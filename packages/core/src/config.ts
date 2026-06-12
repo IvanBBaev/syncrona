@@ -54,6 +54,56 @@ function shouldPreferCurrentWorkingDirectory(
   return segments.length >= 2 && segments[0] === "packages";
 }
 
+// Shape validation for sync.config.js: typos in option names (e.g.
+// "excldues") otherwise pass silently and the option is ignored. Wrong types
+// are hard errors; unknown keys are warnings (forward compatibility).
+const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object"> = {
+  sourceDirectory: "string",
+  buildDirectory: "string",
+  pushConcurrency: "number",
+  rules: "array",
+  includes: "object",
+  excludes: "object",
+  tableOptions: "object",
+  refreshInterval: "number",
+};
+
+export function validateConfigShape(config: unknown, configPath: string): void {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(
+      `Invalid config in ${configPath}: expected module.exports to be an object.`
+    );
+  }
+
+  const errors: string[] = [];
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    const expected = CONFIG_KEY_TYPES[key];
+    if (!expected) {
+      logger.warn(
+        `Unknown option "${key}" in ${configPath} — it will be ignored (typo?). ` +
+          `Known options: ${Object.keys(CONFIG_KEY_TYPES).join(", ")}.`
+      );
+      continue;
+    }
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const matches =
+      expected === "array"
+        ? Array.isArray(value)
+        : expected === "object"
+          ? typeof value === "object" && !Array.isArray(value)
+          : typeof value === expected;
+    if (!matches) {
+      errors.push(`"${key}" must be ${expected === "array" ? "an array" : `a ${expected}`}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Invalid config in ${configPath}: ${errors.join("; ")}.`);
+  }
+}
+
 export class ConfigStore {
   private state: ConfigState = {};
 
@@ -196,6 +246,7 @@ export class ConfigStore {
 
     const loadedObj = (loaded ?? {}) as { default?: unknown };
     const projectConfig: Sync.Config = (loadedObj.default || loadedObj) as Sync.Config;
+    validateConfigShape(projectConfig, configPath);
     const {
       includes: pIncludes = {},
       excludes: pExcludes = {},

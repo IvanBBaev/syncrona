@@ -39,6 +39,15 @@ export type CliCommandModule = {
   handler: (args: Arguments) => unknown;
 };
 
+// G5: single controlled bridge between yargs' runtime Arguments and each
+// command's typed args. The handler body is type-checked against TArgs, and
+// the options/positionals declared in the same registry entry are what
+// guarantee those fields exist at runtime.
+const typedHandler =
+  <TArgs>(handler: (args: Arguments & TArgs) => unknown) =>
+  (args: Arguments): unknown =>
+    handler(args as Arguments & TArgs);
+
 export const SHARED_CLI_OPTIONS: Record<string, Options> = {
   logLevel: {
     type: "string",
@@ -71,12 +80,12 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: ["dev", "d"],
     describe: "Start Development Mode",
-    handler: (args) => devCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => devCommand(args)),
   },
   {
     command: ["refresh", "r"],
     describe: "Refresh Manifest and download new files since last refresh",
-    handler: (args) => refreshCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => refreshCommand(args)),
   },
   {
     command: ["push [target]"],
@@ -103,7 +112,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Will skip confirmation prompts during the push process",
       },
     },
-    handler: (args) => pushCommand(args as unknown as Sync.PushCmdArgs),
+    handler: typedHandler<Sync.PushCmdArgs>((args) => pushCommand(args)),
   },
   {
     command: "download <scope>",
@@ -116,44 +125,44 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Skip download confirmation prompt for noninteractive automation",
       },
     },
-    handler: (args) => downloadCommand(args as unknown as Sync.CmdDownloadArgs),
+    handler: typedHandler<Sync.CmdDownloadArgs>((args) => downloadCommand(args)),
   },
   {
     command: "init",
     describe: "Provisions an initial project for you",
-    handler: (args) => initCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => initCommand(args)),
   },
   {
     command: "build",
     describe: "Build application files locally",
     options: { ...DIFF_OPTION },
-    handler: (args) => buildCommand(args as unknown as Sync.BuildCmdArgs),
+    handler: typedHandler<Sync.BuildCmdArgs>((args) => buildCommand(args)),
   },
   {
     command: "deploy",
     describe: "Deploy local build files to the scoped application",
-    handler: (args) => deployCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => deployCommand(args)),
   },
   {
     command: "docs",
     describe:
       "Generate or logically update Markdown documentation and diagrams for the local scope",
-    handler: (args) => docsCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => docsCommand(args)),
   },
   {
     command: "status",
     describe: "Get information about the connected instance",
-    handler: (args) => statusCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => statusCommand(args)),
   },
   {
     command: "doctor",
     describe: "Run local and connectivity diagnostics for the current syncrona workspace",
-    handler: (args) => doctorCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => doctorCommand(args)),
   },
   {
     command: "plugins",
     describe: "Show configured plugin rules and installed/missing plugin packages",
-    handler: (args) => pluginsCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => pluginsCommand(args)),
   },
   {
     command: "mcp",
@@ -178,14 +187,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Override MCP server entrypoint path",
       },
     },
-    handler: (args) =>
-      mcpCommand(
-        args as unknown as Sync.SharedCmdArgs & {
-          autoConfigure?: boolean;
-          start?: boolean;
-          mcpServerPath?: string;
-        }
-      ),
+    handler: typedHandler<Sync.SharedCmdArgs & { autoConfigure?: boolean; start?: boolean; mcpServerPath?: string; }>((args) => mcpCommand(args)),
   },
   {
     command: "login [instance]",
@@ -197,8 +199,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Instance hostname (e.g. dev12345.service-now.com)",
       },
     },
-    handler: (args) =>
-      loginCommand(args as unknown as Sync.SharedCmdArgs & { instance?: string }),
+    handler: typedHandler<Sync.SharedCmdArgs & { instance?: string }>((args) => loginCommand(args)),
   },
   {
     command: "logout [instance]",
@@ -217,16 +218,13 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Remove credentials for all saved instances",
       },
     },
-    handler: (args) =>
-      logoutCommand(
-        args as unknown as Sync.SharedCmdArgs & { instance?: string; all?: boolean }
-      ),
+    handler: typedHandler<Sync.SharedCmdArgs & { instance?: string; all?: boolean }>((args) => logoutCommand(args)),
   },
   {
     command: "instances",
     describe: "List all instances saved in the global credential store",
     includeSharedOptions: false,
-    handler: (args) => instancesCommand(args as unknown as Sync.SharedCmdArgs),
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => instancesCommand(args)),
   },
   {
     command: "use <instance>",
@@ -238,7 +236,6 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Instance hostname to set as active",
       },
     },
-    handler: (args) =>
-      useCommand(args as unknown as Sync.SharedCmdArgs & { instance: string }),
+    handler: typedHandler<Sync.SharedCmdArgs & { instance: string }>((args) => useCommand(args)),
   },
 ];

@@ -80,6 +80,13 @@ export function shouldRetryStatus(status: number): boolean {
 }
 
 /**
+ * Maximum sustained request rate against a ServiceNow instance. The core CLI
+ * enforces this via axios-rate-limit; the MCP server spaces requests by
+ * 1000 / MAX_REQUESTS_PER_SECOND ms. Keep the two clients in agreement.
+ */
+export const MAX_REQUESTS_PER_SECOND = 20;
+
+/**
  * HTTP status codes that mean "the scoped Syncrona endpoint is not available
  * on this instance" (custom scope not installed, blocked by ACL, or the
  * namespace simply does not exist). Both clients use this to decide when to

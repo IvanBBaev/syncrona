@@ -1,8 +1,19 @@
 trigger:
 - main
 
+# G15: validate on both macOS (developer machines) and Linux (typical CI/CD
+# consumers). Windows support is tracked separately (D5 / DX1).
+strategy:
+  matrix:
+    macos:
+      imageName: 'macOs-latest'
+      publishArtifacts: 'true'
+    linux:
+      imageName: 'ubuntu-latest'
+      publishArtifacts: 'false'
+
 pool:
-  vmImage: 'macOs-latest'
+  vmImage: $(imageName)
 
 steps:
 - task: NodeTool@0
@@ -12,6 +23,11 @@ steps:
 
 - script: npm ci
   displayName: 'Install dependencies'
+
+# G16: supply-chain gate — fail the build on any high/critical advisory in
+# production dependencies (kept at 0 vulnerabilities as of 2026-06-12).
+- script: npm audit --omit=dev --audit-level=high
+  displayName: 'Security audit (production dependencies)'
 
 - script: npm run build
   displayName: 'Build all workspaces'
@@ -29,18 +45,19 @@ steps:
   displayName: 'Test @syncrona/mcp-server'
 
 - script: npm run test:coverage:gates
-  displayName: 'Run coverage gates (core jest thresholds 68/54/58/68, mcp lines>=70%)'
+  displayName: 'Run coverage gates (core jest 68/54/58/68, mcp lines>=70% branches>=70%)'
 
 - script: |
     npm --workspace @syncrona/mcp-server run test:coverage > packages/mcp-server/coverage-summary.txt
   displayName: 'Generate MCP coverage summary report'
+  condition: and(succeeded(), eq(variables['publishArtifacts'], 'true'))
 
 - script: npm run quality:all
   displayName: 'Run quality gates (core + mcp-server)'
 
 - task: PublishBuildArtifacts@1
   displayName: 'Publish core coverage artifact'
-  condition: succeededOrFailed()
+  condition: and(succeededOrFailed(), eq(variables['publishArtifacts'], 'true'))
   inputs:
     PathtoPublish: 'packages/core/coverage'
     ArtifactName: 'core-coverage'
@@ -48,7 +65,7 @@ steps:
 
 - task: PublishBuildArtifacts@1
   displayName: 'Publish MCP coverage summary artifact'
-  condition: succeededOrFailed()
+  condition: and(succeededOrFailed(), eq(variables['publishArtifacts'], 'true'))
   inputs:
     PathtoPublish: 'packages/mcp-server/coverage-summary.txt'
     ArtifactName: 'mcp-coverage-summary'

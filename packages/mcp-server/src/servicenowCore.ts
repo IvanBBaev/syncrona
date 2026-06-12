@@ -6,6 +6,7 @@ import {
 } from "@syncrona/credential-store";
 import {
   DEFAULT_SCOPED_API_PREFIXES,
+  MAX_REQUESTS_PER_SECOND,
   SCOPED_API_PREFIXES_ENV,
   isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
@@ -258,6 +259,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// G4: client-side rate limiting matching the core CLI's axios-rate-limit
+// (shared MAX_REQUESTS_PER_SECOND policy) — requests are spaced by a minimum
+// interval instead of relying solely on 429 retries.
+const MIN_REQUEST_INTERVAL_MS = Math.ceil(1000 / MAX_REQUESTS_PER_SECOND);
+let nextRequestSlotAt = 0;
+
+async function acquireRequestSlot(): Promise<void> {
+  const now = Date.now();
+  const waitMs = Math.max(0, nextRequestSlotAt - now);
+  nextRequestSlotAt = Math.max(now, nextRequestSlotAt) + MIN_REQUEST_INTERVAL_MS;
+  if (waitMs > 0) {
+    await sleep(waitMs);
+  }
+}
+
 function buildScopedEndpoint(prefix: string, route: string): string {
   return `/api/${prefix}/${route.replace(/^\/+/, "")}`;
 }
@@ -341,6 +357,7 @@ export async function snRequestWithConfig(
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
+    await acquireRequestSlot();
     const elapsed = Date.now() - startedAt;
     const remaining = Math.max(timeoutMs - elapsed, 1);
     const controller = new AbortController();

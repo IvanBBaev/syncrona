@@ -3,6 +3,8 @@ const { spawnSync } = require('node:child_process');
 function parseArgs(argv) {
   const out = {
     lineThreshold: 90,
+    // 0 disables the branch gate (kept opt-in for callers that only ratchet lines).
+    branchThreshold: 0,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -12,6 +14,14 @@ function parseArgs(argv) {
       const parsed = Number(next);
       if (Number.isFinite(parsed)) {
         out.lineThreshold = parsed;
+      }
+      i += 1;
+    }
+    if (item === '--branch-threshold') {
+      const next = argv[i + 1];
+      const parsed = Number(next);
+      if (Number.isFinite(parsed)) {
+        out.branchThreshold = parsed;
       }
       i += 1;
     }
@@ -34,7 +44,10 @@ function parseAllFilesLineCoverage(output) {
   }
 
   const linePct = Number(cells[1]);
-  return Number.isFinite(linePct) ? linePct : null;
+  const branchPct = Number(cells[2]);
+  return Number.isFinite(linePct)
+    ? { linePct, branchPct: Number.isFinite(branchPct) ? branchPct : null }
+    : null;
 }
 
 function runCoverage() {
@@ -69,10 +82,27 @@ function main() {
     process.exit(run.exitCode);
   }
 
-  const lineCoverage = parseAllFilesLineCoverage(run.output);
-  if (lineCoverage === null) {
+  const coverage = parseAllFilesLineCoverage(run.output);
+  if (coverage === null) {
     console.error('Could not parse all files line coverage from report.');
     process.exit(1);
+  }
+  const lineCoverage = coverage.linePct;
+
+  if (args.branchThreshold > 0) {
+    if (coverage.branchPct === null) {
+      console.error('Could not parse all files branch coverage from report.');
+      process.exit(1);
+    }
+    if (coverage.branchPct < args.branchThreshold) {
+      console.error(
+        `Coverage gate failed: all files branch coverage ${coverage.branchPct.toFixed(2)}% < ${args.branchThreshold.toFixed(2)}%`
+      );
+      process.exit(1);
+    }
+    console.log(
+      `Branch coverage gate passed: ${coverage.branchPct.toFixed(2)}% >= ${args.branchThreshold.toFixed(2)}%`
+    );
   }
 
   if (lineCoverage < args.lineThreshold) {

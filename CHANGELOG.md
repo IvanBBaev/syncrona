@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 - Table API pagination (`sysparm_offset`) in the manifest builder — tables
   with more than 500 records are now fully enumerated; `sys_idIN` queries
   are chunked to avoid URL-length failures.
+- Client-side rate limiting in the MCP server (shared 20 req/s policy from
+  `@syncrona/sn-transport`, matching the CLI's axios-rate-limit).
 
 ### Fixed
 
@@ -61,6 +63,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- CI now runs on a macOS + Linux matrix and fails on high/critical `npm
+  audit` findings in production dependencies; the mcp coverage gate also
+  enforces a 70% branch threshold; `sync.config.js` option types
+  are validated on load (unknown keys warn, wrong types are errors); CLI
+  registry handlers are type-checked via `typedHandler<TArgs>`.
 - Core is now part of the lint gate (`npm run lint` covers core + mcp-server
   with `--max-warnings=0`); the core coverage gate measures the whole source
   tree with ratchet thresholds instead of a single file.
