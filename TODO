@@ -114,11 +114,13 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       by anything. dependency-cruiser or eslint-plugin-boundaries in the lint gate.
 
 ### QA — missing test coverage
-- [ ] **G11. E2E against an instance** — PARTIAL 2026-06-12: e2eCliSmoke.test.ts
-      runs the real dist binary as a child process (--help lists all 16 commands;
-      an unknown command exits non-zero) — catches packaging/bootstrap breakage
-      (the S1/S2 class). Remaining: a network smoke (login → download →
-      push --dry-run) against a mock/record-replay SN HTTP endpoint.
+- [x] **G11. E2E against an instance** — DONE 2026-06-12 (local slices):
+      e2eCliSmoke.test.ts runs the real dist binary as a child process
+      (packaging/bootstrap breakage), and e2eNetworkSmoke.test.ts drives the
+      REAL snClient (axios, basic auth, rate limiter) over actual sockets
+      against a mock SN Table API — download (manifest build) and push
+      (PATCH) slices, auth header asserted on the wire. Optional follow-up:
+      record-replay against a live instance (needs credentials; see CR22).
 - [x] **G12. Branch coverage for mcp-server** — DONE 2026-06-12:
       check-coverage-gate.js accepts --branch-threshold (opt-in); root
       test:coverage:mcp uses 70 (measured 74.99%).
