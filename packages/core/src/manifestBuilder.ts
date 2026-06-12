@@ -1,10 +1,45 @@
 import { SN, Sync } from "@syncrona/types";
+import { isEndpointNotFoundStatus } from "@syncrona/sn-transport";
 import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap";
 import type { SNClient } from "./snClient";
+import { getErrorResponseStatus } from "./snClient";
+import { logger } from "./Logger";
 
 type TableAPIRecord = Record<string, string>;
 type TableAPIResponse = { result: TableAPIRecord[] };
 const MAX_TABLE_HIERARCHY_DEPTH = 10;
+const SYS_ID_CHUNK_SIZE = 200;
+
+// 400/403/404 mean the table is not queryable for this user/instance (ACL,
+// missing table) — a legitimate "skip this table" case. Anything else
+// (network, 5xx, auth) is a real failure that must NOT be treated as
+// "no records", otherwise an outage silently produces a truncated manifest.
+function isTableSkippableError(e: unknown): boolean {
+  const status = getErrorResponseStatus(e);
+  return typeof status === "number" && isEndpointNotFoundStatus(status);
+}
+
+// Pages through the Table API so tables with more rows than the page size are
+// fully enumerated instead of silently truncated.
+async function tableAPIGetAllRows(
+  client: SNClient,
+  table: string,
+  query: string,
+  fields: string,
+  pageSize: number
+): Promise<TableAPIRecord[]> {
+  const rows: TableAPIRecord[] = [];
+  let offset = 0;
+  for (;;) {
+    const res = await client.tableAPIGet(table, query, fields, pageSize, offset);
+    const page = extractResult(res.data);
+    rows.push(...page);
+    if (page.length < pageSize) {
+      return rows;
+    }
+    offset += pageSize;
+  }
+}
 
 function getDataMaterializationTableAllowlist(): Set<string> {
   const raw = String(process.env.SYNCRONA_DATA_TABLES || "").trim();
@@ -101,13 +136,14 @@ async function getTableNamesInScope(
   excludes: Sync.TablePropMap
 ): Promise<string[]> {
   try {
-    const res = await client.tableAPIGet(
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_metadata",
       `sys_scope=${scopeId}`,
       "sys_class_name",
       10000
     );
-    const tables = filterUniqueTableNames(extractResult(res.data), includes, excludes);
+    const tables = filterUniqueTableNames(rows, includes, excludes);
 
     if (tables.length > 0) {
       return tables;
@@ -420,14 +456,11 @@ async function getRecordsForTable(
   let rows: TableAPIRecord[] = [];
 
   try {
-    const res = await client.tableAPIGet(
-      tableName,
-      query,
-      tableFields,
-      500
-    );
-    rows = extractResult(res.data);
-  } catch {
+    rows = await tableAPIGetAllRows(client, tableName, query, tableFields, 500);
+  } catch (e) {
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
     rows = [];
   }
 
@@ -443,7 +476,7 @@ async function getRecordsForTable(
   const metadataIds = metadataRows
     .map((row) => row.sys_id)
     .filter((id): id is string => !!id);
-  const chunks = chunkArray(metadataIds, 200);
+  const chunks = chunkArray(metadataIds, SYS_ID_CHUNK_SIZE);
   const fallbackRows: TableAPIRecord[] = [];
 
   for (const chunk of chunks) {
@@ -460,8 +493,11 @@ async function getRecordsForTable(
         500
       );
       fallbackRows.push(...extractResult(res.data));
-    } catch {
-      // Continue with other chunks.
+    } catch (e) {
+      if (!isTableSkippableError(e)) {
+        throw e;
+      }
+      // Table not accessible — continue with other chunks.
     }
   }
 
@@ -474,14 +510,17 @@ async function getScopeMetadataRowsForTable(
   tableName: string
 ): Promise<TableAPIRecord[]> {
   try {
-    const res = await client.tableAPIGet(
+    return await tableAPIGetAllRows(
+      client,
       "sys_metadata",
       `sys_scope=${scopeId}^sys_class_name=${tableName}`,
       "sys_id,sys_class_name",
       10000
     );
-    return extractResult(res.data);
-  } catch {
+  } catch (e) {
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
     return [];
   }
 }
@@ -518,25 +557,50 @@ export async function buildManifestFromTableAPI(
   }
 
   const tableNames = await getTableNamesInScope(client, scopeName, scopeId, includes, excludes);
+  if (tableNames.length === 0) {
+    // A populated scope never has zero discoverable tables; an empty result
+    // here almost always means connectivity/ACL trouble. Refuse to build an
+    // empty manifest that would overwrite a previously good one.
+    throw new Error(
+      `No tables discovered for scope "${scopeName}". ` +
+        "Refusing to build an empty manifest (check connectivity, credentials, and ACLs)."
+    );
+  }
+
   const manifest: SN.AppManifest = { scope: scopeName, tables: {} };
+  const failedTables: string[] = [];
 
   await Promise.all(
     tableNames.map(async (tableName) => {
-      const files = await getFileFieldsForTable(client, tableName, includes, excludes);
-      if (files.length === 0) return;
+      try {
+        const files = await getFileFieldsForTable(client, tableName, includes, excludes);
+        if (files.length === 0) return;
 
-      const records = await getRecordsForTable(
-        client,
-        tableName,
-        scopeId,
-        files,
-        tableOptions[tableName]
-      );
-      if (Object.keys(records).length === 0) return;
+        const records = await getRecordsForTable(
+          client,
+          tableName,
+          scopeId,
+          files,
+          tableOptions[tableName]
+        );
+        if (Object.keys(records).length === 0) return;
 
-      manifest.tables[tableName] = { records };
+        manifest.tables[tableName] = { records };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
+        failedTables.push(tableName);
+      }
     })
   );
+
+  if (failedTables.length > 0) {
+    // Better to fail the whole build than to persist a partial manifest in
+    // which the failed tables look like they have no records.
+    throw new Error(
+      `Manifest build incomplete — failed tables: ${failedTables.sort().join(", ")}`
+    );
+  }
 
   return manifest;
 }
@@ -568,16 +632,20 @@ export async function buildBulkDownloadFromTableAPI(
       }
 
       const fileFieldNames = [...allFiles.keys()].join(",");
-      const query = `sys_idIN${sysIds.join(",")}`;
 
       try {
-        const res = await client.tableAPIGet(
-          tableName,
-          query,
-          `sys_id,${displayField},${fileFieldNames}`,
-          500
-        );
-        const rows = extractResult(res.data);
+        // Chunk the sys_id list so large record sets cannot overflow the URL
+        // length limit (mirrors getRecordsForTable).
+        const rows: TableAPIRecord[] = [];
+        for (const chunk of chunkArray(sysIds, SYS_ID_CHUNK_SIZE)) {
+          const res = await client.tableAPIGet(
+            tableName,
+            `sys_idIN${chunk.join(",")}`,
+            `sys_id,${displayField},${fileFieldNames}`,
+            500
+          );
+          rows.push(...extractResult(res.data));
+        }
         const records: SN.TableConfigRecords = {};
 
         for (const row of rows) {
@@ -598,8 +666,12 @@ export async function buildBulkDownloadFromTableAPI(
         if (Object.keys(records).length > 0) {
           result[tableName] = { records };
         }
-      } catch {
-        // Table not accessible — skip
+      } catch (e) {
+        if (!isTableSkippableError(e)) {
+          throw e;
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(`Skipping inaccessible table ${tableName}: ${message}`);
       }
     })
   );
@@ -637,7 +709,7 @@ export function isScopedEndpointUnavailableError(e: unknown): boolean {
   if (!e || typeof e !== "object") return false;
   const err = e as { response?: { status?: number }; status?: number };
   const status = err.response?.status ?? err.status;
-  return status === 400 || status === 403 || status === 404;
+  return typeof status === "number" && isEndpointNotFoundStatus(status);
 }
 
 export function isNotFoundError(e: unknown): boolean {

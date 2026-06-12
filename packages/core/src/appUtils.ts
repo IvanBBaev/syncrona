@@ -7,11 +7,14 @@ import { PUSH_RETRY_LIMIT, PUSH_RETRY_WAIT } from "./constants";
 import PluginManager from "./PluginManager";
 import {
   defaultClient,
+  getErrorResponseStatus,
+  isRetryableRequestError,
   processPushResponse,
   retryOnErr,
   SNClient,
   unwrapSNResponse,
   unwrapTableAPIFirstItem,
+  unwrapTableAPIFirstItemOrEmpty,
 } from "./snClient";
 import {
   buildManifestFromTableAPI,
@@ -86,7 +89,8 @@ export const processManifest = async (
   );
 };
 
-export const syncManifest = async () => {
+// Returns true on success so callers (refresh/dev) can report the real outcome.
+export const syncManifest = async (): Promise<boolean> => {
   try {
     const curManifest = await ConfigManager.getManifest();
     if (!curManifest) throw new Error("No manifest file loaded!");
@@ -118,12 +122,14 @@ export const syncManifest = async () => {
     logger.info("Finding and creating missing files...");
     await processMissingFiles(newManifest);
     ConfigManager.updateManifest(newManifest);
+    return true;
   } catch (e) {
     let message
     if (e instanceof Error) message = e.message
     else message = String(e)
     logger.error("Encountered error while refreshing! ❌");
     logger.error(message.toString());
+    return false;
   }
 };
 
@@ -407,10 +413,17 @@ const pushRec = async (
         logger.debug(
           `Failed to push ${recSummary}! Retrying with ${numTries} left...`
         );
-      }
+      },
+      isRetryableRequestError
     );
     return processPushResponse(pushRes, recSummary);
   } catch (e) {
+    if (getErrorResponseStatus(e) === 404) {
+      return {
+        success: false,
+        message: `Could not find ${recSummary} on the server.`,
+      };
+    }
     let message
     if (e instanceof Error) message = e.message
     else message = String(e)
@@ -591,12 +604,11 @@ const swapServerScope = async (scopeId: string): Promise<void> => {
       client.getUserSysId(),
       "sys_id"
     );
-    const curAppUserPrefId =
-      (await unwrapTableAPIFirstItem(
-        client.getCurrentAppUserPrefSysId(userSysId),
-        "sys_id"
-      )) || "";
-    // If not user pref record exists, create it.
+    // Empty result means no user pref record exists yet — create it.
+    const curAppUserPrefId = await unwrapTableAPIFirstItemOrEmpty(
+      client.getCurrentAppUserPrefSysId(userSysId),
+      "sys_id"
+    );
     if (curAppUserPrefId !== "")
       await client.updateCurrentAppUserPref(scopeId, curAppUserPrefId);
     else await client.createCurrentAppUserPref(scopeId, userSysId);
@@ -623,7 +635,8 @@ export const createAndAssignUpdateSet = async (updateSetName = "") => {
     client.getUserSysId(),
     "sys_id"
   );
-  const curUpdateSetUserPrefId = await unwrapTableAPIFirstItem(
+  // Empty result means no update-set pref record exists yet — create it.
+  const curUpdateSetUserPrefId = await unwrapTableAPIFirstItemOrEmpty(
     client.getCurrentUpdateSetUserPref(userSysId),
     "sys_id"
   );

@@ -75,6 +75,89 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       timeoutMs: timeoutSchema.optional(),
     })
     .passthrough(),
+  // Every tool listed in safetyPolicy.MUTATING_TOOLS carries a schema so
+  // malformed mutating calls are rejected before any side effect.
+  sync_set_scope: z
+    .object({
+      scope: z.string().trim().min(1),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sync_push: z
+    .object({
+      target: z.string().optional(),
+      diff: z.string().optional(),
+      scopeSwap: z.boolean().optional(),
+      updateSet: z.string().optional(),
+      logLevel: z.enum(["error", "warn", "info", "debug", "silly"]).optional(),
+      confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sn_execute_background_script: z
+    .object({
+      script: z.string().min(1),
+      endpointPath: z.string().optional(),
+      confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sync_create_script_include: z
+    .object({
+      name: z.string().trim().min(1),
+      apiName: z.string().optional(),
+      script: z.string().optional(),
+      active: z.boolean().optional(),
+      clientCallable: z.boolean().optional(),
+      refreshAfterCreate: z.boolean().optional(),
+      confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sync_create_script_include_and_sync: z
+    .object({
+      name: z.string().trim().min(1),
+      apiName: z.string().optional(),
+      script: z.string().optional(),
+      active: z.boolean().optional(),
+      clientCallable: z.boolean().optional(),
+      confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sn_autonomous_remediation_workflow: z
+    .object({
+      script: z.string().min(1),
+      apply: z.boolean().optional(),
+      dryRun: z.boolean().optional(),
+      confirmDestructive: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
+  sync_unified_change_workflow: z
+    .object({
+      task: z.string().optional(),
+      script: z.string().optional(),
+      taskType: z.enum(["script", "metadata", "hybrid"]).optional(),
+      executionMode: z.enum(["mocked", "remote"]).optional(),
+      allowRemoteApply: z.boolean().optional(),
+      remoteScript: z.string().optional(),
+      remoteEndpoint: z.string().optional(),
+      proposedChanges: z.array(z.record(z.string(), z.unknown())).optional(),
+      footprintBudget: z.record(z.string(), z.unknown()).optional(),
+      riskLevel: z.enum(["low", "medium", "high", "critical"]).optional(),
+      approval: z.record(z.string(), z.unknown()).optional(),
+      rollbackEvidence: z.record(z.string(), z.unknown()).optional(),
+      policy: z.record(z.string(), z.unknown()).optional(),
+      apply: z.boolean().optional(),
+      confirmDestructive: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
 };
 
 const topLevelIdentifierSchemas: Record<string, z.ZodType<string>> = {

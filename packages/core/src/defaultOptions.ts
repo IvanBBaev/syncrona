@@ -1,5 +1,5 @@
 import { Sync } from "@syncrona/types";
-let excludes: Sync.TablePropMap = {
+const excludes: Sync.TablePropMap = {
   sys_scope_privilege: true,
   sys_dictionary: true,
   sys_impex_entry: true,
@@ -28,7 +28,7 @@ let excludes: Sync.TablePropMap = {
   sys_impex_map: true
 };
 
-let includes: Sync.TablePropMap = {
+const includes: Sync.TablePropMap = {
   content_css: {
     style: {
       type: "css"
@@ -36,6 +36,6 @@ let includes: Sync.TablePropMap = {
   }
 };
 
-let tableOptions: Sync.ITableOptionsMap = {};
+const tableOptions: Sync.ITableOptionsMap = {};
 
 export { includes, excludes, tableOptions };

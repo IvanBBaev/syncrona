@@ -39,7 +39,7 @@ function countManifestFiles(manifest: SN.AppManifest): number {
 export async function startWizard() {
   try {
     const loginAnswers = await getWizardCredentials();
-    let { username, password, instance } = loginAnswers;
+    const { username, password, instance } = loginAnswers;
     let filesReady = 0;
     const sourceDirectory = await getSourceDirectorySelection();
     await ensureSourceDirectory(sourceDirectory);
@@ -97,15 +97,15 @@ export async function startWizard() {
     }
     await setupDotEnv(loginAnswers);
 
-    let hasConfig = await checkConfig();
+    const hasConfig = await checkConfig();
     if (!hasConfig) {
       logger.info("Generating config...");
       await writeDefaultConfig(hasConfig, sourceDirectory);
     }
 
-    let man = ConfigManager.getManifest(true);
+    const man = ConfigManager.getManifest(true);
     if (!man) {
-      let selectedApp = await showAppList(apps);
+      const selectedApp = await showAppList(apps);
       if (!selectedApp) {
         return;
       }
@@ -178,7 +178,7 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
 
 async function checkConfig(): Promise<boolean> {
   try {
-    let checkConfig = ConfigManager.checkConfigPath();
+    const checkConfig = ConfigManager.checkConfigPath();
     if (!checkConfig) {
       return false;
     }
@@ -249,7 +249,7 @@ async function ensureSourceDirectory(sourceDirectory: string): Promise<void> {
 }
 
 async function showAppList(apps: SN.App[]): Promise<string | undefined> {
-  let appSelection: Sync.AppSelectionAnswer = await inquirer.prompt([
+  const appSelection: Sync.AppSelectionAnswer = await inquirer.prompt([
     {
       type: "list",
       name: "app",

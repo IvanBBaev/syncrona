@@ -10,5 +10,9 @@
     "node": ">=22.0.0"
   },
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "index.d.ts"
+  ],
+  "types": "./index.d.ts"
 }

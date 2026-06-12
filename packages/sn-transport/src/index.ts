@@ -78,3 +78,18 @@ const retryableStatusSet = new Set<number>(RETRYABLE_HTTP_STATUSES);
 export function shouldRetryStatus(status: number): boolean {
   return retryableStatusSet.has(status);
 }
+
+/**
+ * HTTP status codes that mean "the scoped Syncrona endpoint is not available
+ * on this instance" (custom scope not installed, blocked by ACL, or the
+ * namespace simply does not exist). Both clients use this to decide when to
+ * try the next scoped prefix or fall back to the standard Table API.
+ */
+export const ENDPOINT_NOT_FOUND_STATUSES: readonly number[] = [400, 403, 404];
+
+const endpointNotFoundStatusSet = new Set<number>(ENDPOINT_NOT_FOUND_STATUSES);
+
+/** Whether the given HTTP status marks the scoped endpoint as unavailable. */
+export function isEndpointNotFoundStatus(status: number): boolean {
+  return endpointNotFoundStatusSet.has(status);
+}

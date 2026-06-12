@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 
-import {
-  existsSync,
-  mkdirSync,
-} from "fs";
-import path from "path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import {
-  isMutatingTool,
-  isUnsafeWorkspaceCommand,
-} from "./safetyPolicy";
+import { isMutatingTool } from "./safetyPolicy";
 import { checkAuditLogIntegrity } from "./audit";
 import { logger } from "./logger";
 import { loadMetricEvents } from "./metricsStore";
@@ -24,46 +16,18 @@ import {
   isDryRunRequested,
 } from "./runtimeUtils";
 import { McpError, normalizeMcpError } from "./errors";
-import { runBackgroundScript } from "./servicenowCore";
-import { tableGet } from "./sessionContext";
 import { MCP_TOOLS, getToolLifecycleMetadata } from "./toolSchemas";
-import { dispatchToolPipeline, type ToolHandlerInvocation } from "./toolDispatch";
-import { getScopeDocsPaths, getScopeTableDocPath } from "./scopePaths";
-import {
-  classifyRelationVisibility,
-  toGraphFromUnknown,
-  hydrateScopeKnowledgeInputs,
-} from "./analysis/scopeDiscovery";
-import {
-  evaluateToolPolicy,
-  getEffectiveAllowFullNodeAccess,
-} from "./policyConfig";
-import { handleSessionTool } from "./handlers/sessionHandlers";
-import { handleWorkspaceTool } from "./handlers/workspaceHandlers";
-import { handleServiceNowCrudTool } from "./handlers/serviceNowCrudHandlers";
-import { handleInsightTool } from "./handlers/insightToolHandlers";
-import { handleMetadataAnalysisTool } from "./handlers/metadataAnalysisHandlers";
-import { handleScriptAnalysisTool } from "./handlers/scriptAnalysisHandlers";
-import { handleHealthPlanningTool } from "./handlers/healthPlanningHandlers";
-import { handleScopeKnowledgeTool } from "./handlers/scopeKnowledgeHandlers";
-import { handleRelationOnboardingTool } from "./handlers/relationOnboardingHandlers";
-import { handleWorkflowTool } from "./handlers/workflowHandlers";
-import { handleDeveloperTool } from "./handlers/developerToolHandlers";
+import { dispatchToolPipeline } from "./toolDispatch";
+import { buildToolHandlerPipeline } from "./toolModules";
+import { evaluateToolPolicy } from "./policyConfig";
 import {
   AUDIT_DIR,
   AUDIT_FILE,
-  GUARDRAIL_CONFIG_FILE,
   METRICS_FILE,
-  PROJECT_DIR,
   SERVER_NAME,
   SERVER_VERSION,
-  TOOL_CONTRACT_VERSION,
 } from "./runtimeConfig";
-import {
-  getSemanticIndex,
-  invalidateSemanticIndex,
-  setSemanticIndex,
-} from "./semanticIndexState";
+import { invalidateSemanticIndex } from "./semanticIndexState";
 import {
   closeResource,
   createGracefulShutdownController,
@@ -71,39 +35,25 @@ import {
   type GracefulShutdownController,
 } from "./gracefulShutdown";
 import {
-  getHealthEndpointStatus,
   parseHealthHttpConfig,
   startHealthHttpServer,
 } from "./healthServer";
-import { asRecord, toStringField } from "./recordUtils";
+import { asRecord } from "./recordUtils";
+import { autoPullAllScopesAndData } from "./scopeBootstrap";
 import {
-  runCommand,
-  runSyncroCliCommand,
-} from "./processRunner";
-import { autoPullAllScopesAndData } from "./scopeBootstrap";import {
   TOOL_METRICS,
   auditMutatingTool,
   auditToolCall,
   buildHealthHttpSnapshot,
-  buildPreflightReport,
-  checkSyncronaCapabilities,
-  createAndSyncScriptInclude,
   enforcePreflightForTool,
-  getSourceDirectory,
-  isDeepAnalysisSatisfied,
   loadGuardrailConfig,
   makeDryRunAuditResponse,
   normalizeTimeout,
-  parseMetadataType,
-  parseUnifiedTaskType,
   recordToolMetric,
   resolveCorrelationId,
-  resolveScopeCode,
-  safeGetSessionContext,
   setAuditIntegrityStatus,
   shouldInvalidateSemanticIndex,
   withCorrelationIdInResponse,
-  writeFileWithStableBackup,
 } from "./toolService";
 export * from "./publicApi";
 
@@ -221,147 +171,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       await enforcePreflightForTool(toolName, timeoutMs);
     }
 
-    const handlerPipeline: Array<ToolHandlerInvocation> = [
-      () => handleSessionTool(toolName, args, {
-        timeoutMs,
-        dryRun,
-        startedAt,
-        buildPreflightReport,
-        checkSyncronaCapabilities,
-        makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
-        auditMutatingTool: requestAuditMutatingTool,
-      }),
-      () => handleWorkspaceTool(toolName, args, {
-        timeoutMs,
-        dryRun,
-        startedAt,
-        allowFullNodeAccess: getEffectiveAllowFullNodeAccess(guardrailConfig),
-        runSyncroCliCommand,
-        runCommand,
-        isUnsafeWorkspaceCommand,
-        makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
-        auditMutatingTool: requestAuditMutatingTool,
-      }),
-      () => handleServiceNowCrudTool(toolName, args, {
-        timeoutMs,
-        dryRun,
-        startedAt,
-        createAndSyncScriptInclude,
-        makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
-        auditMutatingTool: requestAuditMutatingTool,
-      }),
-      () => handleInsightTool(toolName, args, {
-        timeoutMs,
-      }),
-      () => handleMetadataAnalysisTool(toolName, args, {
-        timeoutMs,
-        dryRun,
-        startedAt,
-        projectDir: PROJECT_DIR,
-        parseMetadataType,
-        makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
-        auditMutatingTool: requestAuditMutatingTool,
-        getLastSemanticIndex: () => getSemanticIndex(PROJECT_DIR),
-        setLastSemanticIndex: (rows) => {
-          setSemanticIndex(rows);
-        },
-      }),
-      () => handleScriptAnalysisTool(toolName, args, {
-        dryRun,
-        startedAt,
-        makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
-        auditMutatingTool: requestAuditMutatingTool,
-      }),
-      () => handleHealthPlanningTool(toolName, args, {
-        timeoutMs,
-        contractVersion: TOOL_CONTRACT_VERSION,
-        serverInfo: {
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-        },
-        getDeclaredToolNames: () =>
-          MCP_TOOLS
-            .map((item) => toStringField(asRecord(item).name))
-            .filter((name) => name.length > 0),
-        getDeclaredTools: () => MCP_TOOLS.map((item) => asRecord(item)),
-        getToolMetrics: () => TOOL_METRICS,
-        getHealthEndpointStatus,
-        checkSyncronaCapabilities,
-        toGraphFromUnknown,
-      }),
-      () => handleScopeKnowledgeTool(toolName, args, {
-        timeoutMs,
-        dryRun,
-        resolveScopeCode,
-        hydrateScopeKnowledgeInputs,
-        safeGetSessionContext,
-        asRecord,
-        toGraphFromUnknown,
-        writeJsonAndMarkdown: (paths, index, markdown) => {
-          mkdirSync(paths.dir, { recursive: true });
-          writeFileWithStableBackup(paths.jsonPath, `${JSON.stringify(index, null, 2)}\n`);
-          writeFileWithStableBackup(paths.markdownPath, markdown);
-        },
-        writeTableDocs: (scopeCode, docs) => {
-          const writtenPaths: string[] = [];
-          for (const doc of docs) {
-            const targetPath = getScopeTableDocPath(scopeCode, doc.tableName);
-            mkdirSync(path.dirname(targetPath), { recursive: true });
-            writeFileWithStableBackup(targetPath, doc.markdown);
-            writtenPaths.push(targetPath);
-          }
-          return writtenPaths.sort((a, b) => a.localeCompare(b));
-        },
-        writeScopeDocsBundle: (scopeCode, files) => {
-          const docsRoot = getScopeDocsPaths(scopeCode);
-          const writtenPaths: string[] = [];
-          for (const file of files) {
-            const targetPath = path.join(docsRoot.dir, file.relativePath);
-            mkdirSync(path.dirname(targetPath), { recursive: true });
-            writeFileWithStableBackup(targetPath, file.content);
-            writtenPaths.push(targetPath);
-          }
-          return writtenPaths.sort((a, b) => a.localeCompare(b));
-        },
-      }),
-      () => handleRelationOnboardingTool(toolName, args, {
-        timeoutMs,
-        projectDir: PROJECT_DIR,
-        guardrailConfigFile: GUARDRAIL_CONFIG_FILE,
-        resolveScopeCode,
-        hydrateScopeKnowledgeInputs,
-        toGraphFromUnknown,
-        classifyRelationVisibility,
-        existsSync,
-        joinPath: path.join,
-      }),
-      () => handleWorkflowTool(toolName, args, {
-        timeoutMs,
-        startedAt,
-        parseUnifiedTaskType,
-        isDeepAnalysisSatisfied,
-        buildPreflightReport,
-        asRecord,
-        toGraphFromUnknown,
-        safeGetSessionContext,
-        toStringField,
-        writeJsonAndMarkdown: (paths, index, markdown) => {
-          mkdirSync(paths.dir, { recursive: true });
-          writeFileWithStableBackup(paths.jsonPath, `${JSON.stringify(index, null, 2)}\n`);
-          writeFileWithStableBackup(paths.markdownPath, markdown);
-        },
-        runRemoteScript: (script, resolvedTimeoutMs, endpointPath) =>
-          runBackgroundScript(script, resolvedTimeoutMs, endpointPath, PROJECT_DIR),
-        auditMutatingTool: requestAuditMutatingTool,
-      }),
-      () => handleDeveloperTool(toolName, args, {
-        timeoutMs,
-        projectDir: PROJECT_DIR,
-        sourceDirectory: getSourceDirectory(PROJECT_DIR),
-        resolveScope: (preferredScope) => resolveScopeCode(preferredScope, timeoutMs),
-        tableGet,
-      }),
-    ];
+    // The handler modules live in the TOOL_HANDLER_MODULES registry
+    // (toolModules.ts); this orchestrator only binds them to the request.
+    const handlerPipeline = buildToolHandlerPipeline({
+      toolName,
+      args,
+      timeoutMs,
+      dryRun,
+      startedAt,
+      guardrailConfig,
+      makeDryRunAuditResponse: requestMakeDryRunAuditResponse,
+      auditMutatingTool: requestAuditMutatingTool,
+    });
 
     const response = await dispatchToolPipeline(handlerPipeline, () => ({
       isError: true,
@@ -452,8 +273,6 @@ async function main() {
     console.error("Audit log integrity check failed; continuing with best-effort audit mode");
   }
 
-  await autoPullAllScopesAndData();
-
   const transport = new StdioServerTransport();
   const healthHttpConfig = parseHealthHttpConfig();
   const healthServer = await startHealthHttpServer(healthHttpConfig, buildHealthHttpSnapshot);
@@ -466,6 +285,14 @@ async function main() {
   registerGracefulShutdownSignals(shutdownController);
   await server.connect(transport);
   console.error("Syncrona MCP server connected over stdio");
+
+  // The network-heavy scope bootstrap runs after the stdio handshake so a
+  // slow instance cannot time out the MCP client connection. It logs to
+  // stderr only, so it is safe alongside the JSON-RPC stdout stream.
+  void autoPullAllScopesAndData().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Auto scope pull failed: ${message}`);
+  });
 }
 
 if (require.main === module) {

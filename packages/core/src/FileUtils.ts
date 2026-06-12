@@ -63,7 +63,8 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
   file: SN.File,
   parentPath: string
 ): Promise<void> => {
-  let { name, type, content = "" } = file;
+  const { name, type } = file;
+  let { content = "" } = file;
   // content can sometimes be null
   if (!content) {
     content = "";

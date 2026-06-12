@@ -18,6 +18,8 @@ const {
   normalizeTimeout,
   toTableResultRows,
   checkSyncronaCapabilities,
+  clearScopedApiPrefixCache,
+  clearServiceNowSecretsCache,
   parseHealthHttpConfig,
   startHealthHttpServer,
   getHealthEndpointStatus,
@@ -87,6 +89,13 @@ function mkResponse(status, payload) {
   };
 }
 
+// A test that fails mid-body would otherwise leak its global.fetch mock into
+// every subsequent test (and, via an unclosed health server, hang the run).
+const REAL_GLOBAL_FETCH = global.fetch;
+test.afterEach(() => {
+  global.fetch = REAL_GLOBAL_FETCH;
+});
+
 function withEnv(vars, fn) {
   const old = {
     SN_INSTANCE: process.env.SN_INSTANCE,
@@ -97,6 +106,10 @@ function withEnv(vars, fn) {
   process.env.SN_INSTANCE = vars.SN_INSTANCE;
   process.env.SN_USER = vars.SN_USER;
   process.env.SN_PASSWORD = vars.SN_PASSWORD;
+  // Module-level caches would otherwise leak the previous test's credentials
+  // and scoped-prefix ordering into this one.
+  clearServiceNowSecretsCache();
+  clearScopedApiPrefixCache();
 
   return Promise.resolve()
     .then(fn)
@@ -104,6 +117,7 @@ function withEnv(vars, fn) {
       process.env.SN_INSTANCE = old.SN_INSTANCE;
       process.env.SN_USER = old.SN_USER;
       process.env.SN_PASSWORD = old.SN_PASSWORD;
+      clearServiceNowSecretsCache();
     });
 }
 
@@ -710,20 +724,23 @@ test('startHealthHttpServer serves health snapshot and updates status', async ()
     return;
   }
 
-  const healthRes = await fetch(server.url);
-  assert.equal(healthRes.status, 200);
-  const healthPayload = await healthRes.json();
-  assert.equal(healthPayload.status, 'ok');
-  assert.equal(healthPayload.source, 'test');
+  try {
+    const healthRes = await fetch(server.url);
+    assert.equal(healthRes.status, 200);
+    const healthPayload = await healthRes.json();
+    assert.equal(healthPayload.status, 'ok');
+    assert.equal(healthPayload.source, 'test');
 
-  const notFoundRes = await fetch(server.url.replace('/healthz', '/unknown'));
-  assert.equal(notFoundRes.status, 404);
+    const notFoundRes = await fetch(server.url.replace('/healthz', '/unknown'));
+    assert.equal(notFoundRes.status, 404);
 
-  const status = getHealthEndpointStatus();
-  assert.equal(status.enabled, true);
-  assert.equal(String(status.path), '/healthz');
-
-  await server.close();
+    const status = getHealthEndpointStatus();
+    assert.equal(status.enabled, true);
+    assert.equal(String(status.path), '/healthz');
+  } finally {
+    // A leaked listener keeps the test child process alive forever.
+    await server.close();
+  }
 
   const afterClose = getHealthEndpointStatus();
   assert.equal(afterClose.enabled, false);

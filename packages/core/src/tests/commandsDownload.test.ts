@@ -21,6 +21,7 @@ jest.mock("../config", () => ({
 
 jest.mock("../appUtils", () => ({
   processManifest: (...args: unknown[]) => mockProcessManifest(...args),
+  downloadAllFiles: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../snClient", () => ({
@@ -64,7 +65,7 @@ describe("downloadCommand flow", () => {
       includes: {},
       excludes: {},
       tableOptions: {},
-    }, true);
+    });
     expect(mockProcessManifest).toHaveBeenCalledWith(manifest, true);
   });
 

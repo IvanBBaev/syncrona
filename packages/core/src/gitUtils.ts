@@ -11,24 +11,36 @@ export const gitDiffToEncodedPaths = async (diff: string) => {
   return ConfigManager.getSourcePath();
 };
 
-const gitDiff = async (target: string, sourcePath: string): Promise<string> => {
+const execGit = (args: string[]): Promise<string> => {
   return new Promise<string>((resolve, reject) => {
-    const cmdStr = `git diff --name-status ${target}... -- ${sourcePath}`;
-    cp.exec(cmdStr, (err, stdout, stderr) => {
+    // execFile (no shell) keeps paths with spaces intact and rules out shell
+    // injection through the diff target argument.
+    cp.execFile("git", args, (err, stdout) => {
       if (err) {
         reject(err);
       } else {
-        resolve(formatGitFiles(stdout.trim()));
+        resolve(stdout.trim());
       }
     });
   });
 };
 
+const gitDiff = async (target: string, sourcePath: string): Promise<string> => {
+  const stdout = await execGit([
+    "diff",
+    "--name-status",
+    `${target}...`,
+    "--",
+    sourcePath,
+  ]);
+  return formatGitFiles(stdout);
+};
+
 export const writeDiff = async (files: string) => {
-  let paths = await fUtils.encodedPathsToFilePaths(files);
+  const paths = await fUtils.encodedPathsToFilePaths(files);
   logger.silly(`${paths.length} paths found...`);
   logger.silly(JSON.stringify(paths, null, 2));
-  fs.promises.writeFile(
+  await fs.promises.writeFile(
     ConfigManager.getDiffPath(),
     JSON.stringify({ changed: paths })
   );
@@ -40,33 +52,29 @@ const formatGitFiles = async (gitFiles: string) => {
   const fileSplit = gitFiles.split(/\r?\n/);
   const fileArray: string[] = [];
   fileSplit.forEach((diffFile) => {
-    if (diffFile !== "") {
-      const modCode = diffFile.charAt(0);
+    if (diffFile === "") {
+      return;
+    }
+    // --name-status lines are tab separated: "M\tpath", "R100\told\tnew",
+    // "C75\tsrc\tcopy". For renames/copies the new path is the last column.
+    const columns = diffFile.split("\t");
+    const modCode = columns[0].charAt(0);
+    if (modCode === "D" || columns.length < 2) {
+      return;
+    }
+    const filePath = columns[columns.length - 1].trim();
 
-      if (modCode !== "D") {
-        const filePath = diffFile.substr(1, diffFile.length - 1).trim();
-
-        if (isValidScope(filePath, workspaceDir, baseRepoPath)) {
-          logger.info(diffFile);
-          const absFilePath = path.resolve(baseRepoPath, filePath);
-          fileArray.push(absFilePath);
-        }
-      }
+    if (isValidScope(filePath, workspaceDir, baseRepoPath)) {
+      logger.info(diffFile);
+      const absFilePath = path.resolve(baseRepoPath, filePath);
+      fileArray.push(absFilePath);
     }
   });
   return fileArray.join(PATH_DELIMITER);
 };
 
 const getRepoRootDir = async (): Promise<string> => {
-  return new Promise<string>((resolve, reject) => {
-    cp.exec("git rev-parse --show-toplevel", (err, stdout, stderr) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(stdout.trim());
-      }
-    });
-  });
+  return execGit(["rev-parse", "--show-toplevel"]);
 };
 
 const isValidScope = (

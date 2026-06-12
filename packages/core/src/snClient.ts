@@ -3,8 +3,10 @@ import axios, { AxiosPromise, AxiosResponse } from "axios";
 import rateLimit from "axios-rate-limit";
 import {
   SCOPED_API_PREFIXES_ENV,
+  isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
+  shouldRetryStatus,
 } from "@syncrona/sn-transport";
 import { wait } from "./genericUtils";
 import { logger } from "./Logger";
@@ -30,19 +32,38 @@ function isEndpointNotFound(error: unknown): boolean {
   return (
     axios.isAxiosError(error) &&
     typeof error.response?.status === "number" &&
-    [400, 403, 404].includes(error.response.status)
+    isEndpointNotFoundStatus(error.response.status)
   );
+}
+
+export function getErrorResponseStatus(e: unknown): number | undefined {
+  return axios.isAxiosError(e) ? e.response?.status : undefined;
+}
+
+// Network errors (no HTTP response) are retryable; HTTP errors follow the
+// shared retry-status policy so 4xx failures (bad credentials, missing
+// record) fail fast instead of hammering the instance.
+export function isRetryableRequestError(e: unknown): boolean {
+  const status = getErrorResponseStatus(e);
+  if (status === undefined) {
+    return true;
+  }
+  return shouldRetryStatus(status);
 }
 
 export const retryOnErr = async <T>(
   f: () => Promise<T>,
   allowedRetries: number,
   msBetween = 0,
-  onRetry?: (retriesLeft: number) => void
+  onRetry?: (retriesLeft: number) => void,
+  shouldRetry?: (e: unknown) => boolean
 ): Promise<T> => {
   try {
     return await f();
   } catch (e) {
+    if (shouldRetry && !shouldRetry(e)) {
+      throw e;
+    }
     const newRetries = allowedRetries - 1;
     if (newRetries < 0) {
       throw e;
@@ -51,7 +72,7 @@ export const retryOnErr = async <T>(
       onRetry(newRetries);
     }
     await wait(msBetween);
-    return retryOnErr(f, newRetries, msBetween, onRetry);
+    return retryOnErr(f, newRetries, msBetween, onRetry, shouldRetry);
   }
 };
 
@@ -156,7 +177,8 @@ export const snClient = (
     table: string,
     sysparmQuery: string,
     sysparmFields: string,
-    sysparmLimit = 500
+    sysparmLimit = 500,
+    sysparmOffset = 0
   ) => {
     const endpoint = `api/now/table/${table}`;
     return client.get(endpoint, {
@@ -164,6 +186,9 @@ export const snClient = (
         sysparm_query: sysparmQuery,
         sysparm_fields: sysparmFields,
         sysparm_limit: String(sysparmLimit),
+        ...(sysparmOffset > 0
+          ? { sysparm_offset: String(sysparmOffset) }
+          : {}),
       },
     });
   };
@@ -179,12 +204,15 @@ export const snClient = (
     });
   };
 
-  const getUserSysId = (userName: string = process.env.SN_USER as string) => {
+  const getUserSysId = (userName?: string) => {
+    // Resolve through the credential chain (env/profile/store) rather than
+    // reading SN_USER directly, which is empty for store-based logins.
+    const resolvedUserName = userName || resolveCredentials().user;
     const endpoint = "api/now/table/sys_user";
     type UserResponse = Sync.SNAPIResponse<SN.UserRecord[]>;
     return client.get<UserResponse>(endpoint, {
       params: {
-        sysparm_query: `user_name=${userName}`,
+        sysparm_query: `user_name=${resolvedUserName}`,
         sysparm_fields: "sys_id",
       },
     });
@@ -453,7 +481,7 @@ export const unwrapSNResponse = async <T>(
     return resp.data.result;
   } catch (e) {
     const status = axios.isAxiosError(e) ? e.response?.status : undefined;
-    const isExpectedFallback = typeof status === "number" && [400, 403, 404].includes(status);
+    const isExpectedFallback = typeof status === "number" && isEndpointNotFoundStatus(status);
 
     if (!isExpectedFallback) {
       let message
@@ -478,16 +506,25 @@ export async function unwrapTableAPIFirstItem<T extends Record<string, string>>(
   clientPromise: AxiosPromise<Sync.SNAPIResponse<T[]>>,
   extractField?: keyof T
 ): Promise<T | string> {
-  try {
-    const resp = await unwrapSNResponse(clientPromise);
-    if (resp.length === 0) {
-      throw new Error("Response was not a populated array!");
-    }
-    if (!extractField) {
-      return resp[0];
-    }
-    return resp[0][extractField];
-  } catch (e) {
-    throw e;
+  const resp = await unwrapSNResponse(clientPromise);
+  if (resp.length === 0) {
+    throw new Error("Response was not a populated array!");
   }
+  if (!extractField) {
+    return resp[0];
+  }
+  return resp[0][extractField];
+}
+
+// Non-throwing variant for "find or create" flows: an empty result returns ""
+// so the caller can take the create path instead of failing.
+export async function unwrapTableAPIFirstItemOrEmpty<T>(
+  clientPromise: AxiosPromise<Sync.SNAPIResponse<T[]>>,
+  extractField: keyof T
+): Promise<string> {
+  const resp = await unwrapSNResponse(clientPromise);
+  if (resp.length === 0) {
+    return "";
+  }
+  return String(resp[0][extractField] ?? "");
 }

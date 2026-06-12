@@ -20,7 +20,6 @@ import { encodedPathsToFilePaths } from "./FileUtils";
 import {
   isScopedEndpointUnavailableError,
   buildManifestFromTableAPI,
-  buildBulkDownloadFromTableAPI,
   listAppsFromTableAPI,
 } from "./manifestBuilder";
 import { generateScopeDocs } from "./scopeDocs";
@@ -135,7 +134,7 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
 
     const skipPrompt = args.ci === true;
     if (!skipPrompt) {
-      let answers: { confirmed: boolean } = await inquirer.prompt([
+      const answers: { confirmed: boolean } = await inquirer.prompt([
         {
           type: "confirm",
           name: "confirmed",
@@ -227,7 +226,9 @@ export async function buildCommand(args: Sync.BuildCmdArgs) {
     const results = await AppUtils.buildFiles(fileList);
     logBuildResults(results);
   } catch (e) {
-    process.exit(1);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Build failed: ${message}`);
+    process.exitCode = 1;
   }
 }
 

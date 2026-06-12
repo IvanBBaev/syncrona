@@ -30,21 +30,38 @@ export async function scopeCheck(
   successFunc: () => void | Promise<void>,
   swapScopes: boolean = false
 ) {
+  // Keep the scope check and the command body in separate try blocks so a
+  // command failure is never misreported as a scope-configuration problem.
+  let scopeMatches: boolean;
   try {
-    const scopeCheck = await AppUtils.checkScope(swapScopes);
-    if (!scopeCheck.match) {
-      scopeCheckMessage(scopeCheck);
-      // Throw exception to register this as an error
-      throw new Error();
-    } else {
-      await successFunc();
+    const scopeCheckResult = await AppUtils.checkScope(swapScopes);
+    scopeMatches = scopeCheckResult.match;
+    if (!scopeMatches) {
+      scopeCheckMessage(scopeCheckResult);
     }
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message) {
+      logger.error(message);
+    }
     logger.error(
       "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncrona init`"
     );
-    // Throw exception to register this as an error
-    process.exit(1);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!scopeMatches) {
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await successFunc();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message || "Command failed with an unknown error.");
+    process.exitCode = 1;
   }
 }
 
