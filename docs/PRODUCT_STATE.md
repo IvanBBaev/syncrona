@@ -7,13 +7,32 @@
 
 | | |
 |---|---|
-| Readiness | **~8.5 / 10** toward the 9.5 "real-world ready" target |
+| Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
 | CLI | 16 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
 | MCP server | ~60 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | core: 20 suites / 146 tests green (whole-source coverage ratchet); mcp: node:test **172/172** vs dist + 70% line gate |
+| Tests | **324/324 green** — core: 22 suites / 152 tests (jest, incl. dist-binary e2e smoke); mcp: 172 tests (node:test vs dist) |
+| Coverage | core **70.3%** lines / mcp **82.7%** lines (≈75–77% combined) — see [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; `npm audit --omit=dev` = **0 vulnerabilities** |
 | Version control | git initialized 2026-06-12 (baseline commit); **no remote yet** |
 | Biggest gaps | distribution (Homebrew/Keychain/Windows), gap backlog G1–G16 (OAuth, E2E, CI matrix…), DX backlog (DX1–DX24), credential at-rest strength |
+
+## Metrics snapshot (2026-06-12)
+
+Measured after the CR fix series, modularization, and best-practice hardening.
+Re-measure with `npx jest --coverage` (core) and
+`node scripts/check-coverage-gate.js` (mcp-server).
+
+| Package | Lines | Statements | Branches | Functions | Tests | Gate |
+|---|---|---|---|---|---|---|
+| @syncrona/core | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
+| @syncrona/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
+
+Notes:
+- `credential-store` and `sn-transport` are covered through their consumers'
+  suites; the build plugin packages (babel/webpack/sass/…) have **no tests**
+  (tracked via G13).
+- Fastest coverage wins: core branch coverage (55.8% — error paths in
+  `snClient`/`manifestBuilder`) and first tests for the plugin packages.
 
 ## Phase history
 
@@ -40,7 +59,7 @@ timeline
 | CR — Deep review 2026-06-12 | 30 findings (senior/architect/QA) | 🟡 26 closed; CR1/CR2/CR22/CR26 residuals |
 | Modularization 2026-06-12 | registry-driven CLI commands + MCP tool modules, module contract in ARCHITECTURE §5 | ✅ closed |
 | Best-practice hardening 2026-06-12 | 0 audit vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md | ✅ closed |
-| G — Triple gap analysis 2026-06-12 | 16 missing-capability findings (OAuth, E2E, CI matrix, release automation…) | 🔴 open backlog (order in TODO) |
+| G — Triple gap analysis 2026-06-12 | 16 missing-capability findings (OAuth, E2E, CI matrix, release automation…) | 🟡 G2/G5 done; G15/G16 partial (Linux CI job + audit gate); rest open (order in TODO) |
 | DX — DX research backlog | 24 usability findings | 🔴 open backlog (5 quick wins identified) |
 
 ## What works today
