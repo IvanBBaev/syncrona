@@ -1,5 +1,3 @@
-[![Build Status](https://dev.azure.com/nuvoengineering/syncrona/_apis/build/status/nuvolo.syncrona?branchName=dev)](https://dev.azure.com/nuvoengineering/syncrona/_build/latest?definitionId=15&branchName=dev)
-
 # SyncroNow AI
 
 ## Overview
@@ -59,7 +57,7 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
 ### Global CLI quick start
 
 ```bash
-npm i -g syncrona
+npm i -g @syncrona/core
 syncrona login
 syncrona init
 ```
@@ -69,16 +67,23 @@ syncrona init
 In order to use SyncroNow AI, you will need:
 
 - [Node.js](https://nodejs.org/en/) version 22.0 or later
-- **If you are on Windows** you will also need :
-  - Windows subsystem for Linux installed (Ubuntu should work fine)
-  - Preferably updated to version 1903+ (Previous versions untested/not working)
-  - (Optional) Preferably Windows Terminal installed for rendering the text from the tool
+
+> ⚠️ **Windows users:** WSL (Windows Subsystem for Linux) is currently
+> **required** — native Windows is not yet supported.
+>
+> - Install WSL with an Ubuntu distribution (Windows version 1903+; earlier
+>   versions are untested/not working)
+> - Run all `syncrona` commands from inside the WSL shell
+> - (Optional) Windows Terminal is recommended for proper text rendering
+>
+> Native Windows support (PowerShell install, Windows Credential Manager) is
+> on the roadmap.
 
 ### Instructions
 
 1. Create a folder to store the scoped app code.
 2. In a terminal, run `npm init` inside the newly created folder and follow the instructions to set up your node module.
-3. Import [the scoped app](https://github.com/nuvolo/syncrona-server-scoped-app) from source control into your instance.
+3. (Optional) Install the companion server scoped app on your instance — the CLI works against plain ServiceNow REST APIs **with or without** it; the scoped app only enables a few enhanced endpoints.
 4. Install `@syncrona/core`
 
 ```bash
@@ -193,9 +198,9 @@ Profile vars (`SN_INSTANCE_<PROFILE>`, `SN_USER_<PROFILE>`, `SN_PASSWORD_<PROFIL
 
 ### Workflow
 
-![Development Workflow](https://github.com/nuvolo/syncrona/raw/master/docs/images/syncrona-development.png)
+![Development Workflow](docs/images/sincronia-development.png)
 
-![Deployment Workflow](https://github.com/nuvolo/syncrona/raw/master/docs/images/syncrona-deployment.png)
+![Deployment Workflow](docs/images/sincronia-deployment.png)
 
 ### File Structure
 
@@ -345,7 +350,7 @@ If you find that your config is getting too large, you can use typical nodejs te
 
 ### I'm not seeing all my code files!
 
-When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](https://github.com/nuvolo/syncrona/blob/master/packages/core/src/defaultManifestConfig.ts).
+When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultManifestConfig.ts).
 
 If you think there is something wrong with the default setup, feel free to submit a pull request! 🐙👍
 
@@ -476,15 +481,19 @@ Why is this not automatic? Deleting files can be a dangerous game and it should 
 
 ## Examples
 
-For an example project, we uploaded the [server side code for SyncroNow AI](https://github.com/nuvolo/syncrona-server)! Feel free to contribute to that code if you'd like 🐙
+After downloading a scope, run `npx syncrona docs` to generate Markdown
+documentation and Mermaid diagrams for it (overview, tables, per-record files) —
+a quick way to explore what a real SyncroNow AI project looks like. The
+[tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list=PL1myMMPgZzOrOeu03YsuNmsDI2k0vadTq)
+linked above also walk through a complete project setup.
 
 ## Plugin List
 
-| Name                                                                                                                 | Description                                 |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| [@syncrona/babel-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/babel-plugin/README.md)           | Runs Babel on .js/.ts files                 |
-| [@syncrona/prettier-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/prettier-plugin/README.md)     | Prettifies your output files using Prettier |
-| [@syncrona/sass-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/sass-plugin/README.md)             | Runs the Sass compiler on your files        |
-| [@syncrona/typescript-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/typescript-plugin/README.md) | Type checks and compiles TypeScript files   |
-| [@syncrona/webpack-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/webpack-plugin/README.md)       | Creates Webpack bundles with your files     |
-| [@syncrona/eslint-plugin](https://github.com/nuvolo/syncrona/blob/master/packages/eslint-plugin/README.md)         | Runs ESLint on your files on build          |
+| Name                                                                       | Description                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------- |
+| [@syncrona/babel-plugin](packages/babel-plugin/README.md)                 | Runs Babel on .js/.ts files                 |
+| [@syncrona/prettier-plugin](packages/prettier-plugin/README.md)           | Prettifies your output files using Prettier |
+| [@syncrona/sass-plugin](packages/sass-plugin/README.md)                   | Runs the Sass compiler on your files        |
+| [@syncrona/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
+| [@syncrona/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
+| [@syncrona/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
