@@ -70,7 +70,7 @@
 18. **CR27 (validation)**: zod schemas added for all 7 previously-unvalidated mutating tools (`sync_set_scope`, `sync_push`, `sn_execute_background_script`, `sync_create_script_include`, `sync_create_script_include_and_sync`, `sn_autonomous_remediation_workflow`, `sync_unified_change_workflow`) in [inputValidation.ts](packages/mcp-server/src/inputValidation.ts) — every tool in `MUTATING_TOOLS` now has a schema.
 19. **CR26 (coverage gate)**: core jest `collectCoverageFrom` expanded from the single `src/commands.ts` file to all of `src/**/*.ts` (excl. tests); ratchet thresholds set just under the measured whole-source baseline (statements 68 / branches 54 / functions 58 / lines 68; measured 70.6/56.2/60.0/70.3). Raising toward 80 tracked in TODO.
 20. **CR29 (regression tests)**: 4 new tests in [commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts) — declined prompt leaves no checkpoint (lock-only write + release), failed push still releases the lock + sets exitCode=1, stale lock is replaced and push proceeds, active-lock abort updated to the new atomic EEXIST semantics.
-21. **CR30 (hygiene)**: deleted the empty `СЛОВА` file, `packages/core/junit.xml`, and the per-package `package-lock.json` files (core, mcp-server — npm workspaces use the root lock); `.syncrona-mcp/` added to `.gitignore`.
+21. **CR30 (hygiene)**: deleted the empty `СЛОВА` (stray, zero-byte) file, `packages/core/junit.xml`, and the per-package `package-lock.json` files (core, mcp-server — npm workspaces use the root lock); `.syncrona-mcp/` added to `.gitignore`.
 22. **Pre-existing test debt fixed en route**: `commandsDownload`/`commandsInitAuto` suites (failing before this session) repaired — mock factories were missing `downloadAllFiles`/`resetConfigState`/`loadConfigs`, and assertions still expected the pre-refactor `getManifest(..., true)` withFiles signature.
 23. **MCP suite debug (same session)**: the node:test suite hung deterministically — root cause was a cascade from order-dependent tests: module-level `cachedScopedApiPrefix` pollution + missing `global.fetch` restore on failure + a health-server test leaking its listener (child process never exited). Production fixes: prefix cache set only on 2xx responses; new `clearScopedApiPrefixCache()` test seam (exported via publicApi); `checkSyncronaCapabilities` resolves scope via lightweight `getCurrentScopeWithFallback` instead of the full session context, and no longer passes `scopeCode` as an API namespace prefix (real bug — probed bogus `/api/<scope>/…` endpoints). Test fixes (index.test.js): global `test.afterEach` fetch restore, `withEnv` clears secrets+prefix caches, health-server close in `finally`. The previously documented "5 pre-existing failures" are now genuinely fixed, not worked around.
 24. **Validation (Node 22.22.2)**: core `tsc --noEmit` clean; core jest **20/20 suites, 146/146 tests** green (×3 consecutive coverage runs); coverage gate passes at the new thresholds; sn-transport + mcp-server `tsc` build clean; `eslint packages/mcp-server --max-warnings=0` clean; **mcp node:test 172/172, 0 fail, exit 0**; quality gates all pass (tool contract 26 tools hash d08f3816, docs drift 60 tools, CLAUDE drift 16 commands, release checklist).
@@ -81,7 +81,7 @@
 
 ## 2026-06-12 Deep Code Review — Senior Dev / Architect / QA (review-only, no code changes)
 1. Full source review of the monorepo: core CLI (snClient, appUtils, config, FileUtils, manifestBuilder, pushCommand, commands, devCommands, commander, bootstrap, commandHelpers, gitUtils, Watcher, PluginManager), mcp-server runtime (index, servicenowCore, audit, safetyPolicy, processRunner, toolService, inputValidation), @syncrona/credential-store, root/package metadata, jest config, azure-pipelines.yml, quality-gates.sh.
-2. Findings documented as **CR1–CR30** in [TODO](TODO) (section "ДЪЛБОКО КОД РЕВЮ (2026-06-12)"), prioritized P0/P1/P2 with file:line references and a recommended execution order. Deliberately non-overlapping with the 2026-06-11 AR1–AR12 / DX1–DX24 review; related items cross-referenced.
+2. Findings documented as **CR1–CR30** in [TODO](TODO) (section "DEEP CODE REVIEW (2026-06-12)"; the TODO file has since been translated to English), prioritized P0/P1/P2 with file:line references and a recommended execution order. Deliberately non-overlapping with the 2026-06-11 AR1–AR12 / DX1–DX24 review; related items cross-referenced.
 3. Highlights: P0 — project is NOT a git repository (CR1), credentials still present in packages/core/.env (CR2). P1 bugs — unreachable "create user preference" branches break --scopeSwap/--updateSet for fresh users (CR3), push checkpoint written before the confirm prompt (CR5), process.exit skips collaboration-lock release (CR6), scopeCheck masks every command error (CR9), refresh reports success on failure (CR10), blocking scryptSync on every MCP request (CR21), no Table-API pagination so >500-record tables are silently truncated (CR24). QA — core coverage gate measures only src/commands.ts (CR26), zod schemas cover 6 of ~60 MCP tools (CR27).
 4. Documentation upkeep: marked stale fixes.md items S1/S2/S3 as verified-fixed (tsconfig module=commonjs, core main=./dist/index.js, dist rebuilt); created WORKLOG.md session journal at repo root.
 5. Validation: none required — review-only session, zero source/config changes (per standing review-only policy).
@@ -1154,12 +1154,12 @@
 ## 2026-05-29 TODO Hygiene - completed roadmap items migrated
 1. Reviewed roadmap checklist in [TODO](TODO) and migrated confirmed completed items to DONE tracking.
 2. Confirmed as completed and reflected in TODO:
-	1. Фаза 0 (0.1-0.4) critical bugfix/security baseline checklist.
-	2. Фаза 1.1 covered items: `retryOnErr`, `processFilesInManRec(forceWrite=true)`, `loadConfig`, `groupAppFiles`, `Watcher processQueue`.
-	3. Фаза 1.2 covered MCP unit-test items: unsafe command policy, approval matrix, rollback evidence, sanitize, guardrail config, timeout normalization, `run_node_code` boundary.
-	4. Фаза 1.3 covered CLI flow items: `pushCommand`, `syncManifest`, `devCommand`.
-	5. Фаза 2.2 covered retry semantics fix in `snClient`.
-	6. Фаза 2.3/2.4 covered modularization milestones and metrics extraction already implemented in MCP package.
+	1. Phase 0 (0.1-0.4) critical bugfix/security baseline checklist.
+	2. Phase 1.1 covered items: `retryOnErr`, `processFilesInManRec(forceWrite=true)`, `loadConfig`, `groupAppFiles`, `Watcher processQueue`.
+	3. Phase 1.2 covered MCP unit-test items: unsafe command policy, approval matrix, rollback evidence, sanitize, guardrail config, timeout normalization, `run_node_code` boundary.
+	4. Phase 1.3 covered CLI flow items: `pushCommand`, `syncManifest`, `devCommand`.
+	5. Phase 2.2 covered retry semantics fix in `snClient`.
+	6. Phase 2.3/2.4 covered modularization milestones and metrics extraction already implemented in MCP package.
 3. Remaining unchecked items in TODO are intentionally left active because they are not fully implemented or not yet test-covered.
 
 ## 2026-05-29 Command Reliability - awaited scopeCheck callback
