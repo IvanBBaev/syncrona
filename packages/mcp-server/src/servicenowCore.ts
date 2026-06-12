@@ -7,6 +7,7 @@ import {
 import {
   DEFAULT_SCOPED_API_PREFIXES,
   SCOPED_API_PREFIXES_ENV,
+  isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
   shouldRetryStatus,
@@ -28,6 +29,12 @@ const MAX_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 120;
 
 let cachedScopedApiPrefix: string | null = null;
+
+// Test seam: the last-successful-prefix cache is module state and otherwise
+// leaks ordering effects between unit tests.
+export function clearScopedApiPrefixCache(): void {
+  cachedScopedApiPrefix = null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
@@ -154,14 +161,13 @@ function loadFromSecretsFile(projectDir: string): Record<string, string> {
   }
 }
 
+// Provider precedence mirrors the core CLI, where project-local sources
+// (.env loaded into the environment) win over the global credential store:
+// process env > explicit MCP secrets file > project .env > auth store.
 const DEFAULT_SECRETS_PROVIDERS: SecretsProvider[] = [
   {
     name: "process-env",
     load: () => loadFromProcessEnv(),
-  },
-  {
-    name: "auth-store",
-    load: () => loadFromAuthStore(),
   },
   {
     name: "secrets-file",
@@ -171,7 +177,21 @@ const DEFAULT_SECRETS_PROVIDERS: SecretsProvider[] = [
     name: "dotenv",
     load: (projectDir: string) => loadFromDotEnv(projectDir),
   },
+  {
+    name: "auth-store",
+    load: () => loadFromAuthStore(),
+  },
 ];
+
+// Resolving secrets touches the filesystem and (for the auth store) runs a
+// blocking scrypt key derivation, so the result is cached per projectDir for
+// a short TTL instead of being recomputed on every ServiceNow request.
+const SECRETS_CACHE_TTL_MS = 30_000;
+const secretsCache = new Map<string, { config: SNConfig; expiresAt: number }>();
+
+export function clearServiceNowSecretsCache(): void {
+  secretsCache.clear();
+}
 
 export function resolveServiceNowSecrets(
   projectDir: string = process.cwd(),
@@ -184,6 +204,11 @@ export function resolveServiceNowSecrets(
   };
 
   for (const provider of providers) {
+    // Stop as soon as every key is filled so lower-priority providers
+    // (notably the scrypt-backed auth store) are not consulted needlessly.
+    if (Object.values(merged).every((value) => value !== "")) {
+      break;
+    }
     const values = provider.load(projectDir);
     for (const key of Object.keys(merged)) {
       const candidate = cleanEnvValue(String(values[key] || ""));
@@ -207,7 +232,17 @@ export function resolveServiceNowSecrets(
 }
 
 export function getServiceNowConfig(projectDir: string = process.cwd()): SNConfig {
-  return resolveServiceNowSecrets(projectDir);
+  const cached = secretsCache.get(projectDir);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.config;
+  }
+
+  const config = resolveServiceNowSecrets(projectDir);
+  secretsCache.set(projectDir, {
+    config,
+    expiresAt: Date.now() + SECRETS_CACHE_TTL_MS,
+  });
+  return config;
 }
 
 export function instanceToBaseUrl(instance: string): string {
@@ -245,23 +280,29 @@ export async function snScopedApiRequest(
   projectDir: string = process.cwd(),
   preferredPrefixes: string[] = []
 ): Promise<{ status: number; data: unknown; text: string; usedEndpoint: string }> {
-  let last404: { status: number; data: unknown; text: string; usedEndpoint: string } | null = null;
+  let lastNotFound: { status: number; data: unknown; text: string; usedEndpoint: string } | null = null;
 
   for (const prefix of scopedPrefixOrder(preferredPrefixes)) {
     const endpoint = buildScopedEndpoint(prefix, route);
     const response = await snRequest(method, endpoint, body, timeoutMs, projectDir);
 
-    if (response.status === 404) {
-      last404 = { ...response, usedEndpoint: endpoint };
+    // Shared policy (matches the core CLI): 400/403/404 all mean "this scoped
+    // namespace is unavailable", so try the next prefix.
+    if (isEndpointNotFoundStatus(response.status)) {
+      lastNotFound = { ...response, usedEndpoint: endpoint };
       continue;
     }
 
-    cachedScopedApiPrefix = prefix;
+    // Only a successful response proves the prefix works — caching it on a
+    // 5xx would poison subsequent requests with a bad prefix order.
+    if (response.status >= 200 && response.status < 300) {
+      cachedScopedApiPrefix = prefix;
+    }
     return { ...response, usedEndpoint: endpoint };
   }
 
-  if (last404) {
-    return last404;
+  if (lastNotFound) {
+    return lastNotFound;
   }
 
   const fallbackPrefix = scopedPrefixOrder(preferredPrefixes)[0] || DEFAULT_SCOPED_API_PREFIXES[0];

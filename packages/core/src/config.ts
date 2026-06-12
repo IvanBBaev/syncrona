@@ -165,8 +165,15 @@ export class ConfigStore {
       logger.warn("Couldn't find config file. Loading default...");
       return DEFAULT_CONFIG;
     }
+    const configPath = this.getConfigPath();
+    // NOTE: vm.runInNewContext here is a module LOADER, not a sandbox —
+    // sync.config.js is executable code by design and receives the real
+    // `process`/`require`/`console` (same trust model as any build config).
+    // The vm context only gives us a fresh evaluation per load, so config
+    // reloads (per-scope auto-init, watch mode) pick up file changes without
+    // fighting the require cache.
+    let loaded: unknown;
     try {
-      const configPath = this.getConfigPath();
       const source = await fsp.readFile(configPath, "utf-8");
       const configRequire = createRequire(configPath);
       const sandbox = {
@@ -179,28 +186,28 @@ export class ConfigStore {
         console,
       };
       vm.runInNewContext(source, sandbox, { filename: configPath });
-      const loaded = ((sandbox.module as { exports: unknown }).exports || sandbox.exports) as any;
-      const projectConfig: Sync.Config = (loaded.default || loaded) as Sync.Config;
-      const {
-        includes: pIncludes = {},
-        excludes: pExcludes = {},
-        tableOptions: pTableOptions = {},
-      } = projectConfig;
-
-      return {
-        ...projectConfig,
-        includes: Object.assign({}, includes, pIncludes),
-        excludes: Object.assign({}, excludes, pExcludes),
-        tableOptions: Object.assign({}, tableOptions, pTableOptions),
-      };
+      loaded = (sandbox.module as { exports: unknown }).exports || sandbox.exports;
     } catch (e) {
-      let message;
-      if (e instanceof Error) message = e.message;
-      else message = String(e);
-      logger.warn(message);
-      logger.warn("Couldn't find config file. Loading default...");
-      return DEFAULT_CONFIG;
+      const message = e instanceof Error ? e.message : String(e);
+      // A present-but-broken config must fail hard: silently falling back to
+      // defaults would run commands with the wrong includes/excludes/rules.
+      throw new Error(`Failed to load config file ${configPath}: ${message}`);
     }
+
+    const loadedObj = (loaded ?? {}) as { default?: unknown };
+    const projectConfig: Sync.Config = (loadedObj.default || loadedObj) as Sync.Config;
+    const {
+      includes: pIncludes = {},
+      excludes: pExcludes = {},
+      tableOptions: pTableOptions = {},
+    } = projectConfig;
+
+    return {
+      ...projectConfig,
+      includes: Object.assign({}, includes, pIncludes),
+      excludes: Object.assign({}, excludes, pExcludes),
+      tableOptions: Object.assign({}, tableOptions, pTableOptions),
+    };
   }
 
   private async loadManifest(): Promise<void> {

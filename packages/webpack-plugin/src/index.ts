@@ -33,7 +33,9 @@ const run: Sync.PluginFunc = async function (
     filename: "bundle.js",
   };
   const compiler = webpack(wpOptions);
-  compiler.outputFileSystem = memFS;
+  // memory-fs predates webpack 5's stricter OutputFileSystem typings (PathLike
+  // mkdir args); the runtime shape is still compatible, so bridge the types.
+  compiler.outputFileSystem = memFS as unknown as typeof compiler.outputFileSystem;
   const compilePromise = new Promise<string>((resolve, reject) => {
     compiler.run((err, stats) => {
       if (err) {

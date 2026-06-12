@@ -11,7 +11,7 @@ class PluginManager {
   }
 
   async loadPluginConfig() {
-    let conf = ConfigManager.getConfig();
+    const conf = ConfigManager.getConfig();
     if (conf && conf.rules) {
       this.pluginRules = conf.rules;
     }
@@ -19,8 +19,8 @@ class PluginManager {
 
   determinePlugins(context: Sync.FileContext): Sync.PluginConfig[] {
     let plugins: Sync.PluginConfig[] = [];
-    for (let rule of this.pluginRules) {
-      let reg = rule.match;
+    for (const rule of this.pluginRules) {
+      const reg = rule.match;
       if (reg.test(context.filePath)) {
         plugins = rule.plugins;
         //only match first rule
@@ -37,14 +37,14 @@ class PluginManager {
   ): Promise<Sync.TransformResults> {
     try {
       let output = content;
-      for (let pConfig of plugins) {
-        let pluginPath = path.join(
+      for (const pConfig of plugins) {
+        const pluginPath = path.join(
           ConfigManager.getRootDir(),
           "node_modules",
           pConfig.name
         );
-        let plugin: Sync.Plugin = await import(pluginPath);
-        let results = await plugin.run(context, output, pConfig.options);
+        const plugin: Sync.Plugin = await import(pluginPath);
+        const results = await plugin.run(context, output, pConfig.options);
         if (!results.success) {
           return {
             success: false,

@@ -2,6 +2,7 @@ import { Sync } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import path from "path";
 import * as AppUtils from "./appUtils";
+import * as ConfigManager from "./config";
 import { logger } from "./Logger";
 import { logPushResults } from "./logMessages";
 import { defaultClient, resolveCredentials } from "./snClient";
@@ -30,8 +31,18 @@ const PUSH_CHECKPOINT_FILE = "sync.push.checkpoint.json";
 const COLLABORATION_LOCK_FILE = "sync.collaboration.lock.json";
 const COLLABORATION_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
 
-const getPushCheckpointPath = () => path.join(process.cwd(), PUSH_CHECKPOINT_FILE);
-const getCollaborationLockPath = () => path.join(process.cwd(), COLLABORATION_LOCK_FILE);
+// Lock/checkpoint live in the project root so runs from subdirectories share
+// the same state; fall back to cwd when no config has been loaded yet.
+const getStateBaseDir = (): string => {
+  try {
+    return ConfigManager.getRootDir();
+  } catch (_) {
+    return process.cwd();
+  }
+};
+
+const getPushCheckpointPath = () => path.join(getStateBaseDir(), PUSH_CHECKPOINT_FILE);
+const getCollaborationLockPath = () => path.join(getStateBaseDir(), COLLABORATION_LOCK_FILE);
 
 const recToCheckpointKey = (rec: Sync.BuildableRecord): string =>
   `${rec.table}:${rec.sysId}`;
@@ -103,23 +114,37 @@ async function acquireCollaborationLock(
   command: string,
   instanceProfile?: string
 ): Promise<{ acquired: boolean; reason?: string }> {
-  const existing = await loadCollaborationLock();
-  if (existing && !isCollaborationLockStale(existing)) {
-    const owner = typeof existing.pid === "number" ? `pid ${existing.pid}` : "unknown pid";
-    return {
-      acquired: false,
-      reason: `Detected active ${existing.command} lock (${owner}) created at ${existing.createdAt}.`,
-    };
-  }
-
   const lockPayload: CollaborationLock = {
     command,
     pid: process.pid,
     createdAt: new Date().toISOString(),
     instanceProfile,
   };
-  await fsp.writeFile(getCollaborationLockPath(), JSON.stringify(lockPayload, null, 2), "utf8");
-  return { acquired: true };
+  const payload = JSON.stringify(lockPayload, null, 2);
+
+  // "wx" makes creation atomic: two concurrent runs cannot both win the race.
+  // One retry after removing a stale/corrupt lock file.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await fsp.writeFile(getCollaborationLockPath(), payload, { encoding: "utf8", flag: "wx" });
+      return { acquired: true };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw e;
+      }
+      const existing = await loadCollaborationLock();
+      if (existing && !isCollaborationLockStale(existing)) {
+        const owner = typeof existing.pid === "number" ? `pid ${existing.pid}` : "unknown pid";
+        return {
+          acquired: false,
+          reason: `Detected active ${existing.command} lock (${owner}) created at ${existing.createdAt}.`,
+        };
+      }
+      await releaseCollaborationLock();
+    }
+  }
+
+  return { acquired: false, reason: "Could not acquire collaboration lock." };
 }
 
 async function releaseCollaborationLock(): Promise<void> {
@@ -205,9 +230,6 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       }
       lockAcquired = true;
 
-      const attempted = fileList.map(recToCheckpointKey);
-      await writePushCheckpoint({ attempted, succeeded: [], failed: attempted });
-
       if (!skipPrompt) {
         const answers: { confirmed: boolean } = await inquirer.prompt([
           {
@@ -224,7 +246,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // Does not create update set if updateSetName is blank
       if (updateSet) {
         if (!skipPrompt) {
-          let answers: { confirmed: boolean } = await inquirer.prompt([
+          const answers: { confirmed: boolean } = await inquirer.prompt([
             {
               type: "confirm",
               name: "confirmed",
@@ -233,7 +255,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
             },
           ]);
           if (!answers["confirmed"]) {
-            process.exit(0);
+            return;
           }
         }
 
@@ -242,6 +264,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
           `New Update Set Created(${newUpdateSet.name}) sys_id:${newUpdateSet.id}`
         );
       }
+
+      // Write the checkpoint only after every confirmation has passed, so a
+      // declined prompt leaves no fake "unfinished push" state behind.
+      const attempted = fileList.map(recToCheckpointKey);
+      await writePushCheckpoint({ attempted, succeeded: [], failed: attempted });
+
       const pushResults = await AppUtils.pushFiles(fileList);
 
       const succeeded = pushResults
@@ -262,7 +290,9 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       logPushResults(pushResults);
     } catch (e) {
       logger.getInternalLogger().error(e);
-      process.exit(1);
+      // exitCode instead of process.exit so the finally block can still
+      // release the collaboration lock before the process ends.
+      process.exitCode = 1;
     } finally {
       if (lockAcquired) {
         await releaseCollaborationLock();

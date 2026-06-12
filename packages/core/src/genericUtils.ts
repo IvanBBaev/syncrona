@@ -1,7 +1,7 @@
 import { Sync } from "@syncrona/types";
 
 export function wait(ms: number) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }

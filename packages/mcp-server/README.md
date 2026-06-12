@@ -12,10 +12,15 @@ MCP server package for automating SyncroNow AI + ServiceNow operational tasks fr
 ## Requirements
 
 - Node 22
-- ServiceNow credentials available as environment variables or `.env` in project root:
-  - `SN_INSTANCE`
-  - `SN_USER`
-  - `SN_PASSWORD`
+- ServiceNow credentials (`SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`) from any of
+  the supported sources, resolved in this order (first non-empty value wins,
+  mirroring the core CLI where project-local sources beat the global store):
+  1. process environment variables
+  2. `.syncrona-mcp/secrets.json` (or `SYNCRONA_SECRETS_FILE`)
+  3. `.env` in project root
+  4. global credential store (`syncrona login`)
+
+  The resolved secrets are cached for 30 seconds per project directory.
 - SyncroNow AI CLI available in the target project (`npx syncrona ...`)
 
 ## Build
@@ -222,6 +227,26 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 `run_workspace_command` blocks unsafe shell interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk.
 
 All MCP tool handlers are wrapped with a top-level error boundary so failures return structured tool errors instead of crashing the server.
+
+**The safety policy is a guardrail, not a security boundary.** The workspace
+command filter is a deny-list (`rm`, `sudo`, shell interpreters with `-c`,
+shell metacharacters in arguments) and can be bypassed by interpreters or
+tools it does not list (`node -e`, `python -c`, `npx <pkg>` and similar).
+Likewise, the approval metadata accepted by workflow tools
+(`approvalId`/`approvers`) is recorded for audit purposes but is **not
+verified** against any external system. Run the server only with credentials
+and OS permissions you would trust the calling AI agent to hold directly.
+
+### Background script execution fallback
+
+`sn_execute_background_script` first tries the scoped REST endpoint
+(`…/sinc/runBackgroundScript`). When that endpoint is not installed it falls
+back to posting to the instance-internal `/sys.scripts.do` UI endpoint. That
+fallback is best-effort: modern instances usually require a CSRF session
+token (`sysparm_ck`) and an elevated admin session there, so it may return
+an HTML login/redirect page instead of executing. It also bypasses the REST
+API audit trail on the instance side — prefer installing the scoped app for
+auditable script execution.
 
 ## Guardrails config
 

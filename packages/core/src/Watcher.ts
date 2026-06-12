@@ -8,10 +8,17 @@ import { logger } from "./Logger";
 const DEBOUNCE_MS = 300;
 let pushQueue: string[] = [];
 let watcher: chokidar.FSWatcher | undefined = undefined;
+// Serializes queue processing: changes arriving while a push is in flight are
+// queued and handled in one follow-up run instead of a concurrent push.
+let processing = false;
 
-const processQueue = debounce(async () => {
-  if (pushQueue.length > 0) {
-    try {
+const drainQueue = async (): Promise<void> => {
+  if (processing) {
+    return;
+  }
+  processing = true;
+  try {
+    while (pushQueue.length > 0) {
       // dedupe pushes
       const toProcess = Array.from(new Set([...pushQueue]));
       pushQueue = [];
@@ -39,17 +46,23 @@ const processQueue = debounce(async () => {
           logFilePush(ctx, res);
         }
       });
-    } catch (e) {
-      let message;
-      if (e instanceof Error) {
-        message = e.message;
-      } else {
-        message = String(e);
-      }
-      logger.error("Watcher queue processing failed");
-      logger.error(message);
     }
+  } catch (e) {
+    let message;
+    if (e instanceof Error) {
+      message = e.message;
+    } else {
+      message = String(e);
+    }
+    logger.error("Watcher queue processing failed");
+    logger.error(message);
+  } finally {
+    processing = false;
   }
+};
+
+const processQueue = debounce(() => {
+  void drainQueue();
 }, DEBOUNCE_MS);
 
 export function startWatching(directory: string) {
@@ -62,9 +75,10 @@ async function fileChanged(path: string) {
   processQueue();
 }
 
-export function stopWatching() {
+export async function stopWatching(): Promise<void> {
   if (watcher) {
-    watcher.close();
+    const current = watcher;
     watcher = undefined;
+    await current.close();
   }
 }

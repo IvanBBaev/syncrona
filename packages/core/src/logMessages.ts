@@ -5,8 +5,8 @@ import chalk from "chalk";
 export const log = console.log;
 
 export function scopeCheckMessage(scopeCheck: Sync.ScopeCheckResult) {
-  let sScope = chalk.blue(scopeCheck.sessionScope);
-  let mScope = chalk.blue(scopeCheck.manifestScope);
+  const sScope = chalk.blue(scopeCheck.sessionScope);
+  const mScope = chalk.blue(scopeCheck.manifestScope);
 
   logger.error(
     `Your user's scope is set to ${sScope} but this project is configured for the ${mScope} scope. Please switch scopes in ServiceNow to continue.`
@@ -59,10 +59,10 @@ function multiLog(
   err?: Error
 ) {
   if (success) {
-    let fileNum = chalk.bold.blue(
+    const fileNum = chalk.bold.blue(
       resultSet.filter(result => result).length + ""
     );
-    let message = chalk.green(`${fileNum} files ${successMessage}`);
+    const message = chalk.green(`${fileNum} files ${successMessage}`);
     logger.info(message);
   } else {
     logger.error(errorMessage);

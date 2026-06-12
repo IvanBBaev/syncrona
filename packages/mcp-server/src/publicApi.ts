@@ -91,6 +91,8 @@ export {
 } from "./toolService";
 export {
   cleanEnvValue,
+  clearScopedApiPrefixCache,
+  clearServiceNowSecretsCache,
   getServiceNowConfig,
   instanceToBaseUrl,
   parseDotEnv,
@@ -109,3 +111,9 @@ export {
   setCurrentScope,
   setCurrentUpdateSet,
 } from "./sessionContext";
+export {
+  TOOL_HANDLER_MODULES,
+  buildToolHandlerPipeline,
+  type ToolHandlerModule,
+  type ToolModuleContext,
+} from "./toolModules";

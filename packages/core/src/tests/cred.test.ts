@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path";
 import {init} from "../bootstrap"
 
-let envPath = path.join(process.cwd(), ".env");
+const envPath = path.join(process.cwd(), ".env");
 
 test('Credentials undefined when file is missing', async () => {
     // Removes any existing test env file from past tests
@@ -18,9 +18,9 @@ test('Credentials undefined when file is missing', async () => {
 });
 test('Credentials undefined when file is broken', async () => {
     // Sample Credential Data
-    let t_user = "Tyler";
-    let t_pass = "Edwards";
-    let t_instance = "dev90755.service-now.com";
+    const t_user = "Tyler";
+    const t_pass = "Edwards";
+    const t_instance = "dev90755.service-now.com";
     // Create a faulty .env file
     fs.writeFile(envPath, 
         'SN_USR=' + t_user + ' \nSN_PASWORD' + t_pass + ' \nSN_INSTACE=' + t_instance, 
@@ -36,9 +36,9 @@ test('Credentials undefined when file is broken', async () => {
 });
 test('Credentials correct when file is correct', async () => {
     // Sample Credential Data
-    let t_user = "Tyler";
-    let t_pass = "Edwards";
-    let t_instance = "dev90755.service-now.com";
+    const t_user = "Tyler";
+    const t_pass = "Edwards";
+    const t_instance = "dev90755.service-now.com";
     // Create a correct .env file
     fs.writeFile(envPath, 
         'SN_USER=' + t_user + ' \nSN_PASSWORD=' + t_pass + ' \nSN_INSTANCE=' + t_instance, 

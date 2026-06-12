@@ -12,6 +12,19 @@ SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It all
 
 Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list=PL1myMMPgZzOrOeu03YsuNmsDI2k0vadTq)!
 
+**Project documentation**
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — package graph, the two
+  ServiceNow clients and their shared transport policy, push/manifest flows,
+  MCP request pipeline, and the **module contract** for adding/removing CLI
+  commands and MCP tool families (mermaid diagrams).
+- [docs/PRODUCT_STATE.md](docs/PRODUCT_STATE.md) — what works today, phase
+  history, known gaps and operating constraints.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
+- [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
+  setup, tools, guardrails, and safety notes.
+- [CHANGELOG.md](CHANGELOG.md) — notable changes per release.
+
 **Table of Contents**
 
 - [SyncroNow AI](#syncronow-ai)

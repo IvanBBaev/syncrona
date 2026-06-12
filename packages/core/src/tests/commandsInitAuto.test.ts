@@ -27,11 +27,14 @@ jest.mock("../Logger", () => ({
 
 jest.mock("../appUtils", () => ({
   processManifest: (...args: unknown[]) => mockProcessManifest(...args),
+  downloadAllFiles: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../config", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
   getDefaultConfigFile: (...args: unknown[]) => mockDefaultConfigFile(...args),
+  resetConfigState: jest.fn(),
+  loadConfigs: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../wizard", () => ({
@@ -144,14 +147,12 @@ describe("initCommand auto scope flow", () => {
     expect(mockGetManifestApi).toHaveBeenNthCalledWith(
       1,
       "x_alpha",
-      { includes: {}, excludes: {}, tableOptions: {} },
-      true
+      { includes: {}, excludes: {}, tableOptions: {} }
     );
     expect(mockGetManifestApi).toHaveBeenNthCalledWith(
       2,
       "x_beta",
-      { includes: {}, excludes: {}, tableOptions: {} },
-      true
+      { includes: {}, excludes: {}, tableOptions: {} }
     );
     expect(mockProcessManifest).toHaveBeenCalledTimes(2);
   });

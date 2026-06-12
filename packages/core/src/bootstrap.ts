@@ -7,10 +7,15 @@ export async function init() {
   try {
     await ConfigManager.loadConfigs();
   } catch (e) {
-    console.log(e);
+    // A discovered-but-broken sync.config.js is a hard error: continuing
+    // would silently run with default includes/excludes.
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(message);
+    process.exitCode = 1;
+    return;
   }
 
-  let path = ConfigManager.getEnvPath();
+  const path = ConfigManager.getEnvPath();
   dotenv.config({
     path,
   });

@@ -18,6 +18,7 @@ import {
   toJsonText,
 } from "./runtimeUtils";
 import {
+  getCurrentScopeWithFallback,
   runBackgroundScript,
   snScopedApiRequest,
   snRequest,
@@ -365,8 +366,11 @@ export async function checkSyncronaCapabilities(
   let resolvedScope = scopeCode || "unknown_scope";
   if (!scopeCode) {
     try {
-      const ctx = await getSessionContext(timeoutMs);
-      const scopeObj = asRecord(ctx.scope);
+      // Resolve only the current scope; the full session context drags in
+      // user/update-set lookups that are irrelevant to capability probing
+      // and fail the whole resolution when any of them is unavailable.
+      const res = await getCurrentScopeWithFallback(timeoutMs, PROJECT_DIR);
+      const scopeObj = asRecord(asRecord(res.data).result);
       const currentScope = toStringField(scopeObj.scope);
       if (currentScope) {
         resolvedScope = currentScope;
@@ -392,13 +396,15 @@ export async function checkSyncronaCapabilities(
   const results: Record<string, unknown> = {};
   for (const [name, check] of Object.entries(checks)) {
     try {
+      // NOTE: preferredPrefixes expects an API namespace (x_nuvo_sinc/_sync),
+      // not a target scope code — passing scopeCode here probed bogus
+      // /api/<scope>/… endpoints.
       const response = await snScopedApiRequest(
         check.method,
         check.route,
         check.body,
         timeoutMs,
-        PROJECT_DIR,
-        scopeCode ? [scopeCode] : []
+        PROJECT_DIR
       );
       results[name] = {
         endpoint: response.usedEndpoint,

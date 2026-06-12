@@ -4,14 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- Updated production dependencies to clear all `npm audit` findings (13
+  vulnerabilities, 7 high — including five axios advisories such as SSRF and
+  credential leakage; axios 1.5.1 → 1.17.0, webpack bumped). `npm audit
+  --omit=dev` now reports 0 vulnerabilities.
+
+### Added
+
+- Registry-driven modular architecture: CLI commands are declared in
+  `packages/core/src/cliCommands.ts` (one `CliCommandModule` entry per
+  command) and MCP tool families in `packages/mcp-server/src/toolModules.ts`
+  (`TOOL_HANDLER_MODULES`); the orchestrators are generic interpreters. See
+  `docs/ARCHITECTURE.md` §5 for the add/remove module contract.
+- Architecture and product-state documentation with mermaid diagrams
+  (`docs/ARCHITECTURE.md`, `docs/PRODUCT_STATE.md`) and `CONTRIBUTING.md`.
+- Zod argument schemas for every mutating MCP tool (7 previously
+  unvalidated, including `sync_push` and `sn_execute_background_script`).
+- Table API pagination (`sysparm_offset`) in the manifest builder — tables
+  with more than 500 records are now fully enumerated; `sys_idIN` queries
+  are chunked to avoid URL-length failures.
+
 ### Fixed
 
+- Push safety: the resume checkpoint is written only after the confirmation
+  prompts (a declined prompt no longer fakes an "unfinished push"); the
+  collaboration lock is acquired atomically (`wx` flag), anchored to the
+  project root, and always released — `process.exit` no longer skips cleanup.
+- `--scopeSwap`/`--updateSet` no longer crash for users without an existing
+  user-preference record (the create path was unreachable), and the username
+  is resolved through the credential chain instead of raw `SN_USER`.
+- Error honesty: a present-but-broken `sync.config.js` is a hard error
+  instead of a silent fallback to defaults; `refresh` reports real failures;
+  `scopeCheck` no longer masks command errors as scope problems; `build`
+  logs the failure reason; unknown CLI commands fail (`yargs.strict()`).
+- Push retries follow the shared retry policy (no more retrying 401/403/404
+  toward account lockout); a 404 reports "Could not find … on the server".
+- Manifest refresh treats network failures as errors rather than "no
+  records" — a partial or empty manifest can no longer overwrite a good one.
+- MCP: the scoped-prefix cache is set only on 2xx responses (a 5xx could
+  poison the prefix order); `checkSyncronaCapabilities` resolves the scope
+  via the lightweight current-scope endpoint and no longer probes bogus
+  `/api/<scope>/…` namespaces; MCP credential precedence now matches the CLI
+  (project-local sources beat the global store) and resolved secrets are
+  cached for 30 s (removes a blocking scrypt from every request); server
+  startup connects stdio before the background scope auto-pull.
+- Watcher pushes are serialized (no concurrent pushes on rapid changes);
+  dev-mode interval refreshes no longer overlap; SIGINT cleans up the
+  watcher and refresh timer.
+- Git diff target handling uses `execFile` (paths with spaces, no shell
+  injection) and follows renames/copies to the new path.
 - Correctly detect file extensions for records whose names contain dots (e.g. `my.Widget.js`) by using `path.extname` instead of splitting on the first dot. This fixes wrong field/extension mapping during build and push.
 - `dev` mode no longer crashes when `refreshInterval` is set to `0` (disable polling); `getRefresh()` now treats `0` as a valid value.
 - `SNFileExists` now escapes and anchors the record-name regex, preventing false matches and regex errors for names containing special characters.
 
 ### Changed
 
+- Core is now part of the lint gate (`npm run lint` covers core + mcp-server
+  with `--max-warnings=0`); the core coverage gate measures the whole source
+  tree with ratchet thresholds instead of a single file.
+- Workspace package metadata normalized (`engines`, `files`, `types` fields);
+  per-package lockfiles removed in favor of the root lockfile.
 - Removed dead, duplicated file-path parsing helpers (`parseFileNameParams`, `getParsedFilesPayload`) so `getFileContextFromPath` is the single source of truth.
 - Minor cleanups: removed redundant `try/catch` rethrows and fixed a user-facing typo ("Recieved" → "Received").
 

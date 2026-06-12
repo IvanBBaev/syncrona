@@ -219,7 +219,11 @@ describe("command flows", () => {
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
+    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
+    // 1st read: checkpoint (missing); atomic lock create fails with EEXIST;
+    // 2nd read: the active lock owned by another process.
     mockReadFile.mockRejectedValueOnce(enoent);
+    mockWriteFile.mockRejectedValueOnce(eexist);
     mockReadFile.mockResolvedValueOnce(
       JSON.stringify({
         command: "push",
@@ -240,6 +244,100 @@ describe("command flows", () => {
     expect(mockLoggerWarn).toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
 
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand replaces a stale collaboration lock and proceeds", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
+    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
+    // checkpoint missing; first atomic create hits a leftover lock file that
+    // is stale (>30min old), which gets removed before the retry succeeds.
+    mockReadFile.mockRejectedValueOnce(enoent);
+    mockWriteFile.mockRejectedValueOnce(eexist);
+    mockReadFile.mockResolvedValueOnce(
+      JSON.stringify({
+        command: "push",
+        pid: 4242,
+        createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      })
+    );
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand leaves no checkpoint when the confirmation prompt is declined", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPrompt.mockResolvedValueOnce({ confirmed: false });
+
+    await pushCommand({
+      logLevel: "info",
+      ci: false,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    // Only the lock file is written (and released); no checkpoint state may
+    // survive a declined prompt.
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    expect(String(mockWriteFile.mock.calls[0][0])).toContain("sync.collaboration.lock.json");
+    expect(mockUnlink).toHaveBeenCalledTimes(1);
+    expect(String(mockUnlink.mock.calls[0][0])).toContain("sync.collaboration.lock.json");
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand releases the collaboration lock when the push fails", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    const oldExitCode = process.exitCode;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockRejectedValue(new Error("network died"));
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const unlinkedPaths = mockUnlink.mock.calls.map((call) => String(call[0]));
+    expect(
+      unlinkedPaths.some((p) => p.includes("sync.collaboration.lock.json"))
+    ).toBe(true);
+
+    process.exitCode = oldExitCode;
     process.env.SN_INSTANCE = oldInstance;
   });
 
