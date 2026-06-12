@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      # G15: validate on Linux (typical CI/CD consumers) and macOS (developer
+      # machines). Windows support is tracked separately (D5 / DX1).
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # G16: supply-chain gate — fail on any high/critical advisory in
+      # production dependencies (kept at 0 vulnerabilities as of 2026-06-12).
+      - name: Security audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Typecheck core + mcp-server
+        run: npm run typecheck
+
+      - name: Lint core + mcp-server (zero warnings)
+        run: npm run lint
+
+      - name: Test @syncrona/core
+        run: npm run test:core
+
+      - name: Test @syncrona/mcp-server
+        run: npm run test:mcp
+
+      - name: Coverage gates (core jest thresholds 68/54/58/68, mcp lines>=70% branches>=70%)
+        run: npm run test:coverage:gates
+
+      - name: Quality gates (tool contract, docs drift, release checklist)
+        run: npm run quality:all
+
+      - name: Upload core coverage artifact
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-coverage
+          path: packages/core/coverage
+          if-no-files-found: ignore
