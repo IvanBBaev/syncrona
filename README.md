@@ -1,5 +1,7 @@
 # SyncroNow AI
 
+[![CI](https://github.com/LeassTaTT/syncrona/actions/workflows/ci.yml/badge.svg)](https://github.com/LeassTaTT/syncrona/actions/workflows/ci.yml)
+
 ## Overview
 
 SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It allows you to:
