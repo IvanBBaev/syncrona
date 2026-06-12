@@ -4,352 +4,349 @@
 1. This file tracks only active and upcoming work.
 2. Completed work is tracked in DONE.
 
-## Цел: Готовност за реална употреба 9.5/10
-Текущо: ~8.5/10 — AR ревюто (2026-06-11) и CR fix серията (2026-06-12) са приложени;
-остава distribution polish (D5), няколко ръчни/инфраструктурни остатъка и DX backlog-ът.
+## Goal: real-world readiness 9.5/10
+Current: ~8.5/10 — the AR review (2026-06-11) and the CR fix series (2026-06-12) are
+applied; what remains is distribution polish (D5), a few manual/infrastructure
+residuals, and the DX backlog.
 
 ---
 
-## ФАЗА D — Distribution polish (остатък)
+## PHASE D — Distribution polish (remainder)
 
 ### D5. Distribution polish
-- [ ] macOS Keychain интеграция — keytar за CredentialStore (адресира и AR2)
+- [ ] macOS Keychain integration — keytar for the CredentialStore (also addresses AR2)
 - [ ] Homebrew tap: syncrona/homebrew-tap repo + Formula
-- [ ] GitHub Actions за auto-update на Homebrew formula при нов release
+- [ ] GitHub Actions to auto-update the Homebrew formula on each release
 - [ ] Windows: PowerShell install script + Windows Credential Manager
 
-**Definition of Done Фаза D:** brew install syncrona && syncrona login && syncrona init работи.
+**Definition of Done for Phase D:** `brew install syncrona && syncrona login && syncrona init` works.
 
 ---
 
-## Останали от АРХИТЕКТУРНОТО РЕВЮ (2026-06-11) — детайлите са в DONE
-- [x] AR1 (остатък): РАЗРЕШЕНО 2026-06-12 вечер — мистерията обяснена: cred.test.ts
-      САМ пишеше .env с fixture стойностите Tyler/Edwards/dev90755 и счупеният му
-      cleanup (top-level вместо afterAll) го оставяше след ВСЕКИ тестов run. Затова
-      файлът "се връщаше". Тестът е фикснат (70d8561): awaited writes + afterAll
-      cleanup; .env вече не остава на диска. Няма доказателство за реална парола.
-      Ротация е нужна САМО ако някога ръчно си слагал реални креденшъли в .env.
-- [ ] AR2 (остатък): Passphrase/Keychain-derived ключ — отложено към D5 (keytar).
-- [ ] AR9 (остатък): Пълна ts-jest миграция на mcp-server тестовете — HIGH RISK
-      (88 теста срещу dist); dispatch логиката вече има отделни тестове.
-- [ ] AR11: Капсулирай module-level mutable state (TOOL_METRICS, кешове) в explicit
-      context обект. Бележка 2026-06-12: secrets кешът в servicenowCore (CR21) има
-      reset функция (clearServiceNowSecretsCache), prefix кешът — clearScopedApiPrefixCache;
-      следвай този модел. Модулната архитектура (cliCommands.ts / toolModules.ts registries,
-      docs/ARCHITECTURE.md §5) е направена — AR11 е естественото ѝ продължение.
+## Remaining from the ARCHITECTURE REVIEW (2026-06-11) — details in DONE
+- [x] AR1 (residual): RESOLVED 2026-06-12 evening — the .env values were test
+      fixtures (Tyler/Edwards/dev90755) written by cred.test.ts, whose broken
+      top-level cleanup resurrected the file after every test run. Test fixed
+      (commit 06d307c): awaited writes + afterAll cleanup; .env no longer
+      lingers on disk. No evidence of a real password — rotate only if real
+      credentials were ever placed there manually. See also CR2.
+- [ ] AR2 (residual): Passphrase/Keychain-derived key — deferred to D5 (keytar).
+- [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — HIGH RISK
+      (88 tests against dist); the dispatch logic already has dedicated tests.
+- [ ] AR11: Encapsulate module-level mutable state (TOOL_METRICS, caches) in an
+      explicit context object. Note 2026-06-12: the secrets cache in servicenowCore
+      (CR21) has a reset function (clearServiceNowSecretsCache), the prefix cache has
+      clearScopedApiPrefixCache — follow that model. The modular architecture
+      (cliCommands.ts / toolModules.ts registries, docs/ARCHITECTURE.md §5) is in
+      place — AR11 is its natural continuation.
 
-## Останали от КОД РЕВЮ CR1–CR30 (2026-06-12) — имплементацията е в DONE
-- [ ] CR1 (остатък): решение за git remote/backup. Repo-то е инициализирано с baseline
-      commit (2026-06-12); CR fix серията е КОМИТНАТА на 2026-06-12 по заявка на потребителя
-      (8c0a8e1 CR фиксове, bf10f3c release hygiene, 3a759c9 release план) — working tree чист.
-      Остава само изборът/връзването на remote.
-- [x] CR2 (остатък): ПОТВЪРДЕНО 2026-06-12 — стойностите са тестови fixtures, писани
-      от cred.test.ts (вкл. trailing spaces, които CR2 забеляза — те идват от теста).
-      Виж AR1 за детайлите и фикса.
-- [ ] CR22 (остатък): провери sys.scripts.do fallback срещу реална инстанция —
-      документиран е като best-effort (CSRF/session ограничения), но не е тестван live.
-- [ ] CR26 (follow-up): вдигай coverage праговете (сега st 68 / br 54 / fn 58 / ln 68)
-      към целта 80, докато се добавят тестове. Ratchet, никога надолу.
+## Remaining from CODE REVIEW CR1–CR30 (2026-06-12) — implementation in DONE
+- [x] CR1 (residual): DONE 2026-06-12 — all work is committed (8 commits) and the
+      repo is pushed to https://github.com/LeassTaTT/syncrona (private), author
+      email ivanbbaev@gmail.com (history rewritten before first push — the old
+      nuvolo address never left the machine). The remote's previous 2026-05-31
+      snapshot (which contained packages/core/.env and build artifacts in-tree)
+      was force-replaced. NOTE: azure-pipelines.yml does not run on GitHub —
+      a GitHub Actions workflow is needed for live CI (see RR3/G15).
+- [x] CR2 (residual): CONFIRMED 2026-06-12 — the values were test fixtures written
+      by cred.test.ts (including the trailing spaces CR2 noticed — they come from
+      the test). Details and fix under AR1.
+- [ ] CR22 (residual): verify the sys.scripts.do fallback against a real instance —
+      documented as best-effort (CSRF/session limitations) but not tested live.
+- [ ] CR26 (follow-up): keep raising the coverage thresholds (now st 68 / br 54 /
+      fn 58 / ln 68) toward the 80 target as tests are added. Ratchet, never down.
 
 ---
 
 ## Milestones
 
-| Фаза | Срок | Резултат | Оценка |
+| Phase | Timeline | Result | Score |
 |------|------|----------|--------|
-| A — Код качество | 3–4 дни | Fallback тестове, static imports, wizard UX | 8.0/10 ✅ |
-| B — Standalone MVP | 1 седмица | npm i -g syncrona работи end-to-end | 8.5/10 ✅ |
-| C — Архитектура | 3–4 дни | Малки файлове, типизиран CLI, config reload | 9.0/10 ✅ |
-| D — Feature completion | 1 седмица | ATF gen, diff tool, logging, distribution | 9.5/10 (остава D5) |
-| CR — Review fix серия | 2026-06-12 | 30 находки: 26 фикснати, 4 остатъка по-горе | ✅ |
+| A — Code quality | 3–4 days | Fallback tests, static imports, wizard UX | 8.0/10 ✅ |
+| B — Standalone MVP | 1 week | npm i -g syncrona works end-to-end | 8.5/10 ✅ |
+| C — Architecture | 3–4 days | Small files, typed CLI, config reload | 9.0/10 ✅ |
+| D — Feature completion | 1 week | ATF gen, diff tool, logging, distribution | 9.5/10 (D5 remains) |
+| CR — Review fix series | 2026-06-12 | 30 findings: 26 fixed, 4 residuals above | ✅ |
 
 ---
 
-## ТРОЕН GAP АНАЛИЗ (2026-06-12) — Senior Dev / Architect / QA
-Трета итерация преглед: какво ЛИПСВА (не бъгове — празнини). Номерация G*.
-Не повтаря AR/CR/DX. Best-practice фиксовете от същия ден (0 audit уязвимости,
-core lint gate, package metadata, CONTRIBUTING.md) са в DONE.
+## TRIPLE GAP ANALYSIS (2026-06-12) — Senior Dev / Architect / QA
+Third review pass: what is MISSING (gaps, not bugs). Numbered G*.
+Does not repeat AR/CR/DX. The same-day best-practice fixes (0 audit
+vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
-### Senior Dev — липсващи възможности в кода
-- [ ] **G1. OAuth 2.0 auth** — само Basic auth; инстанции със SSO/MFA политики не могат
-      да ползват CLI/MCP. Минимум: OAuth password grant + refresh token в credential store.
-- [x] **G2. Schema валидация на sync.config.js** — ГОТОВО 2026-06-12: validateConfigShape
-      в config.ts (без нова зависимост) — грешен тип = hard error, непознат ключ = warning
-      със списък на валидните; 4 нови теста (configValidation.test.ts).
-- [ ] **G3. Download прогрес/resume** — push има checkpoint/resume и progress bar;
-      download на голям scope няма нито едното (мрежов срив = пълно повтаряне).
-- [x] **G4. Rate-limit awareness в MCP клиента** — ГОТОВО 2026-06-12: споделена
-      константа MAX_REQUESTS_PER_SECOND=20 в sn-transport; mcp клиентът spacing-ва
-      заявките (acquireRequestSlot, мин. интервал 50ms) вместо да разчита само на 429.
-- [x] **G5. Типизирани CLI args** — ГОТОВО 2026-06-12: `typedHandler<TArgs>` helper в
-      cliCommands.ts — handler телата са типово проверени срещу TArgs; 16-те разпръснати
-      `as unknown as` каста са заменени с един контролиран мост. (Пълна InferredOptionTypes
-      деривация от options декларациите остава възможно надграждане.)
+### Senior Dev — missing capabilities in the code
+- [ ] **G1. OAuth 2.0 auth** — Basic auth only; instances with SSO/MFA policies
+      cannot use the CLI/MCP. Minimum: OAuth password grant + refresh token in the
+      credential store.
+- [x] **G2. Schema validation for sync.config.js** — DONE 2026-06-12:
+      validateConfigShape in config.ts (no new dependency) — wrong type = hard
+      error, unknown key = warning listing the valid options; 4 new tests
+      (configValidation.test.ts).
+- [ ] **G3. Download progress/resume** — push has checkpoint/resume and a progress
+      bar; downloading a large scope has neither (a network failure means starting
+      over).
+- [x] **G4. Rate-limit awareness in the MCP client** — DONE 2026-06-12: shared
+      MAX_REQUESTS_PER_SECOND=20 constant in sn-transport; the mcp client spaces
+      requests (acquireRequestSlot, min 50ms interval) instead of relying only on
+      429 retries.
+- [x] **G5. Typed CLI args** — DONE 2026-06-12: typedHandler<TArgs> helper in
+      cliCommands.ts — handler bodies are type-checked against TArgs; the 16
+      scattered `as unknown as` casts were replaced with one controlled bridge.
+      (Full InferredOptionTypes derivation from the options declarations remains a
+      possible follow-up.)
 
-### Architect — липсваща инфраструктура
-- [ ] **G6. Release автоматизация** — няма changesets/semantic-release; версиите се
-      бъмпват ръчно (lerna fixed mode), CHANGELOG.md е статичен. Едно `npx changeset`
-      решава version+changelog+publish последователността.
-- [ ] **G7. CLI телеметрия за диагностика** — MCP има метрики/audit; CLI няма нищо
-      (doctor е моментна снимка). Opt-in локален диагностичен лог (~/.syncrona/logs)
-      би съкратил support цикъла.
-- [ ] **G8. Plugin API контракт** — Sync.Plugin няма версионен контракт/契约 тест;
-      breaking change в PluginFunc интерфейса чупи външни plugin-и тихо. Свързано с DX13.
-- [ ] **G9. Proxy/TLS конфигурация** — корпоративни proxy и самоподписани сертификати
-      не са поддържани/документирани в нито един от двата HTTP клиента
+### Architect — missing infrastructure
+- [ ] **G6. Release automation** — no changesets/semantic-release; versions are
+      bumped manually (lerna fixed mode), CHANGELOG.md is static. A single
+      `npx changeset` solves the version+changelog+publish sequence.
+- [ ] **G7. CLI diagnostics telemetry** — MCP has metrics/audit; the CLI has
+      nothing (doctor is a snapshot). An opt-in local diagnostic log
+      (~/.syncrona/logs) would shorten the support cycle.
+- [ ] **G8. Plugin API contract** — Sync.Plugin has no versioned contract test;
+      a breaking change in the PluginFunc interface silently breaks external
+      plugins. Related to DX13.
+- [ ] **G9. Proxy/TLS configuration** — corporate proxies and self-signed
+      certificates are not supported/documented in either HTTP client
       (HTTPS_PROXY env, custom CA bundle).
-- [ ] **G10. Машинно налагане на модулните граници** — ARCHITECTURE §5 контрактът
-      (handlers не импортират index, sn-transport е pure и т.н.) не се проверява от
-      нищо. dependency-cruiser или eslint-plugin-boundaries в lint gate-а.
+- [ ] **G10. Machine-enforced module boundaries** — the ARCHITECTURE §5 contract
+      (handlers don't import index, sn-transport stays pure, etc.) is not checked
+      by anything. dependency-cruiser or eslint-plugin-boundaries in the lint gate.
 
-### QA — липсващо тестово покритие
-- [ ] **G11. E2E срещу инстанция** — ЧАСТИЧНО 2026-06-12: e2eCliSmoke.test.ts пуска
-      реалния dist binary като child процес (--help изброява 16-те команди; непозната
-      команда = non-zero exit) — хваща packaging/bootstrap счупвания (S1/S2 класа).
-      Остава: network smoke (login → download → push --dry-run) срещу mock/record-replay
-      SN HTTP endpoint.
-- [x] **G12. Branch coverage за mcp-server** — ГОТОВО 2026-06-12: check-coverage-gate.js
-      приема --branch-threshold (opt-in); root test:coverage:mcp ползва 70 (мерено 74.99%).
-- [ ] **G13. Mutation testing** — Stryker върху credential-store + sn-transport
-      (малки, критични пакети) би показал дали assertions реално пазят.
-- [ ] **G14. Performance базова линия** — няма benchmark (manifest build на N таблици,
-      push на N файла); регресии в скоростта са невидими. Едно `npm run bench` с
-      фиксиран dataset + праг в CI.
-- [x] **G15. OS матрица в CI** — ГОТОВО 2026-06-12 (частично): azure-pipelines.yml е
-      матрица macOS + ubuntu-latest (артефактите се публикуват само от macOS job-а).
-      Windows остава за D5/DX1. Проверка: следващият CI run.
-- [ ] **G16. Security автоматизация в CI** — ЧАСТИЧНО 2026-06-12: `npm audit --omit=dev
-      --audit-level=high` е CI стъпка (проверена локално: 0 уязвимости). Остава: secret
-      scanning (gitleaks) — изисква външен tool в pipeline-а.
+### QA — missing test coverage
+- [ ] **G11. E2E against an instance** — PARTIAL 2026-06-12: e2eCliSmoke.test.ts
+      runs the real dist binary as a child process (--help lists all 16 commands;
+      an unknown command exits non-zero) — catches packaging/bootstrap breakage
+      (the S1/S2 class). Remaining: a network smoke (login → download →
+      push --dry-run) against a mock/record-replay SN HTTP endpoint.
+- [x] **G12. Branch coverage for mcp-server** — DONE 2026-06-12:
+      check-coverage-gate.js accepts --branch-threshold (opt-in); root
+      test:coverage:mcp uses 70 (measured 74.99%).
+- [ ] **G13. Mutation testing** — Stryker on credential-store + sn-transport
+      (small, critical packages) would show whether the assertions actually guard.
+- [ ] **G14. Performance baseline** — no benchmark (manifest build over N tables,
+      push of N files); speed regressions are invisible. A single `npm run bench`
+      with a fixed dataset + threshold in CI.
+- [x] **G15. OS matrix in CI** — DONE 2026-06-12 (partial): azure-pipelines.yml is
+      a macOS + ubuntu-latest matrix (artifacts published only from the macOS job).
+      Windows remains with D5/DX1. Verification: the next CI run.
+- [ ] **G16. Security automation in CI** — PARTIAL 2026-06-12: `npm audit
+      --omit=dev --audit-level=high` is a CI step (verified locally: 0
+      vulnerabilities). Remaining: secret scanning (gitleaks) — requires an
+      external tool in the pipeline.
 
-### Препоръчан ред (G)
-1. ~~G16 + G15~~ направени (G16 без gitleaks; G15 без Windows).
-2. ~~G2~~, ~~G5~~ направени.
-3. G11 — започнат (CLI boot smoke); остава network slice-ът.
-4. G1 (OAuth) + G9 (proxy) — отключват enterprise употреба; планирай с D5.
-5. G6/G7/G8/G10, G12–G14 — постепенно.
+### Recommended order (G)
+1. ~~G16 + G15~~ done (G16 without gitleaks; G15 without Windows).
+2. ~~G2~~, ~~G5~~ done.
+3. G11 — started (CLI boot smoke); the network slice remains.
+4. G1 (OAuth) + G9 (proxy) — unlock enterprise use; plan together with D5.
+5. G6/G7/G8/G10, G13–G14 — incrementally. (~~G12~~, ~~G4~~ done.)
 
 ---
 
-## DEEP DX RESEARCH — Как да направим проекта изключително лесен за употреба (2026-06-11)
-Анализирал съм цялата journey от инсталация до ежедневна разработка: CLI, Config, Docs, Workflow, Error Handling, MCP.
-**Фокус: шум-точки които правят "даже прост" task-ът неприятен за нови потребители.**
+## DEEP DX RESEARCH — making the project exceptionally easy to use (2026-06-11)
+Analysis of the whole journey from installation to daily development: CLI, Config,
+Docs, Workflow, Error Handling, MCP.
+**Focus: friction points that make even a "simple" task unpleasant for new users.**
 
 ### SETUP & ONBOARDING (DX1-DX4)
 
-**DX1: Windows WSL requirement е задавилка**
-- README: "preferably Windows Terminal and WSL (1903+)". Това е скрито, не е ясно че е REQUIRED.
-- 95% потребители на Windows нямат WSL инсталиран и не знаят как да го направят.
-- [ ] Добави `syncrona check-env` който да детектира OS, Node, WSL, Git и отпечатва actionable next steps.
-- [ ] Update README с видим "⚠️ Windows users" секция с link към WSL 2 setup guide.
+**DX1: The Windows WSL requirement is a trap**
+- README: "preferably Windows Terminal and WSL (1903+)". This is buried and it is
+  not clear that it is REQUIRED.
+- 95% of Windows users do not have WSL installed and do not know how to set it up.
+- [ ] Add `syncrona check-env` that detects OS, Node, WSL, Git and prints
+      actionable next steps.
+- [ ] Update README with a visible "⚠️ Windows users" section linking a WSL 2 setup guide.
 
 **DX2: Credential store vs .env confusion**
-- Потребителят има 4 источника: env var, CredentialStore, .env, prompt. Fallback логиката е невидима.
-- Wizard не показва окончателния source — потребителят не знае откъде дошли credentials.
-- Бележка 2026-06-12: precedence-ът вече е уеднаквен CLI↔MCP и документиран в mcp README (CR17);
-  остава видимостта в CLI.
-- [ ] `syncrona status` да отпечатва "Credentials from: .env" или "from CredentialStore (syncrona login)".
-- [ ] Wizard да покаже: "Found SN_INSTANCE in .env. Using this? (yes/no/enter-new)".
+- The user has 4 sources: env var, CredentialStore, .env, prompt. The fallback
+  logic is invisible.
+- The wizard does not show the final source — the user does not know where the
+  credentials came from.
+- Note 2026-06-12: precedence is now unified CLI↔MCP and documented in the mcp
+  README (CR17); CLI-side visibility remains.
+- [ ] `syncrona status` should print "Credentials from: .env" or "from
+      CredentialStore (syncrona login)".
+- [ ] The wizard should show: "Found SN_INSTANCE in .env. Using this? (yes/no/enter-new)".
 
-**DX3: Multi-instance workflow недокументиран**
-- `--instance-profile` е в help, но няма примери. Потребителят трябва да угаи синтаксиса.
-- Няма guide за dev+prod workflow или безопасен context switch.
-- [ ] Добави `MULTI_INSTANCE.md` guide: как да setup profiles, `syncrona use [instance]`, CI/CD примери.
+**DX3: Multi-instance workflow undocumented**
+- `--instance-profile` is in help, but there are no examples; users have to guess
+  the syntax.
+- No guide for a dev+prod workflow or a safe context switch.
+- [ ] Add a `MULTI_INSTANCE.md` guide: profile setup, `syncrona use [instance]`,
+      CI/CD examples.
 
-**DX4: Auto-init monorepo е неочаквано**
-- `syncrona init` при SN_* env vars ще направи `packages/x_*/` за всички scopes.
-- Потребителят се чуди защо внезапно имa 10 нови папки.
-- [ ] Преди auto-init, покажи: "Found 10 scoped apps. Create packages/x_*/? (y/n)".
+**DX4: Auto-init monorepo is unexpected**
+- `syncrona init` with SN_* env vars creates `packages/x_*/` for all scopes.
+- The user wonders why they suddenly have 10 new folders.
+- [ ] Before auto-init, show: "Found 10 scoped apps. Create packages/x_*/? (y/n)".
 
 ---
 
 ### CLI INTERFACE (DX5-DX7)
 
-**DX5: Help текстовете липсват примери**
-- `syncrona push --help` казва "[DESTRUCTIVE]" което е пугащо, но няма примери за безопасен workflow.
-- Няма `--dry-run` подсказка в help.
-- [ ] За всяка команда, добави пример: `syncrona push --dry-run`, `syncrona push --diff main`.
+**DX5: Help texts lack examples**
+- `syncrona push --help` says "[DESTRUCTIVE]", which is scary, but shows no safe
+  workflow examples.
+- No `--dry-run` hint in help.
+- [ ] For every command, add an example: `syncrona push --dry-run`,
+      `syncrona push --diff main`.
 
-**DX6: `--diff` флаг е неясен**
-- `syncrona push --diff main` пречи, дей push-ва всичко (не филтрира changed files).
-- Documentation казва "audit trail", но примерите неясни.
-- [ ] Добави `--changed-only` флаг за истински diff push.
-- [ ] Documento: `--diff main` = audit (push всичко, но track changes), `--changed-only` = филтър.
+**DX6: The `--diff` flag is unclear**
+- `syncrona push --diff main` still pushes everything (it does not filter changed
+  files).
+- The docs say "audit trail", but the examples are unclear.
+- [ ] Add a `--changed-only` flag for a true diff push.
+- [ ] Document: `--diff main` = audit (push everything but track changes),
+      `--changed-only` = filter.
 
-**DX7: `--instance-profile` на ВСЯКА команда е verbose**
-- Типична работа: `syncrona status --instance-profile dev`, `syncrona push --instance-profile dev`.
-- Потребителят трябва да помни флага всеки път.
-- [ ] Добави `.syncrona-local` конфиг (gitignored): `{ "instanceProfile": "dev" }`.
-- [ ] Локален profile перса в `syncrona use [instance]` (не глобалния store).
+**DX7: `--instance-profile` on EVERY command is verbose**
+- Typical work: `syncrona status --instance-profile dev`,
+  `syncrona push --instance-profile dev`.
+- The user has to remember the flag every time.
+- [ ] Add a `.syncrona-local` config (gitignored): `{ "instanceProfile": "dev" }`.
+- [ ] Persist the local profile in `syncrona use [instance]` (not the global store).
 
 ---
 
 ### CONFIGURATION COMPLEXITY (DX8-DX11)
 
 **DX8: Plugin discovery requires manual names**
-- Потребителят трябва да знае че "TypeScript plugin" се нарича "@syncrona/typescript-plugin" в npm.
-- `syncrona plugins` показва някои, но не помага при adding new plugins.
-- [ ] Добави `syncrona config add-plugin` интерактивен chooser: листа plugins, валидира, генерира boilerplate.
+- The user must know the "TypeScript plugin" is called "@syncrona/typescript-plugin" on npm.
+- `syncrona plugins` shows some but does not help when adding new plugins.
+- [ ] Add `syncrona config add-plugin` — an interactive chooser: lists plugins,
+      validates, generates boilerplate.
 
-**DX9: Default includes/excludes скрити в code**
-- "Sane defaults" са в defaultManifestConfig.ts. Потребителят трябва да чете source код за да разбере.
-- [ ] `syncrona status` да покажи "Active includes/excludes" + sources (defaults vs. overrides).
-- [ ] `syncrona config show-defaults` да листа всички defaults.
+**DX9: Default includes/excludes hidden in code**
+- The "sane defaults" live in defaultManifestConfig.ts; users must read source
+  code to understand them.
+- [ ] `syncrona status` should show "Active includes/excludes" + sources
+      (defaults vs overrides).
+- [ ] `syncrona config show-defaults` should list all defaults.
 
-**DX10: `sync.config.js` rule order matters, но няма validation**
-- README: "Order your rules by MOST SPECIFIC extension first!" Потребителят може да отнесе грешни order и тихо да fail.
-- Бележка 2026-06-12: счупен config вече е hard fail вместо тих fallback към defaults (CR20);
-  остава валидацията на реда на правилата.
-- [ ] `syncrona build --check-config` да валидира правилния ред (`.ts` преди `.js` итд).
-- [ ] `--verbose build` да покажи кой file матча кой rule.
+**DX10: `sync.config.js` rule order matters, but there is no validation**
+- README: "Order your rules by MOST SPECIFIC extension first!" — users can get the
+  order wrong and silently fail.
+- Note 2026-06-12: a broken config is now a hard fail instead of a silent default
+  fallback (CR20), and option names/types are validated (G2); rule-order
+  validation remains.
+- [ ] `syncrona build --check-config` should validate rule order (`.ts` before `.js`, etc.).
+- [ ] `--verbose build` should show which file matched which rule.
 
-**DX11: Advanced options недокументирани (`displayField`, `differentiatorField`)**
-- TableOptions са една строчка в README. Когда да се използват? За какво е `differentiatorField`?
-- "Will break the Windows filesystem" е лош сигнал.
-- [ ] Документирай use case: `displayField` = records с еденствено име, `differentiatorField` = dedup по sys_id.
-- [ ] Warning: `differentiatorField` блокира Windows поддържка.
+**DX11: Advanced options undocumented (`displayField`, `differentiatorField`)**
+- TableOptions get one line in the README. When to use them? What is
+  `differentiatorField` for?
+- "Will break the Windows filesystem" is a bad signal.
+- [ ] Document use cases: `displayField` = records with unique names,
+      `differentiatorField` = dedup by sys_id.
+- [ ] Warning: `differentiatorField` blocks Windows support.
 
 ---
 
 ### DOCUMENTATION & EXAMPLES (DX12-DX15)
 
-**DX12: FAQ е скътпа**
-- Има "How do I Delete Something?" и "How do I Add Scripts?" но няма "How do I work with multiple instances?" или error recovery.
-- [ ] Добави FAQ: multi-user workflow, environment switching, performance tuning, troubleshooting.
-- [ ] "Getting Unstuck" раздел: common problems + solutions.
+**DX12: The FAQ is thin**
+- There is "How do I Delete Something?" and "How do I Add Scripts?", but nothing on
+  "How do I work with multiple instances?" or error recovery.
+- [ ] Add FAQ: multi-user workflow, environment switching, performance tuning,
+      troubleshooting.
+- [ ] A "Getting Unstuck" section: common problems + solutions.
 
-**DX13: Plugin development docs липсват**
-- Потребител който пише plugin чете source код. Няма spec, lifecycle, API.
+**DX13: Plugin development docs are missing**
+- A user writing a plugin reads source code. No spec, lifecycle, API.
 - [ ] `PLUGIN_DEVELOPMENT.md`: template plugin, example transformations, interface spec.
 
-**DX14: Workspace/monorepo guide липсва**
-- README: "run from specific scope directory" но няма full workflow пример (init, configure, share deps, CI/CD).
-- [ ] `docs/MONOREPO_GUIDE.md`: структура, per-scope config, shared node_modules, pipeline examples.
+**DX14: Workspace/monorepo guide is missing**
+- README: "run from specific scope directory", but no full workflow example
+  (init, configure, share deps, CI/CD).
+- [ ] `docs/MONOREPO_GUIDE.md`: structure, per-scope config, shared node_modules,
+      pipeline examples.
 
-**DX15: MCP integration docs hardcoded paths и скътпи**
-- MCP quickstart има `/Users/Ivan.Baev/Development/...` в примерите.
-- Няма explanation какво е auto-pull, защо, когда disable.
-- [ ] Update с $HOME substitution или template generator.
-- [ ] Документирай auto-pull, troubleshooting MCP startup.
+**DX15: MCP integration docs have hardcoded paths and are thin**
+- The MCP quickstart contains `/Users/Ivan.Baev/Development/...` in examples.
+- No explanation of what auto-pull is, why, and when to disable it.
+- [ ] Update with $HOME substitution or a template generator.
+- [ ] Document auto-pull and MCP startup troubleshooting.
 
 ---
 
 ### WORKFLOW & DEVELOPER EXPERIENCE (DX16-DX18)
 
-**DX16: Manifest refresh interval скрит конфиг**
-- `refreshInterval: 30` е по подразбиране. Потребител със slow network мързелува.
-- Няма ясна документация какво правят 30 сек refresh-ът.
-- Бележка 2026-06-12: припокриващите се интервални refresh-и вече са guard-нати (CR11).
-- [ ] Документирай refresh behavior и performance.
-- [ ] `--verbose dev` да отпечатва "Manifest refresh took Xms".
-- [ ] `syncrona dev --refresh-interval 60` флаг.
+**DX16: Manifest refresh interval is hidden config**
+- `refreshInterval: 30` is the default. A user on a slow network suffers.
+- No clear documentation of what the 30-second refresh does.
+- Note 2026-06-12: overlapping interval refreshes are now guarded (CR11).
+- [ ] Document refresh behavior and performance.
+- [ ] `--verbose dev` should print "Manifest refresh took Xms".
+- [ ] A `syncrona dev --refresh-interval 60` flag.
 
-**DX17: File structure е странна за нови потребители**
-- "Records are shown as folders..." но потребителят очаква flat structure (src/scripts/my.js).
-- [ ] Добави `--flat` mode: локално flat, автоматично преобразует преди push/pull.
+**DX17: The file structure is strange for new users**
+- "Records are shown as folders…", but users expect a flat structure
+  (src/scripts/my.js).
+- [ ] Add a `--flat` mode: flat locally, converted automatically before push/pull.
 
-**DX18: Error recovery недокументирана**
-- Partial push failure (network dies). Потребителят не знае дали retry е безопасен.
-- Бележка 2026-06-12: checkpoint/resume вече не оставя фалшив state при отказан prompt (CR5),
-  lock-ът се освобождава и при грешка (CR6).
-- [ ] `syncrona repair` да проверява manifest vs. actual files и repair.
+**DX18: Error recovery is undocumented**
+- Partial push failure (network dies). The user does not know whether a retry is safe.
+- Note 2026-06-12: checkpoint/resume no longer leaves bogus state after a declined
+  prompt (CR5); the lock is released even on errors (CR6); behavior is documented
+  in the core README ("Push recovery and locking").
+- [ ] `syncrona repair` should compare manifest vs actual files and repair.
 
 ---
 
 ### ERROR MESSAGES & DEBUGGING (DX19-DX21)
 
-**DX19: Generic error messages не помагат**
-- Добър пример: "Your scope is X but config is Y". Много други errors: "Error processing response".
-- Бележка 2026-06-12: scopeCheck вече показва реалната грешка вместо генеричното "Failed to check
-  your scope" (CR9); buildCommand вече логва грешката (CR8).
+**DX19: Generic error messages do not help**
+- Good example: "Your scope is X but config is Y". Many other errors: "Error
+  processing response".
+- Note 2026-06-12: scopeCheck now shows the real error instead of the generic
+  "Failed to check your scope" (CR9); buildCommand now logs the failure (CR8).
 - [ ] Error categorization: "Network" (retry), "Config" (fix), "Data" (support).
-- [ ] Actionable next steps за всеки error.
+- [ ] Actionable next steps for every error.
 
-**DX20: Silent error swallowing при credential loading**
-- Както говори AR10, грешки при secrets loading са swallow-ни. Потребителят не знае дали .env е невалиден.
-- [ ] `syncrona status --debug-credentials` да отпечатва всички sources и защо са отхвърлени.
+**DX20: Silent error swallowing during credential loading**
+- As AR10 noted, secrets-loading errors are swallowed. Users do not know whether
+  their .env is invalid.
+- [ ] `syncrona status --debug-credentials` should print all sources and why each
+      was rejected.
 
-**DX21: Verbose logging неполна**
-- `--log-level debug` е налично, но output е мълчалив. Потребител stuck не знае какво се случва.
-- [ ] Профилирани лог точки: "Starting refresh...", "Queued 5 files...", "Waiting for API...".
+**DX21: Verbose logging is incomplete**
+- `--log-level debug` exists but the output is silent. A stuck user cannot see
+  what is happening.
+- [ ] Profiled log points: "Starting refresh…", "Queued 5 files…", "Waiting for API…".
 
 ---
 
 ### ADVANCED FEATURES (DX22-DX24)
 
-**DX22: Dry-run output е JSON вместо таблица**
-- Потребителят не вижда лесно какви файлове ще се push-нат.
+**DX22: Dry-run output is JSON instead of a table**
+- The user cannot easily see which files would be pushed.
 - [ ] Table format: `File | Action | Changes | Size`.
 
-**DX23: `--diff` feature недостатъчно документирана**
-- Потребителят не знае че това е за audit trail / compliance review.
-- [ ] Документирай use case ясно.
+**DX23: The `--diff` feature is under-documented**
+- Users do not know it exists for audit trail / compliance review.
+- [ ] Document the use case clearly.
 
-**DX24: Rate limiting & concurrency не е видима**
-- `pushConcurrency: 10` е hardcoded (конфигурируем през sync.config.js, без CLI флаг). Няма progress bar.
-- [ ] `--push-concurrency N` флаг.
+**DX24: Rate limiting & concurrency are invisible**
+- `pushConcurrency: 10` is configurable via sync.config.js but has no CLI flag.
+  No progress bar for long pushes.
+- [ ] A `--push-concurrency N` flag.
 - [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)".
 
 ---
 
-### КРАТКОСРОЧНИ WINS (день-два, висока стойност)
+### SHORT-TERM WINS (a day or two, high value)
 
-1. **DX1**: `syncrona check-env` — спасява нови Windows потребители.
-2. **DX2**: Credential source в `syncrona status` — устранява confusion.
-3. **DX5**: Примери в help текстовете.
+1. **DX1**: `syncrona check-env` — rescues new Windows users.
+2. **DX2**: credential source in `syncrona status` — removes the confusion.
+3. **DX5**: examples in the help texts.
 4. **DX7**: `.syncrona-local` per-profile config — daily comfort.
-5. **DX19/DX20**: Better error messages — най-голямата дневна ROI.
+5. **DX19/DX20**: better error messages — the highest day-to-day ROI.
 
-### ДЪЛГОТЕРМИНИ ИНВЕСТИЦИИ (3-5 дни, бъдеща стойност)
+### LONGER-TERM INVESTMENTS (3-5 days, future value)
 
-1. **DX12-DX15**: Документация (FAQ, Plugin, Monorepo, MCP) — 4 часа.
-2. **DX8**: Interactive config:add-plugin — 2 часа.
-3. **DX16-DX21**: Workflow улучшения (verbose logging, repair, recovery) — 3 часа.
-4. **DX22-DX24**: UI улучшения (dry-run table, progress bar, rate limiting) — 2 часа.
-
----
-
-## RELEASE READINESS ПЛАН (2026-06-12) — по индустриални best practices
-Изведен от пълен release-readiness анализ (детайли: docs/ai/RELEASE_READINESS.md — локален,
-git-excluded). Измерено състояние: `npm run check` (Node 22.22.2) ИЗЦЯЛО ЗЕЛЕН — core 146/146,
-mcp 172/172, coverage gates минати (mcp 82.65% ≥ 70%), tool contract (26), docs drift (60/16),
-release checklist OK. `npm audit`: 9 moderate / 0 high / 0 critical. Tarball на @syncrona/core
-чист (47 kB, само dist + README, без .env/.map). Обща оценка: ~6/10 production-ready —
-инженерното ядро е ~8/10, release инфраструктурата ~3/10.
-СТАТУС след hygiene работата същия ден (bf10f3c): npm audit = 0 vulns; RR2/RR3-CI/RR4
-затворени по-долу — остават само ръчните точки (ротация, remote, npm scope).
-
-### Блокери (преди какъвто и да е публичен release)
-
-#### RR1. Ротация на credentials ✅ РАЗРЕШЕНО (2026-06-12 вечер)
-- [x] Изяснено: .env стойностите бяха тестови fixtures, самовъзкресявани от счупения
-      cleanup на cred.test.ts след всеки run. Тестът фикснат (70d8561); .env вече не
-      остава на диска. Няма доказателство за реална парола — ротация само ако някога
-      РЪЧНО си слагал реални креденшъли там. Детайли: AR1/CR2 бележките по-горе.
-
-#### RR2. Commit на working tree ✅ (2026-06-12)
-- [x] Commit на WIP фиксовете + release-hygiene промените → 8c0a8e1, bf10f3c, 3a759c9;
-      working tree чист, npm run check зелен преди всеки commit.
-
-#### RR3. Remote + реално работещ CI
-- Няма git remote → azure-pipelines.yml не върви никъде; trigger е dev/master, а клонът е main.
-- [x] Оправи trigger branches на main (2026-06-12, bf10f3c).
-- [x] Уеднакви coverage label-ите — сега казват реалните прагове (2026-06-12, bf10f3c).
-- [ ] Избери и вържи remote (Azure DevOps / GitHub) [РЕШЕНИЕ — потребител].
-- [ ] Publish през CI: минимум npm 2FA; в идеал --provenance.
-
-#### RR4. Хигиена на публикувания артефакт
-- [x] Вулнерабилности → 0 (2026-06-12, bf10f3c): npm overrides micromatch ^4.0.8 +
-      uuid ^11.1.1 (audit fix искаше jest 30 major bump — отказано); check зелен след това.
-- [x] LICENSE файл във всеки от 13-те пакета (2026-06-12, bf10f3c).
-- [ ] Провери собствеността на npm scope @syncrona + включи 2FA [РЪЧНО — потребител].
-
-### Should (преди production 1.0, не блокира alpha)
-- [ ] CI платформена матрица (linux/mac/win) или изрично документирана support policy
-      (сега: macOS image + "WSL препоръка" — нито едното).
-- [ ] SECURITY.md (disclosure policy) + dependabot/renovate + secret scanning hook.
-- [ ] manifestBuilder: 6× `catch { return [] }` → разграничи network error от празна таблица
-      (тиха загуба на данни в manifest — най-тежката отворена КОДОВА находка; вж. CR24).
-- [ ] Per-package README (README на @syncrona/core е 880 B — това е npm витрината).
-- [ ] Toolchain поддръжка: eslint 8 (EOL) → 9, inquirer 8 → 12, TypeScript 5.2 → актуален.
-- [ ] E2E smoke срещу реална dev инстанция като release gate (сега всичко е unit/contract).
+1. **DX12-DX15**: documentation (FAQ, Plugin, Monorepo, MCP) — 4 hours.
+2. **DX8**: interactive config:add-plugin — 2 hours.
+3. **DX16-DX21**: workflow improvements (verbose logging, repair, recovery) — 3 hours.
+4. **DX22-DX24**: UI improvements (dry-run table, progress bar, rate limiting) — 2 hours.
