@@ -1,0 +1,26 @@
+{
+  "name": "@syncrona/babel-preset-servicenow",
+  "version": "0.4.2-alpha.8",
+  "description": "ServiceNow Sanitizer Plugin",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.23.2",
+    "@babel/types": "^7.23.0"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8",
+    "@types/babel__core": "^7.20.2",
+    "typescript": "^5.2.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

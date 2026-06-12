@@ -1,0 +1,22 @@
+{
+  "name": "@syncrona/babel-plugin-remove-modules",
+  "version": "0.4.2-alpha.8",
+  "description": "Babel plugin that removes imports and exports from code",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.23.2",
+    "@babel/types": "^7.23.0"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8",
+    "@types/babel__core": "^7.20.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

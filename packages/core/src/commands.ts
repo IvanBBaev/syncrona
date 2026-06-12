@@ -1,0 +1,305 @@
+import { Sync } from "@syncrona/types";
+import { promises as fsp } from "fs";
+import path from "path";
+import * as ConfigManager from "./config";
+import * as AppUtils from "./appUtils";
+import { startWizard } from "./wizard";
+import { logger } from "./Logger";
+import {
+  logPushResults,
+  logBuildResults,
+} from "./logMessages";
+import {
+  defaultClient,
+  resolveCredentials,
+  unwrapSNResponse,
+} from "./snClient";
+import inquirer from "inquirer";
+import { gitDiffToEncodedPaths } from "./gitUtils";
+import { encodedPathsToFilePaths } from "./FileUtils";
+import {
+  isScopedEndpointUnavailableError,
+  buildManifestFromTableAPI,
+  buildBulkDownloadFromTableAPI,
+  listAppsFromTableAPI,
+} from "./manifestBuilder";
+import { generateScopeDocs } from "./scopeDocs";
+import {
+  LOGIN_DEFAULT_SOURCE_DIRECTORY,
+  setLogLevel,
+  scopeCheck,
+  logScopedEndpointCapability,
+} from "./commandHelpers";
+import { mcpCommand } from "./mcpCommand";
+
+// Re-export extracted command modules so consumers can import the full command
+// surface from "./commands" (barrel) in addition to the dedicated modules.
+export { pushCommand } from "./pushCommand";
+export { statusCommand, doctorCommand, pluginsCommand } from "./diagnosticsCommands";
+export { mcpCommand } from "./mcpCommand";
+
+async function localPathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fsp.stat(targetPath);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+async function ensureScopeWorkspace(scopeDir: string): Promise<void> {
+  const sourcePath = path.join(scopeDir, LOGIN_DEFAULT_SOURCE_DIRECTORY);
+  const configPath = path.join(scopeDir, "sync.config.js");
+
+  await fsp.mkdir(sourcePath, { recursive: true });
+  if (!(await localPathExists(configPath))) {
+    await fsp.writeFile(
+      configPath,
+      ConfigManager.getDefaultConfigFile(LOGIN_DEFAULT_SOURCE_DIRECTORY),
+      "utf8"
+    );
+  }
+}
+
+async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
+  const workspaceRoot = process.cwd();
+  const packagesRoot = path.join(workspaceRoot, "packages");
+  await fsp.mkdir(packagesRoot, { recursive: true });
+
+  const client = defaultClient(args.instanceProfile);
+  let apps: import("@syncrona/types").SN.App[] = [];
+  try {
+    apps = await unwrapSNResponse(client.getAppList());
+  } catch (e) {
+    if (isScopedEndpointUnavailableError(e)) {
+      apps = await listAppsFromTableAPI(client);
+    } else {
+      throw e;
+    }
+  }
+
+  const scopedApps = apps
+    .filter((app) => app.scope && app.scope.startsWith("x_"))
+    .sort((a, b) => a.scope.localeCompare(b.scope));
+
+  if (scopedApps.length === 0) {
+    logger.warn("No active scoped apps found for initialization.");
+    return;
+  }
+
+  logger.info(`Auto init: preparing ${scopedApps.length} scoped packages...`);
+  const usedDirNames = new Set<string>();
+  for (const app of scopedApps) {
+    // Use the short scope alias (strip the "x_<vendor>_" prefix) as the folder
+    // name, e.g. x_nuvo_cs -> cs. Fall back to the full scope on collision or
+    // if stripping yields an empty name. The full scope is still used for all
+    // API calls and stored inside the manifest.
+    let dirName = app.scope.replace(/^x_[^_]+_/, "");
+    if (dirName.length === 0 || usedDirNames.has(dirName)) {
+      dirName = app.scope;
+    }
+    usedDirNames.add(dirName);
+
+    const scopeDir = path.join(packagesRoot, dirName);
+    await ensureScopeWorkspace(scopeDir);
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(scopeDir);
+      // Re-resolve config/manifest/source paths for this scope. The config
+      // store is a singleton initialized once at startup, so without this the
+      // chdir is ignored and every scope would write to the workspace root.
+      ConfigManager.resetConfigState();
+      await ConfigManager.loadConfigs();
+      await downloadCommand({
+        logLevel: args.logLevel,
+        scope: app.scope,
+        dryRun: args.dryRun,
+        instanceProfile: args.instanceProfile,
+        ci: true,
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  }
+}
+
+export async function downloadCommand(args: Sync.CmdDownloadArgs) {
+  setLogLevel(args);
+  try {
+    const dryRun = args.dryRun === true;
+    if (dryRun) {
+      logger.info(`Dry run: would download scope ${args.scope} and overwrite local manifest/files.`);
+      return;
+    }
+
+    const skipPrompt = args.ci === true;
+    if (!skipPrompt) {
+      let answers: { confirmed: boolean } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirmed",
+          message: "Downloading will overwrite manifest and files. Are you sure?",
+          default: false,
+        },
+      ]);
+      if (!answers["confirmed"]) {
+        return;
+      }
+    }
+    logger.info("Downloading manifest...");
+    const client = defaultClient(args.instanceProfile);
+    const config = ConfigManager.getConfig();
+
+    let man: import("@syncrona/types").SN.AppManifest;
+    try {
+      man = await unwrapSNResponse(client.getManifest(args.scope, config));
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
+        logger.info("Custom scope not found — building manifest from Table API...");
+        man = await buildManifestFromTableAPI(args.scope, client, config);
+      } else {
+        throw e;
+      }
+    }
+
+    logger.info("Creating local files from manifest...");
+    await AppUtils.processManifest(man, true);
+    logger.info("Fetching file contents...");
+    await AppUtils.downloadAllFiles(man, args.instanceProfile);
+    try {
+      const docPath = await generateScopeDocs(man);
+      logger.success(`Scope documentation written to ${docPath}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn(`Could not generate scope documentation: ${message}`);
+    }
+    logger.success("Download complete ✅");
+  } catch (e) {
+    throw e;
+  }
+}
+export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
+  setLogLevel(args);
+  const man = ConfigManager.getManifest();
+  if (!man) {
+    logger.error(
+      "No manifest found. Run 'syncrona init' or 'syncrona download <scope>' first."
+    );
+    return;
+  }
+  try {
+    const docPath = await generateScopeDocs(man);
+    logger.success(`Scope documentation written to ${docPath}`);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Failed to generate scope documentation: ${message}`);
+  }
+}
+export async function initCommand(args: Sync.SharedCmdArgs) {
+  setLogLevel(args);
+  try {
+    const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
+    if (hasEnvFile) {
+      logger.info("Detected .env in current directory. Running non-interactive all-scope initialization...");
+      await initAllScopesFromEnv(args);
+      logger.success("Init complete: all discoverable scopes initialized. ✅");
+      return;
+    }
+
+    await startWizard();
+    await mcpCommand({ ...args, autoConfigure: true, start: false });
+  } catch (e) {
+    throw e;
+  }
+}
+
+export async function buildCommand(args: Sync.BuildCmdArgs) {
+  setLogLevel(args);
+  try {
+    const encodedPaths = await gitDiffToEncodedPaths(args.diff);
+    const fileList = await AppUtils.getAppFileList(encodedPaths);
+    logger.info(`${fileList.length} files to build.`);
+    if (args.dryRun === true) {
+      logger.info("Dry run: skipping local build output writes.");
+      return;
+    }
+    const results = await AppUtils.buildFiles(fileList);
+    logBuildResults(results);
+  } catch (e) {
+    process.exit(1);
+  }
+}
+
+async function getDeployPaths(): Promise<string[]> {
+  let changedPaths: string[] = [];
+  try {
+    changedPaths = ConfigManager.getDiffFile().changed || [];
+  } catch (e) {}
+  if (changedPaths.length > 0) {
+    const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+      {
+        type: "confirm",
+        name: "confirmed",
+        message:
+          "Would you like to deploy only files changed in your diff file?",
+        default: false,
+      },
+    ]);
+    if (confirmed) return changedPaths;
+  }
+  return encodedPathsToFilePaths(ConfigManager.getBuildPath());
+}
+
+export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
+  setLogLevel(args);
+  await scopeCheck(async () => {
+    try {
+      const dryRun = args.dryRun === true;
+      const credentials = resolveCredentials(args.instanceProfile);
+      const targetServer = credentials.instance;
+      if (!targetServer) {
+        logger.error("No server configured for deploy!");
+        return;
+      }
+
+      const client = defaultClient(args.instanceProfile);
+      try {
+        await client.checkConnection(5000);
+        logScopedEndpointCapability("deploy");
+      } catch (e) {
+        logger.error(
+          "Unable to reach ServiceNow instance before deploy. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
+        );
+        return;
+      }
+
+      const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+        {
+          type: "confirm",
+          name: "confirmed",
+          message:
+            "Deploying will overwrite code in your instance. Are you sure?",
+          default: false,
+        },
+      ]);
+      if (!confirmed) {
+        return;
+      }
+      const paths = await getDeployPaths();
+      logger.silly(`${paths.length} paths found...`);
+      logger.silly(JSON.stringify(paths, null, 2));
+      const appFileList = await AppUtils.getAppFileList(paths);
+      if (dryRun) {
+        logger.info(
+          `Dry run: would deploy ${appFileList.length} records to ${targetServer}, skipping remote push.`
+        );
+        return;
+      }
+      const pushResults = await AppUtils.pushFiles(appFileList);
+      logPushResults(pushResults);
+    } catch (e) {
+      throw e;
+    }
+  });
+}

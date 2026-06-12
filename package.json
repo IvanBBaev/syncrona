@@ -1,0 +1,70 @@
+{
+  "name": "syncro-now-ai",
+  "version": "0.4.2-alpha.8",
+  "private": true,
+  "description": "AI-ready ServiceNow MCP server for metadata analysis, dependency graphs, impact analysis, and scoped application documentation.",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "build:deps": "npm --workspace @syncrona/credential-store run prepack && npm --workspace @syncrona/sn-transport run prepack",
+    "build": "npm run build:deps && npm --workspaces --if-present run prepack",
+    "test": "npm run test:core && npm run test:mcp",
+    "test:core": "npm --workspace @syncrona/core test",
+    "test:mcp": "npm --workspace @syncrona/mcp-server test",
+    "test:coverage:core": "npm --workspace @syncrona/core test",
+    "test:coverage:mcp": "npm --workspace @syncrona/mcp-server run test:coverage:gate -- --line-threshold 70",
+    "test:coverage:gates": "npm run test:coverage:core && npm run test:coverage:mcp",
+    "typecheck:core": "npm --workspace @syncrona/core run prepack",
+    "typecheck:mcp": "npm --workspace @syncrona/mcp-server run build",
+    "typecheck:all": "npm run build:deps && npm --workspaces --if-present run prepack",
+    "typecheck": "npm run typecheck:all",
+    "lint:mcp": "npx eslint \"packages/mcp-server/src/**/*.ts\" --max-warnings=0",
+    "lint": "npm run lint:mcp",
+    "quality": "npm --workspace @syncrona/mcp-server run quality-gates",
+    "quality:core": "npm --workspace @syncrona/core run prepack",
+    "quality:mcp": "npm --workspace @syncrona/mcp-server run quality-gates",
+    "quality:all": "npm run quality:core && npm run quality:mcp",
+    "check": "npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage:gates && npm run quality:all",
+    "mcp:build": "npm --workspace @syncrona/mcp-server run build",
+    "release:core": "npm run build && npm publish --workspace @syncrona/core --access public && bash scripts/tag-core-release.sh",
+    "release:core:dry": "npm run build && npm publish --workspace @syncrona/core --access public --dry-run && bash scripts/tag-core-release.sh --dry-run"
+  },
+  "author": "Ivan Baev",
+  "license": "MIT",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.7.5",
+    "@typescript-eslint/parser": "^6.7.5",
+    "eslint": "^8.51.0",
+    "typescript": "^5.2.2"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [
+    "servicenow",
+    "servicenow-mcp",
+    "mcp",
+    "model-context-protocol",
+    "servicenow-cli",
+    "servicenow-developer-tools",
+    "servicenow-automation",
+    "servicenow-integration",
+    "servicenow-scope",
+    "scoped-applications",
+    "metadata-analysis",
+    "dependency-graph",
+    "impact-analysis",
+    "scope-documentation",
+    "knowledge-graph",
+    "mermaid",
+    "typescript",
+    "ai-tools",
+    "developer-tools",
+    "devops"
+  ]
+}

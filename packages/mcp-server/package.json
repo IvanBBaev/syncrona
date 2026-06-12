@@ -1,0 +1,43 @@
+{
+  "name": "@syncrona/mcp-server",
+  "version": "0.4.2-alpha.8",
+  "description": "MCP server for SyncroNow AI automation and script execution",
+  "main": "./dist/index.js",
+  "bin": {
+    "syncrona-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.js",
+    "test:coverage": "npm run build && node --test --experimental-test-coverage test/*.test.js",
+    "test:coverage:gate": "npm run build && node scripts/check-coverage-gate.js --line-threshold 90",
+    "test:coverage:gate100": "npm run build && node scripts/check-coverage-gate.js --line-threshold 100",
+    "quality-gates": "bash scripts/quality-gates.sh",
+    "check-tool-contract": "node scripts/check-tool-contract.js",
+    "check-docs-drift": "node scripts/check-docs-drift.js",
+    "check-claude-docs-drift": "node scripts/check-claude-docs-drift.js",
+    "validate-release-checklist": "node scripts/validate-release-checklist.js",
+    "prepack": "tsc"
+  },
+  "author": "Multiple",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.3",
+    "@syncrona/credential-store": "^0.4.2-alpha.8",
+    "@syncrona/sn-transport": "^0.4.2-alpha.8",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.4",
+    "typescript": "^5.2.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

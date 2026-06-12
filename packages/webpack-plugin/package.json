@@ -1,0 +1,26 @@
+{
+  "name": "@syncrona/webpack-plugin",
+  "version": "0.4.2-alpha.8",
+  "description": "Webpack plugin for Syncrona",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "memory-fs": "^0.5.0",
+    "webpack": "^5.88.2"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8",
+    "@types/memory-fs": "^0.3.4",
+    "@types/webpack": "^5.28.3"
+  }
+}

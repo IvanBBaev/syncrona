@@ -1,0 +1,23 @@
+{
+  "name": "@syncrona/typescript-plugin",
+  "version": "0.4.2-alpha.8",
+  "description": "TypeScript plugin for Syncrona",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "npx tsc"
+  },
+  "author": "Multiple",
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^5.2.2"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

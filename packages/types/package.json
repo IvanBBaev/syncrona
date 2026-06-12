@@ -1,0 +1,14 @@
+{
+  "name": "@syncrona/types",
+  "version": "0.4.2-alpha.8",
+  "description": "Type Declarations for Syncrona",
+  "main": "index.d.ts",
+  "scripts": {
+    "test": "echo \"No runtime tests for @syncrona/types\""
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}

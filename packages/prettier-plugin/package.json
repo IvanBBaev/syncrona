@@ -1,0 +1,22 @@
+{
+  "name": "@syncrona/prettier-plugin",
+  "version": "0.4.2-alpha.8",
+  "description": "Prettier plugin for Syncrona",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "author": "Multiple",
+  "license": "MIT",
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8",
+    "@types/prettier": "^2.7.3",
+    "typescript": "^5.2.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

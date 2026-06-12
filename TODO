@@ -1,0 +1,549 @@
+# TODO - Active Roadmap
+
+## Execution Policy
+1. This file tracks only active and upcoming work.
+2. Completed work is tracked in DONE.
+
+## Цел: Готовност за реална употреба 9.5/10
+Текущо: 7.5/10 — функционално богат, но нестабилен в edge cases и не е standalone.
+
+---
+
+## ФАЗА D — Feature completion (1 седмица) → 9.5/10
+
+### D1. sync_suggest_tests — генерира ATF тест от Script Include
+- [x] Нов MCP tool sync_suggest_tests в toolSchemas.ts
+	- Args: scope, scriptIncludeName, scriptIncludeSysId?
+- [x] Fetch Script Include script от инстанцията
+- [x] Анализира методи — генерира skeleton ATF тест с beforeEach / afterEach / assertions
+- [x] Output: готов ATF тест script + инструкции за import
+- [x] Handler в handlers/developerToolHandlers.ts + тест
+
+### D2. sync_diff_instance_vs_local — сравни локален код с инстанцията
+- [x] Нов MCP tool sync_diff_instance_vs_local
+	- Args: scope, tableName?, recordName?
+- [x] За всеки локален файл: fetch от инстанцията + compare
+- [x] Output: changed / added / removed с diff summary + race condition warning
+- [x] Handler + тест
+
+### D3. Structured logging с correlation ID
+- [x] Correlation ID (UUID) per tool call — propagate в audit log (вече вързано: resolveCorrelationId + auditToolCall/recordToolMetric).
+- [x] --log-format=json флаг: JSON output вместо plain strings (нов logger.ts; също SYNCRONA_LOG_FORMAT/SYNCRONA_LOG_LEVEL env).
+- [x] logger.* в hot path включват { correlationId, tool, durationMs } (tool.start/tool.complete debug, tool.error error в CallTool). stderr-only (stdout е JSON-RPC).
+
+### D4. Tool versioning в toolSchemas
+- [x] Добави version: string поле към всеки tool schema (metadata.version чрез withToolLifecycleMetadata; DEFAULT 1.0.0 + overrides run_workspace_command/run_node_code 1.1.0).
+- [x] sync_tool_contract_info да включва version map (lifecycle[] с {name,version,deprecated,replacedBy?,...} + deprecatedCount/deprecatedTools).
+- [x] Deprecation warning при извикване на tool с deprecated: true (logger.warn "tool.deprecated" в CallTool чрез нов getToolLifecycleMetadata; механизмът е dormant — 0 реални deprecated tools).
+
+### D5. Distribution polish
+- [ ] macOS Keychain интеграция — keytar за CredentialStore
+- [ ] Homebrew tap: syncrona/homebrew-tap repo + Formula
+- [ ] GitHub Actions за auto-update на Homebrew formula при нов release
+- [x] Auto-update notification (1x/ден) → packages/core/src/updateNotifier.ts (чисти semver/cache/select helpers + best-effort orchestrator), закачен в bootstrap.ts init() след JEST gate. Веднъж/ден чрез ~/.syncrona/update-check.json; нотис само на stderr (без stdout замърсяване); веднъж на нова версия; skip при CI/JEST/non-TTY; opt-out SYNCRONA_NO_UPDATE_NOTIFIER/NO_UPDATE_NOTIFIER. 21 jest теста (updateNotifier.test.ts). Документирано в core README.
+- [ ] Windows: PowerShell install script + Windows Credential Manager
+
+**Definition of Done Фаза D:** brew install syncrona && syncrona login && syncrona init работи. sync_suggest_tests генерира валиден ATF тест. sync_diff_instance_vs_local открива разлики.
+
+---
+
+## Milestones
+
+| Фаза | Срок | Резултат | Оценка |
+|------|------|----------|--------|
+| A — Код качество | 3–4 дни | Fallback тестове, static imports, wizard UX | 8.0/10 |
+| B — Standalone MVP | 1 седмица | npm i -g syncrona работи end-to-end | 8.5/10 |
+| C — Архитектура | 3–4 дни | Малки файлове, типизиран CLI, config reload | 9.0/10 |
+| D — Feature completion | 1 седмица | ATF gen, diff tool, logging, distribution | 9.5/10 |
+
+---
+
+## АРХИТЕКТУРНО КОД РЕВЮ (2026-06-11)
+Ревюто покрива monorepo структурата, `core` CLI, `mcp-server` runtime, auth/credential слоя,
+HTTP клиентите и quality gates. Подредено по приоритет: P0 (блокери), P1 (важни), P2 (полиш).
+
+### P0 — Сигурност и release блокери
+
+#### AR1. Реални ServiceNow credentials в `packages/core/.env`
+- Файлът `packages/core/.env` съдържа SN_USER / SN_PASSWORD / SN_INSTANCE с реални стойности.
+- `.gitignore` игнорира `.env`, но файлът вече е на диска в repo дървото — риск от случаен commit/публикуване в npm tarball.- това не го смисли 
+- [x] Махни реалните creds, добави `.env.example` с placeholder-и.
+- [x] Потвърди че `files: ["dist"]` в package.json не пакетира `.env` (pack dry-run).
+- [ ] Ротирай паролата — третирай я като компрометирана. (РЪЧНО — потребителска задача)
+
+#### AR2. Деривация на encryption ключа е слаба (CredentialStore)
+- `auth.ts` и `servicenowCore.ts` извеждат AES-256-GCM ключ от `hostname:username:salt` чрез `scryptSync`.
+  Ключът е напълно предвидим — който знае hostname+username (или открадне `.enc` файла), декриптира creds.
+- Това е по-скоро обфускация, отколкото криптография. TODO D5 (Keychain/keytar) адресира това — вдигни приоритета.
+- [x] До Keychain интеграцията документирай ясно че at-rest защитата е слаба (не давай false sense of security). → README "Credential storage security" секция.
+- [ ] Обмисли passphrase-derived ключ като интерим вариант. → Оценено: отложено към D5 (Keychain/keytar) — passphrase сега = breaking change + UX триене; документиран като planned в README.
+
+#### AR3. Дублирана логика на ключа между два пакета
+- `STORE_SALT`/`AUTH_STORE_SALT` = `"syncrona-credential-store-v1"`, алгоритъмът и derivation са копирани
+  в `core/src/auth.ts` и `mcp-server/src/servicenowCore.ts`. Разминаване между двата = немога да се чете store-ът.
+- [x] Изнесена в нов `@syncrona/credential-store` пакет (НЕ `@syncrona/types`, който е само .d.ts без build). Async API (saveCredentials/loadCredentials/listInstances/removeCredentials/removeAllCredentials/setActiveInstance/getActiveInstance/resolveCredentialsFromStore/getSyncronaDir) за core + sync API (getActiveInstanceSync/loadCredentialsSync) за mcp. `core/src/auth.ts` сега е `export *` re-export; `servicenowCore.ts` консумира sync API. Build order осигурен чрез `build:deps`. Обратна съвместимост проверена — реалните `.enc` файлове се дешифрират.
+
+### P1 — Архитектурна цялост
+
+#### AR4. Два независими ServiceNow HTTP клиента
+- `core/src/snClient.ts` (axios + axios-rate-limit, retryOnErr) и
+  `mcp-server/src/servicenowCore.ts` (native fetch + ръчен retry/backoff) са паралелни имплементации
+  на едно и също нещо: scoped prefix fallback (`x_nuvo_sinc`/`x_nuvo_sync`), retry, auth header.
+- Логиката за prefix-order/caching е почти дублирана (`endpointPrefixOrder` vs `scopedPrefixOrder`).
+- Drift риск: retry статуси, rate limiting, timeout се развиват различно в двата.
+- [x] Изнесена споделената drift-склонна логика в нов built пакет `@syncrona/sn-transport` (pure, no-IO): scoped-prefix policy (`DEFAULT_SCOPED_API_PREFIXES`, `SCOPED_API_PREFIXES_ENV`, `sanitizeScopedPrefix`, `parseConfiguredScopedApiPrefixes`, `orderScopedApiPrefixes`) + retry-status policy (`RETRYABLE_HTTP_STATUSES`, `shouldRetryStatus`). И двата клиента го консумират; `core/snClient.ts` и `mcp/servicenowCore.ts` запазват СВОЯ runtime кеш на последния успешен prefix. HTTP клиентите (axios vs fetch) НЕ са слети — различни по дизайн (CLI vs дълготраен MCP runtime). `build:deps` строи credential-store + sn-transport преди консуматорите.
+
+#### AR5. `index.ts` на mcp-server смесва orchestration с re-export фасада
+- [index.ts](packages/mcp-server/src/index.ts) има ~90 реда re-export-и (ред 107–193) плюс големия
+  CallTool handler. ARCHITECTURE.md казва "keep orchestration in index.ts" — но фасадата расте неконтролируемо.
+- Handler dispatch-ът е дълга `if (response) return` верига (ред 297–488) с 11 ръчно подадени dependency обекта.
+  Това е service-locator pattern на ръка — труден за тестване и лесен за забравен wiring.
+- [x] Изнесен публичният API в нов `publicApi.ts` (barrel, само `export … from`); `index.ts` пази `export * from "./publicApi"` + `export { main }` и остава bootstrap/orchestration. Премахнат вече-неизползваният локален импорт `getSemanticIndexState` (остава публичен през barrel-а).
+- [x] Dispatch веригата заменена с ordered pipeline registry: `Array<() => Promise<ToolHandlerResponse | null> | ToolHandlerResponse | null>` от 11 хендлър closure-а, итериран в цикъл (връща първия truthy отговор, иначе "Unknown tool" fallthrough). Махнат 11× `if (response) return` boilerplate; контекст обектите запазени идентични.
+
+#### AR6. Голям обем транзитивни зависимости в root `package.json`
+- Root `dependencies` изброява ~370 пакета — на практика целият flattened lockfile е вдигнат в manifest-а
+  (acorn, webpack, jest, winston, babel… като direct deps на root). Това не е валиден dependency граф.
+- Скрива кои са истинските преки зависимости; пречи на security audit и dedupe.
+- [x] Изчисти root deps до реално преките (workspace tooling); остави транзитивните на lockfile-а.
+- [x] Изтрий `package-lock-old.json` файловете из пакетите (мъртъв артефакт).
+
+#### AR7. Несъответствия в метаданните на пакетите
+- License разминаване: root `package.json` = MIT, но `core`/`mcp-server`/`types` = GPL-3.0. Това е правен конфликт. ПОЛЗВАЙ МИТ 
+- Версии: root `0.1.0`, core `0.4.2-alpha.7`, mcp-server `0.1.0`, types `0.4.2-alpha.3`, lerna `0.4.2-alpha.6` — ТОВА ГО РЕШИ ТИ 
+  пет различни схеми. `engines.node` също се разминава (root/mcp `>=22`, types няма).
+- [x] Уеднакви license навсякъде (избери една и я приложи последователно).
+- [x] Възприеми единна версионна стратегия (lerna `version` командата или fixed mode).
+
+#### AR8. `repository.url` сочи към `nuvolo/syncrona`, а проектът е "syncro-now-ai" ТОВА НУВОЛО КАКВО Е? 
+- Nuvolo = компания (enterprise asset management върху ServiceNow, придобита от Nemetschek); `nuvolo/syncrona` е наследен/остарял URL от произхода на проекта.
+- [x] Премахнати `repository`/`bugs`/`homepage` (+ мъртвия `gitHead` артефакт) от ВСИЧКИ package.json — решение: няма реален публичен repo засега, по-чисто отколкото грешен URL. Всички 12 package.json остават валиден JSON, нула `nuvolo` референции.
+
+### P2 — Качество и поддръжка
+
+#### AR9. Тестова стратегия е разделена и непълна
+- core: Jest с coverage gate. mcp-server: native `node --test` срещу **компилирания `dist/`** (`test/*.test.js`),
+  не срещу TS source. Това тества build артефакт, не четим source — рефакторите чупят тестове по неясен начин.
+- Целият голям CallTool handler е под `/* node:coverage disable */` — критичният dispatch път е извън coverage.
+- [ ] Обмисли уеднаквяване на test runner-а (ts-jest за двата) или поне TS-level тестове за handler dispatch. → Частично: dispatch логиката вече има отделни тестове (test/toolDispatch.test.js, node:test срещу dist — консистентно с mcp стратегията). Пълна ts-jest миграция на mcp-server остава HIGH RISK (88 теста срещу dist) и не е направена.
+- [x] Изнеси dispatch логиката в чиста функция за да падне `coverage disable`. → Изнесена в нов leaf модул packages/mcp-server/src/toolDispatch.ts (dispatchToolPipeline + типове ToolHandlerResponse/ToolHandlerInvocation). index.ts вече вика чистата функция вместо inline IIFE. Decision логиката (first-truthy-wins + fallback) е сега покрита/тествана (+4 теста). ЗАБЕЛЕЖКА: целият `node:coverage disable` блок НЕ падна напълно — той обвива и живия wiring (executeMcpToolIntegration, мрежа/процес); само dispatch решението е изнесено.
+
+#### AR10. Мълчаливо поглъщане на грешки (catch-and-ignore)
+- Pattern `catch (_) { return {} }` / `// silently ignore` се повтаря в secrets loading (servicenowCore),
+  credential store (auth.ts), audit writer. Удобно, но крие конфигурационни грешки от потребителя.
+- [x] Поне debug-level лог зад флаг при swallow на грешка (вързано с TODO D3 correlation logging). Добавени logger.debug при secrets loading (servicenowCore: loadFromDotEnv/loadFromSecretsFile) и audit writer (writeAuditEvent/checkAuditLogIntegrity); видими при SYNCRONA_LOG_LEVEL=debug.
+
+#### AR11. Module-level mutable state
+- `cachedScopedApiPrefix` / `cachedScopedEndpointPrefix`, `internalClient`, `storedCredentialsCache`,
+  `TOOL_METRICS`, `LAST_AUDIT_INTEGRITY_STATUS` са module singletons. ОК за single-process stdio MCP,
+  но правят unit тестовете stateful (нужни reset hooks) и блокират бъдещ multi-instance/HTTP режим.
+- [ ] Капсулирай в explicit context/контейнер обект, подаван надолу (по-лесно за тест и reuse).
+
+#### AR12. `main` entry на root package.json сочи към несъществуващ `index.js`
+- Root е workspace orchestrator, не публикуем пакет — `"main": "index.js"` е подвеждащ.
+- [x] Добави `"private": true` на root (предпазва случаен `npm publish`) и махни `main`.
+
+### Силни страни (да се запазят)
+- Чисто разделена handler/analysis структура в mcp-server; ARCHITECTURE.md документира правилата.
+- Audit log с redaction на sensitive ключове + integrity check/quarantine — добра security дисциплина.
+- Guardrail/policy слой, dry-run, preflight, graceful shutdown — зряла MCP safety постановка.
+- Coverage gates и docs-drift checker в CI показват внимание към регресии.
+
+### Препоръчан ред на действие
+1. AR1 + AR2/AR3 (creds + crypto) — преди всякакъв публичен release.
+2. AR7/AR8/AR12 (метаданни/license) — бърз, нискорисков cleanup.
+3. AR4/AR5 (дублиран клиент + dispatch registry) — най-голяма дългосрочна стойност.
+4. AR6/AR9/AR10/AR11 — постепенно, успоредно с Фаза C/D.
+
+---
+
+## DEEP DX RESEARCH — Как да направим проекта изключително лесен за употреба (2026-06-11)
+Анализирал съм цялата journey от инсталация до ежедневна разработка: CLI, Config, Docs, Workflow, Error Handling, MCP.
+**Фокус: шум-точки които правят "даже прост" task-ът неприятен за нови потребители.**
+
+### SETUP & ONBOARDING (DX1-DX4)
+
+**DX1: Windows WSL requirement е задавилка**
+- README: "preferably Windows Terminal and WSL (1903+)". Това е скрито, не е ясно че е REQUIRED.
+- 95% потребители на Windows нямат WSL инсталиран и не знаят как да го направят.
+- [ ] Добави `syncrona check-env` който да детектира OS, Node, WSL, Git и отпечатва actionable next steps.
+- [ ] Update README с видим "⚠️ Windows users" секция с link към WSL 2 setup guide.
+
+**DX2: Credential store vs .env confusion**
+- Потребителят има 4 источника: env var, CredentialStore, .env, prompt. Fallback логиката е невидима.
+- Wizard не показва окончателния source — потребителят не знае откъде дошли credentials.
+- [ ] `syncrona status` да отпечатва "Credentials from: .env" или "from CredentialStore (syncrona login)".
+- [ ] Wizard да покаже: "Found SN_INSTANCE in .env. Using this? (yes/no/enter-new)".
+
+**DX3: Multi-instance workflow недокументиран**
+- `--instance-profile` е в help, но няма примери. Потребителят трябва да угаи синтаксиса.
+- Няма guide за dev+prod workflow или безопасен context switch.
+- [ ] Добави `MULTI_INSTANCE.md` guide: как да setup profiles, `syncrona use [instance]`, CI/CD примери.
+
+**DX4: Auto-init monorepo е неочаквано**
+- `syncrona init` при SN_* env vars ще направи `packages/x_*/` за всички scopes.
+- Потребителят се чуди защо внезапно имa 10 нови папки.
+- [ ] Преди auto-init, покажи: "Found 10 scoped apps. Create packages/x_*/? (y/n)".
+
+---
+
+### CLI INTERFACE (DX5-DX7)
+
+**DX5: Help текстовете липсват примери**
+- `syncrona push --help` казва "[DESTRUCTIVE]" което е пугащо, но няма примери за безопасен workflow.
+- Няма `--dry-run` подсказка в help.
+- [ ] За всяка команда, добави пример: `syncrona push --dry-run`, `syncrona push --diff main`.
+
+**DX6: `--diff` флаг е неясен**
+- `syncrona push --diff main` пречи, дей push-ва всичко (не филтрира changed files).
+- Documentation казва "audit trail", но примерите неясни.
+- [ ] Добави `--changed-only` флаг за истински diff push.
+- [ ] Documento: `--diff main` = audit (push всичко, но track changes), `--changed-only` = филтър.
+
+**DX7: `--instance-profile` на ВСЯКА команда е verbose**
+- Типична работа: `syncrona status --instance-profile dev`, `syncrona push --instance-profile dev`.
+- Потребителят трябва да помни флага всеки път.
+- [ ] Добави `.syncrona-local` конфиг (gitignored): `{ "instanceProfile": "dev" }`.
+- [ ] Локален profile перса в `syncrona use [instance]` (не глобалния store).
+
+---
+
+### CONFIGURATION COMPLEXITY (DX8-DX11)
+
+**DX8: Plugin discovery requires manual names**
+- Потребителят трябва да знае че "TypeScript plugin" се нарича "@syncrona/typescript-plugin" в npm.
+- `syncrona plugins` показва някои, но не помага при adding new plugins.
+- [ ] Добави `syncrona config add-plugin` интерактивен chooser: листа plugins, валидира, генерира boilerplate.
+
+**DX9: Default includes/excludes скрити в code**
+- "Sane defaults" са в defaultManifestConfig.ts. Потребителят трябва да чете source код за да разбере.
+- [ ] `syncrona status` да покажи "Active includes/excludes" + sources (defaults vs. overrides).
+- [ ] `syncrona config show-defaults` да листа всички defaults.
+
+**DX10: `sync.config.js` rule order matters, но няма validation**
+- README: "Order your rules by MOST SPECIFIC extension first!" Потребителят може да отнесе грешни order и тихо да fail.
+- Няма error, няма warning.
+- [ ] `syncrona build --check-config` да валидира правилния ред (`.ts` преди `.js` итд).
+- [ ] `--verbose build` да покажи кой file матча кой rule.
+
+**DX11: Advanced options недокументирани (`displayField`, `differentiatorField`)**
+- TableOptions са една строчка в README. Когда да се използват? За какво е `differentiatorField`?
+- "Will break the Windows filesystem" е лош сигнал.
+- [ ] Документирай use case: `displayField` = records с еденствено име, `differentiatorField` = dedup по sys_id.
+- [ ] Warning: `differentiatorField` блокира Windows поддържка.
+
+---
+
+### DOCUMENTATION & EXAMPLES (DX12-DX15)
+
+**DX12: FAQ е скътпа**
+- Има "How do I Delete Something?" и "How do I Add Scripts?" но няма "How do I work with multiple instances?" или error recovery.
+- [ ] Добави FAQ: multi-user workflow, environment switching, performance tuning, troubleshooting.
+- [ ] "Getting Unstuck" раздел: common problems + solutions.
+
+**DX13: Plugin development docs липсват**
+- Потребител който пише plugin чете source код. Няма spec, lifecycle, API.
+- [ ] `PLUGIN_DEVELOPMENT.md`: template plugin, example transformations, interface spec.
+
+**DX14: Workspace/monorepo guide липсва**
+- README: "run from specific scope directory" но няма full workflow пример (init, configure, share deps, CI/CD).
+- [ ] `docs/MONOREPO_GUIDE.md`: структура, per-scope config, shared node_modules, pipeline examples.
+
+**DX15: MCP integration docs hardcoded paths и скътпи**
+- MCP quickstart има `/Users/Ivan.Baev/Development/...` в примерите.
+- Няма explanation какво е auto-pull, защо, когда disable.
+- [ ] Update с $HOME substitution или template generator.
+- [ ] Документирай auto-pull, troubleshooting MCP startup.
+
+---
+
+### WORKFLOW & DEVELOPER EXPERIENCE (DX16-DX18)
+
+**DX16: Manifest refresh interval скрит конфиг**
+- `refreshInterval: 30` е по подразбиране. Потребител със slow network мързелува.
+- Няма ясна документация какво правят 30 сек refresh-ът.
+- [ ] Документирай refresh behavior и performance.
+- [ ] `--verbose dev` да отпечатва "Manifest refresh took Xms".
+- [ ] `syncrona dev --refresh-interval 60` флаг.
+
+**DX17: File structure е странна за нови потребители**
+- "Records are shown as folders..." но потребителят очаква flat structure (src/scripts/my.js).
+- [ ] Добави `--flat` mode: локално flat, автоматично преобразует преди push/pull.
+
+**DX18: Error recovery недокументирана**
+- Partial push failure (network dies). Потребителят не знае дали retry е безопасен.
+- Няма recovery guide.
+- [ ] `syncrona repair` да проверява manifest vs. actual files и repair.
+
+---
+
+### ERROR MESSAGES & DEBUGGING (DX19-DX21)
+
+**DX19: Generic error messages не помагат**
+- Добър пример: "Your scope is X but config is Y". Много други errors: "Error processing response".
+- Потребителят не знае какво да направи.
+- [ ] Error categorization: "Network" (retry), "Config" (fix), "Data" (support).
+- [ ] Actionable next steps за всеки error.
+
+**DX20: Silent error swallowing при credential loading**
+- Както говори AR10, грешки при secrets loading са swallow-ни. Потребителят не знае дали .env е невалиден.
+- [ ] `syncrona status --debug-credentials` да отпечатва всички sources и защо са отхвърлени.
+
+**DX21: Verbose logging неполна**
+- `--log-level debug` е налично, но output е мълчалив. Потребител stuck не знае какво се случва.
+- [ ] Профилирани лог точки: "Starting refresh...", "Queued 5 files...", "Waiting for API...".
+
+---
+
+### ADVANCED FEATURES (DX22-DX24)
+
+**DX22: Dry-run output е JSON вместо таблица**
+- Потребителят не вижда лесно какви файлове ще се push-нат.
+- [ ] Table format: `File | Action | Changes | Size`.
+
+**DX23: `--diff` feature недостатъчно документирана**
+- Потребителят не знае че това е за audit trail / compliance review.
+- [ ] Документирай use case ясно.
+
+**DX24: Rate limiting & concurrency не е видима**
+- `pushConcurrency: 10` е hardcoded. Няма progress bar.
+- [ ] `--push-concurrency N` флаг.
+- [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)".
+
+---
+
+## ДЪЛБОКО КОД РЕВЮ (2026-06-12) — Senior Dev / Architect / QA
+Пълен преглед на source-а: core CLI (всички модули), mcp-server runtime (index, servicenowCore,
+audit, safetyPolicy, processRunner, toolService, inputValidation), credential-store, конфигурация,
+CI и тестова стратегия. НЕ повтаря AR1–AR12 / DX1–DX24 — само нови находки; връзките са отбелязани.
+Номерация CR* (code review). Приоритет: P0 (блокер), P1 (бъг с реален ефект), P2 (качество/полиш).
+
+### P0 — Блокери
+
+#### CR1. Проектът НЕ е git repository
+- `git status` → "fatal: not a git repository". Има `.gitignore`, `azure-pipelines.yml`, release
+  tagging скрипт и `push --diff` (git diff) — всичко предполага git, а repo няма.
+- Една повреда на диска = загуба на целия проект; няма история, няма преглед на промени.
+- [ ] `git init` + първоначален commit (преди това провери `.gitignore` покритието: `dist/`, `.env`,
+  `junit.xml`, `.syncrona-mcp/audit.log` вече са вътре).
+- [ ] Реши за remote (AR8 каза "няма публичен repo засега" — поне локален git + backup).
+
+#### CR2. `packages/core/.env` пак съдържа credentials
+- AR1 е маркиран done, но файлът съдържа `SN_USER=Tyler` / `SN_PASSWORD=Edwards` /
+  `SN_INSTANCE=dev90755.service-now.com`. Ако са dummy — ок, но изглеждат като реален dev instance.
+- Стойностите имат trailing spaces ("Tyler ") — отделен footgun при парсване.
+- [ ] Потвърди дали са реални; ако да — изтрий и ротирай (AR1 ротацията така или иначе е отворена).
+- [ ] Махни trailing whitespace или мини изцяло на credential store за локална работа.
+
+### Senior Dev — коректност (P1)
+
+#### CR3. Мъртъв "create user preference" branch — командата гърми вместо да създаде записа
+- `unwrapTableAPIFirstItem` ХВЪРЛЯ при празен масив ([snClient.ts:483-485](packages/core/src/snClient.ts#L483-L485)),
+  затова `curAppUserPrefId !== ""` в [appUtils.ts:594-602](packages/core/src/appUtils.ts#L594-L602) и
+  `curUpdateSetUserPrefId !== ""` в [appUtils.ts:626-638](packages/core/src/appUtils.ts#L626-L638)
+  никога не виждат "". `createCurrentAppUserPref` / `createCurrentUpdateSetUserPref` са unreachable.
+- Ефект: при потребител без съществуващ user preference `--scopeSwap` / `--updateSet` фейлват с
+  "Response was not a populated array!" вместо да създадат preference-а.
+- [ ] Връни "empty → ''" семантика (overload без throw) или хвани специфичната грешка и създай записа.
+- [ ] Регресионен тест за "няма pref запис" пътя.
+
+#### CR4. `getUserSysId()` чете `SN_USER` директно от env
+- [snClient.ts:182](packages/core/src/snClient.ts#L182) — default параметър `process.env.SN_USER`.
+  При login през credential store (без .env) или с `--instance-profile` → `user_name=undefined`.
+- Засяга scope swap и update set assignment (тихо се ползва грешен потребител).
+- [ ] Ползвай `resolveCredentials(profile).user` вместо raw env.
+
+#### CR5. Push checkpoint се записва ПРЕДИ confirm prompt-а
+- [pushCommand.ts:209](packages/core/src/pushCommand.ts#L209) пише checkpoint (failed=attempted),
+  prompt-ът е на ред 211. Отказ → checkpoint остава на диска → следващият push предлага фалшив
+  "Resume only failed records from the previous run?".
+- [ ] Мести записа на checkpoint-а след потвърждението (непосредствено преди pushFiles).
+
+#### CR6. `process.exit()` прескача finally → стар collaboration lock
+- [pushCommand.ts:237](packages/core/src/pushCommand.ts#L237) (`exit(0)` при отказ на update set
+  prompt) и [pushCommand.ts:265](packages/core/src/pushCommand.ts#L265) (`exit(1)` в catch) убиват
+  процеса преди `finally { releaseCollaborationLock() }` → lock файлът виси до 30-мин staleness.
+- [ ] Замени exit с return / освободи lock-а явно преди exit.
+
+#### CR7. Collaboration lock не е атомарен и е вързан за cwd
+- Load→check→write TOCTOU в [pushCommand.ts:102-123](packages/core/src/pushCommand.ts#L102-L123) —
+  два едновременни push-а могат и двата да "вземат" lock-а. Ползвай `writeFile(..., { flag: "wx" })`.
+- Lock/checkpoint пътищата са `process.cwd()` ([pushCommand.ts:33-34](packages/core/src/pushCommand.ts#L33-L34)),
+  не project root (`ConfigManager.getRootDir()`) — стартиране от поддиректория = друг lock.
+- [ ] Атомарен create + преместване в root dir.
+
+#### CR8. `buildCommand` поглъща грешката безследно
+- [commands.ts:229-231](packages/core/src/commands.ts#L229-L231): `catch { process.exit(1) }` —
+  exit 1 без НИКАКВО съобщение. Потребителят не вижда защо build-ът е паднал.
+- [ ] Логни грешката преди exit.
+
+#### CR9. `scopeCheck` маскира реалната грешка на всяка команда
+- [commandHelpers.ts:29-49](packages/core/src/commandHelpers.ts#L29-L49): целият команден body
+  (`successFunc`) е в същия try → ВСЯКА грешка (мрежа, конфиг, push) се репортва като
+  "Failed to check your scope!" + exit(1). Реалната причина се губи; `throw new Error()` без message.
+- [ ] Раздели scope-check грешките от грешките на командата; логни оригиналното съобщение.
+
+#### CR10. `refreshCommand` печата успех при провал
+- `syncManifest` гълта всички грешки и само ги логва ([appUtils.ts:121-127](packages/core/src/appUtils.ts#L121-L127)),
+  след което [devCommands.ts:34](packages/core/src/devCommands.ts#L34) безусловно печата
+  "Refresh complete! ✅". False positive — потребителят мисли, че е синхронизиран.
+- [ ] syncManifest да връща статус (или да хвърля); refresh да репортва реалния резултат.
+
+#### CR11. dev mode: припокриващи се refresh-и и вечен interval
+- [devCommands.ts:15-22](packages/core/src/devCommands.ts#L15-L22): `setInterval` пуска
+  `refreshCommand` без await/guard — бавен refresh (>30s) → паралелни `syncManifest` → race върху
+  manifest файла. Интервалът никога не се clear-ва (няма graceful stop на dev mode).
+- [ ] In-flight guard (skip ако предният не е свършил) + clearInterval при stop/SIGINT.
+
+#### CR12. Watcher: конкурентни push-ове и неawait-нат close
+- Debounce-ът ([Watcher.ts:12](packages/core/src/Watcher.ts#L12)) не предпазва от втори push докато
+  първият тече — промени по време на push стартират паралелен `pushFiles` за същите файлове.
+- `watcher.close()` ([Watcher.ts:67](packages/core/src/Watcher.ts#L67)) връща Promise — не се await-ва.
+- Слуша само "change" — нови файлове ("add") не се push-ват.
+- [ ] Сериализирай queue processing-а (busy флаг + re-run); реши дали "add" е желан trigger.
+
+#### CR13. commander: fire-and-forget async handlers, без strict mode
+- Всички yargs handlers ([commander.ts:42-261](packages/core/src/commander.ts#L42-L261)) викат async
+  команди без await/catch → throw (напр. от `initCommand`/`downloadCommand`) = unhandled rejection
+  с грозен stack вместо чисто съобщение.
+- Няма `.strict()`/`demandCommand` → `syncrona foo` мълчи. Typos в help: "anme", "synce".
+- [ ] `.strict()`, demandCommand(1), wrap handlers с общ error handler; оправи typos.
+
+#### CR14. `processPushResponse` е мъртъв код по failure пътищата
+- axios хвърля при не-2xx по подразбиране → 404/non-2xx branches в
+  [snClient.ts:62-74](packages/core/src/snClient.ts#L62-L74) не се достигат (всичко минава през catch
+  на `pushRec`). Сообщението "Could not find X on the server" реално никога не се показва.
+- [ ] Или подай `validateStatus`, или опрости функцията до success пътя.
+
+#### CR15. `retryOnErr` ретрайва и auth грешки
+- [snClient.ts:37-56](packages/core/src/snClient.ts#L37-L56) ретрайва ВСИЧКО — вкл. 401/403.
+  3 ретрая с грешна парола = риск от account lockout на инстанцията.
+- [ ] Не ретрайвай 4xx (без 408/429); ползвай `shouldRetryStatus` от @syncrona/sn-transport (AR4).
+
+#### CR16. gitUtils: floating promise, неквотирани пътища, rename статуси
+- `writeDiff` не await-ва `writeFile` ([gitUtils.ts:31](packages/core/src/gitUtils.ts#L31)) → връща
+  преди записа; възможен unhandled rejection.
+- `cp.exec("git diff ... -- ${sourcePath}")` ([gitUtils.ts:16](packages/core/src/gitUtils.ts#L16)) —
+  пътища с интервали чупят командата; интерполиран `target` от CLI арг = injection вектор (нисък риск,
+  но `execFile` е правилно).
+- `--name-status` rename редове ("R100\told\tnew") дават боклук-път → тихо изпуснати файлове при
+  `push --diff` ([gitUtils.ts:44-54](packages/core/src/gitUtils.ts#L44-L54)).
+- [ ] `execFile` с args масив; обработи R/C статуси; await на writeFile.
+
+### Architect — дизайн и консистентност (P1/P2)
+
+#### CR17. Несъгласувана credential precedence: CLI vs MCP server
+- core: bootstrap зарежда `.env` в process.env → env (вкл. .env) ПЕЧЕЛИ над credential store
+  ([snClient.ts:384-409](packages/core/src/snClient.ts#L384-L409)).
+- mcp: process-env > auth-store > secrets-file > **.env последен**
+  ([servicenowCore.ts:157-174](packages/mcp-server/src/servicenowCore.ts#L157-L174)).
+- Един и същ проект може да говори с РАЗЛИЧНИ инстанции от CLI и от MCP. Свързано с DX2.
+- [ ] Дефинирай една канонична precedence верига (в sn-transport или credential-store) и я ползвай в двата.
+
+#### CR18. "Endpoint unavailable" policy drift (AR4 остатък)
+- core третира 400/403/404 като scoped-endpoint-missing ([snClient.ts:33](packages/core/src/snClient.ts#L33),
+  [manifestBuilder.ts:640](packages/core/src/manifestBuilder.ts#L640)); mcp — само 404
+  ([servicenowCore.ts:254](packages/mcp-server/src/servicenowCore.ts#L254)).
+- sn-transport унифицира retry статусите, но не и тази политика — точно drift-а, който AR4 цели.
+- [ ] Изнеси `ENDPOINT_NOT_FOUND_STATUSES` + helper в @syncrona/sn-transport.
+
+#### CR19. `vm.runInNewContext` за sync.config.js е псевдо-sandbox
+- [config.ts:171-181](packages/core/src/config.ts#L171-L181) подава реални `process`, `require`,
+  `console` в "sandbox"-а → никаква изолация, но кодът внушава такава.
+- [ ] Замени с обикновен `require`/`import` + документирай "config файлът е изпълним код", или махни
+  vm-а. Сегашното е заблуждаващо и за четеца, и за security преглед.
+
+#### CR20. Счупен sync.config.js → тихо default config
+- Syntax error → warn + `DEFAULT_CONFIG` ([config.ts:196-203](packages/core/src/config.ts#L196-L203)).
+  Команди продължават с ГРЕШНИ includes/excludes/rules — push/build на грешни неща. Свързано с DX10.
+- [ ] Разграничи "няма config" (default ок) от "config-ът не се парсва" (hard fail).
+
+#### CR21. Blocking `scryptSync` на всеки MCP request
+- `resolveServiceNowSecrets` вика ВСИЧКИ providers безусловно ([servicenowCore.ts:186-194](packages/mcp-server/src/servicenowCore.ts#L186-L194));
+  auth-store провайдърът → `loadCredentialsSync` → `getMachineKey()` → `scryptSync` (~30-100ms CPU
+  block) на ВСЕКИ `snRequest` в дълготраен server.
+- [ ] Кеширай resolved secrets (+ machine key) с invalidation (mtime/TTL); short-circuit щом merged е пълен.
+
+#### CR22. `sys.scripts.do` fallback е крехък и заобикаля REST одита
+- [servicenowCore.ts:399-427](packages/mcp-server/src/servicenowCore.ts#L399-L427): UI endpoint —
+  обикновено изисква `sysparm_ck` CSRF token и сесия; с Basic auth поведението варира по версии
+  (302/403/HTML). Освен това не минава през REST ACL/audit пътя на инстанцията.
+- [ ] Документирай ограничението + третирай като last-resort с явен флаг; провери дали изобщо работи
+  срещу съвременен release (иначе е мъртъв код с security миризма).
+
+#### CR23. `autoPullAllScopesAndData()` блокира MCP handshake
+- [index.ts:455-467](packages/mcp-server/src/index.ts#L455-L467): тежкият network pull е ПРЕДИ
+  `server.connect(transport)` → при бавна инстанция MCP клиентът timeout-ва на startup.
+- [ ] Connect първо, auto-pull във фонов режим (с readiness статус в health snapshot).
+
+#### CR24. manifestBuilder: без пагинация + грешка ≡ "няма данни"
+- `sysparm_limit` 500/10000 без offset loop ([manifestBuilder.ts](packages/core/src/manifestBuilder.ts)) —
+  таблица с >500 записа бива ТИХО отрязана в manifest-а.
+- Навсякъде `catch { return [] }` — мрежова грешка изглежда като празна таблица; полупразен manifest
+  се записва върху добрия (изгубени file contexts → push тихо ги прескача).
+- [ ] Пагинация (offset loop до < limit); разграничи error от empty (поне warn + не презаписвай
+  manifest при частичен резултат).
+
+#### CR25. `buildBulkDownloadFromTableAPI` не чанква sys_idIN
+- [manifestBuilder.ts:571](packages/core/src/manifestBuilder.ts#L571): `sys_idIN${all}` без chunk —
+  стотици записи → прекомерно дълъг URL (414), докато `getRecordsForTable` чанква по 200.
+- [ ] Преизползвай `chunkArray(..., 200)` и тук.
+
+### QA — тестове, CI, валидация (P1/P2)
+
+#### CR26. Coverage gate-ът на core покрива САМО src/commands.ts
+- [jest.config.js](packages/core/jest.config.js): `collectCoverageFrom: ['src/commands.ts']` —
+  CI стъпката "coverage gates (core>=80%)" реално мери 1 от ~28 файла. Подвеждаща метрика;
+  snClient/appUtils/pushCommand (където са CR3–CR16) нямат gate изобщо.
+- [ ] Разшири collectCoverageFrom до src/**/*.ts (без tests) и калибрирай праговете реалистично.
+
+#### CR27. Schema валидация за 6 от ~60 MCP tools
+- [inputValidation.ts:16-78](packages/mcp-server/src/inputValidation.ts#L16-L78): пълни zod схеми
+  само за 6 tools + top-level identifier checks; останалите минават `passthrough`.
+- [ ] Минимум: схеми за всички MUTATING_TOOLS (safetyPolicy списъка), после останалите.
+
+#### CR28. safetyPolicy е deny-list и approval-ите не се верифицират
+- `BLOCKED_COMMANDS` не покрива `node -e`, `python -c`, `npx rimraf`, `find -delete`…
+  ([safetyPolicy.ts:21-33](packages/mcp-server/src/safetyPolicy.ts#L21-L33)) — заобиколимо по
+  конструкция; плюс `run_node_code` съществува зад флаг.
+- `isApprovalSatisfied` приема каквито-и-да-е стрингове (approvalId/approvers) без верификация —
+  "approval theater" ([safetyPolicy.ts:146-167](packages/mcp-server/src/safetyPolicy.ts#L146-L167)).
+- [ ] Документирай явно, че това НЕ е security boundary (а UX guardrail); обмисли allow-list за
+  workspace команди.
+
+#### CR29. Липсват регресионни тестове за push state машината
+- Checkpoint decline (CR5), lock release при exit (CR6), resume филтъра, watcher конкурентност (CR12)
+  нямат тестове — точно там са намерените бъгове. commandsFlow.test.ts покрива happy paths.
+- [ ] Тестове за: decline→няма checkpoint; грешка→lock освободен; resume филтрира коректно.
+
+#### CR30. Repo хигиена
+- `СЛОВА` — празен файл на root. `fixes.md` — stale (S1/S2/S3 вече фиксирани; проверено: tsconfig
+  module=commonjs, core main=./dist/index.js). `packages/core/junit.xml` — тестов артефакт в дървото.
+- Per-package `package-lock.json` (core, mcp-server) при npm workspaces — само root lock е канон.
+- `.claude/settings.local.json`, `.syncrona-mcp/audit.log` — локални артефакти в дървото.
+- [ ] Изчисти/актуализирай; след `git init` (CR1) провери какво влиза в първия commit.
+
+### Препоръчан ред на действие (CR)
+1. CR1 (git init) + CR2 (.env) — днес, преди каквото и да е друго.
+2. CR5/CR6/CR7 (push state) + CR3/CR4 (мъртви branches/env creds) — следващ работен блок; това са
+   реални user-facing бъгове.
+3. CR8–CR16 (error handling/CLI) — пакетно, заедно с CR29 тестовете.
+4. CR17–CR25 (архитектура) — планирай с Фаза D; CR21/CR23 са най-голям ефект за MCP.
+5. CR26–CR28, CR30 — успоредно, ниско-рискови.
+
+---
+
+### КРАТКОСРОЧНИ WINS (день-два, висока стойност)
+
+1. **DX1**: `syncrona check-env` — спасява нови Windows потребители.
+2. **DX2**: Credential source в `syncrona status` — устранява confusion.
+3. **DX5**: Примери в help текстовете.
+4. **DX7**: `.syncrona-local` per-profile config — daily comfort.
+5. **DX19/DX20**: Better error messages — най-голямата дневна ROI.
+
+### ДЪЛГОТЕРМИНИ ИНВЕСТИЦИИ (3-5 дни, бъдеща стойност)
+
+1. **DX12-DX15**: Документация (FAQ, Plugin, Monorepo, MCP) — 4 часа.
+2. **DX8**: Interactive config:add-plugin — 2 часа.
+3. **DX16-DX21**: Workflow улучшения (verbose logging, repair, recovery) — 3 часа.
+4. **DX22-DX24**: UI улучшения (dry-run table, progress bar, rate limiting) — 2 часа.

@@ -1,0 +1,25 @@
+{
+  "name": "@syncrona/credential-store",
+  "version": "0.4.2-alpha.8",
+  "description": "Shared encrypted credential store for Syncrona (core CLI and MCP server).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.4",
+    "typescript": "^5.2.2"
+  }
+}

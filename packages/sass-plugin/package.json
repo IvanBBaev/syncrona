@@ -1,0 +1,24 @@
+{
+  "name": "@syncrona/sass-plugin",
+  "version": "0.4.2-alpha.8",
+  "description": "SASS plugin for Syncrona",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "sass": "^1.93.2"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^0.4.2-alpha.8",
+    "@types/node": "^20.8.4"
+  }
+}

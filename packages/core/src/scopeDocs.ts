@@ -1,0 +1,250 @@
+import { SN } from "@syncrona/types";
+import { promises as fsp } from "fs";
+import path from "path";
+
+export const DOCS_AUTO_START = "<!-- SYNCRONA:DOCS:START -->";
+export const DOCS_AUTO_END = "<!-- SYNCRONA:DOCS:END -->";
+
+/**
+ * Short, human-readable descriptions for common ServiceNow tables so generated
+ * docs explain what each "package" of artifacts is, not just its name.
+ */
+const TABLE_DESCRIPTIONS: Record<string, string> = {
+  sys_script: "Business Rules — server-side logic that runs on database operations.",
+  sys_script_include: "Script Includes — reusable server-side classes and functions.",
+  sys_script_client: "Client Scripts — browser-side logic running on forms.",
+  sys_script_fix: "Fix Scripts — one-off server-side migration/maintenance scripts.",
+  sys_ui_script: "UI Scripts — reusable client-side scripts loaded into the UI.",
+  sys_ui_action: "UI Actions — buttons, links, and context-menu actions on forms/lists.",
+  sys_ui_page: "UI Pages — Jelly/HTML pages rendered by the platform.",
+  sys_ui_macro: "UI Macros — reusable Jelly fragments embedded in pages.",
+  sysevent_script_action: "Script Actions — scripts triggered by platform events.",
+  sysauto_script: "Scheduled Jobs — scripts executed on a schedule.",
+  sys_processor: "Processors — endpoint handlers mapped to URLs.",
+  sys_rest_message: "REST Messages — outbound REST integration definitions.",
+  sys_transform_map: "Transform Maps — import-set field mapping definitions.",
+  sys_web_service: "Scripted Web Services — scripted SOAP/REST endpoints.",
+  sys_ws_operation: "Scripted REST Operations — operations on scripted REST APIs.",
+  catalog_script_client: "Catalog Client Scripts — client logic on catalog items.",
+  sys_atf_test: "ATF Tests — Automated Test Framework test definitions.",
+  sys_atf_step: "ATF Steps — individual steps within ATF tests.",
+  sp_widget: "Service Portal Widgets — portal UI components (HTML/CSS/client/server).",
+  sys_style: "Field Styles — conditional styling rules for fields.",
+  sys_security_acl: "ACLs — access control rules.",
+};
+
+export interface ScopeTableSummary {
+  table: string;
+  description: string;
+  recordCount: number;
+  fileCount: number;
+  records: Array<{ name: string; files: string[] }>;
+}
+
+export interface ScopeSummary {
+  scope: string;
+  tableCount: number;
+  recordCount: number;
+  fileCount: number;
+  tables: ScopeTableSummary[];
+}
+
+export interface GenerateScopeDocsOptions {
+  /** Directory the per-scope markdown file is written to. Default: docs/scopes */
+  outDir?: string;
+  /** Current date/time injected for deterministic testing. */
+  now?: Date;
+}
+
+function describeTable(table: string): string {
+  return TABLE_DESCRIPTIONS[table] || `Records from the \`${table}\` table.`;
+}
+
+/** Builds a deterministic, sorted summary of a downloaded scope manifest. */
+export function summarizeManifest(manifest: SN.AppManifest): ScopeSummary {
+  const tables: ScopeTableSummary[] = [];
+  let totalRecords = 0;
+  let totalFiles = 0;
+
+  const tableNames = Object.keys(manifest.tables || {}).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
+  for (const table of tableNames) {
+    const tableConfig = manifest.tables[table];
+    const recordEntries = Object.values(tableConfig.records || {});
+    const records = recordEntries
+      .map((record) => ({
+        name: record.name,
+        files: (record.files || []).map((file) => file.name).sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const fileCount = records.reduce((acc, record) => acc + record.files.length, 0);
+    totalRecords += records.length;
+    totalFiles += fileCount;
+
+    tables.push({
+      table,
+      description: describeTable(table),
+      recordCount: records.length,
+      fileCount,
+      records,
+    });
+  }
+
+  return {
+    scope: manifest.scope,
+    tableCount: tables.length,
+    recordCount: totalRecords,
+    fileCount: totalFiles,
+    tables,
+  };
+}
+
+function sanitizeMermaidLabel(value: string): string {
+  return String(value || "")
+    .replace(/["\\]/g, "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
+}
+
+/** Renders a Mermaid flowchart linking the scope to its tables and counts. */
+export function buildScopeMermaid(summary: ScopeSummary): string {
+  const lines: string[] = ["```mermaid", "flowchart LR"];
+  const scopeLabel = sanitizeMermaidLabel(summary.scope) || "scope";
+  lines.push(`  scope["${scopeLabel}"]`);
+
+  summary.tables.forEach((table, index) => {
+    const label = `${sanitizeMermaidLabel(table.table)}<br/>${table.recordCount} records`;
+    lines.push(`  t${index}["${label}"]`);
+    lines.push(`  scope --> t${index}`);
+  });
+
+  lines.push("```");
+  return lines.join("\n");
+}
+
+/**
+ * Builds the auto-generated documentation block (without the surrounding
+ * markers) describing the scope, its tables, and per-record files.
+ */
+export function buildScopeDocBody(
+  summary: ScopeSummary,
+  now: Date = new Date()
+): string {
+  const out: string[] = [];
+  out.push(
+    `_Generated by syncrona on ${now.toISOString()}. Content inside this block is regenerated on each sync — add manual notes outside the block._`
+  );
+  out.push("");
+  out.push("## Overview");
+  out.push("");
+  out.push(`- Scope: \`${summary.scope}\``);
+  out.push(`- Tables: ${summary.tableCount}`);
+  out.push(`- Records: ${summary.recordCount}`);
+  out.push(`- Files: ${summary.fileCount}`);
+  out.push("");
+
+  out.push("## Architecture");
+  out.push("");
+  out.push(buildScopeMermaid(summary));
+  out.push("");
+
+  out.push("## Tables");
+  out.push("");
+  if (summary.tables.length === 0) {
+    out.push("_No tables were found for this scope._");
+  } else {
+    out.push("| Table | Description | Records | Files |");
+    out.push("| --- | --- | --- | --- |");
+    for (const table of summary.tables) {
+      out.push(
+        `| \`${table.table}\` | ${table.description} | ${table.recordCount} | ${table.fileCount} |`
+      );
+    }
+  }
+  out.push("");
+
+  for (const table of summary.tables) {
+    out.push(`### \`${table.table}\``);
+    out.push("");
+    out.push(table.description);
+    out.push("");
+    if (table.records.length === 0) {
+      out.push("_No records._");
+      out.push("");
+      continue;
+    }
+    out.push("| Record | Files |");
+    out.push("| --- | --- |");
+    for (const record of table.records) {
+      const files = record.files.length > 0 ? record.files.map((f) => `\`${f}\``).join(", ") : "—";
+      out.push(`| ${record.name} | ${files} |`);
+    }
+    out.push("");
+  }
+
+  return out.join("\n").trimEnd();
+}
+
+/** Wraps the auto body in the start/end markers. */
+export function wrapAutoSection(body: string): string {
+  return `${DOCS_AUTO_START}\n${body}\n${DOCS_AUTO_END}`;
+}
+
+/**
+ * Performs a logical update of existing doc content:
+ * - If the markers exist, only the content between them is replaced.
+ * - If no markers exist but content is present, the auto block is appended,
+ *   preserving the manual content.
+ * - If there is no existing content, a titled document with the block is created.
+ */
+export function upsertDocsSection(
+  existing: string,
+  scope: string,
+  autoBlock: string
+): string {
+  const startIdx = existing.indexOf(DOCS_AUTO_START);
+  const endIdx = existing.indexOf(DOCS_AUTO_END);
+
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = existing.slice(0, startIdx);
+    const after = existing.slice(endIdx + DOCS_AUTO_END.length);
+    return `${before}${autoBlock}${after}`;
+  }
+
+  if (existing.trim().length > 0) {
+    return `${existing.trimEnd()}\n\n${autoBlock}\n`;
+  }
+
+  return `# Scope: ${scope}\n\n${autoBlock}\n`;
+}
+
+/**
+ * Generates (or logically updates) the markdown documentation for a downloaded
+ * scope manifest and writes it to disk. Returns the path written.
+ */
+export async function generateScopeDocs(
+  manifest: SN.AppManifest,
+  options: GenerateScopeDocsOptions = {}
+): Promise<string> {
+  const outDir = options.outDir || path.join(process.cwd(), "docs", "scopes");
+  const summary = summarizeManifest(manifest);
+  const body = buildScopeDocBody(summary, options.now);
+  const autoBlock = wrapAutoSection(body);
+
+  await fsp.mkdir(outDir, { recursive: true });
+  const filePath = path.join(outDir, `${summary.scope}.md`);
+
+  let existing = "";
+  try {
+    existing = await fsp.readFile(filePath, "utf8");
+  } catch {
+    existing = "";
+  }
+
+  const next = upsertDocsSection(existing, summary.scope, autoBlock);
+  await fsp.writeFile(filePath, next, "utf8");
+  return filePath;
+}
