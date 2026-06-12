@@ -511,4 +511,77 @@ describe("manifestBuilder", () => {
 
     expect(byArray.tables.sys_script_include.records["Include A (version:v2)"]).toBeDefined();
   });
+
+  it("fails the build when a table's field lookup hits a network error (no silent drop)", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, _query: string, fields: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      if (table === "sys_metadata") {
+        return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
+      }
+      if (table === "sys_dictionary" && fields === "element,internal_type") {
+        // Network-level failure: no HTTP status at all.
+        throw new Error("socket hang up");
+      }
+      return { data: { result: [] } };
+    });
+
+    await expect(
+      buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+        includes: {},
+        excludes: {},
+        tableOptions: {},
+      })
+    ).rejects.toThrow("Manifest build incomplete — failed tables: sys_script_include");
+  });
+
+  it("still skips a table whose dictionary endpoint is inaccessible (403)", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, _query: string, fields: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      if (table === "sys_metadata") {
+        return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
+      }
+      if (table === "sys_dictionary" && fields === "element,internal_type") {
+        throw Object.assign(new Error("forbidden"), {
+          isAxiosError: true,
+          response: { status: 403 },
+        });
+      }
+      return { data: { result: [] } };
+    });
+
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+      includes: {},
+      excludes: {},
+      tableOptions: {},
+    });
+
+    expect(manifest.tables).toEqual({});
+  });
+
+  it("listAppsFromTableAPI propagates network errors instead of returning an empty list", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockRejectedValue(new Error("socket hang up"));
+
+    await expect(listAppsFromTableAPI(createClient(tableAPIGet))).rejects.toThrow(
+      "socket hang up"
+    );
+  });
+
+  it("listAppsFromTableAPI returns empty list when sys_app endpoint is unavailable (404)", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockRejectedValue(
+      Object.assign(new Error("not found"), {
+        isAxiosError: true,
+        response: { status: 404 },
+      })
+    );
+
+    await expect(listAppsFromTableAPI(createClient(tableAPIGet))).resolves.toEqual([]);
+  });
 });

@@ -292,7 +292,13 @@ async function getFileFieldsForTable(
     }
 
     return files;
-  } catch {
+  } catch (e) {
+    // Only an inaccessible table may look like "no file fields"; a network
+    // failure must propagate so the table lands in failedTables instead of
+    // silently vanishing from the manifest.
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
     return [];
   }
 }
@@ -348,7 +354,12 @@ async function getTextFieldsForTable(
     }
 
     return files;
-  } catch {
+  } catch (e) {
+    // Same contract as getFileFieldsForTable: swallow only "table not
+    // accessible", let real failures reach the failedTables accounting.
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
     return [];
   }
 }
@@ -698,7 +709,14 @@ export async function listAppsFromTableAPI(
       scope: r.scope,
       displayName: r.name,
     }));
-  } catch {
+  } catch (e) {
+    // "No apps" and "the request failed" are different answers: only report
+    // an empty list when the endpoint itself is unavailable (ACL/404).
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    logger.warn(`sys_app listing unavailable, returning empty app list: ${message}`);
     return [];
   }
 }
