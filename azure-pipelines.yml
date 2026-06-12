@@ -1,6 +1,5 @@
 trigger:
-- dev
-- master
+- main
 
 pool:
   vmImage: 'macOs-latest'
@@ -21,7 +20,7 @@ steps:
   displayName: 'Typecheck @syncrona/core + @syncrona/mcp-server'
 
 - script: npm run lint
-  displayName: 'Lint mcp-server TypeScript sources'
+  displayName: 'Lint core + mcp-server TypeScript sources'
 
 - script: npm run test:core
   displayName: 'Test @syncrona/core'
@@ -30,7 +29,7 @@ steps:
   displayName: 'Test @syncrona/mcp-server'
 
 - script: npm run test:coverage:gates
-  displayName: 'Run coverage gates (core>=80%, mcp>=70%)'
+  displayName: 'Run coverage gates (core jest thresholds 68/54/58/68, mcp lines>=70%)'
 
 - script: |
     npm --workspace @syncrona/mcp-server run test:coverage > packages/mcp-server/coverage-summary.txt

@@ -20,8 +20,9 @@
     "typecheck:mcp": "npm --workspace @syncrona/mcp-server run build",
     "typecheck:all": "npm run build:deps && npm --workspaces --if-present run prepack",
     "typecheck": "npm run typecheck:all",
+    "lint:core": "npx eslint \"packages/core/src/**/*.ts\" --max-warnings=0",
     "lint:mcp": "npx eslint \"packages/mcp-server/src/**/*.ts\" --max-warnings=0",
-    "lint": "npm run lint:mcp",
+    "lint": "npm run lint:core && npm run lint:mcp",
     "quality": "npm --workspace @syncrona/mcp-server run quality-gates",
     "quality:core": "npm --workspace @syncrona/core run prepack",
     "quality:mcp": "npm --workspace @syncrona/mcp-server run quality-gates",
@@ -42,6 +43,10 @@
   "workspaces": [
     "packages/*"
   ],
+  "overrides": {
+    "micromatch": "^4.0.8",
+    "uuid": "^11.1.1"
+  },
   "directories": {
     "doc": "docs"
   },
