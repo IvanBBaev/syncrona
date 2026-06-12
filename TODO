@@ -70,15 +70,18 @@ core lint gate, package metadata, CONTRIBUTING.md) са в DONE.
 ### Senior Dev — липсващи възможности в кода
 - [ ] **G1. OAuth 2.0 auth** — само Basic auth; инстанции със SSO/MFA политики не могат
       да ползват CLI/MCP. Минимум: OAuth password grant + refresh token в credential store.
-- [ ] **G2. Schema валидация на sync.config.js** — typo в ключ (напр. "excldues") минава
-      тихо. Zod схема + warning за непознати ключове (CR20 хвана само счупен JS).
+- [x] **G2. Schema валидация на sync.config.js** — ГОТОВО 2026-06-12: validateConfigShape
+      в config.ts (без нова зависимост) — грешен тип = hard error, непознат ключ = warning
+      със списък на валидните; 4 нови теста (configValidation.test.ts).
 - [ ] **G3. Download прогрес/resume** — push има checkpoint/resume и progress bar;
       download на голям scope няма нито едното (мрежов срив = пълно повтаряне).
-- [ ] **G4. Rate-limit awareness в MCP клиента** — core има axios-rate-limit (20 RPS);
-      mcp fetch клиентът разчита само на 429 retry. Сподели политиката през sn-transport.
-- [ ] **G5. Типизирани CLI args** — `args as unknown as X` кастовете в cliCommands.ts
-      зависят от ръчна синхронизация между options декларацията и типа. Генерик
-      `CliCommandModule<TArgs>` би хванал разминаванията компилационно.
+- [x] **G4. Rate-limit awareness в MCP клиента** — ГОТОВО 2026-06-12: споделена
+      константа MAX_REQUESTS_PER_SECOND=20 в sn-transport; mcp клиентът spacing-ва
+      заявките (acquireRequestSlot, мин. интервал 50ms) вместо да разчита само на 429.
+- [x] **G5. Типизирани CLI args** — ГОТОВО 2026-06-12: `typedHandler<TArgs>` helper в
+      cliCommands.ts — handler телата са типово проверени срещу TArgs; 16-те разпръснати
+      `as unknown as` каста са заменени с един контролиран мост. (Пълна InferredOptionTypes
+      деривация от options декларациите остава възможно надграждане.)
 
 ### Architect — липсваща инфраструктура
 - [ ] **G6. Release автоматизация** — няма changesets/semantic-release; версиите се
@@ -97,25 +100,29 @@ core lint gate, package metadata, CONTRIBUTING.md) са в DONE.
       нищо. dependency-cruiser или eslint-plugin-boundaries в lint gate-а.
 
 ### QA — липсващо тестово покритие
-- [ ] **G11. E2E срещу инстанция** — всичко е unit с mock-ове; няма дори smoke flow
-      (login → download → push --dry-run) срещу реален/record-replay SN endpoint.
-- [ ] **G12. Branch coverage за mcp-server** — gate-ът е line-only 70%; решаващата
-      логика (policy/safety) заслужава branch праг.
+- [ ] **G11. E2E срещу инстанция** — ЧАСТИЧНО 2026-06-12: e2eCliSmoke.test.ts пуска
+      реалния dist binary като child процес (--help изброява 16-те команди; непозната
+      команда = non-zero exit) — хваща packaging/bootstrap счупвания (S1/S2 класа).
+      Остава: network smoke (login → download → push --dry-run) срещу mock/record-replay
+      SN HTTP endpoint.
+- [x] **G12. Branch coverage за mcp-server** — ГОТОВО 2026-06-12: check-coverage-gate.js
+      приема --branch-threshold (opt-in); root test:coverage:mcp ползва 70 (мерено 74.99%).
 - [ ] **G13. Mutation testing** — Stryker върху credential-store + sn-transport
       (малки, критични пакети) би показал дали assertions реално пазят.
 - [ ] **G14. Performance базова линия** — няма benchmark (manifest build на N таблици,
       push на N файла); регресии в скоростта са невидими. Едно `npm run bench` с
       фиксиран dataset + праг в CI.
-- [ ] **G15. OS матрица в CI** — pipeline-ът е само macOS; Linux (типичен CI consumer)
-      и Windows (известна слабост, DX1/DX11) не се build-ват/тестват изобщо.
-- [ ] **G16. Security автоматизация в CI** — `npm audit --omit=dev` не е CI стъпка
-      (днешните 13 уязвимости стояха незабелязани); няма secret scanning (gitleaks).
-      Добави и двете като quality gate.
+- [x] **G15. OS матрица в CI** — ГОТОВО 2026-06-12 (частично): azure-pipelines.yml е
+      матрица macOS + ubuntu-latest (артефактите се публикуват само от macOS job-а).
+      Windows остава за D5/DX1. Проверка: следващият CI run.
+- [ ] **G16. Security автоматизация в CI** — ЧАСТИЧНО 2026-06-12: `npm audit --omit=dev
+      --audit-level=high` е CI стъпка (проверена локално: 0 уязвимости). Остава: secret
+      scanning (gitleaks) — изисква външен tool в pipeline-а.
 
 ### Препоръчан ред (G)
-1. G16 + G15 (CI: audit step + linux job) — час работа, постоянна стойност.
-2. G2 (config схема) + G5 (типизирани args) — дребни, вдигат коректността.
-3. G11 (e2e smoke) — най-голямата QA празнина.
+1. ~~G16 + G15~~ направени (G16 без gitleaks; G15 без Windows).
+2. ~~G2~~, ~~G5~~ направени.
+3. G11 — започнат (CLI boot smoke); остава network slice-ът.
 4. G1 (OAuth) + G9 (proxy) — отключват enterprise употреба; планирай с D5.
 5. G6/G7/G8/G10, G12–G14 — постепенно.
 

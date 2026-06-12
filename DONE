@@ -1,5 +1,37 @@
 # DONE - Completed Work Log
 
+## 2026-06-12 G backlog — G4 MCP client rate limiting
+1. **G4 (done)**: `MAX_REQUESTS_PER_SECOND = 20` added to [@syncrona/sn-transport](packages/sn-transport/src/index.ts) as the shared rate policy (the core CLI already enforces it via axios-rate-limit); [servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) now spaces every outgoing request through `acquireRequestSlot()` (min interval 1000/20 = 50ms, promise-slot scheduler) instead of relying solely on 429 retries.
+2. Validation: sn-transport + mcp builds clean, eslint clean, full mcp node:test suite **172/172** green.
+
+## 2026-06-12 G backlog — G12 branch coverage gate for mcp-server
+1. **G12 (done)**: [check-coverage-gate.js](packages/mcp-server/scripts/check-coverage-gate.js) now parses the branch column of the node:test coverage report and accepts an opt-in `--branch-threshold`; root `test:coverage:mcp` runs with `--line-threshold 70 --branch-threshold 70`. Validated end-to-end: branch 74.99% >= 70%, lines 82.65% >= 70% (full mcp suite). CI display name updated.
+2. Docs: PRODUCT_STATE metrics gate column updated; test counts corrected to 324/324 (152 core incl. e2e smoke + 172 mcp).
+
+## 2026-06-12 G backlog — G11 first slice (CLI e2e boot smoke) + docs refresh
+1. **G11 (partial)**: new [packages/core/src/tests/e2eCliSmoke.test.ts](packages/core/src/tests/e2eCliSmoke.test.ts) runs the **compiled dist binary** as a child process (skips if dist is absent; CI always builds first): `--help` must list all 16 registry commands (catches packaging/bootstrap/registry-wiring breakage of the S1/S2 class that unit tests with mocks can never see) and an unknown command must exit non-zero (strict surface). Network smoke (login → download → push --dry-run against a mock SN endpoint) remains in TODO.
+2. **Docs refresh**: PRODUCT_STATE phase table G row updated (G2/G5 done, G15/G16 partial); CHANGELOG "Changed" notes the CI matrix + audit gate, config validation, and typedHandler.
+3. Validation: core dist rebuilt, e2e smoke 2/2, full core suite **22 suites / 152 tests** green.
+
+## 2026-06-12 G backlog — G5 typed CLI args
+1. **G5 (done)**: new `typedHandler<TArgs>` bridge in [packages/core/src/cliCommands.ts](packages/core/src/cliCommands.ts) — every registry handler body is now type-checked against its command's args type (Sync.SharedCmdArgs / PushCmdArgs / CmdDownloadArgs / BuildCmdArgs / auth+mcp intersections); the 16 scattered `args as unknown as X` casts were replaced by one audited cast inside the helper. Full InferredOptionTypes derivation from the options declarations noted in TODO as a possible follow-up.
+2. Validation: core tsc clean, eslint clean, jest 150/150.
+
+## 2026-06-12 G backlog — first slice (G2, G15 partial, G16 partial) + metrics in docs
+1. **Metrics documented** (user requested): docs/PRODUCT_STATE.md TL;DR now states readiness **~85%** (8.5/10 toward the 9.5 target), 318/318 tests, and a dated "Metrics snapshot (2026-06-12)" section — core 70.3% lines (st 70.6 / br 55.8 / fn 60.7, 146 tests), mcp **82.7% lines** (br 75.0 / fn 84.9, 172 tests; measured via check-coverage-gate.js), gate statuses, untested plugin packages note, fastest coverage wins.
+2. **G16 (partial)**: `npm audit --omit=dev --audit-level=high` added as a CI step in azure-pipelines.yml (verified locally: 0 vulnerabilities, gate passes). Remaining: secret scanning (gitleaks).
+3. **G15 (partial)**: azure-pipelines.yml converted to a strategy matrix — macOS + **ubuntu-latest** (coverage artifacts published from the macOS job only). Windows remains with D5/DX1.
+4. **G2 (done)**: `validateConfigShape` in packages/core/src/config.ts (no new dependency) — wrong option types are hard errors, unknown keys (typos like "excldues") warn with the list of valid options; wired into `loadConfig` after the module loads. New suite configValidation.test.ts (4 tests: typo warning, type error, non-object export, clean config).
+5. Validation (Node 22.22.2): core jest **150/150** (146 + 4 new), core lint `--max-warnings=0` clean. CI matrix/audit steps validate on the next pipeline run.
+
+## 2026-06-12 Documentation audit — gaps found and filled (user requested)
+1. **CHANGELOG.md `[Unreleased]`** had none of today's work → added Security (13→0 vulnerabilities, axios 1.17.0), Added (registry architecture, new docs, zod schemas for mutating tools, Table API pagination), Fixed (push safety, error honesty, MCP prefix-cache/capabilities/precedence/startup, watcher/dev serialization, gitUtils execFile) and Changed (core lint gate, whole-source coverage, package metadata) sections, merged with the pre-existing unreleased entries.
+2. **docs/PRODUCT_STATE.md** refreshed: mcp test status ("70% line gate" → **172/172** green), TL;DR rows for lint/security posture and registry-driven surfaces, timeline entry for modularization/hardening/G-analysis, phase-table rows (Modularization ✅, Best-practice hardening ✅, G backlog 🔴), and G1–G16 added to "What is NOT done".
+3. **docs/ARCHITECTURE.md**: CI diagram corrected (eslint core+mcp, 172 mcp tests), added the test-hygiene note (cache seams + fetch restore/finally), the 0-vulnerabilities dependency policy (G16 pointer), and a CONTRIBUTING.md link.
+4. **README.md (root)**: new "Project documentation" block linking ARCHITECTURE, PRODUCT_STATE, CONTRIBUTING, mcp-server README, and CHANGELOG (command table untouched — drift-gated).
+5. **packages/core/README.md**: the push state files (`sync.push.checkpoint.json`, `sync.collaboration.lock.json`) appear in user projects but were documented nowhere → new "Push recovery and locking" section (resume semantics, atomic lock, 30-min staleness, retry policy) and "Credential resolution order" section (CLI chain, mirroring the mcp README).
+6. Validation: all four quality gates pass after the docs changes (tool contract 26 tools hash d08f3816, docs drift 60 tools, CLAUDE drift 16 commands, release checklist).
+
 ## 2026-06-12 Best-practice hardening + triple gap analysis (user requested)
 1. **Supply-chain security**: `npm audit` showed **13 production vulnerabilities** (6 moderate, 7 high — axios 1.5.1 had 5 advisories incl. SSRF/credential leakage, plus ajv ReDoS, brace-expansion ReDoS, webpack SSRF). Applied `npm audit fix` → **0 vulnerabilities** (axios → 1.17.0, webpack bumped). Note: `--omit=dev` initially pruned dev deps from node_modules; restored with full `npm install` against the fixed lockfile.
 2. **Webpack-plugin compile fix**: the webpack bump tightened `OutputFileSystem` typings (PathLike mkdir args) and broke `compiler.outputFileSystem = memFS` in [packages/webpack-plugin/src/index.ts](packages/webpack-plugin/src/index.ts); bridged with an explicit type-level cast (runtime shape unchanged).
