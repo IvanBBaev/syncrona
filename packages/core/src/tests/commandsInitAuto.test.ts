@@ -10,6 +10,7 @@ const mockMkdir = jest.fn();
 const mockWriteFile = jest.fn();
 const mockGetAppListApi = jest.fn();
 const mockGetManifestApi = jest.fn();
+const mockPrompt = jest.fn();
 
 jest.mock("../Watcher", () => ({
   startWatching: jest.fn(),
@@ -64,7 +65,7 @@ jest.mock("../snClient", () => ({
 jest.mock("inquirer", () => ({
   __esModule: true,
   default: {
-    prompt: jest.fn(),
+    prompt: (...args: unknown[]) => mockPrompt(...args),
   },
 }));
 
@@ -155,5 +156,26 @@ describe("initCommand auto scope flow", () => {
       { includes: {}, excludes: {}, tableOptions: {} }
     );
     expect(mockProcessManifest).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels auto-init when the confirmation prompt is declined (DX4)", async () => {
+    mockPrompt.mockResolvedValueOnce({ confirmed: false });
+    const { initCommand } = await import("../commands");
+
+    await initCommand({ logLevel: "info" }); // no --ci → prompts
+
+    expect(mockPrompt).toHaveBeenCalled();
+    // Declined before the creation/download loop: no scope is downloaded.
+    expect(mockGetManifestApi).not.toHaveBeenCalled();
+    expect(mockProcessManifest).not.toHaveBeenCalled();
+  });
+
+  it("dry-run reports the plan without creating or downloading (DX4)", async () => {
+    const { initCommand } = await import("../commands");
+
+    await initCommand({ logLevel: "info", dryRun: true });
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockGetManifestApi).not.toHaveBeenCalled();
   });
 });
