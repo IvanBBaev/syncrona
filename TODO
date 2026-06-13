@@ -103,9 +103,13 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [ ] **G7. CLI diagnostics telemetry** — MCP has metrics/audit; the CLI has
       nothing (doctor is a snapshot). An opt-in local diagnostic log
       (~/.syncrona/logs) would shorten the support cycle.
-- [ ] **G8. Plugin API contract** — Sync.Plugin has no versioned contract test;
-      a breaking change in the PluginFunc interface silently breaks external
-      plugins. Related to DX13.
+- [x] **G8. Plugin API contract** — DONE 2026-06-13: pluginContract.test.ts pins
+      the public plugin contract on two layers — (1) a `referencePlugin` typed
+      against `Sync.Plugin`/`PluginFunc`/`FileContext` so an incompatible
+      interface change fails to COMPILE, and (2) a conforming plugin loaded
+      through the real PluginManager from <rootDir>/node_modules/<name>,
+      asserting call shape, output chaining, first-match rule selection, and
+      short-circuit on success:false. 4 tests. Related to DX13.
 - [ ] **G9. Proxy/TLS configuration** — corporate proxies and self-signed
       certificates are not supported/documented in either HTTP client
       (HTTPS_PROXY env, custom CA bundle).
@@ -129,20 +133,25 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [ ] **G14. Performance baseline** — no benchmark (manifest build over N tables,
       push of N files); speed regressions are invisible. A single `npm run bench`
       with a fixed dataset + threshold in CI.
-- [x] **G15. OS matrix in CI** — DONE 2026-06-12 (partial): azure-pipelines.yml is
-      a macOS + ubuntu-latest matrix (artifacts published only from the macOS job).
-      Windows remains with D5/DX1. Verification: the next CI run.
-- [ ] **G16. Security automation in CI** — PARTIAL 2026-06-12: `npm audit
-      --omit=dev --audit-level=high` is a CI step (verified locally: 0
-      vulnerabilities). Remaining: secret scanning (gitleaks) — requires an
-      external tool in the pipeline.
+- [x] **G15. OS matrix in CI** — DONE 2026-06-13: live CI is now
+      .github/workflows/ci.yml (the repo lives on GitHub; azure-pipelines.yml
+      does not run there), matrix ubuntu-latest + macos-latest, Node from
+      .nvmrc, full check chain. Windows remains with D5/DX1.
+- [ ] **G16. Security automation in CI** — PARTIAL: `npm audit --omit=dev
+      --audit-level=high` is a CI step in both azure-pipelines.yml and the
+      GitHub Actions workflow (verified locally: 0 vulnerabilities). Remaining:
+      secret scanning (gitleaks) — requires an external tool in the pipeline.
+- [ ] **G17. Tests must not dirty the tracked tree** — the scope-docs test
+      regenerates packages/core/docs/scopes/x_test.md with a fresh timestamp on
+      every run, leaving the working tree dirty (a `git status` surprise and a
+      potential accidental commit). Either write generated docs to a tmp dir in
+      the test, or stop tracking the generated x_test.md. (QA finding 2026-06-13.)
 
 ### Recommended order (G)
-1. ~~G16 + G15~~ done (G16 without gitleaks; G15 without Windows).
-2. ~~G2~~, ~~G5~~ done.
-3. G11 — started (CLI boot smoke); the network slice remains.
-4. G1 (OAuth) + G9 (proxy) — unlock enterprise use; plan together with D5.
-5. G6/G7/G8/G10, G13–G14 — incrementally. (~~G12~~, ~~G4~~ done.)
+1. ~~G16 + G15~~ done (G16 without gitleaks; G15 now on GitHub Actions, no Windows).
+2. ~~G2~~, ~~G5~~, ~~G8~~, ~~G11~~ done.
+3. G1 (OAuth) + G9 (proxy) — unlock enterprise use; plan together with D5.
+4. G6/G7/G10, G13–G14, G17 — incrementally. (~~G12~~, ~~G4~~ done.)
 
 ---
 
