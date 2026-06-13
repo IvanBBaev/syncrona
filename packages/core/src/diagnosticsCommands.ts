@@ -398,6 +398,30 @@ export async function pluginsCommand(args: Sync.SharedCmdArgs): Promise<PluginsS
   return summary;
 }
 
+// DX9: inspect configuration. Currently supports `show-defaults`, which prints
+// the built-in defaults applied before a project's sync.config.js overrides, so
+// users don't have to read defaultOptions.ts to understand them.
+export function configCommand(args: Sync.SharedCmdArgs & { action: string }): void {
+  setLogLevel(args);
+  const action = String(args.action || "").trim();
+  if (action !== "show-defaults") {
+    logger.error(`Unknown config action "${action}". Supported actions: show-defaults.`);
+    process.exitCode = 1;
+    return;
+  }
+  const def = ConfigManager.getDefaultConfig();
+  logger.info("Syncrona default configuration (applied before sync.config.js overrides):");
+  logger.info(`  sourceDirectory: ${def.sourceDirectory}`);
+  logger.info(`  buildDirectory:  ${def.buildDirectory}`);
+  logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
+  logger.info(`  refreshInterval: ${def.refreshInterval}s`);
+  logger.info(`  default include table rules: ${Object.keys(def.includes ?? {}).length}`);
+  logger.info(`  default exclude table rules: ${Object.keys(def.excludes ?? {}).length}`);
+  logger.info(
+    "Override any of these in sync.config.js (includes/excludes merge on top of these defaults) — see the README Configuration section."
+  );
+}
+
 type EnvCheck = { name: string; ok: boolean; details: string };
 
 function detectWsl(): boolean {

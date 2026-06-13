@@ -95,4 +95,13 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
     expect(out).toContain("node:");
     expect(out).toMatch(/Environment looks good/);
   }, 30000);
+
+  // DX9: config show-defaults prints the built-in defaults without a project.
+  it("config show-defaults prints default settings", async () => {
+    const res = await runCli(["config", "show-defaults"], workspace);
+    const out = res.stdout + res.stderr;
+    expect(res.code).toBe(0);
+    expect(out).toContain("sourceDirectory");
+    expect(out).toMatch(/default (include|exclude) table rules/);
+  }, 30000);
 });
