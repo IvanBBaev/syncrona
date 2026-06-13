@@ -6,7 +6,9 @@ import { logger } from "./Logger";
 import { devModeLog } from "./logMessages";
 import { setLogLevel, scopeCheck } from "./commandHelpers";
 
-export async function devCommand(args: Sync.SharedCmdArgs) {
+export async function devCommand(
+  args: Sync.SharedCmdArgs & { refreshInterval?: number }
+) {
   setLogLevel(args);
   await scopeCheck(async () => {
     startWatching(ConfigManager.getSourcePath());
@@ -21,13 +23,20 @@ export async function devCommand(args: Sync.SharedCmdArgs) {
         return;
       }
       refreshInFlight = true;
+      const startedAt = Date.now();
       try {
         await refreshCommand(args, false);
       } finally {
         refreshInFlight = false;
+        // DX21: surface refresh cost at debug/verbose so a slow instance is visible.
+        logger.debug(`Manifest refresh took ${Date.now() - startedAt}ms`);
       }
     };
-    const interval = ConfigManager.getRefresh();
+    // DX16: --refresh-interval overrides sync.config.js refreshInterval; 0 disables polling.
+    const interval =
+      typeof args.refreshInterval === "number" && Number.isFinite(args.refreshInterval)
+        ? Math.max(0, Math.floor(args.refreshInterval))
+        : ConfigManager.getRefresh();
     if (interval && interval > 0) {
       logger.info(`Checking for new manifest files every ${interval} seconds`);
       const timer = setInterval(() => {

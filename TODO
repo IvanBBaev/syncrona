@@ -361,8 +361,11 @@ Docs, Workflow, Error Handling, MCP.
 - No clear documentation of what the 30-second refresh does.
 - Note 2026-06-12: overlapping interval refreshes are now guarded (CR11).
 - [ ] Document refresh behavior and performance.
-- [ ] `--verbose dev` should print "Manifest refresh took Xms".
-- [ ] A `syncrona dev --refresh-interval 60` flag.
+- [x] `--verbose dev` should print "Manifest refresh took Xms" — DONE 2026-06-13:
+      the refresher logs `Manifest refresh took Xms` at debug level (DX21).
+- [x] A `syncrona dev --refresh-interval 60` flag — DONE 2026-06-13:
+      `dev --refresh-interval N` (alias --refreshInterval) overrides
+      sync.config.js refreshInterval; 0 disables polling.
 
 **DX17: The file structure is strange for new users**
 - "Records are shown as folders…", but users expect a flat structure

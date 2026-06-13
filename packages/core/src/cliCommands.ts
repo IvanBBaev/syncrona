@@ -82,8 +82,19 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: ["dev", "d"],
     describe: "Start Development Mode",
-    examples: [["$0 dev", "Watch tracked files and push each change to ServiceNow as you save"]],
-    handler: typedHandler<Sync.SharedCmdArgs>((args) => devCommand(args)),
+    options: {
+      refreshInterval: {
+        alias: "refresh-interval",
+        type: "number",
+        describe:
+          "Seconds between manifest refreshes (overrides sync.config.js refreshInterval; 0 disables polling)",
+      },
+    },
+    examples: [
+      ["$0 dev", "Watch tracked files and push each change to ServiceNow as you save"],
+      ["$0 dev --refresh-interval 60", "Poll for new manifest files every 60s instead of the default"],
+    ],
+    handler: typedHandler<Sync.SharedCmdArgs & { refreshInterval?: number }>((args) => devCommand(args)),
   },
   {
     command: ["refresh", "r"],
