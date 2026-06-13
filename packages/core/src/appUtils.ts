@@ -256,6 +256,14 @@ export const processMissingFiles = async (
 ): Promise<void> => {
   try {
     const missing = await findMissingFiles(newManifest);
+    // DX21: surface how much work the refresh found (visible at --log-level debug).
+    const missingRecords = Object.values(missing).reduce(
+      (sum, recs) => sum + Object.keys(recs).length,
+      0
+    );
+    logger.debug(
+      `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
+    );
     const { tableOptions = {} } = ConfigManager.getConfig();
     const client = defaultClient();
 
@@ -305,6 +313,14 @@ export const downloadAllFiles = async (
   instanceProfile?: string
 ): Promise<void> => {
   const missing = buildFullMissingMap(manifest);
+  // DX21: report download volume so a slow pull is explainable.
+  const downloadRecords = Object.values(missing).reduce(
+    (sum, recs) => sum + Object.keys(recs).length,
+    0
+  );
+  logger.info(
+    `Downloading ${downloadRecords} record(s) across ${Object.keys(missing).length} table(s)...`
+  );
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient(instanceProfile);
 
