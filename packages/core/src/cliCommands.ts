@@ -168,11 +168,20 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "status",
     describe: "Get information about the connected instance",
+    options: {
+      debugCredentials: {
+        alias: "debug-credentials",
+        type: "boolean",
+        default: false,
+        describe: "Print every credential source (env, profile, store) and which one won",
+      },
+    },
     examples: [
       ["$0 status", "Show instance, user, scope, credential source and connectivity"],
       ["$0 status --instance-profile dev", "Show status for the 'dev' credential profile"],
+      ["$0 status --debug-credentials", "Explain where credentials resolve from and why"],
     ],
-    handler: typedHandler<Sync.SharedCmdArgs>((args) => statusCommand(args)),
+    handler: typedHandler<Sync.SharedCmdArgs & { debugCredentials?: boolean }>((args) => statusCommand(args)),
   },
   {
     command: "doctor",
