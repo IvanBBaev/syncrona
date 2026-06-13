@@ -20,6 +20,12 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
   commands and MCP tool families (mermaid diagrams).
 - [docs/PRODUCT_STATE.md](docs/PRODUCT_STATE.md) — what works today, phase
   history, known gaps and operating constraints.
+- [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md) — credential precedence,
+  instance profiles, the dev→prod workflow, and CI.
+- [docs/MONOREPO_GUIDE.md](docs/MONOREPO_GUIDE.md) — multi-scope layout,
+  per-scope vs shared config, and CI matrices.
+- [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) — the plugin
+  contract and how to write and wire your own build plugin.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
   setup, tools, guardrails, and safety notes.
@@ -51,6 +57,9 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
   - [FAQ](#faq)
     - [How do I Delete Something?](#how-do-i-delete-something)
     - [How do I Add New Scripts?](#how-do-i-add-new-scripts)
+    - [How do I work with multiple instances?](#how-do-i-work-with-multiple-instances)
+    - [How do I work with several scoped apps in one repo?](#how-do-i-work-with-several-scoped-apps-in-one-repo)
+    - [Getting unstuck](#getting-unstuck)
   - [Examples](#examples)
   - [Plugin List](#plugin-list)
 
@@ -500,6 +509,37 @@ Why is this not automatic? Deleting files can be a dangerous game and it should 
 1. Turn off dev mode if you are currently running SyncroNow AI
 2. Create the record in ServiceNow
 3. Run `npx syncrona refresh` and the files will get created automatically 👍
+
+### How do I work with multiple instances?
+
+Use the global credential store (`syncrona login` / `syncrona use`) or
+instance-profile env vars and `--instance-profile`. `syncrona status` shows
+which instance and credential source are active. Full guide:
+[docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
+
+### How do I work with several scoped apps in one repo?
+
+Treat each scope as its own project under `packages/`, run commands from the
+scope directory, and share `node_modules`/plugins at the root. Full guide:
+[docs/MONOREPO_GUIDE.md](docs/MONOREPO_GUIDE.md).
+
+### Getting unstuck
+
+- **"credentials missing" after logging in** — the stored credential file may
+  not decrypt on this machine. Run `syncrona status --debug-credentials`; if it
+  reports a decrypt failure, re-run `syncrona login`.
+- **Connecting to the wrong instance** — run `syncrona status` and check
+  `Credentials from:`. A stale project `.env` wins over the store; fix or remove
+  it, or pass `--instance-profile`.
+- **`syncrona download` overwrote my edits** — `download` is destructive by
+  design (it confirms first; `--ci` skips the prompt). Keep your source in git
+  so a bad download is a `git checkout` away.
+- **A push failed partway** — fix the cause and run `syncrona push` again; it
+  offers to resume only the records that failed last time.
+- **Slow network** — `syncrona dev --refresh-interval 60` polls less often, and
+  `syncrona push --concurrency 5` throttles parallel pushes.
+- **Environment problems** — `syncrona check-env` verifies Node, platform/WSL,
+  and Git, and prints actionable fixes.
 
 ## Examples
 
