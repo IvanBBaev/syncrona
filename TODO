@@ -101,9 +101,11 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [ ] **G6. Release automation** — no changesets/semantic-release; versions are
       bumped manually (lerna fixed mode), CHANGELOG.md is static. A single
       `npx changeset` solves the version+changelog+publish sequence.
-- [ ] **G7. CLI diagnostics telemetry** — MCP has metrics/audit; the CLI has
-      nothing (doctor is a snapshot). An opt-in local diagnostic log
-      (~/.syncrona/logs) would shorten the support cycle.
+- [~] **G7. CLI diagnostics telemetry** — PARTIAL 2026-06-13: opt-in local
+      diagnostic log shipped — SYNCRONA_DIAGNOSTIC_LOG=1 appends CLI output to
+      ~/.syncrona/logs/cli.log (rotation, off by default, documented in
+      SECURITY.md). isDiagnosticLogEnabled + 3 tests. Remaining: structured
+      metrics/telemetry for the KPI set (BA7) — needs an opt-in events schema.
 - [x] **G8. Plugin API contract** — DONE 2026-06-13: pluginContract.test.ts pins
       the public plugin contract on two layers — (1) a `referencePlugin` typed
       against `Sync.Plugin`/`PluginFunc`/`FileContext` so an incompatible

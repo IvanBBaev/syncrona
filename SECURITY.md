@@ -37,6 +37,11 @@ understand what it touches:
   back to the instance (with a confirmation prompt unless `--ci`). The MCP
   server reads metadata for analysis and keeps an audit log under
   `.syncrona-mcp/` (with secret redaction).
+- **Opt-in diagnostic log.** The CLI does not write logs to disk by default.
+  Setting `SYNCRONA_DIAGNOSTIC_LOG=1` appends CLI output to
+  `~/.syncrona/logs/cli.log` (size-bounded with rotation) for support — it
+  contains the same messages shown on the console (credentials are masked).
+  Leave it off unless you are diagnosing an issue.
 
 ## Hardening recommendations
 
