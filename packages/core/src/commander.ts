@@ -32,6 +32,9 @@ function buildCommandBuilder(mod: CliCommandModule) {
     for (const [name, config] of Object.entries(mod.positionals || {})) {
       cmdArgs.positional(name, config);
     }
+    for (const [example, description] of mod.examples || []) {
+      cmdArgs.example(example, description);
+    }
     return cmdArgs;
   };
 }
@@ -39,7 +42,7 @@ function buildCommandBuilder(mod: CliCommandModule) {
 // Interprets the CLI_COMMANDS registry. New commands are added by appending a
 // module entry in cliCommands.ts — this file should not need to change.
 export async function initCommands() {
-  let cli = yargs as Argv;
+  let cli = (yargs as Argv).scriptName("syncrona");
   for (const mod of CLI_COMMANDS) {
     cli = cli.command(
       mod.command,

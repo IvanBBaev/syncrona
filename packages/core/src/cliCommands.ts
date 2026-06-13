@@ -36,6 +36,8 @@ export type CliCommandModule = {
   positionals?: Record<string, PositionalOptions>;
   /** Set false for commands that do not take the shared options. */
   includeSharedOptions?: boolean;
+  /** Usage examples shown in `--help`: [command, description] pairs. */
+  examples?: Array<[string, string]>;
   handler: (args: Arguments) => unknown;
 };
 
@@ -80,6 +82,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: ["dev", "d"],
     describe: "Start Development Mode",
+    examples: [["$0 dev", "Watch tracked files and push each change to ServiceNow as you save"]],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => devCommand(args)),
   },
   {
@@ -112,6 +115,11 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Will skip confirmation prompts during the push process",
       },
     },
+    examples: [
+      ["$0 push --dry-run", "Preview what would be pushed without writing anything"],
+      ["$0 push --diff main", "Push but record changes vs the main branch for the audit trail"],
+      ["$0 push --ci", "Push without confirmation prompts (CI/automation)"],
+    ],
     handler: typedHandler<Sync.PushCmdArgs>((args) => pushCommand(args)),
   },
   {
@@ -125,6 +133,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Skip download confirmation prompt for noninteractive automation",
       },
     },
+    examples: [
+      ["$0 download x_my_app", "Download the x_my_app scope, overwriting local files"],
+      ["$0 download x_my_app --dry-run", "Preview the download without overwriting anything"],
+    ],
     handler: typedHandler<Sync.CmdDownloadArgs>((args) => downloadCommand(args)),
   },
   {
@@ -136,6 +148,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "build",
     describe: "Build application files locally",
     options: { ...DIFF_OPTION },
+    examples: [
+      ["$0 build", "Build all source files into the local build directory"],
+      ["$0 build --diff main", "Build and record a diff manifest vs the main branch for deploy"],
+    ],
     handler: typedHandler<Sync.BuildCmdArgs>((args) => buildCommand(args)),
   },
   {
@@ -152,6 +168,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "status",
     describe: "Get information about the connected instance",
+    examples: [
+      ["$0 status", "Show instance, user, scope, credential source and connectivity"],
+      ["$0 status --instance-profile dev", "Show status for the 'dev' credential profile"],
+    ],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => statusCommand(args)),
   },
   {
@@ -168,6 +188,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "mcp",
     describe:
       "Start standalone MCP server and optionally auto-configure local MCP client files",
+    examples: [
+      ["$0 mcp", "Auto-configure local MCP client files and start the MCP server"],
+      ["$0 mcp --no-start", "Only write .vscode/mcp.json and secrets, do not start the server"],
+    ],
     options: {
       autoConfigure: {
         alias: ["auto-configure", "configure"],
@@ -199,6 +223,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Instance hostname (e.g. dev12345.service-now.com)",
       },
     },
+    examples: [
+      ["$0 login", "Prompt for instance and credentials, then save them"],
+      ["$0 login dev12345.service-now.com", "Save credentials for a specific instance"],
+    ],
     handler: typedHandler<Sync.SharedCmdArgs & { instance?: string }>((args) => loginCommand(args)),
   },
   {
@@ -236,6 +264,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Instance hostname to set as active",
       },
     },
+    examples: [["$0 use dev12345.service-now.com", "Make this stored instance the active one for later commands"]],
     handler: typedHandler<Sync.SharedCmdArgs & { instance: string }>((args) => useCommand(args)),
   },
 ];

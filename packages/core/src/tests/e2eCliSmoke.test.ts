@@ -77,4 +77,13 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
     const res = await runCli(["frobnicate"], workspace);
     expect(res.code).not.toBe(0);
   }, 30000);
+
+  // DX5: per-command help carries usage examples under the script name.
+  it("shows usage examples in a command's --help", async () => {
+    const res = await runCli(["push", "--help"], workspace);
+    const out = res.stdout + res.stderr;
+    expect(res.code).toBe(0);
+    expect(out).toContain("Examples:");
+    expect(out).toContain("syncrona push --dry-run");
+  }, 30000);
 });

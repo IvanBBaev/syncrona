@@ -269,8 +269,12 @@ Docs, Workflow, Error Handling, MCP.
 - `syncrona push --help` says "[DESTRUCTIVE]", which is scary, but shows no safe
   workflow examples.
 - No `--dry-run` hint in help.
-- [ ] For every command, add an example: `syncrona push --dry-run`,
-      `syncrona push --diff main`.
+- [x] DONE 2026-06-13: added an `examples` field to the CliCommandModule
+      registry (wired through buildCommandBuilder → yargs `.example()`); populated
+      examples for dev/push/download/build/status/login/use/mcp, incl.
+      `push --dry-run`, `push --diff main`, `push --ci`. Also set
+      `.scriptName("syncrona")` so help shows `syncrona <cmd>` not `index.js`.
+      e2e smoke test asserts `push --help` carries the examples.
 
 **DX6: The `--diff` flag is unclear**
 - `syncrona push --diff main` still pushes everything (it does not filter changed
