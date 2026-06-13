@@ -62,4 +62,37 @@ describe("describeCredentialSource (DX2)", () => {
   it("reports missing credentials when nothing is set", async () => {
     expect(await describe_()).toBe("none (credentials missing)");
   });
+
+  // DX20: diagnoseCredentials backs `status --debug-credentials`.
+  async function diagnose_(profile?: string) {
+    const { diagnoseCredentials } = await import("../snClient");
+    return diagnoseCredentials(profile);
+  }
+
+  it("diagnoseCredentials reports base env presence and the resolved winner", async () => {
+    process.env.SN_INSTANCE = "dev.service-now.com";
+    process.env.SN_USER = "u";
+    process.env.SN_PASSWORD = "p";
+    const d = await diagnose_();
+    expect(d.baseEnvPresent).toEqual({ instance: true, user: true, password: true });
+    expect(d.profileEnvPresent).toBeUndefined();
+    expect(d.source).toBe("environment (.env / shell SN_* vars)");
+    expect(d.resolvedInstance).toBe("dev.service-now.com");
+    expect(d.resolvedUser).toBe("u");
+  });
+
+  it("diagnoseCredentials reports profile env presence when a profile is used", async () => {
+    process.env.SN_USER_DEV = "u";
+    process.env.SN_INSTANCE_DEV = "dev.service-now.com";
+    const d = await diagnose_("dev");
+    expect(d.profile).toBe("DEV");
+    expect(d.profileEnvPresent).toEqual({ instance: true, user: true, password: false });
+    expect(d.source).toBe("instance profile env vars");
+  });
+
+  it("diagnoseCredentials reports all-missing when nothing is set", async () => {
+    const d = await diagnose_();
+    expect(d.baseEnvPresent).toEqual({ instance: false, user: false, password: false });
+    expect(d.source).toBe("none (credentials missing)");
+  });
 });

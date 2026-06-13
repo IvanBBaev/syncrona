@@ -391,8 +391,21 @@ Docs, Workflow, Error Handling, MCP.
 **DX20: Silent error swallowing during credential loading**
 - As AR10 noted, secrets-loading errors are swallowed. Users do not know whether
   their .env is invalid.
-- [ ] `syncrona status --debug-credentials` should print all sources and why each
-      was rejected.
+- [x] DONE 2026-06-13: `syncrona status --debug-credentials` prints every source —
+      base env presence, profile env presence, credential-store instances + active,
+      and the resolved winner. Backed by snClient.diagnoseCredentials (reuses the
+      resolver's profile naming, no drift). 3 unit tests.
+      It immediately earned its keep: on this machine it revealed that the active
+      stored instance (ven03019) FAILS to decrypt ("unable to authenticate data"),
+      which is why plain `status` reported "credentials missing". The debug view
+      now reports the decrypt failure + hint ("re-run syncrona login"); previously
+      resolveCredentialsFromStore swallowed it silently.
+- [ ] **DX20b (new finding 2026-06-13)**: resolveCredentialsFromStore swallows
+      AES-GCM decryption failures and returns null (AR10 pattern), so plain
+      `status`/connection shows "credentials missing" with no hint that stored
+      creds exist but won't decrypt. Surface a one-line warning on the normal
+      path too (not just --debug-credentials), e.g. "stored creds for X failed to
+      decrypt — re-run login". Low-risk, high-clarity.
 
 **DX21: Verbose logging is incomplete**
 - `--log-level debug` exists but the output is silent. A stuck user cannot see

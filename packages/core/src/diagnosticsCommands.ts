@@ -7,8 +7,10 @@ import {
   defaultClient,
   resolveCredentials,
   describeCredentialSource,
+  diagnoseCredentials,
   unwrapSNResponse,
 } from "./snClient";
+import { listInstances, getActiveInstance, loadCredentials } from "./auth";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder";
 import { setLogLevel, logScopedEndpointCapability } from "./commandHelpers";
 
@@ -58,7 +60,9 @@ function safeConfigGet(getter: () => string): string {
   }
 }
 
-export async function statusCommand(args: Sync.SharedCmdArgs): Promise<StatusSummary> {
+export async function statusCommand(
+  args: Sync.SharedCmdArgs & { debugCredentials?: boolean }
+): Promise<StatusSummary> {
   setLogLevel(args);
   const credentials = resolveCredentials(args.instanceProfile);
   const instance = credentials.instance;
@@ -134,7 +138,61 @@ export async function statusCommand(args: Sync.SharedCmdArgs): Promise<StatusSum
     logger.warn(`status: ${error}`);
   }
 
+  if (args.debugCredentials) {
+    await printCredentialDiagnostics(args.instanceProfile);
+  }
+
   return summary;
+}
+
+// DX20: explain every credential source and which one the resolver picked, so
+// "why am I talking to the wrong instance?" is answerable without guessing.
+async function printCredentialDiagnostics(profile?: string): Promise<void> {
+  const diag = diagnoseCredentials(profile);
+  const yn = (present: boolean): string => (present ? "set" : "missing");
+
+  logger.info("--- credential diagnostics ---");
+  logger.info(
+    `Base env: SN_INSTANCE ${yn(diag.baseEnvPresent.instance)}, ` +
+      `SN_USER ${yn(diag.baseEnvPresent.user)}, SN_PASSWORD ${yn(diag.baseEnvPresent.password)}`
+  );
+  if (diag.profile && diag.profileEnvPresent) {
+    logger.info(
+      `Profile "${diag.profile}" env: SN_INSTANCE_${diag.profile} ${yn(diag.profileEnvPresent.instance)}, ` +
+        `SN_USER_${diag.profile} ${yn(diag.profileEnvPresent.user)}, ` +
+        `SN_PASSWORD_${diag.profile} ${yn(diag.profileEnvPresent.password)}`
+    );
+  }
+  try {
+    const stored = await listInstances();
+    const active = await getActiveInstance();
+    logger.info(
+      `Credential store: ${stored.length} instance(s)${stored.length ? ` [${stored.join(", ")}]` : ""}` +
+        `${active ? `, active: ${active}` : ", no active instance"}`
+    );
+    // A stored instance that won't decrypt is the silent cause of "credentials
+    // missing" despite a prior login (resolveCredentialsFromStore swallows the
+    // error). Surface it here with an actionable hint.
+    if (active) {
+      try {
+        await loadCredentials(active);
+        logger.info(`Active stored instance "${active}" decrypts: yes`);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(
+          `Active stored instance "${active}" FAILED to decrypt: ${message}. ` +
+            "The credential file was likely encrypted on a different machine or user — re-run 'syncrona login'."
+        );
+      }
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.info(`Credential store: unreadable (${message})`);
+  }
+  logger.info(`Resolved source (winner): ${diag.source}`);
+  logger.info(
+    `Resolved instance: ${diag.resolvedInstance || "<missing>"}, user: ${diag.resolvedUser || "<missing>"}`
+  );
 }
 
 export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boolean; checks: DoctorCheck[] }> {

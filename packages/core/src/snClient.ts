@@ -469,6 +469,46 @@ export function describeCredentialSource(profile?: string): string {
   return resolveCredentialsInternal(profile).source;
 }
 
+export type CredentialDiagnostics = {
+  profile?: string;
+  baseEnvPresent: { instance: boolean; user: boolean; password: boolean };
+  profileEnvPresent?: { instance: boolean; user: boolean; password: boolean };
+  source: CredentialSource;
+  resolvedInstance: string;
+  resolvedUser: string;
+};
+
+// Structured breakdown of every env-based credential source for the
+// `status --debug-credentials` view. The credential store (async) is reported
+// separately by the caller; here we cover env presence + the resolved winner,
+// reusing the same profile-var naming so it can never drift from resolution.
+export function diagnoseCredentials(profile?: string): CredentialDiagnostics {
+  const normalizedProfile =
+    normalizeProfileName(profile) || normalizeProfileName(activeInstanceProfile);
+  const { creds, source } = resolveCredentialsInternal(profile);
+  const present = (v?: string): boolean => !!(v && v.length > 0);
+
+  const diag: CredentialDiagnostics = {
+    profile: normalizedProfile,
+    baseEnvPresent: {
+      instance: present(process.env.SN_INSTANCE),
+      user: present(process.env.SN_USER),
+      password: present(process.env.SN_PASSWORD),
+    },
+    source,
+    resolvedInstance: creds.instance,
+    resolvedUser: creds.user,
+  };
+  if (normalizedProfile) {
+    diag.profileEnvPresent = {
+      instance: present(process.env[profileEnvVar("SN_INSTANCE", normalizedProfile)]),
+      user: present(process.env[profileEnvVar("SN_USER", normalizedProfile)]),
+      password: present(process.env[profileEnvVar("SN_PASSWORD", normalizedProfile)]),
+    };
+  }
+  return diag;
+}
+
 function credentialsKey(credentials: SNCredentials): string {
   return `${credentials.profile || "default"}|${credentials.instance}|${credentials.user}|${credentials.password}`;
 }
