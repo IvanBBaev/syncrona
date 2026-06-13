@@ -35,31 +35,27 @@ class PluginManager {
     context: Sync.FileContext,
     content: string
   ): Promise<Sync.TransformResults> {
-    try {
-      let output = content;
-      for (const pConfig of plugins) {
-        const pluginPath = path.join(
-          ConfigManager.getRootDir(),
-          "node_modules",
-          pConfig.name
-        );
-        const plugin: Sync.Plugin = await import(pluginPath);
-        const results = await plugin.run(context, output, pConfig.options);
-        if (!results.success) {
-          return {
-            success: false,
-            content: "",
-          };
-        }
-        output = results.output;
+    let output = content;
+    for (const pConfig of plugins) {
+      const pluginPath = path.join(
+        ConfigManager.getRootDir(),
+        "node_modules",
+        pConfig.name
+      );
+      const plugin: Sync.Plugin = await import(pluginPath);
+      const results = await plugin.run(context, output, pConfig.options);
+      if (!results.success) {
+        return {
+          success: false,
+          content: "",
+        };
       }
-      return {
-        success: true,
-        content: output,
-      };
-    } catch (e) {
-      throw e;
+      output = results.output;
     }
+    return {
+      success: true,
+      content: output,
+    };
   }
 
   async processFile(
@@ -67,36 +63,26 @@ class PluginManager {
     content: string
   ): Promise<string> {
     const plugins = this.determinePlugins(context);
-    if (plugins.length > 0) {
-      try {
-        const pluginResults = await this.runPlugins(plugins, context, content);
-        if (pluginResults.success) {
-          return pluginResults.content;
-        } else {
-          throw new Error(
-            `Failed to build ${context.tableName}=>${context.sys_id}!`
-          );
-        }
-      } catch (e) {
-        throw e;
-      }
-    } else {
+    if (plugins.length === 0) {
       return content;
     }
+    const pluginResults = await this.runPlugins(plugins, context, content);
+    if (!pluginResults.success) {
+      throw new Error(
+        `Failed to build ${context.tableName}=>${context.sys_id}!`
+      );
+    }
+    return pluginResults.content;
   }
 
   async getFinalFileContents(context: Sync.FileContext, processFile = true) {
     const { filePath } = context;
-    try {
-      const contents = await fsp.readFile(filePath, "utf-8");
-      if (processFile) {
-        await this.loadPluginConfig();
-        return await this.processFile(context, contents);
-      }
-      return contents;
-    } catch (e) {
-      throw e;
+    const contents = await fsp.readFile(filePath, "utf-8");
+    if (processFile) {
+      await this.loadPluginConfig();
+      return await this.processFile(context, contents);
     }
+    return contents;
   }
 }
 
