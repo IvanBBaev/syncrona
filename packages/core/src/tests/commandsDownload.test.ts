@@ -24,6 +24,13 @@ jest.mock("../appUtils", () => ({
   downloadAllFiles: jest.fn().mockResolvedValue(undefined),
 }));
 
+// downloadCommand also generates scope docs; stub it so the test does not
+// write the real packages/core/docs/scopes/<scope>.md (which generateScopeDocs
+// resolves from process.cwd() and would dirty the tracked tree). (G17)
+jest.mock("../scopeDocs", () => ({
+  generateScopeDocs: jest.fn().mockResolvedValue("/tmp/docs/scopes/x_test.md"),
+}));
+
 jest.mock("../snClient", () => ({
   defaultClient: () => ({
     getManifest: (...args: unknown[]) => mockGetManifestApi(...args),
