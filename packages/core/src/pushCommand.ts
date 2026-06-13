@@ -270,7 +270,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       const attempted = fileList.map(recToCheckpointKey);
       await writePushCheckpoint({ attempted, succeeded: [], failed: attempted });
 
-      const pushResults = await AppUtils.pushFiles(fileList);
+      const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);
 
       const succeeded = pushResults
         .map((res, index) => ({ res, key: attempted[index] }))

@@ -432,13 +432,17 @@ const pushRec = async (
   }
 };
 
-const resolvePushConcurrency = (): number => {
-  const cfg = ConfigManager.getConfig();
-  const raw = (cfg as Sync.Config).pushConcurrency;
-  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+// CLI --push-concurrency wins over sync.config.js pushConcurrency, which wins
+// over the default of 10; the result is always clamped to 1–50.
+export const resolvePushConcurrency = (override?: number): number => {
+  const candidate =
+    typeof override === "number" && Number.isFinite(override)
+      ? override
+      : (ConfigManager.getConfig() as Sync.Config).pushConcurrency;
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
     return 10;
   }
-  return Math.min(Math.max(Math.floor(raw), 1), 50);
+  return Math.min(Math.max(Math.floor(candidate), 1), 50);
 };
 
 const mapWithConcurrency = async <T, R>(
@@ -467,10 +471,11 @@ const mapWithConcurrency = async <T, R>(
 };
 
 export const pushFiles = async (
-  recs: Sync.BuildableRecord[]
+  recs: Sync.BuildableRecord[],
+  concurrencyOverride?: number
 ): Promise<Sync.PushResult[]> => {
   const client = defaultClient();
-  const pushConcurrency = resolvePushConcurrency();
+  const pushConcurrency = resolvePushConcurrency(concurrencyOverride);
   const tick = getProgTick(logger.getLogLevel(), recs.length * 2) || (() => {});
   return mapWithConcurrency(recs, pushConcurrency, async (rec) => {
     const fieldNames = Object.keys(rec.fields);
