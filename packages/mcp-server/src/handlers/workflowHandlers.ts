@@ -1,3 +1,5 @@
+import type { UnifiedTaskType } from "../toolService";
+import type { GraphNode, GraphEdge } from "../analysis/graph";
 import {
   buildDependencyGraph,
   buildFullScriptAnalysisReport,
@@ -21,20 +23,8 @@ import { toJsonText } from "../runtimeUtils";
 
 import type { ToolResponse } from "../toolResponse";
 
-type GraphNode = {
-  id: string;
-  kind: "script" | "table" | "api" | "update_set" | "record" | "scheduled_job" | "external_scope";
-  label: string;
-};
 
-type GraphEdge = {
-  from: string;
-  to: string;
-  relation: "reads" | "writes" | "calls" | "contains" | "belongs_to" | "depends_on" | "affects" | "cross_scope_dependency" | "global_dependency";
-  why: string;
-};
 
-type UnifiedTaskType = "script" | "metadata" | "hybrid";
 
 type WorkflowContext = {
   timeoutMs: number;

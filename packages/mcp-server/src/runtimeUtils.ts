@@ -1,9 +1,4 @@
-type CmdResult = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-};
+import type { CmdResult } from "./processRunner";
 
 type McpErrorPayload = {
   code?: string;

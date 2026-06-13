@@ -168,14 +168,12 @@ Findings prefixed ARCH-/DEV-/QA-.
       toolDispatch.ts — a silent drift surface. Consolidated into a leaf module
       `toolResponse.ts`; handlers import it, `ToolHandlerResponse` is now an
       alias. typecheck + lint green.
-- [ ] **ARCH-2. Other intra-mcp duplicated types** — `GraphNode`/`GraphEdge`
-      are re-declared in 3 handlers although `analysis/graph.ts` already exports
-      them (handler copies omit the optional `meta?` field); `CmdResult` × 3
-      (runtimeUtils, processRunner, workspaceHandlers); `UnifiedTaskType` × 2
-      (toolService, workflowHandlers, identical string union). Lower blast
-      radius than ARCH-1 — consolidate handlers onto the exported definitions
-      (import GraphNode/GraphEdge from analysis/graph, CmdResult from
-      processRunner, lift UnifiedTaskType to a shared spot). Mechanical, gated.
+- [x] **ARCH-2. Other intra-mcp duplicated types** — DONE 2026-06-13: handlers
+      now `import type` the canonical definitions — GraphNode/GraphEdge from
+      analysis/graph.ts (3 handlers), CmdResult from processRunner (runtimeUtils
+      + workspaceHandlers), UnifiedTaskType exported from toolService and
+      imported by workflowHandlers. Each type has exactly one definition now;
+      `import type` is erased at compile so zero runtime/cycle risk. check green.
 - Confirmed healthy (no action): invariants #1 (no stdout pollution) and #2
   (both clients consume sn-transport for prefix/retry/endpoint-not-found, incl.
   CR18) hold; no cyclic/upward imports; handlers don't import index (§5). The
@@ -187,10 +185,12 @@ Findings prefixed ARCH-/DEV-/QA-.
       body in try/catch only to re-throw the same error: dead structure that
       obscures which code actually has error handling. FIXED the 3 in
       PluginManager.ts (clean rewrite, behavior identical, core suite green).
-      REMAINING 9 (documented, mechanical follow-up — each needs a body
-      de-indent so left out of this pass to keep the diff low-risk):
-      commands.ts:177/211/302, appUtils.ts:277/595/705, wizard.ts:212/225,
-      FileUtils.ts:296.
+      REMAINING 9 DEFERRED (commands.ts:177/211/302, appUtils.ts:277/595/705,
+      wizard.ts:212/225, FileUtils.ts:296): each wraps a whole function body, so
+      removal means de-indenting large bodies — a big diff with real risk for
+      ZERO behavior change. Per the review rule (don't fix mechanically-risky
+      noise), left as-is intentionally. Reopen only if touching those functions
+      for another reason.
 - [ ] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** —
       genericUtils.ts `allSettled` returns `{status:"fulfilled",value}` /
       `{status:"rejected",reason}`, which is exactly the native

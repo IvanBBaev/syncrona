@@ -1,21 +1,11 @@
+import type { GraphNode, GraphEdge } from "../analysis/graph";
 import { buildScopeKnowledgeIndex, buildTableFieldMarkdownDocs, rankMinimalFootprintTargets, renderScopeKnowledgeMarkdown, renderTableRelationshipMermaid, validateScopeKnowledgeIndex } from "../analysis";
 import { getScopeDocsPaths, getScopeKnowledgePaths, getTableDependencyReportPaths, normalizeScopeCode } from "../scopePaths";
 import { toJsonText } from "../runtimeUtils";
 
 import type { ToolResponse } from "../toolResponse";
 
-type GraphNode = {
-  id: string;
-  kind: "script" | "table" | "api" | "update_set" | "record" | "scheduled_job" | "external_scope";
-  label: string;
-};
 
-type GraphEdge = {
-  from: string;
-  to: string;
-  relation: "reads" | "writes" | "calls" | "contains" | "belongs_to" | "depends_on" | "affects" | "cross_scope_dependency" | "global_dependency";
-  why: string;
-};
 
 type ScopeKnowledgeHydrated = {
   entities: Array<Record<string, unknown>>;

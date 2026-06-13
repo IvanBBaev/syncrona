@@ -56,7 +56,7 @@ import { handleScopeKnowledgeTool } from "./handlers/scopeKnowledgeHandlers";
 import { handleRelationOnboardingTool } from "./handlers/relationOnboardingHandlers";
 import { handleWorkflowTool } from "./handlers/workflowHandlers";
 
-type UnifiedTaskType = "script" | "metadata" | "hybrid";
+export type UnifiedTaskType = "script" | "metadata" | "hybrid";
 
 let LAST_AUDIT_INTEGRITY_STATUS = "unknown";
 

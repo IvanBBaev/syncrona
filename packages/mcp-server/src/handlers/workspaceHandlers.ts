@@ -1,12 +1,7 @@
+import type { CmdResult } from "../processRunner";
 import { commandResultToText } from "../runtimeUtils";
 import vm from "node:vm";
 
-type CmdResult = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-};
 
 import type { ToolResponse } from "../toolResponse";
 
