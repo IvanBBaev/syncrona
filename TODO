@@ -280,12 +280,17 @@ Docs, Workflow, Error Handling, MCP.
       e2e smoke test asserts `push --help` carries the examples.
 
 **DX6: The `--diff` flag is unclear**
-- `syncrona push --diff main` still pushes everything (it does not filter changed
-  files).
-- The docs say "audit trail", but the examples are unclear.
-- [ ] Add a `--changed-only` flag for a true diff push.
-- [ ] Document: `--diff main` = audit (push everything but track changes),
-      `--changed-only` = filter.
+- CORRECTION 2026-06-13: the premise was wrong. `push --diff <branch>` already
+  pushes ONLY the changed files (gitDiffToEncodedPaths → `git diff <branch>...`
+  → getAppFileList over just those paths). It is already a changed-only push, so
+  a separate `--changed-only` flag would just duplicate `--diff`. The real gap
+  was clarity: `push --diff` = filter to changed files; `build --diff` = build
+  all but write sync.diff.manifest.json for deploy.
+- [x] ~~Add a --changed-only flag~~ — not needed (push --diff is the changed-only
+  push). RESOLVED as a docs fix.
+- [x] Document the two meanings — DONE 2026-06-13: README "Using the diff option"
+  rewritten to contrast push vs build; --diff option describe and the push --diff
+  help example corrected (the example previously mislabeled it as audit-only).
 
 **DX7: `--instance-profile` on EVERY command is verbose**
 - Typical work: `syncrona status --instance-profile dev`,

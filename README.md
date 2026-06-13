@@ -180,11 +180,26 @@ Recommendations:
 
 #### Using the diff option
 
-When using the `push` and `build` commands you can specify a branch to compare changes against using the `--diff` option. When using diff with build, SyncroNow AI will build all files from the source folder but will create a `sync.diff.manifest.json` file that tracks changes for deploy.
+`--diff <branch>` means **different things for `push` and `build`** — both use
+`git diff <branch>...` against your source folder, but apply it differently:
 
-```bash
-npx syncrona build --diff master
-```
+- **`syncrona push --diff <branch>`** pushes **only the files that changed**
+  versus that branch. This is the "changed-only" push — use it to push just your
+  feature's edits instead of the whole scope.
+
+  ```bash
+  npx syncrona push --diff main
+  ```
+
+- **`syncrona build --diff <branch>`** builds **all** source files but also
+  writes a `sync.diff.manifest.json` recording which files changed, so a later
+  `syncrona deploy` can target just those (an audit/deploy-tracking trail).
+
+  ```bash
+  npx syncrona build --diff main
+  ```
+
+Without `--diff`, `push` and `build` act on the entire source folder.
 
 #### Using dry-run mode
 
