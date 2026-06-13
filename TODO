@@ -141,11 +141,13 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       --audit-level=high` is a CI step in both azure-pipelines.yml and the
       GitHub Actions workflow (verified locally: 0 vulnerabilities). Remaining:
       secret scanning (gitleaks) — requires an external tool in the pipeline.
-- [ ] **G17. Tests must not dirty the tracked tree** — the scope-docs test
-      regenerates packages/core/docs/scopes/x_test.md with a fresh timestamp on
-      every run, leaving the working tree dirty (a `git status` surprise and a
-      potential accidental commit). Either write generated docs to a tmp dir in
-      the test, or stop tracking the generated x_test.md. (QA finding 2026-06-13.)
+- [x] **G17. Tests must not dirty the tracked tree** — DONE 2026-06-13: the
+      culprit was commandsDownload.test.ts — downloadCommand calls the REAL
+      generateScopeDocs(man), which resolves its outDir from process.cwd() and
+      so rewrote packages/core/docs/scopes/x_test.md (cwd = packages/core under
+      jest) with a fresh timestamp every run. Fixed by stubbing ../scopeDocs in
+      that test (the test is about download orchestration, not doc generation).
+      Verified: full core suite leaves the tracked tree clean.
 
 ### Recommended order (G)
 1. ~~G16 + G15~~ done (G16 without gitleaks; G15 now on GitHub Actions, no Windows).
