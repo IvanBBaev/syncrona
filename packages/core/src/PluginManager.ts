@@ -1,5 +1,6 @@
 import { Sync } from "@syncrona/types";
 import * as ConfigManager from "./config";
+import { logger } from "./Logger";
 import fs from "fs";
 import path from "path";
 const fsp = fs.promises;
@@ -63,9 +64,14 @@ class PluginManager {
     content: string
   ): Promise<string> {
     const plugins = this.determinePlugins(context);
+    // DX10: under --log-level debug, show which rule (plugins) each file matched.
     if (plugins.length === 0) {
+      logger.debug(`build: ${context.filePath} matched no rule — copied as-is`);
       return content;
     }
+    logger.debug(
+      `build: ${context.filePath} matched rule → plugins [${plugins.map((p) => p.name).join(", ")}]`
+    );
     const pluginResults = await this.runPlugins(plugins, context, content);
     if (!pluginResults.success) {
       throw new Error(
