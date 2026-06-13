@@ -431,8 +431,13 @@ Docs, Workflow, Error Handling, MCP.
 **DX24: Rate limiting & concurrency are invisible**
 - `pushConcurrency: 10` is configurable via sync.config.js but has no CLI flag.
   No progress bar for long pushes.
-- [ ] A `--push-concurrency N` flag.
-- [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)".
+- [x] A `--push-concurrency N` flag — DONE 2026-06-13: `push --concurrency N`
+      (aliases --push-concurrency / --pushConcurrency) overrides sync.config.js
+      pushConcurrency, clamped 1-50, falls back to 10. resolvePushConcurrency
+      takes an optional override; pushFiles threads args.pushConcurrency (deploy
+      and watch keep the config default). 4 unit tests + help example.
+- [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)". (push already has a
+      progress tick via getProgTick; a richer ETA bar remains.)
 
 ---
 

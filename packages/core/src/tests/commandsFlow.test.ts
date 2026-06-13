@@ -211,7 +211,7 @@ describe("command flows", () => {
     expect(mockCheckScope).toHaveBeenCalledWith(false);
     expect(mockCheckConnection).toHaveBeenCalledWith(5000);
     expect(mockGetAppFileList).toHaveBeenCalledWith("encoded:/tmp/a.js");
-    expect(mockPushFiles).toHaveBeenCalledWith(appFileList);
+    expect(mockPushFiles).toHaveBeenCalledWith(appFileList, undefined);
     expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
     expect(mockWriteFile).toHaveBeenCalledTimes(3);
     expect(mockUnlink).toHaveBeenCalledTimes(2);
@@ -404,9 +404,10 @@ describe("command flows", () => {
       updateSet: "",
     });
 
-    expect(mockPushFiles).toHaveBeenCalledWith([
-      { table: "sys_script", sysId: "2", fields: { script: { filePath: "/tmp/b.js" } } },
-    ]);
+    expect(mockPushFiles).toHaveBeenCalledWith(
+      [{ table: "sys_script", sysId: "2", fields: { script: { filePath: "/tmp/b.js" } } }],
+      undefined
+    );
 
     process.env.SN_INSTANCE = oldInstance;
   });

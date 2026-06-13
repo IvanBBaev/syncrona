@@ -114,9 +114,16 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         default: false,
         describe: "Will skip confirmation prompts during the push process",
       },
+      pushConcurrency: {
+        alias: ["push-concurrency", "concurrency"],
+        type: "number",
+        describe:
+          "Max records pushed in parallel (1-50; overrides sync.config.js pushConcurrency, default 10)",
+      },
     },
     examples: [
       ["$0 push --dry-run", "Preview what would be pushed without writing anything"],
+      ["$0 push --concurrency 5", "Throttle to 5 parallel record pushes (slow networks)"],
       ["$0 push --diff main", "Push but record changes vs the main branch for the audit trail"],
       ["$0 push --ci", "Push without confirmation prompts (CI/automation)"],
     ],

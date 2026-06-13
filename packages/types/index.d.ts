@@ -15,6 +15,7 @@ export namespace Sync {
     scopeSwap: boolean;
     updateSet: string;
     ci: boolean;
+    pushConcurrency?: number;
   }
   interface BuildCmdArgs extends SharedCmdArgs {
     diff: string;
