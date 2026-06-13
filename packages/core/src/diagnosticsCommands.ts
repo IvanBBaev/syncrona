@@ -24,10 +24,25 @@ type StatusSummary = {
   buildPath: string;
   manifestPath: string;
   credentialSource: string;
+  includeRules: number;
+  excludeRules: number;
   envReady: boolean;
   connectivityOk: boolean;
   errors: string[];
 };
+
+// DX9: how many include/exclude table rules are active in the merged config.
+function countConfigRules(): { includeRules: number; excludeRules: number } {
+  try {
+    const cfg = ConfigManager.getConfig();
+    return {
+      includeRules: Object.keys(cfg.includes ?? {}).length,
+      excludeRules: Object.keys(cfg.excludes ?? {}).length,
+    };
+  } catch (_) {
+    return { includeRules: 0, excludeRules: 0 };
+  }
+}
 
 type DoctorCheck = {
   name: string;
@@ -128,6 +143,7 @@ export async function statusCommand(
     buildPath: safeConfigGet(() => ConfigManager.getBuildPath()),
     manifestPath: safeConfigGet(() => ConfigManager.getManifestPath()),
     credentialSource: describeCredentialSource(args.instanceProfile),
+    ...countConfigRules(),
     envReady,
     connectivityOk,
     errors,
@@ -141,6 +157,9 @@ export async function statusCommand(
   logger.info(`Source: ${summary.sourcePath}`);
   logger.info(`Build: ${summary.buildPath}`);
   logger.info(`Manifest: ${summary.manifestPath}`);
+  logger.info(
+    `Config rules: ${summary.includeRules} include, ${summary.excludeRules} exclude (defaults + overrides)`
+  );
   logger.info(`Environment Ready: ${summary.envReady ? "yes" : "no"}`);
   logger.info(`Connectivity: ${summary.connectivityOk ? "ok" : "failed"}`);
   for (const error of summary.errors) {

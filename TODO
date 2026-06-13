@@ -304,8 +304,10 @@ Docs, Workflow, Error Handling, MCP.
 **DX9: Default includes/excludes hidden in code**
 - The "sane defaults" live in defaultManifestConfig.ts; users must read source
   code to understand them.
-- [ ] `syncrona status` should show "Active includes/excludes" + sources
-      (defaults vs overrides).
+- [x] `syncrona status` should show "Active includes/excludes" — DONE 2026-06-13:
+      status prints "Config rules: N include, M exclude (defaults + overrides)"
+      from the merged config. (Per-rule defaults-vs-overrides provenance and a
+      `config show-defaults` subcommand remain as a deeper follow-up.)
 - [ ] `syncrona config show-defaults` should list all defaults.
 
 **DX10: `sync.config.js` rule order matters, but there is no validation**
