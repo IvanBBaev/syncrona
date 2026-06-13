@@ -1,5 +1,5 @@
 import { Sync } from "@syncrona/types";
-import { promises as fsp } from "fs";
+import { promises as fsp, readFileSync } from "fs";
 import path from "path";
 import * as ConfigManager from "./config";
 import * as AppUtils from "./appUtils";
@@ -8,10 +8,37 @@ import { scopeCheckMessage } from "./logMessages";
 import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient";
 
 export const LOGIN_DEFAULT_SOURCE_DIRECTORY = "src";
+export const LOCAL_CONFIG_FILE = ".syncrona-local";
+
+// DX7: a gitignored .syncrona-local in the working directory can set a default
+// instance profile so you don't pass --instance-profile on every command.
+function readLocalInstanceProfile(): string | undefined {
+  try {
+    const raw = readFileSync(path.join(process.cwd(), LOCAL_CONFIG_FILE), "utf-8");
+    const parsed = JSON.parse(raw) as { instanceProfile?: unknown };
+    const profile = typeof parsed.instanceProfile === "string" ? parsed.instanceProfile.trim() : "";
+    return profile || undefined;
+  } catch (_) {
+    // Missing or unparseable .syncrona-local → no local default.
+    return undefined;
+  }
+}
+
+// Explicit --instance-profile wins over .syncrona-local, which wins over none.
+export function resolveInstanceProfile(args: { instanceProfile?: string }): string | undefined {
+  if (args.instanceProfile) {
+    return args.instanceProfile;
+  }
+  return readLocalInstanceProfile();
+}
 
 export function setLogLevel(args: Sync.SharedCmdArgs) {
   logger.setLogLevel(args.logLevel);
-  setActiveInstanceProfile(args.instanceProfile);
+  const profile = resolveInstanceProfile(args);
+  if (profile && !args.instanceProfile) {
+    logger.debug(`Using instance profile "${profile}" from ${LOCAL_CONFIG_FILE}`);
+  }
+  setActiveInstanceProfile(profile);
 }
 
 export function logScopedEndpointCapability(context: string): void {

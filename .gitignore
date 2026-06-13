@@ -74,5 +74,8 @@ junit.xml
 # Syncrona MCP runtime artifacts (audit log, metrics)
 .syncrona-mcp/
 
+# Per-workspace local overrides (e.g. default instance profile)
+.syncrona-local
+
 #DSstore
 .DS_Store
