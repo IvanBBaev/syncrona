@@ -317,7 +317,7 @@ Docs, Workflow, Error Handling, MCP.
       status prints "Config rules: N include, M exclude (defaults + overrides)"
       from the merged config. (Per-rule defaults-vs-overrides provenance and a
       `config show-defaults` subcommand remain as a deeper follow-up.)
-- [ ] `syncrona config show-defaults` should list all defaults.
+- [x] `syncrona config show-defaults` — DONE 2026-06-14: new `config <action>` command; show-defaults prints built-in sourceDirectory/buildDirectory/pushConcurrency/refreshInterval + default include/exclude rule counts. Documented (README+CLAUDE.md, 18 commands); e2e test.
 
 **DX10: `sync.config.js` rule order matters, but there is no validation**
 - README: "Order your rules by MOST SPECIFIC extension first!" — users can get the

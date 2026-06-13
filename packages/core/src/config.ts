@@ -431,6 +431,12 @@ export function getRefresh() {
   return defaultConfigStore.getRefresh();
 }
 
+// The built-in defaults applied before a project's sync.config.js overrides.
+// Exposed read-only for `syncrona config show-defaults` (DX9).
+export function getDefaultConfig(): Sync.Config {
+  return DEFAULT_CONFIG;
+}
+
 export function getDefaultConfigFile(sourceDirectory = "src"): string {
   const normalizedSourceDirectory = String(sourceDirectory || "src").trim() || "src";
   return `

@@ -8,7 +8,7 @@ import {
   docsCommand,
 } from "./commands";
 import { pushCommand } from "./pushCommand";
-import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand } from "./diagnosticsCommands";
+import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand, configCommand } from "./diagnosticsCommands";
 import { mcpCommand } from "./mcpCommand";
 import { devCommand, refreshCommand } from "./devCommands";
 import {
@@ -226,6 +226,19 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "plugins",
     describe: "Show configured plugin rules and installed/missing plugin packages",
     handler: typedHandler<Sync.SharedCmdArgs>((args) => pluginsCommand(args)),
+  },
+  {
+    command: "config <action>",
+    describe: "Inspect configuration (action: show-defaults)",
+    positionals: {
+      action: {
+        type: "string",
+        describe: "config action",
+        choices: ["show-defaults"],
+      },
+    },
+    examples: [["$0 config show-defaults", "Print the built-in default includes/excludes and settings"]],
+    handler: typedHandler<Sync.SharedCmdArgs & { action: string }>((args) => configCommand(args)),
   },
   {
     command: "mcp",
