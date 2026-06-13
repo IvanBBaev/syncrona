@@ -6,8 +6,47 @@ import * as AppUtils from "./appUtils";
 import { logger } from "./Logger";
 import { scopeCheckMessage } from "./logMessages";
 import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient";
+import { getActiveInstance, loadCredentials } from "./auth";
 
 export const LOGIN_DEFAULT_SOURCE_DIRECTORY = "src";
+
+export type ActiveStoreHealth = { active: string | null; decrypts: boolean; error?: string };
+
+// Health of the active stored instance: does its credential file decrypt?
+// resolveCredentialsFromStore swallows decryption failures and returns null,
+// so this is the single place that turns that silence into a clear signal
+// (used by status, push, and download).
+export async function activeStoreHealth(): Promise<ActiveStoreHealth> {
+  let active: string | null = null;
+  try {
+    active = await getActiveInstance();
+  } catch {
+    return { active: null, decrypts: false };
+  }
+  if (!active) {
+    return { active: null, decrypts: false };
+  }
+  try {
+    await loadCredentials(active);
+    return { active, decrypts: true };
+  } catch (e) {
+    return { active, decrypts: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// One actionable warning when a prior login left a stored instance that no
+// longer decrypts (the silent cause of "credentials missing"); null otherwise.
+export async function getActiveStoreDecryptWarning(): Promise<string | null> {
+  const health = await activeStoreHealth();
+  if (health.active && !health.decrypts) {
+    return (
+      `Stored credentials for "${health.active}" failed to decrypt` +
+      (health.error ? ` (${health.error})` : "") +
+      " — likely encrypted on a different machine or user. Re-run 'syncrona login'."
+    );
+  }
+  return null;
+}
 export const LOCAL_CONFIG_FILE = ".syncrona-local";
 
 // DX7: a gitignored .syncrona-local in the working directory can set a default
