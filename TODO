@@ -256,8 +256,8 @@ Docs, Workflow, Error Handling, MCP.
 - `--instance-profile` is in help, but there are no examples; users have to guess
   the syntax.
 - No guide for a dev+prod workflow or a safe context switch.
-- [ ] Add a `MULTI_INSTANCE.md` guide: profile setup, `syncrona use [instance]`,
-      CI/CD examples.
+- [x] DONE 2026-06-13: docs/MULTI_INSTANCE.md — precedence, store vs profiles,
+      dev→prod workflow, CI, troubleshooting. Linked from README + FAQ.
 
 **DX4: Auto-init monorepo is unexpected**
 - `syncrona init` with SN_* env vars creates `packages/x_*/` for all scopes.
@@ -339,19 +339,20 @@ Docs, Workflow, Error Handling, MCP.
 **DX12: The FAQ is thin**
 - There is "How do I Delete Something?" and "How do I Add Scripts?", but nothing on
   "How do I work with multiple instances?" or error recovery.
-- [ ] Add FAQ: multi-user workflow, environment switching, performance tuning,
-      troubleshooting.
-- [ ] A "Getting Unstuck" section: common problems + solutions.
+- [x] DONE 2026-06-13: README FAQ expanded — multi-instance, multi-scope, and a
+      "Getting unstuck" section (decrypt failures, wrong instance, partial push,
+      slow network, check-env).
 
 **DX13: Plugin development docs are missing**
 - A user writing a plugin reads source code. No spec, lifecycle, API.
-- [ ] `PLUGIN_DEVELOPMENT.md`: template plugin, example transformations, interface spec.
+- [x] DONE 2026-06-13: docs/PLUGIN_DEVELOPMENT.md — the Sync.Plugin contract,
+      FileContext fields, rule wiring, conventions, local link workflow.
 
 **DX14: Workspace/monorepo guide is missing**
 - README: "run from specific scope directory", but no full workflow example
   (init, configure, share deps, CI/CD).
-- [ ] `docs/MONOREPO_GUIDE.md`: structure, per-scope config, shared node_modules,
-      pipeline examples.
+- [x] DONE 2026-06-13: docs/MONOREPO_GUIDE.md — layout, per-scope vs shared,
+      credentials across scopes, CI matrix, tips.
 
 **DX15: MCP integration docs have hardcoded paths and are thin**
 - The MCP quickstart contains `/Users/Ivan.Baev/Development/...` in examples.
