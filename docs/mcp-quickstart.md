@@ -38,6 +38,29 @@ node <SYNCRONA_REPO>/packages/mcp-server/dist/index.js
 
 Keep this terminal running.
 
+## Auto-pull on startup
+
+By default the MCP server pulls scope metadata for all discoverable scopes in
+the **background, after it has connected** (so it never blocks the MCP
+handshake) — this primes the AI tools with scope knowledge. On large instances
+or slow networks where you only need specific scopes, disable it:
+
+```bash
+export SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES=0   # also accepts false / no / off
+```
+
+With auto-pull off, generate scope knowledge on demand with the tool calls
+below.
+
+### Troubleshooting MCP startup
+- **Client times out connecting** — usually a slow/unreachable instance; verify
+  `SN_INSTANCE` and credentials, or disable auto-pull (above).
+- **No tools appear** — check the client points at
+  `<SYNCRONA_REPO>/packages/mcp-server/dist/index.js` and that `npm run mcp:build`
+  ran (the `dist/` exists).
+- **Nothing on stdout** — by design: the MCP server speaks JSON-RPC on stdout;
+  all human-readable logs go to stderr.
+
 ## Generate Scope Knowledge
 
 Run this tool call from an MCP-enabled chat client (replace `x_your_scope`

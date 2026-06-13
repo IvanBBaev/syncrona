@@ -237,6 +237,22 @@ npx syncrona status --instance-profile dev
 
 Profile vars (`SN_INSTANCE_<PROFILE>`, `SN_USER_<PROFILE>`, `SN_PASSWORD_<PROFILE>`) fall back to base vars when a specific value is missing.
 
+#### Manifest refresh in dev mode
+
+In `dev` mode Syncrona periodically re-reads the instance manifest to pick up
+records created in ServiceNow since you started (it does **not** overwrite local
+file contents). The interval defaults to **30 seconds** (`refreshInterval` in
+`sync.config.js`). Overlapping refreshes are guarded — a slow refresh never
+stacks. On a slow network, raise the interval or disable polling:
+
+```bash
+npx syncrona dev --refresh-interval 60   # poll every 60s
+npx syncrona dev --refresh-interval 0    # disable polling; refresh manually with `syncrona refresh`
+```
+
+Run with `--log-level debug` to see `Manifest refresh took Xms` and per-file
+rule matches.
+
 ### Workflow
 
 ![Development Workflow](docs/images/sincronia-development.png)
