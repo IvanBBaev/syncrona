@@ -194,16 +194,10 @@ Findings prefixed ARCH-/DEV-/QA-.
       ZERO behavior change. Per the review rule (don't fix mechanically-risky
       noise), left as-is intentionally. Reopen only if touching those functions
       for another reason.
-- [ ] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** —
-      genericUtils.ts `allSettled` returns `{status:"fulfilled",value}` /
-      `{status:"rejected",reason}`, which is exactly the native
-      `Promise.allSettled` result shape (available on Node 22). Replace the
-      custom helper with the native call and drop `Sync.PromiseResult`. Minor;
-      no bug, just dead reimplementation.
-- No correctness/async/resource defects found beyond the above — the CR1–CR30
-  series already covered the real bugs (push state, retry policy, swallowed
-  errors, manifest data loss).
-
+- [x] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** — CLOSED
+      2026-06-13 as won't-do: swapping to native changes the typed call sites
+      (Sync.PromiseResult casts in appUtils) for zero behavior gain; the custom
+      helper is harmless. Revisit only if that code is touched anyway.
 ### QA
 - [x] **QA-1. Broken-config hard-fail was untested (invariant #6 / CR20)** —
       DONE 2026-06-13: config.ts throws "Failed to load config file" on a
@@ -214,13 +208,9 @@ Findings prefixed ARCH-/DEV-/QA-.
 - [ ] **QA-2. Thin handler coverage** — 5 mcp test files for 11 handlers; mcp
       tests run against compiled `dist/` not `src/` (AR9, known). Adding
       per-handler tests against dist is the path; tracked, not done here.
-- [ ] **QA-3. Single-file `npx jest <file>` from repo root falls back to babel
-      and fails to parse TS** (`as` casts) — ts-jest only applies when run from
-      packages/core or via `npm --workspace @syncrona/core test`. Contributor
-      gotcha; document in CONTRIBUTING or add a root jest config. Minor.
-
----
-
+- [x] **QA-3. Single-file `npx jest` from repo root** — DONE 2026-06-13:
+      documented in CONTRIBUTING ("Running a single test file") — run from inside
+      the package or via `npm --workspace`. Runner-resolution quirk, not a bug.
 ## DEEP DX RESEARCH — making the project exceptionally easy to use (2026-06-11)
 Analysis of the whole journey from installation to daily development: CLI, Config,
 Docs, Workflow, Error Handling, MCP.
@@ -306,7 +296,9 @@ Docs, Workflow, Error Handling, MCP.
       `.syncrona-local` (`{ "instanceProfile": "dev" }`) in the working dir sets a
       default profile; explicit --instance-profile still wins. resolveInstanceProfile
       in commandHelpers; 4 tests; documented in MULTI_INSTANCE.md; added to .gitignore.
-- [ ] Persist the local profile in `syncrona use [instance]` (not the global store).
+- [x] Persist profile in `syncrona use` — N/A 2026-06-13: `use` selects the
+      active *stored instance* (store-based); `.syncrona-local` sets the env-var
+      *profile* default (DX7, done). Different mechanisms — not merged by design.
 
 ---
 

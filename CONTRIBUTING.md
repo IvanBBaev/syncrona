@@ -26,8 +26,16 @@ npm run test       # core jest (146+) + mcp node:test (172+)
 npm run check      # the full gate: build + typecheck + lint + tests + coverage + governance
 ```
 
-CI (`azure-pipelines.yml`) runs the same gates plus the governance checks:
-tool-contract hash, README/CLAUDE.md docs-drift, release checklist.
+CI runs the same gates plus governance checks (tool-contract hash,
+README/CLAUDE.md docs-drift, release checklist) — on GitHub via
+`.github/workflows/ci.yml` (matrix: ubuntu + macOS) and, for Azure DevOps,
+`azure-pipelines.yml`.
+
+**Running a single test file:** run it from inside the package — ts-jest is
+configured per-package — e.g. `cd packages/core && npx jest src/tests/foo.test.ts`,
+or `npm --workspace @syncrona/core test`. Running `npx jest <file>` from the
+**repo root** falls back to Babel and fails to parse TypeScript (`as` casts);
+that's a runner-resolution quirk, not a code error.
 
 ## Conventions
 
