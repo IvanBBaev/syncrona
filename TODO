@@ -337,7 +337,7 @@ Docs, Workflow, Error Handling, MCP.
       order, reports any rule shadowed by an earlier broader one (synthesizes a
       representative filename from anchored patterns; zero false positives),
       exits non-zero without building. checkRuleOrder + 4 tests.
-- [ ] `--verbose build` should show which file matched which rule.
+- [x] `--verbose build` — DONE 2026-06-13 (9c34412): processFile logs the matched rule per file at debug level.
 
 **DX11: Advanced options undocumented (`displayField`, `differentiatorField`)**
 - TableOptions get one line in the README. When to use them? What is
@@ -449,7 +449,7 @@ Docs, Workflow, Error Handling, MCP.
 **DX21: Verbose logging is incomplete**
 - `--log-level debug` exists but the output is silent. A stuck user cannot see
   what is happening.
-- [ ] Profiled log points: "Starting refresh…", "Queued 5 files…", "Waiting for API…".
+- [x] Profiled log points — DONE 2026-06-13: refresh logs missing-record counts (debug) and download logs record/table volume (info), on top of the existing stage logs and the DX21 "Manifest refresh took Xms" timing.
 
 ---
 
