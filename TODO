@@ -201,6 +201,21 @@ Findings prefixed ARCH-/DEV-/QA-.
   series already covered the real bugs (push state, retry policy, swallowed
   errors, manifest data loss).
 
+### QA
+- [x] **QA-1. Broken-config hard-fail was untested (invariant #6 / CR20)** —
+      DONE 2026-06-13: config.ts throws "Failed to load config file" on a
+      present-but-broken sync.config.js (never silently DEFAULT_CONFIG), but no
+      test locked it — a refactor could quietly restore the dangerous default
+      fallback. Added a regression test (syntactically broken config → rejects)
+      to configValidation.test.ts. 5/5 green.
+- [ ] **QA-2. Thin handler coverage** — 5 mcp test files for 11 handlers; mcp
+      tests run against compiled `dist/` not `src/` (AR9, known). Adding
+      per-handler tests against dist is the path; tracked, not done here.
+- [ ] **QA-3. Single-file `npx jest <file>` from repo root falls back to babel
+      and fails to parse TS** (`as` casts) — ts-jest only applies when run from
+      packages/core or via `npm --workspace @syncrona/core test`. Contributor
+      gotcha; document in CONTRIBUTING or add a root jest config. Minor.
+
 ---
 
 ## DEEP DX RESEARCH — making the project exceptionally easy to use (2026-06-11)
