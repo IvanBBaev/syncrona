@@ -86,4 +86,13 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
     expect(out).toContain("Examples:");
     expect(out).toContain("syncrona push --dry-run");
   }, 30000);
+
+  // DX1: check-env runs without a project/instance and reports prerequisites.
+  it("check-env reports prerequisites and exits 0 on a healthy machine", async () => {
+    const res = await runCli(["check-env"], workspace);
+    const out = res.stdout + res.stderr;
+    expect(res.code).toBe(0);
+    expect(out).toContain("node:");
+    expect(out).toMatch(/Environment looks good/);
+  }, 30000);
 });

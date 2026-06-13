@@ -25,6 +25,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona deploy` deploys built files.
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
 - `npx syncrona status` prints extended diagnostics.
+- `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncrona doctor` runs diagnostic checks.
 - `npx syncrona plugins` reports configured plugin rules and plugin package availability.
 - `npx syncrona mcp` starts standalone MCP server with optional local auto-configure.

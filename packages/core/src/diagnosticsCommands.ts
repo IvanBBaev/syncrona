@@ -1,5 +1,7 @@
 import { Sync } from "@syncrona/types";
-import { promises as fsp } from "fs";
+import { promises as fsp, readFileSync } from "fs";
+import { execFileSync } from "child_process";
+import os from "os";
 import path from "path";
 import * as ConfigManager from "./config";
 import { logger } from "./Logger";
@@ -417,4 +419,79 @@ export async function pluginsCommand(args: Sync.SharedCmdArgs): Promise<PluginsS
   }
 
   return summary;
+}
+
+type EnvCheck = { name: string; ok: boolean; details: string };
+
+function detectWsl(): boolean {
+  if (process.env.WSL_DISTRO_NAME) {
+    return true;
+  }
+  try {
+    return readFileSync("/proc/version", "utf-8").toLowerCase().includes("microsoft");
+  } catch (_) {
+    return false;
+  }
+}
+
+// DX1: verify the machine meets syncrona's prerequisites (Node 22+, supported
+// platform/WSL, Git) and print actionable next steps — needs no instance.
+export function checkEnvCommand(
+  args: Sync.SharedCmdArgs
+): { ok: boolean; checks: EnvCheck[] } {
+  setLogLevel(args);
+  const checks: EnvCheck[] = [];
+
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  checks.push({
+    name: "node",
+    ok: Number.isFinite(nodeMajor) && nodeMajor >= 22,
+    details:
+      nodeMajor >= 22
+        ? `Node.js ${process.versions.node} (>= 22 required)`
+        : `Node.js ${process.versions.node} is too old — syncrona requires Node 22+. Install via nvm: 'nvm install 22 && nvm use 22'.`,
+  });
+
+  if (process.platform === "win32") {
+    checks.push({
+      name: "platform",
+      ok: false,
+      details:
+        "Native Windows is not supported yet — run syncrona inside WSL (Ubuntu). See the README \"Windows users\" section.",
+    });
+  } else if (process.platform === "linux") {
+    const wsl = detectWsl();
+    checks.push({
+      name: "platform",
+      ok: true,
+      details: wsl ? `Linux / WSL (${process.env.WSL_DISTRO_NAME || "detected"})` : "Linux",
+    });
+  } else {
+    checks.push({ name: "platform", ok: true, details: `${process.platform} (${os.release()})` });
+  }
+
+  let gitOk = false;
+  let gitDetails = "git not found on PATH — install Git from https://git-scm.com.";
+  try {
+    gitDetails = execFileSync("git", ["--version"], { encoding: "utf-8" }).trim();
+    gitOk = true;
+  } catch (_) {
+    gitOk = false;
+  }
+  checks.push({ name: "git", ok: gitOk, details: gitDetails });
+
+  const ok = checks.every((c) => c.ok);
+  for (const c of checks) {
+    const line = `${c.ok ? "✓" : "✗"} ${c.name}: ${c.details}`;
+    if (c.ok) {
+      logger.info(line);
+    } else {
+      logger.warn(line);
+    }
+  }
+  logger.info(ok ? "Environment looks good ✅" : "Environment has issues — address the ✗ items above.");
+  if (!ok) {
+    process.exitCode = 1;
+  }
+  return { ok, checks };
 }
