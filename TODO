@@ -263,7 +263,10 @@ Docs, Workflow, Error Handling, MCP.
 **DX4: Auto-init monorepo is unexpected**
 - `syncrona init` with SN_* env vars creates `packages/x_*/` for all scopes.
 - The user wonders why they suddenly have 10 new folders.
-- [ ] Before auto-init, show: "Found 10 scoped apps. Create packages/x_*/? (y/n)".
+- [x] DONE 2026-06-13: auto-init (`init` with .env) now resolves the folder plan,
+      prints "Found N scoped app(s). Would create under packages/: …", and
+      confirms before creating anything. --ci skips the prompt; --dry-run reports
+      the plan and creates nothing. 3 tests (commandsInitAuto).
 
 ---
 

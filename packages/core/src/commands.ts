@@ -86,19 +86,49 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
     return;
   }
 
-  logger.info(`Auto init: preparing ${scopedApps.length} scoped packages...`);
+  // Resolve the folder name for each scope up front so we can show the user
+  // exactly what would be created before touching the filesystem.
+  // Use the short scope alias (strip the "x_<vendor>_" prefix), e.g.
+  // x_nuvo_cs -> cs; fall back to the full scope on collision or empty name.
+  // The full scope is still used for all API calls and stored in the manifest.
   const usedDirNames = new Set<string>();
-  for (const app of scopedApps) {
-    // Use the short scope alias (strip the "x_<vendor>_" prefix) as the folder
-    // name, e.g. x_nuvo_cs -> cs. Fall back to the full scope on collision or
-    // if stripping yields an empty name. The full scope is still used for all
-    // API calls and stored inside the manifest.
+  const plan = scopedApps.map((app) => {
     let dirName = app.scope.replace(/^x_[^_]+_/, "");
     if (dirName.length === 0 || usedDirNames.has(dirName)) {
       dirName = app.scope;
     }
     usedDirNames.add(dirName);
+    return { scope: app.scope, dirName };
+  });
 
+  // DX4: auto-init can create many directories from a single `init` — say what
+  // and confirm first (skipped with --ci; --dry-run reports without creating).
+  logger.info(
+    `Found ${plan.length} scoped app(s). Would create under packages/: ${plan
+      .map((p) => p.dirName)
+      .join(", ")}`
+  );
+  if (args.dryRun === true) {
+    logger.info("Dry run: skipping directory creation and downloads.");
+    return;
+  }
+  if (args.ci !== true) {
+    const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+      {
+        type: "confirm",
+        name: "confirmed",
+        message: `Create ${plan.length} package folder(s) under packages/ and download each scope?`,
+        default: false,
+      },
+    ]);
+    if (!confirmed) {
+      logger.info("Auto init cancelled.");
+      return;
+    }
+  }
+
+  logger.info(`Auto init: preparing ${plan.length} scoped packages...`);
+  for (const { scope, dirName } of plan) {
     const scopeDir = path.join(packagesRoot, dirName);
     await ensureScopeWorkspace(scopeDir);
 
@@ -112,7 +142,7 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
       await ConfigManager.loadConfigs();
       await downloadCommand({
         logLevel: args.logLevel,
-        scope: app.scope,
+        scope,
         dryRun: args.dryRun,
         instanceProfile: args.instanceProfile,
         ci: true,
