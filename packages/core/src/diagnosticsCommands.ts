@@ -6,6 +6,7 @@ import { logger } from "./Logger";
 import {
   defaultClient,
   resolveCredentials,
+  describeCredentialSource,
   unwrapSNResponse,
 } from "./snClient";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder";
@@ -20,6 +21,7 @@ type StatusSummary = {
   sourcePath: string;
   buildPath: string;
   manifestPath: string;
+  credentialSource: string;
   envReady: boolean;
   connectivityOk: boolean;
   errors: string[];
@@ -112,6 +114,7 @@ export async function statusCommand(args: Sync.SharedCmdArgs): Promise<StatusSum
     sourcePath: safeConfigGet(() => ConfigManager.getSourcePath()),
     buildPath: safeConfigGet(() => ConfigManager.getBuildPath()),
     manifestPath: safeConfigGet(() => ConfigManager.getManifestPath()),
+    credentialSource: describeCredentialSource(args.instanceProfile),
     envReady,
     connectivityOk,
     errors,
@@ -119,6 +122,7 @@ export async function statusCommand(args: Sync.SharedCmdArgs): Promise<StatusSum
 
   logger.info(`Instance: ${summary.instance || "<missing>"}`);
   logger.info(`User: ${summary.user || "<missing>"}`);
+  logger.info(`Credentials from: ${summary.credentialSource}`);
   logger.info(`Scope: ${summary.scope}`);
   logger.info(`Config: ${summary.configPath}`);
   logger.info(`Source: ${summary.sourcePath}`);

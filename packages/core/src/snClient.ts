@@ -409,7 +409,20 @@ function profileEnvVar(baseName: string, profile?: string): string {
   return `${baseName}_${normalized}`;
 }
 
-export function resolveCredentials(profile?: string): SNCredentials {
+// Human-readable origin of the resolved credentials, surfaced by `status` so
+// users can tell whether a command is talking to .env, a profile, or the store.
+export type CredentialSource =
+  | "credential store (syncrona login)"
+  | "instance profile env vars"
+  | "environment (.env / shell SN_* vars)"
+  | "none (credentials missing)";
+
+// Single source of truth for both the credentials and where they came from, so
+// the precedence logic is never duplicated between resolution and reporting.
+function resolveCredentialsInternal(profile?: string): {
+  creds: SNCredentials;
+  source: CredentialSource;
+} {
   const normalizedProfile = normalizeProfileName(profile) || normalizeProfileName(activeInstanceProfile);
   const userFromProfile = process.env[profileEnvVar("SN_USER", normalizedProfile)] || "";
   const passwordFromProfile = process.env[profileEnvVar("SN_PASSWORD", normalizedProfile)] || "";
@@ -421,19 +434,39 @@ export function resolveCredentials(profile?: string): SNCredentials {
   const hasEnvCreds = !!(SN_USER || userFromProfile);
   if (!hasEnvCreds && storedCredentialsCache && !normalizedProfile) {
     return {
-      user: storedCredentialsCache.user,
-      password: storedCredentialsCache.password,
-      instance: storedCredentialsCache.instance,
-      profile: undefined,
+      creds: {
+        user: storedCredentialsCache.user,
+        password: storedCredentialsCache.password,
+        instance: storedCredentialsCache.instance,
+        profile: undefined,
+      },
+      source: "credential store (syncrona login)",
     };
   }
 
-  return {
+  const creds: SNCredentials = {
     user: userFromProfile || SN_USER,
     password: passwordFromProfile || SN_PASSWORD,
     instance: instanceFromProfile || SN_INSTANCE,
     profile: normalizedProfile,
   };
+  // profileEnvVar() falls back to the base var name when no profile is set, so
+  // "came from a profile" requires both a profile AND a profile-specific value.
+  const usedProfile = !!normalizedProfile && !!userFromProfile;
+  const source: CredentialSource = creds.user
+    ? usedProfile
+      ? "instance profile env vars"
+      : "environment (.env / shell SN_* vars)"
+    : "none (credentials missing)";
+  return { creds, source };
+}
+
+export function resolveCredentials(profile?: string): SNCredentials {
+  return resolveCredentialsInternal(profile).creds;
+}
+
+export function describeCredentialSource(profile?: string): string {
+  return resolveCredentialsInternal(profile).source;
 }
 
 function credentialsKey(credentials: SNCredentials): string {

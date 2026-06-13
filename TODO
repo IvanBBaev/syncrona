@@ -240,8 +240,13 @@ Docs, Workflow, Error Handling, MCP.
   credentials came from.
 - Note 2026-06-12: precedence is now unified CLI↔MCP and documented in the mcp
   README (CR17); CLI-side visibility remains.
-- [ ] `syncrona status` should print "Credentials from: .env" or "from
-      CredentialStore (syncrona login)".
+- [x] DONE 2026-06-13: `syncrona status` now prints "Credentials from: <source>"
+      (credential store / instance profile env vars / environment (.env / shell)
+      / none). Single internal resolver (resolveCredentialsInternal) reports
+      both creds and source so precedence is never duplicated; new
+      describeCredentialSource() + credentialSource in StatusSummary; 3 tests
+      (credentialSource.test.ts). The test caught a real classification bug
+      (base env mis-reported as profile) before it shipped.
 - [ ] The wizard should show: "Found SN_INSTANCE in .env. Using this? (yes/no/enter-new)".
 
 **DX3: Multi-instance workflow undocumented**

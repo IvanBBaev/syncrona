@@ -72,6 +72,7 @@ jest.mock("../snClient", () => ({
   }),
   unwrapSNResponse: (...args: unknown[]) => mockUnwrapSNResponse(...args),
   resolveCredentials: (...args: unknown[]) => mockResolveCredentials(...args),
+  describeCredentialSource: () => "environment (.env / shell SN_* vars)",
   getScopedEndpointPrefix: (...args: unknown[]) => mockGetScopedEndpointPrefix(...args),
   setActiveInstanceProfile: (...args: unknown[]) => mockSetActiveInstanceProfile(...args),
 }));
