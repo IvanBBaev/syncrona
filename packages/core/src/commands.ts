@@ -230,7 +230,14 @@ export async function initCommand(args: Sync.SharedCmdArgs) {
   try {
     const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
     if (hasEnvFile) {
-      logger.info("Detected .env in current directory. Running non-interactive all-scope initialization...");
+      // DX2: name the instance the .env resolves to so the user knows which
+      // server init will talk to before it proceeds (folder creation is then
+      // confirmed in initAllScopesFromEnv — DX4 — unless --ci).
+      const detectedInstance = resolveCredentials(args.instanceProfile).instance;
+      logger.info(
+        `Detected .env in current directory${detectedInstance ? ` (SN_INSTANCE=${detectedInstance})` : ""}. ` +
+          "Running all-scope initialization — you'll confirm before any folders are created."
+      );
       await initAllScopesFromEnv(args);
       logger.success("Init complete: all discoverable scopes initialized. ✅");
       return;

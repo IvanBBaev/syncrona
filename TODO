@@ -243,7 +243,13 @@ Docs, Workflow, Error Handling, MCP.
       describeCredentialSource() + credentialSource in StatusSummary; 3 tests
       (credentialSource.test.ts). The test caught a real classification bug
       (base env mis-reported as profile) before it shipped.
-- [ ] The wizard should show: "Found SN_INSTANCE in .env. Using this? (yes/no/enter-new)".
+- [x] "Found SN_INSTANCE in .env" — DONE 2026-06-14 (adapted to architecture):
+      the no-.env path uses the credential STORE (logs "Using active
+      CredentialStore profile for X"), not .env prompting; the .env path now
+      names the instance ("Detected .env (SN_INSTANCE=X)…") and confirms before
+      creating folders (DX4). The literal yes/no/enter-new prompt doesn't fit
+      (wizard is store-based), so this captures the intent: never act on .env
+      silently.
 
 **DX3: Multi-instance workflow undocumented**
 - `--instance-profile` is in help, but there are no examples; users have to guess
