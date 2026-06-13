@@ -107,6 +107,15 @@ export async function statusCommand(
     }
   } else {
     errors.push(`Missing environment variables: ${missingEnvVars.join(", ")}`);
+    // DX20b: if a prior login left a stored instance that no longer decrypts,
+    // that — not a truly empty config — is why creds look missing. Say so.
+    const health = await activeStoreHealth();
+    if (health.active && !health.decrypts) {
+      errors.push(
+        `Stored credentials for "${health.active}" failed to decrypt (${health.error}) — ` +
+          "likely encrypted on a different machine or user. Re-run 'syncrona login'."
+      );
+    }
   }
 
   const summary: StatusSummary = {
@@ -165,22 +174,17 @@ async function printCredentialDiagnostics(profile?: string): Promise<void> {
   }
   try {
     const stored = await listInstances();
-    const active = await getActiveInstance();
+    const health = await activeStoreHealth();
     logger.info(
       `Credential store: ${stored.length} instance(s)${stored.length ? ` [${stored.join(", ")}]` : ""}` +
-        `${active ? `, active: ${active}` : ", no active instance"}`
+        `${health.active ? `, active: ${health.active}` : ", no active instance"}`
     );
-    // A stored instance that won't decrypt is the silent cause of "credentials
-    // missing" despite a prior login (resolveCredentialsFromStore swallows the
-    // error). Surface it here with an actionable hint.
-    if (active) {
-      try {
-        await loadCredentials(active);
-        logger.info(`Active stored instance "${active}" decrypts: yes`);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
+    if (health.active) {
+      if (health.decrypts) {
+        logger.info(`Active stored instance "${health.active}" decrypts: yes`);
+      } else {
         logger.warn(
-          `Active stored instance "${active}" FAILED to decrypt: ${message}. ` +
+          `Active stored instance "${health.active}" FAILED to decrypt: ${health.error}. ` +
             "The credential file was likely encrypted on a different machine or user — re-run 'syncrona login'."
         );
       }
@@ -193,6 +197,31 @@ async function printCredentialDiagnostics(profile?: string): Promise<void> {
   logger.info(
     `Resolved instance: ${diag.resolvedInstance || "<missing>"}, user: ${diag.resolvedUser || "<missing>"}`
   );
+}
+
+// Health of the active stored instance: does its credential file decrypt?
+// `resolveCredentialsFromStore` swallows decryption failures and returns null,
+// so this is the single place that turns that silence into a clear signal.
+async function activeStoreHealth(): Promise<{
+  active: string | null;
+  decrypts: boolean;
+  error?: string;
+}> {
+  let active: string | null = null;
+  try {
+    active = await getActiveInstance();
+  } catch {
+    return { active: null, decrypts: false };
+  }
+  if (!active) {
+    return { active: null, decrypts: false };
+  }
+  try {
+    await loadCredentials(active);
+    return { active, decrypts: true };
+  } catch (e) {
+    return { active, decrypts: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boolean; checks: DoctorCheck[] }> {

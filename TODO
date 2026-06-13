@@ -400,12 +400,16 @@ Docs, Workflow, Error Handling, MCP.
       which is why plain `status` reported "credentials missing". The debug view
       now reports the decrypt failure + hint ("re-run syncrona login"); previously
       resolveCredentialsFromStore swallowed it silently.
-- [ ] **DX20b (new finding 2026-06-13)**: resolveCredentialsFromStore swallows
-      AES-GCM decryption failures and returns null (AR10 pattern), so plain
-      `status`/connection shows "credentials missing" with no hint that stored
-      creds exist but won't decrypt. Surface a one-line warning on the normal
-      path too (not just --debug-credentials), e.g. "stored creds for X failed to
-      decrypt — re-run login". Low-risk, high-clarity.
+- [x] **DX20b** — DONE 2026-06-13: plain `syncrona status` (not just
+      --debug-credentials) now appends an error when the active stored instance
+      fails to decrypt: "Stored credentials for X failed to decrypt (…) — re-run
+      'syncrona login'." Shared activeStoreHealth() helper backs both the normal
+      and debug paths (decrypt check defined once). Verified live (the ven03019
+      fixture surfaces the warning). commandsFlow status tests made hermetic by
+      mocking ../auth.
+      Residual: push/download with stored-only creds still fail with a raw auth
+      error rather than this hint — generalizing the warning to those paths
+      (or un-swallowing in resolveCredentialsFromStore) is a larger follow-up.
 
 **DX21: Verbose logging is incomplete**
 - `--log-level debug` exists but the output is silent. A stuck user cannot see

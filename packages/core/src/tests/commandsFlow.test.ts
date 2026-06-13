@@ -65,6 +65,13 @@ jest.mock("../Logger", () => ({
   },
 }));
 
+// statusCommand inspects the credential store (DX20/DX20b); keep it hermetic.
+jest.mock("../auth", () => ({
+  getActiveInstance: jest.fn().mockResolvedValue(null),
+  listInstances: jest.fn().mockResolvedValue([]),
+  loadCredentials: jest.fn().mockResolvedValue({}),
+}));
+
 jest.mock("../snClient", () => ({
   defaultClient: () => ({
     checkConnection: (...args: unknown[]) => mockCheckConnection(...args),
