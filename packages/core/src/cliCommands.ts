@@ -8,7 +8,7 @@ import {
   docsCommand,
 } from "./commands";
 import { pushCommand } from "./pushCommand";
-import { statusCommand, doctorCommand, pluginsCommand } from "./diagnosticsCommands";
+import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand } from "./diagnosticsCommands";
 import { mcpCommand } from "./mcpCommand";
 import { devCommand, refreshCommand } from "./devCommands";
 import {
@@ -200,6 +200,12 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 status --debug-credentials", "Explain where credentials resolve from and why"],
     ],
     handler: typedHandler<Sync.SharedCmdArgs & { debugCredentials?: boolean }>((args) => statusCommand(args)),
+  },
+  {
+    command: "check-env",
+    describe: "Check OS, Node, WSL and Git prerequisites and print actionable fixes",
+    examples: [["$0 check-env", "Verify your machine meets syncrona's prerequisites before init"]],
+    handler: typedHandler<Sync.SharedCmdArgs>((args) => checkEnvCommand(args)),
   },
   {
     command: "doctor",

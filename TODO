@@ -229,9 +229,12 @@ Docs, Workflow, Error Handling, MCP.
 - README: "preferably Windows Terminal and WSL (1903+)". This is buried and it is
   not clear that it is REQUIRED.
 - 95% of Windows users do not have WSL installed and do not know how to set it up.
-- [ ] Add `syncrona check-env` that detects OS, Node, WSL, Git and prints
-      actionable next steps.
-- [ ] Update README with a visible "⚠️ Windows users" section linking a WSL 2 setup guide.
+- [x] Add `syncrona check-env` — DONE 2026-06-13: new command checks Node (>=22),
+      platform (flags native Windows, detects WSL), and Git, printing ✓/✗ per
+      check with actionable fixes; exits non-zero on problems. Documented in
+      README + CLAUDE.md (drift gate: 17 commands). e2e smoke test added.
+- [x] Update README with a visible "⚠️ Windows users" section — DONE earlier
+      (README Requirements now has the WSL-required callout).
 
 **DX2: Credential store vs .env confusion**
 - The user has 4 sources: env var, CredentialStore, .env, prompt. The fallback
