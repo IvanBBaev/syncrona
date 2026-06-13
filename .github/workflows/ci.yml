@@ -46,7 +46,7 @@ jobs:
       - name: Test @syncrona/mcp-server
         run: npm run test:mcp
 
-      - name: Coverage gates (core jest thresholds 68/54/58/68, mcp lines>=70% branches>=70%)
+      - name: Coverage gates (core jest thresholds 70/57/61/70, mcp lines>=70% branches>=70%)
         run: npm run test:coverage:gates
 
       - name: Quality gates (tool contract, docs drift, release checklist)

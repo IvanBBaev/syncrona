@@ -53,8 +53,9 @@ residuals, and the DX backlog.
       the test). Details and fix under AR1.
 - [ ] CR22 (residual): verify the sys.scripts.do fallback against a real instance —
       documented as best-effort (CSRF/session limitations) but not tested live.
-- [ ] CR26 (follow-up): keep raising the coverage thresholds (now st 68 / br 54 /
-      fn 58 / ln 68) toward the 80 target as tests are added. Ratchet, never down.
+- [~] CR26 (follow-up): coverage thresholds ratcheted 2026-06-13 to st 70 / br 57 /
+      fn 61 / ln 70 (measured 70.7/57.7/61.8/70.5 after DX/contract tests); CI
+      labels updated. Keep ratcheting toward 80 as tests are added; never down.
 
 ---
 
@@ -449,7 +450,7 @@ Docs, Workflow, Error Handling, MCP.
 
 **DX23: The `--diff` feature is under-documented**
 - Users do not know it exists for audit trail / compliance review.
-- [ ] Document the use case clearly.
+- [x] DONE 2026-06-13 (DX6):  Document the use case clearly.
 
 **DX24: Rate limiting & concurrency are invisible**
 - `pushConcurrency: 10` is configurable via sync.config.js but has no CLI flag.
