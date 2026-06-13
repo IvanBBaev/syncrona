@@ -74,7 +74,8 @@ const DIFF_OPTION: Record<string, Options> = {
     alias: "d",
     type: "string",
     default: "",
-    describe: "Specify branch to do git diff against",
+    describe:
+      "Git branch to diff against: push acts on changed files only; build records a deploy diff manifest",
   },
 };
 
@@ -135,7 +136,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     examples: [
       ["$0 push --dry-run", "Preview what would be pushed without writing anything"],
       ["$0 push --concurrency 5", "Throttle to 5 parallel record pushes (slow networks)"],
-      ["$0 push --diff main", "Push but record changes vs the main branch for the audit trail"],
+      ["$0 push --diff main", "Push only the files changed vs the main branch (changed-only push)"],
       ["$0 push --ci", "Push without confirmation prompts (CI/automation)"],
     ],
     handler: typedHandler<Sync.PushCmdArgs>((args) => pushCommand(args)),
