@@ -354,8 +354,15 @@ Docs, Workflow, Error Handling, MCP.
 **DX15: MCP integration docs have hardcoded paths and are thin**
 - The MCP quickstart contains `/Users/Ivan.Baev/Development/...` in examples.
 - No explanation of what auto-pull is, why, and when to disable it.
-- [ ] Update with $HOME substitution or a template generator.
-- [ ] Document auto-pull and MCP startup troubleshooting.
+- [x] Update with $HOME substitution — DONE 2026-06-13: mcp-quickstart.md now uses
+      `<SYNCRONA_REPO>`/`<SCOPE_PROJECT>` placeholders and placeholder credentials
+      (also removed committed real-looking creds: work email + password + instance),
+      and points at `syncrona login` instead of inline env vars.
+- [ ] Document auto-pull and MCP startup troubleshooting. (still pending)
+- [ ] Repo hygiene: docs/desktop-app-plan.md (a DIFFERENT project) and
+      docs/syncrona-plan.md are internal Bulgarian planning docs with personal
+      paths committed to the repo — decide whether to remove/relocate them
+      (user call). Flagged 2026-06-13.
 
 ---
 
