@@ -331,7 +331,10 @@ Docs, Workflow, Error Handling, MCP.
 - Note 2026-06-12: a broken config is now a hard fail instead of a silent default
   fallback (CR20), and option names/types are validated (G2); rule-order
   validation remains.
-- [ ] `syncrona build --check-config` should validate rule order (`.ts` before `.js`, etc.).
+- [x] `syncrona build --check-config` — DONE 2026-06-13 (acb386e): validates rule
+      order, reports any rule shadowed by an earlier broader one (synthesizes a
+      representative filename from anchored patterns; zero false positives),
+      exits non-zero without building. checkRuleOrder + 4 tests.
 - [ ] `--verbose build` should show which file matched which rule.
 
 **DX11: Advanced options undocumented (`displayField`, `differentiatorField`)**
