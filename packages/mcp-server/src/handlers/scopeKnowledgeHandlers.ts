@@ -2,10 +2,7 @@ import { buildScopeKnowledgeIndex, buildTableFieldMarkdownDocs, rankMinimalFootp
 import { getScopeDocsPaths, getScopeKnowledgePaths, getTableDependencyReportPaths, normalizeScopeCode } from "../scopePaths";
 import { toJsonText } from "../runtimeUtils";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 type GraphNode = {
   id: string;

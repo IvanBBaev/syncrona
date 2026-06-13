@@ -8,10 +8,10 @@
  * lives inside the coverage-disabled live-wiring block in index.ts.
  */
 
-export type ToolHandlerResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "./toolResponse";
+
+// The dispatch pipeline returns the same shape every handler produces.
+export type ToolHandlerResponse = ToolResponse;
 
 export type ToolHandlerInvocation = () =>
   | Promise<ToolHandlerResponse | null>
