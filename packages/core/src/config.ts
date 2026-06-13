@@ -104,6 +104,42 @@ export function validateConfigShape(config: unknown, configPath: string): void {
   }
 }
 
+export type RuleOrderIssue = { laterIndex: number; earlierIndex: number; sample: string };
+
+// Build a representative filename from an anchored, literal extension pattern
+// (e.g. /\.secret\.ts$/ -> "file.secret.ts"). Returns null for patterns with
+// regex metacharacters we can't safely turn into a concrete filename, so the
+// shadowing check never guesses.
+function synthesizeFilename(pattern: RegExp): string | null {
+  const literal = pattern.source.replace(/^\^/, "").replace(/\$$/, "").replace(/\\\./g, ".");
+  if (!/^[A-Za-z0-9._-]+$/.test(literal)) {
+    return null;
+  }
+  return literal.startsWith(".") ? `file${literal}` : `file.${literal}`;
+}
+
+// DX10: rules are matched first-wins, so a broad rule placed before a more
+// specific one (e.g. /\.ts$/ before /\.secret\.ts$/) silently shadows it. For
+// each rule we synthesize a representative filename and, if an EARLIER rule
+// also matches it, report the shadow — a real file with that name would be
+// claimed by the earlier rule. Zero false positives by construction.
+export function checkRuleOrder(rules: Array<{ match: RegExp }>): RuleOrderIssue[] {
+  const issues: RuleOrderIssue[] = [];
+  for (let j = 0; j < rules.length; j++) {
+    const sample = synthesizeFilename(rules[j].match);
+    if (sample === null || !rules[j].match.test(sample)) {
+      continue;
+    }
+    for (let i = 0; i < j; i++) {
+      if (rules[i].match.test(sample)) {
+        issues.push({ laterIndex: j, earlierIndex: i, sample });
+        break;
+      }
+    }
+  }
+  return issues;
+}
+
 export class ConfigStore {
   private state: ConfigState = {};
 

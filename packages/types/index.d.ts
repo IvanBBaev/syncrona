@@ -19,6 +19,7 @@ export namespace Sync {
   }
   interface BuildCmdArgs extends SharedCmdArgs {
     diff: string;
+    checkConfig?: boolean;
   }
   interface Config {
     sourceDirectory: string;

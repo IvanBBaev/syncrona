@@ -166,10 +166,19 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "build",
     describe: "Build application files locally",
-    options: { ...DIFF_OPTION },
+    options: {
+      ...DIFF_OPTION,
+      checkConfig: {
+        alias: "check-config",
+        type: "boolean",
+        default: false,
+        describe: "Validate sync.config.js rule order (detect shadowed rules) and exit without building",
+      },
+    },
     examples: [
       ["$0 build", "Build all source files into the local build directory"],
       ["$0 build --diff main", "Build and record a diff manifest vs the main branch for deploy"],
+      ["$0 build --check-config", "Check that no rule is shadowed by an earlier, broader rule"],
     ],
     handler: typedHandler<Sync.BuildCmdArgs>((args) => buildCommand(args)),
   },

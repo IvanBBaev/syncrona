@@ -246,6 +246,25 @@ export async function initCommand(args: Sync.SharedCmdArgs) {
 export async function buildCommand(args: Sync.BuildCmdArgs) {
   setLogLevel(args);
   try {
+    if (args.checkConfig === true) {
+      const rules = ConfigManager.getConfig().rules ?? [];
+      const issues = ConfigManager.checkRuleOrder(rules);
+      if (issues.length === 0) {
+        logger.success(`Config rule order OK (${rules.length} rule(s); no shadowing detected).`);
+        return;
+      }
+      for (const issue of issues) {
+        logger.warn(
+          `Rule #${issue.laterIndex + 1} (${rules[issue.laterIndex].match}) is shadowed by ` +
+            `earlier rule #${issue.earlierIndex + 1} (${rules[issue.earlierIndex].match}): ` +
+            `a file like "${issue.sample}" would match the earlier rule first. ` +
+            "Move the more specific rule before the broader one."
+        );
+      }
+      process.exitCode = 1;
+      return;
+    }
+
     const encodedPaths = await gitDiffToEncodedPaths(args.diff);
     const fileList = await AppUtils.getAppFileList(encodedPaths);
     logger.info(`${fileList.length} files to build.`);
