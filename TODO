@@ -182,6 +182,25 @@ Findings prefixed ARCH-/DEV-/QA-.
   only documented structural gaps remain AR11 (module-level mutable state) and
   G10 (boundaries not machine-enforced) — both design-level, left as tracked.
 
+### Dev
+- [~] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — these wrap a
+      body in try/catch only to re-throw the same error: dead structure that
+      obscures which code actually has error handling. FIXED the 3 in
+      PluginManager.ts (clean rewrite, behavior identical, core suite green).
+      REMAINING 9 (documented, mechanical follow-up — each needs a body
+      de-indent so left out of this pass to keep the diff low-risk):
+      commands.ts:177/211/302, appUtils.ts:277/595/705, wizard.ts:212/225,
+      FileUtils.ts:296.
+- [ ] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** —
+      genericUtils.ts `allSettled` returns `{status:"fulfilled",value}` /
+      `{status:"rejected",reason}`, which is exactly the native
+      `Promise.allSettled` result shape (available on Node 22). Replace the
+      custom helper with the native call and drop `Sync.PromiseResult`. Minor;
+      no bug, just dead reimplementation.
+- No correctness/async/resource defects found beyond the above — the CR1–CR30
+  series already covered the real bugs (push state, retry policy, swallowed
+  errors, manifest data loss).
+
 ---
 
 ## DEEP DX RESEARCH — making the project exceptionally easy to use (2026-06-11)
