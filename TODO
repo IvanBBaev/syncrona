@@ -434,9 +434,11 @@ Docs, Workflow, Error Handling, MCP.
       and debug paths (decrypt check defined once). Verified live (the ven03019
       fixture surfaces the warning). commandsFlow status tests made hermetic by
       mocking ../auth.
-      Residual: push/download with stored-only creds still fail with a raw auth
-      error rather than this hint — generalizing the warning to those paths
-      (or un-swallowing in resolveCredentialsFromStore) is a larger follow-up.
+      Update 2026-06-14: the decrypt check is now a shared helper
+      (getActiveStoreDecryptWarning in commandHelpers) reused by status AND the
+      push no-server path, so `push` shows the hint too. download still relies on
+      its connection error (a pre-check there risks the download test suite); the
+      helper is available if we later choose to wire it.
 
 **DX21: Verbose logging is incomplete**
 - `--log-level debug` exists but the output is silent. A stuck user cannot see

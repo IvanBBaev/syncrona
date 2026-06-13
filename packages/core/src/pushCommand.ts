@@ -13,6 +13,7 @@ import {
   setLogLevel,
   scopeCheck,
   logScopedEndpointCapability,
+  getActiveStoreDecryptWarning,
 } from "./commandHelpers";
 
 type PushCheckpoint = {
@@ -168,6 +169,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       const targetServer = credentials.instance;
       if (!targetServer) {
         logger.error("No server configured for push!");
+        // DX20b: a logged-in user with no env creds may have a stored instance
+        // that won't decrypt — that's the real reason, not "no server".
+        const decryptWarning = await getActiveStoreDecryptWarning();
+        if (decryptWarning) {
+          logger.warn(decryptWarning);
+        }
         return;
       }
 

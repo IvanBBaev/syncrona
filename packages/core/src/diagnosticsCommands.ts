@@ -12,9 +12,14 @@ import {
   diagnoseCredentials,
   unwrapSNResponse,
 } from "./snClient";
-import { listInstances, getActiveInstance, loadCredentials } from "./auth";
+import { listInstances } from "./auth";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder";
-import { setLogLevel, logScopedEndpointCapability } from "./commandHelpers";
+import {
+  setLogLevel,
+  logScopedEndpointCapability,
+  activeStoreHealth,
+  getActiveStoreDecryptWarning,
+} from "./commandHelpers";
 
 type StatusSummary = {
   ok: boolean;
@@ -126,12 +131,9 @@ export async function statusCommand(
     errors.push(`Missing environment variables: ${missingEnvVars.join(", ")}`);
     // DX20b: if a prior login left a stored instance that no longer decrypts,
     // that — not a truly empty config — is why creds look missing. Say so.
-    const health = await activeStoreHealth();
-    if (health.active && !health.decrypts) {
-      errors.push(
-        `Stored credentials for "${health.active}" failed to decrypt (${health.error}) — ` +
-          "likely encrypted on a different machine or user. Re-run 'syncrona login'."
-      );
+    const decryptWarning = await getActiveStoreDecryptWarning();
+    if (decryptWarning) {
+      errors.push(decryptWarning);
     }
   }
 
@@ -218,31 +220,6 @@ async function printCredentialDiagnostics(profile?: string): Promise<void> {
   logger.info(
     `Resolved instance: ${diag.resolvedInstance || "<missing>"}, user: ${diag.resolvedUser || "<missing>"}`
   );
-}
-
-// Health of the active stored instance: does its credential file decrypt?
-// `resolveCredentialsFromStore` swallows decryption failures and returns null,
-// so this is the single place that turns that silence into a clear signal.
-async function activeStoreHealth(): Promise<{
-  active: string | null;
-  decrypts: boolean;
-  error?: string;
-}> {
-  let active: string | null = null;
-  try {
-    active = await getActiveInstance();
-  } catch {
-    return { active: null, decrypts: false };
-  }
-  if (!active) {
-    return { active: null, decrypts: false };
-  }
-  try {
-    await loadCredentials(active);
-    return { active, decrypts: true };
-  } catch (e) {
-    return { active, decrypts: false, error: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boolean; checks: DoctorCheck[] }> {
