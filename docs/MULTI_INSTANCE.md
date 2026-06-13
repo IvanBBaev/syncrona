@@ -53,6 +53,18 @@ A profile var falls back to its base var when unset (e.g. `SN_USER_DEV` →
 `SN_USER`), so you can share a username across profiles and vary only the
 instance.
 
+### Avoid repeating `--instance-profile`
+
+Drop a gitignored `.syncrona-local` file in the working directory to set a
+default profile so you don't pass the flag on every command:
+
+```json
+{ "instanceProfile": "dev" }
+```
+
+An explicit `--instance-profile` on the command line still wins over it.
+`.syncrona-local` is already in `.gitignore`.
+
 ## A safe dev → prod workflow
 
 ```bash
