@@ -326,9 +326,11 @@ Docs, Workflow, Error Handling, MCP.
 - TableOptions get one line in the README. When to use them? What is
   `differentiatorField` for?
 - "Will break the Windows filesystem" is a bad signal.
-- [ ] Document use cases: `displayField` = records with unique names,
-      `differentiatorField` = dedup by sys_id.
-- [ ] Warning: `differentiatorField` blocks Windows support.
+- [x] Document use cases — DONE 2026-06-13: README Table Options now has a
+      "When to use each option" subsection explaining displayField (folder name
+      field), differentiatorField (dedup of equal display values, with array
+      fallback), and query (scope down large tables), plus a sharper Windows/WSL
+      warning on differentiatorField.
 
 ---
 

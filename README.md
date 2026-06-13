@@ -459,9 +459,28 @@ module.exports = {
 };
 ```
 
+**When to use each option**
+
+- **`displayField`** — the field whose value names each record's folder. Use it
+  when a table's default display value is empty, non-unique, or not filesystem-
+  friendly (e.g. records keyed by a code field rather than `name`). Picking a
+  field with a clear, unique value per record keeps the folder tree readable.
+- **`differentiatorField`** — appended in parentheses to disambiguate records
+  that share the same `displayField` value (otherwise they would collide on the
+  same folder and one would overwrite the other — see the "never have records
+  with the same display value" warning under [File Structure](#file-structure)).
+  Use it when a table legitimately has duplicate display values; point it at a
+  field that differs between them (e.g. `version`, or `sys_id` as a last resort).
+  An array tries each field in order until one has a value.
+- **`query`** — an encoded query that limits which records are tracked for the
+  table. Use it to scope large tables down to the records you actually edit.
+
 **Note on differentiatorField**
 
-This feature will currently put a colon in the filename. This will break the Windows filesystem. Use at your own risk.
+This feature will currently put a colon in the filename, which breaks the
+Windows filesystem (and WSL paths under `/mnt`). Prefer a non-`sys_id`
+differentiator where possible, and avoid it entirely if your team works on
+native Windows.
 
 ## FAQ
 
