@@ -58,6 +58,15 @@ describe("sync.config.js shape validation (G2)", () => {
     );
   });
 
+  // Invariant #6 / CR20: a present-but-broken config must fail hard, never
+  // silently fall back to DEFAULT_CONFIG (which would run push/build with the
+  // wrong includes/excludes/rules). Locks the throw at config.ts loadConfig().
+  it("treats a syntactically broken config as a hard error, not a silent default", async () => {
+    await expect(
+      loadConfigFrom("module.exports = { sourceDirectory: 'src',\n") // unterminated object literal
+    ).rejects.toThrow(/Failed to load config file/);
+  });
+
   it("accepts a fully valid config without warnings", async () => {
     const store = await loadConfigFrom(
       "module.exports = { sourceDirectory: 'src', buildDirectory: 'build', pushConcurrency: 5, rules: [], includes: {}, excludes: {}, tableOptions: {}, refreshInterval: 30 };\n"
