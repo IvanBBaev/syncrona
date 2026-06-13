@@ -492,3 +492,35 @@ Docs, Workflow, Error Handling, MCP.
 2. **DX8**: interactive config:add-plugin — 2 hours.
 3. **DX16-DX21**: workflow improvements (verbose logging, repair, recovery) — 3 hours.
 4. **DX22-DX24**: UI improvements (dry-run table, progress bar, rate limiting) — 2 hours.
+
+---
+
+## BUSINESS ANALYSIS (2026-06-13) — BA lens
+Deep BA review + implemented artifacts. Full report: docs/BUSINESS_ANALYSIS.md
+(git-tracked). Findings BA1–BA8; the report's risk register (R1–R8) and MoSCoW
+roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
+
+- [x] **BA-DOCS** — DONE 2026-06-13: created docs/BUSINESS_ANALYSIS.md (vision,
+      P1–P4 personas + ICP, quantified value hypotheses, competitive/SWOT,
+      stakeholder map, FR/NFR, KPIs, MoSCoW roadmap, risk register, adoption
+      funnel + enterprise-readiness gate, validation plan); SECURITY.md
+      (disclosure + data-handling); .github issue/feature templates + support
+      config (feedback loop); README trademark disclaimer + compatibility/auth
+      notes + doc links.
+- [ ] **BA1. No target persona / user-research loop** — roadmap is self-derived.
+      ACTION (owner): run 5–8 interviews (SI/consultancy beachhead); tie roadmap
+      to demand. Feedback loop now opened via issue templates.
+- [ ] **BA2. Value proposition not quantified** — hypotheses in §3 need baseline
+      + after measurement with 1–2 pilot teams.
+- [ ] **BA3. No competitive one-pager** vs ServiceNow native Git / Sincronia —
+      draft positioning is in §4; publish a standalone comparison.
+- [ ] **BA4. Enterprise auth (Basic only)** is the #1 paying-market blocker —
+      promote G1 (OAuth/SSO) to "Must". (Tech work tracked as G1.)
+- [ ] **BA5. No business model / sustainability / bus factor 1** — decide
+      OSS-only vs OSS+paid-support; document ownership; recruit co-maintainer.
+- [ ] **BA6. Brand fragmentation** (syncro-now-ai / SyncroNow AI / syncrona /
+      @syncrona) — unify on one name across npm/repo/CLI [owner decision].
+- [ ] **BA7. No success metrics / KPIs** — instrument once opt-in telemetry (G7)
+      lands; KPI set defined in §7.
+- [ ] **BA8. Provenance / IP (Risk R1)** — verify ownership of pre-existing code
+      and clearance to distribute BEFORE any public release [owner/legal].

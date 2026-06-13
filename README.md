@@ -26,6 +26,10 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
   per-scope vs shared config, and CI matrices.
 - [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) — the plugin
   contract and how to write and wire your own build plugin.
+- [docs/BUSINESS_ANALYSIS.md](docs/BUSINESS_ANALYSIS.md) — product vision,
+  personas, value proposition, competitive positioning, KPIs, prioritized
+  roadmap and risk register.
+- [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
   setup, tools, guardrails, and safety notes.
@@ -89,6 +93,16 @@ In order to use SyncroNow AI, you will need:
 >
 > Native Windows support (PowerShell install, Windows Credential Manager) is
 > on the roadmap.
+
+**ServiceNow compatibility:** Syncrona talks to standard ServiceNow REST/Table
+APIs and works with or without the companion scoped app, so it is broadly
+release-agnostic. It is actively used against recent ServiceNow releases; a
+formal supported-version matrix is being established — if you hit a
+release-specific issue, please open an issue with your instance version.
+
+**Authentication:** HTTP Basic auth over HTTPS today; OAuth 2.0 / SSO is on the
+roadmap. Use a dedicated least-privilege integration user. See
+[SECURITY.md](SECURITY.md) for data-handling and credential guidance.
 
 ### Instructions
 
@@ -574,3 +588,10 @@ linked above also walk through a complete project setup.
 | [@syncrona/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
 | [@syncrona/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
 | [@syncrona/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
+
+## Trademarks & license
+
+ServiceNow is a registered trademark of ServiceNow, Inc. This project is an
+independent, third-party tool and is not affiliated with, endorsed by, or
+sponsored by ServiceNow, Inc. All other trademarks are the property of their
+respective owners. Syncrona is released under the [MIT License](LICENSE).
