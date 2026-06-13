@@ -2,14 +2,20 @@
 
 ## Prerequisites
 
-1. Use Node 22.
+1. Use Node 22 (`nvm use 22`).
 2. Build the MCP server from this repository.
-3. Run MCP with `cwd` set to the scoped app project.
+3. Run MCP with `cwd` set to your scoped app project.
+
+In the commands below, replace the placeholder paths with your own:
+
+- `<SYNCRONA_REPO>` — where you cloned this repository.
+- `<SCOPE_PROJECT>` — your scoped app project directory (the one with
+  `sync.config.js`).
 
 ## Build MCP Server
 
 ```bash
-cd /Users/Ivan.Baev/Development/Incubation/syncrona
+cd <SYNCRONA_REPO>
 nvm use 22
 npm install || npm install --ignore-scripts
 npm run mcp:build
@@ -17,26 +23,31 @@ npm run mcp:build
 
 ## Start MCP for Scope Project
 
+Prefer the global credential store over inline env vars: run
+`npx syncrona login` once, then start the server. If you must use env vars,
+set your own values (never commit real credentials):
+
 ```bash
-cd /Users/Ivan.Baev/Development/Incubation/core-apps-ai/packages/cs
+cd <SCOPE_PROJECT>
 nvm use 22
-export SN_INSTANCE=ven03019.service-now.com
-export SN_USER=Ivan.Baev@nuvolo.com
-export SN_PASSWORD=nuvolo
-node /Users/Ivan.Baev/Development/Incubation/syncrona/packages/mcp-server/dist/index.js
+export SN_INSTANCE=your-instance.service-now.com
+export SN_USER=your.username
+export SN_PASSWORD=your-password
+node <SYNCRONA_REPO>/packages/mcp-server/dist/index.js
 ```
 
 Keep this terminal running.
 
 ## Generate Scope Knowledge
 
-Run this tool call from an MCP-enabled chat client:
+Run this tool call from an MCP-enabled chat client (replace `x_your_scope`
+with your scope prefix):
 
 ```json
 {
   "tool": "sync_generate_scope_knowledge",
   "arguments": {
-    "scope": "x_nuvo_cs",
+    "scope": "x_your_scope",
     "task": "table dependencies report",
     "writeFiles": true,
     "trigger": "manual"
@@ -52,7 +63,7 @@ Run this MCP tool call:
 {
   "tool": "sync_generate_table_dependency_report",
   "arguments": {
-    "scope": "x_nuvo_cs",
+    "scope": "x_your_scope",
     "task": "table dependencies report",
     "writeFiles": true
   }
@@ -61,13 +72,13 @@ Run this MCP tool call:
 
 Expected artifact paths:
 
-- `.syncrona-mcp/reports/x_nuvo_cs-table-dependencies.md`
-- `.syncrona-mcp/reports/x_nuvo_cs-table-dependencies.json`
+- `.syncrona-mcp/reports/x_your_scope-table-dependencies.md`
+- `.syncrona-mcp/reports/x_your_scope-table-dependencies.json`
 
 ## Verify Outputs
 
 ```bash
-cd /Users/Ivan.Baev/Development/Incubation/core-apps-ai/packages/cs
+cd <SCOPE_PROJECT>
 ls -la .syncrona-mcp/scopes
-cat .syncrona-mcp/scopes/x_nuvo_cs.md | head -n 120
+cat .syncrona-mcp/scopes/x_your_scope.md | head -n 120
 ```
