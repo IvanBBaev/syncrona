@@ -7,10 +7,7 @@ import {
 } from "../analysis";
 import { toJsonText } from "../runtimeUtils";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 export type DeveloperToolContext = {
   timeoutMs: number;

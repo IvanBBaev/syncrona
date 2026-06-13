@@ -21,10 +21,7 @@ import { toJsonText } from "../runtimeUtils";
 import { snRequest } from "../servicenowCore";
 import { tableGet } from "../sessionContext";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 type MetadataAnalysisContext = {
   timeoutMs: number;

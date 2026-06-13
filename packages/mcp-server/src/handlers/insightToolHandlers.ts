@@ -11,10 +11,7 @@ import {
   toTableResultRows,
 } from "../servicenowCore";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 type InsightToolContext = {
   timeoutMs: number;

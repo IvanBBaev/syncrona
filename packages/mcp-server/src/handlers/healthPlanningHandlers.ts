@@ -9,10 +9,7 @@ import {
 } from "../analysis";
 import { toJsonText } from "../runtimeUtils";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 type HealthPlanningContext = {
   timeoutMs: number;

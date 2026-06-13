@@ -7,10 +7,7 @@ import {
   setCurrentUpdateSet,
 } from "../sessionContext";
 
-type ToolResponse = {
-  isError: boolean;
-  content: Array<{ type: string; text: string }>;
-};
+import type { ToolResponse } from "../toolResponse";
 
 type SessionToolContext = {
   timeoutMs: number;

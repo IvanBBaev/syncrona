@@ -157,6 +157,33 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ---
 
+## FULL REVIEW (2026-06-13) — architect / dev / qa pass
+Fresh three-persona pass over the current tree (does not repeat AR/CR/DX/G).
+Findings prefixed ARCH-/DEV-/QA-.
+
+### Architect
+- [x] **ARCH-1. Duplicated `ToolResponse` type (12 copies)** — DONE 2026-06-13:
+      the identical `{ isError; content: Array<{type;text}> }` shape was
+      copy-pasted in all 11 mcp-server handlers plus `ToolHandlerResponse` in
+      toolDispatch.ts — a silent drift surface. Consolidated into a leaf module
+      `toolResponse.ts`; handlers import it, `ToolHandlerResponse` is now an
+      alias. typecheck + lint green.
+- [ ] **ARCH-2. Other intra-mcp duplicated types** — `GraphNode`/`GraphEdge`
+      are re-declared in 3 handlers although `analysis/graph.ts` already exports
+      them (handler copies omit the optional `meta?` field); `CmdResult` × 3
+      (runtimeUtils, processRunner, workspaceHandlers); `UnifiedTaskType` × 2
+      (toolService, workflowHandlers, identical string union). Lower blast
+      radius than ARCH-1 — consolidate handlers onto the exported definitions
+      (import GraphNode/GraphEdge from analysis/graph, CmdResult from
+      processRunner, lift UnifiedTaskType to a shared spot). Mechanical, gated.
+- Confirmed healthy (no action): invariants #1 (no stdout pollution) and #2
+  (both clients consume sn-transport for prefix/retry/endpoint-not-found, incl.
+  CR18) hold; no cyclic/upward imports; handlers don't import index (§5). The
+  only documented structural gaps remain AR11 (module-level mutable state) and
+  G10 (boundaries not machine-enforced) — both design-level, left as tracked.
+
+---
+
 ## DEEP DX RESEARCH — making the project exceptionally easy to use (2026-06-11)
 Analysis of the whole journey from installation to daily development: CLI, Config,
 Docs, Workflow, Error Handling, MCP.
