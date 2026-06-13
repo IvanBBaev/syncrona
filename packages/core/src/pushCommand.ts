@@ -7,6 +7,7 @@ import { logger } from "./Logger";
 import { logPushResults } from "./logMessages";
 import { defaultClient, resolveCredentials } from "./snClient";
 import inquirer from "inquirer";
+import { formatTable } from "./genericUtils";
 import { gitDiffToEncodedPaths } from "./gitUtils";
 import {
   setLogLevel,
@@ -216,6 +217,17 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       logger.info(`${fileList.length} files to push.`);
 
       if (dryRun) {
+        if (fileList.length > 0) {
+          const rows = fileList.map((rec) => {
+            const fieldNames = Object.keys(rec.fields);
+            const recordName = rec.fields[fieldNames[0]]?.name || rec.sysId;
+            return [rec.table, recordName, String(fieldNames.length), rec.sysId];
+          });
+          logger.info(
+            "Dry run — records that would be pushed:\n" +
+              formatTable(["Table", "Record", "Fields", "sys_id"], rows)
+          );
+        }
         logger.info("Dry run enabled: skipping push checkpoint writes and remote push operation.");
         return;
       }

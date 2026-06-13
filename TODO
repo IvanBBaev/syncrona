@@ -449,7 +449,11 @@ Docs, Workflow, Error Handling, MCP.
 
 **DX22: Dry-run output is JSON instead of a table**
 - The user cannot easily see which files would be pushed.
-- [ ] Table format: `File | Action | Changes | Size`.
+- [x] Table format — DONE 2026-06-13: `push --dry-run` now prints a
+      column-aligned table (Table | Record | Fields | sys_id) of the records it
+      would push, via a new formatTable helper (genericUtils, 3 tests). Deploy/
+      build dry-runs still log a summary line; extending the table to them is a
+      follow-up.
 
 **DX23: The `--diff` feature is under-documented**
 - Users do not know it exists for audit trail / compliance review.
