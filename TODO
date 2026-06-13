@@ -508,8 +508,10 @@ roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
       to demand. Feedback loop now opened via issue templates.
 - [ ] **BA2. Value proposition not quantified** — hypotheses in §3 need baseline
       + after measurement with 1–2 pilot teams.
-- [ ] **BA3. No competitive one-pager** vs ServiceNow native Git / Sincronia —
-      draft positioning is in §4; publish a standalone comparison.
+- [x] **BA3. Competitive one-pager** — DONE 2026-06-14: docs/COMPARISON.md —
+      Syncrona vs ServiceNow native Git, Sincronia, and update sets (capability
+      matrix, when-to-choose, the one-line difference, honest gaps). Linked from
+      README and BUSINESS_ANALYSIS §4.
 - [ ] **BA4. Enterprise auth (Basic only)** is the #1 paying-market blocker —
       promote G1 (OAuth/SSO) to "Must". (Tech work tracked as G1.)
 - [ ] **BA5. No business model / sustainability / bus factor 1** — decide

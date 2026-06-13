@@ -29,6 +29,8 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
 - [docs/BUSINESS_ANALYSIS.md](docs/BUSINESS_ANALYSIS.md) — product vision,
   personas, value proposition, competitive positioning, KPIs, prioritized
   roadmap and risk register.
+- [docs/COMPARISON.md](docs/COMPARISON.md) — Syncrona vs ServiceNow native Git,
+  Sincronia, and update sets (one-page comparison).
 - [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
