@@ -160,6 +160,22 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ---
 
+## FULL REVIEW — cycle 2026-06-14 (architect / dev / qa over session additions)
+- Architect: CLEAN — no new duplicated types (ARCH-1/2 hold), the new helpers
+  (activeStoreHealth, getActiveStoreDecryptWarning, checkRuleOrder, formatTable,
+  diagnoseCredentials) each have one home and are reused; no boundary
+  violations. Minor note (no fix): core SYNCRONA_* env-var names are bare string
+  literals vs mcp's centralized runtimeConfig — low value.
+- Dev: CLEAN — new edge logic (synthesizeFilename metachar→null, formatTable
+  empty rows, execFileSync/loadCredentials throw paths) handled correctly; no
+  defects.
+- QA: ONE gap fixed — getActiveStoreDecryptWarning/activeStoreHealth (shared
+  DX20b helper used by status+push) had no unit test; added storeDecryptWarning
+  .test.ts (4 tests: no-active / decrypts / fails / unreadable-store).
+- Early stop: cycle 1 yielded one fixable (the QA test); a second cycle over the
+  unchanged-but-now-covered code produces no new findings, so per the skill's
+  early-stop rule cycles 2–3 are not run for show.
+
 ## FULL REVIEW (2026-06-13) — architect / dev / qa pass
 Fresh three-persona pass over the current tree (does not repeat AR/CR/DX/G).
 Findings prefixed ARCH-/DEV-/QA-.
