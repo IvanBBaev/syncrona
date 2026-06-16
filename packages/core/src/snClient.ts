@@ -1,5 +1,5 @@
 import { Sync, SN } from "@syncrona/types";
-import axios, { AxiosPromise, AxiosResponse } from "axios";
+import axios, { AxiosPromise, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from "axios";
 import rateLimit from "axios-rate-limit";
 import {
   SCOPED_API_PREFIXES_ENV,
@@ -10,6 +10,7 @@ import {
 } from "@syncrona/sn-transport";
 import { wait } from "./genericUtils";
 import { logger } from "./Logger";
+import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth";
 import { resolveCredentialsFromStore } from "./auth";
 
 let cachedScopedEndpointPrefix: string | undefined;
@@ -102,22 +103,45 @@ export const processPushResponse = (
 export const snClient = (
   baseURL: string,
   username: string,
-  password: string
+  password: string,
+  oauth?: OAuthConfig
 ) => {
-  const client = rateLimit(
-    axios.create({
-      withCredentials: true,
-      auth: {
-        username,
-        password,
-      },
-      headers: {
-        "Content-Type": "application/json",
-      },
+  // OAuth mode (G1): Bearer token instead of Basic, refreshed on expiry/401.
+  // Basic auth stays the default when no OAuth client is configured.
+  const base = axios.create({
+    withCredentials: true,
+    headers: { "Content-Type": "application/json" },
+    baseURL,
+    ...(oauth ? {} : { auth: { username, password } }),
+  });
+
+  if (oauth) {
+    const tokenHttp = axios.create({
       baseURL,
-    }),
-    { maxRPS: 20 }
-  );
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    const poster: TokenPoster = async (path, body) => (await tokenHttp.post(path, body)).data;
+    const tokens = createTokenManager({ username, password }, oauth, poster);
+
+    base.interceptors.request.use(async (config) => {
+      config.headers = config.headers ?? {};
+      (config.headers as Record<string, string>).Authorization = `Bearer ${await tokens.getToken()}`;
+      return config;
+    });
+    base.interceptors.response.use(undefined, async (error: AxiosError) => {
+      const cfg = error.config as
+        | (InternalAxiosRequestConfig & { _oauthRetried?: boolean })
+        | undefined;
+      if (error.response?.status === 401 && cfg && !cfg._oauthRetried) {
+        cfg._oauthRetried = true;
+        (cfg.headers as Record<string, string>).Authorization = `Bearer ${await tokens.forceRefresh()}`;
+        return base.request(cfg);
+      }
+      return Promise.reject(error);
+    });
+  }
+
+  const client = rateLimit(base, { maxRPS: 20 });
 
   const requestScopedEndpoint = async <T>(
     method: "get" | "post",
@@ -390,6 +414,10 @@ export type SNCredentials = {
   password: string;
   instance: string;
   profile?: string;
+  // G1: when both are set (via SN_OAUTH_CLIENT_ID / SN_OAUTH_CLIENT_SECRET, with
+  // optional _<PROFILE> suffix), the client uses OAuth 2.0 instead of Basic auth.
+  clientId?: string;
+  clientSecret?: string;
 };
 
 function normalizeProfileName(profile?: string): string | undefined {
@@ -444,11 +472,21 @@ function resolveCredentialsInternal(profile?: string): {
     };
   }
 
+  const clientId =
+    process.env[profileEnvVar("SN_OAUTH_CLIENT_ID", normalizedProfile)] ||
+    process.env.SN_OAUTH_CLIENT_ID ||
+    "";
+  const clientSecret =
+    process.env[profileEnvVar("SN_OAUTH_CLIENT_SECRET", normalizedProfile)] ||
+    process.env.SN_OAUTH_CLIENT_SECRET ||
+    "";
   const creds: SNCredentials = {
     user: userFromProfile || SN_USER,
     password: passwordFromProfile || SN_PASSWORD,
     instance: instanceFromProfile || SN_INSTANCE,
     profile: normalizedProfile,
+    clientId: clientId || undefined,
+    clientSecret: clientSecret || undefined,
   };
   // profileEnvVar() falls back to the base var name when no profile is set, so
   // "came from a profile" requires both a profile AND a profile-specific value.
@@ -510,7 +548,7 @@ export function diagnoseCredentials(profile?: string): CredentialDiagnostics {
 }
 
 function credentialsKey(credentials: SNCredentials): string {
-  return `${credentials.profile || "default"}|${credentials.instance}|${credentials.user}|${credentials.password}`;
+  return `${credentials.profile || "default"}|${credentials.instance}|${credentials.user}|${credentials.password}|${credentials.clientId || ""}`;
 }
 
 export function setActiveInstanceProfile(profile?: string): void {
@@ -535,10 +573,15 @@ export const defaultClient = (profile?: string) => {
     return internalClient;
   }
 
+  const oauth =
+    credentials.clientId && credentials.clientSecret
+      ? { clientId: credentials.clientId, clientSecret: credentials.clientSecret }
+      : undefined;
   internalClient = snClient(
     `https://${credentials.instance}/`,
     credentials.user,
-    credentials.password
+    credentials.password,
+    oauth
   );
   internalClientKey = nextKey;
   return internalClient;

@@ -102,9 +102,13 @@ release-agnostic. It is actively used against recent ServiceNow releases; a
 formal supported-version matrix is being established — if you hit a
 release-specific issue, please open an issue with your instance version.
 
-**Authentication:** HTTP Basic auth over HTTPS today; OAuth 2.0 / SSO is on the
-roadmap. Use a dedicated least-privilege integration user. See
-[SECURITY.md](SECURITY.md) for data-handling and credential guidance.
+**Authentication:** HTTP Basic auth over HTTPS by default. **OAuth 2.0** is
+supported (CLI): set `SN_OAUTH_CLIENT_ID` and `SN_OAUTH_CLIENT_SECRET` (with the
+same `SN_USER`/`SN_PASSWORD`, optionally per-profile `_<PROFILE>` suffixes) and
+the CLI exchanges them for a Bearer token at `oauth_token.do`, refreshing on
+expiry/401. Without those vars it stays on Basic. Use a dedicated least-privilege
+integration user. See [SECURITY.md](SECURITY.md) and
+[docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
 
 ### Instructions
 

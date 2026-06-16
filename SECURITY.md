@@ -28,10 +28,14 @@ understand what it touches:
   hostname + username — see the "Credential storage security" section in the
   core README. Treat the machine as the trust boundary; for CI/shared
   environments prefer environment variables or a dedicated secrets manager.
-- **Transport.** Authentication currently uses HTTP Basic auth over HTTPS.
-  OAuth 2.0 / SSO support is on the roadmap; until then, use a dedicated
-  least-privilege integration user and rotate its password if a credential file
-  may have been exposed.
+- **Transport.** Authentication uses HTTP Basic auth over HTTPS by default.
+  **OAuth 2.0** (Resource Owner Password Credentials grant) is supported in the
+  CLI: set `SN_OAUTH_CLIENT_ID` + `SN_OAUTH_CLIENT_SECRET` and the same
+  username/password are exchanged at `oauth_token.do` for a short-lived Bearer
+  token (refreshed on expiry/401). Tokens are held in memory per process and
+  never written to disk. Use a dedicated least-privilege integration user and
+  rotate its password if a credential file may have been exposed. (The MCP
+  server still uses Basic auth — OAuth there is a planned follow-up.)
 - **What is read/written.** Syncrona reads scoped-application source/metadata
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP

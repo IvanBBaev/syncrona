@@ -77,9 +77,15 @@ Does not repeat AR/CR/DX. The same-day best-practice fixes (0 audit
 vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ### Senior Dev — missing capabilities in the code
-- [ ] **G1. OAuth 2.0 auth** — Basic auth only; instances with SSO/MFA policies
-      cannot use the CLI/MCP. Minimum: OAuth password grant + refresh token in the
-      credential store.
+- [~] **G1. OAuth 2.0 auth** — CLI DONE 2026-06-16 (additive; Basic stays default):
+      set SN_OAUTH_CLIENT_ID + SN_OAUTH_CLIENT_SECRET (with the usual
+      SN_USER/SN_PASSWORD, optional _<PROFILE> suffixes) and the core client
+      exchanges them at oauth_token.do (OAuth 2.0 password grant) for a Bearer
+      token, refreshed on expiry/401; tokens in-memory per process. New oauth.ts
+      token manager (5 tests) + snClient interceptors; e2e Bearer-on-the-wire
+      test. Documented (README/SECURITY/MULTI_INSTANCE). Remaining: the MCP
+      server (servicenowCore fetch client) still uses Basic — OAuth there is the
+      follow-up; full SSO/authorization-code grant also future.
 - [x] **G2. Schema validation for sync.config.js** — DONE 2026-06-12:
       validateConfigShape in config.ts (no new dependency) — wrong type = hard
       error, unknown key = warning listing the valid options; 4 new tests

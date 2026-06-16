@@ -92,7 +92,7 @@ AI layer that understands your scope.* Publish this as a one-page comparison.
 - FR-3 Multi-instance / profiles — **have** (login/use/instances, profiles).
 - FR-4 AI/MCP analysis (metadata, dependency, impact, docs) — **have** (~60 tools).
 - FR-5 Diagnostics (status, doctor, check-env) — **have**.
-- FR-6 **OAuth 2.0 / SSO auth** — **GAP (G1)**, top enterprise blocker.
+- FR-6 **OAuth 2.0 / SSO auth** — **CLI done** (OAuth 2.0 password grant via SN_OAUTH_*; G1); MCP server + full SSO remain a follow-up.
 - FR-7 Download progress/resume — **GAP (G3)**.
 
 ### Non-functional (have / gap)
