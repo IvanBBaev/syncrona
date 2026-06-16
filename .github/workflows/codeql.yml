@@ -2,16 +2,19 @@ name: CodeQL
 
 # G16: static application security testing (SAST). CodeQL scans the TypeScript
 # sources for injection, path-traversal, and similar code-level vulnerabilities
-# on every push/PR to main and on a weekly schedule (catches advisories added
-# after a commit lands). Findings surface as code-scanning alerts; they do not
-# fail the build.
+# on every push/PR to main. Findings surface as code-scanning alerts; they do
+# not fail the build.
+#
+# NOTE: code scanning needs a public repo (or GitHub Advanced Security on a
+# private one). The analyze job is therefore guarded to run only when the repo
+# is public — it is skipped (green) while the repo stays private, and activates
+# automatically once the owner flips it public. Re-add a `schedule:` trigger
+# then if periodic re-scans are wanted.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    - cron: "23 5 * * 1"
 
 # Least-privilege default; the analyze job widens to what CodeQL needs.
 permissions:
@@ -21,6 +24,7 @@ jobs:
   analyze:
     name: Analyze (javascript-typescript)
     runs-on: ubuntu-latest
+    if: ${{ github.event.repository.private == false }}
     permissions:
       security-events: write
       actions: read
