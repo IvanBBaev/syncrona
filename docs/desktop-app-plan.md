@@ -1,56 +1,56 @@
-# Desktop/app — Подробен план
+# Desktop/app — Detailed Plan
 
-**Проект:** `/Users/Ivan.Baev/Desktop/app`
-**Статус:** Работи. Нужно: добавяне на нови tools.
-**Stack:** Node 22, TypeScript 5.7, ESM (`"type": "module"`), `"module": "NodeNext"`, fetch-based, без axios.
+**Project:** `/Users/Ivan.Baev/Desktop/app`
+**Status:** Working. Needed: add new tools.
+**Stack:** Node 22, TypeScript 5.7, ESM (`"type": "module"`), `"module": "NodeNext"`, fetch-based, no axios.
 
 ---
 
-## Текущо състояние — работи ✅
+## Current state — working ✅
 
-### Инфраструктура
-- `serviceNowRequest(method, path, body?)` — централна fetch функция, поддържа GET + POST
-- Auth: basic / oauth / auto — чете от `.env` чрез zod schema
+### Infrastructure
+- `serviceNowRequest(method, path, body?)` — central fetch function, supports GET + POST
+- Auth: basic / oauth / auto — reads from `.env` via a zod schema
 - `SN_INSECURE_TLS=true` → `NODE_TLS_REJECT_UNAUTHORIZED=0`
 - MCP SDK: `@modelcontextprotocol/sdk ^1.12.0`
 
-### Съществуващи tools
+### Existing tools
 
 #### `servicenow.runScript`
-- POST към `SN_SCRIPT_API_PATH` (default: `/api/x_copilot_exec/v1/run`)
+- POST to `SN_SCRIPT_API_PATH` (default: `/api/x_copilot_exec/v1/run`)
 - Params: `script` (required), `scope?`, `timeoutMs?`, `returnGlideRecordPreview?`
-- Връща: `{ ok, output?, error? }`
+- Returns: `{ ok, output?, error? }`
 
 #### `servicenow.countTablesByPrefix`
-- GET `sys_db_object` → filter по `nameSTARTSWITH{prefix}`
-- За всяка таблица: GET `/api/now/stats/{table}?sysparm_count=true`
-- Връща: `{ tableCount, totalRows, denied, tables[] }`
+- GET `sys_db_object` → filter by `nameSTARTSWITH{prefix}`
+- For each table: GET `/api/now/stats/{table}?sysparm_count=true`
+- Returns: `{ tableCount, totalRows, denied, tables[] }`
 
 #### `servicenow.buildMetadataManifest`
-- GET `sys_db_object` → всички таблици с prefix
-- За всяка: GET `sys_dictionary` → fields с types
-- Опционално: записва JSON в `reports/{prefix}_metadata_manifest.json`
-- Връща: `{ tableCount, fieldCount, tables[{ name, label, superClass, fields[] }] }`
+- GET `sys_db_object` → all tables with the prefix
+- For each: GET `sys_dictionary` → fields with types
+- Optional: writes JSON to `reports/{prefix}_metadata_manifest.json`
+- Returns: `{ tableCount, fieldCount, tables[{ name, label, superClass, fields[] }] }`
 
 ---
 
-## Какво трябва да се добави
+## What needs to be added
 
 ### D1. `servicenow.queryRecords`
 
-**Цел:** Общ query към произволна SN таблица.
+**Goal:** Generic query against an arbitrary SN table.
 
 **Input:**
 ```typescript
 {
-  table: string;          // задължително — напр. "sys_script_include"
-  query?: string;         // encoded query — напр. "active=true^nameSTARTSWITHx_"
-  fields?: string[];      // кои полета — празен = всички
+  table: string;          // required — e.g. "sys_script_include"
+  query?: string;         // encoded query — e.g. "active=true^nameSTARTSWITHx_"
+  fields?: string[];      // which fields — empty = all
   limit?: number;         // 1–500, default 50
 }
 ```
 
-**Имплементация:**
+**Implementation:**
 ```
 GET /api/now/table/{table}
   ?sysparm_query={query}
@@ -67,26 +67,26 @@ GET /api/now/table/{table}
 }
 ```
 
-**Бележки:**
-- `serviceNowRequest` вече поддържа GET — директно използване
-- Без промяна на инфраструктурата
+**Notes:**
+- `serviceNowRequest` already supports GET — use it directly
+- No infrastructure change
 
 ---
 
 ### D2. `servicenow.getRecord`
 
-**Цел:** Вземи един конкретен запис по sys_id.
+**Goal:** Fetch one specific record by sys_id.
 
 **Input:**
 ```typescript
 {
-  table: string;     // задължително
-  sysId: string;     // задължително
-  fields?: string[]; // кои полета
+  table: string;     // required
+  sysId: string;     // required
+  fields?: string[]; // which fields
 }
 ```
 
-**Имплементация:**
+**Implementation:**
 ```
 GET /api/now/table/{table}/{sysId}
   ?sysparm_fields={fields.join(",")}
@@ -105,20 +105,20 @@ GET /api/now/table/{table}/{sysId}
 
 ### D3. `servicenow.createRecord`
 
-**Цел:** Създай нов запис в таблица.
+**Goal:** Create a new record in a table.
 
 **Input:**
 ```typescript
 {
   table: string;
   record: Record<string, unknown>;   // field → value
-  confirmDestructive: boolean;        // задължително true
+  confirmDestructive: boolean;        // must be true
 }
 ```
 
-**Guard:** Ако `confirmDestructive !== true` → връща error без SN call.
+**Guard:** If `confirmDestructive !== true` → returns an error without an SN call.
 
-**Имплементация:**
+**Implementation:**
 ```
 POST /api/now/table/{table}
 Body: record
@@ -129,7 +129,7 @@ Body: record
 {
   table: string;
   status: number;
-  result: Record<string, unknown>; // новосъздаденият запис от SN
+  result: Record<string, unknown>; // the newly created record from SN
 }
 ```
 
@@ -137,28 +137,28 @@ Body: record
 
 ### D4. `servicenow.updateRecord`
 
-**Цел:** Обнови съществуващ запис по sys_id.
+**Goal:** Update an existing record by sys_id.
 
 **Input:**
 ```typescript
 {
   table: string;
   sysId: string;
-  fields: Record<string, unknown>;  // само полетата за промяна
-  confirmDestructive: boolean;       // задължително true
+  fields: Record<string, unknown>;  // only the fields to change
+  confirmDestructive: boolean;       // must be true
 }
 ```
 
-**Guard:** Ако `confirmDestructive !== true` → error без SN call.
+**Guard:** If `confirmDestructive !== true` → error without an SN call.
 
-**Имплементация:**
+**Implementation:**
 ```
 PATCH /api/now/table/{table}/{sysId}
 Body: fields
 ```
 
-**Важно:** `serviceNowRequest` в момента поддържа само `"GET" | "POST"`.
-Трябва да се добави `"PATCH"` в сигнатурата и fetch логиката.
+**Important:** `serviceNowRequest` currently supports only `"GET" | "POST"`.
+`"PATCH"` must be added to the signature and the fetch logic.
 
 **Output:**
 ```typescript
@@ -174,36 +174,36 @@ Body: fields
 
 ### D5. `servicenow.analyzeScript`
 
-**Цел:** Локален статичен анализ на SN server-side script. Без SN connection.
+**Goal:** Local static analysis of an SN server-side script. No SN connection.
 
 **Input:**
 ```typescript
 {
   script: string;
-  suppressIds?: string[]; // finding IDs за изключване от репорта
+  suppressIds?: string[]; // finding IDs to exclude from the report
 }
 ```
 
-**Имплементация — regex checks (порт от syncrona):**
+**Implementation — regex checks (port from syncrona):**
 
 Security findings:
-| ID | Level | Pattern | Съобщение |
-|----|-------|---------|-----------|
+| ID | Level | Pattern | Message |
+|----|-------|---------|---------|
 | `sec.encoded.query.concat` | high | `addEncodedQuery(...+input` | Dynamic query concatenation — injection risk |
-| `sec.workflow.bypass` | medium | `setWorkflow(false)` | Bypass на business rules |
-| `sec.gliderecord.review` | low | `new GlideRecord(...)` | Провери ACL и query constraints |
+| `sec.workflow.bypass` | medium | `setWorkflow(false)` | Bypass of business rules |
+| `sec.gliderecord.review` | low | `new GlideRecord(...)` | Check ACL and query constraints |
 
 Architecture findings:
-| ID | Level | Pattern | Съобщение |
-|----|-------|---------|-----------|
+| ID | Level | Pattern | Message |
+|----|-------|---------|---------|
 | `arch.logging.noise` | low | `gs.log(` | Noisy log usage |
-| `arch.empty.catch` | medium | `catch () {}` | Empty catch скрива грешки |
+| `arch.empty.catch` | medium | `catch () {}` | Empty catch hides errors |
 
 Performance findings:
-| ID | Level | Pattern | Съобщение |
-|----|-------|---------|-----------|
-| `perf.nested.gr` | high | `while(gr.next())` + `new GlideRecord(` | Nested GlideRecord в loop |
-| `perf.orderby.review` | low | `orderBy(` | Ordering без индекс |
+| ID | Level | Pattern | Message |
+|----|-------|---------|---------|
+| `perf.nested.gr` | high | `while(gr.next())` + `new GlideRecord(` | Nested GlideRecord in a loop |
+| `perf.orderby.review` | low | `orderBy(` | Ordering without an index |
 
 **Risk score:** high=5, medium=3, low=1
 
@@ -230,21 +230,21 @@ Performance findings:
 
 ### D6. `servicenow.executeBackgroundScript`
 
-**Цел:** Изпълни background script директно (без scope context wrapper).
+**Goal:** Execute a background script directly (without the scope context wrapper).
 
 **Input:**
 ```typescript
 {
   script: string;
-  confirmDestructive: boolean; // задължително true
+  confirmDestructive: boolean; // must be true
 }
 ```
 
 **Guard:** `confirmDestructive !== true` → error.
 
-**Имплементация:**
-- Използва `SN_SCRIPT_API_PATH` (вече конфигуриран)
-- Разликата от `runScript`: без `scope` / `returnGlideRecordPreview` overhead
+**Implementation:**
+- Uses `SN_SCRIPT_API_PATH` (already configured)
+- Difference from `runScript`: no `scope` / `returnGlideRecordPreview` overhead
 
 **Output:**
 ```typescript
@@ -257,42 +257,42 @@ Performance findings:
 
 ---
 
-## Промени в инфраструктурата
+## Infrastructure changes
 
-### `serviceNowRequest` — добави PATCH
+### `serviceNowRequest` — add PATCH
 
 ```typescript
-// Сега:
+// Now:
 async function serviceNowRequest(method: "GET" | "POST", path: string, body?: unknown)
 
-// Трябва:
+// Needed:
 async function serviceNowRequest(method: "GET" | "POST" | "PATCH", path: string, body?: unknown)
 ```
 
-Fetch логиката вече предава `body` ако е наличен — PATCH работи по същия начин като POST.
+The fetch logic already passes `body` if present — PATCH works the same way as POST.
 
 ---
 
-## Ред на изпълнение за Desktop/app
+## Execution order for Desktop/app
 
 ```
-1. D7  — добави PATCH в serviceNowRequest (базова инфраструктура)
-2. D1  — queryRecords (най-прост, само GET)
-3. D2  — getRecord (GET по sys_id)
-4. D3  — createRecord (POST с guard)
-5. D4  — updateRecord (PATCH с guard)
-6. D5  — analyzeScript (local, без SN)
+1. D7  — add PATCH to serviceNowRequest (base infrastructure)
+2. D1  — queryRecords (simplest, GET only)
+3. D2  — getRecord (GET by sys_id)
+4. D3  — createRecord (POST with guard)
+5. D4  — updateRecord (PATCH with guard)
+6. D5  — analyzeScript (local, no SN)
 7. D6  — executeBackgroundScript
 8.      — npm run build && npm run check
 ```
 
 ---
 
-## Build команди
+## Build commands
 
 ```bash
 cd /Users/Ivan.Baev/Desktop/app
 npm run check    # TypeScript typecheck
-npm run build    # компилира в dist/
-npm run dev      # tsx директно (без build)
+npm run build    # compiles to dist/
+npm run dev      # tsx directly (no build)
 ```

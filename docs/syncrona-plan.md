@@ -1,38 +1,38 @@
-# Syncrona — Подробен план
+# Syncrona — Detailed Plan
 
-**Проект:** `/Users/Ivan.Baev/Development/Incubation/syncrona`
-**Статус:** Частично счупен. Критични бъгове блокират CLI download и npm publish.
-**Stack:** Node 22, TypeScript, UMD (трябва CommonJS), yargs v17, axios, inquirer, monorepo.
+**Project:** `/Users/Ivan.Baev/Development/Incubation/syncrona`
+**Status:** Partially broken. Critical bugs block CLI download and npm publish.
+**Stack:** Node 22, TypeScript, UMD (should be CommonJS), yargs v17, axios, inquirer, monorepo.
 
 ---
 
-## Архитектура на проекта
+## Project architecture
 
 ```
 packages/
   core/           — CLI (syncrona init/download/push/dev/...)
-  mcp-server/     — MCP сървър (tools за Claude/Cursor/VS Code)
-  types/          — споделени типове
-  babel-plugin/   — ServiceNow babel трансформации
+  mcp-server/     — MCP server (tools for Claude/Cursor/VS Code)
+  types/          — shared types
+  babel-plugin/   — ServiceNow babel transformations
   ...
 ```
 
 ---
 
-## Критични бъгове — трябва незабавно
+## Critical bugs — fix immediately
 
-### S1. `tsconfig.json` — `"module": "umd"` е грешен
+### S1. `tsconfig.json` — `"module": "umd"` is wrong
 
-**Файл:** `/Users/Ivan.Baev/Development/Incubation/syncrona/tsconfig.json`
+**File:** `/Users/Ivan.Baev/Development/Incubation/syncrona/tsconfig.json`
 
-**Проблем:**
+**Problem:**
 ```json
 "module": "umd"
 ```
 
-Node.js CLI приложение НИКОГА не трябва да се компилира като UMD. UMD е за browser/AMD среди. Yargs v17 при UMD формат регистрира builder функцията като handler — затова `args.options is not a function`.
+A Node.js CLI application must NEVER be compiled as UMD. UMD is for browser/AMD environments. With the UMD format, yargs v17 registers the builder function as the handler — hence `args.options is not a function`.
 
-**Грешката в production:**
+**The production error:**
 ```
 TypeError: args.options is not a function
     at Object.handler (dist/commander.js:75:18)
@@ -43,64 +43,64 @@ TypeError: args.options is not a function
 "module": "commonjs"
 ```
 
-**Засяга:** Всички команди с function builder — `download`, `push`, `build`, `mcp`. `refresh`, `dev`, `deploy` (с object builder) работят случайно.
+**Affects:** All commands with a function builder — `download`, `push`, `build`, `mcp`. `refresh`, `dev`, `deploy` (with an object builder) work by accident.
 
-**След fix:** `npm --workspace @syncrona/core run build`
+**After the fix:** `npm --workspace @syncrona/core run build`
 
 ---
 
-### S2. `packages/core/package.json` — typo в `main`
+### S2. `packages/core/package.json` — typo in `main`
 
-**Файл:** `/Users/Ivan.Baev/Development/Incubation/syncrona/packages/core/package.json`
+**File:** `/Users/Ivan.Baev/Development/Incubation/syncrona/packages/core/package.json`
 
-**Проблем:**
+**Problem:**
 ```json
 "main": "./dist./index.js"
 ```
 
-Двойна точка (`./dist./`) — Node.js не може да намери entry point при `require("@syncrona/core")`.
+Double dot (`./dist./`) — Node.js cannot find the entry point on `require("@syncrona/core")`.
 
 **Fix:**
 ```json
 "main": "./dist/index.js"
 ```
 
-**Засяга:** npm publish, локално зареждане като пакет.
+**Affects:** npm publish, loading locally as a package.
 
 ---
 
-### S3. Rebuild след S1 + S2
+### S3. Rebuild after S1 + S2
 
 ```bash
 npm --workspace @syncrona/core run build
 ```
 
-Потвърждение че работи:
+Confirm it works:
 ```bash
 node packages/core/dist/index.js download --help
-# трябва да покаже help без грешка
+# should show help without an error
 ```
 
 ---
 
 ### S4. `packages/core/src/commander.ts` — function builders
 
-**Файл:** `packages/core/src/commander.ts`
+**File:** `packages/core/src/commander.ts`
 
-**Проблем:** След S1 (CommonJS) грешката изчезва, но кодът остава fragile. Function builders връщат `cmdArgs` — излишно.
+**Problem:** After S1 (CommonJS) the error disappears, but the code stays fragile. Function builders return `cmdArgs` — redundant.
 
-**Сегашен код (push като пример):**
+**Current code (push as an example):**
 ```typescript
 .command(["push [target]"], "...",
   cmdArgs => {
     cmdArgs.options({ ...sharedOptions, diff: {...}, scopeSwap: {...}, updateSet: {...}, ci: {...} });
-    return cmdArgs;  // ← излишно
+    return cmdArgs;  // ← redundant
   },
   (args) => { pushCommand(args); }
 )
 ```
 
-**По-чист вариант:**
+**Cleaner variant:**
 ```typescript
 .command(["push [target]"], "...",
   { ...sharedOptions, diff: {...}, scopeSwap: {...}, updateSet: {...}, ci: {...} },
@@ -108,65 +108,65 @@ node packages/core/dist/index.js download --help
 )
 ```
 
-Засяга: `download`, `push`, `build`, `mcp` команди.
+Affects: `download`, `push`, `build`, `mcp` commands.
 
-**Важно:** S4 е clean-up. S1 е истинският fix. Не е задължително за работа.
-
----
-
-## Вече оправени в тази сесия (нужен само rebuild)
-
-### S5. `wizard.ts` — fresh machine без `syncrona login`
-
-**Старо поведение:** `getWizardCredentials()` хвърляше веднага ако няма active instance в store.
-
-**Ново поведение:** Ако няма active instance → вика `promptForCredentials()` → user въвежда credentials → запазва в store → продължава.
-
-**Файл:** `packages/core/src/wizard.ts` — `getWizardCredentials()` функция.
+**Important:** S4 is clean-up. S1 is the real fix. Not required to make it work.
 
 ---
 
-### S6. `wizard.ts` — fresh SN instance без scoped apps
+## Already fixed in this session (rebuild only)
 
-**Старо поведение:** `listAppsFromTableAPI()` → empty → `throw new Error("No scoped apps were found")`.
+### S5. `wizard.ts` — fresh machine without `syncrona login`
 
-**Ново поведение:**
-1. Показва guidance: "Create a scoped app in ServiceNow Studio"
-2. Пита: "Enter scope code manually?"
-3. Ако да → user въвежда scope → продължава
-4. Ако не → излиза gracefully
+**Old behavior:** `getWizardCredentials()` threw immediately if there was no active instance in the store.
 
-**Файл:** `packages/core/src/wizard.ts` — `startWizard()` функция, след двата `if (apps.length === 0)` checks.
+**New behavior:** If there is no active instance → calls `promptForCredentials()` → user enters credentials → saves to the store → continues.
+
+**File:** `packages/core/src/wizard.ts` — `getWizardCredentials()` function.
 
 ---
 
-### S7. `.env` с plain-text credentials
+### S6. `wizard.ts` — fresh SN instance without scoped apps
 
-**Три промени:**
+**Old behavior:** `listAppsFromTableAPI()` → empty → `throw new Error("No scoped apps were found")`.
 
-**7a. `wizard.ts` `setupDotEnv()`** — вече пише само `SN_INSTANCE=...`, без `SN_USER` и `SN_PASSWORD`. Prezisva съществуващи `.env` файлове с credentials.
+**New behavior:**
+1. Shows guidance: "Create a scoped app in ServiceNow Studio"
+2. Asks: "Enter scope code manually?"
+3. If yes → user enters scope → continues
+4. If no → exits gracefully
 
-**7b. `snClient.ts` `resolveCredentials()`** — `hasEnvCreds` вече е `true` само ако `SN_USER` е наличен. `SN_INSTANCE`-only `.env` вече не блокира encrypted credential store.
-
-**7c. `wizard.ts` `startWizard()`** — `preloadStoredCredentials(instance)` се вика след `saveCredentials()`. `downloadApp()` → `defaultClient()` използва store, не env vars.
-
-**Ефект:** Стар `.env` с грешна парола вече не блокира `syncrona login`.
+**File:** `packages/core/src/wizard.ts` — `startWizard()` function, after the two `if (apps.length === 0)` checks.
 
 ---
 
-## MCP сървър — анализ
+### S7. `.env` with plain-text credentials
 
-### Какво работи в MCP сървъра
+**Three changes:**
+
+**7a. `wizard.ts` `setupDotEnv()`** — now writes only `SN_INSTANCE=...`, without `SN_USER` and `SN_PASSWORD`. Overwrites existing `.env` files that contain credentials.
+
+**7b. `snClient.ts` `resolveCredentials()`** — `hasEnvCreds` is now `true` only if `SN_USER` is present. An `SN_INSTANCE`-only `.env` no longer blocks the encrypted credential store.
+
+**7c. `wizard.ts` `startWizard()`** — `preloadStoredCredentials(instance)` is called after `saveCredentials()`. `downloadApp()` → `defaultClient()` uses the store, not env vars.
+
+**Effect:** An old `.env` with a wrong password no longer blocks `syncrona login`.
+
+---
+
+## MCP server — analysis
+
+### What works in the MCP server
 
 - Session context (current scope, update set)
 - Script analysis tools (local regex)
-- Workspace tools (refresh, status, push) — викат `syncrona` CLI subprocess
+- Workspace tools (refresh, status, push) — call the `syncrona` CLI subprocess
 - CRUD tools (sn_query_records, sn_create_record)
 - Background script execution
 
-### Проблем: auto scope pull
+### Problem: auto scope pull
 
-**Код:** `packages/mcp-server/src/index.ts` около ред 1972
+**Code:** `packages/mcp-server/src/index.ts` around line 1972
 
 ```typescript
 const downloadResult = await runSyncroCliCommand(
@@ -178,29 +178,29 @@ const downloadResult = await runSyncroCliCommand(
 );
 ```
 
-`runSyncroCliCommand` вика `node dist/index.js download <scope>`.
+`runSyncroCliCommand` calls `node dist/index.js download <scope>`.
 
-При UMD module → yargs грешка → exit=1 → "Auto scope pull failed".
+With a UMD module → yargs error → exit=1 → "Auto scope pull failed".
 
-**Fix:** S1 (CommonJS) + S3 (rebuild) → автоматично се оправя.
+**Fix:** S1 (CommonJS) + S3 (rebuild) → fixed automatically.
 
 ---
 
-### `servicenowCore.ts` — липсващ PATCH метод
+### `servicenowCore.ts` — missing PATCH method
 
-**Файл:** `packages/mcp-server/src/servicenowCore.ts`
+**File:** `packages/mcp-server/src/servicenowCore.ts`
 
-**Проблем:** `snRequest` поддържа `"GET" | "POST"`, но не `"PATCH"`.
+**Problem:** `snRequest` supports `"GET" | "POST"`, but not `"PATCH"`.
 
 ```typescript
-// Сега:
+// Now:
 export async function snRequest(
   method: "GET" | "POST",
   ...
 )
 ```
 
-Нужен е PATCH за `sn_update_metadata_record` и бъдещи update tools.
+PATCH is needed for `sn_update_metadata_record` and future update tools.
 
 **Fix:**
 ```typescript
@@ -210,11 +210,11 @@ export async function snRequest(
 )
 ```
 
-Fetch логиката вече предава body — PATCH работи без друга промяна.
+The fetch logic already passes the body — PATCH works with no other change.
 
 ---
 
-## Credential flow — пълна картина
+## Credential flow — full picture
 
 ```
 syncrona login
@@ -223,59 +223,59 @@ syncrona login
 
 syncrona init / syncrona dev / syncrona push
   → bootstrap.ts:
-      dotenv.config()                      // зарежда .env (само SN_INSTANCE вече)
-      preloadStoredCredentials()           // зарежда store в памет
+      dotenv.config()                      // loads .env (only SN_INSTANCE now)
+      preloadStoredCredentials()           // loads the store into memory
   → resolveCredentials():
-      if (SN_USER в env) → env wins
-      else → storedCredentialsCache        // ← нормалният path след fix
+      if (SN_USER in env) → env wins
+      else → storedCredentialsCache        // ← the normal path after the fix
 
 syncrona download (MCP subprocess)
-  → наследява env от MCP процеса
-  → ако няма SN_USER в env → store
+  → inherits env from the MCP process
+  → if no SN_USER in env → store
 ```
 
 ---
 
-## Ред на изпълнение за Syncrona
+## Execution order for Syncrona
 
 ```
-1. S1  — tsconfig.json: "module": "commonjs"          ← 1 ред промяна
-2. S2  — package.json main typo fix                    ← 1 ред промяна
+1. S1  — tsconfig.json: "module": "commonjs"           ← 1-line change
+2. S2  — package.json main typo fix                    ← 1-line change
 3. S3  — npm --workspace @syncrona/core run build      ← rebuild
-4.      — тест: node packages/core/dist/index.js download --help
-5. S4  — commander.ts: function builders → objects     ← clean-up (незадължително)
-6. S6  — snRequest PATCH в servicenowCore.ts           ← за update tools
+4.      — test: node packages/core/dist/index.js download --help
+5. S4  — commander.ts: function builders → objects     ← clean-up (optional)
+6. S6  — snRequest PATCH in servicenowCore.ts          ← for update tools
 7.      — npm run check (full typecheck)
-8. B3  — npm publish (от TODO в DONE файла)            ← след всичко горе
+8. B3  — npm publish (from the TODO in the DONE file)  ← after everything above
 ```
 
 ---
 
-## Build команди
+## Build commands
 
 ```bash
-# Само core
+# Core only
 npm --workspace @syncrona/core run build
 
-# Само MCP server
+# MCP server only
 npm --workspace @syncrona/mcp-server run build
 
-# Пълен check (typecheck + lint + tests)
+# Full check (typecheck + lint + tests)
 npm run check
 
-# Тест на download командата
+# Test the download command
 node packages/core/dist/index.js download --help
 ```
 
 ---
 
-## Файлове засегнати от промените (quick reference)
+## Files affected by the changes (quick reference)
 
-| Файл | Промяна | Статус |
-|------|---------|--------|
-| `tsconfig.json` | `"module": "commonjs"` | ❌ чака |
-| `packages/core/package.json` | `"main": "./dist/index.js"` | ❌ чака |
-| `packages/core/src/commander.ts` | function builders → objects | ❌ чака (clean-up) |
-| `packages/core/src/wizard.ts` | fresh machine + fresh instance + .env | ✅ оправено |
-| `packages/core/src/snClient.ts` | hasEnvCreds само по SN_USER | ✅ оправено |
-| `packages/mcp-server/src/servicenowCore.ts` | PATCH метод | ❌ чака |
+| File | Change | Status |
+|------|--------|--------|
+| `tsconfig.json` | `"module": "commonjs"` | ❌ pending |
+| `packages/core/package.json` | `"main": "./dist/index.js"` | ❌ pending |
+| `packages/core/src/commander.ts` | function builders → objects | ❌ pending (clean-up) |
+| `packages/core/src/wizard.ts` | fresh machine + fresh instance + .env | ✅ fixed |
+| `packages/core/src/snClient.ts` | hasEnvCreds by SN_USER only | ✅ fixed |
+| `packages/mcp-server/src/servicenowCore.ts` | PATCH method | ❌ pending |

@@ -675,18 +675,18 @@ test('minimal-footprint planner ranks task-relevant targets first', () => {
   assert.equal(ranked[0].id, 'script:IncidentHandler');
 });
 
-test('minimal-footprint planner supports Cyrillic task input', () => {
+test('minimal-footprint planner ranks multi-word task input', () => {
   const graph = {
     nodes: [
-      { id: 'script:ВалидацияИнцидент', kind: 'script', label: 'ВалидацияИнцидент' },
+      { id: 'script:ValidateIncident', kind: 'script', label: 'ValidateIncident' },
       { id: 'script:TaskUtil', kind: 'script', label: 'TaskUtil' },
     ],
     edges: [],
   };
 
-  const ranked = rankMinimalFootprintTargets('поправи валидация инцидент', graph, 1);
+  const ranked = rankMinimalFootprintTargets('fix validate incident', graph, 1);
   assert.equal(ranked.length, 1);
-  assert.equal(ranked[0].id, 'script:ВалидацияИнцидент');
+  assert.equal(ranked[0].id, 'script:ValidateIncident');
 });
 
 test('scope knowledge index validates and markdown renders required sections', () => {

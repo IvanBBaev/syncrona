@@ -360,11 +360,11 @@ test('sync_ai_next_actions returns prioritized safe orchestration steps', async 
   assert.equal(payload.nextActions.some((step) => step.tool === 'sync_preflight_check'), true);
 });
 
-test('sync_ai_next_actions supports Cyrillic objective tokenization', async () => {
+test('sync_ai_next_actions tokenizes multi-word objectives', async () => {
   const response = await handleHealthPlanningTool(
     'sync_ai_next_actions',
     {
-      objective: 'Подготви скоуп и контекст, после пушни промените безопасно',
+      objective: 'Prepare scope and context, then push the changes safely',
       maxSteps: 3,
     },
     {

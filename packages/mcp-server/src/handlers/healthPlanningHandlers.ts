@@ -96,7 +96,7 @@ function scoreActionTemplate(template: AiActionTemplate, objectiveTokens: Set<st
 }
 
 function buildAiActionTemplates(objective: string): AiActionTemplate[] {
-  const isPushLike = /\b(push|deploy|apply|release|промени|деплой|публикувай)\b/i.test(objective);
+  const isPushLike = /\b(push|deploy|apply|release|publish|change)\b/i.test(objective);
   return [
     {
       id: "tool-contract",
@@ -104,7 +104,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       tool: "sync_tool_contract_info",
       reason: "Aligns AI orchestration with current MCP tool surface and versions.",
       args: {},
-      triggerKeywords: ["tool", "contract", "capabilities", "capability", "versions", "възможности"],
+      triggerKeywords: ["tool", "contract", "capabilities", "capability", "versions"],
       baseScore: 2,
     },
     {
@@ -117,7 +117,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
         expectedUpdateSetName: "",
         createUpdateSetIfMissing: true,
       },
-      triggerKeywords: ["scope", "session", "update", "set", "context", "контекст", "скоуп", "ъпдейт"],
+      triggerKeywords: ["scope", "session", "update", "set", "context"],
       baseScore: 3,
     },
     {
@@ -126,7 +126,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       tool: "sync_check_instance_capabilities",
       reason: "Validates scoped endpoint support before advanced automation.",
       args: {},
-      triggerKeywords: ["endpoint", "instance", "capabilities", "readiness", "готовност", "инстанс"],
+      triggerKeywords: ["endpoint", "instance", "capabilities", "readiness"],
       baseScore: 3,
     },
     {
@@ -137,7 +137,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       args: {
         includeWorkspace: true,
       },
-      triggerKeywords: ["dependency", "graph", "impact", "dependencies", "връзки", "зависимости"],
+      triggerKeywords: ["dependency", "graph", "impact", "dependencies", "relations"],
       baseScore: 2,
     },
     {
@@ -150,7 +150,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
         graph: {},
         limit: 5,
       },
-      triggerKeywords: ["plan", "target", "minimal", "footprint", "task", "план", "минимален"],
+      triggerKeywords: ["plan", "target", "minimal", "footprint", "task"],
       baseScore: 4,
     },
     {
@@ -159,7 +159,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       tool: "sync_preflight_check",
       reason: "Prevents unsafe writes when scope/update-set drift is present.",
       args: {},
-      triggerKeywords: ["push", "deploy", "apply", "mutate", "write", "пуш", "деплой", "промени"],
+      triggerKeywords: ["push", "deploy", "apply", "mutate", "write", "change"],
       baseScore: isPushLike ? 5 : 1,
     },
     {
@@ -168,7 +168,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       tool: "sync_health_check",
       reason: "Captures baseline reliability state before long workflows.",
       args: {},
-      triggerKeywords: ["health", "reliability", "metrics", "стабилност", "метрики"],
+      triggerKeywords: ["health", "reliability", "metrics", "stability"],
       baseScore: 1,
     },
   ];
