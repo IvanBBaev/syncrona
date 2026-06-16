@@ -15,7 +15,7 @@ code. (Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §4.)
 | Works **without** a companion scoped app | ✅ | n/a | ❌ (needs server app) | n/a |
 | Quality gates / tests / audit shipped | ✅ | n/a | partial | ❌ |
 | First-party support & SLA | ❌ | ✅ | ❌ | n/a |
-| OAuth / SSO auth | ⏳ roadmap | ✅ | ❌ | ✅ |
+| OAuth / SSO auth | ✅ CLI (OAuth 2.0) · ⏳ MCP | ✅ | ❌ | ✅ |
 | Maintained / active | ✅ (early) | ✅ | ⚠️ legacy | n/a |
 
 ✅ yes · ⏳ planned · ⚠️ caveat · ❌ no
@@ -25,7 +25,7 @@ code. (Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §4.)
 - **Choose Syncrona** if your team already lives in Git/CI, runs **multiple**
   scoped apps, wants a real local build pipeline, or wants AI/MCP tooling that
   understands your scope's metadata and dependencies — and can authenticate with
-  a least-privilege integration user (Basic auth today; OAuth on the roadmap).
+  a least-privilege integration user (Basic auth, or OAuth 2.0 via SN_OAUTH_* in the CLI).
 - **Choose ServiceNow native Git** if first-party support, OAuth/SSO, and zero
   third-party tooling are hard requirements and you don't need local build
   pipelines or AI analysis.

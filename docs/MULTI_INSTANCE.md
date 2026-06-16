@@ -65,6 +65,26 @@ default profile so you don't pass the flag on every command:
 An explicit `--instance-profile` on the command line still wins over it.
 `.syncrona-local` is already in `.gitignore`.
 
+## OAuth 2.0 (optional)
+
+By default the CLI authenticates with HTTP Basic auth. To use OAuth 2.0
+instead, register an OAuth API client in ServiceNow (System OAuth → Application
+Registry) and set its client id/secret alongside your usual credentials:
+
+```bash
+export SN_INSTANCE=dev12345.service-now.com
+export SN_USER=integration.user
+export SN_PASSWORD=...
+export SN_OAUTH_CLIENT_ID=<client_id>
+export SN_OAUTH_CLIENT_SECRET=<client_secret>
+```
+
+The CLI exchanges the username/password for a Bearer token at `oauth_token.do`
+(OAuth 2.0 password grant) and refreshes it on expiry or a 401. The OAuth vars
+also support `_<PROFILE>` suffixes (`SN_OAUTH_CLIENT_ID_DEV`, …) like the other
+`SN_*` vars. Remove them to fall back to Basic auth. Tokens live in memory for
+the process only — they are not written to disk.
+
 ## A safe dev → prod workflow
 
 ```bash

@@ -12,6 +12,7 @@ describe("e2e network smoke (real HTTP against a mock ServiceNow)", () => {
   let server: http.Server;
   let baseURL: string;
   const seenAuthHeaders: string[] = [];
+  const tokenRequests: string[] = [];
   let lastPatch: { url: string; body: Record<string, unknown> } | null = null;
 
   beforeAll(async () => {
@@ -22,6 +23,16 @@ describe("e2e network smoke (real HTTP against a mock ServiceNow)", () => {
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(payload));
       };
+
+      if (url.pathname.endsWith("oauth_token.do") && req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => {
+          tokenRequests.push(body);
+          respond({ access_token: "tok-123", refresh_token: "ref-123", expires_in: 1800 });
+        });
+        return;
+      }
 
       if (req.method === "PATCH") {
         let body = "";
@@ -102,5 +113,35 @@ describe("e2e network smoke (real HTTP against a mock ServiceNow)", () => {
       url: "/api/now/table/sys_script_include/rec-1",
       body: { script: "gs.info('updated');" },
     });
+  });
+
+  // G1: OAuth mode exchanges username/password at oauth_token.do and sends the
+  // access token as a Bearer header on every Table API request (no Basic auth).
+  it("uses OAuth Bearer over the wire when an OAuth client is configured", async () => {
+    tokenRequests.length = 0;
+    const before = seenAuthHeaders.length;
+    const client = snClient(baseURL, "smoke.user", "smoke.pass", {
+      clientId: "my-client",
+      clientSecret: "my-secret",
+    });
+
+    const manifest = await buildManifestFromTableAPI("x_smoke", client, {
+      includes: {},
+      excludes: {},
+      tableOptions: {},
+    });
+    expect(manifest.scope).toBe("x_smoke");
+
+    // Token endpoint was hit with the password grant + client credentials.
+    expect(tokenRequests.length).toBeGreaterThan(0);
+    expect(tokenRequests[0]).toContain("grant_type=password");
+    expect(tokenRequests[0]).toContain("client_id=my-client");
+
+    // Every Table API request after client creation carried the Bearer token,
+    // and none used Basic auth.
+    const apiAuthHeaders = seenAuthHeaders.slice(before).filter((h) => h !== "");
+    expect(apiAuthHeaders.length).toBeGreaterThan(0);
+    expect(apiAuthHeaders.every((h) => h === "Bearer tok-123")).toBe(true);
+    expect(apiAuthHeaders.some((h) => h.startsWith("Basic "))).toBe(false);
   });
 });
