@@ -45,7 +45,9 @@
   ],
   "overrides": {
     "micromatch": "^4.0.8",
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "form-data": "^4.0.6",
+    "hono": "^4.12.25"
   },
   "directories": {
     "doc": "docs"
