@@ -100,3 +100,6 @@ const endpointNotFoundStatusSet = new Set<number>(ENDPOINT_NOT_FOUND_STATUSES);
 export function isEndpointNotFoundStatus(status: number): boolean {
   return endpointNotFoundStatusSet.has(status);
 }
+
+// Shared OAuth 2.0 token manager (IO-free; HTTP injected). Used by both clients.
+export * from "./oauth";

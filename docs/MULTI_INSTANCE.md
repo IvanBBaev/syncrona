@@ -80,10 +80,15 @@ export SN_OAUTH_CLIENT_SECRET=<client_secret>
 ```
 
 The CLI exchanges the username/password for a Bearer token at `oauth_token.do`
-(OAuth 2.0 password grant) and refreshes it on expiry or a 401. The OAuth vars
-also support `_<PROFILE>` suffixes (`SN_OAUTH_CLIENT_ID_DEV`, …) like the other
-`SN_*` vars. Remove them to fall back to Basic auth. Tokens live in memory for
-the process only — they are not written to disk.
+(OAuth 2.0 password grant) and refreshes it on expiry or a 401. The CLI OAuth
+vars also support `_<PROFILE>` suffixes (`SN_OAUTH_CLIENT_ID_DEV`, …) like the
+other `SN_*` vars. Remove them to fall back to Basic auth. Tokens live in memory
+for the process only — they are not written to disk.
+
+The **MCP server** honors the same `SN_OAUTH_CLIENT_ID`/`SN_OAUTH_CLIENT_SECRET`
+(base vars; the MCP server uses a single instance config, not profiles) and
+likewise sends a Bearer token with refresh-on-401, falling back to Basic when
+they are unset.
 
 ## A safe dev → prod workflow
 

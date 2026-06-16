@@ -77,15 +77,14 @@ Does not repeat AR/CR/DX. The same-day best-practice fixes (0 audit
 vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ### Senior Dev — missing capabilities in the code
-- [~] **G1. OAuth 2.0 auth** — CLI DONE 2026-06-16 (additive; Basic stays default):
-      set SN_OAUTH_CLIENT_ID + SN_OAUTH_CLIENT_SECRET (with the usual
-      SN_USER/SN_PASSWORD, optional _<PROFILE> suffixes) and the core client
-      exchanges them at oauth_token.do (OAuth 2.0 password grant) for a Bearer
-      token, refreshed on expiry/401; tokens in-memory per process. New oauth.ts
-      token manager (5 tests) + snClient interceptors; e2e Bearer-on-the-wire
-      test. Documented (README/SECURITY/MULTI_INSTANCE). Remaining: the MCP
-      server (servicenowCore fetch client) still uses Basic — OAuth there is the
-      follow-up; full SSO/authorization-code grant also future.
+- [x] **G1. OAuth 2.0 auth** — DONE 2026-06-16 (CLI + MCP; additive, Basic default):
+      SN_OAUTH_CLIENT_ID + SN_OAUTH_CLIENT_SECRET (CLI also _<PROFILE>) → OAuth 2.0
+      password grant at oauth_token.do → Bearer + refresh on expiry/401. The token
+      manager lives in @syncrona/sn-transport (shared, IO-free; ARCH-001); the CLI
+      (snClient axios interceptors) and the MCP server (servicenowCore fetch) both
+      use it. Tests: oauth.test.ts (4) + e2e Bearer-on-wire + mcp oauth.test.js (3).
+      Legacy sys.scripts.do fallback stays Basic (best-effort; CR22). Full
+      authorization-code / SSO grant is future.
 - [x] **G2. Schema validation for sync.config.js** — DONE 2026-06-12:
       validateConfigShape in config.ts (no new dependency) — wrong type = hard
       error, unknown key = warning listing the valid options; 4 new tests

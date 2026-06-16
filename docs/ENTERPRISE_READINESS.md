@@ -10,9 +10,10 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 ## 1. Authentication & security
 - ✅ **OAuth 2.0 (CLI)** — password grant, Bearer + refresh, `SN_OAUTH_*`; Basic
   stays default (G1).
-- 🟡 **OAuth 2.0 (MCP server)** — `servicenowCore` still uses Basic; share the
-  `createTokenManager` (move to `@syncrona/sn-transport`, already consumed by
-  both) and wire Bearer + 401-refresh into the fetch client. **Next up.**
+- ✅ **OAuth 2.0 (MCP server)** — DONE: `createTokenManager` moved to
+  `@syncrona/sn-transport` (shared); `servicenowCore` sends Bearer + refresh on
+  401, Basic fallback, via the same `SN_OAUTH_*` vars (3 mcp tests). The legacy
+  `sys.scripts.do` fallback stays Basic (best-effort; CR22).
 - 🔴 **SSO / authorization-code grant** — beyond password grant; needs product
   decision + per-instance OAuth app config.
 - 🟡/🔴 **At-rest credential strength (AR2)** — current store key is machine-

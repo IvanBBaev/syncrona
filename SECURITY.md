@@ -33,9 +33,11 @@ understand what it touches:
   CLI: set `SN_OAUTH_CLIENT_ID` + `SN_OAUTH_CLIENT_SECRET` and the same
   username/password are exchanged at `oauth_token.do` for a short-lived Bearer
   token (refreshed on expiry/401). Tokens are held in memory per process and
-  never written to disk. Use a dedicated least-privilege integration user and
-  rotate its password if a credential file may have been exposed. (The MCP
-  server still uses Basic auth — OAuth there is a planned follow-up.)
+  never written to disk. **Both the CLI and the MCP server** support OAuth via
+  the same `SN_OAUTH_CLIENT_ID`/`SN_OAUTH_CLIENT_SECRET` vars. Use a dedicated
+  least-privilege integration user and rotate its password if a credential file
+  may have been exposed. (The MCP server's legacy `sys.scripts.do` fallback
+  remains Basic-only; it is a best-effort last resort — see CR22.)
 - **What is read/written.** Syncrona reads scoped-application source/metadata
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP

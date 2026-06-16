@@ -12,6 +12,10 @@ import {
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
   shouldRetryStatus,
+  createTokenManager,
+  type TokenManager,
+  type TokenPoster,
+  type OAuthTokenResponse,
 } from "@syncrona/sn-transport";
 import { logger } from "./logger";
 
@@ -19,7 +23,42 @@ type SNConfig = {
   instance: string;
   user: string;
   password: string;
+  // G1: when both are set (SN_OAUTH_CLIENT_ID / SN_OAUTH_CLIENT_SECRET), the
+  // MCP client authenticates with OAuth 2.0 Bearer instead of Basic.
+  clientId?: string;
+  clientSecret?: string;
 };
+
+// Cache one token manager per instance+client across the long-running server,
+// so token caching/refresh actually persists between tool calls.
+const tokenManagers = new Map<string, TokenManager>();
+
+function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
+  const key = `${config.instance}|${config.clientId}`;
+  const existing = tokenManagers.get(key);
+  if (existing) {
+    return existing;
+  }
+  const poster: TokenPoster = async (tokenPath, body) => {
+    const res = await fetch(`${baseUrl}${tokenPath}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body,
+    });
+    const text = await res.text();
+    return JSON.parse(text) as OAuthTokenResponse;
+  };
+  const manager = createTokenManager(
+    { username: config.user, password: config.password },
+    { clientId: config.clientId as string, clientSecret: config.clientSecret as string },
+    poster
+  );
+  tokenManagers.set(key, manager);
+  return manager;
+}
 
 export type SecretsProvider = {
   name: string;
@@ -229,7 +268,17 @@ export function resolveServiceNowSecrets(
     );
   }
 
-  return { instance, user, password };
+  // G1: optional OAuth 2.0 — env-configured; absent → Basic auth (default).
+  const clientId = cleanEnvValue(process.env.SN_OAUTH_CLIENT_ID || "");
+  const clientSecret = cleanEnvValue(process.env.SN_OAUTH_CLIENT_SECRET || "");
+
+  return {
+    instance,
+    user,
+    password,
+    clientId: clientId || undefined,
+    clientSecret: clientSecret || undefined,
+  };
 }
 
 export function getServiceNowConfig(projectDir: string = process.cwd()): SNConfig {
@@ -354,6 +403,16 @@ export async function snRequestWithConfig(
   const { instance, user, password } = config;
   const baseUrl = instanceToBaseUrl(instance);
   const startedAt = Date.now();
+  // G1: OAuth Bearer when configured, else Basic (default). One token manager
+  // per instance+client (cached) so refresh persists across tool calls.
+  const useOAuth = !!(config.clientId && config.clientSecret);
+  const tokens = useOAuth ? getTokenManager(config, baseUrl) : null;
+  let oauthRetried = false;
+
+  const authHeader = async (): Promise<string> =>
+    tokens
+      ? `Bearer ${await tokens.getToken()}`
+      : `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
@@ -364,17 +423,28 @@ export async function snRequestWithConfig(
     const timer = setTimeout(() => controller.abort(), remaining);
 
     try {
-      const auth = Buffer.from(`${user}:${password}`).toString("base64");
       const response = await fetch(`${baseUrl}${endpoint.replace(/^\//, "")}`, {
         method,
         headers: {
-          Authorization: `Basic ${auth}`,
+          Authorization: await authHeader(),
           "Content-Type": "application/json",
           Accept: "application/json, text/plain, text/html",
         },
         body: body === undefined || body === null ? undefined : JSON.stringify(body),
         signal: controller.signal,
       });
+
+      // OAuth: a 401 usually means the token expired — refresh once and retry.
+      if (
+        tokens &&
+        response.status === 401 &&
+        !oauthRetried &&
+        attempt < MAX_REQUEST_ATTEMPTS
+      ) {
+        oauthRetried = true;
+        await tokens.forceRefresh();
+        continue;
+      }
 
       const text = await response.text();
       let data: unknown = text;
