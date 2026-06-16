@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Production + dev npm dependencies across the workspace root (npm workspaces
+  # resolve from the single root lockfile, so a root-level entry covers all
+  # packages/*). Security and version updates land as grouped weekly PRs.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+
+  # Keep the SHA-pinned GitHub Actions current (Dependabot bumps the pin and
+  # the version comment together).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

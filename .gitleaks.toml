@@ -1,0 +1,15 @@
+# gitleaks configuration — extends the built-in ruleset with project allowlists.
+# Used by the secret-scan job in .github/workflows/ci.yml (G16).
+title = "syncrona gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test suites and example/docs use placeholder credentials, not real secrets."
+paths = [
+  '''packages/.*/test/.*''',
+  '''packages/core/src/tests/.*''',
+  '''.*\.example$''',
+  '''.*\.example\..*''',
+]
