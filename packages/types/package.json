@@ -9,10 +9,15 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "author": "",
+  "author": "Ivan Baev",
   "license": "MIT",
   "files": [
     "index.d.ts"
   ],
-  "types": "./index.d.ts"
+  "types": "./index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/types"
+  }
 }

@@ -14,7 +14,7 @@ npm i -D @syncrona/webpack-plugin
 
 | Key               | Type                                                | Default  | Description                                                                                                                                                                                                               |
 | ----------------- | --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `configGenerator` | `(context:Sync.FileContext)=>webpack.Configuration` | `()=>{}` | Function that can generate a webpack configuration object. A [Sync.FileContext](https://github.com/nuvolo/syncrona/blob/bdb/packages/types/index.d.ts) is passed in so that you can substitute options using the context |
+| `configGenerator` | `(context:Sync.FileContext)=>webpack.Configuration` | `()=>{}` | Function that can generate a webpack configuration object. A [Sync.FileContext](../types/index.d.ts) is passed in so that you can substitute options using the context |
 | `webpackConfig`   | `webpack.Configuration`                             | `{}`     | Same as [webpack.config.js](https://webpack.js.org/configuration/) object                                                                                                                                                 |
 
 ### Order of Configurations

@@ -6,7 +6,7 @@
   "scripts": {
     "prepack": "npx tsc"
   },
-  "author": "Multiple",
+  "author": "Ivan Baev",
   "license": "MIT",
   "dependencies": {
     "typescript": "^5.2.2"
@@ -22,5 +22,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/typescript-plugin"
   }
 }

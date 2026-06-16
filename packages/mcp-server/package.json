@@ -19,7 +19,7 @@
     "validate-release-checklist": "node scripts/validate-release-checklist.js",
     "prepack": "tsc"
   },
-  "author": "Multiple",
+  "author": "Ivan Baev",
   "license": "MIT",
   "engines": {
     "node": ">=22.0.0"
@@ -39,5 +39,10 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/mcp-server"
   }
 }

@@ -73,5 +73,9 @@
     "ai-tools",
     "developer-tools",
     "devops"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git"
+  }
 }

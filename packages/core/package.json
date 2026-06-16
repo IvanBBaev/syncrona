@@ -4,7 +4,7 @@
   "description": "Next-gen file syncer",
   "license": "MIT",
   "main": "./dist/index.js",
-  "author": "Multiple",
+  "author": "Ivan Baev",
   "private": false,
   "scripts": {
     "prepack": "tsc",
@@ -51,5 +51,10 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/core"
   }
 }

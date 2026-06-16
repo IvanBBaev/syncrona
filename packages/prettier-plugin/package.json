@@ -6,7 +6,7 @@
   "scripts": {
     "prepack": "tsc"
   },
-  "author": "Multiple",
+  "author": "Ivan Baev",
   "license": "MIT",
   "devDependencies": {
     "@syncrona/types": "^0.4.2-alpha.8",
@@ -21,5 +21,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/prettier-plugin"
   }
 }

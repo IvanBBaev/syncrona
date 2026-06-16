@@ -418,7 +418,7 @@ If you find that your config is getting too large, you can use typical nodejs te
 
 ### I'm not seeing all my code files!
 
-When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultManifestConfig.ts).
+When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultOptions.ts) (and you can list them with `syncrona config show-defaults`).
 
 If you think there is something wrong with the default setup, feel free to submit a pull request! 🐙👍
 

@@ -6,7 +6,7 @@
   "scripts": {
     "prepack": "tsc"
   },
-  "author": "Multiple",
+  "author": "Ivan Baev",
   "license": "MIT",
   "dependencies": {
     "eslint": "8.51.0"
@@ -25,5 +25,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/eslint-plugin"
   }
 }

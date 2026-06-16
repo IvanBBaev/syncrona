@@ -6,7 +6,7 @@
   "scripts": {
     "prepack": "tsc"
   },
-  "author": "",
+  "author": "Ivan Baev",
   "license": "MIT",
   "dependencies": {
     "@babel/core": "^7.23.2",
@@ -24,5 +24,10 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "directory": "packages/babel-plugin-remove-modules"
+  }
 }
