@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 # Least-privilege default token (enterprise/supply-chain hardening): the
-# workflow only reads the repo. Follow-up: pin actions to commit SHAs.
+# workflow only reads the repo. Actions are pinned to commit SHAs below.
 permissions:
   contents: read
 
@@ -21,9 +21,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload core coverage artifact
         if: always() && matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: core-coverage
           path: packages/core/coverage

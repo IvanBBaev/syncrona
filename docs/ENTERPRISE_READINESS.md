@@ -51,7 +51,7 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   release-checklist gates.
 - ✅ **CI matrix** — GitHub Actions on ubuntu + macOS, full chain + audit gate;
   least-privilege `permissions: contents: read`.
-- 🟡 **CI hardening (remainder)** — pin actions to commit SHAs.
+- ✅ **CI hardening** — least-privilege permissions + GitHub Actions pinned to commit SHAs.
 - 🟡 **Module-boundary enforcement (G10)** — dependency-cruiser in lint (dev dep
   — needs your OK).
 - 🟡 **Mutation/perf baselines (G13/G14)** — Stryker / bench (dev deps).
@@ -67,17 +67,20 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - 🟡 **Per-package READMEs** — npm landing pages for published packages.
 
 ## Recommended sequence
-1. 🟡 **MCP-server OAuth** — finishes the enterprise auth story (next AI task).
-2. 🔴 **IP/provenance clearance** — gates everything public.
-3. 🔴 **Decide brand + repo-public + npm scope/2FA** (one decision block).
-4. 🟡 **Keychain (AR2) + G6 changesets + CI SHA-pinning + per-package READMEs**
-   (AI-completable once deps/decisions are cleared).
-5. 🔴 **Distribution (Homebrew/Windows) + compatibility matrix + SLA** — needs
+1. ✅ **MCP-server OAuth** — done (enterprise auth story complete: CLI + MCP).
+2. ✅ **CI hardening** — done (least-privilege + SHA-pinned actions).
+3. 🟡 **Pre-publish package hygiene** — per-package READMEs, bin-path/metadata
+   normalization, `repository`/`author` fields (in progress).
+4. 🔴 **IP/provenance clearance** — gates everything public.
+5. 🔴 **Decide brand + repo-public + npm scope/2FA** (one decision block).
+6. 🟡 **Keychain (AR2) + G6 changesets** — AI-completable once the new-dependency
+   decisions are cleared.
+7. 🔴 **Distribution (Homebrew/Windows) + compatibility matrix + SLA** — needs
    accounts, live instances, and a support model.
-6. **Cut 1.0** once §1–§3 gates are green and the Definition of Done in
-   `repo-standard` is met.
+8. **Cut 1.0** once the gates above are green and the `repo-standard` Definition
+   of Done is met.
 
-> Bottom line: the **engineering** is close to 1.0-grade. What gates a public/
-> enterprise 1.0 is mostly **owner decisions** (IP, brand, repo-public, npm,
-> SLA) and **distribution**, not code. The largest remaining *code* item is
-> MCP-server OAuth (scheduled next).
+> Bottom line: the **engineering** is essentially 1.0-grade (OAuth complete on
+> both clients, CI hardened, gates green). What gates a public/enterprise 1.0 is
+> now almost entirely **owner decisions** (IP/provenance, brand, repo-public,
+> npm scope/2FA, SLA) and **distribution** — not code.
