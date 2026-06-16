@@ -31,8 +31,12 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
   roadmap and risk register.
 - [docs/COMPARISON.md](docs/COMPARISON.md) — Syncrona vs ServiceNow native Git,
   Sincronia, and update sets (one-page comparison).
+- [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
+  for a public 1.0 / enterprise release (done / scheduled / owner-gated).
 - [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
+- [SUPPORT.md](SUPPORT.md) — getting help, diagnostics, support scope.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
   setup, tools, guardrails, and safety notes.
 - [CHANGELOG.md](CHANGELOG.md) — notable changes per release.

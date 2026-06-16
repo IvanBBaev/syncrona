@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege default token (enterprise/supply-chain hardening): the
+# workflow only reads the repo. Follow-up: pin actions to commit SHAs.
+permissions:
+  contents: read
+
 jobs:
   check:
     strategy:
