@@ -145,10 +145,13 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       .github/workflows/ci.yml (the repo lives on GitHub; azure-pipelines.yml
       does not run there), matrix ubuntu-latest + macos-latest, Node from
       .nvmrc, full check chain. Windows remains with D5/DX1.
-- [ ] **G16. Security automation in CI** — PARTIAL: `npm audit --omit=dev
-      --audit-level=high` is a CI step in both azure-pipelines.yml and the
-      GitHub Actions workflow (verified locally: 0 vulnerabilities). Remaining:
-      secret scanning (gitleaks) — requires an external tool in the pipeline.
+- [x] **G16. Security automation in CI** — DONE 2026-06-16: `npm audit
+      --omit=dev --audit-level=high` runs in the GitHub Actions workflow
+      (0 vulnerabilities). Added: gitleaks secret scanning (full-history job in
+      ci.yml, test/example fixtures allowlisted via .gitleaks.toml), CodeQL SAST
+      (.github/workflows/codeql.yml — push/PR + weekly schedule), and Dependabot
+      (.github/dependabot.yml — weekly npm + github-actions updates). All actions
+      SHA-pinned, least-privilege permissions.
 - [x] **G17. Tests must not dirty the tracked tree** — DONE 2026-06-13: the
       culprit was commandsDownload.test.ts — downloadCommand calls the REAL
       generateScopeDocs(man), which resolves its outDir from process.cwd() and
