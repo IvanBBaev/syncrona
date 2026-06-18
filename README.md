@@ -10,6 +10,8 @@ SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It all
 2. Run your code through build pipelines that enable you to write modern JavaScript and use modern development tools such as [TypeScript](https://www.typescriptlang.org/), [Babel](https://babeljs.io/), and [Webpack](https://webpack.js.org/). 🎉
 3. Take control of your development process in ServiceNow! 💪
 
+Because your scoped-app code is downloaded as plain, editable files in a project folder, SyncroNow AI is well suited for **tracking your ServiceNow source code in Git** — giving you real diffs, history, branches and pull requests over code that would otherwise live only inside the instance.
+
 Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list=PL1myMMPgZzOrOeu03YsuNmsDI2k0vadTq)!
 
 **Project documentation**
@@ -33,6 +35,8 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
   Sincronia, and update sets (one-page comparison).
 - [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
   for a public 1.0 / enterprise release (done / scheduled / owner-gated).
+- [ROADMAP.md](ROADMAP.md) — shipped capabilities and the path to v0.5 beta and
+  v1.0 (with owner-gated items called out).
 - [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
 - [SUPPORT.md](SUPPORT.md) — getting help, diagnostics, support scope.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
