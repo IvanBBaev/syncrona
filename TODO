@@ -214,6 +214,102 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ---
 
+## FULL REVIEW — 2026-06-22 (architect / dev / qa × 4 over the GPL relicense)
+Scope: the MIT→GPL-3.0 relicense (LICENSE, NOTICE, package.json, README) + repo.
+
+### Cycle 1 — Architect
+- [x] **ARCH-5. Relicense incomplete: Homebrew formula still `license "MIT"`** —
+      DONE 2026-06-22: packaging/homebrew/syncro-now-ai.rb declared MIT (would
+      publish wrong license metadata to the tap). → `GPL-3.0-or-later`.
+- [x] **ARCH-6. Relicense incomplete: docs site advertised MIT (4 places)** —
+      DONE 2026-06-22: docs/index.html (the public GitHub Pages site) claimed MIT
+      in the meta description (×2), JSON-LD `license`, a "MIT licensed" badge, and
+      the footer — a public license misstatement. → GPL-3.0 (GNU URL for JSON-LD).
+- [x] **ARCH-8. package-lock workspace entries cached as MIT** — DONE 2026-06-22:
+      our workspace packages still showed `"license": "MIT"` in package-lock
+      (stale vs the updated package.json). Regenerated via `npm install`; all
+      workspace entries are now GPL-3.0-or-later (third-party deps keep their own
+      real licenses, untouched).
+- [ ] **ARCH-7. No per-file SPDX/GPL headers** — DEFERRED (recommended, not a
+      violation): GPL "How to Apply" recommends a short license header per source
+      file; the project relies on LICENSE + NOTICE + README, which is acceptable.
+      Adding headers to ~90 files is mechanical bulk best left to an explicit pass
+      (architect rule: many-file changes are flagged, not auto-applied).
+
+### Cycle 1 — Dev
+- CLEAN: the relicense changed only metadata/text/docs, no executable code.
+  Verified LICENSE is the verbatim canonical GPL-3.0, all package.json stay valid
+  JSON (npm install + gate green), the Homebrew `.rb` and JSON-LD edits parse. No
+  defects, no edits.
+
+### Cycle 1 — QA
+- [x] **QA-6. No guard against license drift** — DONE 2026-06-22: the ARCH-5/6/8
+      drift slipped in because nothing checked license consistency. Added
+      licenseConsistency.test.ts (4 tests, runs in the gate): LICENSE is GPL-3.0
+      (not MIT), NOTICE exists + attributes Sincronia, root + every workspace
+      package.json declare GPL-3.0-or-later. A future revert to MIT now fails CI.
+
+### Cycle 2 — CLEAN (early stop)
+- Architect: no residual MIT license claim in owned artifacts (LICENSE/NOTICE/
+  package.json/docs/Homebrew all GPL); dependency-cruiser ✔. The QA-6 guard
+  covers the legally-binding artifacts; docs/Homebrew display strings are lower
+  risk and were fixed in cycle 1.
+- Dev: no executable code touched this run; CLEAN.
+- QA: license guard green; no further gap.
+- Whole clean cycle → per the early-stop rule, cycles 3–4 not run. Asked 4, ran 2.
+
+## FULL REVIEW — 2026-06-21 (architect / dev / qa × 4 over the engineering-100 branch)
+Scope: the PR #9 changes (QA-2, G13, AR11, DX17-19/24, D5, distribution).
+Ids continue from the project's running ARCH-/DEV-/QA- numbering.
+
+### Cycle 1 — Architect
+- [x] **ARCH-3. `flat` config flag is an inert no-op (contract lie)** — DONE
+      2026-06-21: config.ts getFlatMode() and flatLayout.ts helpers had zero src
+      callers (DX17 pipeline wiring is deferred), yet `flat: true` was accepted +
+      shape-validated, so a user got the folder layout silently. Fix: loadConfigs
+      now logs a one-time warning when `flat: true` that the flat layout is a
+      preview not yet applied on pull/push. (Full wiring stays deferred — needs
+      live validation.) config.ts:170.
+- [x] **ARCH-4. Error-hint presentation duplicated across 5 sinks** — DONE
+      2026-06-21: `logger.info(\`→ ${classifyError(e).hint}\`)` was copy-pasted in
+      commander, commandHelpers (×2), pushCommand and repairCommand — a
+      presentation policy that would drift. Extracted `logErrorHint(e)` in
+      commandHelpers (keeps errorTaxonomy pure / logger-free); all 5 sinks call it.
+
+### Cycle 1 — Dev
+- [x] **DEV-3. DX24 progress ETA never rendered (`~0.0Human left`)** — DONE
+      2026-06-21: the custom progress token `:etaHuman` prefix-collides with the
+      `progress` lib's built-in `:eta` token, so it rendered as `:eta` ("0.0") +
+      literal "Human". Verified with a faked-TTY render. Fix: rename the token to
+      the collision-free `:remaining` (and the local var to remainingMs).
+      appUtils.ts getProgTick. Rest of the new code (flatLayout edge cases,
+      repairCommand async/error paths, AR11 accessors) reviewed CLEAN.
+
+### Cycle 1 — QA
+- [x] **QA-4. DEV-3 had no regression test** — DONE 2026-06-21: the ETA token
+      bug would not have failed any test. getProgTick is now exported with an
+      injectable stream; progressTick.test.ts renders it against a faked TTY and
+      asserts the token substitutes (no surviving `:remaining`, no `:eta`-collision
+      "Human" leftover, count + "left" present). 2 tests.
+- [x] **QA-5. repair `--prune` deletion path untested (data-loss risk)** — DONE
+      2026-06-21: `--apply --prune` calls fsp.unlink on orphans with no test.
+      Added 3 real-temp-file tests (fs unmocked): `--apply --prune --ci` deletes
+      the orphan, `--apply` without `--prune` keeps it, report-only never deletes.
+- Other new code: flatLayout (13 round-trip tests), AR11 (5), D5 (storeKey +
+      storeKeyResolution, keychain mocked/hermetic), QA-2 handler suites — all
+      adequately covered; no further gaps this cycle.
+
+### Cycle 2 — CLEAN (early stop)
+- Architect: dependency-cruiser ✔ (94 modules, no cycles/boundary violations);
+  the new commander→commandHelpers edge introduces no cycle; the only other
+  progress bar (wizard.renderProgressBar) is a pure string renderer, not the
+  `progress` lib, so no token-collision class elsewhere.
+- Dev: cycle-1 fixes verified correct; no new defects.
+- QA: new tests green; remaining wrappers (logErrorHint) / cosmetic warning are
+  low-risk and adequately backed by classifyError's own tests.
+- A whole clean cycle (no findings from any persona) → per the skill's
+  early-stop rule, cycles 3–4 were not run for show. Asked for 4, ran 2.
+
 ## FULL REVIEW — cycle 2026-06-14 (architect / dev / qa over session additions)
 - Architect: CLEAN — no new duplicated types (ARCH-1/2 hold), the new helpers
   (activeStoreHealth, getActiveStoreDecryptWarning, checkRuleOrder, formatTable,
@@ -623,5 +719,15 @@ roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
       @syncrona) — unify on one name across npm/repo/CLI [owner decision].
 - [ ] **BA7. No success metrics / KPIs** — instrument once opt-in telemetry (G7)
       lands; KPI set defined in §7.
-- [ ] **BA8. Provenance / IP (Risk R1)** — verify ownership of pre-existing code
-      and clearance to distribute BEFORE any public release [owner/legal].
+- [~] **BA8. Provenance / IP (Risk R1)** — LICENSING FIX APPLIED 2026-06-21.
+      Deep BA found the real conflict: upstream Sincronia is **GPL-3.0**
+      (LICENSE file + @sincronia/core package.json) but this fork was relicensed
+      to **MIT** with no attribution — a GPL violation that blocked any
+      distribution. Fixed: LICENSE replaced with verbatim GPL-3.0, all 14
+      package.json `license` fields → `GPL-3.0-or-later`, added `NOTICE`
+      (copyright + Sincronia/Nuvolo attribution + trademark notice), README
+      license section rewritten. Gate green. REMAINING [owner/legal]: a lawyer's
+      sign-off on the GPL-3.0-only vs -or-later variant and that no
+      employer-proprietary code is mixed in, BEFORE the first public publish.
+      Note: GPL copyleft forecloses a closed-source/proprietary paid tier
+      (see deep BA §1/§3 — OSS or SaaS/support monetization only).

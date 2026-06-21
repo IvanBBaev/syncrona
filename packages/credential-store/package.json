@@ -13,7 +13,7 @@
     "node": ">=22.0.0"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "files": [
     "dist"
   ],

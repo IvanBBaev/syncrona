@@ -676,4 +676,12 @@ linked above also walk through a complete project setup.
 ServiceNow is a registered trademark of ServiceNow, Inc. This project is an
 independent, third-party tool and is not affiliated with, endorsed by, or
 sponsored by ServiceNow, Inc. All other trademarks are the property of their
-respective owners. SyncroNow AI is released under the [MIT License](LICENSE).
+respective owners.
+
+SyncroNow AI is licensed under the **[GNU General Public License v3.0](LICENSE)**
+(GPL-3.0-or-later). It is a derivative work of
+[Sincronia ("sinc")](https://github.com/nuvolo/sincronia) by Nuvolo, which is
+licensed under GPL-3.0; substantial portions of the build/plugin packages, CLI
+core, and shared types originate from that project and remain under GPL-3.0. See
+[NOTICE](NOTICE) for full attribution. As required by the GPL, redistributions
+must preserve these notices and make the corresponding source available.

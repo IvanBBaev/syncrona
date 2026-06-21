@@ -1,0 +1,31 @@
+SyncroNow AI
+Copyright (C) 2026 Ivan Baev
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+----------------------------------------------------------------------------
+Attribution — derivative work
+----------------------------------------------------------------------------
+
+SyncroNow AI is a derivative work of Sincronia ("sinc"), the ServiceNow build
+pipeline by Nuvolo, which is licensed under the GNU General Public License,
+version 3.0. Substantial portions of the build/plugin packages, the CLI core,
+and the shared types originate from that project and remain licensed under
+GPL-3.0.
+
+  Original project: Sincronia — https://github.com/nuvolo/sincronia
+  Copyright (C) Nuvolo and the Sincronia contributors.
+
+Modifications, additions (the MCP server, credential store, sn-transport,
+OAuth/proxy support, governance/audit, additional CLI commands and tests) are
+Copyright (C) 2026 Ivan Baev and are likewise licensed under GPL-3.0-or-later.
+
+----------------------------------------------------------------------------
+Trademarks
+----------------------------------------------------------------------------
+
+"ServiceNow" is a registered trademark of ServiceNow, Inc. This project is not
+affiliated with, sponsored by, or endorsed by ServiceNow, Inc. or Nuvolo.
