@@ -213,7 +213,7 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
   const man = ConfigManager.getManifest();
   if (!man) {
     logger.error(
-      "No manifest found. Run 'syncrona init' or 'syncrona download <scope>' first."
+      "No manifest found. Run 'syncro-now-ai init' or 'syncro-now-ai download <scope>' first."
     );
     return;
   }

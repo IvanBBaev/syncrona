@@ -2,7 +2,7 @@
 
 ## Scope
 
-This playbook is optimized for day-to-day operators running Syncrona MCP against scoped ServiceNow apps.
+This playbook is optimized for day-to-day operators running SyncroNow AI MCP against scoped ServiceNow apps.
 
 ## Fast triage checklist
 

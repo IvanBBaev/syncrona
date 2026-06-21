@@ -724,8 +724,8 @@ describe("command flows", () => {
       expect(match).toBeDefined();
       const writtenConfig = JSON.parse(String(match?.[1] ?? "{}"));
       expect(writtenConfig.mcpServers?.existing).toBeDefined();
-      expect(writtenConfig.mcpServers?.syncrona).toBeDefined();
-      expect(writtenConfig.mcpServers?.syncrona?.args).toEqual(["/tmp/mcp/dist/index.js"]);
+      expect(writtenConfig.mcpServers?.["syncro-now-ai"]).toBeDefined();
+      expect(writtenConfig.mcpServers?.["syncro-now-ai"]?.args).toEqual(["/tmp/mcp/dist/index.js"]);
     }
 
   });
@@ -752,7 +752,7 @@ describe("command flows", () => {
       mcpServerPath: "/tmp/mcp/dist/index.js",
     });
 
-    expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
+    expect(mockLoggerError).toHaveBeenCalledWith("Run syncro-now-ai login first.");
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 
@@ -803,7 +803,7 @@ describe("command flows", () => {
     expect(result.connectivityOk).toBe(true);
     expect(result.scope).toBe("x_demo");
     expect(result.errors).toContain(
-      "Scoped Syncrona API is unavailable on this instance. Using Table API compatibility mode; current session scope could not be verified."
+      "Scoped SyncroNow AI API is unavailable on this instance. Using Table API compatibility mode; current session scope could not be verified."
     );
 
     process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;

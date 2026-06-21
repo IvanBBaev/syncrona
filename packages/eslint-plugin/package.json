@@ -1,7 +1,7 @@
 {
   "name": "@syncro-now-ai/eslint-plugin",
   "version": "0.4.2-alpha.8",
-  "description": "ESLint plugin for Syncrona",
+  "description": "ESLint plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"

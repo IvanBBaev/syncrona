@@ -1,6 +1,6 @@
-# Syncrona Roadmap
+# SyncroNow AI Roadmap
 
-Syncrona is a local-first CLI + AI (MCP) toolchain for ServiceNow scoped-app
+SyncroNow AI is a local-first CLI + AI (MCP) toolchain for ServiceNow scoped-app
 development — *"treat ServiceNow code like real application code: versioned,
 testable, automatable, and AI-analyzable, from your own editor."*
 
@@ -28,7 +28,7 @@ human-facing summary of them.
 
 ---
 
-## Where Syncrona is today (v0.4.x alpha)
+## Where SyncroNow AI is today (v0.4.x alpha)
 
 The engineering foundation is in place and validated end-to-end against scoped
 applications. The following are **shipped**:
@@ -84,7 +84,7 @@ applications. The following are **shipped**:
 
 ## v0.5 — First public publish (beta)
 
-Goal: ship Syncrona to npm and open the repository. This milestone is gated
+Goal: ship SyncroNow AI to npm and open the repository. This milestone is gated
 mostly by **owner decisions**, with a small amount of engineering left.
 
 ### Owner decisions (must clear first)
@@ -92,13 +92,15 @@ mostly by **owner decisions**, with a small amount of engineering left.
   code and the right to distribute it publicly. Code carried prior `nuvolo`
   references; the repo now lives on a personal account. **Hard gate on every
   public step below.**
-- 🔒 **Brand unification** (BA6) — pick one name across npm scope, repo, and CLI
-  (`syncro-now-ai` / `SyncroNow AI` / `syncrona` / `@syncrona`). Changes the
-  published package name, so it must precede the first publish.
+- ✅ **Brand unification** (BA6) — **decided & implemented**: product **SyncroNow
+  AI**, npm scope `@syncro-now-ai/*`, CLI command `syncro-now-ai`, MCP server
+  `syncro-now-ai-mcp-server`. On-disk conventions (`.syncrona*`) and the
+  versioned at-rest crypto salt are intentionally left unchanged (no migration
+  pre-publish). Repo rename to match is the only owner step left (cosmetic).
 - 🔒 **Repository → public** — flip only after IP clearance. Also activates the
   CodeQL workflow (currently guarded to public repos).
-- 🔒 **npm publish + 2FA** (D5) — claim the `@syncrona` scope, enable 2FA, then
-  `npm run release:core`.
+- 🔒 **npm publish + 2FA** (D5) — claim the `@syncro-now-ai` scope, enable 2FA,
+  then run the `release` workflow (Changesets publish with provenance).
 - 🔒 **Business model / sustainability** (BA5) — OSS-only vs OSS + paid support;
   ownership and co-maintainer (bus factor is 1 today).
 
@@ -106,8 +108,9 @@ mostly by **owner decisions**, with a small amount of engineering left.
 - ✅ **Release automation** (G6) — Changesets wired in (`.changeset/`,
   `npm run changeset` / `version-packages` / `release`); `@syncro-now-ai/*` packages
   version in lockstep. The publish step itself stays owner-gated.
-- 📋 **CI publish with provenance** (D5) — publish from CI with `--provenance`
-  instead of a laptop.
+- ✅ **CI publish with provenance** (D5) — [`release.yml`](.github/workflows/release.yml)
+  publishes via Changesets with `--provenance` (`id-token: write`); dormant until
+  the `NPM_TOKEN` secret + public repo land.
 - ✅ **Per-package READMEs** — npm landing pages for every published package
   (all 13 have a README and `repository`/`author` metadata).
 - ✅ **OS keychain credential strength** (AR2) — the at-rest key resolves from
@@ -122,9 +125,13 @@ mostly by **owner decisions**, with a small amount of engineering left.
 Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 
 ### Distribution
-- 🔒/📋 **Homebrew tap** (D5) — `homebrew-tap` repo + formula + release action.
-- 🔒/📋 **Windows support** (D5) — PowerShell install script + Windows Credential
-  Manager (native, beyond WSL).
+- 🚧 **Homebrew tap** (D5) — formula template shipped in
+  [`packaging/homebrew/`](packaging/homebrew/syncro-now-ai.rb); owner step left is
+  creating the `homebrew-tap` repo and the first publish (release action fills the
+  tarball `url`/`sha256`).
+- 🚧 **Windows support** (D5) — [`packaging/windows/install.ps1`](packaging/windows/install.ps1)
+  shipped; Windows Credential Manager works natively via `@napi-rs/keyring`
+  (`SYNCRONA_USE_KEYCHAIN=1`). Remaining: broader native-Windows path testing.
 
 ### Auth & connectivity
 - 📋 **Proxy / TLS configuration** (G9) — `HTTPS_PROXY` + custom CA bundle for
@@ -179,7 +186,7 @@ Engineering-completable, not release-blocking; sequenced by demand.
 
 ---
 
-> **Note:** Syncrona is currently a **private** repository. Public-facing items
+> **Note:** SyncroNow AI is currently a **private** repository. Public-facing items
 > (npm publish, repo visibility, CodeQL activation, Homebrew) all sit behind the
 > IP/provenance and brand decisions above. Internal item IDs (G*, AR*, CR*, DX*,
 > BA*) reference [`TODO`](TODO) and [`DONE`](DONE).

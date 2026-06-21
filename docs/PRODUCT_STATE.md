@@ -1,4 +1,4 @@
-# Syncrona — Product State
+# SyncroNow AI — Product State
 
 > Last updated: 2026-06-21. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
@@ -10,7 +10,7 @@
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
 | CLI | 16 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
 | MCP server | ~60 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | **324/324 green** — core: 22 suites / 152 tests (jest, incl. dist-binary e2e smoke); mcp: 172 tests (node:test vs dist) |
+| Tests | **381 green** — core: 33 suites / 206 tests (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: 175 tests (node:test vs dist) |
 | Coverage | core **70.3%** lines / mcp **82.7%** lines (≈75–77% combined) — see [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
 | Version control | git on `main`; remote `origin` → github.com/LeassTaTT/syncrona (**private**) |
@@ -145,10 +145,12 @@ mindmap
 
 ## What is NOT done
 
-1. **D5 distribution** — Homebrew tap + formula automation and a native-Windows
-   installer + Credential Manager. (macOS/Windows/libsecret keychain support for
-   the at-rest key shipped via AR2, opt-in.) This is the main blocker for the
-   "brew install syncrona" definition of done.
+1. **D5 distribution** — scaffolding shipped in [`packaging/`](../packaging/)
+   (Homebrew formula template, Windows `install.ps1`, provenance release
+   workflow); activation is **owner-gated** on npm publish (scope ownership +
+   2FA) and repo-public. macOS/Windows/libsecret keychain for the at-rest key
+   shipped via AR2 (opt-in). Remaining: `homebrew-tap` repo + first publish to
+   complete the "brew install syncro-now-ai" definition of done.
 2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2);
    verify the `sys.scripts.do` fallback against a live instance (CR22).
 3. **Engineering debt accepted knowingly** — mcp tests run against `dist/`

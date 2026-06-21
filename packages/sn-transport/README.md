@@ -1,6 +1,6 @@
 # @syncro-now-ai/sn-transport
 
-Shared **ServiceNow transport policy** for Syncrona. This package is the single
+Shared **ServiceNow transport policy** for SyncroNow AI. This package is the single
 source of truth for the transport-level rules that both ServiceNow HTTP clients
 must agree on:
 
@@ -15,7 +15,7 @@ drift apart.
 ## What lives here
 
 ### Scoped API prefix resolution
-ServiceNow scoped APIs live under `api/<prefix>/…`. Syncrona tries a known set
+ServiceNow scoped APIs live under `api/<prefix>/…`. SyncroNow AI tries a known set
 of prefixes in order and remembers the one that worked.
 
 - `DEFAULT_SCOPED_API_PREFIXES` — defaults (`x_nuvo_sinc`, `x_nuvo_sync`).

@@ -201,10 +201,10 @@ describe("wizard", () => {
     expect(mockSaveCredentials).not.toHaveBeenCalled();
     expect(mockSetActiveInstance).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "No active credentials profile found. Run 'syncrona login' first."
+      "No active credentials profile found. Run 'syncro-now-ai login' first."
     );
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
+      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
     );
   });
 
@@ -340,7 +340,7 @@ describe("wizard", () => {
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "Wizard doctor: Syncrona scoped API is unavailable on this instance. Continuing in Table API compatibility mode."
+      "Wizard doctor: SyncroNow AI scoped API is unavailable on this instance. Continuing in Table API compatibility mode."
     );
     expect(mockLoggerSuccess).toHaveBeenCalledWith("1 files ready. Open Claude and start coding.");
   });

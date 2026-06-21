@@ -3,7 +3,7 @@ import path from "path";
 import { getSyncronaDir } from "./auth";
 
 /**
- * Best-effort "a newer version is available" notifier for the Syncrona CLI.
+ * Best-effort "a newer version is available" notifier for the SyncroNow AI CLI.
  *
  * Design goals:
  *  - Never disrupt or slow down the CLI: all failures are swallowed, the
@@ -16,7 +16,7 @@ import { getSyncronaDir } from "./auth";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 export const PACKAGE_NAME = "@syncro-now-ai/core";
-export const DISPLAY_NAME = "syncrona";
+export const DISPLAY_NAME = "syncro-now-ai";
 const REGISTRY_BASE = "https://registry.npmjs.org";
 const FETCH_TIMEOUT_MS = 1500;
 const CACHE_FILE_NAME = "update-check.json";

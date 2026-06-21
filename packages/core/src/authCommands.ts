@@ -127,7 +127,7 @@ export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: strin
     logger.warn(`Logged in, but failed to prepare workspace structure: ${message}`);
   }
 
-  logger.info("Run `syncrona init` to discover scope and generate sync.manifest.json.");
+  logger.info("Run `syncro-now-ai init` to discover scope and generate sync.manifest.json.");
 }
 
 export async function logoutCommand(
@@ -145,7 +145,7 @@ export async function logoutCommand(
   const targetInstance = args.instance;
   if (!targetInstance) {
     logger.error("Specify an instance to log out from, or use --all to remove all.");
-    logger.info("Example: syncrona logout dev12345.service-now.com");
+    logger.info("Example: syncro-now-ai logout dev12345.service-now.com");
     process.exit(1);
   }
 
@@ -176,7 +176,7 @@ export async function instancesCommand(args: Sync.SharedCmdArgs): Promise<void> 
   const active = await getActiveInstance();
 
   if (all.length === 0) {
-    logger.info("No saved instances. Run `syncrona login` to add one.");
+    logger.info("No saved instances. Run `syncro-now-ai login` to add one.");
     return;
   }
 
@@ -200,7 +200,7 @@ export async function useCommand(
   const all = await listInstances();
   if (!all.includes(normalizedInstance)) {
     logger.error(
-      `No saved credentials for "${normalizedInstance}". Run: syncrona login ${normalizedInstance}`
+      `No saved credentials for "${normalizedInstance}". Run: syncro-now-ai login ${normalizedInstance}`
     );
     process.exit(1);
   }

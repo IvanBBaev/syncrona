@@ -1,6 +1,6 @@
 # Support
 
-Thanks for using Syncrona. This is an actively developed but **pre-1.0** project;
+Thanks for using SyncroNow AI. This is an actively developed but **pre-1.0** project;
 please set expectations accordingly.
 
 ## Getting help

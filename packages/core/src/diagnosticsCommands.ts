@@ -114,7 +114,7 @@ export async function statusCommand(
           const manifest = ConfigManager.getManifest();
           scope = manifest?.scope || "<unknown>";
           errors.push(
-            "Scoped Syncrona API is unavailable on this instance. Using Table API compatibility mode; current session scope could not be verified."
+            "Scoped SyncroNow AI API is unavailable on this instance. Using Table API compatibility mode; current session scope could not be verified."
           );
         } else {
           throw e;
@@ -208,7 +208,7 @@ async function printCredentialDiagnostics(profile?: string): Promise<void> {
       } else {
         logger.warn(
           `Active stored instance "${health.active}" FAILED to decrypt: ${health.error}. ` +
-            "The credential file was likely encrypted on a different machine or user — re-run 'syncrona login'."
+            "The credential file was likely encrypted on a different machine or user — re-run 'syncro-now-ai login'."
         );
       }
     }
@@ -410,7 +410,7 @@ export function configCommand(args: Sync.SharedCmdArgs & { action: string }): vo
     return;
   }
   const def = ConfigManager.getDefaultConfig();
-  logger.info("Syncrona default configuration (applied before sync.config.js overrides):");
+  logger.info("SyncroNow AI default configuration (applied before sync.config.js overrides):");
   logger.info(`  sourceDirectory: ${def.sourceDirectory}`);
   logger.info(`  buildDirectory:  ${def.buildDirectory}`);
   logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
@@ -435,7 +435,7 @@ function detectWsl(): boolean {
   }
 }
 
-// DX1: verify the machine meets syncrona's prerequisites (Node 22+, supported
+// DX1: verify the machine meets SyncroNow AI's prerequisites (Node 22+, supported
 // platform/WSL, Git) and print actionable next steps — needs no instance.
 export function checkEnvCommand(
   args: Sync.SharedCmdArgs
@@ -450,7 +450,7 @@ export function checkEnvCommand(
     details:
       nodeMajor >= 22
         ? `Node.js ${process.versions.node} (>= 22 required)`
-        : `Node.js ${process.versions.node} is too old — syncrona requires Node 22+. Install via nvm: 'nvm install 22 && nvm use 22'.`,
+        : `Node.js ${process.versions.node} is too old — SyncroNow AI requires Node 22+. Install via nvm: 'nvm install 22 && nvm use 22'.`,
   });
 
   if (process.platform === "win32") {
@@ -458,7 +458,7 @@ export function checkEnvCommand(
       name: "platform",
       ok: false,
       details:
-        "Native Windows is not supported yet — run syncrona inside WSL (Ubuntu). See the README \"Windows users\" section.",
+        "Native Windows is not supported yet — run SyncroNow AI inside WSL (Ubuntu). See the README \"Windows users\" section.",
     });
   } else if (process.platform === "linux") {
     const wsl = detectWsl();

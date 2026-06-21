@@ -1,6 +1,6 @@
 # Monorepo / multi-scope guide
 
-A ServiceNow instance often has several scoped apps. Syncrona treats each scope
+A ServiceNow instance often has several scoped apps. SyncroNow AI treats each scope
 as its own project: you run commands **from the scope's directory**, and each
 scope carries its own config, manifest, and (optionally) `.env`.
 

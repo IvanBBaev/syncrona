@@ -1,5 +1,5 @@
 /**
- * Credential store for the Syncrona CLI.
+ * Credential store for the SyncroNow AI CLI.
  *
  * The implementation lives in the shared `@syncro-now-ai/credential-store` package
  * so the CLI and the MCP server never diverge on crypto format, key derivation,

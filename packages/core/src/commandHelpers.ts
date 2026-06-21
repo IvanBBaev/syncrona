@@ -42,7 +42,7 @@ export async function getActiveStoreDecryptWarning(): Promise<string | null> {
     return (
       `Stored credentials for "${health.active}" failed to decrypt` +
       (health.error ? ` (${health.error})` : "") +
-      " — likely encrypted on a different machine or user. Re-run 'syncrona login'."
+      " — likely encrypted on a different machine or user. Re-run 'syncro-now-ai login'."
     );
   }
   return null;

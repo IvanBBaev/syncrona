@@ -67,7 +67,7 @@ export async function startWizard() {
     if (apps.length === 0) {
       logger.info("No scoped apps were found on this instance.");
       logger.info(
-        "Create a new scoped app in ServiceNow Studio first, then re-run 'syncrona init'."
+        "Create a new scoped app in ServiceNow Studio first, then re-run 'syncro-now-ai init'."
       );
       logger.info(
         "Or enter a scope code manually if the app exists but wasn't returned by the API (ACL restriction)."
@@ -125,7 +125,7 @@ export async function startWizard() {
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
         logger.info(
-          "Wizard doctor: Syncrona scoped API is unavailable on this instance. Continuing in Table API compatibility mode."
+          "Wizard doctor: SyncroNow AI scoped API is unavailable on this instance. Continuing in Table API compatibility mode."
         );
       } else {
         throw e;
@@ -141,7 +141,7 @@ export async function startWizard() {
       logger.error(e.message);
     }
     logger.error(
-      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
+      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
     );
     return;
   }
@@ -151,7 +151,7 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
   const activeInstance = await getActiveInstance();
   if (!activeInstance) {
     throw new Error(
-      "No active credentials profile found. Run 'syncrona login' first."
+      "No active credentials profile found. Run 'syncro-now-ai login' first."
     );
   }
 
@@ -163,7 +163,7 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
     !storedCreds.password
   ) {
     throw new Error(
-      "No active credentials profile found. Run 'syncrona login' first."
+      "No active credentials profile found. Run 'syncro-now-ai login' first."
     );
   }
 

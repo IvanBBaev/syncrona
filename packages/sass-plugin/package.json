@@ -1,7 +1,7 @@
 {
   "name": "@syncro-now-ai/sass-plugin",
   "version": "0.4.2-alpha.8",
-  "description": "SASS plugin for Syncrona",
+  "description": "SASS plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"

@@ -811,11 +811,11 @@ async function handleCompareInstances(
 
   const configA = loadAuthStoreProfile(profileA);
   if (!configA) {
-    return errorResponse(`Profile not found in auth store: ${profileA}. Run 'syncrona login' for it first.`);
+    return errorResponse(`Profile not found in auth store: ${profileA}. Run 'syncro-now-ai login' for it first.`);
   }
   const configB = loadAuthStoreProfile(profileB);
   if (!configB) {
-    return errorResponse(`Profile not found in auth store: ${profileB}. Run 'syncrona login' for it first.`);
+    return errorResponse(`Profile not found in auth store: ${profileB}. Run 'syncro-now-ai login' for it first.`);
   }
 
   const requestedTables = Array.isArray(args.tables)

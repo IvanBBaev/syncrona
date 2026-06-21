@@ -1,6 +1,6 @@
 # @syncro-now-ai/core
 
-This module contains the core of Syncrona. It is required to use Syncrona at all.
+This module contains the core of SyncroNow AI. It is required to use SyncroNow AI at all.
 It can interact with other plugins after you configure them.
 
 ## Credential resolution order

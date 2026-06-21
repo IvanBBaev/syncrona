@@ -440,7 +440,7 @@ function profileEnvVar(baseName: string, profile?: string): string {
 // Human-readable origin of the resolved credentials, surfaced by `status` so
 // users can tell whether a command is talking to .env, a profile, or the store.
 export type CredentialSource =
-  | "credential store (syncrona login)"
+  | "credential store (syncro-now-ai login)"
   | "instance profile env vars"
   | "environment (.env / shell SN_* vars)"
   | "none (credentials missing)";
@@ -468,7 +468,7 @@ function resolveCredentialsInternal(profile?: string): {
         instance: storedCredentialsCache.instance,
         profile: undefined,
       },
-      source: "credential store (syncrona login)",
+      source: "credential store (syncro-now-ai login)",
     };
   }
 

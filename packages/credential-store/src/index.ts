@@ -1,7 +1,7 @@
 /**
  * @syncro-now-ai/credential-store
  *
- * Single source of truth for Syncrona's at-rest credential storage. Both the
+ * Single source of truth for SyncroNow AI's at-rest credential storage. Both the
  * core CLI (async API) and the MCP server (sync API) consume this package so
  * the crypto format, key derivation, file naming, and on-disk layout never
  * diverge between the two processes.
@@ -260,7 +260,7 @@ export async function loadCredentials(
     raw = await fsp.readFile(filePath, "utf8");
   } catch {
     throw new Error(
-      `No credentials found for "${instance}". Run: syncrona login ${instance}`
+      `No credentials found for "${instance}". Run: syncro-now-ai login ${instance}`
     );
   }
   const data = decryptWithFallback(raw.trim());

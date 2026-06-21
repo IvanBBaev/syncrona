@@ -14,7 +14,7 @@ residuals, and the DX backlog.
 ## PHASE D — Distribution polish (remainder)
 
 ### D5. Distribution polish
-- [ ] macOS Keychain integration — keytar for the CredentialStore (also addresses AR2)
+- [~] macOS Keychain for the CredentialStore — AR2 DONE 2026-06-21 (opt-in keychain via @napi-rs/keyring + SYNCRONA_STORE_KEY; see DONE). Remaining for D5: make the keychain the default backend.
 - [ ] Homebrew tap: syncrona/homebrew-tap repo + Formula
 - [ ] GitHub Actions to auto-update the Homebrew formula on each release
 - [ ] Windows: PowerShell install script + Windows Credential Manager
@@ -30,7 +30,7 @@ residuals, and the DX backlog.
       (commit 06d307c): awaited writes + afterAll cleanup; .env no longer
       lingers on disk. No evidence of a real password — rotate only if real
       credentials were ever placed there manually. See also CR2.
-- [ ] AR2 (residual): Passphrase/Keychain-derived key — deferred to D5 (keytar).
+- [x] AR2 (residual): DONE 2026-06-21 — at-rest key resolves SYNCRONA_STORE_KEY > OS keychain (opt-in SYNCRONA_USE_KEYCHAIN, @napi-rs/keyring) > legacy machine key, with decrypt fallback. See DONE.
 - [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — HIGH RISK
       (88 tests against dist); the dispatch logic already has dedicated tests.
 - [ ] AR11: Encapsulate module-level mutable state (TOOL_METRICS, caches) in an
@@ -103,9 +103,9 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       possible follow-up.)
 
 ### Architect — missing infrastructure
-- [ ] **G6. Release automation** — no changesets/semantic-release; versions are
-      bumped manually (lerna fixed mode), CHANGELOG.md is static. A single
-      `npx changeset` solves the version+changelog+publish sequence.
+- [x] **G6. Release automation** — DONE 2026-06-21: Changesets wired in
+      (.changeset/, npm run changeset / version-packages / release); @syncro-now-ai/*
+      version in lockstep. Publishing stays owner-gated (npm scope + 2FA). See DONE.
 - [~] **G7. CLI diagnostics telemetry** — PARTIAL 2026-06-13: opt-in local
       diagnostic log shipped — SYNCRONA_DIAGNOSTIC_LOG=1 appends CLI output to
       ~/.syncrona/logs/cli.log (rotation, off by default, documented in
@@ -121,9 +121,9 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [ ] **G9. Proxy/TLS configuration** — corporate proxies and self-signed
       certificates are not supported/documented in either HTTP client
       (HTTPS_PROXY env, custom CA bundle).
-- [ ] **G10. Machine-enforced module boundaries** — the ARCHITECTURE §5 contract
-      (handlers don't import index, sn-transport stays pure, etc.) is not checked
-      by anything. dependency-cruiser or eslint-plugin-boundaries in the lint gate.
+- [x] **G10. Machine-enforced module boundaries** — DONE 2026-06-21:
+      dependency-cruiser runs in `npm run lint` (lint:boundaries) — no runtime
+      circular deps; foundation packages may not import core/mcp-server. See DONE.
 
 ### QA — missing test coverage
 - [x] **G11. E2E against an instance** — DONE 2026-06-12 (local slices):
@@ -166,7 +166,7 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 1. ~~G16 + G15~~ done (G16 without gitleaks; G15 now on GitHub Actions, no Windows).
 2. ~~G2~~, ~~G5~~, ~~G8~~, ~~G11~~ done.
 3. G1 (OAuth) + G9 (proxy) — unlock enterprise use; plan together with D5.
-4. G6/G7/G10, G13–G14, G17 — incrementally. (~~G12~~, ~~G4~~ done.)
+4. G7, G13–G14, G17 — incrementally. (~~G4~~, ~~G6~~, ~~G10~~, ~~G12~~ done.)
 
 ---
 
@@ -206,8 +206,9 @@ Findings prefixed ARCH-/DEV-/QA-.
 - Confirmed healthy (no action): invariants #1 (no stdout pollution) and #2
   (both clients consume sn-transport for prefix/retry/endpoint-not-found, incl.
   CR18) hold; no cyclic/upward imports; handlers don't import index (§5). The
-  only documented structural gaps remain AR11 (module-level mutable state) and
-  G10 (boundaries not machine-enforced) — both design-level, left as tracked.
+  only documented structural gap remaining is AR11 (module-level mutable state),
+  left as tracked. (G10 boundaries are now machine-enforced via
+  dependency-cruiser — 2026-06-21.)
 
 ### Dev
 - [~] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — these wrap a
@@ -403,10 +404,9 @@ Docs, Workflow, Error Handling, MCP.
       (also removed committed real-looking creds: work email + password + instance),
       and points at `syncrona login` instead of inline env vars.
 - [x] Document auto-pull and MCP startup troubleshooting — DONE 2026-06-13: added an "Auto-pull on startup" + troubleshooting section to docs/mcp-quickstart.md (default on, SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES=0 to disable, runs after connect).
-- [ ] Repo hygiene: docs/desktop-app-plan.md (a DIFFERENT project) and
-      docs/syncrona-plan.md are internal Bulgarian planning docs with personal
-      paths committed to the repo — decide whether to remove/relocate them
-      (user call). Flagged 2026-06-13.
+- [x] Repo hygiene: DONE 2026-06-21 — removed internal scratch/planning docs
+      (fixes.md, docs/syncrona-plan.md, docs/desktop-app-plan.md,
+      docs/github-title-page.md, docs/npm-title-page.md).
 
 ---
 

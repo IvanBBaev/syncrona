@@ -1,7 +1,7 @@
 {
   "name": "@syncro-now-ai/types",
   "version": "0.4.2-alpha.8",
-  "description": "Type Declarations for Syncrona",
+  "description": "Type Declarations for SyncroNow AI",
   "main": "index.d.ts",
   "scripts": {
     "test": "echo \"No runtime tests for @syncro-now-ai/types\""

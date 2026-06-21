@@ -1,7 +1,7 @@
 {
   "name": "@syncro-now-ai/credential-store",
   "version": "0.4.2-alpha.8",
-  "description": "Shared encrypted credential store for Syncrona (core CLI and MCP server).",
+  "description": "Shared encrypted credential store for SyncroNow AI (core CLI and MCP server).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {

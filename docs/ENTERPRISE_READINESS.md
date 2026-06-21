@@ -1,6 +1,6 @@
 # Public 1.0 / Enterprise readiness
 
-What it takes to take Syncrona from "alpha-ready" to a **public 1.0** that an
+What it takes to take SyncroNow AI from "alpha-ready" to a **public 1.0** that an
 enterprise can adopt. Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md)
 (§10 enterprise gate) and the engineering `TODO`/`DONE`. Status as of 2026-06-21.
 
@@ -51,7 +51,7 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - 🔴 **CR22** — verify the `sys.scripts.do` fallback against a live instance.
 
 ## 4. Quality, CI/CD, governance
-- ✅ **Gates** — `npm run check` green (201 tests); coverage ratchet
+- ✅ **Gates** — `npm run check` green (381 tests: 206 core + 175 mcp); coverage ratchet
   (core 70/57/61/70, mcp 70% lines+branches); tool-contract + docs-drift +
   release-checklist gates.
 - ✅ **CI matrix** — GitHub Actions on ubuntu + macOS, full chain + audit gate;

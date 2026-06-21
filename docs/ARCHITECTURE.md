@@ -1,9 +1,9 @@
-# Syncrona — Architecture
+# SyncroNow AI — Architecture
 
 > Last updated: 2026-06-12 (post CR1–CR30 fix series). Companion document:
 > [PRODUCT_STATE.md](PRODUCT_STATE.md) for what is done and what remains.
 
-Syncrona is a monorepo that ships a ServiceNow development toolchain:
+SyncroNow AI is a monorepo that ships a ServiceNow development toolchain:
 a **CLI** that syncs scoped-application files between a local workspace and a
 ServiceNow instance, and an **MCP server** that exposes the same instance to
 AI agents through ~60 governed tools.

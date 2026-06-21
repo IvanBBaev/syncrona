@@ -762,7 +762,7 @@ test('getSessionContext resolves scope and update set details', async () => {
 
     if (uri.includes('/api/now/table/sys_scope?') && method === 'GET') {
       return mkResponse(200, {
-        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sinc', name: 'Syncrona' }],
+        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sinc', name: 'SyncroNow AI' }],
       });
     }
 
@@ -814,7 +814,7 @@ test('setCurrentScope updates apps.current_app user preference', async () => {
 
     if (uri.includes('/api/now/table/sys_scope?') && method === 'GET') {
       return mkResponse(200, {
-        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sync', name: 'Syncrona' }],
+        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sync', name: 'SyncroNow AI' }],
       });
     }
     if (uri.includes('/api/now/table/sys_user?') && method === 'GET') {
@@ -911,7 +911,7 @@ test('setCurrentUpdateSet creates missing update set and assigns preference', as
     }
     if (uri.includes('/api/now/table/sys_scope?') && method === 'GET') {
       return mkResponse(200, {
-        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sync', name: 'Syncrona' }],
+        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sync', name: 'SyncroNow AI' }],
       });
     }
 
@@ -1408,7 +1408,7 @@ test('buildPreflightReport evaluates scope and update set checks', async () => {
     }
     if (uri.includes('/api/now/table/sys_scope?') && method === 'GET') {
       return mkResponse(200, {
-        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sinc', name: 'Syncrona' }],
+        result: [{ sys_id: 'scope1', scope: 'x_nuvo_sinc', name: 'SyncroNow AI' }],
       });
     }
     if (

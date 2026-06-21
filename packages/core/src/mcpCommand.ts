@@ -88,7 +88,7 @@ async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string
 
   config.mcpServers = {
     ...existingServers,
-    syncrona: {
+    "syncro-now-ai": {
       command: "node",
       args: [mcpServerPath],
       cwd: workspaceRoot,
@@ -229,7 +229,7 @@ export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
     if (secretsPath) {
       logger.success(`MCP secrets config updated: ${secretsPath}`);
     } else {
-      logger.error("Run syncrona login first.");
+      logger.error("Run syncro-now-ai login first.");
       return;
     }
 
@@ -246,10 +246,10 @@ export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
     return;
   }
 
-  logger.info(`Starting Syncrona MCP server from ${mcpServerPath}...`);
+  logger.info(`Starting SyncroNow AI MCP server from ${mcpServerPath}...`);
   const exitCode = await startMcpServerProcess(mcpServerPath, workspaceRoot);
   if (exitCode !== 0) {
-    logger.error(`Syncrona MCP server exited with code ${exitCode}.`);
+    logger.error(`SyncroNow AI MCP server exited with code ${exitCode}.`);
     process.exit(exitCode);
   }
 }

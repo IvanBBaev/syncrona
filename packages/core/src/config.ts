@@ -432,7 +432,7 @@ export function getRefresh() {
 }
 
 // The built-in defaults applied before a project's sync.config.js overrides.
-// Exposed read-only for `syncrona config show-defaults` (DX9).
+// Exposed read-only for `syncro-now-ai config show-defaults` (DX9).
 export function getDefaultConfig(): Sync.Config {
   return DEFAULT_CONFIG;
 }

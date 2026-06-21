@@ -1,7 +1,7 @@
 /**
  * @syncro-now-ai/sn-transport — shared ServiceNow transport policy.
  *
- * The Syncrona project ships two independent ServiceNow HTTP clients: the core
+ * The SyncroNow AI project ships two independent ServiceNow HTTP clients: the core
  * CLI client (`packages/core/src/snClient.ts`, built on axios) and the MCP
  * server client (`packages/mcp-server/src/servicenowCore.ts`, built on native
  * fetch). The clients differ by design (CLI vs. long-lived MCP runtime), but
@@ -87,7 +87,7 @@ export function shouldRetryStatus(status: number): boolean {
 export const MAX_REQUESTS_PER_SECOND = 20;
 
 /**
- * HTTP status codes that mean "the scoped Syncrona endpoint is not available
+ * HTTP status codes that mean "the scoped SyncroNow AI endpoint is not available
  * on this instance" (custom scope not installed, blocked by ACL, or the
  * namespace simply does not exist). Both clients use this to decide when to
  * try the next scoped prefix or fall back to the standard Table API.

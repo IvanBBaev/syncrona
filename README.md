@@ -31,7 +31,7 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
 - [docs/BUSINESS_ANALYSIS.md](docs/BUSINESS_ANALYSIS.md) — product vision,
   personas, value proposition, competitive positioning, KPIs, prioritized
   roadmap and risk register.
-- [docs/COMPARISON.md](docs/COMPARISON.md) — Syncrona vs ServiceNow native Git,
+- [docs/COMPARISON.md](docs/COMPARISON.md) — SyncroNow AI vs ServiceNow native Git,
   Sincronia, and update sets (one-page comparison).
 - [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
   for a public 1.0 / enterprise release (done / scheduled / owner-gated).
@@ -104,7 +104,7 @@ In order to use SyncroNow AI, you will need:
 > Native Windows support (PowerShell install, Windows Credential Manager) is
 > on the roadmap.
 
-**ServiceNow compatibility:** Syncrona talks to standard ServiceNow REST/Table
+**ServiceNow compatibility:** SyncroNow AI talks to standard ServiceNow REST/Table
 APIs and works with or without the companion scoped app, so it is broadly
 release-agnostic. It is actively used against recent ServiceNow releases; a
 formal supported-version matrix is being established — if you hit a
@@ -135,7 +135,7 @@ npm i -D @syncro-now-ai/core
 npx syncro-now-ai init
 ```
 
-If your repository is a monorepo with many scoped apps under `packages/`, run Syncrona from the specific scope directory, for example `packages/cs`. Each scope package should get its own `.env`, `sync.config.js`, and `sync.manifest.json`.
+If your repository is a monorepo with many scoped apps under `packages/`, run SyncroNow AI from the specific scope directory, for example `packages/cs`. Each scope package should get its own `.env`, `sync.config.js`, and `sync.manifest.json`.
 
 5. [Configure your project!](#configuration)
 6. **OPTIONAL BUT HIGHLY RECOMMENDED** Once your project is configured the way you like, you can commit and push it to a git repository for superior tracking and version control! Make sure to create a `.gitignore` file and ignore `node_modules` and `.env` because you **really** don't want those files in your repository.
@@ -265,7 +265,7 @@ Profile vars (`SN_INSTANCE_<PROFILE>`, `SN_USER_<PROFILE>`, `SN_PASSWORD_<PROFIL
 
 #### Manifest refresh in dev mode
 
-In `dev` mode Syncrona periodically re-reads the instance manifest to pick up
+In `dev` mode SyncroNow AI periodically re-reads the instance manifest to pick up
 records created in ServiceNow since you started (it does **not** overwrite local
 file contents). The interval defaults to **30 seconds** (`refreshInterval` in
 `sync.config.js`). Overlapping refreshes are guarded — a slow refresh never
@@ -636,4 +636,4 @@ linked above also walk through a complete project setup.
 ServiceNow is a registered trademark of ServiceNow, Inc. This project is an
 independent, third-party tool and is not affiliated with, endorsed by, or
 sponsored by ServiceNow, Inc. All other trademarks are the property of their
-respective owners. Syncrona is released under the [MIT License](LICENSE).
+respective owners. SyncroNow AI is released under the [MIT License](LICENSE).

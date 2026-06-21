@@ -1,8 +1,8 @@
-# Writing a Syncrona plugin
+# Writing a SyncroNow AI plugin
 
 A plugin is an npm package that transforms a file's contents on its way from
 your local source to ServiceNow (build/push) — for example transpiling
-TypeScript, bundling with Webpack, or prettifying output. Syncrona ships
+TypeScript, bundling with Webpack, or prettifying output. SyncroNow AI ships
 several (`@syncro-now-ai/typescript-plugin`, `@syncro-now-ai/babel-plugin`,
 `@syncro-now-ai/webpack-plugin`, `@syncro-now-ai/sass-plugin`, `@syncro-now-ai/prettier-plugin`,
 `@syncro-now-ai/eslint-plugin`); this guide covers writing your own.
@@ -76,7 +76,7 @@ module.exports = {
 - Validate `options` defensively — a misconfigured rule should fail with a
   clear message, not a crash.
 - Return `{ success: false, output: "" }` (or throw) on unrecoverable input;
-  Syncrona reports the failing `table=>sys_id`.
+  SyncroNow AI reports the failing `table=>sys_id`.
 - Publish as a normal npm package whose main module exports `run`.
 
 ## Local development

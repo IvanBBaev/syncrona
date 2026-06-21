@@ -1,6 +1,6 @@
 # Working with multiple ServiceNow instances
 
-Syncrona resolves credentials from three places, in this order (first match
+SyncroNow AI resolves credentials from three places, in this order (first match
 wins). `syncro-now-ai status` prints the winner as `Credentials from: …`, and
 `syncro-now-ai status --debug-credentials` shows every source and why each was or
 wasn't used.

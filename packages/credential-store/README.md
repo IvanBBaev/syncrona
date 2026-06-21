@@ -1,6 +1,6 @@
 # @syncro-now-ai/credential-store
 
-Shared encrypted credential store for Syncrona. It is the single source of
+Shared encrypted credential store for SyncroNow AI. It is the single source of
 truth for at-rest credential storage used by both the `@syncro-now-ai/core` CLI and
 the `@syncro-now-ai/mcp-server`, so the encryption format, key derivation, file
 naming, and on-disk layout never diverge between processes.

@@ -264,7 +264,7 @@ export function resolveServiceNowSecrets(
 
   if (!instance || !user || !password) {
     throw new Error(
-      "Missing ServiceNow credentials. Provide SN_INSTANCE, SN_USER, SN_PASSWORD via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root."
+      "Missing ServiceNow credentials. Provide SN_INSTANCE, SN_USER, SN_PASSWORD via env, auth store (syncro-now-ai login), .syncrona-mcp/secrets.json, or .env in project root."
     );
   }
 

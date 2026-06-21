@@ -1,4 +1,4 @@
-# Contributing to Syncrona
+# Contributing to SyncroNow AI
 
 ## Prerequisites
 
