@@ -469,8 +469,12 @@ Docs, Workflow, Error Handling, MCP.
   processing response".
 - Note 2026-06-12: scopeCheck now shows the real error instead of the generic
   "Failed to check your scope" (CR9); buildCommand now logs the failure (CR8).
-- [ ] Error categorization: "Network" (retry), "Config" (fix), "Data" (support).
-- [ ] Actionable next steps for every error.
+- [x] Error categorization + actionable next steps — DONE 2026-06-21:
+      errorTaxonomy.ts `classifyError` sorts any failure into network / auth /
+      config / data / unknown (by transport code, then HTTP status, then message
+      keywords) and the top-level CLI error boundary (commander.ts runHandler)
+      now prints a `→ <hint>` next-step line after the error. Pure + tested
+      (errorTaxonomy.test.ts, 5 tests).
 
 **DX20: Silent error swallowing during credential loading**
 - As AR10 noted, secrets-loading errors are swallowed. Users do not know whether
