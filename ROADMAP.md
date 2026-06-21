@@ -15,7 +15,7 @@ human-facing summary of them.
 - **Current version:** `0.4.2-alpha.8` (private alpha)
 - **Engineering readiness:** ~8.5/10 — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened.
-- **Last updated:** 2026-06-17
+- **Last updated:** 2026-06-21
 
 ## Status legend
 
@@ -48,12 +48,12 @@ applications. The following are **shipped**:
 
 ### Auth & security ✅
 - **OAuth 2.0** on both the CLI and the MCP server (password grant, Bearer +
-  refresh on 401/expiry, shared token manager in `@syncrona/sn-transport`).
+  refresh on 401/expiry, shared token manager in `@syncro-now-ai/sn-transport`).
   Basic auth stays the default; OAuth is opt-in via `SN_OAUTH_CLIENT_ID` /
   `SN_OAUTH_CLIENT_SECRET`.
 - Multi-instance credentials (env / encrypted store / interactive, profile
   aware), credential-source visibility in `status`, decrypt-failure warnings.
-- Encrypted credential store (`@syncrona/credential-store`, AES-256-GCM),
+- Encrypted credential store (`@syncro-now-ai/credential-store`, AES-256-GCM),
   policy-as-code + secrets-provider chain, Zod input validation, audited tool
   calls, VM-sandboxed script execution.
 
@@ -103,15 +103,17 @@ mostly by **owner decisions**, with a small amount of engineering left.
   ownership and co-maintainer (bus factor is 1 today).
 
 ### Engineering (completable once decisions land)
-- 📋 **Release automation** (G6) — adopt Changesets for version + changelog +
-  publish (adds a dev dependency).
+- ✅ **Release automation** (G6) — Changesets wired in (`.changeset/`,
+  `npm run changeset` / `version-packages` / `release`); `@syncro-now-ai/*` packages
+  version in lockstep. The publish step itself stays owner-gated.
 - 📋 **CI publish with provenance** (D5) — publish from CI with `--provenance`
   instead of a laptop.
-- 🚧 **Per-package READMEs** — npm landing pages for every published package
-  (all 13 now have a README and `repository`/`author` metadata).
-- 🚧 **OS keychain credential strength** (AR2) — promote the at-rest key from
-  machine-derived to an OS keychain (keytar), with an env/secrets-manager path
-  for CI.
+- ✅ **Per-package READMEs** — npm landing pages for every published package
+  (all 13 have a README and `repository`/`author` metadata).
+- ✅ **OS keychain credential strength** (AR2) — the at-rest key resolves from
+  `SYNCRONA_STORE_KEY` (CI / secrets manager) or the OS keychain (opt-in
+  `SYNCRONA_USE_KEYCHAIN`, optional `@napi-rs/keyring`), falling back to the
+  legacy machine-derived key.
 
 ---
 
@@ -131,8 +133,9 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   decision and per-instance OAuth app configuration.
 
 ### Quality & enforcement
-- 📋 **Machine-enforced module boundaries** (G10) — dependency-cruiser /
-  eslint-plugin-boundaries to enforce the ARCHITECTURE §5 contract in lint.
+- ✅ **Machine-enforced module boundaries** (G10) — dependency-cruiser runs in
+  `npm run lint` (`lint:boundaries`): no circular dependencies, and the shared
+  foundation packages may not import the core/mcp-server consumers.
 - 📋 **Mutation testing** (G13) — Stryker on `credential-store` + `sn-transport`.
 - 📋 **Performance baseline** (G14) — `npm run bench` for manifest build / push,
   with a CI threshold to catch regressions.
