@@ -28,7 +28,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncro-now-ai check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncro-now-ai doctor` runs diagnostic checks.
 - `npx syncro-now-ai plugins` reports configured plugin rules and plugin package availability.
-- `npx syncro-now-ai config` inspects configuration (e.g. `config show-defaults`).
+- `npx syncro-now-ai config` inspects or extends configuration (e.g. `config show-defaults`, `config add-plugin`).
 - `npx syncro-now-ai mcp` starts standalone MCP server with optional local auto-configure.
 - `npx syncro-now-ai login` saves credentials in the global credential store.
 - `npx syncro-now-ai logout` removes stored credentials.

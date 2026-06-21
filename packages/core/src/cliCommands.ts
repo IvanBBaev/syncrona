@@ -229,16 +229,26 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   },
   {
     command: "config <action>",
-    describe: "Inspect configuration (action: show-defaults)",
+    describe: "Inspect or extend configuration (action: show-defaults, add-plugin)",
     positionals: {
       action: {
         type: "string",
         describe: "config action",
-        choices: ["show-defaults"],
+        choices: ["show-defaults", "add-plugin"],
       },
     },
-    examples: [["$0 config show-defaults", "Print the built-in default includes/excludes and settings"]],
-    handler: typedHandler<Sync.SharedCmdArgs & { action: string }>((args) => configCommand(args)),
+    options: {
+      plugin: {
+        type: "string",
+        describe: "Plugin to wire for `add-plugin` (e.g. typescript, babel, sass)",
+      },
+    },
+    examples: [
+      ["$0 config show-defaults", "Print the built-in default includes/excludes and settings"],
+      ["$0 config add-plugin", "List the first-party build plugins and which are installed"],
+      ["$0 config add-plugin --plugin typescript", "Print the install command and a paste-ready rules snippet"],
+    ],
+    handler: typedHandler<Sync.SharedCmdArgs & { action: string; plugin?: string }>((args) => configCommand(args)),
   },
   {
     command: "mcp",
