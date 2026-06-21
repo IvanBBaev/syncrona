@@ -146,8 +146,9 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   `npm run lint` (`lint:boundaries`): no circular dependencies, and the shared
   foundation packages may not import the core/mcp-server consumers.
 - 📋 **Mutation testing** (G13) — Stryker on `credential-store` + `sn-transport`.
-- 📋 **Performance baseline** (G14) — `npm run bench` for manifest build / push,
-  with a CI threshold to catch regressions.
+- ✅ **Performance baseline** (G14) — `npm run bench` measures the manifest →
+  doc pipeline over a deterministic synthetic dataset (median/p95/runs-sec) and
+  can fail on a `--max-ms` threshold for a non-blocking CI job.
 - 📋 **Thin handler coverage** (QA-2) + coverage ratchet toward 80%.
 
 ### Product & support
