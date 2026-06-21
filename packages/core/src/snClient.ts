@@ -1,11 +1,16 @@
 import { Sync, SN } from "@syncro-now-ai/types";
+import https from "node:https";
+import fs from "node:fs";
 import axios, { AxiosPromise, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from "axios";
 import rateLimit from "axios-rate-limit";
 import {
+  CA_BUNDLE_ENV,
   SCOPED_API_PREFIXES_ENV,
+  TLS_REJECT_UNAUTHORIZED_ENV,
   isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
+  resolveTlsPolicy,
   shouldRetryStatus,
 } from "@syncro-now-ai/sn-transport";
 import { wait } from "./genericUtils";
@@ -27,6 +32,37 @@ function endpointPrefixOrder(): string[] {
     configured,
     cachedScopedEndpointPrefix ? [cachedScopedEndpointPrefix] : []
   );
+}
+
+// G9: corporate proxy + TLS support. HTTPS_PROXY / NO_PROXY are honored
+// automatically by axios's Node adapter, so proxying needs no extra wiring. A
+// custom CA bundle (corporate / self-signed CA) or an explicit verification
+// opt-out are applied here via a shared https.Agent. Returns undefined when no
+// non-default TLS setting is configured, so the standard agent is used.
+export function buildHttpsAgent(): https.Agent | undefined {
+  const policy = resolveTlsPolicy(
+    process.env[CA_BUNDLE_ENV],
+    process.env[TLS_REJECT_UNAUTHORIZED_ENV]
+  );
+  if (!policy.custom) {
+    return undefined;
+  }
+  let ca: Buffer | undefined;
+  if (policy.caBundlePath) {
+    try {
+      ca = fs.readFileSync(policy.caBundlePath);
+    } catch (e) {
+      logger.warn(
+        `Could not read CA bundle at ${policy.caBundlePath}: ${(e as Error).message}`
+      );
+    }
+  }
+  if (!policy.rejectUnauthorized) {
+    logger.warn(
+      `TLS certificate verification is DISABLED (${TLS_REJECT_UNAUTHORIZED_ENV}). Use only against trusted test instances.`
+    );
+  }
+  return new https.Agent({ ca, rejectUnauthorized: policy.rejectUnauthorized });
 }
 
 function isEndpointNotFound(error: unknown): boolean {
@@ -108,10 +144,14 @@ export const snClient = (
 ) => {
   // OAuth mode (G1): Bearer token instead of Basic, refreshed on expiry/401.
   // Basic auth stays the default when no OAuth client is configured.
+  // G9: a shared https.Agent carries any custom CA bundle / TLS opt-out to every
+  // request (and to the OAuth token endpoint), so corporate CAs work end-to-end.
+  const httpsAgent = buildHttpsAgent();
   const base = axios.create({
     withCredentials: true,
     headers: { "Content-Type": "application/json" },
     baseURL,
+    ...(httpsAgent ? { httpsAgent } : {}),
     ...(oauth ? {} : { auth: { username, password } }),
   });
 
@@ -119,6 +159,7 @@ export const snClient = (
     const tokenHttp = axios.create({
       baseURL,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      ...(httpsAgent ? { httpsAgent } : {}),
     });
     const poster: TokenPoster = async (path, body) => (await tokenHttp.post(path, body)).data;
     const tokens = createTokenManager({ username, password }, oauth, poster);

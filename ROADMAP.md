@@ -134,8 +134,10 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   (`SYNCRONA_USE_KEYCHAIN=1`). Remaining: broader native-Windows path testing.
 
 ### Auth & connectivity
-- 📋 **Proxy / TLS configuration** (G9) — `HTTPS_PROXY` + custom CA bundle for
-  corporate networks and self-signed certificates.
+- ✅ **Proxy / TLS configuration** (G9) — CLI honors `HTTPS_PROXY` / `NO_PROXY`
+  automatically; custom CA bundle via `SYNCRONA_CA_BUNDLE` / `NODE_EXTRA_CA_CERTS`,
+  plus a warned `SYNCRONA_TLS_REJECT_UNAUTHORIZED=0` opt-out for test instances.
+  (MCP fetch-client proxy via an undici dispatcher remains a small follow-up.)
 - 🔒 **SSO / authorization-code grant** — beyond password grant; needs a product
   decision and per-instance OAuth app configuration.
 
