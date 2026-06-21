@@ -118,9 +118,16 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       through the real PluginManager from <rootDir>/node_modules/<name>,
       asserting call shape, output chaining, first-match rule selection, and
       short-circuit on success:false. 4 tests. Related to DX13.
-- [ ] **G9. Proxy/TLS configuration** — corporate proxies and self-signed
-      certificates are not supported/documented in either HTTP client
-      (HTTPS_PROXY env, custom CA bundle).
+- [x] **G9. Proxy/TLS configuration** — DONE 2026-06-21: the CLI honors
+      HTTPS_PROXY/HTTP_PROXY/NO_PROXY automatically (axios Node adapter); custom
+      CA bundles via SYNCRONA_CA_BUNDLE (+ Node's NODE_EXTRA_CA_CERTS, which also
+      covers the MCP fetch client) and an explicit, warned
+      SYNCRONA_TLS_REJECT_UNAUTHORIZED=0 opt-out, applied through a shared
+      https.Agent on every request incl. the OAuth token endpoint. Policy is a
+      pure helper in sn-transport (resolveTlsPolicy); 17 tests (tlsPolicy.test.ts).
+      Documented in README. Residual: HTTPS_PROXY for the MCP native-fetch client
+      needs an undici dispatcher (dep) — CA already works there via
+      NODE_EXTRA_CA_CERTS.
 - [x] **G10. Machine-enforced module boundaries** — DONE 2026-06-21:
       dependency-cruiser runs in `npm run lint` (lint:boundaries) — no runtime
       circular deps; foundation packages may not import core/mcp-server. See DONE.

@@ -101,5 +101,52 @@ export function isEndpointNotFoundStatus(status: number): boolean {
   return endpointNotFoundStatusSet.has(status);
 }
 
+/**
+ * Env var: path to a PEM CA bundle to trust for ServiceNow TLS. Use it for a
+ * corporate/self-signed certificate authority. (Node's built-in
+ * `NODE_EXTRA_CA_CERTS` also works and additionally covers the MCP server's
+ * native-fetch client; this variable gives the CLI an explicit, per-process
+ * override without touching the global trust store.)
+ */
+export const CA_BUNDLE_ENV = "SYNCRONA_CA_BUNDLE";
+
+/**
+ * Env var: set to `0` / `false` / `no` to DISABLE TLS certificate verification.
+ * Insecure — intended only for throwaway/test instances with a self-signed
+ * cert you cannot add to a bundle. Verification is on by default.
+ */
+export const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
+
+/** Resolved TLS policy for a ServiceNow client (see {@link resolveTlsPolicy}). */
+export interface ResolvedTlsPolicy {
+  /** Path to a CA bundle file the caller should read and trust, if configured. */
+  caBundlePath?: string;
+  /** Whether the server certificate must be verified. False only on explicit opt-out. */
+  rejectUnauthorized: boolean;
+  /** True when any non-default TLS setting is in effect (caller builds a custom agent). */
+  custom: boolean;
+}
+
+/**
+ * Resolve the ServiceNow TLS policy from raw environment values. Pure (no I/O):
+ * the caller passes the env strings in and performs the actual file read and
+ * HTTPS-agent construction. Shared so every client agrees on the same opt-out
+ * semantics. An unset/blank reject value keeps verification ON; only the
+ * explicit falsey tokens (`0`, `false`, `no`) turn it off.
+ */
+export function resolveTlsPolicy(
+  caBundleEnv: string | undefined,
+  rejectUnauthorizedEnv: string | undefined
+): ResolvedTlsPolicy {
+  const caBundlePath = (caBundleEnv || "").trim() || undefined;
+  const raw = (rejectUnauthorizedEnv || "").trim().toLowerCase();
+  const rejectUnauthorized = !(raw === "0" || raw === "false" || raw === "no");
+  return {
+    caBundlePath,
+    rejectUnauthorized,
+    custom: !!caBundlePath || !rejectUnauthorized,
+  };
+}
+
 // Shared OAuth 2.0 token manager (IO-free; HTTP injected). Used by both clients.
 export * from "./oauth";

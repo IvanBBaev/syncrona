@@ -118,6 +118,15 @@ expiry/401. Without those vars it stays on Basic. Use a dedicated least-privileg
 integration user. See [SECURITY.md](SECURITY.md) and
 [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
 
+**Corporate proxies & custom TLS (G9):** the CLI honors the standard
+`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment variables automatically, so
+it works behind a corporate proxy with no extra configuration. For a corporate
+or self-signed certificate authority, point `SYNCRONA_CA_BUNDLE` at a PEM CA
+bundle (or set Node's built-in `NODE_EXTRA_CA_CERTS`, which also covers the MCP
+server's native-fetch client). As a last resort for a throwaway test instance,
+`SYNCRONA_TLS_REJECT_UNAUTHORIZED=0` disables certificate verification — insecure,
+never use it against a real instance.
+
 ### Instructions
 
 1. Create a folder to store the scoped app code.
