@@ -1,4 +1,4 @@
-import { SN, Sync } from "@syncrona/types";
+import { SN, Sync } from "@syncro-now-ai/types";
 import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,

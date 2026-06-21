@@ -80,7 +80,7 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [x] **G1. OAuth 2.0 auth** — DONE 2026-06-16 (CLI + MCP; additive, Basic default):
       SN_OAUTH_CLIENT_ID + SN_OAUTH_CLIENT_SECRET (CLI also _<PROFILE>) → OAuth 2.0
       password grant at oauth_token.do → Bearer + refresh on expiry/401. The token
-      manager lives in @syncrona/sn-transport (shared, IO-free; ARCH-001); the CLI
+      manager lives in @syncro-now-ai/sn-transport (shared, IO-free; ARCH-001); the CLI
       (snClient axios interceptors) and the MCP server (servicenowCore fetch) both
       use it. Tests: oauth.test.ts (4) + e2e Bearer-on-wire + mcp oauth.test.js (3).
       Legacy sys.scripts.do fallback stays Basic (best-effort; CR22). Full
@@ -337,7 +337,7 @@ Docs, Workflow, Error Handling, MCP.
 ### CONFIGURATION COMPLEXITY (DX8-DX11)
 
 **DX8: Plugin discovery requires manual names**
-- The user must know the "TypeScript plugin" is called "@syncrona/typescript-plugin" on npm.
+- The user must know the "TypeScript plugin" is called "@syncro-now-ai/typescript-plugin" on npm.
 - `syncrona plugins` shows some but does not help when adding new plugins.
 - [ ] Add `syncrona config add-plugin` — an interactive chooser: lists plugins,
       validates, generates boilerplate.

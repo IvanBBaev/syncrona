@@ -16,24 +16,24 @@ It complements README and package-level docs with implementation and quality-gat
 - MCP governance checks run through `packages/mcp-server/scripts/quality-gates.sh`.
 
 ## Command Reference
-- `npx syncrona init` provisions a project.
-- `npx syncrona refresh` refreshes manifest and downloads new files.
-- `npx syncrona dev` starts watch mode.
-- `npx syncrona push` pushes local files to ServiceNow.
-- `npx syncrona download` downloads scoped application files.
-- `npx syncrona build` builds local artifacts.
-- `npx syncrona deploy` deploys built files.
-- `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
-- `npx syncrona status` prints extended diagnostics.
-- `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.
-- `npx syncrona doctor` runs diagnostic checks.
-- `npx syncrona plugins` reports configured plugin rules and plugin package availability.
-- `npx syncrona config` inspects configuration (e.g. `config show-defaults`).
-- `npx syncrona mcp` starts standalone MCP server with optional local auto-configure.
-- `npx syncrona login` saves credentials in the global credential store.
-- `npx syncrona logout` removes stored credentials.
-- `npx syncrona instances` lists stored instances and active marker.
-- `npx syncrona use` sets the active stored instance.
+- `npx syncro-now-ai init` provisions a project.
+- `npx syncro-now-ai refresh` refreshes manifest and downloads new files.
+- `npx syncro-now-ai dev` starts watch mode.
+- `npx syncro-now-ai push` pushes local files to ServiceNow.
+- `npx syncro-now-ai download` downloads scoped application files.
+- `npx syncro-now-ai build` builds local artifacts.
+- `npx syncro-now-ai deploy` deploys built files.
+- `npx syncro-now-ai docs` generates or logically updates scope Markdown docs and diagrams.
+- `npx syncro-now-ai status` prints extended diagnostics.
+- `npx syncro-now-ai check-env` checks OS, Node, WSL and Git prerequisites.
+- `npx syncro-now-ai doctor` runs diagnostic checks.
+- `npx syncro-now-ai plugins` reports configured plugin rules and plugin package availability.
+- `npx syncro-now-ai config` inspects configuration (e.g. `config show-defaults`).
+- `npx syncro-now-ai mcp` starts standalone MCP server with optional local auto-configure.
+- `npx syncro-now-ai login` saves credentials in the global credential store.
+- `npx syncro-now-ai logout` removes stored credentials.
+- `npx syncro-now-ai instances` lists stored instances and active marker.
+- `npx syncro-now-ai use` sets the active stored instance.
 
 ## Documentation Drift Policy
 - README command table and this document must stay aligned for core CLI commands.

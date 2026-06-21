@@ -1,10 +1,10 @@
 {
-  "name": "@syncrona/types",
+  "name": "@syncro-now-ai/types",
   "version": "0.4.2-alpha.8",
   "description": "Type Declarations for Syncrona",
   "main": "index.d.ts",
   "scripts": {
-    "test": "echo \"No runtime tests for @syncrona/types\""
+    "test": "echo \"No runtime tests for @syncro-now-ai/types\""
   },
   "engines": {
     "node": ">=22.0.0"

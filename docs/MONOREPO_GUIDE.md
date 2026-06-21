@@ -20,10 +20,10 @@ my-sn-repo/
       sync.manifest.json
       src/
   package.json            # workspace root (npm workspaces / lerna)
-  node_modules/           # shared dependencies, incl. @syncrona/* plugins
+  node_modules/           # shared dependencies, incl. @syncro-now-ai/* plugins
 ```
 
-`syncrona init` can scaffold `packages/x_*/` for every scope discovered on the
+`syncro-now-ai init` can scaffold `packages/x_*/` for every scope discovered on the
 instance; it confirms before creating directories.
 
 ## Per-scope vs shared
@@ -33,18 +33,18 @@ instance; it confirms before creating directories.
 
   ```bash
   cd packages/x_acme_cs
-  syncrona status
-  syncrona dev
+  syncro-now-ai status
+  syncro-now-ai dev
   ```
 
 - **Shared:** `node_modules` at the repo root. Install build plugins
-  (`@syncrona/typescript-plugin`, etc.) once at the root; each scope's
+  (`@syncro-now-ai/typescript-plugin`, etc.) once at the root; each scope's
   `sync.config.js` references them by name and they resolve up the tree.
 
 ## Credentials across scopes
 
 All scopes on the same instance can share one credential source. Use the global
-store (`syncrona login` / `syncrona use`) or instance-profile env vars — see
+store (`syncro-now-ai login` / `syncro-now-ai use`) or instance-profile env vars — see
 [MULTI_INSTANCE.md](MULTI_INSTANCE.md). A per-scope `.env` overrides the store
 for that scope only, which is handy when one app lives on a different instance.
 
@@ -58,9 +58,9 @@ strategy:
     scope: [x_acme_cs, x_acme_inventory]
 steps:
   - run: npm ci
-  - run: npx syncrona build
+  - run: npx syncro-now-ai build
     working-directory: packages/${{ matrix.scope }}
-  - run: npx syncrona push --ci
+  - run: npx syncro-now-ai push --ci
     working-directory: packages/${{ matrix.scope }}
     env:
       SN_INSTANCE: ${{ secrets.SN_INSTANCE }}
@@ -74,5 +74,5 @@ steps:
   (the first matching rule wins).
 - Commit `sync.config.js` and `src/`; gitignore `.env`, `node_modules/`,
   `build/`, and `.syncrona-mcp/`.
-- `syncrona status` from a scope directory confirms which instance, scope, and
+- `syncro-now-ai status` from a scope directory confirms which instance, scope, and
   credential source that scope resolves to.

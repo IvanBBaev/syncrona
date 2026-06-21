@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import memoryFS from "memory-fs";
 import webpack from "webpack";
 import path from "path";

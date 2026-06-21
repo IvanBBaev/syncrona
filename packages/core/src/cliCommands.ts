@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import type { Arguments, Options, PositionalOptions } from "yargs";
 import {
   downloadCommand,

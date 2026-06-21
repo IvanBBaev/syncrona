@@ -13,7 +13,7 @@ const DEFAULT_REQUIRED_SECTIONS = [
 ];
 
 const README_COMMAND_REGEX = /^\|\s*`([^`]+)`\s*\|/gm;
-const CLAUDE_COMMAND_REGEX = /`npx\s+syncrona\s+([a-z][a-z0-9-]*)\b/g;
+const CLAUDE_COMMAND_REGEX = /`npx\s+syncro-now-ai\s+([a-z][a-z0-9-]*)\b/g;
 
 function normalizeCommandName(raw) {
   const normalized = String(raw || '').trim().toLowerCase();

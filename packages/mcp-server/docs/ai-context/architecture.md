@@ -2,7 +2,7 @@
 
 ## Package purpose
 
-The package @syncrona/mcp-server exposes a ServiceNow-focused MCP server over stdio.
+The package @syncro-now-ai/mcp-server exposes a ServiceNow-focused MCP server over stdio.
 It enables AI clients to run safe operational workflows against:
 
 - local Syncrona workspace commands
