@@ -14,6 +14,7 @@ import {
 } from "./snClient";
 import { listInstances } from "./auth";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder";
+import { KNOWN_PLUGINS, findKnownPlugin, renderPluginRule } from "./pluginCatalog";
 import {
   setLogLevel,
   logScopedEndpointCapability,
@@ -398,27 +399,90 @@ export async function pluginsCommand(args: Sync.SharedCmdArgs): Promise<PluginsS
   return summary;
 }
 
-// DX9: inspect configuration. Currently supports `show-defaults`, which prints
-// the built-in defaults applied before a project's sync.config.js overrides, so
-// users don't have to read defaultOptions.ts to understand them.
-export function configCommand(args: Sync.SharedCmdArgs & { action: string }): void {
+// DX9 / DX8: inspect and modify configuration.
+//   show-defaults — print the built-in defaults applied before a project's
+//                   sync.config.js overrides.
+//   add-plugin    — help wire a first-party build plugin: pass --plugin <name>
+//                   for its install command + a paste-ready rules snippet, or
+//                   omit it to list the available plugins and what's installed.
+export async function configCommand(
+  args: Sync.SharedCmdArgs & { action: string; plugin?: string }
+): Promise<void> {
   setLogLevel(args);
   const action = String(args.action || "").trim();
-  if (action !== "show-defaults") {
-    logger.error(`Unknown config action "${action}". Supported actions: show-defaults.`);
+  if (action === "show-defaults") {
+    const def = ConfigManager.getDefaultConfig();
+    logger.info("SyncroNow AI default configuration (applied before sync.config.js overrides):");
+    logger.info(`  sourceDirectory: ${def.sourceDirectory}`);
+    logger.info(`  buildDirectory:  ${def.buildDirectory}`);
+    logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
+    logger.info(`  refreshInterval: ${def.refreshInterval}s`);
+    logger.info(`  default include table rules: ${Object.keys(def.includes ?? {}).length}`);
+    logger.info(`  default exclude table rules: ${Object.keys(def.excludes ?? {}).length}`);
+    logger.info(
+      "Override any of these in sync.config.js (includes/excludes merge on top of these defaults) — see the README Configuration section."
+    );
+    return;
+  }
+  if (action === "add-plugin") {
+    await addPluginAction(args.plugin);
+    return;
+  }
+  logger.error(
+    `Unknown config action "${action}". Supported actions: show-defaults, add-plugin.`
+  );
+  process.exitCode = 1;
+}
+
+// True when the named package exists under the project's node_modules.
+async function isPluginInstalled(pkg: string): Promise<boolean> {
+  let rootDir = process.cwd();
+  try {
+    rootDir = ConfigManager.getRootDir();
+  } catch (_) {
+    rootDir = process.cwd();
+  }
+  try {
+    await fsp.stat(path.join(rootDir, "node_modules", pkg));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function addPluginAction(pluginQuery?: string): Promise<void> {
+  const query = String(pluginQuery || "").trim();
+  if (!query) {
+    logger.info("Available SyncroNow AI build plugins (pass --plugin <name> to wire one):");
+    for (const plugin of KNOWN_PLUGINS) {
+      const installed = await isPluginInstalled(plugin.pkg);
+      logger.info(
+        `  ${plugin.short.padEnd(11)} ${installed ? "[installed]" : "[missing]   "} ${plugin.pkg} — ${plugin.description}`
+      );
+    }
+    logger.info("Example: syncro-now-ai config add-plugin --plugin typescript");
+    return;
+  }
+
+  const plugin = findKnownPlugin(query);
+  if (!plugin) {
+    logger.error(
+      `Unknown plugin "${query}". Available: ${KNOWN_PLUGINS.map((p) => p.short).join(", ")}.`
+    );
     process.exitCode = 1;
     return;
   }
-  const def = ConfigManager.getDefaultConfig();
-  logger.info("SyncroNow AI default configuration (applied before sync.config.js overrides):");
-  logger.info(`  sourceDirectory: ${def.sourceDirectory}`);
-  logger.info(`  buildDirectory:  ${def.buildDirectory}`);
-  logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
-  logger.info(`  refreshInterval: ${def.refreshInterval}s`);
-  logger.info(`  default include table rules: ${Object.keys(def.includes ?? {}).length}`);
-  logger.info(`  default exclude table rules: ${Object.keys(def.excludes ?? {}).length}`);
+
+  const installed = await isPluginInstalled(plugin.pkg);
+  logger.info(`Plugin: ${plugin.pkg} — ${plugin.description}`);
+  if (installed) {
+    logger.info("Status: installed ✅");
+  } else {
+    logger.warn(`Status: not installed — run \`npm i -D ${plugin.pkg}\` first.`);
+  }
+  logger.info(renderPluginRule(plugin));
   logger.info(
-    "Override any of these in sync.config.js (includes/excludes merge on top of these defaults) — see the README Configuration section."
+    "Order rules most-specific-first; the first matching rule is the only one that runs."
   );
 }
 

@@ -352,8 +352,14 @@ Docs, Workflow, Error Handling, MCP.
 **DX8: Plugin discovery requires manual names**
 - The user must know the "TypeScript plugin" is called "@syncro-now-ai/typescript-plugin" on npm.
 - `syncrona plugins` shows some but does not help when adding new plugins.
-- [ ] Add `syncrona config add-plugin` — an interactive chooser: lists plugins,
-      validates, generates boilerplate.
+- [x] Add `config add-plugin` — DONE 2026-06-21: new action on the existing
+      `config` command (so no new top-level command). With `--plugin <name>` it
+      resolves the plugin (short alias / full pkg / loose form), reports
+      installed-vs-missing, and prints the `npm i -D` command plus a paste-ready
+      `rules` snippet; with no flag it lists all first-party plugins and their
+      install status. Catalog + resolution + rendering are a pure module
+      (pluginCatalog.ts); 16 tests (pluginCatalog.test.ts). README + CLAUDE.md
+      updated.
 
 **DX9: Default includes/excludes hidden in code**
 - The "sane defaults" live in defaultManifestConfig.ts; users must read source
