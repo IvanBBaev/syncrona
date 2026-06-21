@@ -89,9 +89,16 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       validateConfigShape in config.ts (no new dependency) — wrong type = hard
       error, unknown key = warning listing the valid options; 4 new tests
       (configValidation.test.ts).
-- [ ] **G3. Download progress/resume** — push has checkpoint/resume and a progress
-      bar; downloading a large scope has neither (a network failure means starting
-      over).
+- [x] **G3. Download progress/resume** — DONE 2026-06-21: `downloadAllFiles`
+      now pulls one table at a time, logging per-table progress ([i/N]) and
+      recording each completed table in `sync.download.checkpoint.json`
+      (downloadCheckpoint.ts) so an interrupted pull resumes instead of starting
+      over; the checkpoint is cleared on full success and ignored when stale
+      (different scope). The bulk endpoint is now called per table (falling back
+      to the Table API once the scoped endpoint is unavailable). Resume/progress
+      logic is an injected-deps orchestration (downloadTablesWithResume) — 8
+      tests (downloadResume + downloadCheckpoint). Trade-off: more requests on
+      the scoped-app path in exchange for resumability + visible progress.
 - [x] **G4. Rate-limit awareness in the MCP client** — DONE 2026-06-12: shared
       MAX_REQUESTS_PER_SECOND=20 constant in sn-transport; the mcp client spaces
       requests (acquireRequestSlot, min 50ms interval) instead of relying only on

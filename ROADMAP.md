@@ -166,7 +166,9 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 
 Engineering-completable, not release-blocking; sequenced by demand.
 
-- 📋 **Download progress/resume** (G3) — bring download to parity with push.
+- ✅ **Download progress/resume** (G3) — per-table progress + a
+  `sync.download.checkpoint.json` so an interrupted download resumes instead of
+  starting over (parity with push).
 - 📋 **`--flat` mode** (DX17) — flat local layout, converted before push/pull.
 - 📋 **`syncrona repair`** — compare manifest vs actual files and repair drift.
 - 📋 **Error taxonomy** (DX19) — Network / Config / Data categories with
