@@ -1,4 +1,4 @@
-# @syncrona/sass-plugin
+# @syncro-now-ai/sass-plugin
 
 ## Overview
 
@@ -7,7 +7,7 @@ This plugin allows you to run [Sass](https://sass-lang.com/) on scss/sass files.
 ## Installation
 
 ```bash
-npm i -D @syncrona/sass-plugin
+npm i -D @syncro-now-ai/sass-plugin
 ```
 
 ## Options
@@ -25,7 +25,7 @@ module.exports={
     match:/\.scss$/,
     plugins:[
       {
-        name:"@syncrona/sass-plugin",
+        name:"@syncro-now-ai/sass-plugin",
         //No options necessary
         options:{}
       }

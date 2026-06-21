@@ -1,5 +1,5 @@
 import { groupAppFiles } from "../appUtils";
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 
 const ctx = (
   filePath: string,

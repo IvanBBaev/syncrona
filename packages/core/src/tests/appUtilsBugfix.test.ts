@@ -1,4 +1,4 @@
-import { SN } from "@syncrona/types";
+import { SN } from "@syncro-now-ai/types";
 
 const createDirRecursively = jest.fn(async () => undefined);
 const writeSNFileCurry = jest.fn(() => async () => undefined);

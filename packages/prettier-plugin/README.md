@@ -1,4 +1,4 @@
-# @syncrona/prettier-plugin
+# @syncro-now-ai/prettier-plugin
 
 ## Overview
 
@@ -7,7 +7,7 @@ This plugin allows you to run [Prettier](https://prettier.io/) on all supported 
 ## Installation
 
 ```bash
-npm i -D @syncrona/prettier-plugin
+npm i -D @syncro-now-ai/prettier-plugin
 ```
 
 ## Options
@@ -29,7 +29,7 @@ module.exports={
   rules:{
     match:/\.js$/,
     plugins:[
-      name:"@syncrona/prettier-plugin",
+      name:"@syncro-now-ai/prettier-plugin",
       //Prettier options
       options:{
         //sets tabs to be 2 spaces

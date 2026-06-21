@@ -6,7 +6,7 @@
 |---|--------|------|---------|-----------|
 | S1 | syncrona | `tsconfig.json` | `"module": "umd"` → must be `"commonjs"` — caused `args.options is not a function` on `syncrona download` | ✅ FIXED (verified 2026-06-12: module=commonjs) |
 | S2 | syncrona | `packages/core/package.json` | `"main": "./dist./index.js"` typo → must be `"./dist/index.js"` | ✅ FIXED (verified 2026-06-12: main=./dist/index.js) |
-| S3 | syncrona | rebuild core | `npm --workspace @syncrona/core run build` after S1+S2 | ✅ FIXED (dist rebuilt after S1+S2) |
+| S3 | syncrona | rebuild core | `npm --workspace @syncro-now-ai/core run build` after S1+S2 | ✅ FIXED (dist rebuilt after S1+S2) |
 | S4 | syncrona | `packages/core/src/commander.ts` | function builders for download/push/build/mcp → replace with options objects | ✅ superseded by the cliCommands.ts registry (2026-06-12) |
 | S5 | syncrona | already fixed in session | wizard fresh machine, fresh SN instance, .env credentials | ✅ rebuild |
 | D1 | desktop-app | `src/index.ts` | Add `servicenow.queryRecords` tool | 🟡 IMPORTANT |

@@ -1,5 +1,5 @@
 // Shared, IO-free OAuth 2.0 token manager (Resource Owner Password Credentials
-// grant). Lives in @syncrona/sn-transport so both the CLI (axios) and the MCP
+// grant). Lives in @syncro-now-ai/sn-transport so both the CLI (axios) and the MCP
 // server (fetch) use one implementation. The HTTP call is injected as `post`,
 // so this module performs no IO itself and stays pure.
 //

@@ -102,11 +102,11 @@ describe("auth credential store", () => {
     const auth = await loadAuthWithHome(tempHome);
 
     await expect(auth.loadCredentials("missing.service-now.com")).rejects.toThrow(
-      'No credentials found for "missing.service-now.com". Run: syncrona login missing.service-now.com'
+      'No credentials found for "missing.service-now.com". Run: syncro-now-ai login missing.service-now.com'
     );
   });
 
-  it("exposes the expected global syncrona directory", async () => {
+  it("exposes the expected global SyncroNow AI directory", async () => {
     const auth = await loadAuthWithHome(tempHome);
     expect(auth.getSyncronaDir()).toBe(path.join(tempHome, ".syncrona"));
   });

@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import type { Arguments, Options, PositionalOptions } from "yargs";
 import {
   downloadCommand,
@@ -214,12 +214,12 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "check-env",
     describe: "Check OS, Node, WSL and Git prerequisites and print actionable fixes",
-    examples: [["$0 check-env", "Verify your machine meets syncrona's prerequisites before init"]],
+    examples: [["$0 check-env", "Verify your machine meets SyncroNow AI's prerequisites before init"]],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => checkEnvCommand(args)),
   },
   {
     command: "doctor",
-    describe: "Run local and connectivity diagnostics for the current syncrona workspace",
+    describe: "Run local and connectivity diagnostics for the current SyncroNow AI workspace",
     handler: typedHandler<Sync.SharedCmdArgs>((args) => doctorCommand(args)),
   },
   {

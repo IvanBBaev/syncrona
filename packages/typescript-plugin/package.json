@@ -1,7 +1,7 @@
 {
-  "name": "@syncrona/typescript-plugin",
+  "name": "@syncro-now-ai/typescript-plugin",
   "version": "0.4.2-alpha.8",
-  "description": "TypeScript plugin for Syncrona",
+  "description": "TypeScript plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "npx tsc"
@@ -12,7 +12,7 @@
     "typescript": "^5.2.2"
   },
   "devDependencies": {
-    "@syncrona/types": "^0.4.2-alpha.8"
+    "@syncro-now-ai/types": "^0.4.2-alpha.8"
   },
   "files": [
     "dist"

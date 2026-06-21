@@ -1,18 +1,18 @@
-# Writing a Syncrona plugin
+# Writing a SyncroNow AI plugin
 
 A plugin is an npm package that transforms a file's contents on its way from
 your local source to ServiceNow (build/push) — for example transpiling
-TypeScript, bundling with Webpack, or prettifying output. Syncrona ships
-several (`@syncrona/typescript-plugin`, `@syncrona/babel-plugin`,
-`@syncrona/webpack-plugin`, `@syncrona/sass-plugin`, `@syncrona/prettier-plugin`,
-`@syncrona/eslint-plugin`); this guide covers writing your own.
+TypeScript, bundling with Webpack, or prettifying output. SyncroNow AI ships
+several (`@syncro-now-ai/typescript-plugin`, `@syncro-now-ai/babel-plugin`,
+`@syncro-now-ai/webpack-plugin`, `@syncro-now-ai/sass-plugin`, `@syncro-now-ai/prettier-plugin`,
+`@syncro-now-ai/eslint-plugin`); this guide covers writing your own.
 
 ## The contract
 
 A plugin module exports a `run` function matching `Sync.Plugin`:
 
 ```ts
-import type { Sync, SN } from "@syncrona/types";
+import type { Sync, SN } from "@syncro-now-ai/types";
 
 export const run: Sync.PluginFunc = async (
   context: Sync.FileContext,
@@ -61,7 +61,7 @@ module.exports = {
       match: /\.ts$/,
       // Plugins run in order; each receives the previous one's output.
       plugins: [
-        { name: "@syncrona/typescript-plugin", options: { transpile: true } },
+        { name: "@syncro-now-ai/typescript-plugin", options: { transpile: true } },
         { name: "my-org-plugin", options: { tag: "v1" } },
       ],
     },
@@ -76,7 +76,7 @@ module.exports = {
 - Validate `options` defensively — a misconfigured rule should fail with a
   clear message, not a crash.
 - Return `{ success: false, output: "" }` (or throw) on unrecoverable input;
-  Syncrona reports the failing `table=>sys_id`.
+  SyncroNow AI reports the failing `table=>sys_id`.
 - Publish as a normal npm package whose main module exports `run`.
 
 ## Local development
@@ -85,5 +85,5 @@ module.exports = {
 cd my-plugin && npm link
 cd /path/to/scope-project && npm link my-plugin
 # reference "my-plugin" in sync.config.js rules, then:
-syncrona build
+syncro-now-ai build
 ```

@@ -1,4 +1,4 @@
-# @syncrona/babel-preset-servicenow
+# @syncro-now-ai/babel-preset-servicenow
 
 ## Overview
 
@@ -8,7 +8,7 @@ Right now it is fairly simple, but it might be enhanced in the future if more is
 ## Installation
 
 ```bash
-npm i -D @syncrona/babel-preset-servicenow
+npm i -D @syncro-now-ai/babel-preset-servicenow
 ```
 
 After the installation is completed, add it to the `presets` section of your Babel configuration.

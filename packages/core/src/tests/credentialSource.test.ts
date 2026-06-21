@@ -1,6 +1,6 @@
 export {};
 
-// DX2: `syncrona status` reports where credentials were resolved from.
+// DX2: `syncro-now-ai status` reports where credentials were resolved from.
 // describeCredentialSource must mirror resolveCredentials' precedence exactly
 // (they share one internal resolver), so these cover the env-driven branches.
 

@@ -1,0 +1,44 @@
+name: Release
+
+# Publishes the @syncro-now-ai/* packages to npm with build provenance.
+#
+# OWNER-GATED: this workflow stays dormant until the owner decisions land
+# (IP/provenance clearance, repo public, npm scope ownership + 2FA). To enable:
+#   1. Claim the @syncro-now-ai scope on npm and enable 2FA (automation token).
+#   2. Add the token as the NPM_TOKEN repository secret.
+#   3. Run via "Run workflow" (workflow_dispatch) or push a v* tag.
+# Provenance requires `id-token: write` and a public repo (npm attestations).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance attestations
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Full validation gate
+        run: npm run check
+
+      - name: Publish to npm with provenance
+        run: npx changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

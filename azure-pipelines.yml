@@ -33,22 +33,22 @@ steps:
   displayName: 'Build all workspaces'
 
 - script: npm run typecheck
-  displayName: 'Typecheck @syncrona/core + @syncrona/mcp-server'
+  displayName: 'Typecheck @syncro-now-ai/core + @syncro-now-ai/mcp-server'
 
 - script: npm run lint
   displayName: 'Lint core + mcp-server TypeScript sources'
 
 - script: npm run test:core
-  displayName: 'Test @syncrona/core'
+  displayName: 'Test @syncro-now-ai/core'
 
 - script: npm run test:mcp
-  displayName: 'Test @syncrona/mcp-server'
+  displayName: 'Test @syncro-now-ai/mcp-server'
 
 - script: npm run test:coverage:gates
   displayName: 'Run coverage gates (core jest 70/57/61/70, mcp lines>=70% branches>=70%)'
 
 - script: |
-    npm --workspace @syncrona/mcp-server run test:coverage > packages/mcp-server/coverage-summary.txt
+    npm --workspace @syncro-now-ai/mcp-server run test:coverage > packages/mcp-server/coverage-summary.txt
   displayName: 'Generate MCP coverage summary report'
   condition: and(succeeded(), eq(variables['publishArtifacts'], 'true'))
 

@@ -2,7 +2,7 @@ import winston, { format, transports } from "winston";
 import chalk from "chalk";
 import fs from "fs";
 import path from "path";
-import { getSyncronaDir } from "@syncrona/credential-store";
+import { getSyncronaDir } from "@syncro-now-ai/credential-store";
 
 // G7: opt-in local diagnostic log. Off by default (privacy); enable with
 // SYNCRONA_DIAGNOSTIC_LOG=1 to append CLI output to ~/.syncrona/logs/cli.log

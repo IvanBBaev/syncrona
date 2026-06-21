@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import prettier from "prettier";
 const run: Sync.PluginFunc = async function(
   context: Sync.FileContext,

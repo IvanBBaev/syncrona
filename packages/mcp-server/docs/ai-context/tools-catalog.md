@@ -10,7 +10,7 @@
 - sync_preflight_check: validates context against guardrails
 - sync_check_instance_capabilities: verifies scoped endpoint readiness before automation
 
-## Workspace and Syncrona command tools
+## Workspace and SyncroNow AI command tools
 
 - sync_status
 - sync_refresh

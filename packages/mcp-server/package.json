@@ -1,10 +1,10 @@
 {
-  "name": "@syncrona/mcp-server",
+  "name": "@syncro-now-ai/mcp-server",
   "version": "0.4.2-alpha.8",
   "description": "MCP server for SyncroNow AI automation and script execution",
   "main": "./dist/index.js",
   "bin": {
-    "syncrona-mcp-server": "./dist/index.js"
+    "syncro-now-ai-mcp-server": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -26,8 +26,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
-    "@syncrona/credential-store": "^0.4.2-alpha.8",
-    "@syncrona/sn-transport": "^0.4.2-alpha.8",
+    "@syncro-now-ai/credential-store": "^0.4.2-alpha.8",
+    "@syncro-now-ai/sn-transport": "^0.4.2-alpha.8",
     "zod": "^3.23.8"
   },
   "devDependencies": {

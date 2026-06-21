@@ -45,7 +45,7 @@ Create `sync.mcp.guardrails.json` in project root:
 
 ## Contract hash check
 
-Run `npm run --workspace=@syncrona/mcp-server check-tool-contract` and track the reported `contractHash` in release notes for quick contract drift detection.
+Run `npm run --workspace=@syncro-now-ai/mcp-server check-tool-contract` and track the reported `contractHash` in release notes for quick contract drift detection.
 
 ## Troubleshooting
 

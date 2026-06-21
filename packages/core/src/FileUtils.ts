@@ -1,4 +1,4 @@
-import { SN, Sync } from "@syncrona/types";
+import { SN, Sync } from "@syncro-now-ai/types";
 import { PATH_DELIMITER } from "./constants";
 import fs, { promises as fsp } from "fs";
 import path from "path";
