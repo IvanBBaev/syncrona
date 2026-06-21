@@ -6,14 +6,16 @@
  * the crypto format, key derivation, file naming, and on-disk layout never
  * diverge between the two processes.
  *
- * Security note: the encryption key is resolved by `getStoreKey()` (AR2) with
+ * Security note: the encryption key is resolved by `getStoreKey()` (AR2/D5) with
  * the precedence SYNCRONA_STORE_KEY (explicit, for CI / secrets managers) > OS
- * keychain (opt-in via SYNCRONA_USE_KEYCHAIN, needs the optional
- * @napi-rs/keyring) > the legacy machine-derived key. The machine-derived
- * default is only obfuscation-grade — anyone able to run as the same user on the
- * same host can decrypt files written with it; configure an explicit key or the
- * keychain for real at-rest protection. See the core README "Credential storage
- * security" section.
+ * keychain (DEFAULT backend; needs the optional @napi-rs/keyring, opt out with
+ * SYNCRONA_USE_KEYCHAIN=0) > the legacy machine-derived key. When the keychain
+ * or @napi-rs/keyring is unavailable the resolver falls back to the
+ * machine-derived key automatically, and reads retry with it so stores written
+ * before D5 keep decrypting. The machine-derived key is only obfuscation-grade —
+ * anyone able to run as the same user on the same host can decrypt files written
+ * with it; the keychain (now default) or an explicit key gives real at-rest
+ * protection. See the core README "Credential storage security" section.
  */
 import {
   createCipheriv,
@@ -76,14 +78,16 @@ export function getMachineKey(): Buffer {
 }
 
 /* ----------------------------------------------------------------------------
- * At-rest key resolution (AR2)
+ * At-rest key resolution (AR2 + D5)
  *
  * The file-encryption key is resolved with this precedence:
  *   1. SYNCRONA_STORE_KEY  — an explicit 32-byte key (64 hex chars or base64),
  *      for CI and secrets managers.
- *   2. OS keychain         — a random 256-bit master key kept in the OS keychain
- *      (opt-in via SYNCRONA_USE_KEYCHAIN=1; needs the optional @napi-rs/keyring).
- *   3. Machine-derived key — the legacy obfuscation-grade default.
+ *   2. OS keychain         — a random 256-bit master key kept in the OS keychain.
+ *      DEFAULT backend (D5); needs the optional @napi-rs/keyring. Opt out with
+ *      SYNCRONA_USE_KEYCHAIN=0 (e.g. headless CI with no keychain).
+ *   3. Machine-derived key — the legacy obfuscation-grade fallback, used
+ *      automatically when the keychain / @napi-rs/keyring is unavailable.
  *
  * Reads fall back to the legacy machine key so stores written before this
  * change keep decrypting; the next `login` re-encrypts with the resolved key.
@@ -131,8 +135,16 @@ function keyFromEnv(): Buffer | null {
 }
 
 function isKeychainEnabled(): boolean {
+  // D5: the OS keychain is the DEFAULT at-rest backend. Only an explicit falsey
+  // opt-out disables it (e.g. SYNCRONA_USE_KEYCHAIN=0 on a headless CI box with
+  // no keychain). When enabled but the keychain / @napi-rs/keyring is
+  // unavailable, keyFromKeychain returns null and getStoreKey falls back to the
+  // legacy machine-derived key, so this is safe to default on.
   const flag = (process.env[USE_KEYCHAIN_ENV] || "").trim().toLowerCase();
-  return flag === "1" || flag === "true" || flag === "yes";
+  if (flag === "0" || flag === "false" || flag === "no") {
+    return false;
+  }
+  return true;
 }
 
 function openKeychainEntry(): KeyringEntry | null {
@@ -184,6 +196,11 @@ export function getStoreKey(): Buffer {
 export function getStoreKeySource(): StoreKeySource {
   getStoreKey();
   return (cachedStoreKey as { key: Buffer; source: StoreKeySource }).source;
+}
+
+/** Reset the resolved-key cache so a later env change is re-evaluated (tests). */
+export function clearStoreKeyCache(): void {
+  cachedStoreKey = null;
 }
 
 export function encrypt(plaintext: string, key: Buffer): string {

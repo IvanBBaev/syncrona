@@ -6,8 +6,9 @@
 .DESCRIPTION
     Verifies the Node.js / npm prerequisites and installs the CLI globally from
     npm. Credential storage on Windows uses the Windows Credential Manager
-    natively through the optional @napi-rs/keyring dependency (enable with
-    SYNCRONA_USE_KEYCHAIN=1); no extra setup is required.
+    natively through the optional @napi-rs/keyring dependency. As of D5 the
+    keychain is the DEFAULT backend (opt out with SYNCRONA_USE_KEYCHAIN=0); no
+    extra setup is required.
 
     Native Windows is supported in addition to WSL. WSL remains the recommended
     path for parity with the documented Unix workflows.
@@ -59,7 +60,7 @@ if ($LASTEXITCODE -ne 0) {
 
 if (Test-Command "syncro-now-ai") {
     Write-Host "Installed. Run 'syncro-now-ai --help' to get started." -ForegroundColor Green
-    Write-Host "Tip: set SYNCRONA_USE_KEYCHAIN=1 to store credentials in Windows Credential Manager." -ForegroundColor Yellow
+    Write-Host "Credentials are stored in Windows Credential Manager by default (opt out with SYNCRONA_USE_KEYCHAIN=0)." -ForegroundColor Yellow
 } else {
     Write-Warning "Install completed but 'syncro-now-ai' is not on PATH yet. Open a new terminal or check your npm global bin path (npm config get prefix)."
 }

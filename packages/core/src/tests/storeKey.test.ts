@@ -2,9 +2,10 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-// AR2: the at-rest encryption key is resolved from SYNCRONA_STORE_KEY (CI /
-// secrets manager) or the OS keychain (opt-in), falling back to the legacy
-// machine-derived key so pre-AR2 credential files keep decrypting.
+// AR2 + D5: the at-rest encryption key is resolved from SYNCRONA_STORE_KEY (CI /
+// secrets manager) or the OS keychain (the DEFAULT backend as of D5; opt out
+// with SYNCRONA_USE_KEYCHAIN=0), falling back to the legacy machine-derived key
+// so pre-AR2 credential files keep decrypting.
 
 const KEY_A = "a".repeat(64); // 32 bytes of 0xaa
 const KEY_B = "b".repeat(64); // 32 bytes of 0xbb
@@ -67,8 +68,11 @@ describe("at-rest key resolution (AR2)", () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-store-key-"));
     savedStoreKey = process.env.SYNCRONA_STORE_KEY;
     savedUseKeychain = process.env.SYNCRONA_USE_KEYCHAIN;
-    // never touch the real OS keychain from tests
-    delete process.env.SYNCRONA_USE_KEYCHAIN;
+    // D5: the keychain is now the DEFAULT backend, so absence of the flag means
+    // "on". Tests must explicitly opt OUT (="0") to stay hermetic and never
+    // touch the real OS keychain; the keychain cases below opt back in ("1")
+    // with a mocked @napi-rs/keyring.
+    process.env.SYNCRONA_USE_KEYCHAIN = "0";
     delete process.env.SYNCRONA_STORE_KEY;
   });
 
