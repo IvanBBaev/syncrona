@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp, readFileSync } from "fs";
 import path from "path";
 import * as ConfigManager from "./config";
@@ -111,7 +111,7 @@ export async function scopeCheck(
       logger.error(message);
     }
     logger.error(
-      "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncrona init`"
+      "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncro-now-ai init`"
     );
     process.exitCode = 1;
     return;

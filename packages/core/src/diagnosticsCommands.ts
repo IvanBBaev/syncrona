@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp, readFileSync } from "fs";
 import { execFileSync } from "child_process";
 import os from "os";

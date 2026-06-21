@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import { logger } from "./Logger";
 import chalk from "chalk";
 

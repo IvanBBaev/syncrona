@@ -1,4 +1,4 @@
-import { SN } from "@syncrona/types";
+import { SN } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import path from "path";
 

@@ -1,4 +1,4 @@
-import {Sync} from "@syncrona/types";
+import {Sync} from "@syncro-now-ai/types";
 import * as babel from "@babel/core";
 export async function run(
   context: Sync.FileContext,

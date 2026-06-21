@@ -1,4 +1,4 @@
-# @syncrona/webpack-plugin
+# @syncro-now-ai/webpack-plugin
 
 ## Overview
 
@@ -7,7 +7,7 @@ This plugin allows you to run [Webpack](https://webpack.js.org/) on your desired
 ## Installation
 
 ```bash
-npm i -D @syncrona/webpack-plugin
+npm i -D @syncro-now-ai/webpack-plugin
 ```
 
 ## Options
@@ -33,7 +33,7 @@ module.exports={
   rules:{
     match:/\.wp\.js$/,
     plugins:[
-      name:"@syncrona/webpack-plugin",
+      name:"@syncro-now-ai/webpack-plugin",
       options:{
         configGenerator:(context)=>{
           mode:"production",

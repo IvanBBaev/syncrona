@@ -1,4 +1,4 @@
-# @syncrona/eslint-plugin
+# @syncro-now-ai/eslint-plugin
 
 ## Overview
 
@@ -7,7 +7,7 @@ This plugin allows you to run the [ESLint](https://eslint.org/) checker on files
 ## Installation
 
 ```bash
-npm i -D @syncrona/eslint-plugin
+npm i -D @syncro-now-ai/eslint-plugin
 ```
 
 ### Order of Configurations
@@ -26,7 +26,7 @@ module.exports={
   rules:{
     match:/\.ts$/,
     plugins:[
-      name:"@syncrona/eslint-plugin",
+      name:"@syncro-now-ai/eslint-plugin",
     ]
   }
 }; 

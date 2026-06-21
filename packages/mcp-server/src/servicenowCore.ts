@@ -3,7 +3,7 @@ import path from "path";
 import {
   getActiveInstanceSync,
   loadCredentialsSync,
-} from "@syncrona/credential-store";
+} from "@syncro-now-ai/credential-store";
 import {
   DEFAULT_SCOPED_API_PREFIXES,
   MAX_REQUESTS_PER_SECOND,
@@ -16,7 +16,7 @@ import {
   type TokenManager,
   type TokenPoster,
   type OAuthTokenResponse,
-} from "@syncrona/sn-transport";
+} from "@syncro-now-ai/sn-transport";
 import { logger } from "./logger";
 
 type SNConfig = {

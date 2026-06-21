@@ -587,18 +587,18 @@ describe("command flows", () => {
         {
           match: /\\.ts$/,
           plugins: [
-            { name: "@syncrona/typescript-plugin", options: {} },
-            { name: "@syncrona/prettier-plugin", options: {} },
+            { name: "@syncro-now-ai/typescript-plugin", options: {} },
+            { name: "@syncro-now-ai/prettier-plugin", options: {} },
           ],
         },
         {
           match: /\\.js$/,
-          plugins: [{ name: "@syncrona/typescript-plugin", options: {} }],
+          plugins: [{ name: "@syncro-now-ai/typescript-plugin", options: {} }],
         },
       ],
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath.includes("@syncrona/typescript-plugin")) {
+      if (candidatePath.includes("@syncro-now-ai/typescript-plugin")) {
         return { isDirectory: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -609,11 +609,11 @@ describe("command flows", () => {
     expect(result.totalRules).toBe(2);
     expect(result.totalPlugins).toBe(2);
     expect(result.plugins).toEqual([
-      { name: "@syncrona/prettier-plugin", installed: false, rulesMatched: 1 },
-      { name: "@syncrona/typescript-plugin", installed: true, rulesMatched: 2 },
+      { name: "@syncro-now-ai/prettier-plugin", installed: false, rulesMatched: 1 },
+      { name: "@syncro-now-ai/typescript-plugin", installed: true, rulesMatched: 2 },
     ]);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      "plugin:@syncrona/prettier-plugin is configured but not installed in node_modules."
+      "plugin:@syncro-now-ai/prettier-plugin is configured but not installed in node_modules."
     );
   });
 

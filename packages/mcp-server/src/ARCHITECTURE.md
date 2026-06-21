@@ -38,4 +38,4 @@ This folder is organized by responsibilities so the code stays readable and easy
 
 1. Continue reducing `index.ts` by moving tool handlers into grouped handler modules.
 2. Keep compatibility by re-exporting externally-used helper APIs from `index.ts`.
-3. Preserve behavior with `npm --workspace @syncrona/mcp-server test` after each extraction slice.
+3. Preserve behavior with `npm --workspace @syncro-now-ai/mcp-server test` after each extraction slice.

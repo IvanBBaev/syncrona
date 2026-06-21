@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 
 const mockLogFilePush = jest.fn();
 const mockGroupAppFiles = jest.fn();

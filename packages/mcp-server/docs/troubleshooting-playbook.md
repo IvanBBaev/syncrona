@@ -8,7 +8,7 @@ This playbook is optimized for day-to-day operators running Syncrona MCP against
 
 1. Confirm Node runtime: `node -v` must be v22.x.
 2. Confirm credentials are set: `SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`.
-3. Confirm MCP server is built: `npm run --workspace=@syncrona/mcp-server build`.
+3. Confirm MCP server is built: `npm run --workspace=@syncro-now-ai/mcp-server build`.
 4. Confirm MCP is started from the target scoped app `cwd`.
 5. Confirm preflight context: run `sync_get_session_context` then `sync_preflight_check`.
 
@@ -50,8 +50,8 @@ Expected deterministic outputs:
 
 ## Recovery runbook
 
-1. Rebuild MCP server: `npm run --workspace=@syncrona/mcp-server build`.
-2. Re-run tests: `npm run --workspace=@syncrona/mcp-server test`.
-3. Validate quality gates: `npm run --workspace=@syncrona/mcp-server quality-gates`.
+1. Rebuild MCP server: `npm run --workspace=@syncro-now-ai/mcp-server build`.
+2. Re-run tests: `npm run --workspace=@syncro-now-ai/mcp-server test`.
+3. Validate quality gates: `npm run --workspace=@syncro-now-ai/mcp-server quality-gates`.
 4. Regenerate scope knowledge and table dependency report.
 5. Reconfirm preflight and capabilities before next mutation.

@@ -1,4 +1,4 @@
-# @syncrona/typescript-plugin
+# @syncro-now-ai/typescript-plugin
 
 ## Overview
 
@@ -7,7 +7,7 @@ This plugin allows you to run the [TypeScript](https://www.typescriptlang.org/) 
 ## Installation
 
 ```bash
-npm i -D @syncrona/typescript-plugin
+npm i -D @syncro-now-ai/typescript-plugin
 ```
 
 ## Options
@@ -32,7 +32,7 @@ module.exports={
   rules:{
     match:/\.ts$/,
     plugins:[
-      name:"@syncrona/typescript-plugin",
+      name:"@syncro-now-ai/typescript-plugin",
       options:{
         transpile:false
       }

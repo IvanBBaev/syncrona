@@ -1,4 +1,4 @@
-# @syncrona/sn-transport
+# @syncro-now-ai/sn-transport
 
 Shared **ServiceNow transport policy** for Syncrona. This package is the single
 source of truth for the transport-level rules that both ServiceNow HTTP clients

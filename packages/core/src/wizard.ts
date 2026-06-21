@@ -1,4 +1,4 @@
-import { SN, Sync } from "@syncrona/types";
+import { SN, Sync } from "@syncro-now-ai/types";
 import inquirer from "inquirer";
 import * as ConfigManager from "./config";
 import * as AppUtils from "./appUtils";
@@ -133,7 +133,7 @@ export async function startWizard() {
     }
     logger.success(`${filesReady} files ready. Open Claude and start coding.`);
     logger.success(
-      "You are all set up 👍 Try running 'npx syncrona dev' to begin development mode."
+      "You are all set up 👍 Try running 'npx syncro-now-ai dev' to begin development mode."
     );
     await ConfigManager.loadConfigs();
   } catch (e) {

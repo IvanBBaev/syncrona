@@ -1,4 +1,4 @@
-import { Sync, SN } from "@syncrona/types";
+import { Sync, SN } from "@syncro-now-ai/types";
 import axios, { AxiosPromise, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from "axios";
 import rateLimit from "axios-rate-limit";
 import {
@@ -7,7 +7,7 @@ import {
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
   shouldRetryStatus,
-} from "@syncrona/sn-transport";
+} from "@syncro-now-ai/sn-transport";
 import { wait } from "./genericUtils";
 import { logger } from "./Logger";
 import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth";

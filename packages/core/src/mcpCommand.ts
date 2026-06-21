@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import os from "os";
 import path from "path";
@@ -64,7 +64,7 @@ async function resolveMcpServerPath(explicitPath: string | undefined, workspaceR
   }
 
   throw new Error(
-    "Unable to find MCP server entrypoint. Build @syncrona/mcp-server or provide --mcp-server-path."
+    "Unable to find MCP server entrypoint. Build @syncro-now-ai/mcp-server or provide --mcp-server-path."
   );
 }
 

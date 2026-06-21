@@ -33,7 +33,7 @@ README/CLAUDE.md docs-drift, release checklist) — on GitHub via
 
 **Running a single test file:** run it from inside the package — ts-jest is
 configured per-package — e.g. `cd packages/core && npx jest src/tests/foo.test.ts`,
-or `npm --workspace @syncrona/core test`. Running `npx jest <file>` from the
+or `npm --workspace @syncro-now-ai/core test`. Running `npx jest <file>` from the
 **repo root** falls back to Babel and fails to parse TypeScript (`as` casts);
 that's a runner-resolution quirk, not a code error.
 
@@ -43,7 +43,7 @@ that's a runner-resolution quirk, not a code error.
   raised, never lowered.
 - **stdout discipline (MCP):** the MCP server speaks JSON-RPC on stdout —
   log only to stderr (`logger.ts`).
-- **Transport policy lives in `@syncrona/sn-transport`** — never re-hardcode
+- **Transport policy lives in `@syncro-now-ai/sn-transport`** — never re-hardcode
   scoped prefixes, retry statuses, or endpoint-not-found statuses in a client.
 - **Command tables drift-checked:** changing the CLI surface requires updating
   README and CLAUDE.md in the same change, or CI fails.

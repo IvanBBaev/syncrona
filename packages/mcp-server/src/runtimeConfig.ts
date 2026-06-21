@@ -1,7 +1,7 @@
 import path from "path";
 
 export const DEFAULT_TIMEOUT_MS = 120000;
-export const SERVER_NAME = "syncrona-mcp-server";
+export const SERVER_NAME = "syncro-now-ai-mcp-server";
 export const SERVER_VERSION = "0.1.0";
 export const TOOL_CONTRACT_VERSION = "1.0.0";
 export const PRIMARY_SYNCRO_CLI = "syncrona";

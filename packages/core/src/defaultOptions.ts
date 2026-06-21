@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 const excludes: Sync.TablePropMap = {
   sys_scope_privilege: true,
   sys_dictionary: true,

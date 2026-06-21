@@ -1,5 +1,5 @@
 /**
- * @syncrona/sn-transport — shared ServiceNow transport policy.
+ * @syncro-now-ai/sn-transport — shared ServiceNow transport policy.
  *
  * The Syncrona project ships two independent ServiceNow HTTP clients: the core
  * CLI client (`packages/core/src/snClient.ts`, built on axios) and the MCP
