@@ -145,9 +145,14 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       test:coverage:mcp uses 70 (measured 74.99%).
 - [ ] **G13. Mutation testing** — Stryker on credential-store + sn-transport
       (small, critical packages) would show whether the assertions actually guard.
-- [ ] **G14. Performance baseline** — no benchmark (manifest build over N tables,
-      push of N files); speed regressions are invisible. A single `npm run bench`
-      with a fixed dataset + threshold in CI.
+- [x] **G14. Performance baseline** — DONE 2026-06-21: `npm run bench`
+      (scripts/bench.mjs) processes a deterministic synthetic manifest (default
+      40 tables × 80 records = 3200 records / 4280 files) through the pure
+      summarize → Mermaid → doc-body pipeline; prints median/p95/mean + runs/sec
+      after warm-up. Tunable (--tables/--records/--iterations) and gateable
+      (--max-ms exits non-zero) so it can run as a non-blocking CI job. No new
+      deps; imports the compiled core. (Kept out of the blocking `check` chain on
+      purpose — wall-clock thresholds are flaky across CI runners.)
 - [x] **G15. OS matrix in CI** — DONE 2026-06-13: live CI is now
       .github/workflows/ci.yml (the repo lives on GitHub; azure-pipelines.yml
       does not run there), matrix ubuntu-latest + macos-latest, Node from

@@ -29,6 +29,7 @@
     "quality:mcp": "npm --workspace @syncro-now-ai/mcp-server run quality-gates",
     "quality:all": "npm run quality:core && npm run quality:mcp",
     "check": "npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage:gates && npm run quality:all",
+    "bench": "npm run build && node scripts/bench.mjs",
     "mcp:build": "npm --workspace @syncro-now-ai/mcp-server run build",
     "release:core": "npm run build && npm publish --workspace @syncro-now-ai/core --access public && bash scripts/tag-core-release.sh",
     "release:core:dry": "npm run build && npm publish --workspace @syncro-now-ai/core --access public --dry-run && bash scripts/tag-core-release.sh --dry-run",
