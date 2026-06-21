@@ -169,6 +169,16 @@ export class ConfigStore {
     const cfg = await this.loadConfig(noConfigPath);
     if (cfg) {
       this.state.config = cfg;
+      if (cfg.flat === true) {
+        // DX17: the flat layout is shipped as a preview — the conversion helpers
+        // exist and are tested, but pull/push do not yet apply them. Warn so a
+        // user who sets `flat: true` is not silently given the folder layout.
+        logger.warn(
+          "Config `flat: true` is an experimental preview — the flat " +
+            "<table>/<record>~<field> layout is not yet applied automatically on " +
+            "pull/push (see the README \"Flat layout\" section)."
+        );
+      }
     }
 
     await this.loadEnvPath();

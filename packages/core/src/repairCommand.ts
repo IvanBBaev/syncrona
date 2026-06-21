@@ -6,8 +6,7 @@ import * as AppUtils from "./appUtils";
 import * as FileUtils from "./FileUtils";
 import { logger } from "./Logger";
 import { formatTable } from "./genericUtils";
-import { setLogLevel } from "./commandHelpers";
-import { classifyError } from "./errorTaxonomy";
+import { setLogLevel, logErrorHint } from "./commandHelpers";
 
 export type RepairCmdArgs = Sync.SharedCmdArgs & {
   apply?: boolean;
@@ -132,7 +131,7 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message || "Repair failed with an unknown error.");
-    logger.info(`→ ${classifyError(e).hint}`);
+    logErrorHint(e); // DX19: actionable next step based on error category
     process.exitCode = 1;
   }
 }

@@ -93,6 +93,14 @@ export function logScopedEndpointCapability(context: string): void {
   );
 }
 
+// DX19: single home for the actionable next-step line so the `→ <hint>`
+// presentation policy is not copy-pasted across the CLI error sinks (it would
+// otherwise drift). classifyError stays pure (no logger); this is the one
+// place that renders + logs it.
+export function logErrorHint(e: unknown): void {
+  logger.info(`→ ${classifyError(e).hint}`);
+}
+
 export async function scopeCheck(
   successFunc: () => void | Promise<void>,
   swapScopes: boolean = false
@@ -114,8 +122,7 @@ export async function scopeCheck(
     logger.error(
       "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncro-now-ai init`"
     );
-    // DX19: categorize the failure and surface an actionable next step.
-    logger.info(`→ ${classifyError(e).hint}`);
+    logErrorHint(e); // DX19: actionable next step
     process.exitCode = 1;
     return;
   }
@@ -130,8 +137,7 @@ export async function scopeCheck(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message || "Command failed with an unknown error.");
-    // DX19: categorize the failure and surface an actionable next step.
-    logger.info(`→ ${classifyError(e).hint}`);
+    logErrorHint(e); // DX19: actionable next step
     process.exitCode = 1;
   }
 }
