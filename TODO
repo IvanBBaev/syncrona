@@ -5,21 +5,40 @@
 2. Completed work is tracked in DONE.
 
 ## Goal: real-world readiness 9.5/10
-Current: ~8.5/10 — the AR review (2026-06-11) and the CR fix series (2026-06-12) are
-applied; what remains is distribution polish (D5), a few manual/infrastructure
-residuals, and the DX backlog.
+Current: ~9/10 — as of 2026-06-21 the engineering-completable backlog is closed:
+D5 (keychain default + Homebrew/Windows scaffolding), AR11, G13, QA-2 and the DX
+items (DX17 core, DX18 repair, DX19, DX24) are done; `npm run check` is green and
+prod `npm audit` is clean. What remains is NOT engineering-completable offline:
+AR9 (deferred by decision), CR22 + DX17 pipeline wiring + Homebrew/Windows real
+verification (need a live instance / first publish / Windows host), and the BA1–8
+owner/business decisions (incl. npm publish, which is owner-gated).
 
 ---
 
 ## PHASE D — Distribution polish (remainder)
 
 ### D5. Distribution polish
-- [~] macOS Keychain for the CredentialStore — AR2 DONE 2026-06-21 (opt-in keychain via @napi-rs/keyring + SYNCRONA_STORE_KEY; see DONE). Remaining for D5: make the keychain the default backend.
-- [ ] Homebrew tap: syncrona/homebrew-tap repo + Formula
-- [ ] GitHub Actions to auto-update the Homebrew formula on each release
-- [ ] Windows: PowerShell install script + Windows Credential Manager
+- [x] macOS Keychain for the CredentialStore — DONE 2026-06-21. Keychain is now
+      the DEFAULT at-rest backend (was opt-in): isKeychainEnabled defaults on,
+      opt out with SYNCRONA_USE_KEYCHAIN=0, graceful fallback to machine key when
+      @napi-rs/keyring/keychain is unavailable; decrypt retries with the machine
+      key so pre-D5 stores keep opening. + clearStoreKeyCache, hermetic test
+      harness (jest.setup.js forces keychain off; storeKey/storeKeyResolution
+      mock the keyring). Docs synced (core README, packaging README, install.ps1).
+- [x] Homebrew formula — DONE (code-complete, UNVERIFIED) 2026-06-21:
+      packaging/homebrew/syncro-now-ai.rb (Node-CLI pattern). Cannot brew-install
+      until first npm publish + tap repo exist.
+- [x] GitHub Actions to auto-update the Homebrew formula on each release — DONE
+      2026-06-21: dormant `update-homebrew` job in release.yml (computes sha256
+      from the published tarball, renders the formula, pushes to the tap). Gated
+      on HOMEBREW_TAP_READY var + HOMEBREW_TAP_TOKEN secret.
+- [x] Windows: PowerShell install script + Windows Credential Manager — DONE
+      2026-06-21: packaging/windows/install.ps1 (Node check + global npm install);
+      Windows Credential Manager comes from the cross-platform @napi-rs/keyring
+      used by D5. UNVERIFIED (no Windows host).
 
-**Definition of Done for Phase D:** `brew install syncrona && syncrona login && syncrona init` works.
+**Definition of Done for Phase D:** `brew install syncrona && syncrona login && syncrona init` works
+(blocked only on the first npm publish + tap repo — both owner-gated).
 
 ---
 
@@ -31,14 +50,16 @@ residuals, and the DX backlog.
       lingers on disk. No evidence of a real password — rotate only if real
       credentials were ever placed there manually. See also CR2.
 - [x] AR2 (residual): DONE 2026-06-21 — at-rest key resolves SYNCRONA_STORE_KEY > OS keychain (opt-in SYNCRONA_USE_KEYCHAIN, @napi-rs/keyring) > legacy machine key, with decrypt fallback. See DONE.
-- [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — HIGH RISK
-      (88 tests against dist); the dispatch logic already has dedicated tests.
-- [ ] AR11: Encapsulate module-level mutable state (TOOL_METRICS, caches) in an
-      explicit context object. Note 2026-06-12: the secrets cache in servicenowCore
-      (CR21) has a reset function (clearServiceNowSecretsCache), the prefix cache has
-      clearScopedApiPrefixCache — follow that model. The modular architecture
-      (cliCommands.ts / toolModules.ts registries, docs/ARCHITECTURE.md §5) is in
-      place — AR11 is its natural continuation.
+- [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — DEFERRED
+      2026-06-21 (conscious decision, not a gap): HIGH RISK (88 tests against
+      dist) for ZERO behavior change; the dispatch logic already has dedicated
+      tests. New tests are written in the existing node:test/dist style instead.
+- [x] AR11: DONE 2026-06-21 — TOOL_METRICS (the in-memory ring buffer) is no
+      longer an exported, externally-spliced array. It is encapsulated behind
+      getToolMetrics / clearToolMetrics / replaceToolMetrics / pushToolMetric in
+      toolService.ts (mirrors clearServiceNowSecretsCache / clearScopedApiPrefixCache),
+      so it is mutated in one place and reset/rehydrated explicitly. index.ts and
+      toolModules.ts use the accessors; 5 tests (toolMetrics.test.js).
 
 ## Remaining from CODE REVIEW CR1–CR30 (2026-06-12) — implementation in DONE
 - [x] CR1 (residual): DONE 2026-06-12 — all work is committed (8 commits) and the
@@ -150,8 +171,12 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [x] **G12. Branch coverage for mcp-server** — DONE 2026-06-12:
       check-coverage-gate.js accepts --branch-threshold (opt-in); root
       test:coverage:mcp uses 70 (measured 74.99%).
-- [ ] **G13. Mutation testing** — Stryker on credential-store + sn-transport
-      (small, critical packages) would show whether the assertions actually guard.
+- [x] **G13. Mutation testing** — DONE 2026-06-21: Stryker (jest runner,
+      non-blocking break:null, `npm run test:mutation`) on the two foundation
+      packages, which also got their first unit tests. Baseline scores:
+      sn-transport 80.2%, credential-store 47.0% total (covered 70%; the
+      uncovered remainder is the keychain/native path). Stryker added as a devDep
+      (does not affect the prod `npm audit --omit=dev` gate).
 - [x] **G14. Performance baseline** — DONE 2026-06-21: `npm run bench`
       (scripts/bench.mjs) processes a deterministic synthetic manifest (default
       40 tables × 80 records = 3200 records / 4280 files) through the pure
@@ -251,9 +276,12 @@ Findings prefixed ARCH-/DEV-/QA-.
       test locked it — a refactor could quietly restore the dangerous default
       fallback. Added a regression test (syntactically broken config → rejects)
       to configValidation.test.ts. 5/5 green.
-- [ ] **QA-2. Thin handler coverage** — 5 mcp test files for 11 handlers; mcp
-      tests run against compiled `dist/` not `src/` (AR9, known). Adding
-      per-handler tests against dist is the path; tracked, not done here.
+- [x] **QA-2. Thin handler coverage** — DONE 2026-06-21: added 5 per-handler
+      test files (against dist, per the AR9 decision) for the weakest handlers —
+      serviceNowCrud 2%→90%, scriptAnalysis 8%→100%, developerTool 10%→55%,
+      metadataAnalysis 3%→42%, sessionHandlers 3%→40%. MCP line coverage
+      82.6%→86.4%, 175→228 tests. Validation/guard/dry-run paths are covered
+      without the network; happy-path network calls stay with the e2e suites.
 - [x] **QA-3. Single-file `npx jest` from repo root** — DONE 2026-06-13:
       documented in CONTRIBUTING ("Running a single test file") — run from inside
       the package or via `npm --workspace`. Runner-resolution quirk, not a bug.
@@ -451,14 +479,25 @@ Docs, Workflow, Error Handling, MCP.
 **DX17: The file structure is strange for new users**
 - "Records are shown as folders…", but users expect a flat structure
   (src/scripts/my.js).
-- [ ] Add a `--flat` mode: flat locally, converted automatically before push/pull.
+- [~] `--flat` mode — CORE DONE 2026-06-21: lossless, reversible conversion
+      (flatLayout.ts folderRelToFlat / flatRelToFolder, `~` field separator since
+      it never appears in a dictionary field name; 13 round-trip tests) + `flat`
+      config flag (shape-validated, getFlatMode) + README "Flat layout" docs.
+      REMAINING: the automatic pull/push pipeline wiring touches the hot
+      getFileContextFromPath parser + the write path and needs a live round-trip
+      against an instance to validate safely — kept as an opt-in preview until then.
 
 **DX18: Error recovery is undocumented**
 - Partial push failure (network dies). The user does not know whether a retry is safe.
 - Note 2026-06-12: checkpoint/resume no longer leaves bogus state after a declined
   prompt (CR5); the lock is released even on errors (CR6); behavior is documented
   in the core README ("Push recovery and locking").
-- [ ] `syncrona repair` should compare manifest vs actual files and repair.
+- [x] `syncrona repair` — DONE 2026-06-21: new command (cliCommands registry +
+      repairCommand.ts) reconciles the manifest against local files — reports
+      missing (in manifest, not on disk) and orphan (on disk, no manifest record)
+      files. `--apply` re-downloads missing (reuses processMissingFiles),
+      `--apply --prune` deletes orphans (confirm unless `--ci`). Report-only by
+      default; `--dry-run` overrides `--apply`. 6 tests; README + CLAUDE.md (19 cmds).
 
 ---
 
@@ -472,9 +511,10 @@ Docs, Workflow, Error Handling, MCP.
 - [x] Error categorization + actionable next steps — DONE 2026-06-21:
       errorTaxonomy.ts `classifyError` sorts any failure into network / auth /
       config / data / unknown (by transport code, then HTTP status, then message
-      keywords) and the top-level CLI error boundary (commander.ts runHandler)
-      now prints a `→ <hint>` next-step line after the error. Pure + tested
-      (errorTaxonomy.test.ts, 5 tests).
+      keywords). The `→ <hint>` next-step line is now printed at ALL three CLI
+      error sinks: commander.ts runHandler, commandHelpers.ts scopeCheck (both the
+      scope-check and command-body catches, covering dev/refresh/deploy/build) and
+      pushCommand.ts. Pure + tested (errorTaxonomy.test.ts, 5 tests).
 
 **DX20: Silent error swallowing during credential loading**
 - As AR10 noted, secrets-loading errors are swallowed. Users do not know whether
@@ -530,8 +570,10 @@ Docs, Workflow, Error Handling, MCP.
       pushConcurrency, clamped 1-50, falls back to 10. resolvePushConcurrency
       takes an optional override; pushFiles threads args.pushConcurrency (deploy
       and watch keep the config default). 4 unit tests + help example.
-- [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)". (push already has a
-      progress tick via getProgTick; a richer ETA bar remains.)
+- [x] Progress bar ETA — DONE 2026-06-21: getProgTick now renders
+      `:current/:total (:percent) ~<eta> left`, with the ETA derived from observed
+      throughput (elapsed / completed × remaining) via formatDuration
+      (genericUtils, tested: s / m / h, clamps non-finite). No new dependency.
 
 ---
 
