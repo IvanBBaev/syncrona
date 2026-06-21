@@ -1,6 +1,7 @@
 import yargs from "yargs";
 import type { Argv, Arguments } from "yargs";
 import { logger } from "./Logger";
+import { classifyError } from "./errorTaxonomy";
 import {
   CLI_COMMANDS,
   SHARED_CLI_OPTIONS,
@@ -18,6 +19,8 @@ const runHandler =
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e);
         logger.error(message || "Command failed with an unknown error.");
+        // DX19: append an actionable next step based on the error category.
+        logger.info(`→ ${classifyError(e).hint}`);
         process.exitCode = 1;
       });
   };
