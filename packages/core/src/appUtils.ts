@@ -590,27 +590,34 @@ export const pushFiles = async (
 export const summarizeRecord = (table: string, recDescriptor: string): string =>
   `${table} > ${recDescriptor}`;
 
-const getProgTick = (
+// Exported for tests (progressTick.test.ts renders this with a faked TTY to lock
+// DEV-3: the format token must not start with a built-in progress token).
+export const getProgTick = (
   logLevel: string,
-  total: number
+  total: number,
+  stream: NodeJS.WritableStream = process.stderr
 ): (() => void) | undefined => {
   if (logLevel === "info") {
     // DX24: show count and an ETA derived from observed throughput, e.g.
     //   [=====       ] 30/100 (30%) ~2m 10s left
-    const progBar = new ProgressBar(":bar :current/:total (:percent) ~:etaHuman left", {
+    // NB: the token name must not start with a built-in progress token (`:eta`,
+    // `:current`, …) — `:etaHuman` would be parsed as `:eta` + "Human". `:remaining`
+    // is collision-free.
+    const progBar = new ProgressBar(":bar :current/:total (:percent) ~:remaining left", {
       total,
       width: 40,
+      stream,
     });
     const startedAt = Date.now();
     let completed = 0;
     return () => {
       completed += 1;
       const elapsed = Date.now() - startedAt;
-      const remaining =
+      const remainingMs =
         completed > 0 && completed < total
           ? (elapsed / completed) * (total - completed)
           : 0;
-      progBar.tick({ etaHuman: formatDuration(remaining) });
+      progBar.tick({ remaining: formatDuration(remainingMs) });
     };
   }
   // no-op at other log levels
