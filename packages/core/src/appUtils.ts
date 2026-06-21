@@ -23,6 +23,12 @@ import {
 } from "./manifestBuilder";
 import { logger } from "./Logger";
 import { aggregateErrorMessages, allSettled } from "./genericUtils";
+import {
+  DownloadCheckpoint,
+  readDownloadCheckpoint,
+  writeDownloadCheckpoint,
+  deleteDownloadCheckpoint,
+} from "./downloadCheckpoint";
 
 const processFilesInManRec = async (
   recPath: string,
@@ -305,44 +311,108 @@ export const buildFullMissingMap = (
   return missing;
 };
 
-// Fetch and write the contents for every file in the manifest. Relies on the
-// bulk download endpoint (with a Table API fallback) rather than depending on
-// the manifest response to embed file contents.
+// Injected dependencies for the resumable download loop, so the
+// progress/checkpoint/skip logic can be tested without a network or the disk.
+export interface DownloadTableDeps {
+  /** Fetch the file contents for a single-table missing map. */
+  fetchTable: (tableMissing: SN.MissingFileTableMap) => Promise<SN.TableMap>;
+  /** Write a fetched table's files to disk. */
+  writeTable: (files: SN.TableMap) => Promise<void>;
+  readCheckpoint: (scope: string) => Promise<DownloadCheckpoint | null>;
+  writeCheckpoint: (checkpoint: DownloadCheckpoint) => Promise<void>;
+  deleteCheckpoint: () => Promise<void>;
+}
+
+// G3: download one table at a time, recording each completed table in a
+// checkpoint so an interrupted run resumes instead of starting over, and
+// reporting per-table progress. On full success the checkpoint is cleared.
+export const downloadTablesWithResume = async (
+  missing: SN.MissingFileTableMap,
+  scope: string,
+  deps: DownloadTableDeps
+): Promise<void> => {
+  const allTables = Object.keys(missing);
+  // DX21: report download volume so a slow pull is explainable.
+  const totalRecords = allTables.reduce(
+    (sum, table) => sum + Object.keys(missing[table]).length,
+    0
+  );
+
+  const checkpoint = await deps.readCheckpoint(scope);
+  const completed = new Set<string>(checkpoint?.completedTables ?? []);
+  const pending = allTables.filter((table) => !completed.has(table));
+
+  if (completed.size > 0) {
+    logger.info(
+      `Resuming download for ${scope}: ${completed.size} table(s) already done, ${pending.length} remaining.`
+    );
+  } else {
+    logger.info(
+      `Downloading ${totalRecords} record(s) across ${allTables.length} table(s)...`
+    );
+  }
+
+  for (let i = 0; i < pending.length; i += 1) {
+    const table = pending[i];
+    const recordCount = Object.keys(missing[table]).length;
+    logger.info(`  [${i + 1}/${pending.length}] ${table} (${recordCount} record(s))`);
+
+    // A non-skippable error here propagates with the checkpoint intact, so the
+    // next run resumes at this table instead of redoing the earlier ones.
+    const files = await deps.fetchTable({
+      [table]: missing[table],
+    } as SN.MissingFileTableMap);
+    await deps.writeTable(files);
+
+    completed.add(table);
+    await deps.writeCheckpoint({ scope, completedTables: [...completed] });
+  }
+
+  await deps.deleteCheckpoint();
+};
+
+// Fetch and write the contents for every file in the manifest, one table at a
+// time so progress is visible and an interrupted pull can resume (G3). Uses the
+// bulk download endpoint per table, falling back to the Table API once the
+// scoped endpoint is found to be unavailable.
 export const downloadAllFiles = async (
   manifest: SN.AppManifest,
   instanceProfile?: string
 ): Promise<void> => {
   const missing = buildFullMissingMap(manifest);
-  // DX21: report download volume so a slow pull is explainable.
-  const downloadRecords = Object.values(missing).reduce(
-    (sum, recs) => sum + Object.keys(recs).length,
-    0
-  );
-  logger.info(
-    `Downloading ${downloadRecords} record(s) across ${Object.keys(missing).length} table(s)...`
-  );
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient(instanceProfile);
 
-  let filesToProcess: SN.TableMap;
-  try {
-    filesToProcess = await unwrapSNResponse(
-      client.getMissingFiles(missing, tableOptions)
-    );
-  } catch (e) {
-    if (isScopedEndpointUnavailableError(e)) {
-      logger.info("Custom scope not found — fetching files from Table API...");
-      filesToProcess = await buildBulkDownloadFromTableAPI(
-        missing,
-        client,
-        tableOptions
+  // Probe the scoped endpoint once; after the first "unavailable" go straight to
+  // the Table API for the remaining tables instead of re-probing each time.
+  let scopedEndpointUnavailable = false;
+  const fetchTable = async (
+    tableMissing: SN.MissingFileTableMap
+  ): Promise<SN.TableMap> => {
+    if (scopedEndpointUnavailable) {
+      return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+    }
+    try {
+      return await unwrapSNResponse(
+        client.getMissingFiles(tableMissing, tableOptions)
       );
-    } else {
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
+        logger.info("Custom scope not found — fetching files from Table API...");
+        scopedEndpointUnavailable = true;
+        return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+      }
       throw e;
     }
-  }
+  };
 
-  await processTablesInManifest(filesToProcess, true);
+  await downloadTablesWithResume(missing, manifest.scope, {
+    fetchTable,
+    writeTable: (files) => processTablesInManifest(files, true),
+    readCheckpoint: readDownloadCheckpoint,
+    writeCheckpoint: writeDownloadCheckpoint,
+    deleteCheckpoint: deleteDownloadCheckpoint,
+  });
 };
 
 export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {

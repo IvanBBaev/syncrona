@@ -616,6 +616,9 @@ scope directory, and share `node_modules`/plugins at the root. Full guide:
   so a bad download is a `git checkout` away.
 - **A push failed partway** — fix the cause and run `syncro-now-ai push` again; it
   offers to resume only the records that failed last time.
+- **A download failed partway** — just run `syncro-now-ai download <scope>` again;
+  it records completed tables in `sync.download.checkpoint.json` and resumes with
+  the tables it has not fetched yet instead of starting over.
 - **Slow network** — `syncro-now-ai dev --refresh-interval 60` polls less often, and
   `syncro-now-ai push --concurrency 5` throttles parallel pushes.
 - **Environment problems** — `syncro-now-ai check-env` verifies Node, platform/WSL,
