@@ -1,6 +1,6 @@
 # Syncrona — Product State
 
-> Last updated: 2026-06-12. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Last updated: 2026-06-21. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
 
 ## TL;DR
@@ -12,9 +12,9 @@
 | MCP server | ~60 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
 | Tests | **324/324 green** — core: 22 suites / 152 tests (jest, incl. dist-binary e2e smoke); mcp: 172 tests (node:test vs dist) |
 | Coverage | core **70.3%** lines / mcp **82.7%** lines (≈75–77% combined) — see [Metrics snapshot](#metrics-snapshot-2026-06-12) |
-| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; `npm audit --omit=dev` = **0 vulnerabilities** |
-| Version control | git initialized 2026-06-12 (baseline commit); **no remote yet** |
-| Biggest gaps | distribution (Homebrew/Keychain/Windows), gap backlog G1–G16 (OAuth, E2E, CI matrix…), DX backlog (DX1–DX24), credential at-rest strength |
+| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
+| Version control | git on `main`; remote `origin` → github.com/LeassTaTT/syncrona (**private**) |
+| Biggest gaps | distribution (Homebrew/Windows), live-instance compatibility matrix, DX backlog (DX1–DX24); **owner-gated** publish decisions (IP/provenance, brand, npm scope) |
 
 ## Metrics snapshot (2026-06-12)
 
@@ -24,8 +24,8 @@ Re-measure with `npx jest --coverage` (core) and
 
 | Package | Lines | Statements | Branches | Functions | Tests | Gate |
 |---|---|---|---|---|---|---|
-| @syncrona/core | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
-| @syncrona/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
+| @syncro-now-ai/core | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
+| @syncro-now-ai/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
 
 Notes:
 - `credential-store` and `sn-transport` are covered through their consumers'
@@ -64,7 +64,7 @@ timeline
 
 ## What works today
 
-### CLI (`npx syncrona …`)
+### CLI (`npx syncro-now-ai …`)
 
 | Command | State | Notes |
 |---|---|---|
@@ -100,11 +100,11 @@ companion scoped app via the Table-API fallback layer.
 
 ### Shared foundation
 
-- `@syncrona/credential-store` — single source of truth for at-rest crypto
+- `@syncro-now-ai/credential-store` — single source of truth for at-rest crypto
   (AES-256-GCM, machine-derived key), async API for the CLI + sync API for
   the MCP server. *Known limitation: key derivation is obfuscation-grade
   until Keychain lands (AR2/D5).*
-- `@syncrona/sn-transport` — shared scoped-prefix, retry-status, and
+- `@syncro-now-ai/sn-transport` — shared scoped-prefix, retry-status, and
   endpoint-not-found policies consumed by both HTTP clients.
 
 ## 2026-06-12 fix series — what changed (CR1–CR30)
@@ -145,23 +145,23 @@ mindmap
 
 ## What is NOT done
 
-1. **D5 distribution** — Homebrew tap + formula automation, macOS Keychain
-   (keytar), Windows installer + Credential Manager. This is the main blocker
-   for the "brew install syncrona" definition of done.
+1. **D5 distribution** — Homebrew tap + formula automation and a native-Windows
+   installer + Credential Manager. (macOS/Windows/libsecret keychain support for
+   the at-rest key shipped via AR2, opt-in.) This is the main blocker for the
+   "brew install syncrona" definition of done.
 2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2);
-   pick a git remote/backup (CR1); verify the `sys.scripts.do` fallback against
-   a live instance (CR22).
+   verify the `sys.scripts.do` fallback against a live instance (CR22).
 3. **Engineering debt accepted knowingly** — mcp tests run against `dist/`
    (AR9, high-risk migration); module-level state pending a context object
-   (AR11); coverage ratchet at 68% heading to 80 (CR26).
+   (AR11); coverage ratchet heading to 80 (CR26).
 4. **Gap backlog G1–G16** (triple analysis, 2026-06-12 — details and order in
-   `TODO`): OAuth 2.0 auth (G1), config schema validation (G2), download
-   resume/progress (G3), MCP rate limiting (G4), typed CLI args (G5), release
-   automation (G6), CLI telemetry (G7), plugin API contract (G8), proxy/TLS
-   support (G9), machine-enforced module boundaries (G10), E2E tests against
-   an instance (G11), mcp branch coverage (G12), mutation testing (G13),
-   performance baselines (G14), OS matrix in CI (G15), security automation in
-   CI — audit step + secret scanning (G16).
+   `TODO`). **Shipped since:** OAuth 2.0 (G1), config schema validation (G2),
+   MCP rate limiting (G4), typed CLI args (G5), release automation via Changesets
+   (G6), machine-enforced module boundaries (G10), mcp branch coverage (G12), OS
+   matrix in CI (G15), security automation (G16). **Remaining:** download
+   resume/progress (G3), CLI telemetry (G7), plugin API contract (G8), proxy/TLS
+   support (G9), E2E tests against an instance (G11), mutation testing (G13),
+   performance baselines (G14).
 5. **DX backlog (DX1–DX24)** — onboarding (`check-env`, credential-source
    visibility), help examples, multi-instance guide, plugin-dev docs, error
    taxonomy, progress bars. Quick wins shortlisted in `TODO`.
@@ -169,7 +169,8 @@ mindmap
 ## Operating constraints
 
 - Node ≥ 22, npm ≥ 10 (enforced via `engines`; CI runs Node 22).
-- ServiceNow auth is Basic (user/password); OAuth is not implemented.
+- ServiceNow auth defaults to Basic (user/password); OAuth 2.0 is available
+  opt-in on both the CLI and the MCP server (`SN_OAUTH_*`).
 - The MCP safety layer is a guardrail, not a sandbox — run it with credentials
   you would trust the calling agent to hold (see mcp README "Safety note").
 - Windows support is best-effort (WSL recommended; `differentiatorField`
