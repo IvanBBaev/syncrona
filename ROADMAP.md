@@ -12,9 +12,11 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `0.4.2-alpha.8` (private alpha)
-- **Engineering readiness:** ~8.5/10 — gate suite green, 0 production-dependency
-  vulnerabilities, OAuth on CLI + MCP, CI hardened.
+- **Current version:** `0.4.2-alpha.8` (public alpha)
+- **Engineering readiness:** ~9/10 — gate suite green, 0 production-dependency
+  vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
+  a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8) and an
+  error taxonomy (DX19) now shipped.
 - **Last updated:** 2026-06-21
 
 ## Status legend
@@ -72,7 +74,7 @@ applications. The following are **shipped**:
 - GitHub Actions CI matrix (Ubuntu + macOS), least-privilege token, all actions
   SHA-pinned.
 - **Security automation:** `npm audit` gate (0 high/critical in prod deps),
-  gitleaks secret scanning, CodeQL SAST (activates when the repo goes public),
+  gitleaks secret scanning, CodeQL SAST (active — the repo is public),
   Dependabot.
 
 ### Docs & governance ✅
@@ -97,8 +99,9 @@ mostly by **owner decisions**, with a small amount of engineering left.
   `syncro-now-ai-mcp-server`. On-disk conventions (`.syncrona*`) and the
   versioned at-rest crypto salt are intentionally left unchanged (no migration
   pre-publish). Repo rename to match is the only owner step left (cosmetic).
-- 🔒 **Repository → public** — flip only after IP clearance. Also activates the
-  CodeQL workflow (currently guarded to public repos).
+- ✅ **Repository → public** — done 2026-06-21; the repo is now public and the
+  CodeQL workflow (guarded to public repos) activates automatically. (Confirm IP
+  clearance below is settled, since it was the intended gate for this step.)
 - 🔒 **npm publish + 2FA** (D5) — claim the `@syncro-now-ai` scope, enable 2FA,
   then run the `release` workflow (Changesets publish with provenance).
 - 🔒 **Business model / sustainability** (BA5) — OSS-only vs OSS + paid support;
@@ -191,7 +194,7 @@ Engineering-completable, not release-blocking; sequenced by demand.
 
 ---
 
-> **Note:** SyncroNow AI is currently a **private** repository. Public-facing items
-> (npm publish, repo visibility, CodeQL activation, Homebrew) all sit behind the
-> IP/provenance and brand decisions above. Internal item IDs (G*, AR*, CR*, DX*,
-> BA*) reference [`TODO`](TODO) and [`DONE`](DONE).
+> **Note:** SyncroNow AI is now a **public** repository (2026-06-21); CodeQL is
+> active. The remaining public-facing items (npm publish, Homebrew) still sit
+> behind the IP/provenance and business decisions above. Internal item IDs
+> (G*, AR*, CR*, DX*, BA*) reference [`TODO`](TODO) and [`DONE`](DONE).

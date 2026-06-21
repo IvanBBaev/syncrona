@@ -24,7 +24,8 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   strong protection.
 - ✅ **Security policy & data-handling** — SECURITY.md (disclosure + what is
   read/written + opt-in diagnostic log).
-- 🟡 **Secret scanning in CI** — add gitleaks (external action) (G16 remainder).
+- ✅ **Secret scanning in CI** — gitleaks runs in the GitHub Actions workflow
+  (full-history job, fixtures allowlisted via `.gitleaks.toml`).
 - ✅ **Dependency audit gate** — `npm audit --omit=dev --audit-level=high` = 0,
   enforced in CI.
 
@@ -67,7 +68,8 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - 🔴 **IP / provenance clearance (BA8 / R1)** — verify ownership of pre-existing
   code and the right to distribute publicly **before the repo goes public**.
   "ServiceNow" trademark disclaimer is in place.
-- 🔴 **Repository goes public** — currently private; flip only after IP clearance.
+- ✅ **Repository public** — done 2026-06-21; CodeQL now active. (Was gated on IP
+  clearance below — confirm that clearance is settled.)
 - 🔴 **Brand unification (BA6)** — `syncro-now-ai` / `@syncro-now-ai/*` / `syncrona`
   CLI; pick one name before a public launch (changes the published package name).
 - 🟡 **Per-package READMEs** — npm landing pages for published packages.
