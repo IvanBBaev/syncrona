@@ -3,7 +3,7 @@ import path from "path";
 import {
   getActiveInstanceSync,
   loadCredentialsSync,
-} from "@syncrona/credential-store";
+} from "@syncro-now-ai/credential-store";
 import {
   DEFAULT_SCOPED_API_PREFIXES,
   MAX_REQUESTS_PER_SECOND,
@@ -16,7 +16,7 @@ import {
   type TokenManager,
   type TokenPoster,
   type OAuthTokenResponse,
-} from "@syncrona/sn-transport";
+} from "@syncro-now-ai/sn-transport";
 import { logger } from "./logger";
 
 type SNConfig = {
@@ -264,7 +264,7 @@ export function resolveServiceNowSecrets(
 
   if (!instance || !user || !password) {
     throw new Error(
-      "Missing ServiceNow credentials. Provide SN_INSTANCE, SN_USER, SN_PASSWORD via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root."
+      "Missing ServiceNow credentials. Provide SN_INSTANCE, SN_USER, SN_PASSWORD via env, auth store (syncro-now-ai login), .syncrona-mcp/secrets.json, or .env in project root."
     );
   }
 

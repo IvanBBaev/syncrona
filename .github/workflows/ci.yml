@@ -45,10 +45,10 @@ jobs:
       - name: Lint core + mcp-server (zero warnings)
         run: npm run lint
 
-      - name: Test @syncrona/core
+      - name: Test @syncro-now-ai/core
         run: npm run test:core
 
-      - name: Test @syncrona/mcp-server
+      - name: Test @syncro-now-ai/mcp-server
         run: npm run test:mcp
 
       - name: Coverage gates (core jest thresholds 70/57/61/70, mcp lines>=70% branches>=70%)

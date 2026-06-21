@@ -1,5 +1,5 @@
-import { SN, Sync } from "@syncrona/types";
-import { isEndpointNotFoundStatus } from "@syncrona/sn-transport";
+import { SN, Sync } from "@syncro-now-ai/types";
+import { isEndpointNotFoundStatus } from "@syncro-now-ai/sn-transport";
 import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap";
 import type { SNClient } from "./snClient";
 import { getErrorResponseStatus } from "./snClient";

@@ -1,4 +1,4 @@
-# @syncrona/babel-plugin
+# @syncro-now-ai/babel-plugin
 
 ## Overview
 
@@ -9,7 +9,7 @@ Whatever Babel plugins and presets you use, you still need to `npm install` them
 ## Installation
 
 ```bash
-npm i -D @syncrona/babel-plugin
+npm i -D @syncro-now-ai/babel-plugin
 ```
 
 ## Options
@@ -36,12 +36,12 @@ module.exports={
   rules:{
     match:/\.ts$/,
     plugins:[
-      name:"@syncrona/babel-plugin",
+      name:"@syncro-now-ai/babel-plugin",
       //Babel options. Numbering shows order of execution
       options:{
         presets: [
           //6. Sanitize output code for ServiceNow
-          "@syncrona/servicenow",
+          "@syncro-now-ai/servicenow",
           //5. Babel env preset, transforms syntactic sugar to valid older javascript
           "@babel/env",
           //4. Typescript preset. Removes type information and makes it valid javascript
@@ -49,7 +49,7 @@ module.exports={
           ],
         plugins: [
           //1. Remove import/export statements used for type inference
-          "@syncrona/remove-modules",
+          "@syncro-now-ai/remove-modules",
           //2 and 3. Required babel plugins for typescript
           "@babel/proposal-class-properties",
           "@babel/proposal-object-rest-spread"

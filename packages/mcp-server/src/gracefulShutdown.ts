@@ -82,7 +82,7 @@ export function createGracefulShutdownController(
       shuttingDown = true;
       shutdownPromise = (async () => {
         const startedAt = Date.now();
-        logger(`Syncrona MCP shutdown requested by ${signal}`);
+        logger(`SyncroNow AI MCP shutdown requested by ${signal}`);
         writeAuditEvent(auditDir, auditFile, {
           timestamp: new Date().toISOString(),
           event: "shutdown.requested",

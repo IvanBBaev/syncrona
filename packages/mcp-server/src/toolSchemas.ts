@@ -42,7 +42,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_status",
     description:
-      "Show connected ServiceNow instance, scope and user from current Syncrona project.",
+      "Show connected ServiceNow instance, scope and user from current SyncroNow AI project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -231,7 +231,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_check_instance_capabilities",
     description:
-      "Check whether Syncrona scoped-app endpoints are available in the target ServiceNow instance.",
+      "Check whether SyncroNow AI scoped-app endpoints are available in the target ServiceNow instance.",
     inputSchema: {
       type: "object",
       properties: {
@@ -251,7 +251,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: "sync_refresh",
-    description: "Refresh local Syncrona manifest from the target instance.",
+    description: "Refresh local SyncroNow AI manifest from the target instance.",
     inputSchema: {
       type: "object",
       properties: {
@@ -270,7 +270,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: "sync_build",
-    description: "Build local files with Syncrona.",
+    description: "Build local files with SyncroNow AI.",
     inputSchema: {
       type: "object",
       properties: {
@@ -295,7 +295,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_push",
     description:
-      "Push files to ServiceNow instance using Syncrona. Destructive action.",
+      "Push files to ServiceNow instance using SyncroNow AI. Destructive action.",
     inputSchema: {
       type: "object",
       properties: {
@@ -343,7 +343,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "run_workspace_command",
     description:
-      "Run a local command in the Syncrona workspace for automation tasks.",
+      "Run a local command in the SyncroNow AI workspace for automation tasks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1376,7 +1376,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
       properties: {
         profileA: {
           type: "string",
-          description: "First stored instance profile name (as saved by syncrona login).",
+          description: "First stored instance profile name (as saved by syncro-now-ai login).",
         },
         profileB: {
           type: "string",

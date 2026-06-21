@@ -2,7 +2,7 @@ import chokidar from "chokidar";
 import { logFilePush } from "./logMessages";
 import { debounce } from "lodash";
 import { getFileContextFromPath } from "./FileUtils";
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 import { groupAppFiles, pushFiles } from "./appUtils";
 import { logger } from "./Logger";
 const DEBOUNCE_MS = 300;

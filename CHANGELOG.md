@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- Stronger at-rest credential key (AR2): the credential-store encryption key is
+  resolved from `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets
+  managers) or the OS keychain (opt-in `SYNCRONA_USE_KEYCHAIN=1`, optional
+  `@napi-rs/keyring`), falling back to the legacy machine-derived key so existing
+  credential files keep decrypting.
 - Updated production dependencies to clear all `npm audit` findings (13
   vulnerabilities, 7 high — including five axios advisories such as SSRF and
   credential leakage; axios 1.5.1 → 1.17.0, webpack bumped). `npm audit
@@ -13,6 +18,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Release automation via Changesets (G6): `.changeset/` config plus
+  `npm run changeset` / `version-packages` / `release`; all `@syncro-now-ai/*`
+  packages version in lockstep.
+- Machine-enforced module boundaries (G10): dependency-cruiser runs in
+  `npm run lint` (`lint:boundaries`) — no circular dependencies, and the shared
+  foundation packages may not import the core/mcp-server consumers.
 - Registry-driven modular architecture: CLI commands are declared in
   `packages/core/src/cliCommands.ts` (one `CliCommandModule` entry per
   command) and MCP tool families in `packages/mcp-server/src/toolModules.ts`
@@ -26,7 +37,7 @@ All notable changes to this project will be documented in this file.
   with more than 500 records are now fully enumerated; `sys_idIN` queries
   are chunked to avoid URL-length failures.
 - Client-side rate limiting in the MCP server (shared 20 req/s policy from
-  `@syncrona/sn-transport`, matching the CLI's axios-rate-limit).
+  `@syncro-now-ai/sn-transport`, matching the CLI's axios-rate-limit).
 
 ### Fixed
 

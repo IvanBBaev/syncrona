@@ -1,7 +1,15 @@
 # DONE - Completed Work Log
 
+## 2026-06-21 G6 + G10 + AR2 (release automation, module boundaries, at-rest key) + docs
+1. **G6 (done)** — Release automation via Changesets: added [.changeset/](.changeset/) config (`fixed` lockstep group for all `@syncro-now-ai/*`, public access, `commit:false`) and root scripts `changeset` / `version-packages` / `release` in [package.json](package.json). `changeset status` lists all 13 packages bumping together. Publishing itself stays owner-gated (npm scope + 2FA).
+2. **G10 (done)** — Machine-enforced module boundaries: added [.dependency-cruiser.cjs](.dependency-cruiser.cjs) and `lint:boundaries`, wired into `npm run lint`. Rules: no runtime circular deps (type-only cycles ignored — found and excluded the `workflowHandlers`↔`toolService` type-only cycle), and the shared foundation packages (`types`, `credential-store`, `sn-transport`) may not import the `core`/`mcp-server` consumers. Teeth-tested against real cross-package edges (dist form).
+3. **AR2 (done)** — Stronger at-rest credential key: [credential-store/src/index.ts](packages/credential-store/src/index.ts) resolves the AES key via `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets managers) > OS keychain (opt-in `SYNCRONA_USE_KEYCHAIN=1`, optional `@napi-rs/keyring` — synchronous API, chosen over the archived `keytar`) > the legacy machine-derived key; reads fall back to the machine key so pre-AR2 files keep decrypting. Added `getStoreKey` / `getStoreKeySource` and [storeKey.test.ts](packages/core/src/tests/storeKey.test.ts) (env round-trip, malformed-key rejection, machine-key fallback, keychain opt-in via a virtual mock).
+4. **Docs refresh** — synced [PRODUCT_STATE.md](docs/PRODUCT_STATE.md) (OAuth implemented, remote present, shipped G-items), [ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md), [ROADMAP.md](ROADMAP.md), [README.md](README.md) (credential-storage section), [credential-store/README.md](packages/credential-store/README.md), [CHANGELOG.md](CHANGELOG.md).
+5. **Repo hygiene** — removed the empty `TODO.md`/`DONE.md` stubs that shadowed the canonical `TODO`/`DONE`, and the internal scratch/planning docs (`fixes.md`, `docs/syncrona-plan.md`, `docs/desktop-app-plan.md`, `docs/github-title-page.md`, `docs/npm-title-page.md`).
+6. Validation: `npm run check` green (build/typecheck/lint+boundaries/tests/coverage/quality); `npm audit --omit=dev --audit-level=high` = 0 vulnerabilities. Committed in two parts — the `@syncro-now-ai` scope rename (BA6) separately from this feature work.
+
 ## 2026-06-12 G backlog — G4 MCP client rate limiting
-1. **G4 (done)**: `MAX_REQUESTS_PER_SECOND = 20` added to [@syncrona/sn-transport](packages/sn-transport/src/index.ts) as the shared rate policy (the core CLI already enforces it via axios-rate-limit); [servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) now spaces every outgoing request through `acquireRequestSlot()` (min interval 1000/20 = 50ms, promise-slot scheduler) instead of relying solely on 429 retries.
+1. **G4 (done)**: `MAX_REQUESTS_PER_SECOND = 20` added to [@syncro-now-ai/sn-transport](packages/sn-transport/src/index.ts) as the shared rate policy (the core CLI already enforces it via axios-rate-limit); [servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) now spaces every outgoing request through `acquireRequestSlot()` (min interval 1000/20 = 50ms, promise-slot scheduler) instead of relying solely on 429 retries.
 2. Validation: sn-transport + mcp builds clean, eslint clean, full mcp node:test suite **172/172** green.
 
 ## 2026-06-12 G backlog — G12 branch coverage gate for mcp-server
@@ -36,7 +44,7 @@
 1. **Supply-chain security**: `npm audit` showed **13 production vulnerabilities** (6 moderate, 7 high — axios 1.5.1 had 5 advisories incl. SSRF/credential leakage, plus ajv ReDoS, brace-expansion ReDoS, webpack SSRF). Applied `npm audit fix` → **0 vulnerabilities** (axios → 1.17.0, webpack bumped). Note: `--omit=dev` initially pruned dev deps from node_modules; restored with full `npm install` against the fixed lockfile.
 2. **Webpack-plugin compile fix**: the webpack bump tightened `OutputFileSystem` typings (PathLike mkdir args) and broke `compiler.outputFileSystem = memFS` in [packages/webpack-plugin/src/index.ts](packages/webpack-plugin/src/index.ts); bridged with an explicit type-level cast (runtime shape unchanged).
 3. **Core lint gate**: core was previously **not linted at all** (the root `lint` script covered only mcp-server). Fixed all 55 violations (35 auto-fixed `prefer-const`, unused import/param, split `let/const` destructuring in FileUtils), configured `.eslintrc` with `argsIgnorePattern: "^_"` and a tests-only override allowing `any`; added `lint:core` and wired `lint = lint:core && lint:mcp` (CI step renamed accordingly). Both packages now pass `--max-warnings=0`.
-4. **Package metadata normalization**: added `engines.node >=22` to all 8 plugin packages, `files` to babel-plugin-remove-modules and types, `types: ./index.d.ts` to @syncrona/types — every workspace package now declares engines/files/license consistently.
+4. **Package metadata normalization**: added `engines.node >=22` to all 8 plugin packages, `files` to babel-plugin-remove-modules and types, `types: ./index.d.ts` to @syncro-now-ai/types — every workspace package now declares engines/files/license consistently.
 5. **CONTRIBUTING.md** added: prerequisites, quality-gate commands, and the project conventions (coverage ratchet, MCP stdout discipline, sn-transport policy ownership, docs-drift rule, destructive-action UX, security and test-hygiene rules).
 6. **Dev-mode shutdown**: SIGINT in `syncrona dev` now also closes the chokidar watcher (`stopWatching`), alongside clearing the refresh interval.
 7. **Triple gap analysis** (third review pass, what is *missing* rather than broken): **G1–G16** added to TODO across Senior Dev (OAuth, config schema validation, download resume/progress, MCP rate limiting, typed CLI args), Architect (release automation/changesets, CLI telemetry, plugin API contract, proxy/TLS support, machine-enforced module boundaries), QA (E2E against an instance, branch coverage for mcp, mutation testing, performance baselines, OS matrix in CI, security automation in CI) — with a recommended order.
@@ -62,7 +70,7 @@
 10. **CR16 (gitUtils)**: `cp.exec` string interpolation replaced with `execFile("git", [...])` (no shell — spaces/injection safe); `--name-status` parsing is tab-aware and takes the **new** path for rename/copy (R/C) statuses instead of producing garbage paths; `writeDiff` awaits its `writeFile`.
 11. **CR19/CR20 (config loading)**: `vm.runInNewContext` is kept but honestly documented as a module **loader** (fresh evaluation per load for reload support), NOT a sandbox; a present-but-broken `sync.config.js` now throws (`Failed to load config file …`) instead of silently falling back to default config; [bootstrap.ts](packages/core/src/bootstrap.ts) surfaces that error and exits non-zero. (A plain-require attempt was reverted: jest's module registry defeats `require.cache` busting — the reload regression test caught it.)
 12. **CR24/CR25 (manifestBuilder)**: new `tableAPIGetAllRows` pages through the Table API (`sysparm_offset` support added to `snClient.tableAPIGet`) so >500-record tables are no longer silently truncated; error≠empty — `isTableSkippableError` (shared 400/403/404 policy) distinguishes ACL-skips from real failures, failed tables abort the manifest build ("Manifest build incomplete — failed tables: …"), and zero discovered tables refuses to build an empty manifest that would overwrite a good one; `buildBulkDownloadFromTableAPI` chunks `sys_idIN` queries at 200 ids (mirrors `getRecordsForTable`) to avoid HTTP 414.
-13. **CR18 (shared endpoint policy)**: `@syncrona/sn-transport` now exports `ENDPOINT_NOT_FOUND_STATUSES` (400/403/404) + `isEndpointNotFoundStatus`; consumed by core (`snClient.isEndpointNotFound`, `unwrapSNResponse`, `manifestBuilder.isScopedEndpointUnavailableError`) and mcp (`snScopedApiRequest` prefix-fallback now treats 400/403 like 404 — was 404-only drift).
+13. **CR18 (shared endpoint policy)**: `@syncro-now-ai/sn-transport` now exports `ENDPOINT_NOT_FOUND_STATUSES` (400/403/404) + `isEndpointNotFoundStatus`; consumed by core (`snClient.isEndpointNotFound`, `unwrapSNResponse`, `manifestBuilder.isScopedEndpointUnavailableError`) and mcp (`snScopedApiRequest` prefix-fallback now treats 400/403 like 404 — was 404-only drift).
 14. **CR17 (credential precedence)**: MCP provider order changed to `process-env > secrets-file > .env > auth-store` (was: auth-store second), matching the core CLI where project-local sources beat the global store; documented in the mcp README Requirements section.
 15. **CR21 (perf)**: `getServiceNowConfig` caches resolved secrets per projectDir with a 30s TTL (+`clearServiceNowSecretsCache`), and the provider loop short-circuits once all keys are filled — eliminates the blocking `scryptSync` (~30–100ms CPU) that previously ran on **every** ServiceNow request in the long-lived server.
 16. **CR23 (startup)**: `autoPullAllScopesAndData()` moved **after** `server.connect(transport)` and runs in the background (verified stderr-only logging), so a slow instance can no longer time out the MCP client handshake.
@@ -80,7 +88,7 @@
 2. Completed content moved/condensed here: Phase D items D1–D4 + D5 auto-update notifier (detailed entries from 2026-06-11/05-31 already below), the 2026-06-11 AR1–AR12 architecture review (entries below), and the full CR1–CR30 review text (findings preserved in the review entry of 2026-06-12; implementation in the entry above).
 
 ## 2026-06-12 Deep Code Review — Senior Dev / Architect / QA (review-only, no code changes)
-1. Full source review of the monorepo: core CLI (snClient, appUtils, config, FileUtils, manifestBuilder, pushCommand, commands, devCommands, commander, bootstrap, commandHelpers, gitUtils, Watcher, PluginManager), mcp-server runtime (index, servicenowCore, audit, safetyPolicy, processRunner, toolService, inputValidation), @syncrona/credential-store, root/package metadata, jest config, azure-pipelines.yml, quality-gates.sh.
+1. Full source review of the monorepo: core CLI (snClient, appUtils, config, FileUtils, manifestBuilder, pushCommand, commands, devCommands, commander, bootstrap, commandHelpers, gitUtils, Watcher, PluginManager), mcp-server runtime (index, servicenowCore, audit, safetyPolicy, processRunner, toolService, inputValidation), @syncro-now-ai/credential-store, root/package metadata, jest config, azure-pipelines.yml, quality-gates.sh.
 2. Findings documented as **CR1–CR30** in [TODO](TODO) (section "DEEP CODE REVIEW (2026-06-12)"; the TODO file has since been translated to English), prioritized P0/P1/P2 with file:line references and a recommended execution order. Deliberately non-overlapping with the 2026-06-11 AR1–AR12 / DX1–DX24 review; related items cross-referenced.
 3. Highlights: P0 — project is NOT a git repository (CR1), credentials still present in packages/core/.env (CR2). P1 bugs — unreachable "create user preference" branches break --scopeSwap/--updateSet for fresh users (CR3), push checkpoint written before the confirm prompt (CR5), process.exit skips collaboration-lock release (CR6), scopeCheck masks every command error (CR9), refresh reports success on failure (CR10), blocking scryptSync on every MCP request (CR21), no Table-API pagination so >500-record tables are silently truncated (CR24). QA — core coverage gate measures only src/commands.ts (CR26), zod schemas cover 6 of ~60 MCP tools (CR27).
 4. Documentation upkeep: marked stale fixes.md items S1/S2/S3 as verified-fixed (tsconfig module=commonjs, core main=./dist/index.js, dist rebuilt); created WORKLOG.md session journal at repo root.
@@ -93,7 +101,7 @@
 
 ## 2026-06-11 Phase D — D5 (auto-update notification)
 1. D5 (Phase D — distribution polish, "auto-update notification 1x/day"): added a best-effort "new version available" notifier in [packages/core/src/updateNotifier.ts](packages/core/src/updateNotifier.ts). Pure, unit-tested decision logic (`parseSemver`/`compareSemver`/`isNewerVersion` with prerelease ordering, `shouldRefresh`, `buildUpdateNotice`, `notifierDisabled`, `selectNotice`) is separated from thin IO wrappers (`readUpdateCache`/`writeUpdateCache`, `resolveCurrentVersion`, `fetchLatestVersion` via global `fetch` + `AbortController` with a 1.5s timeout) and the `runUpdateNotifier` orchestrator.
-2. D5 behaviour: queries the npm registry for `@syncrona/core` at most **once per day** (cached in `~/.syncrona/update-check.json`), prints a single notice to **stderr** only (never stdout, so piped output stays clean), and notifies **once per discovered newer version** (tracked via `notifiedVersion`, no per-run nagging). Best-effort: every failure is swallowed, it never blocks or breaks a command.
+2. D5 behaviour: queries the npm registry for `@syncro-now-ai/core` at most **once per day** (cached in `~/.syncrona/update-check.json`), prints a single notice to **stderr** only (never stdout, so piped output stays clean), and notifies **once per discovered newer version** (tracked via `notifiedVersion`, no per-run nagging). Best-effort: every failure is swallowed, it never blocks or breaks a command.
 3. D5 gating + opt-out: skipped under CI (`CI`), tests (`JEST_WORKER_ID`), and when stderr is not a TTY; explicit opt-out via `SYNCRONA_NO_UPDATE_NOTIFIER` or `NO_UPDATE_NOTIFIER` (`1`/`true`).
 4. D5 wiring: hooked into [packages/core/src/bootstrap.ts](packages/core/src/bootstrap.ts) `init()` right after the `JEST_WORKER_ID` early-return and before `initCommands()`, so it is a no-op in tests and adds at most the once/day bounded check otherwise.
 5. D5 coverage: new jest suite [packages/core/src/tests/updateNotifier.test.ts](packages/core/src/tests/updateNotifier.test.ts) — 21 tests across pure helpers, cache IO round-trip/malformed-file handling, and orchestration (fetch+cache+notice-once, disabled/non-TTY no-op, never-throws-on-fetch-failure). Documented in [packages/core/README.md](packages/core/README.md) "Update notifications".
@@ -116,12 +124,12 @@
 7. Validation (Node 22): mcp build clean, eslint `--max-warnings=0` clean, index.test.js 88/83/5 (same pre-existing #22/#23/#25/#26/#53), focused 79/79, docs drift 60, CLAUDE drift 16. Logger smoke-tested: default level hides `debug`; `text`/`json` formats and `--log-format=json` (both `=` and spaced forms) parse correctly; stdout stays empty.
 
 ## 2026-06-11 Architecture Review — AR4 (shared ServiceNow transport policy)
-1. AR4 (P1 — two parallel SN clients): created a new built workspace package [`@syncrona/sn-transport`](packages/sn-transport) as the single source of truth for the transport-level policy that the two ServiceNow clients (core CLI on axios, MCP server on native fetch) must agree on but had copy-pasted. The package is intentionally pure (no I/O, no node globals).
+1. AR4 (P1 — two parallel SN clients): created a new built workspace package [`@syncro-now-ai/sn-transport`](packages/sn-transport) as the single source of truth for the transport-level policy that the two ServiceNow clients (core CLI on axios, MCP server on native fetch) must agree on but had copy-pasted. The package is intentionally pure (no I/O, no node globals).
 2. AR4 scoped-prefix policy: extracted `DEFAULT_SCOPED_API_PREFIXES` (`x_nuvo_sinc`/`x_nuvo_sync`), `SCOPED_API_PREFIXES_ENV` (`SYNCRONA_SCOPED_API_PREFIXES`), `sanitizeScopedPrefix`, `parseConfiguredScopedApiPrefixes(rawEnvValue)` (parse the comma-separated override, fall back to defaults, de-dup), and `orderScopedApiPrefixes(configured, preferred?)` (preferred/last-successful first, then configured, de-dup) — the logic that was duplicated as `configuredEndpointPrefixes`/`endpointPrefixOrder` (core) vs `configuredScopedApiPrefixes`/`scopedPrefixOrder` (mcp).
 3. AR4 retry policy: extracted the canonical retryable HTTP status set (`RETRYABLE_HTTP_STATUSES` = 408/425/429/500/502/503/504) and `shouldRetryStatus(status)`.
 4. AR4 consumers: [packages/core/src/snClient.ts](packages/core/src/snClient.ts) now derives `endpointPrefixOrder()` from the shared helpers while keeping its own `cachedScopedEndpointPrefix` + the `getScopedEndpointPrefix()` export (consumed by `commandHelpers.ts` and asserted by tests). [packages/mcp-server/src/servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) dropped its local `RETRYABLE_STATUSES`/prefix constants/`sanitizeScopedPrefix`/`configuredScopedApiPrefixes`, imports the shared policy, re-exports `shouldRetryStatus` (still used internally and re-exported via `publicApi`), and reimplements `scopedPrefixOrder` on top of the shared helpers. Behavior is byte-for-byte identical in both.
 5. AR4 scope decision: the two HTTP clients were deliberately NOT merged — they differ by design (one-shot CLI with axios + axios-rate-limit + retry-on-any-error vs. a long-lived MCP runtime with native fetch + status-based backoff). Only the genuinely duplicated, drift-prone policy was unified. The mcp-only retry-loop tuning (`MAX_REQUEST_ATTEMPTS`/`BASE_RETRY_DELAY_MS`) stayed local.
-6. AR4 wiring: added `@syncrona/sn-transport@^0.4.2-alpha.8` as a runtime dependency of both `@syncrona/core` and `@syncrona/mcp-server`; extended root `build:deps` to build `credential-store` then `sn-transport` before consumers.
+6. AR4 wiring: added `@syncro-now-ai/sn-transport@^0.4.2-alpha.8` as a runtime dependency of both `@syncro-now-ai/core` and `@syncro-now-ai/mcp-server`; extended root `build:deps` to build `credential-store` then `sn-transport` before consumers.
 7. Validation (Node 22): full workspace build clean, eslint `--max-warnings=0` clean, mcp index.test.js 88/83/5 (same pre-existing #22/#23/#25/#26/#53), focused 79/79, docs drift 60, CLAUDE drift 16. Core Jest: `snClientBugfix.test.ts` passes (confirms the prefix cache contract). Two core suites (`commandsInitAuto`, `commandsDownload`) fail on pre-existing, unrelated mock drift (`ConfigManager.resetConfigState`/`AppUtils.downloadAllFiles` are not functions) — untouched by this change.
 
 ## 2026-06-11 Architecture Review — AR5 (mcp-server index.ts: barrel + dispatch registry)
@@ -132,10 +140,10 @@
 5. Validation (Node 22): mcp-server build (tsc) clean, eslint `--max-warnings=0` clean, index.test.js 88 tests / 83 pass / 5 fail (the same pre-existing network/instance-dependent #22/#23/#25/#26/#53), focused suite 79/79, docs drift 60 aligned, CLAUDE drift 16 aligned.
 
 ## 2026-06-11 Architecture Review — AR3 (shared credential store) + AR8 (repo metadata)
-1. AR3 (P0 — duplicated crypto): created new built workspace package [`@syncrona/credential-store`](packages/credential-store) (chosen over `@syncrona/types`, which ships only `index.d.ts` with no build) as the single source of truth for at-rest credential storage. It centralizes the AES-256-GCM format, machine-key derivation (`hostname:username:salt`), file naming, and `~/.syncrona` layout that were copy-pasted in `core/src/auth.ts` and `mcp-server/src/servicenowCore.ts`.
+1. AR3 (P0 — duplicated crypto): created new built workspace package [`@syncro-now-ai/credential-store`](packages/credential-store) (chosen over `@syncro-now-ai/types`, which ships only `index.d.ts` with no build) as the single source of truth for at-rest credential storage. It centralizes the AES-256-GCM format, machine-key derivation (`hostname:username:salt`), file naming, and `~/.syncrona` layout that were copy-pasted in `core/src/auth.ts` and `mcp-server/src/servicenowCore.ts`.
 2. AR3 API design: async API for the core CLI (`saveCredentials`, `loadCredentials`, `listInstances`, `removeCredentials`, `removeAllCredentials`, `setActiveInstance`, `getActiveInstance`, `resolveCredentialsFromStore`, `getSyncronaDir`) + sync API for the MCP secrets resolver (`getActiveInstanceSync`, `loadCredentialsSync` — never throw, return `null` on failure, and do not enforce non-empty user/password so callers keep their exact semantics). Low-level primitives (`getMachineKey`, `encrypt`, `decrypt`, `instanceToFilename`, `filenameToInstance`) are also exported.
-3. AR3 consumers: [packages/core/src/auth.ts](packages/core/src/auth.ts) is now a thin `export * from "@syncrona/credential-store"` (preserves the full public API used by `wizard.ts`/`authCommands.ts`/`mcpCommand.ts`/`snClient.ts`); [packages/mcp-server/src/servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) dropped its `crypto`/`os` imports + `AUTH_STORE_*` constants + `authStoreMachineKey`/`decryptAuthStorePayload`, and `loadFromAuthStore`/`loadAuthStoreProfile` now call the shared sync API while keeping byte-for-byte identical behavior.
-4. AR3 wiring: added `@syncrona/credential-store@^0.4.2-alpha.8` as a runtime dependency of both `@syncrona/core` and `@syncrona/mcp-server`; added a `build:deps` script and prefixed root `build`/`typecheck:all` with it so the shared package is compiled before its consumers (npm workspaces run in alphabetical, not topological, order).
+3. AR3 consumers: [packages/core/src/auth.ts](packages/core/src/auth.ts) is now a thin `export * from "@syncro-now-ai/credential-store"` (preserves the full public API used by `wizard.ts`/`authCommands.ts`/`mcpCommand.ts`/`snClient.ts`); [packages/mcp-server/src/servicenowCore.ts](packages/mcp-server/src/servicenowCore.ts) dropped its `crypto`/`os` imports + `AUTH_STORE_*` constants + `authStoreMachineKey`/`decryptAuthStorePayload`, and `loadFromAuthStore`/`loadAuthStoreProfile` now call the shared sync API while keeping byte-for-byte identical behavior.
+4. AR3 wiring: added `@syncro-now-ai/credential-store@^0.4.2-alpha.8` as a runtime dependency of both `@syncro-now-ai/core` and `@syncro-now-ai/mcp-server`; added a `build:deps` script and prefixed root `build`/`typecheck:all` with it so the shared package is compiled before its consumers (npm workspaces run in alphabetical, not topological, order).
 5. AR3 backward compatibility: verified the real pre-existing `~/.syncrona/credentials/*.enc` files (written by the old core crypto) still decrypt through the new shared package, and `listInstances()` via the core re-export returns both stored instances — confirming the format is unchanged.
 6. AR8 (repo metadata): removed the stale `repository`/`bugs`/`homepage` fields (pointing at the inherited `nuvolo/syncrona` URL) and the dead `gitHead` artifact from all package.json files. Decision: no real public repo exists yet, so clean metadata beats a wrong URL. All 12 package.json remain valid JSON with zero `nuvolo` references.
 7. Validation (Node 22): full workspace build clean, eslint `--max-warnings=0` clean, focused suite 79/79, index.test.js 83 pass/5 fail (the 5 are the same pre-existing network/instance-dependent: #22/#23/#25/#26/#53), docs drift 60 aligned, CLAUDE drift 16 aligned.
@@ -144,7 +152,7 @@
 1. AR1 (P0 — credentials): removed `packages/core/.env` (real demo creds), added [packages/core/.env.example](packages/core/.env.example) with placeholders pointing to `syncrona login`; verified `npm pack --dry-run` ships only `dist/` + README (no `.env`). Password rotation left as a manual user task.
 2. AR12: root [package.json](package.json) now `"private": true` and `"main"` removed (was pointing at a nonexistent `index.js`) — prevents accidental `npm publish` of the orchestrator.
 3. AR7 (license): unified all packages to MIT (root was MIT; the 11 workspace packages were GPL-3.0). Replaced the root [LICENSE](LICENSE) GPL-3.0 text with MIT.
-4. AR7 (versioning): adopted lerna fixed mode — set [lerna.json](lerna.json) and every package to a single version `0.4.2-alpha.8`; aligned internal `@syncrona/types` dependency ranges to `^0.4.2-alpha.8`; added `engines.node >=22.0.0` to `@syncrona/types` for metadata consistency.
+4. AR7 (versioning): adopted lerna fixed mode — set [lerna.json](lerna.json) and every package to a single version `0.4.2-alpha.8`; aligned internal `@syncro-now-ai/types` dependency ranges to `^0.4.2-alpha.8`; added `engines.node >=22.0.0` to `@syncro-now-ai/types` for metadata consistency.
 5. AR6 (dependency hygiene): stripped the ~370 transitive packages wrongly listed under root `dependencies` (kept only the real dev tooling in `devDependencies`); deleted all 10 dead `package-lock-old.json` artifacts; `npm install` pruned 15 truly-unused packages and refreshed the lockfile.
 6. Test fix: [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js) — the `resolveServiceNowSecrets reads credentials from secrets file` test now isolates `HOME` (like its sibling auth-store test) so the auth-store provider can't read real `~/.syncrona` credentials. This removes a latent env-dependent failure that surfaced once an active instance existed.
 7. Validation (Node 22): full workspace build clean, eslint `--max-warnings=0` clean, focused suite 79/79, index.test.js 83 pass/5 fail (the 5 are pre-existing network/instance-dependent), docs drift 60 aligned, CLAUDE drift 16 aligned, core rebuilt and global `syncrona` link confirmed resolving to local build at `0.4.2-alpha.8`.
@@ -208,7 +216,7 @@
 	2. fixed failure mode where child commands ran inside `packages/<scope>` without `.env` and exited with code 1.
 	3. enriched auto-pull failure logs with `exit`, timeout flag, and stderr/stdout snippets for direct diagnosis.
 2. Validation completed:
-	1. `npm run --workspace=@syncrona/mcp-server build` passed.
+	1. `npm run --workspace=@syncro-now-ai/mcp-server build` passed.
 
 ## 2026-05-30 Init Auto All-Scopes Flow
 1. Updated [packages/core/src/commands.ts](packages/core/src/commands.ts):
@@ -245,7 +253,7 @@
 ## 2026-05-30 MCP Uses Local Core CLI
 1. Updated [packages/mcp-server/src/index.ts](packages/mcp-server/src/index.ts):
 	1. MCP now resolves and executes local `packages/core/dist/index.js` when available.
-	2. falls back to `npx syncrona` only when local core dist is not present.
+	2. falls back to `npx syncro-now-ai` only when local core dist is not present.
 2. This guarantees startup auto-download uses the latest in-repo core fallback fixes.
 
 ## 2026-05-30 Fleet Discovery Fallback
@@ -282,7 +290,7 @@
 	2. restored base behavior: startup now relies on `syncrona refresh` first, with `syncrona download` fallback.
 	3. this keeps file extension resolution in the core CLI pipeline and avoids wrong `.txt` code files.
 3. Validation completed:
-	1. `npm run --workspace=@syncrona/mcp-server build` passed.
+	1. `npm run --workspace=@syncro-now-ai/mcp-server build` passed.
 
 ## 2026-05-30 MCP Startup Auto-Pull All Scopes
 1. Implemented MCP startup bootstrap in [packages/mcp-server/src/index.ts](packages/mcp-server/src/index.ts):
@@ -295,8 +303,8 @@
 3. Updated runtime documentation in [packages/mcp-server/README.md](packages/mcp-server/README.md):
 	1. documented default startup behavior and disable flag.
 4. Validation completed:
-	1. `npm run --workspace=@syncrona/mcp-server build` passed.
-	2. `npm run --workspace=@syncrona/mcp-server test` remains red on an existing credential-precedence test unrelated to this change (`resolveServiceNowSecrets reads credentials from secrets file when env is empty`).
+	1. `npm run --workspace=@syncro-now-ai/mcp-server build` passed.
+	2. `npm run --workspace=@syncro-now-ai/mcp-server test` remains red on an existing credential-precedence test unrelated to this change (`resolveServiceNowSecrets reads credentials from secrets file when env is empty`).
 
 ## 2026-05-30 Login Bootstrap for Clean Instances
 1. Updated login flow to auto-create minimal workspace structure on successful authentication:
@@ -362,8 +370,8 @@
 7. Added regression coverage in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js):
 	1. integration test validates full docs bundle write under `.syncrona-mcp/docs/{scope}/`.
 8. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (133 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (133 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 	3. tool contract now reports `(26 tools, hash=f28bd5c6)`.
 
 ## 2026-05-29 Scope Docs Slice - Referenced Tables Index (4.3)
@@ -381,8 +389,8 @@
 	2. index payload assertion for out-of-scope referenced target in [packages/mcp-server/test/analysis.test.js](packages/mcp-server/test/analysis.test.js).
 	3. integration payload assertion for `index.referencedTables` in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js).
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (132 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (132 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 Scope Docs Slice - Per-table Field Documentation (4.2)
 1. Added scope table docs path helpers in [packages/mcp-server/src/scopePaths.ts](packages/mcp-server/src/scopePaths.ts):
@@ -401,8 +409,8 @@
 	1. unit test for `buildTableFieldMarkdownDocs` in [packages/mcp-server/test/analysis.test.js](packages/mcp-server/test/analysis.test.js).
 	2. integration test validating generated table doc file write in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js).
 7. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (131 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (131 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 Scope Docs Slice - Dictionary Field Extraction (4.1)
 1. Extended ServiceNow scope discovery dictionary payload in [packages/mcp-server/src/index.ts](packages/mcp-server/src/index.ts):
@@ -416,8 +424,8 @@
 	2. grouped dictionary inventory markdown test in [packages/mcp-server/test/analysis.test.js](packages/mcp-server/test/analysis.test.js).
 	3. integration test assertion for autodiscovery `index.tableFields` in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js).
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (129 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (129 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 Scope Docs Slice - Impact Mini-Diagrams Per Object (3.3)
 1. Implemented per-object impact diagram rendering in [packages/mcp-server/src/analysis/scopeKnowledge.ts](packages/mcp-server/src/analysis/scopeKnowledge.ts):
@@ -431,8 +439,8 @@
 	1. validates `## Impact Mini-Diagrams` presence.
 	2. verifies per-object headings and Mermaid block output.
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (127 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (127 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 MCP Integration Stability Fix - Preserve JSON Tool Payloads
 1. Fixed JSON payload truncation bug in [packages/mcp-server/src/runtimeUtils.ts](packages/mcp-server/src/runtimeUtils.ts):
@@ -441,8 +449,8 @@
 2. Restored strict payload assertions in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js):
 	1. `scope knowledge generation auto-discovers ServiceNow metadata by default` now consistently validates `payload.validation.valid` and `payload.serviceNowDiscovered`.
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed.
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed.
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 Scope Docs Slice - Table Relationship Mermaid Diagram (3.2)
 1. Implemented ER diagram renderer in [packages/mcp-server/src/analysis/graph.ts](packages/mcp-server/src/analysis/graph.ts):
@@ -457,7 +465,7 @@
 	1. direct ER renderer test for inheritance + reference relations.
 	2. scope markdown includes ER section and `erDiagram` block.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (126 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (126 tests).
 
 ## 2026-05-29 Scope Docs Slice - Mermaid Dependency Graph Rendering (3.1)
 1. Implemented Mermaid graph renderer in [packages/mcp-server/src/analysis/graph.ts](packages/mcp-server/src/analysis/graph.ts):
@@ -473,7 +481,7 @@
 	1. direct mermaid renderer output test.
 	2. scope markdown includes flowchart mermaid content.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (125 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (125 tests).
 
 ## 2026-05-29 Scope Docs Slice - Cross-scope + Global Dependency Baseline (2.1/2.2/2.3)
 1. Extended graph model in [packages/mcp-server/src/analysis/graph.ts](packages/mcp-server/src/analysis/graph.ts):
@@ -501,7 +509,7 @@
 	1. cross-scope and global dependency edge generation.
 	2. external dependency markdown section rendering.
 7. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (124 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (124 tests).
 
 ## 2026-05-29 Scope Docs Slice - UI Formatters Metadata Discovery (1.4)
 1. Extended metadata typing/config in [packages/mcp-server/src/analysis.ts](packages/mcp-server/src/analysis.ts):
@@ -519,7 +527,7 @@
 4. Added regression coverage in [packages/mcp-server/test/analysis.test.js](packages/mcp-server/test/analysis.test.js):
 	1. ui formatter metadata normalization and table linkage.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (122 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (122 tests).
 
 ## 2026-05-29 Scope Docs Slice - UI Actions Metadata Discovery (1.3)
 1. Extended metadata typing/config in [packages/mcp-server/src/analysis.ts](packages/mcp-server/src/analysis.ts):
@@ -542,7 +550,7 @@
 	1. ui action metadata normalization.
 	2. ui action table relation (`affects`) and script include relation (`calls`).
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (121 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (121 tests).
 
 ## 2026-05-29 Scope Docs Slice - UI Scripts Metadata Discovery (1.2)
 1. Extended metadata typing/config in [packages/mcp-server/src/analysis.ts](packages/mcp-server/src/analysis.ts):
@@ -566,7 +574,7 @@
 	2. GlideAjax include extraction.
 	3. ui script dependency graph `calls` edge behavior.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (119 tests).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (119 tests).
 
 ## 2026-05-29 Scope Docs Slice - Scheduled Jobs Metadata Discovery (partial 1.1)
 1. Extended metadata typing/config in [packages/mcp-server/src/analysis.ts](packages/mcp-server/src/analysis.ts):
@@ -596,8 +604,8 @@
 8. Added regression coverage in [packages/mcp-server/test/analysis.test.js](packages/mcp-server/test/analysis.test.js):
 	1. scheduled job markdown section with schedule, affected tables, and script excerpt.
 9. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (116 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (116 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 
 ## 2026-05-29 Standalone Track Slice - Standalone MCP Command with Auto-Configure
 1. Added standalone MCP runtime command in [packages/core/src/commands.ts](packages/core/src/commands.ts):
@@ -606,7 +614,7 @@
 	3. auto-config writes `.syncrona-mcp/secrets.json` from resolved credentials when available.
 	4. optional process start (`--start`, default true) runs MCP server via node with stdio inherit.
 2. Exposed CLI command in [packages/core/src/commander.ts](packages/core/src/commander.ts):
-	1. `npx syncrona mcp` with options `--auto-configure`, `--start`, and `--mcp-server-path`.
+	1. `npx syncro-now-ai mcp` with options `--auto-configure`, `--start`, and `--mcp-server-path`.
 3. Added regression coverage in [packages/core/src/tests/commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts):
 	1. auto-config path writes mcp client + secrets files and skips start when disabled.
 	2. start path spawns standalone MCP process.
@@ -614,8 +622,8 @@
 	1. [README.md](README.md) command table includes `mcp`.
 	2. [CLAUDE.md](CLAUDE.md) command reference includes `mcp`.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (14 suites, 76 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
+	1. `npm --workspace @syncro-now-ai/core test` passed (14 suites, 76 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
 	3. `npm run check` remains blocked by known environment/runtime ESLint dependency parse issue in `lint:mcp`.
 
 ## 2026-05-29 Standalone Track Slice - Init Wizard Rewrite + Doctor
@@ -634,8 +642,8 @@
 4. Updated user docs in [README.md](README.md):
 	1. init wizard behavior notes for env/store fallback and initial diagnostics.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (14 suites, 74 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed (docs/tool/CLAUDE drift and governance checks green).
+	1. `npm --workspace @syncro-now-ai/core test` passed (14 suites, 74 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed (docs/tool/CLAUDE drift and governance checks green).
 	3. `npm run check` remains blocked by known environment/runtime ESLint dependency parse issue in `lint:mcp`.
 
 ## 2026-05-29 Standalone Track Slice - CredentialStore and login/use/logout flows
@@ -653,8 +661,8 @@
 	1. [README.md](README.md) command table now includes `login`, `logout`, `instances`, and `use`.
 	2. [CLAUDE.md](CLAUDE.md) command reference aligned with README.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (13 suites, 72 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
+	1. `npm --workspace @syncro-now-ai/core test` passed (13 suites, 72 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
 	3. `npm run check` remains blocked by known environment/runtime ESLint dependency parse issue in `lint:mcp`.
 
 ## 2026-05-29 Advanced Features Slice - Plugin Ecosystem
@@ -664,7 +672,7 @@
 	3. validates local package presence from workspace `node_modules` and flags missing plugins.
 	4. returns structured summary and logs actionable diagnostics.
 2. Exposed CLI command in [packages/core/src/commander.ts](packages/core/src/commander.ts):
-	1. new command `npx syncrona plugins`.
+	1. new command `npx syncro-now-ai plugins`.
 3. Added regression coverage in [packages/core/src/tests/commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts):
 	1. empty-rule configuration behavior.
 	2. mixed installed/missing plugin reporting behavior.
@@ -672,8 +680,8 @@
 	1. [README.md](README.md) command table entry for `plugins`.
 	2. [CLAUDE.md](CLAUDE.md) command reference alignment.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (12 suites, 66 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
+	1. `npm --workspace @syncro-now-ai/core test` passed (12 suites, 66 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed (tool/docs/CLAUDE drift and governance checks green).
 	3. `npm run check` currently still fails in root `lint:mcp` due environment/runtime ESLint parser issue in dependency (`@typescript-eslint/eslint-plugin`).
 
 ## 2026-05-29 Advanced Features Slice - AI-native Assistance Tools
@@ -691,8 +699,8 @@
 	1. [packages/mcp-server/docs/ai-context/tools-catalog.md](packages/mcp-server/docs/ai-context/tools-catalog.md)
 	2. [packages/mcp-server/README.md](packages/mcp-server/README.md)
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (113 tests).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed (tool contract/docs drift/CLAUDE drift/release checklist green).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (113 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed (tool contract/docs drift/CLAUDE drift/release checklist green).
 
 ## 2026-05-29 Advanced Features Slice - Collaboration/Conflict Detection
 1. Added collaboration lock guard in [packages/core/src/commands.ts](packages/core/src/commands.ts):
@@ -704,7 +712,7 @@
 	1. push aborts with warning when an active collaboration lock is present.
 	2. updated push happy-path expectations to include lock write/unlink operations.
 3. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 51 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 51 tests).
 	2. `npm run check` currently fails in root `lint:mcp` due ESLint runtime parse error in dependency (`@typescript-eslint/eslint-plugin`) in this environment.
 
 ## 2026-05-29 Advanced Features Slice - Multi-instance Support
@@ -724,7 +732,7 @@
 	3. [packages/core/src/tests/commandsDownload.test.ts](packages/core/src/tests/commandsDownload.test.ts): updated snClient mock compatibility.
 5. Updated usage docs in [README.md](README.md) with `--instance-profile` examples.
 6. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 50 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 50 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, CLAUDE docs drift aligned, release checklist valid).
 
 ## 2026-05-29 Test Base Slice - Raise Core Coverage Threshold to 80
@@ -738,7 +746,7 @@
 	4. status connectivity-failure branch with env present.
 	5. logBuildResults assertion for build pipeline path.
 3. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 46 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 46 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, CLAUDE docs drift aligned, release checklist valid).
 
 ## 2026-05-29 DX Slice - CLAUDE.md Authoring and Docs Drift Automation
@@ -760,7 +768,7 @@
 	3. CLI success-path tests.
 5. Updated root docs command table context in [README.md](README.md) and aligned command coverage with CLAUDE reference.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (111/111).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (111/111).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, CLAUDE docs drift aligned, release checklist valid).
 
 ## 2026-05-29 DX Slice - Extended status Command
@@ -774,7 +782,7 @@
 	2. degraded status path with missing env and skipped connectivity.
 4. Updated command docs in [README.md](README.md) to reflect extended status output.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 42 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 42 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, release checklist valid).
 
 ## 2026-05-29 DX Slice - --dry-run Support for Core Commands
@@ -794,7 +802,7 @@
 4. Stabilized bootstrap behavior for test runtime in [packages/core/src/bootstrap.ts](packages/core/src/bootstrap.ts):
 	1. skip command argv parsing when running under Jest (`JEST_WORKER_ID`).
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 40 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 40 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, release checklist valid).
 
 ## 2026-05-29 DX Slice - syncrona doctor Command
@@ -805,13 +813,13 @@
 	4. connectivity probe (`checkConnection`) when env is complete.
 	5. deterministic per-check pass/fail logging and summary result.
 2. Exposed CLI entry in [packages/core/src/commander.ts](packages/core/src/commander.ts):
-	1. `npx syncrona doctor` command registration.
+	1. `npx syncro-now-ai doctor` command registration.
 3. Added regression coverage in [packages/core/src/tests/commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts):
 	1. healthy path with full env + reachable instance.
 	2. degraded path with missing env and skipped connectivity.
 4. Updated command docs in [README.md](README.md) command table.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (11 suites, 36 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (11 suites, 36 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, release checklist valid).
 
 ## 2026-05-29 Reliability Slice - File I/O Retry Resilience Coverage
@@ -823,7 +831,7 @@
 	1. transient `EBUSY` injection on `fs.promises.readFile`.
 	2. assertion that async discovery recovers and still extracts table dependencies.
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (108/108).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (108/108).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned, release checklist valid).
 
 ## 2026-05-29 Reliability Slice - Custom Error Hierarchy and Centralized Error Handling
@@ -840,7 +848,7 @@
 	1. structured formatter payload checks.
 	2. normalization behavior for native and unknown errors.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed.
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, governance and docs gates green).
 
 ## 2026-05-29 Observability/Governance Slice - Release Governance Automation
@@ -855,8 +863,8 @@
 	2. fail scenario for missing governance sections/invalid changelog format.
 	3. CLI fail exit code and error output behavior.
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (105/105).
-	2. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (105/105).
+	2. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 	3. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned).
 
 ## 2026-05-29 Observability/Governance Slice - Tool Versioning and Deprecation Metadata
@@ -872,7 +880,7 @@
 	1. deterministic lifecycle metadata payload assertions for `sync_tool_contract_info`.
 5. Updated documentation in [packages/mcp-server/README.md](packages/mcp-server/README.md) for expanded contract metadata payload.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (102/102).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (102/102).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned).
 
 ## 2026-05-29 Observability/Governance Slice - Enhanced Health Checks and Optional HTTP Endpoint
@@ -887,7 +895,7 @@
 	2. live HTTP endpoint 200/404 response behavior and runtime status updates.
 4. Updated runtime documentation in [packages/mcp-server/README.md](packages/mcp-server/README.md) with optional health endpoint env variables.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (102/102).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (102/102).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned).
 
 ## 2026-05-29 Observability/Governance Slice - Structured Logging with Correlation IDs
@@ -905,7 +913,7 @@
 	1. `auditToolCall` persistence includes `correlationId`.
 	2. metrics store roundtrip preserves `correlationId`.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (100/100).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (100/100).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned).
 
 ## 2026-05-29 Observability/Governance Slice - Standardized Workflow Simulation Artifact Output
@@ -922,7 +930,7 @@
 	1. deterministic simulation report path generation.
 	2. unified workflow simulation payload shape and optional artifact write behavior.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (100/100).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (100/100).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned).
 
 ## 2026-05-29 Observability/Governance Slice - Docs Drift Quality Gate
@@ -940,7 +948,7 @@
 	1. Added missing tool entries in [packages/mcp-server/docs/ai-context/tools-catalog.md](packages/mcp-server/docs/ai-context/tools-catalog.md).
 	2. Added missing tool entries in [packages/mcp-server/README.md](packages/mcp-server/README.md).
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server run quality-gates` passed.
+	1. `npm --workspace @syncro-now-ai/mcp-server run quality-gates` passed.
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`, docs drift aligned for 48 schema tools).
 
 ## 2026-05-29 Observability/Governance Slice - Tool Contract Capability Endpoint
@@ -954,7 +962,7 @@
 4. Updated catalog docs in [packages/mcp-server/docs/ai-context/tools-catalog.md](packages/mcp-server/docs/ai-context/tools-catalog.md).
 5. Added test coverage in [packages/mcp-server/test/index.test.js](packages/mcp-server/test/index.test.js) for deterministic contract endpoint payload.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (96/96).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (96/96).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Policy and Secrets Hardening - Guardrail Policy Model + SecretsProvider
@@ -976,7 +984,7 @@
 	2. policy model rule enforcement behavior.
 	3. guardrail config policy parsing.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (95/95).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (95/95).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Unified Workflow - Remote Apply Implementation
@@ -994,7 +1002,7 @@
 	1. Remote apply success path with explicit opt-in.
 	2. Remote apply rejection when opt-in is missing.
 6. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (93/93).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (93/93).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Strict TypeScript Enablement - Workspace Coverage
@@ -1032,7 +1040,7 @@
 1. Cleaned stale/unused imports in [packages/mcp-server/src/index.ts](packages/mcp-server/src/index.ts) introduced by handler delegation and analysis extraction.
 2. Restored only required compile-time imports used by metadata and graph flow helpers.
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (93/93).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (93/93).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Analysis Decomposition Milestone - Graph and Scope Knowledge Modules
@@ -1041,7 +1049,7 @@
 3. Simplified [packages/mcp-server/src/analysis.ts](packages/mcp-server/src/analysis.ts) to a compatibility facade that re-exports extracted modules and retains metadata/drift/contract/log helpers.
 4. Decomposition objective for `analysis.ts` is now functionally complete while preserving existing public exports and deterministic output behavior.
 5. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (93/93).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (93/93).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Analysis Decomposition Slice - Script Analysis Module
@@ -1062,7 +1070,7 @@
 	12. `buildFullScriptAnalysisReport`
 	13. `renderFullAnalysisMarkdown`
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (93/93).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (93/93).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Analysis Decomposition Slice - Semantic Module
@@ -1075,7 +1083,7 @@
 	4. `searchSemanticIndex`
 	5. `buildSymbolCrossReference`
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (93/93).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (93/93).
 	2. `npm run check` passed (EXIT:0, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Audit Hardening - sanitizeForAudit partial key redaction
@@ -1088,7 +1096,7 @@
 	3. Verifies nested redaction for `x-auth-token`.
 	4. Verifies nested redaction for `x-api-key`.
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (78/78).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (78/78).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Push Reliability - partial push recovery checkpoint
@@ -1100,7 +1108,7 @@
 	1. Verifies checkpoint writes/cleanup in normal push flow.
 	2. Verifies resume mode filters to failed records from checkpoint.
 3. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (10 suites, 26 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (10 suites, 26 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`).
 
 ## 2026-05-29 CLI Reliability - connection preflight before push/deploy
@@ -1114,7 +1122,7 @@
 	1. [packages/core/src/tests/snClientBugfix.test.ts](packages/core/src/tests/snClientBugfix.test.ts) validates `checkConnection` endpoint and timeout usage.
 	2. [packages/core/src/tests/commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts) validates preflight call in push/deploy and early return on failed preflight.
 4. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (10 suites, 25 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (10 suites, 25 tests).
 	2. `npm run check` passed (`EXIT:0`, tool contract hash `74521ed2`).
 
 ## 2026-05-29 CI Coverage Wiring - gates and artifacts
@@ -1148,7 +1156,7 @@
 4. Minor test reliability fix:
 	1. Marked [packages/core/src/tests/commandsFlow.test.ts](packages/core/src/tests/commandsFlow.test.ts) and [packages/core/src/tests/commandsDownload.test.ts](packages/core/src/tests/commandsDownload.test.ts) as modules (`export {}`) to avoid cross-file TS redeclaration during `tsc`.
 5. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (10 suites, 23 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (10 suites, 23 tests).
 	2. `npm run check` passed (full workspace, tool contract hash `74521ed2`).
 
 ## 2026-05-29 TODO Hygiene - completed roadmap items migrated
@@ -1167,7 +1175,7 @@
 	1. `scopeCheck` now accepts async callbacks and `await`s them.
 	2. Command callbacks (`dev`, `refresh`, `push`, `deploy`) now propagate async failures deterministically through the existing error path.
 2. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (8 suites, 18 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (8 suites, 18 tests).
 	2. `npm run check` passed (full workspace, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Command Flow Coverage - dev/push/deploy
@@ -1176,7 +1184,7 @@
 	2. `pushCommand` resolves target file list and logs push results in CI mode.
 	3. `deployCommand` confirms deploy, resolves build paths, pushes files, and logs outcomes.
 2. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (8 suites, 18 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (8 suites, 18 tests).
 	2. `npm run check` passed (full workspace, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Core Coverage Expansion - grouping and watcher queue
@@ -1187,7 +1195,7 @@
 	1. Verifies `Watcher.ts` maps push results back to correct record context after grouping.
 	2. Verifies queue processing failures are caught and logged (error boundary behavior).
 3. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (7 suites, 15 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (7 suites, 15 tests).
 	2. `npm run check` passed (full workspace, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Retry Policy Fix - off-by-one and test coverage
@@ -1199,7 +1207,7 @@
 	2. `allowedRetries=3` performs exactly three retries.
 	3. First-attempt success returns immediately with no retry callback.
 3. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (5 suites, 12 tests).
+	1. `npm --workspace @syncro-now-ai/core test` passed (5 suites, 12 tests).
 	2. `npm run check` passed (full workspace, including MCP quality gates and tool contract hash `74521ed2`).
 
 ## 2026-05-29 Medium Priority Follow-up - Config and Node Code Guards
@@ -1218,8 +1226,8 @@
 		2. blocks when unsafe command detection triggers.
 		3. executes when confirmed and safe.
 4. Validation completed:
-	1. `npm --workspace @syncrona/core test` passed (5 suites, 9 tests).
-	2. `npm --workspace @syncrona/mcp-server test` passed (78/78).
+	1. `npm --workspace @syncro-now-ai/core test` passed (5 suites, 9 tests).
+	2. `npm --workspace @syncro-now-ai/mcp-server test` passed (78/78).
 	3. `npm run check` passed (full workspace, quality gates, tool contract hash `74521ed2`).
 
 ## 2026-05-29 Core Critical Bugfixes - Async and Write Safety
@@ -1256,7 +1264,7 @@
 	4. `summarizeMetricsWindows`
 	5. `summarizeMetrics`
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Metadata Analysis
@@ -1275,7 +1283,7 @@
 	10. `sync_search_semantic_index`
 	11. `sync_symbol_cross_reference`
 4. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Script Analysis
@@ -1287,7 +1295,7 @@
 	4. `sn_analyze_script_full`
 	5. `sn_autonomous_remediation_workflow`
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Health and Planning
@@ -1298,7 +1306,7 @@
 	3. `sync_table_api_coverage_matrix`
 	4. `sync_plan_minimal_footprint`
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Scope Knowledge and Reports
@@ -1309,7 +1317,7 @@
 	3. `sync_scope_knowledge_auto_update`
 	4. `sync_generate_table_dependency_report`
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Relations and Onboarding
@@ -1318,7 +1326,7 @@
 	1. `sync_analyze_scope_relations`
 	2. `sync_onboarding_bootstrap`
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Extraction Slice - Workflow
@@ -1327,7 +1335,7 @@
 	1. `sn_render_analysis_markdown`
 	2. `sync_unified_change_workflow`
 3. Validation completed:
-	1. `npm --workspace @syncrona/mcp-server test` passed (77/77).
+	1. `npm --workspace @syncro-now-ai/mcp-server test` passed (77/77).
 	2. `npm run check` passed (full workspace).
 
 ## 2026-05-28 Dispatcher Modularization Milestone
@@ -1354,7 +1362,7 @@
 	2. transient request retry behavior tests.
 	3. integration helper test for scope relation analysis.
 4. Updated tool contract and docs for new analyzer capability.
-5. Final validation: `npm --workspace @syncrona/mcp-server test` and `npm run check` passed.
+5. Final validation: `npm --workspace @syncro-now-ai/mcp-server test` and `npm run check` passed.
 
 ## Completion Summary
 1. Iterations 1 to 6 are completed and validated.
@@ -1367,7 +1375,7 @@
 ## 2026-05-28 Roadmap Execution Update (50% TODO slice)
 1. Runtime policy aligned to Node 22 across root/core/mcp manifests and README requirements.
 2. Root quality command matrix implemented (`quality:*`, `check`, normalized `test` orchestration).
-3. Workspace test policy cleaned for `@syncrona/types` (removed failing placeholder test script).
+3. Workspace test policy cleaned for `@syncro-now-ai/types` (removed failing placeholder test script).
 4. Scope knowledge markdown now includes deterministic dependency evidence provenance section.
 5. Scope knowledge markdown now includes dedicated table dependency section.
 
@@ -1913,7 +1921,7 @@ Progress:
 - [x] Fixed archive file detection in test to exclude the active `audit.log` file.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (80/80).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (80/80).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -1930,7 +1938,7 @@ Progress:
 - [x] Added regression tests for drain behavior and request rejection during shutdown.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (82/82).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (82/82).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -1946,7 +1954,7 @@ Progress:
 - [x] Added regression tests for valid log path and malformed-log quarantine path.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (84/84).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (84/84).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -1959,7 +1967,7 @@ Progress:
 - [x] Added regression test that verifies `sysparm_query` is empty by default.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (85/85).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (85/85).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -1974,7 +1982,7 @@ Progress:
 - [x] Added regression tests for metrics append/load and malformed-line tolerance.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (87/87).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (87/87).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -1990,7 +1998,7 @@ Progress:
 - [x] Added guardrail flag `allowFullNodeAccess` for explicit opt-in to legacy full Node execution path.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (87/87).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (87/87).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2004,7 +2012,7 @@ Progress:
 - [x] Added regression test to verify deep paths beyond limit are not traversed.
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 27 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 27 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2044,7 +2052,7 @@ Progress:
 	- [x] `writeFileForce` retry on transient write failure
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 30 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 30 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2058,10 +2066,10 @@ Progress:
 	- [x] sysId/updateSetSysId/expectedUpdateSetSysId -> 32-char hex sys_id
 - [x] Wired validation into `CallToolRequestSchema` path before handler dispatch.
 - [x] Added regression tests for invalid table names, invalid sys_id values, and valid identifier cases.
-- [x] Added `zod` dependency to `@syncrona/mcp-server`.
+- [x] Added `zod` dependency to `@syncro-now-ai/mcp-server`.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (90/90 tests).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (90/90 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2075,7 +2083,7 @@ Progress:
 - [x] Added regression test proving audit rows are written for both non-mutating and mutating tools.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (91/91 tests).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (91/91 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2090,7 +2098,7 @@ Progress:
 - [x] Added deterministic regression test comparing async results across different concurrency values.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (92/92 tests).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (92/92 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2105,7 +2113,7 @@ Progress:
 - [x] Added regression test for lazy build and invalidation state transitions.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (93/93 tests).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (93/93 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2120,7 +2128,7 @@ Progress:
 - [x] Added unit test asserting max in-flight push requests respects configured limit.
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 31 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 31 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2134,7 +2142,7 @@ Progress:
 - [x] Added regression test proving refreshed `refreshInterval` is observed after config file rewrite.
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 32 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 32 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2150,7 +2158,7 @@ Progress:
 - [x] Added regression test for singleton reset and factory instance isolation.
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 33 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 33 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2164,7 +2172,7 @@ Progress:
 - [x] Added regression test validating same-client reuse for unchanged credentials, refresh on credential change, and reset behavior.
 
 ### Validation
-- [x] `npm --workspace @syncrona/core test` -> pass (11/11 suites, 34 tests).
+- [x] `npm --workspace @syncro-now-ai/core test` -> pass (11/11 suites, 34 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---
@@ -2178,7 +2186,7 @@ Progress:
 - [x] Preserved integration helper compatibility for injected preflight/session context overrides used by tests.
 
 ### Validation
-- [x] `npm --workspace @syncrona/mcp-server test` -> pass (93/93 tests).
+- [x] `npm --workspace @syncro-now-ai/mcp-server test` -> pass (93/93 tests).
 - [x] `npm run check` -> pass (EXIT:0, tool contract hash `74521ed2`).
 
 ---

@@ -540,7 +540,7 @@ export async function createAndSyncScriptInclude(
     nextStep:
       localPaths.length > 0
         ? "Ask AI to edit one of the localPaths directly."
-        : "No local path found in manifest yet. Run syncrona refresh again and retry.",
+        : "No local path found in manifest yet. Run syncro-now-ai refresh again and retry.",
     isFailure:
       createRes.status < 200 ||
       createRes.status > 299 ||

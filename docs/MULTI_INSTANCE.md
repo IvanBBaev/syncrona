@@ -1,15 +1,15 @@
 # Working with multiple ServiceNow instances
 
-Syncrona resolves credentials from three places, in this order (first match
-wins). `syncrona status` prints the winner as `Credentials from: …`, and
-`syncrona status --debug-credentials` shows every source and why each was or
+SyncroNow AI resolves credentials from three places, in this order (first match
+wins). `syncro-now-ai status` prints the winner as `Credentials from: …`, and
+`syncro-now-ai status --debug-credentials` shows every source and why each was or
 wasn't used.
 
 1. **`--instance-profile <name>`** → `SN_INSTANCE_<NAME>` / `SN_USER_<NAME>` /
    `SN_PASSWORD_<NAME>` environment variables.
 2. **Plain `SN_INSTANCE` / `SN_USER` / `SN_PASSWORD`** (a project `.env` is
    loaded into the environment at startup).
-3. **The global encrypted credential store** (`syncrona login` / `syncrona use`).
+3. **The global encrypted credential store** (`syncro-now-ai login` / `syncro-now-ai use`).
 
 Project-local sources deliberately beat the global store, and the MCP server
 follows the same precedence.
@@ -19,14 +19,14 @@ follows the same precedence.
 Save each instance once, then switch between them:
 
 ```bash
-syncrona login dev12345.service-now.com    # prompts + stores credentials
-syncrona login prod98765.service-now.com
-syncrona instances                         # list stored instances + active marker
-syncrona use dev12345.service-now.com      # make dev the active instance
-syncrona status                            # confirm: "Credentials from: credential store"
+syncro-now-ai login dev12345.service-now.com    # prompts + stores credentials
+syncro-now-ai login prod98765.service-now.com
+syncro-now-ai instances                         # list stored instances + active marker
+syncro-now-ai use dev12345.service-now.com      # make dev the active instance
+syncro-now-ai status                            # confirm: "Credentials from: credential store"
 ```
 
-`syncrona logout <instance>` removes one; `syncrona logout --all` clears all.
+`syncro-now-ai logout <instance>` removes one; `syncro-now-ai logout --all` clears all.
 
 > At-rest protection is machine-key obfuscation, not strong cryptography — see
 > the "Credential storage security" section in the core README. Treat the
@@ -45,8 +45,8 @@ export SN_INSTANCE_PROD=prod98765.service-now.com
 export SN_USER_PROD=prod.user
 export SN_PASSWORD_PROD=prod.password
 
-syncrona status  --instance-profile dev
-syncrona push    --instance-profile prod --dry-run
+syncro-now-ai status  --instance-profile dev
+syncro-now-ai push    --instance-profile prod --dry-run
 ```
 
 A profile var falls back to its base var when unset (e.g. `SN_USER_DEV` →
@@ -94,15 +94,15 @@ they are unset.
 
 ```bash
 # 1. Develop against dev
-syncrona use dev12345.service-now.com
-syncrona dev
+syncro-now-ai use dev12345.service-now.com
+syncro-now-ai dev
 
 # 2. Build and preview the prod push before committing to it
-syncrona build
-syncrona push --instance-profile prod --dry-run
+syncro-now-ai build
+syncro-now-ai push --instance-profile prod --dry-run
 
 # 3. Push for real once the dry run looks right
-syncrona push --instance-profile prod
+syncro-now-ai push --instance-profile prod
 ```
 
 `push`, `download` and `deploy` confirm before writing; add `--ci` to skip the
@@ -119,14 +119,14 @@ env:
   SN_USER: ${{ secrets.SN_USER }}
   SN_PASSWORD: ${{ secrets.SN_PASSWORD }}
 steps:
-  - run: npx syncrona build
-  - run: npx syncrona push --ci
+  - run: npx syncro-now-ai build
+  - run: npx syncro-now-ai push --ci
 ```
 
 ## Troubleshooting
 
 - `status` says **credentials missing** but you logged in → the stored file may
-  not decrypt on this machine. Run `syncrona status --debug-credentials`; if it
-  reports a decrypt failure, re-run `syncrona login`.
+  not decrypt on this machine. Run `syncro-now-ai status --debug-credentials`; if it
+  reports a decrypt failure, re-run `syncro-now-ai login`.
 - Talking to the **wrong instance** → check `Credentials from:` in `status`; a
   stale `.env` beats the store. Remove/fix the `.env` or use a profile.

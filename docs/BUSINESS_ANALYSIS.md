@@ -1,4 +1,4 @@
-# Syncrona — Business Analysis
+# SyncroNow AI — Business Analysis
 
 > Author lens: Business Analyst (BABOK-aligned). Companion to the engineering
 > docs ([ARCHITECTURE.md](ARCHITECTURE.md), [PRODUCT_STATE.md](PRODUCT_STATE.md)).
@@ -9,7 +9,7 @@
 
 **For** ServiceNow scoped-application developers and the teams that ship them,
 **who** are constrained by in-platform Studio source control and manual change
-movement, **Syncrona is** a local-first CLI + AI (MCP) toolchain **that** lets
+movement, **SyncroNow AI is** a local-first CLI + AI (MCP) toolchain **that** lets
 them edit, version, build, analyze, and deploy scoped-app code with standard
 software-engineering practices, **unlike** Studio's built-in Git or the legacy
 Sincronia CLI, **our product** works with or without a companion scoped app and
@@ -52,13 +52,13 @@ with early adopters (each needs a baseline + after measurement):
 
 ## 4. Competitive positioning
 
-| Alternative | Strengths | Where Syncrona wins | Where it must catch up |
+| Alternative | Strengths | Where SyncroNow AI wins | Where it must catch up |
 |---|---|---|---|
 | **ServiceNow Studio + native Git** | First-party, supported, OAuth/SSO | Local editor, build pipeline (TS/Babel/Webpack), AI/MCP analysis, multi-scope CLI | First-party trust, OAuth/SSO, support SLA |
 | **Sincronia / `sinc` (predecessor)** | Established, known to some teams | Modern Node 22, MCP/AI layer, registry-driven, governance/audit, works without companion app | Existing user base & familiarity |
 | **Bespoke scripts / update sets** | Zero tooling cost | Repeatable, documented, testable, automatable | "Already works for us" inertia |
 
-**Sharpest message:** *Native Git moved your code into Git; Syncrona moves your
+**Sharpest message:** *Native Git moved your code into Git; SyncroNow AI moves your
 **workflow** into modern engineering — build pipelines, multi-scope CLI, and an
 AI layer that understands your scope.* Publish this as a one-page comparison.
 

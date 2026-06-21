@@ -1,15 +1,19 @@
 /**
- * @syncrona/credential-store
+ * @syncro-now-ai/credential-store
  *
- * Single source of truth for Syncrona's at-rest credential storage. Both the
+ * Single source of truth for SyncroNow AI's at-rest credential storage. Both the
  * core CLI (async API) and the MCP server (sync API) consume this package so
  * the crypto format, key derivation, file naming, and on-disk layout never
  * diverge between the two processes.
  *
- * Security note: at-rest protection here is obfuscation-grade. The encryption
- * key is derived from the machine hostname + OS username, so anyone able to run
- * as the same user on the same host can decrypt the files. See the core README
- * "Credential storage security" section for hardening recommendations.
+ * Security note: the encryption key is resolved by `getStoreKey()` (AR2) with
+ * the precedence SYNCRONA_STORE_KEY (explicit, for CI / secrets managers) > OS
+ * keychain (opt-in via SYNCRONA_USE_KEYCHAIN, needs the optional
+ * @napi-rs/keyring) > the legacy machine-derived key. The machine-derived
+ * default is only obfuscation-grade — anyone able to run as the same user on the
+ * same host can decrypt files written with it; configure an explicit key or the
+ * keychain for real at-rest protection. See the core README "Credential storage
+ * security" section.
  */
 import {
   createCipheriv,
@@ -71,6 +75,117 @@ export function getMachineKey(): Buffer {
   return scryptSync(machineId, STORE_SALT, KEY_LENGTH);
 }
 
+/* ----------------------------------------------------------------------------
+ * At-rest key resolution (AR2)
+ *
+ * The file-encryption key is resolved with this precedence:
+ *   1. SYNCRONA_STORE_KEY  — an explicit 32-byte key (64 hex chars or base64),
+ *      for CI and secrets managers.
+ *   2. OS keychain         — a random 256-bit master key kept in the OS keychain
+ *      (opt-in via SYNCRONA_USE_KEYCHAIN=1; needs the optional @napi-rs/keyring).
+ *   3. Machine-derived key — the legacy obfuscation-grade default.
+ *
+ * Reads fall back to the legacy machine key so stores written before this
+ * change keep decrypting; the next `login` re-encrypts with the resolved key.
+ * ------------------------------------------------------------------------- */
+
+const STORE_KEY_ENV = "SYNCRONA_STORE_KEY";
+const USE_KEYCHAIN_ENV = "SYNCRONA_USE_KEYCHAIN";
+const KEYCHAIN_SERVICE = "syncrona-credential-store";
+const KEYCHAIN_ACCOUNT = "store-master-key";
+
+export type StoreKeySource = "env" | "keychain" | "machine";
+
+type KeyringEntry = {
+  getPassword(): string | null;
+  setPassword(pw: string): void;
+};
+type KeyringModule = {
+  Entry: new (service: string, account: string) => KeyringEntry;
+};
+
+let cachedStoreKey: { key: Buffer; source: StoreKeySource } | null = null;
+
+function parseKeyMaterial(raw: string): Buffer | null {
+  const value = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return Buffer.from(value, "hex");
+  try {
+    const b = Buffer.from(value, "base64");
+    if (b.length === KEY_LENGTH) return b;
+  } catch {
+    // not valid base64 — fall through
+  }
+  return null;
+}
+
+function keyFromEnv(): Buffer | null {
+  const raw = process.env[STORE_KEY_ENV];
+  if (!raw || !raw.trim()) return null;
+  const key = parseKeyMaterial(raw);
+  if (!key) {
+    throw new Error(
+      `${STORE_KEY_ENV} must be a 32-byte key encoded as 64 hex characters or base64.`
+    );
+  }
+  return key;
+}
+
+function isKeychainEnabled(): boolean {
+  const flag = (process.env[USE_KEYCHAIN_ENV] || "").trim().toLowerCase();
+  return flag === "1" || flag === "true" || flag === "yes";
+}
+
+function openKeychainEntry(): KeyringEntry | null {
+  try {
+    // Optional native dependency — absent or unloadable on unsupported platforms.
+    const mod = require("@napi-rs/keyring") as KeyringModule;
+    return new mod.Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+  } catch {
+    return null;
+  }
+}
+
+function keyFromKeychain(): Buffer | null {
+  if (!isKeychainEnabled()) return null;
+  const entry = openKeychainEntry();
+  if (!entry) return null;
+  try {
+    const existing = entry.getPassword();
+    if (existing) {
+      const parsed = parseKeyMaterial(existing);
+      if (parsed) return parsed;
+    }
+    const generated = randomBytes(KEY_LENGTH);
+    entry.setPassword(generated.toString("hex"));
+    return generated;
+  } catch {
+    // keychain locked or unavailable — fall through to the machine key.
+    return null;
+  }
+}
+
+export function getStoreKey(): Buffer {
+  if (cachedStoreKey) return cachedStoreKey.key;
+  const envKey = keyFromEnv();
+  if (envKey) {
+    cachedStoreKey = { key: envKey, source: "env" };
+    return envKey;
+  }
+  const keychainKey = keyFromKeychain();
+  if (keychainKey) {
+    cachedStoreKey = { key: keychainKey, source: "keychain" };
+    return keychainKey;
+  }
+  const machineKey = getMachineKey();
+  cachedStoreKey = { key: machineKey, source: "machine" };
+  return machineKey;
+}
+
+export function getStoreKeySource(): StoreKeySource {
+  getStoreKey();
+  return (cachedStoreKey as { key: Buffer; source: StoreKeySource }).source;
+}
+
 export function encrypt(plaintext: string, key: Buffer): string {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
@@ -96,6 +211,25 @@ export function decrypt(ciphertext: string, key: Buffer): string {
   return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
 }
 
+/**
+ * Decrypt with the resolved store key, retrying with the legacy machine-derived
+ * key so credential files written before AR2 keep opening.
+ */
+function decryptWithFallback(ciphertext: string): string {
+  try {
+    return decrypt(ciphertext, getStoreKey());
+  } catch (primaryError) {
+    if (getStoreKeySource() !== "machine") {
+      try {
+        return decrypt(ciphertext, getMachineKey());
+      } catch {
+        // legacy key did not match either — surface the primary error below
+      }
+    }
+    throw primaryError;
+  }
+}
+
 async function ensureDirs(): Promise<void> {
   await fsp.mkdir(getCredentialsDir(), { recursive: true, mode: 0o700 });
 }
@@ -110,7 +244,7 @@ export async function saveCredentials(
   password: string
 ): Promise<void> {
   await ensureDirs();
-  const key = getMachineKey();
+  const key = getStoreKey();
   const data = JSON.stringify({ instance, user, password });
   const encrypted = encrypt(data, key);
   const filePath = credentialFilePath(instance);
@@ -120,17 +254,16 @@ export async function saveCredentials(
 export async function loadCredentials(
   instance: string
 ): Promise<StoredCredentials> {
-  const key = getMachineKey();
   const filePath = credentialFilePath(instance);
   let raw: string;
   try {
     raw = await fsp.readFile(filePath, "utf8");
   } catch {
     throw new Error(
-      `No credentials found for "${instance}". Run: syncrona login ${instance}`
+      `No credentials found for "${instance}". Run: syncro-now-ai login ${instance}`
     );
   }
-  const data = decrypt(raw.trim(), key);
+  const data = decryptWithFallback(raw.trim());
   return JSON.parse(data) as StoredCredentials;
 }
 
@@ -231,7 +364,7 @@ export function loadCredentialsSync(
   }
   try {
     const raw = readFileSync(filePath, "utf8").trim();
-    const data = decrypt(raw, getMachineKey());
+    const data = decryptWithFallback(raw);
     const creds = JSON.parse(data) as Partial<StoredCredentials>;
     return {
       instance: String(creds.instance || instance || ""),

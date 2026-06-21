@@ -309,9 +309,9 @@ test('CLAUDE docs drift parser extracts command names from README and CLAUDE doc
     '| `status` | none |',
   ].join('\n');
   const claudeRaw = [
-    '- `npx syncrona refresh`',
-    '- `npx syncrona download`',
-    '- `npx syncrona status`',
+    '- `npx syncro-now-ai refresh`',
+    '- `npx syncro-now-ai download`',
+    '- `npx syncro-now-ai status`',
   ].join('\n');
 
   assert.deepEqual(parseCommandNamesFromReadme(readmeRaw), ['download', 'refresh', 'status']);
@@ -330,7 +330,7 @@ test('CLAUDE docs drift validator reports missing sections and missing command d
   );
   fs.writeFileSync(
     claudePath,
-    ['## Purpose', '## Command Reference', '- `npx syncrona refresh`'].join('\n'),
+    ['## Purpose', '## Command Reference', '- `npx syncro-now-ai refresh`'].join('\n'),
     'utf-8'
   );
 
@@ -362,8 +362,8 @@ test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
       '## Quality Gates',
       '## Command Reference',
       '## Documentation Drift Policy',
-      '- `npx syncrona refresh`',
-      '- `npx syncrona status`',
+      '- `npx syncro-now-ai refresh`',
+      '- `npx syncro-now-ai status`',
     ].join('\n'),
     'utf-8'
   );

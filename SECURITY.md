@@ -16,7 +16,7 @@ receives fixes until a stable line is declared.
 
 ## Data handling
 
-Syncrona is a developer tool that talks to your ServiceNow instance. You should
+SyncroNow AI is a developer tool that talks to your ServiceNow instance. You should
 understand what it touches:
 
 - **Credentials.** The CLI authenticates to ServiceNow. Credentials come from
@@ -38,7 +38,7 @@ understand what it touches:
   least-privilege integration user and rotate its password if a credential file
   may have been exposed. (The MCP server's legacy `sys.scripts.do` fallback
   remains Basic-only; it is a best-effort last resort — see CR22.)
-- **What is read/written.** Syncrona reads scoped-application source/metadata
+- **What is read/written.** SyncroNow AI reads scoped-application source/metadata
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP
   server reads metadata for analysis and keeps an audit log under

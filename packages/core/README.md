@@ -1,6 +1,6 @@
-# @syncrona/core
+# @syncro-now-ai/core
 
-This module contains the core of Syncrona. It is required to use Syncrona at all.
+This module contains the core of SyncroNow AI. It is required to use SyncroNow AI at all.
 It can interact with other plugins after you configure them.
 
 ## Credential resolution order
@@ -11,14 +11,14 @@ Commands resolve ServiceNow credentials in this order (first match wins):
    `SN_PASSWORD_<NAME>` environment variables;
 2. plain `SN_INSTANCE` / `SN_USER` / `SN_PASSWORD` environment variables
    (a `.env` in the project root is loaded into the environment at startup);
-3. the global encrypted credential store (`syncrona login`, `syncrona use`).
+3. the global encrypted credential store (`syncro-now-ai login`, `syncro-now-ai use`).
 
 Project-local sources deliberately beat the global store, and the MCP server
 follows the same precedence (see the mcp-server README).
 
 ## Push recovery and locking
 
-`syncrona push` maintains two state files in the **project root** (next to
+`syncro-now-ai push` maintains two state files in the **project root** (next to
 `sync.config.js`); both are safe to delete when no push is running:
 
 - `sync.push.checkpoint.json` — written after you confirm a push, updated

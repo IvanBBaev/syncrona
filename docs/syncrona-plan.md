@@ -10,7 +10,7 @@
 
 ```
 packages/
-  core/           — CLI (syncrona init/download/push/dev/...)
+  core/           — CLI (syncro-now-ai init/download/push/dev/...)
   mcp-server/     — MCP server (tools for Claude/Cursor/VS Code)
   types/          — shared types
   babel-plugin/   — ServiceNow babel transformations
@@ -45,7 +45,7 @@ TypeError: args.options is not a function
 
 **Affects:** All commands with a function builder — `download`, `push`, `build`, `mcp`. `refresh`, `dev`, `deploy` (with an object builder) work by accident.
 
-**After the fix:** `npm --workspace @syncrona/core run build`
+**After the fix:** `npm --workspace @syncro-now-ai/core run build`
 
 ---
 
@@ -58,7 +58,7 @@ TypeError: args.options is not a function
 "main": "./dist./index.js"
 ```
 
-Double dot (`./dist./`) — Node.js cannot find the entry point on `require("@syncrona/core")`.
+Double dot (`./dist./`) — Node.js cannot find the entry point on `require("@syncro-now-ai/core")`.
 
 **Fix:**
 ```json
@@ -72,7 +72,7 @@ Double dot (`./dist./`) — Node.js cannot find the entry point on `require("@sy
 ### S3. Rebuild after S1 + S2
 
 ```bash
-npm --workspace @syncrona/core run build
+npm --workspace @syncro-now-ai/core run build
 ```
 
 Confirm it works:
@@ -116,7 +116,7 @@ Affects: `download`, `push`, `build`, `mcp` commands.
 
 ## Already fixed in this session (rebuild only)
 
-### S5. `wizard.ts` — fresh machine without `syncrona login`
+### S5. `wizard.ts` — fresh machine without `syncro-now-ai login`
 
 **Old behavior:** `getWizardCredentials()` threw immediately if there was no active instance in the store.
 
@@ -150,7 +150,7 @@ Affects: `download`, `push`, `build`, `mcp` commands.
 
 **7c. `wizard.ts` `startWizard()`** — `preloadStoredCredentials(instance)` is called after `saveCredentials()`. `downloadApp()` → `defaultClient()` uses the store, not env vars.
 
-**Effect:** An old `.env` with a wrong password no longer blocks `syncrona login`.
+**Effect:** An old `.env` with a wrong password no longer blocks `syncro-now-ai login`.
 
 ---
 
@@ -217,11 +217,11 @@ The fetch logic already passes the body — PATCH works with no other change.
 ## Credential flow — full picture
 
 ```
-syncrona login
+syncro-now-ai login
   → saveCredentials(instance, user, pass)  // ~/.syncrona/credentials/{instance}.enc
   → setActiveInstance(instance)            // ~/.syncrona/config.json
 
-syncrona init / syncrona dev / syncrona push
+syncro-now-ai init / syncro-now-ai dev / syncro-now-ai push
   → bootstrap.ts:
       dotenv.config()                      // loads .env (only SN_INSTANCE now)
       preloadStoredCredentials()           // loads the store into memory
@@ -229,7 +229,7 @@ syncrona init / syncrona dev / syncrona push
       if (SN_USER in env) → env wins
       else → storedCredentialsCache        // ← the normal path after the fix
 
-syncrona download (MCP subprocess)
+syncro-now-ai download (MCP subprocess)
   → inherits env from the MCP process
   → if no SN_USER in env → store
 ```
@@ -241,7 +241,7 @@ syncrona download (MCP subprocess)
 ```
 1. S1  — tsconfig.json: "module": "commonjs"           ← 1-line change
 2. S2  — package.json main typo fix                    ← 1-line change
-3. S3  — npm --workspace @syncrona/core run build      ← rebuild
+3. S3  — npm --workspace @syncro-now-ai/core run build      ← rebuild
 4.      — test: node packages/core/dist/index.js download --help
 5. S4  — commander.ts: function builders → objects     ← clean-up (optional)
 6. S6  — snRequest PATCH in servicenowCore.ts          ← for update tools
@@ -255,10 +255,10 @@ syncrona download (MCP subprocess)
 
 ```bash
 # Core only
-npm --workspace @syncrona/core run build
+npm --workspace @syncro-now-ai/core run build
 
 # MCP server only
-npm --workspace @syncrona/mcp-server run build
+npm --workspace @syncro-now-ai/mcp-server run build
 
 # Full check (typecheck + lint + tests)
 npm run check

@@ -34,7 +34,7 @@ describe("getActiveStoreDecryptWarning / activeStoreHealth (DX20b)", () => {
     expect(warning).toContain("ven03019.service-now.com");
     expect(warning).toContain("failed to decrypt");
     expect(warning).toContain("unable to authenticate data");
-    expect(warning).toContain("syncrona login");
+    expect(warning).toContain("syncro-now-ai login");
   });
 
   it("treats an unreadable store as no warning (best-effort)", async () => {

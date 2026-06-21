@@ -1,4 +1,4 @@
-import { Sync } from "@syncrona/types";
+import { Sync } from "@syncro-now-ai/types";
 
 export function wait(ms: number) {
   return new Promise((resolve) => {

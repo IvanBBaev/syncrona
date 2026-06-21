@@ -1,6 +1,6 @@
-# Syncrona Roadmap
+# SyncroNow AI Roadmap
 
-Syncrona is a local-first CLI + AI (MCP) toolchain for ServiceNow scoped-app
+SyncroNow AI is a local-first CLI + AI (MCP) toolchain for ServiceNow scoped-app
 development — *"treat ServiceNow code like real application code: versioned,
 testable, automatable, and AI-analyzable, from your own editor."*
 
@@ -15,7 +15,7 @@ human-facing summary of them.
 - **Current version:** `0.4.2-alpha.8` (private alpha)
 - **Engineering readiness:** ~8.5/10 — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened.
-- **Last updated:** 2026-06-17
+- **Last updated:** 2026-06-21
 
 ## Status legend
 
@@ -28,7 +28,7 @@ human-facing summary of them.
 
 ---
 
-## Where Syncrona is today (v0.4.x alpha)
+## Where SyncroNow AI is today (v0.4.x alpha)
 
 The engineering foundation is in place and validated end-to-end against scoped
 applications. The following are **shipped**:
@@ -48,12 +48,12 @@ applications. The following are **shipped**:
 
 ### Auth & security ✅
 - **OAuth 2.0** on both the CLI and the MCP server (password grant, Bearer +
-  refresh on 401/expiry, shared token manager in `@syncrona/sn-transport`).
+  refresh on 401/expiry, shared token manager in `@syncro-now-ai/sn-transport`).
   Basic auth stays the default; OAuth is opt-in via `SN_OAUTH_CLIENT_ID` /
   `SN_OAUTH_CLIENT_SECRET`.
 - Multi-instance credentials (env / encrypted store / interactive, profile
   aware), credential-source visibility in `status`, decrypt-failure warnings.
-- Encrypted credential store (`@syncrona/credential-store`, AES-256-GCM),
+- Encrypted credential store (`@syncro-now-ai/credential-store`, AES-256-GCM),
   policy-as-code + secrets-provider chain, Zod input validation, audited tool
   calls, VM-sandboxed script execution.
 
@@ -84,7 +84,7 @@ applications. The following are **shipped**:
 
 ## v0.5 — First public publish (beta)
 
-Goal: ship Syncrona to npm and open the repository. This milestone is gated
+Goal: ship SyncroNow AI to npm and open the repository. This milestone is gated
 mostly by **owner decisions**, with a small amount of engineering left.
 
 ### Owner decisions (must clear first)
@@ -92,26 +92,31 @@ mostly by **owner decisions**, with a small amount of engineering left.
   code and the right to distribute it publicly. Code carried prior `nuvolo`
   references; the repo now lives on a personal account. **Hard gate on every
   public step below.**
-- 🔒 **Brand unification** (BA6) — pick one name across npm scope, repo, and CLI
-  (`syncro-now-ai` / `SyncroNow AI` / `syncrona` / `@syncrona`). Changes the
-  published package name, so it must precede the first publish.
+- ✅ **Brand unification** (BA6) — **decided & implemented**: product **SyncroNow
+  AI**, npm scope `@syncro-now-ai/*`, CLI command `syncro-now-ai`, MCP server
+  `syncro-now-ai-mcp-server`. On-disk conventions (`.syncrona*`) and the
+  versioned at-rest crypto salt are intentionally left unchanged (no migration
+  pre-publish). Repo rename to match is the only owner step left (cosmetic).
 - 🔒 **Repository → public** — flip only after IP clearance. Also activates the
   CodeQL workflow (currently guarded to public repos).
-- 🔒 **npm publish + 2FA** (D5) — claim the `@syncrona` scope, enable 2FA, then
-  `npm run release:core`.
+- 🔒 **npm publish + 2FA** (D5) — claim the `@syncro-now-ai` scope, enable 2FA,
+  then run the `release` workflow (Changesets publish with provenance).
 - 🔒 **Business model / sustainability** (BA5) — OSS-only vs OSS + paid support;
   ownership and co-maintainer (bus factor is 1 today).
 
 ### Engineering (completable once decisions land)
-- 📋 **Release automation** (G6) — adopt Changesets for version + changelog +
-  publish (adds a dev dependency).
-- 📋 **CI publish with provenance** (D5) — publish from CI with `--provenance`
-  instead of a laptop.
-- 🚧 **Per-package READMEs** — npm landing pages for every published package
-  (all 13 now have a README and `repository`/`author` metadata).
-- 🚧 **OS keychain credential strength** (AR2) — promote the at-rest key from
-  machine-derived to an OS keychain (keytar), with an env/secrets-manager path
-  for CI.
+- ✅ **Release automation** (G6) — Changesets wired in (`.changeset/`,
+  `npm run changeset` / `version-packages` / `release`); `@syncro-now-ai/*` packages
+  version in lockstep. The publish step itself stays owner-gated.
+- ✅ **CI publish with provenance** (D5) — [`release.yml`](.github/workflows/release.yml)
+  publishes via Changesets with `--provenance` (`id-token: write`); dormant until
+  the `NPM_TOKEN` secret + public repo land.
+- ✅ **Per-package READMEs** — npm landing pages for every published package
+  (all 13 have a README and `repository`/`author` metadata).
+- ✅ **OS keychain credential strength** (AR2) — the at-rest key resolves from
+  `SYNCRONA_STORE_KEY` (CI / secrets manager) or the OS keychain (opt-in
+  `SYNCRONA_USE_KEYCHAIN`, optional `@napi-rs/keyring`), falling back to the
+  legacy machine-derived key.
 
 ---
 
@@ -120,9 +125,13 @@ mostly by **owner decisions**, with a small amount of engineering left.
 Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 
 ### Distribution
-- 🔒/📋 **Homebrew tap** (D5) — `homebrew-tap` repo + formula + release action.
-- 🔒/📋 **Windows support** (D5) — PowerShell install script + Windows Credential
-  Manager (native, beyond WSL).
+- 🚧 **Homebrew tap** (D5) — formula template shipped in
+  [`packaging/homebrew/`](packaging/homebrew/syncro-now-ai.rb); owner step left is
+  creating the `homebrew-tap` repo and the first publish (release action fills the
+  tarball `url`/`sha256`).
+- 🚧 **Windows support** (D5) — [`packaging/windows/install.ps1`](packaging/windows/install.ps1)
+  shipped; Windows Credential Manager works natively via `@napi-rs/keyring`
+  (`SYNCRONA_USE_KEYCHAIN=1`). Remaining: broader native-Windows path testing.
 
 ### Auth & connectivity
 - 📋 **Proxy / TLS configuration** (G9) — `HTTPS_PROXY` + custom CA bundle for
@@ -131,8 +140,9 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   decision and per-instance OAuth app configuration.
 
 ### Quality & enforcement
-- 📋 **Machine-enforced module boundaries** (G10) — dependency-cruiser /
-  eslint-plugin-boundaries to enforce the ARCHITECTURE §5 contract in lint.
+- ✅ **Machine-enforced module boundaries** (G10) — dependency-cruiser runs in
+  `npm run lint` (`lint:boundaries`): no circular dependencies, and the shared
+  foundation packages may not import the core/mcp-server consumers.
 - 📋 **Mutation testing** (G13) — Stryker on `credential-store` + `sn-transport`.
 - 📋 **Performance baseline** (G14) — `npm run bench` for manifest build / push,
   with a CI threshold to catch regressions.
@@ -176,7 +186,7 @@ Engineering-completable, not release-blocking; sequenced by demand.
 
 ---
 
-> **Note:** Syncrona is currently a **private** repository. Public-facing items
+> **Note:** SyncroNow AI is currently a **private** repository. Public-facing items
 > (npm publish, repo visibility, CodeQL activation, Homebrew) all sit behind the
 > IP/provenance and brand decisions above. Internal item IDs (G*, AR*, CR*, DX*,
 > BA*) reference [`TODO`](TODO) and [`DONE`](DONE).

@@ -284,7 +284,7 @@ async function main() {
   });
   registerGracefulShutdownSignals(shutdownController);
   await server.connect(transport);
-  console.error("Syncrona MCP server connected over stdio");
+  console.error("SyncroNow AI MCP server connected over stdio");
 
   // The network-heavy scope bootstrap runs after the stdio handshake so a
   // slow instance cannot time out the MCP client connection. It logs to

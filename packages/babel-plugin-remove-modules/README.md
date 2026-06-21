@@ -1,4 +1,4 @@
-# @syncrona/babel-plugin-remove-modules
+# @syncro-now-ai/babel-plugin-remove-modules
 
 ## Overview
 
@@ -7,7 +7,7 @@ This [Babel](https://babeljs.io) plugin is for stripping import/export statement
 ## Installation
 
 ```bash
-npm i -D @syncrona/babel-plugin-remove-modules
+npm i -D @syncro-now-ai/babel-plugin-remove-modules
 ```
 
 ## Usage
