@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SyncroNow AI — modern Git-based ServiceNow development</title>
+    <meta
+      name="description"
+      content="SyncroNow AI lets you manage ServiceNow scoped-app source code in Git with a real local build pipeline (TypeScript / Babel / Webpack / Sass), bidirectional sync, multi-instance support and an MCP server for AI-assisted analysis."
+    />
+    <meta name="theme-color" content="#6366f1" />
+    <link rel="canonical" href="https://leasstatt.github.io/syncrona/" />
+    <!-- Social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SyncroNow AI — modern ServiceNow development" />
+    <meta
+      property="og:description"
+      content="Treat ServiceNow code like real source code: edit in your own editor, build with modern tooling, review in Git, sync on save — plus an MCP server for AI-assisted analysis."
+    />
+    <meta property="og:url" content="https://leasstatt.github.io/syncrona/" />
+    <meta
+      property="og:image"
+      content="https://leasstatt.github.io/syncrona/assets/og-image.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 18 commands, 13 packages, 6 build plugins, MIT."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SyncroNow AI — modern ServiceNow development" />
+    <meta
+      name="twitter:description"
+      content="Manage ServiceNow scoped-app source code in Git with a real build pipeline and an MCP server for AI-assisted analysis."
+    />
+    <meta
+      name="twitter:image"
+      content="https://leasstatt.github.io/syncrona/assets/og-image.png"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 18 commands, 13 packages, 6 build plugins, MIT."
+    />
+    <!-- Structured data: software listing + FAQ rich results -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "name": "SyncroNow AI",
+            "alternateName": "syncrona",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Cross-platform (Node.js 22+; Windows via WSL)",
+            "description": "A CLI and MCP toolchain that manages ServiceNow scoped-application source code in Git, with a local build pipeline (TypeScript / Babel / Webpack / Sass), bidirectional sync, multi-instance profiles and AI-assisted metadata, dependency and impact analysis.",
+            "url": "https://leasstatt.github.io/syncrona/",
+            "downloadUrl": "https://www.npmjs.com/package/@syncro-now-ai/core",
+            "softwareVersion": "0.4.2-alpha.8",
+            "license": "https://opensource.org/licenses/MIT",
+            "author": { "@type": "Person", "name": "Ivan Baev" },
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "keywords": "servicenow, sincronia, scoped application, git, typescript, babel, webpack, mcp, ci/cd"
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is SyncroNow AI affiliated with ServiceNow?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. It is an independent, third-party tool, not affiliated with, endorsed by or sponsored by ServiceNow, Inc. It talks to standard ServiceNow REST/Table APIs and works with or without an optional companion scoped app."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it work without installing anything on the instance?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The CLI works against plain ServiceNow REST APIs with or without the companion server scoped app; the scoped app only enables a few enhanced endpoints. Authenticate with a dedicated least-privilege integration user over HTTP Basic or OAuth 2.0."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How is this different from ServiceNow's native Git integration?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "ServiceNow native Git moves your code into Git. SyncroNow AI moves your workflow into modern engineering: a local build pipeline (TypeScript / Babel / Webpack / Sass), a multi-scope CLI you run from your own editor, and an AI / MCP layer that understands your scope's metadata and dependencies."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it run on Windows?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "On Windows, WSL (Windows Subsystem for Linux, Ubuntu) is currently required — run all syncrona commands from inside the WSL shell. Native Windows support (PowerShell install, Windows Credential Manager) is on the roadmap. macOS and Linux are first-class."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I work with multiple ServiceNow instances?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Use the encrypted global credential store (syncrona login / use / instances) or instance-profile environment variables with --instance-profile to route a single command at dev, test or prod. syncrona status shows which instance and credential source are active."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%236366f1'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 11a7 7 0 0 1 11.7-5L19 8'/%3E%3Cpath d='M19 4v4h-4'/%3E%3Cpath d='M19 13a7 7 0 0 1-11.7 5L5 16'/%3E%3Cpath d='M5 20v-4h4'/%3E%3C/g%3E%3C/svg%3E"
+    />
+    <!-- Apply the saved/system theme before first paint to avoid a flash. -->
+    <script>
+      (function () {
+        try {
+          var t =
+            localStorage.getItem("syncrona-theme") ||
+            (window.matchMedia &&
+            matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light");
+          document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="topbar">
+      <button class="icon-btn" id="menuBtn" aria-label="Toggle menu">☰</button>
+      <a class="brand" href="#top">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11a7 7 0 0 1 11.7-5L19 8" /><path d="M19 4v4h-4" /><path d="M19 13a7 7 0 0 1-11.7 5L5 16" /><path d="M5 20v-4h4" /></svg>
+        </span>
+        SyncroNow AI <small>· docs</small>
+      </a>
+      <span class="spacer"></span>
+      <nav class="toplinks">
+        <a href="#quickstart">Quick start</a>
+        <a href="#commands">Commands</a>
+        <a href="#mcp">MCP</a>
+        <a href="#compare">Compare</a>
+      </nav>
+      <a
+        class="icon-btn"
+        href="https://github.com/LeassTaTT/syncrona"
+        title="GitHub repository"
+        aria-label="GitHub repository"
+        target="_blank"
+        rel="noopener"
+        ><svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">🌙</button>
+    </header>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <div class="layout" id="top">
+      <aside class="sidebar" id="sidebar">
+        <h4>Getting started</h4>
+        <nav>
+          <a href="#overview">Overview</a>
+          <a href="#what-is-it">What is it?</a>
+          <a href="#capabilities">Capabilities</a>
+          <a href="#quickstart">Quick start</a>
+        </nav>
+        <h4>Reference</h4>
+        <nav>
+          <a href="#commands">Commands</a>
+          <a href="#configuration">Configuration</a>
+          <a href="#plugins">Build plugins</a>
+        </nav>
+        <h4>Connect</h4>
+        <nav>
+          <a href="#credentials">Credentials &amp; auth</a>
+          <a href="#mcp">MCP server</a>
+        </nav>
+        <h4>Guides</h4>
+        <nav>
+          <a href="#workflow">Workflow</a>
+          <a href="#compare">How it compares</a>
+          <a href="#security">Security</a>
+          <a href="#architecture">Architecture</a>
+        </nav>
+        <h4>More</h4>
+        <nav>
+          <a href="#faq">FAQ</a>
+        </nav>
+      </aside>
+
+      <main class="content" id="main">
+        <!-- HERO -->
+        <section class="hero" id="overview">
+          <div class="hero-grid">
+            <div class="hero-copy">
+              <span class="eyebrow">ServiceNow · Git · Modern tooling</span>
+              <h1>Treat ServiceNow code like real source code.</h1>
+              <p class="lead">
+                <strong>SyncroNow AI</strong> downloads your scoped-app code as
+                plain, editable files, builds them with modern tooling
+                (TypeScript, Babel, Webpack, Sass) and syncs the result back to
+                the instance on save — so your ServiceNow source lives in Git
+                with real diffs, history, branches and pull requests.
+              </p>
+              <div class="hero-cta">
+                <a class="btn primary" href="#quickstart">Get started →</a>
+                <a
+                  class="btn"
+                  href="https://github.com/LeassTaTT/syncrona"
+                  target="_blank"
+                  rel="noopener"
+                  >View on GitHub</a
+                >
+                <a class="btn" href="#compare">How it compares</a>
+              </div>
+              <div class="badges">
+                <span class="badge ok">MIT licensed</span>
+                <span class="badge">Node.js 22+</span>
+                <span class="badge">TypeScript · ESM</span>
+                <span class="badge ok">Basic &amp; OAuth 2.0</span>
+                <span class="badge">MCP server included</span>
+              </div>
+            </div>
+            <div class="hero-visual">
+              <div class="term" aria-hidden="true">
+                <div class="term-bar">
+                  <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+                  <span class="term-title">zsh · ~/acme-app</span>
+                </div>
+                <div class="term-body">
+<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona login</span></span>
+<span class="l"><span class="ok">✔</span> Saved credentials · <span class="accent">dev12345.service-now.com</span></span>
+<span class="l"> </span>
+<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona init</span></span>
+<span class="l"><span class="ok">✔</span> Wrote sync.config.js · sync.manifest.json · .env</span>
+<span class="l"><span class="ok">✔</span> Scope <span class="accent">x_acme_app</span> · 142 files tracked</span>
+<span class="l"> </span>
+<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona dev</span></span>
+<span class="l"><span class="accent">▸</span> watching <span class="dim">src/</span> · build &amp; push on save</span>
+<span class="l"><span class="dim">~</span> PriceCalc/script.ts <span class="dim">→ babel + typescript</span></span>
+<span class="l"><span class="ok">✔</span> pushed <span class="accent">PriceCalc</span> <span class="dim">· 312ms</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat"><b>18</b><span>CLI commands</span></div>
+            <div class="stat"><b>13</b><span>workspace packages</span></div>
+            <div class="stat"><b>59</b><span>MCP tools</span></div>
+            <div class="stat"><b>6</b><span>build plugins</span></div>
+            <div class="stat"><b>22+</b><span>Node.js</span></div>
+          </div>
+        </section>
+
+        <!-- WHAT IS IT -->
+        <section id="what-is-it">
+          <h2>What is this, exactly?</h2>
+          <p>
+            SyncroNow AI is the next-generation successor to
+            <a href="https://github.com/nuvolo/sincronia" target="_blank" rel="noopener">Sincronia</a>
+            — a CLI (and an MCP server) for managing ServiceNow
+            <em>scoped-application source code</em> outside the platform. It
+            takes a two-pronged approach: architecture, records, dictionary and
+            other metadata stay managed in ServiceNow the normal way; your
+            <strong>source code itself</strong> lives in a local project folder,
+            under Git, built with the tools you already use.
+          </p>
+          <div class="callout">
+            <span class="c-ico">💡</span>
+            <p>
+              Once code is in your project, it becomes the
+              <strong>source of truth</strong> — you edit it locally, not in the
+              instance. SyncroNow AI builds it and writes the result back. That
+              shift is what gives you real diffs, code review and CI over code
+              that would otherwise only exist inside ServiceNow.
+            </p>
+          </div>
+        </section>
+
+        <!-- CAPABILITIES -->
+        <section id="capabilities">
+          <h2>Capabilities</h2>
+          <p class="lead">
+            A modern engineering workflow on top of ServiceNow — not just a file
+            uploader.
+          </p>
+          <div class="cards">
+            <div class="card">
+              <div class="ico">🐙</div>
+              <h3>Git-native source control</h3>
+              <p>
+                Scoped-app code becomes plain editable files in a project tree,
+                so it tracks in Git with real diffs, history, branches and pull
+                requests — instead of living only inside Studio.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico">⚙️</div>
+              <h3>Modern build pipeline</h3>
+              <p>
+                Write TypeScript, modern JavaScript or Sass and compile to
+                instance-ready code with per-rule plugin chains — Babel,
+                Webpack, the TypeScript compiler, Prettier and ESLint.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico">🔄</div>
+              <h3>Bidirectional sync</h3>
+              <p>
+                <code>dev</code> mode watches your files and pushes builds on
+                save; <code>refresh</code> pulls records created in the instance.
+                <code>push</code> / <code>build</code> / <code>deploy</code> give
+                you full and diff-scoped flows.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico">🏢</div>
+              <h3>Multi-instance &amp; monorepo</h3>
+              <p>
+                An encrypted credential store and instance profiles route one
+                command at dev, test or prod. Run several scoped apps from one
+                repo, each with its own config.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico">🤖</div>
+              <h3>AI &amp; MCP analysis</h3>
+              <p>
+                A bundled MCP server gives an AI assistant metadata inventory,
+                dependency graphs, impact analysis, drift detection and scoped
+                documentation — with guardrails and dry-run.
+              </p>
+            </div>
+            <div class="card">
+              <div class="ico">🩺</div>
+              <h3>Diagnostics &amp; safety</h3>
+              <p>
+                <code>check-env</code>, <code>doctor</code> and
+                <code>status</code> verify your environment and connectivity;
+                <code>--dry-run</code> previews any write before it touches the
+                instance.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- QUICK START -->
+        <section id="quickstart">
+          <h2>Quick start</h2>
+          <p>
+            You need <strong>Node.js 22+</strong> and a ServiceNow instance you
+            can reach (a free
+            <a href="https://developer.servicenow.com/" target="_blank" rel="noopener"
+              >Personal Developer Instance</a
+            >
+            works great). On Windows, run everything inside
+            <a href="https://learn.microsoft.com/windows/wsl/" target="_blank" rel="noopener">WSL</a>.
+          </p>
+
+          <h3>1 · Install the CLI and log in</h3>
+          <p>
+            Install globally for the <code>syncrona</code> command, then save
+            credentials in the encrypted global store.
+          </p>
+          <div class="codeblock" data-lang="bash">
+            <pre><code>npm i -g @syncro-now-ai/core
+syncrona login          # prompts for instance, user, password (or OAuth)</code></pre>
+          </div>
+          <p class="lead" style="font-size: 14px">
+            Prefer a per-project dev dependency? Use
+            <code>npm i -D @syncro-now-ai/core</code> and call it with
+            <code>npx syncrona …</code>.
+          </p>
+
+          <h3>2 · Initialise the project</h3>
+          <p>
+            From an empty project folder (run <code>npm init</code> first), the
+            wizard writes <code>sync.config.js</code>,
+            <code>sync.manifest.json</code> and <code>.env</code>, then runs a
+            quick connection check.
+          </p>
+          <div class="codeblock" data-lang="bash">
+            <pre><code>npx syncrona init</code></pre>
+          </div>
+          <div class="callout">
+            <span class="c-ico">🔒</span>
+            <p>
+              Add a <code>.gitignore</code> that ignores
+              <code>node_modules</code> and <code>.env</code> before your first
+              commit — you really don't want credentials in your repository.
+            </p>
+          </div>
+
+          <h3>3 · Start dev mode and work</h3>
+          <p>
+            Every time you save a tracked file, SyncroNow AI builds it with your
+            ruleset and pushes the result to the matching record in ServiceNow.
+          </p>
+          <div class="codeblock" data-lang="bash">
+            <pre><code>npx syncrona dev</code></pre>
+          </div>
+          <p>
+            Optionally install the companion server scoped app for a few
+            enhanced endpoints — the CLI works <strong>with or without</strong>
+            it against plain REST APIs.
+          </p>
+        </section>
+
+        <!-- COMMANDS -->
+        <section id="commands">
+          <h2>Commands</h2>
+          <p>
+            The full <code>syncrona</code> command surface. Run any of them with
+            <code>npx syncrona &lt;command&gt;</code> (or just
+            <code>syncrona</code> if installed globally).
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th>Alias</th>
+                  <th>What it does</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>init</code></td><td>—</td><td>Wizard that scaffolds a new project (config, manifest, <code>.env</code>) and runs an initial connection check.</td></tr>
+                <tr><td><code>dev</code></td><td><code>d</code></td><td>Watch mode — builds and pushes tracked files on save; periodically refreshes the manifest.</td></tr>
+                <tr><td><code>refresh</code></td><td><code>r</code></td><td>Refresh the manifest and download newly created records. Never overwrites local file contents.</td></tr>
+                <tr><td><code>push</code></td><td>—</td><td>Build and push local files to the instance. <code>--diff &lt;branch&gt;</code> pushes only changed files.</td></tr>
+                <tr><td><code>download &lt;scope&gt;</code></td><td>—</td><td>Download a scoped app, overwriting local files. Destructive — confirms first.</td></tr>
+                <tr><td><code>build</code></td><td>—</td><td>Build the project locally into the build folder (<code>--diff</code> records changed files for deploy).</td></tr>
+                <tr><td><code>deploy</code></td><td>—</td><td>Deploy the built files in the build folder to the instance.</td></tr>
+                <tr><td><code>docs</code></td><td>—</td><td>Generate / update Markdown docs and Mermaid diagrams for the downloaded scope.</td></tr>
+                <tr><td><code>status</code></td><td>—</td><td>Extended workspace status — instance / user / scope, config paths, env readiness, connectivity.</td></tr>
+                <tr><td><code>check-env</code></td><td>—</td><td>Check machine prerequisites (Node 22+, platform / WSL, Git) and print actionable fixes.</td></tr>
+                <tr><td><code>doctor</code></td><td>—</td><td>Run local config and connectivity diagnostics and report actionable failures.</td></tr>
+                <tr><td><code>plugins</code></td><td>—</td><td>Show configured plugin rules and report which plugin packages are installed or missing.</td></tr>
+                <tr><td><code>config &lt;action&gt;</code></td><td>—</td><td>Inspect configuration — e.g. <code>config show-defaults</code> prints built-in includes / excludes.</td></tr>
+                <tr><td><code>mcp</code></td><td>—</td><td>Start the standalone MCP server and optionally auto-configure local MCP client files.</td></tr>
+                <tr><td><code>login [instance]</code></td><td>—</td><td>Save credentials in the encrypted global credential store and optionally set the active instance.</td></tr>
+                <tr><td><code>logout [instance]</code></td><td>—</td><td>Remove stored credentials for one instance (or all with <code>--all</code>).</td></tr>
+                <tr><td><code>instances</code></td><td>—</td><td>List instances saved in the global store and mark the active one.</td></tr>
+                <tr><td><code>use &lt;instance&gt;</code></td><td>—</td><td>Set the active stored instance for subsequent commands.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Diff, dry-run and profiles</h3>
+          <ul>
+            <li>
+              <strong><code>--diff &lt;branch&gt;</code></strong> uses
+              <code>git diff</code> against a branch. On <code>push</code> it
+              pushes <em>only changed files</em>; on <code>build</code> it builds
+              everything but records which files changed for a later targeted
+              <code>deploy</code>.
+            </li>
+            <li>
+              <strong><code>--dry-run</code></strong> previews effects without
+              writing, on <code>push</code>, <code>deploy</code>,
+              <code>download</code> and <code>build</code>.
+            </li>
+            <li>
+              <strong><code>--instance-profile &lt;name&gt;</code></strong>
+              selects profile env vars (<code>SN_INSTANCE_&lt;PROFILE&gt;</code>,
+              <code>SN_USER_&lt;PROFILE&gt;</code>,
+              <code>SN_PASSWORD_&lt;PROFILE&gt;</code>), falling back to base vars.
+            </li>
+            <li>
+              <strong><code>--refresh-interval &lt;seconds&gt;</code></strong>
+              tunes how often <code>dev</code> re-reads the manifest (default
+              30s; <code>0</code> disables polling).
+            </li>
+          </ul>
+        </section>
+
+        <!-- CONFIGURATION -->
+        <section id="configuration">
+          <h2>Configuration</h2>
+          <p>
+            All configuration lives in <code>sync.config.js</code> in your
+            project root. It controls where source lives, which files are
+            tracked, and which build plugins run on them.
+          </p>
+          <div class="codeblock" data-lang="javascript">
+            <pre><code>module.exports = {
+  // Where your source files live and are watched in dev mode.
+  sourceDirectory: "src",
+  // Where local builds are written.
+  buildDirectory: "build",
+  // Plugin rules — MOST SPECIFIC match first; the first match wins.
+  rules: [],
+  // Tables/fields to exclude (on top of the built-in defaults).
+  excludes: {},
+  // Tables/fields to explicitly include (can override excludes).
+  includes: {},
+  // How often (seconds) dev mode refreshes the manifest.
+  refreshInterval: 30,
+};</code></pre>
+          </div>
+
+          <h3>Includes &amp; excludes</h3>
+          <p>
+            Too many files, or some missing? <code>includes</code> and
+            <code>excludes</code> are layered on top of sane built-in defaults.
+            List those defaults with <code>syncrona config show-defaults</code>,
+            then add overrides — and run <code>syncrona refresh</code> to apply.
+          </p>
+          <div class="codeblock" data-lang="javascript">
+            <pre><code>module.exports = {
+  excludes: {
+    sys_scope_privilege: false, // turn the default exclusion back on
+    my_cool_table: true,        // exclude this table entirely
+    new_cool_table: { cool_script: true }, // exclude one field
+  },
+  includes: {
+    sys_report: true, // force-include (overrides excludes)
+    // treat a text field as a .js code file:
+    special_code_table: { neat_script_field: { type: "js" } },
+  },
+};</code></pre>
+          </div>
+
+          <h3>Plugin rules</h3>
+          <p>
+            The <code>rules</code> array maps a filename regular expression to an
+            ordered plugin chain. The result of each plugin is passed to the
+            next, and only the <strong>first matching rule</strong> runs — so
+            order your most specific patterns first.
+          </p>
+          <div class="codeblock" data-lang="javascript">
+            <pre><code>rules: [
+  { match: /\.secret\.ts$/, plugins: [] },     // matched → no plugins run
+  {
+    match: /\.ts$/,
+    plugins: [
+      {
+        name: "@syncro-now-ai/typescript-plugin",
+        options: { transpile: false }, // type-check only
+      },
+    ],
+  },
+],</code></pre>
+          </div>
+          <div class="callout">
+            <span class="c-ico">✨</span>
+            <p>
+              Multi-part extensions unlock multiple pipelines for the same base
+              file: <code>script.client.js</code> and
+              <code>script.server.js</code> can run Webpack and Babel
+              respectively. As long as the base filename is stable, add as many
+              extensions as you like.
+            </p>
+          </div>
+
+          <h3>Table options</h3>
+          <p>
+            <code>tableOptions</code> customises how records on a table map to
+            folders: <code>displayField</code> names the record folder,
+            <code>differentiatorField</code> disambiguates duplicate display
+            values, and <code>query</code> is an encoded query that limits which
+            records are tracked.
+          </p>
+          <div class="codeblock" data-lang="javascript">
+            <pre><code>tableOptions: {
+  some_table: {
+    displayField: "some_field",
+    differentiatorField: ["version", "sys_id"], // first non-empty wins
+    query: "active=true",
+  },
+},</code></pre>
+          </div>
+          <div class="callout warn">
+            <span class="c-ico">⚠️</span>
+            <p>
+              A <code>sys_id</code> differentiator puts a colon in the filename,
+              which breaks native Windows and WSL <code>/mnt</code> paths. Prefer
+              a non-<code>sys_id</code> differentiator, and avoid it entirely on
+              native-Windows teams.
+            </p>
+          </div>
+        </section>
+
+        <!-- BUILD PLUGINS -->
+        <section id="plugins">
+          <h2>Build plugins</h2>
+          <p>
+            Plugins are where the power comes from. Each is a separate
+            <code>@syncro-now-ai/*</code> package you install as a dev dependency
+            and wire into a rule. Chains run in order, threading each plugin's
+            output into the next.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Package</th><th>What it does</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>@syncro-now-ai/typescript-plugin</code></td><td>Type-checks and compiles TypeScript files.</td></tr>
+                <tr><td><code>@syncro-now-ai/babel-plugin</code></td><td>Runs Babel on <code>.js</code> / <code>.ts</code> files.</td></tr>
+                <tr><td><code>@syncro-now-ai/webpack-plugin</code></td><td>Bundles your files with Webpack.</td></tr>
+                <tr><td><code>@syncro-now-ai/sass-plugin</code></td><td>Compiles Sass / SCSS to CSS.</td></tr>
+                <tr><td><code>@syncro-now-ai/prettier-plugin</code></td><td>Formats output files with Prettier.</td></tr>
+                <tr><td><code>@syncro-now-ai/eslint-plugin</code></td><td>Runs ESLint over your files on build.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="lead" style="font-size: 14px">
+            Supporting presets — <code>@syncro-now-ai/babel-preset-servicenow</code>
+            and <code>@syncro-now-ai/babel-plugin-remove-modules</code> — adapt
+            modern output for the ServiceNow runtime.
+          </p>
+          <div class="callout">
+            <span class="c-ico">🧱</span>
+            <p>
+              Source is built <em>asymmetrically</em>: the code you write is not
+              the code that runs. A small TypeScript class becomes the
+              transpiled, ServiceNow-compatible JavaScript that lands in the
+              Script Include — you keep the readable source in Git.
+            </p>
+          </div>
+        </section>
+
+        <!-- CREDENTIALS & AUTH -->
+        <section id="credentials">
+          <h2>Credentials &amp; authentication</h2>
+          <p>
+            Authenticate with a <strong>dedicated least-privilege integration
+            user</strong> over HTTPS. HTTP Basic is the default; OAuth 2.0 is
+            supported in the CLI.
+          </p>
+
+          <h3>Where credentials live</h3>
+          <p>
+            The global credential store writes each instance to
+            <code>~/.syncrona/credentials/&lt;instance&gt;.enc</code>, encrypted
+            with AES-256-GCM. The encryption key is resolved with this
+            precedence:
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Key source</th><th>How</th><th>Strength</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>SYNCRONA_STORE_KEY</code></td>
+                  <td>Explicit 32-byte key (hex / base64) from a secrets manager — best for CI / shared environments.</td>
+                  <td><span class="pill ro">Strongest</span></td>
+                </tr>
+                <tr>
+                  <td>OS keychain</td>
+                  <td>Opt in with <code>SYNCRONA_USE_KEYCHAIN=1</code> (macOS Keychain / Windows Credential Manager / libsecret) via optional <code>@napi-rs/keyring</code>.</td>
+                  <td><span class="pill ro">Strong</span></td>
+                </tr>
+                <tr>
+                  <td>Machine-derived (default)</td>
+                  <td>Derived from hostname + username. Obfuscation-grade — guards against casual inspection, not a compromised account or stolen disk.</td>
+                  <td><span class="pill wr">Obfuscation</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout security">
+            <span class="c-ico">🛡️</span>
+            <p>
+              With the default machine-derived key, anyone who can read the
+              <code>.enc</code> file and run code as your user can decrypt it.
+              For real at-rest protection set <code>SYNCRONA_STORE_KEY</code> or
+              enable the keychain, rely on OS file permissions and full-disk
+              encryption, and rotate the integration user's password if a file
+              may have been exposed.
+            </p>
+          </div>
+
+          <h3>OAuth 2.0</h3>
+          <p>
+            Set <code>SN_OAUTH_CLIENT_ID</code> and
+            <code>SN_OAUTH_CLIENT_SECRET</code> (alongside
+            <code>SN_USER</code> / <code>SN_PASSWORD</code>, optionally with
+            per-profile <code>_&lt;PROFILE&gt;</code> suffixes) and the CLI
+            exchanges them for a Bearer token at <code>oauth_token.do</code>,
+            refreshing on expiry or 401. Without those vars it stays on Basic.
+          </p>
+        </section>
+
+        <!-- MCP SERVER -->
+        <section id="mcp">
+          <h2>MCP server</h2>
+          <p>
+            The bundled <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
+            server (<code>@syncro-now-ai/mcp-server</code>) lets an MCP-capable
+            AI client — Claude Desktop, Claude Code, VS Code Chat — analyse and
+            operate your scope: session &amp; scope control, metadata inventory,
+            dependency and impact graphs, static script analysis, drift
+            detection and scoped documentation, behind guardrails and dry-run.
+          </p>
+
+          <h3>Register it with your client</h3>
+          <p>
+            Run <code>npx syncrona mcp</code> to start the server and optionally
+            write local client config (<code>.vscode/mcp.json</code>,
+            <code>.syncrona-mcp/secrets.json</code>), or register it directly:
+          </p>
+          <div class="codeblock" data-lang="json">
+            <pre><code>{
+  "mcpServers": {
+    "syncrona": {
+      "command": "npx",
+      "args": ["-y", "@syncro-now-ai/mcp-server"]
+    }
+  }
+}</code></pre>
+          </div>
+
+          <h3>Tool families</h3>
+          <p>59 tools, grouped by what they do. Expand a family to see the tools inside.</p>
+          <div class="tools-controls">
+            <button type="button" class="ghost-btn" id="expand-all-tools">Expand all</button>
+            <button type="button" class="ghost-btn" id="collapse-all-tools">Collapse all</button>
+          </div>
+
+          <details class="tool">
+            <summary><code>Session &amp; guardrails</code><span class="tool-sum">scope, update set and preflight control</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sync_get_session_context</code> — current scope and update set</li>
+                <li><code>sync_set_scope</code> / <code>sync_list_scopes</code> — switch / list scopes</li>
+                <li><code>sync_set_update_set</code> / <code>sync_list_update_sets</code> — switch / list update sets</li>
+                <li><code>sync_prepare_session</code> — one-call scope + update-set setup</li>
+                <li><code>sync_preflight_check</code> — validate context against guardrails</li>
+                <li><code>sync_check_instance_capabilities</code> — verify scoped endpoints before automation</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Records &amp; metadata</code><span class="tool-sum">query, read and update instance records</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sn_query_records</code> — query a table, optional grouped analysis</li>
+                <li><code>sn_create_record</code> — create records with validated payloads</li>
+                <li><code>sn_list_metadata_records</code> / <code>sn_get_metadata_record</code> — inventory and read BR, Client Script, ACL, Dictionary, UI Policy, Scripted REST</li>
+                <li><code>sn_update_metadata_record</code> — controlled update with confirm + dry-run gate</li>
+                <li><code>sn_search_scripts</code> — full-text search across script tables with excerpts</li>
+                <li><code>sn_get_record_history</code> — field-level change history from <code>sys_audit</code></li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Dependency &amp; impact</code><span class="tool-sum">graphs, blast radius and relations</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sn_build_dependency_graph</code> — nodes/edges with cycle detection and hotspots</li>
+                <li><code>sn_analyze_impact</code> — ranked downstream blast radius for a change</li>
+                <li><code>sn_diff_dependency_graphs</code> — deterministic before/after graph diff</li>
+                <li><code>sync_analyze_scope_relations</code> — full table relation map for a scope</li>
+                <li><code>sync_generate_table_dependency_report</code> — one-command dependency report</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Code analysis</code><span class="tool-sum">static analysis and semantic indexing</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sn_analyze_script_architecture</code> / <code>_security</code> / <code>_performance</code> — analysis packs with severity + remediation</li>
+                <li><code>sn_analyze_script_full</code> — unified weighted risk score, optional suppressions</li>
+                <li><code>sync_build_semantic_index</code> / <code>sync_search_semantic_index</code> — symbol-level local indexing and lookup</li>
+                <li><code>sync_symbol_cross_reference</code> — symbol occurrences by file and count</li>
+                <li><code>sn_render_analysis_markdown</code> — deterministic markdown report</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Change &amp; release</code><span class="tool-sum">drift, validation, diffs and release notes</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sync_detect_drift</code> / <code>sync_diff_instance_vs_local</code> — local vs instance comparison</li>
+                <li><code>sync_validate_change_package</code> / <code>sync_validate_before_push</code> — pre-push dependency &amp; risk checks</li>
+                <li><code>sync_compare_instances</code> — compare a scope across two stored profiles (dev vs prod)</li>
+                <li><code>sync_list_recent_changes</code> — recent scope changes from <code>sys_update_xml</code></li>
+                <li><code>sync_generate_release_notes</code> / <code>sync_export_update_set</code> — release notes and Update Set export</li>
+                <li><code>sync_unified_change_workflow</code> — preflight → analysis → approval → footprint/rollback</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Scope docs &amp; knowledge</code><span class="tool-sum">durable, reusable scope context</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sync_generate_scope_knowledge</code> / <code>sync_validate_scope_knowledge</code> — knowledge JSON + validation</li>
+                <li><code>sync_generate_scope_docs</code> — full docs bundle (overview, dependencies, relationships, per-object)</li>
+                <li><code>sync_scope_knowledge_auto_update</code> — trigger-based updates (init / refresh / change / drift)</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="tool">
+            <summary><code>Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, ATF, health and AI planning</span></summary>
+            <div class="tool-body">
+              <ul>
+                <li><code>sync_status</code> / <code>sync_refresh</code> / <code>sync_build</code> / <code>sync_push</code> — workspace command wrappers</li>
+                <li><code>sync_create_script_include</code> / <code>_and_sync</code> — create a Script Include and pull it local to edit</li>
+                <li><code>sn_execute_background_script</code> / <code>run_node_code</code> — controlled execution with safety gates</li>
+                <li><code>sync_run_atf_tests</code> / <code>sync_suggest_tests</code> — run ATF tests and scaffold test skeletons</li>
+                <li><code>sn_autonomous_remediation_workflow</code> — detect → propose → dry-run/apply → validate, with approval</li>
+                <li><code>sync_health_check</code> / <code>sync_metrics_trend</code> — reliability metrics and trend deltas</li>
+                <li><code>sync_ai_next_actions</code> / <code>sync_plan_minimal_footprint</code> / <code>sync_onboarding_bootstrap</code> — AI-aware planning and onboarding</li>
+              </ul>
+            </div>
+          </details>
+
+          <div class="callout warn">
+            <span class="c-ico">⚠️</span>
+            <p>
+              Writes obey a guardrail policy and a dry-run gate; background-script
+              and Node execution are explicit, gated capabilities meant for
+              non-production environments. Always point the MCP server at a
+              least-privilege integration user.
+            </p>
+          </div>
+        </section>
+
+        <!-- WORKFLOW -->
+        <section id="workflow">
+          <h2>Workflow</h2>
+          <p>
+            SyncroNow AI manages your scope <em>asymmetrically</em>: source code
+            is owned locally; everything else (tables, dictionary, config
+            records, metadata) stays managed in ServiceNow and moves with your
+            usual update-set / deploy process.
+          </p>
+
+          <h3>File structure</h3>
+          <p>Downloaded code is laid out one folder per record:</p>
+          <div class="codeblock" data-lang="text">
+            <pre><code>project_folder/
+  src/
+    table_name/
+      record_name/
+        field_name.extension</code></pre>
+          </div>
+          <p>
+            Records are folders because one record can hold multiple code files.
+            Because the folder is named by the record's display value,
+            <strong>never have two records with the same display value in the
+            same table</strong> — or use <code>differentiatorField</code> to keep
+            them apart.
+          </p>
+
+          <h3>Day-to-day</h3>
+          <ul>
+            <li><strong>Add a record:</strong> create it in ServiceNow, run <code>syncrona refresh</code> — files appear automatically.</li>
+            <li><strong>Edit code:</strong> run <code>syncrona dev</code> and just save; builds push on save.</li>
+            <li><strong>Delete:</strong> stop dev mode, delete the record in ServiceNow, <code>syncrona refresh</code>, then remove the files (deliberately — deletion is never automatic).</li>
+            <li><strong>Ship:</strong> <code>syncrona push</code> (or <code>build</code> + <code>deploy</code>) for the whole scope, or <code>push --diff main</code> for just your feature's edits.</li>
+          </ul>
+          <div class="callout">
+            <span class="c-ico">📂</span>
+            <p>
+              Once a scope is downloaded, <code>syncrona docs</code> generates
+              Markdown and Mermaid diagrams (overview, tables, per-record) — a
+              fast way to explore what a real project looks like.
+            </p>
+          </div>
+        </section>
+
+        <!-- COMPARE -->
+        <section id="compare">
+          <h2>How it compares</h2>
+          <p>
+            For teams deciding how to manage ServiceNow scoped-app code. SyncroNow AI
+            is pre-1.0 and early — these are the honest trade-offs.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>&nbsp;</th>
+                  <th>SyncroNow AI</th>
+                  <th>Studio + native Git</th>
+                  <th>Sincronia (predecessor)</th>
+                  <th>Update sets</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Edit in your own editor</td><td class="yes">✅</td><td>partial</td><td class="yes">✅</td><td class="no">❌</td></tr>
+                <tr><td>Git diff / PR review of code</td><td class="yes">✅</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">❌</td></tr>
+                <tr><td>Local build pipeline (TS/Babel/Webpack/Sass)</td><td class="yes">✅</td><td class="no">❌</td><td class="yes">✅</td><td class="no">❌</td></tr>
+                <tr><td>Multi-scope CLI from one repo</td><td class="yes">✅</td><td>partial</td><td class="yes">✅</td><td class="no">❌</td></tr>
+                <tr><td>AI / MCP analysis</td><td class="yes">✅</td><td class="no">❌</td><td class="no">❌</td><td class="no">❌</td></tr>
+                <tr><td>Works without a companion scoped app</td><td class="yes">✅</td><td>n/a</td><td class="no">❌</td><td>n/a</td></tr>
+                <tr><td>OAuth / SSO auth</td><td>✅ CLI · ⏳ MCP</td><td class="yes">✅</td><td class="no">❌</td><td class="yes">✅</td></tr>
+                <tr><td>First-party support &amp; SLA</td><td class="no">❌</td><td class="yes">✅</td><td class="no">❌</td><td>n/a</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <span class="c-ico">🎯</span>
+            <p>
+              <strong>The one-line difference:</strong> ServiceNow's native Git
+              moved your <em>code</em> into Git. SyncroNow AI moves your
+              <em>workflow</em> into modern engineering — local build pipelines, a
+              multi-scope CLI, and an AI layer that understands your scope.
+            </p>
+          </div>
+          <p>
+            <strong>Honest gaps today:</strong> versus first-party tooling it
+            still lacks OAuth/SSO in the MCP server, a support SLA, and a packaged
+            distribution (Homebrew / Windows installer). These are the active
+            priorities — see the
+            <a href="https://github.com/LeassTaTT/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.
+          </p>
+        </section>
+
+        <!-- SECURITY -->
+        <section id="security">
+          <h2>Security &amp; safety</h2>
+          <ul>
+            <li>
+              <strong>Least-privilege by default.</strong> Use a dedicated
+              integration user with only the roles your scope needs; never your
+              admin account.
+            </li>
+            <li>
+              <strong>Encrypted credential store.</strong> AES-256-GCM at rest;
+              key from an explicit secret, the OS keychain, or a machine-derived
+              fallback. Configure a real key for at-rest protection — see
+              <a href="#credentials">Credentials</a>.
+            </li>
+            <li>
+              <strong>Dry-run everything risky.</strong> <code>--dry-run</code>
+              previews <code>push</code>, <code>deploy</code>,
+              <code>download</code> and <code>build</code>; the MCP server gates
+              writes behind confirmation and dry-run.
+            </li>
+            <li>
+              <strong>Destructive ops confirm first.</strong>
+              <code>download</code> overwrites local files but asks before doing
+              so (<code>--ci</code> skips the prompt) — keep source in Git so a
+              bad download is a <code>git checkout</code> away.
+            </li>
+            <li>
+              <strong>Secrets stay out of Git.</strong> Ignore <code>.env</code>
+              and <code>node_modules</code>; for CI, source
+              <code>SYNCRONA_STORE_KEY</code> from a secrets manager or use plain
+              env vars instead of the on-disk store.
+            </li>
+          </ul>
+          <div class="callout">
+            <span class="c-ico">📜</span>
+            <p>
+              Report vulnerabilities and review data-handling in
+              <a href="https://github.com/LeassTaTT/syncrona/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.
+            </p>
+          </div>
+        </section>
+
+        <!-- ARCHITECTURE -->
+        <section id="architecture">
+          <h2>Architecture</h2>
+          <p>
+            A Node 22 monorepo of 13 <code>@syncro-now-ai/*</code> packages. Two
+            ServiceNow clients — the core CLI and the MCP server — share one
+            transport policy (<code>sn-transport</code>) and one encrypted
+            credential store, so authentication, scoped-API resolution and retry
+            behaviour are identical across both.
+          </p>
+          <figure class="diagram">
+            <svg viewBox="0 0 720 380" role="img" aria-label="SyncroNow AI architecture: AI assistant and your editor drive the MCP server and core CLI, which share transport and credential store and talk to the ServiceNow instance over REST.">
+              <!-- top sources -->
+              <rect class="box" x="70" y="20" width="200" height="58" rx="10" />
+              <text class="lbl" x="170" y="54" text-anchor="middle">AI assistant</text>
+              <rect class="box" x="450" y="20" width="200" height="58" rx="10" />
+              <text class="lbl" x="550" y="54" text-anchor="middle">Your editor + Git</text>
+
+              <!-- middle clients -->
+              <rect class="box accent" x="70" y="130" width="200" height="62" rx="10" />
+              <text class="lbl" x="170" y="158" text-anchor="middle">MCP server</text>
+              <text class="tag" x="170" y="178" text-anchor="middle">@syncro-now-ai/mcp-server</text>
+              <rect class="box accent" x="450" y="130" width="200" height="62" rx="10" />
+              <text class="lbl" x="550" y="158" text-anchor="middle">core CLI · syncrona</text>
+              <text class="tag" x="550" y="178" text-anchor="middle">@syncro-now-ai/core</text>
+
+              <!-- shared -->
+              <rect class="box" x="190" y="240" width="340" height="56" rx="10" />
+              <text class="lbl" x="360" y="266" text-anchor="middle">sn-transport · credential-store</text>
+              <text class="sub" x="360" y="284" text-anchor="middle">shared transport policy + encrypted credentials</text>
+
+              <!-- instance -->
+              <rect class="box" x="210" y="322" width="300" height="50" rx="10" />
+              <text class="lbl" x="360" y="346" text-anchor="middle">ServiceNow instance</text>
+              <text class="sub" x="360" y="362" text-anchor="middle">REST / Table API · Basic / OAuth 2.0</text>
+
+              <!-- edges -->
+              <path class="edge" d="M170 78 L170 128" />
+              <polygon class="ah" points="165,122 175,122 170,130" />
+              <text class="edge-lbl" x="178" y="108">stdio · MCP</text>
+
+              <path class="edge" d="M550 78 L550 128" />
+              <polygon class="ah" points="545,122 555,122 550,130" />
+              <text class="edge-lbl" x="558" y="108">save · build</text>
+
+              <path class="edge" d="M170 192 L300 240" />
+              <polygon class="ah" points="291,233 303,236 296,245" />
+
+              <path class="edge" d="M550 192 L420 240" />
+              <polygon class="ah" points="424,245 417,236 429,233" />
+
+              <path class="edge" d="M360 296 L360 320" />
+              <polygon class="ah" points="355,314 365,314 360,322" />
+              <text class="edge-lbl" x="370" y="312">REST</text>
+            </svg>
+            <figcaption>
+              One transport, one credential store — two clients. Build plugins
+              (<code>typescript</code>, <code>babel</code>, <code>webpack</code>,
+              <code>sass</code>, <code>prettier</code>, <code>eslint</code>) and
+              shared <code>types</code> complete the workspace.
+            </figcaption>
+          </figure>
+          <p>
+            CLI commands are declared one entry at a time in a registry, and MCP
+            tool families likewise — the orchestrators are generic interpreters,
+            so adding a command or a tool family is a contained, contract-checked
+            change. Quality gates (type-check, lint, dependency-cruiser module
+            boundaries, tests) run via <code>npm run check</code>.
+          </p>
+          <p>
+            Full detail:
+            <a href="https://github.com/LeassTaTT/syncrona/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noopener">docs/ARCHITECTURE.md</a>.
+          </p>
+        </section>
+
+        <!-- FAQ -->
+        <section id="faq">
+          <h2>FAQ</h2>
+
+          <h3>Is SyncroNow AI affiliated with ServiceNow?</h3>
+          <p>
+            No. It is an independent, third-party tool, <strong>not affiliated
+            with, endorsed by or sponsored by ServiceNow, Inc.</strong>
+            "ServiceNow" is a trademark of ServiceNow, Inc., used here only to
+            indicate compatibility.
+          </p>
+
+          <h3>Why the package name <code>@syncro-now-ai/*</code>?</h3>
+          <p>
+            The project ships under the <code>@syncro-now-ai</code> npm scope (the
+            CLI is <code>@syncro-now-ai/core</code>, exposing the
+            <code>syncrona</code> command); the GitHub repository is
+            <a href="https://github.com/LeassTaTT/syncrona" target="_blank" rel="noopener"><code>LeassTaTT/syncrona</code></a>.
+            It is the modern successor to Sincronia / <code>sinc</code>.
+          </p>
+
+          <h3>Does it work without installing anything on the instance?</h3>
+          <p>
+            Yes. The CLI talks to standard ServiceNow REST / Table APIs and works
+            <strong>with or without</strong> the optional companion scoped app —
+            which only enables a few enhanced endpoints. It is broadly
+            release-agnostic; if you hit a release-specific issue, open an issue
+            with your instance version.
+          </p>
+
+          <h3>How is this different from ServiceNow's native Git?</h3>
+          <p>
+            Native Git moves your code into Git. SyncroNow AI moves your
+            <em>workflow</em> into modern engineering: a local build pipeline, a
+            multi-scope CLI you run from your own editor, and an AI / MCP layer
+            that understands your scope's metadata and dependencies. See
+            <a href="#compare">How it compares</a>.
+          </p>
+
+          <h3>Does it run on Windows?</h3>
+          <p>
+            On Windows, <strong>WSL is currently required</strong> (Ubuntu, build
+            1903+) — run every <code>syncrona</code> command inside the WSL
+            shell. Native Windows support (PowerShell install, Windows Credential
+            Manager) is on the roadmap; macOS and Linux are first-class.
+          </p>
+
+          <h3>Can I work with multiple instances or scopes?</h3>
+          <p>
+            Yes. Use the encrypted global store (<code>syncrona login</code> /
+            <code>use</code> / <code>instances</code>) or instance-profile env
+            vars with <code>--instance-profile</code> to route a single command
+            at dev, test or prod. For several scoped apps in one repo, treat each
+            scope as its own project under <code>packages/</code> and run commands
+            from the scope directory.
+          </p>
+
+          <h3>Is it production-ready?</h3>
+          <p>
+            It is pre-1.0 and early. The engineering is solid — type-checked
+            lint, enforced module boundaries, tests and a security model — but
+            review the security model for your own deployment, and keep your
+            source in Git. Track progress in the
+            <a href="https://github.com/LeassTaTT/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      <div class="foot-inner">
+        <div>
+          <strong>SyncroNow AI</strong> · MIT License · built by Ivan Baev
+          <br />
+          Modern, Git-based ServiceNow scoped-app development.
+        </div>
+        <div>
+          <a href="https://github.com/LeassTaTT/syncrona" target="_blank" rel="noopener">GitHub</a> ·
+          <a href="https://github.com/LeassTaTT/syncrona/blob/main/README.md" target="_blank" rel="noopener">README</a> ·
+          <a href="https://github.com/LeassTaTT/syncrona/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a> ·
+          <a href="https://github.com/LeassTaTT/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        </div>
+      </div>
+      <p class="disclaimer" style="opacity: 0.7; font-size: 0.8rem; margin-top: 1rem">
+        <strong>SyncroNow AI</strong> is an independent, community-built project
+        and is <strong>not affiliated with, endorsed by, or sponsored by
+        ServiceNow, Inc.</strong> "ServiceNow", the ServiceNow logo, "Now", and
+        related marks are trademarks or registered trademarks of ServiceNow,
+        Inc., used here only nominatively to indicate compatibility with the
+        ServiceNow platform.
+      </p>
+    </footer>
+
+    <button id="toTop" class="to-top" aria-label="Back to top" title="Back to top">
+      ↑
+    </button>
+
+    <script src="assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117" />
+      <stop offset="1" stop-color="#11122a" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.0" r="0.8">
+      <stop offset="0" stop-color="#6366f1" stop-opacity="0.36" />
+      <stop offset="1" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+
+  <g transform="translate(528,86)">
+    <rect width="64" height="64" rx="15" fill="#6366f1" />
+    <g transform="translate(13,13)" fill="none" stroke="#ffffff" stroke-width="2.6"
+      stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 11a7 7 0 0 1 11.7-5L19 8" />
+      <path d="M19 4v4h-4" />
+      <path d="M19 13a7 7 0 0 1-11.7 5L5 16" />
+      <path d="M5 20v-4h4" />
+    </g>
+  </g>
+  <text x="612" y="132" font-family="Helvetica, Arial, sans-serif" font-size="34"
+    font-weight="700" fill="#e6edf3">SyncroNow AI</text>
+
+  <text x="600" y="300" font-family="Helvetica, Arial, sans-serif" font-size="62"
+    font-weight="800" fill="#f0f6fc" text-anchor="middle">Treat ServiceNow code</text>
+  <text x="600" y="372" font-family="Helvetica, Arial, sans-serif" font-size="62"
+    font-weight="800" fill="#f0f6fc" text-anchor="middle">like <tspan fill="#a5b4fc">real source code</tspan>.</text>
+
+  <text x="600" y="446" font-family="Helvetica, Arial, sans-serif" font-size="27"
+    fill="#9aa6b2" text-anchor="middle">Git-based ServiceNow development — local build pipeline,</text>
+  <text x="600" y="482" font-family="Helvetica, Arial, sans-serif" font-size="27"
+    fill="#9aa6b2" text-anchor="middle">multi-instance sync, and an MCP server for AI analysis.</text>
+
+  <text x="600" y="556" font-family="Helvetica, Arial, sans-serif" font-size="26"
+    font-weight="700" fill="#a5b4fc" text-anchor="middle">18 commands · 13 packages · 6 build plugins · MIT</text>
+
+  <text x="600" y="600" font-family="Helvetica, Arial, sans-serif" font-size="20"
+    fill="#59636e" text-anchor="middle">github.com/LeassTaTT/syncrona</text>
+</svg>
