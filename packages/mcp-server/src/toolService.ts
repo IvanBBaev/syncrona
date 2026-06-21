@@ -64,7 +64,35 @@ export function setAuditIntegrityStatus(status: string): void {
   LAST_AUDIT_INTEGRITY_STATUS = status;
 }
 
-export const TOOL_METRICS: ToolMetricEvent[] = [];
+// AR11: the in-memory tool-metrics ring buffer is module-level mutable state.
+// It is encapsulated behind explicit accessors (mirroring
+// clearServiceNowSecretsCache / clearScopedApiPrefixCache) so it is mutated in
+// exactly one place (pushToolMetric) and can be reset/rehydrated in tests and
+// on startup instead of being spliced from across the codebase.
+const MAX_TOOL_METRICS = 500;
+const toolMetrics: ToolMetricEvent[] = [];
+
+/** Read-only view of the recorded tool metrics (newest last). */
+export function getToolMetrics(): readonly ToolMetricEvent[] {
+  return toolMetrics;
+}
+
+/** Drop all recorded metrics (used by tests and explicit resets). */
+export function clearToolMetrics(): void {
+  toolMetrics.length = 0;
+}
+
+/** Replace the buffer wholesale, e.g. rehydrating from the persisted log. */
+export function replaceToolMetrics(events: ToolMetricEvent[]): void {
+  toolMetrics.splice(0, toolMetrics.length, ...events.slice(-MAX_TOOL_METRICS));
+}
+
+function pushToolMetric(event: ToolMetricEvent): void {
+  toolMetrics.push(event);
+  if (toolMetrics.length > MAX_TOOL_METRICS) {
+    toolMetrics.splice(0, toolMetrics.length - MAX_TOOL_METRICS);
+  }
+}
 
 export function normalizeTimeout(timeoutMs: unknown): number {
   if (typeof timeoutMs !== "number" || Number.isNaN(timeoutMs)) {
@@ -105,7 +133,7 @@ export function makeDryRunResponse(toolName: string, details: Record<string, unk
 }
 
 export function buildHealthHttpSnapshot(): Record<string, unknown> {
-  const metricsSummary = summarizeMetrics(TOOL_METRICS);
+  const metricsSummary = summarizeMetrics([...getToolMetrics()]);
   return {
     status: "ok",
     timestamp: new Date().toISOString(),
@@ -348,11 +376,7 @@ export function recordToolMetric(
         : undefined,
   };
 
-  TOOL_METRICS.push(event);
-
-  if (TOOL_METRICS.length > 500) {
-    TOOL_METRICS.splice(0, TOOL_METRICS.length - 500);
-  }
+  pushToolMetric(event);
 
   appendMetricEvent(AUDIT_DIR, METRICS_FILE, event);
 }

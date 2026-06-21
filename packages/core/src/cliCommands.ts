@@ -8,6 +8,7 @@ import {
   docsCommand,
 } from "./commands";
 import { pushCommand } from "./pushCommand";
+import { repairCommand } from "./repairCommand";
 import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand, configCommand } from "./diagnosticsCommands";
 import { mcpCommand } from "./mcpCommand";
 import { devCommand, refreshCommand } from "./devCommands";
@@ -192,6 +193,36 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     describe:
       "Generate or logically update Markdown documentation and diagrams for the local scope",
     handler: typedHandler<Sync.SharedCmdArgs>((args) => docsCommand(args)),
+  },
+  {
+    command: "repair",
+    describe:
+      "Reconcile the manifest with local files; report or re-download missing files and prune orphans",
+    options: {
+      apply: {
+        type: "boolean",
+        default: false,
+        describe: "Apply repairs (re-download missing files); report-only without it",
+      },
+      prune: {
+        type: "boolean",
+        default: false,
+        describe: "With --apply, also delete orphan files that no manifest record claims",
+      },
+      ci: {
+        type: "boolean",
+        default: false,
+        describe: "Skip the prune confirmation prompt for noninteractive automation",
+      },
+    },
+    examples: [
+      ["$0 repair", "Report missing and orphan files without changing anything"],
+      ["$0 repair --apply", "Re-download files the manifest expects but are missing locally"],
+      ["$0 repair --apply --prune --ci", "Re-download missing files and delete orphans without prompting"],
+    ],
+    handler: typedHandler<Sync.SharedCmdArgs & { apply?: boolean; prune?: boolean; ci?: boolean }>(
+      (args) => repairCommand(args)
+    ),
   },
   {
     command: "status",

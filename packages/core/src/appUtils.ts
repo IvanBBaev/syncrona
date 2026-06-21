@@ -22,7 +22,7 @@ import {
   isScopedEndpointUnavailableError,
 } from "./manifestBuilder";
 import { logger } from "./Logger";
-import { aggregateErrorMessages, allSettled } from "./genericUtils";
+import { aggregateErrorMessages, allSettled, formatDuration } from "./genericUtils";
 import {
   DownloadCheckpoint,
   readDownloadCheckpoint,
@@ -595,12 +595,22 @@ const getProgTick = (
   total: number
 ): (() => void) | undefined => {
   if (logLevel === "info") {
-    const progBar = new ProgressBar(":bar (:percent)", {
+    // DX24: show count and an ETA derived from observed throughput, e.g.
+    //   [=====       ] 30/100 (30%) ~2m 10s left
+    const progBar = new ProgressBar(":bar :current/:total (:percent) ~:etaHuman left", {
       total,
-      width: 60,
+      width: 40,
     });
+    const startedAt = Date.now();
+    let completed = 0;
     return () => {
-      progBar.tick();
+      completed += 1;
+      const elapsed = Date.now() - startedAt;
+      const remaining =
+        completed > 0 && completed < total
+          ? (elapsed / completed) * (total - completed)
+          : 0;
+      progBar.tick({ etaHuman: formatDuration(remaining) });
     };
   }
   // no-op at other log levels

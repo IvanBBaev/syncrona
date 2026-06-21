@@ -9,6 +9,7 @@ import { defaultClient, resolveCredentials } from "./snClient";
 import inquirer from "inquirer";
 import { formatTable } from "./genericUtils";
 import { gitDiffToEncodedPaths } from "./gitUtils";
+import { classifyError } from "./errorTaxonomy";
 import {
   setLogLevel,
   scopeCheck,
@@ -309,6 +310,8 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       logPushResults(pushResults);
     } catch (e) {
       logger.getInternalLogger().error(e);
+      // DX19: categorize the failure and surface an actionable next step.
+      logger.info(`→ ${classifyError(e).hint}`);
       // exitCode instead of process.exit so the finally block can still
       // release the collaboration lock before the process ends.
       process.exitCode = 1;

@@ -57,7 +57,7 @@ function shouldPreferCurrentWorkingDirectory(
 // Shape validation for sync.config.js: typos in option names (e.g.
 // "excldues") otherwise pass silently and the option is ignored. Wrong types
 // are hard errors; unknown keys are warnings (forward compatibility).
-const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object"> = {
+const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" | "boolean"> = {
   sourceDirectory: "string",
   buildDirectory: "string",
   pushConcurrency: "number",
@@ -66,6 +66,7 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object">
   excludes: "object",
   tableOptions: "object",
   refreshInterval: "number",
+  flat: "boolean",
 };
 
 export function validateConfigShape(config: unknown, configPath: string): void {
@@ -429,6 +430,12 @@ export function getDiffFile() {
 
 export function getRefresh() {
   return defaultConfigStore.getRefresh();
+}
+
+// DX17: whether the workspace uses the flat <table>/<record>~<field>.<ext>
+// layout instead of per-record folders. Off unless `flat: true` in sync.config.js.
+export function getFlatMode(): boolean {
+  return getConfig().flat === true;
 }
 
 // The built-in defaults applied before a project's sync.config.js overrides.

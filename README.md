@@ -172,6 +172,7 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncro-now-ai build`                |
 | `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance.                                                                                           | `npx syncro-now-ai deploy`               |
 | `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncro-now-ai docs`                 |
+| `repair`           | `--apply`, `--prune`, `--ci` | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files no record claims. | `npx syncro-now-ai repair`               |
 | `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncro-now-ai status`               |
 | `check-env`        | **none** | Checks machine prerequisites (Node 22+, supported platform/WSL, Git) and prints actionable fixes.                                                          | `npx syncro-now-ai check-env`            |
 | `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncro-now-ai doctor`               |
@@ -199,14 +200,19 @@ encryption key is resolved with this precedence:
 1. **`SYNCRONA_STORE_KEY`** — an explicit 32-byte key (64 hex characters or
    base64). Use this for CI/CD and shared environments, sourced from a secrets
    manager. This is the strongest option.
-2. **OS keychain** — opt in with `SYNCRONA_USE_KEYCHAIN=1`. A random 256-bit
-   master key is generated once and stored in the OS keychain (macOS Keychain /
-   Windows Credential Manager / libsecret), via the optional `@napi-rs/keyring`
-   dependency. The on-disk files stay useless without keychain access.
-3. **Machine-derived key (default)** — derived from your machine hostname and
-   username. This is **obfuscation-grade, not strong cryptography**.
+2. **OS keychain (default)** — used automatically when the optional
+   `@napi-rs/keyring` dependency is installed; opt out with
+   `SYNCRONA_USE_KEYCHAIN=0` (e.g. headless CI with no keychain). A random
+   256-bit master key is generated once and stored in the OS keychain (macOS
+   Keychain / Windows Credential Manager / libsecret). The on-disk files stay
+   useless without keychain access.
+3. **Machine-derived key (fallback)** — derived from your machine hostname and
+   username, used automatically when the keychain / `@napi-rs/keyring` is
+   unavailable. This is **obfuscation-grade, not strong cryptography**. Reads
+   retry with this key so stores written before the keychain default keep
+   decrypting.
 
-> ⚠️ With the default machine-derived key, anyone who can read the `.enc` file
+> ⚠️ With the machine-derived fallback key, anyone who can read the `.enc` file
 > **and** run code as your user on the same machine (or who knows your hostname +
 > username) can decrypt the credentials. It guards against casual inspection and
 > accidental file sharing — not a compromised account, stolen disk, or malware
@@ -431,10 +437,32 @@ module.exports = {
   includes: {},
   //How often syncrona will refresh the manifest in development mode
   refreshInterval: 30,
+  // (Experimental, opt-in) Use a flat local layout
+  // <table>/<record>~<field>.<ext> instead of per-record folders. The mapping
+  // is lossless and reversible (see "Flat layout" below).
+  flat: false,
 };
 ```
 
 If you find that your config is getting too large, you can use typical nodejs techniques for splitting it into smaller modules and loading them into the `sync.config.js`.
+
+#### Flat layout (experimental)
+
+By default each record is stored as a folder of field files
+(`<table>/<record>/<field>.<ext>`). Setting `flat: true` selects a flatter
+layout that collapses the per-record folder into one file per field, keeping
+table, record and field so the mapping stays **lossless and reversible**:
+
+```
+sys_script_include/MyUtil/script.js      ->  sys_script_include/MyUtil~script.js
+```
+
+The `~` separator never appears in a ServiceNow dictionary field name, so the
+record is everything before the last `~` and the field everything after it. The
+conversion is implemented as pure, fully-tested helpers
+(`folderRelToFlat` / `flatRelToFolder` in `packages/core/src/flatLayout.ts`).
+Automatic conversion inside `pull`/`push` is being rolled out and validated
+against a live instance; until then, treat `flat` as an opt-in preview.
 
 ### There are WAY too many files in here!
 

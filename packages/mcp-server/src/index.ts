@@ -41,7 +41,7 @@ import {
 import { asRecord } from "./recordUtils";
 import { autoPullAllScopesAndData } from "./scopeBootstrap";
 import {
-  TOOL_METRICS,
+  replaceToolMetrics,
   auditMutatingTool,
   auditToolCall,
   buildHealthHttpSnapshot,
@@ -260,7 +260,7 @@ function registerGracefulShutdownSignals(controller: GracefulShutdownController)
 async function main() {
   const persistedMetrics = loadMetricEvents(AUDIT_DIR, METRICS_FILE, 500);
   if (persistedMetrics.length > 0) {
-    TOOL_METRICS.splice(0, TOOL_METRICS.length, ...persistedMetrics);
+    replaceToolMetrics(persistedMetrics);
   }
 
   const integrity = checkAuditLogIntegrity(AUDIT_DIR, AUDIT_FILE);

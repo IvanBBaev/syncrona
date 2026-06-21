@@ -5,6 +5,7 @@ import * as ConfigManager from "./config";
 import * as AppUtils from "./appUtils";
 import { logger } from "./Logger";
 import { scopeCheckMessage } from "./logMessages";
+import { classifyError } from "./errorTaxonomy";
 import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient";
 import { getActiveInstance, loadCredentials } from "./auth";
 
@@ -113,6 +114,8 @@ export async function scopeCheck(
     logger.error(
       "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncro-now-ai init`"
     );
+    // DX19: categorize the failure and surface an actionable next step.
+    logger.info(`→ ${classifyError(e).hint}`);
     process.exitCode = 1;
     return;
   }
@@ -127,6 +130,8 @@ export async function scopeCheck(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message || "Command failed with an unknown error.");
+    // DX19: categorize the failure and surface an actionable next step.
+    logger.info(`→ ${classifyError(e).hint}`);
     process.exitCode = 1;
   }
 }
