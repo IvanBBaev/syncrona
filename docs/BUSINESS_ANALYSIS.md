@@ -165,12 +165,25 @@ discover → **install (Node 22 / WSL on Windows / not yet published)** → init
 support/SLA, compatibility unknown)** → advocate.
 
 **Enterprise-readiness checklist (procurement will ask):**
-- [ ] OAuth/SSO auth (R2)
-- [ ] Data-handling & security statement (SECURITY.md) — *added 2026-06-13*
-- [ ] ServiceNow version compatibility matrix
-- [ ] Support model / SLA / contact
-- [ ] License & IP clearance (R1)
-- [ ] At-rest credential strength (keychain)
+- [~] OAuth/SSO auth (R2) — OAuth 2.0 password grant on CLI + MCP; full SSO/
+  authorization-code remains.
+- [x] Data-handling & security statement (SECURITY.md) — *2026-06-13*; **AI/MCP
+  data-flow boundary added 2026-06-22** (SN data → LLM provider trust boundary).
+- [~] ServiceNow version compatibility matrix — `docs/COMPATIBILITY.md` *added
+  2026-06-22* (expected-compatible; live-instance verification still open, CR22).
+- [~] Support model / SLA / contact — `GOVERNANCE.md` *added 2026-06-22* (best-
+  effort model + bus-factor mitigation documented; **no SLA**, bus factor still 1).
+- [~] License & IP clearance (R1) — relicensed to GPL-3.0 + attribution
+  *2026-06-22*; legal sign-off (variant + proprietary-code clearance) still owner.
+- [x] At-rest credential strength (keychain) — OS keychain is the default backend
+  *(D5, 2026-06-21)*.
+
+**Companion documents (added 2026-06-22, BA gap pass):**
+[COMPATIBILITY.md](COMPATIBILITY.md) (G-G), [GO_TO_MARKET.md](GO_TO_MARKET.md)
+(G-B), [VALIDATION_INTERVIEWS.md](VALIDATION_INTERVIEWS.md) (G-A, the #1 gap),
+[../GOVERNANCE.md](../GOVERNANCE.md) (G-D), SECURITY.md "AI / MCP data flow" (G-C).
+**Still the gating gap: G-A demand validation is unstarted — every other artifact
+assumes a demand that has not been measured.**
 
 ## 11. Validation plan (next 2–4 weeks, BA actions)
 
