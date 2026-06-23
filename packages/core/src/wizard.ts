@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
 import inquirer from "inquirer";
 import * as ConfigManager from "./config";

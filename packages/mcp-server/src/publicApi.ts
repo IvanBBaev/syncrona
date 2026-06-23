@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * publicApi.ts — public re-export barrel for the MCP server package.
  *

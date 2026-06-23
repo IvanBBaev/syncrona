@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // DX8: a small catalog of the first-party build plugins so `config add-plugin`
 // can help users wire one without knowing its exact npm name or boilerplate.
 // Pure data + formatting (no I/O); the command layer adds installed-detection.

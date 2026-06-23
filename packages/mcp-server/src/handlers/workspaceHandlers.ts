@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { CmdResult } from "../processRunner";
 import { commandResultToText } from "../runtimeUtils";
 import vm from "node:vm";

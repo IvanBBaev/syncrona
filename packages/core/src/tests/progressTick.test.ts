@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { getProgTick } from "../appUtils";
 
 // QA regression lock for DEV-3: the DX24 progress ETA used a custom token

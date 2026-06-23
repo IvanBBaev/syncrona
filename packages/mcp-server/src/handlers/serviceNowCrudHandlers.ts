@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { toJsonText, trimOutput } from "../runtimeUtils";
 import { runBackgroundScript, snRequest, summarizeRows, toTableResultRows } from "../servicenowCore";
 

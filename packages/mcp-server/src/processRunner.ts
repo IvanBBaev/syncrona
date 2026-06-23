@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import path from "path";

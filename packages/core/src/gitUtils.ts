@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import * as cp from "child_process";
 import path from "path";
 import { logger } from "./Logger";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Hermetic credential tests. As of D5 the OS keychain is the DEFAULT at-rest
 // backend, which means any test that exercises the credential store would
 // otherwise reach for the real @napi-rs/keyring / OS keychain — a side effect

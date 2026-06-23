@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { UnifiedTaskType } from "../toolService";
 import type { GraphNode, GraphEdge } from "../analysis/graph";
 import {

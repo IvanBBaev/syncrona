@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import dotenv from "dotenv";
 import * as ConfigManager from "./config";
 import { preloadStoredCredentials } from "./snClient";

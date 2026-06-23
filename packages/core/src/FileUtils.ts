@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
 import { PATH_DELIMITER } from "./constants";
 import fs, { promises as fsp } from "fs";

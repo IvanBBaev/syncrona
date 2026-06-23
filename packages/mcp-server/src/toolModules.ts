@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import { MCP_TOOLS } from "./toolSchemas";

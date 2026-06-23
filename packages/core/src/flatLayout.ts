@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // DX17: optional flat local layout.
 //
 // SyncroNow AI stores each record as a folder of field files:

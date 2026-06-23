@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import * as AppUtils from "../appUtils";
 import { scopeCheck, resolveInstanceProfile } from "../commandHelpers";
 

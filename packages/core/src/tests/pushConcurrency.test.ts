@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export {};
 
 // DX24: --push-concurrency overrides sync.config.js pushConcurrency, which

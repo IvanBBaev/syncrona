@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Canonical MCP tool response shape returned by every tool handler. Kept in a
 // leaf module (no imports) so handlers, the dispatch pipeline, and the public
 // API barrel all share one definition instead of redeclaring it — previously
