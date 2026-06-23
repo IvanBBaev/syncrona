@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     return {};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import yargs from "yargs";
 import type { Argv, Arguments } from "yargs";
 import { logger } from "./Logger";

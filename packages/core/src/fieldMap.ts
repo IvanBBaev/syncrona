@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Exact typeMap from SincUtilsMS — maps ServiceNow internal_type → file extension
 export const SN_TYPE_MAP: Record<string, string> = {
   css: "css",

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import chokidar from "chokidar";
 import { logFilePush } from "./logMessages";
 import { debounce } from "lodash";

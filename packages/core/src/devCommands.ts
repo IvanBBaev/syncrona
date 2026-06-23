@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import * as ConfigManager from "./config";
 import { startWatching, stopWatching } from "./Watcher";

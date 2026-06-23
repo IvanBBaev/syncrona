@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // G3: download progress / resume. A large scoped-app download can fail partway
 // (a flaky network, a throttled instance); without state, the next run starts
 // over. This checkpoint records which tables have already been downloaded AND

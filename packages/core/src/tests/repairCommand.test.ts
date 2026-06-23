@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 jest.mock("../config");
 jest.mock("../appUtils");
 jest.mock("../FileUtils");

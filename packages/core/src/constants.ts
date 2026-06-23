@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import path from "path";
 
 export const PATH_DELIMITER = `${path.delimiter}${path.delimiter}`;

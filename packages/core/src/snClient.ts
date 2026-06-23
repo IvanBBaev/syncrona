@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync, SN } from "@syncro-now-ai/types";
 import https from "node:https";
 import fs from "node:fs";

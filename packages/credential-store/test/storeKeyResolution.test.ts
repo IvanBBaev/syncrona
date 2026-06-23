@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { getStoreKeySource, clearStoreKeyCache } from "../src/index";
 
 // D5: the keychain is the default backend. These tests pin the precedence and

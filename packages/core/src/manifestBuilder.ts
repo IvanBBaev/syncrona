@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
 import { isEndpointNotFoundStatus } from "@syncro-now-ai/sn-transport";
 import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import path from "path";
 
 export const DEFAULT_TIMEOUT_MS = 120000;

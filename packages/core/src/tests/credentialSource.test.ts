@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export {};
 
 // DX2: `syncro-now-ai status` reports where credentials were resolved from.
