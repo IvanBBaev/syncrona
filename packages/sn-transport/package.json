@@ -19,7 +19,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "@types/node": "^20.8.4",
+    "@types/node": "^26.0.0",
     "typescript": "^5.2.2"
   },
   "repository": {
