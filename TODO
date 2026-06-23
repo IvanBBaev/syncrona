@@ -214,6 +214,19 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ---
 
+## FULL REVIEW — 2026-06-22 (b) (architect / dev / qa × 5 over SPDX headers + BA docs)
+
+### Cycle 1 — Architect
+- [x] **ARCH-9. SPDX header coverage was inconsistent** — DONE 2026-06-22:
+      ARCH-7 only headered packages/*/src, so the separate `/test` dirs
+      (credential-store, sn-transport, mcp-server), the mcp-server `scripts/*.js`
+      and the jest config/setup files were left without a license header — a
+      header policy applied by directory accident, not intent. Completed it: all
+      166 hand-written source files (ts/js/mjs) now carry
+      `// SPDX-License-Identifier: GPL-3.0-or-later`; generated `coverage/` (already
+      gitignored) and `dist/` are correctly excluded. Verified 0 source files
+      remain without a header.
+
 ## FULL REVIEW — 2026-06-22 (architect / dev / qa × 4 over the GPL relicense)
 Scope: the MIT→GPL-3.0 relicense (LICENSE, NOTICE, package.json, README) + repo.
 
@@ -230,11 +243,12 @@ Scope: the MIT→GPL-3.0 relicense (LICENSE, NOTICE, package.json, README) + rep
       (stale vs the updated package.json). Regenerated via `npm install`; all
       workspace entries are now GPL-3.0-or-later (third-party deps keep their own
       real licenses, untouched).
-- [ ] **ARCH-7. No per-file SPDX/GPL headers** — DEFERRED (recommended, not a
-      violation): GPL "How to Apply" recommends a short license header per source
-      file; the project relies on LICENSE + NOTICE + README, which is acceptable.
-      Adding headers to ~90 files is mechanical bulk best left to an explicit pass
-      (architect rule: many-file changes are flagged, not auto-applied).
+- [x] **ARCH-7. Per-file SPDX/GPL headers** — DONE 2026-06-22: added
+      `// SPDX-License-Identifier: GPL-3.0-or-later` to all 141 source `.ts` files
+      under packages/*/src (shebang-aware: header after `#!` on the 2 bin files;
+      idempotent). License-only identifier is correct for both Sincronia-origin
+      and new files; the mixed copyright stays in NOTICE. Gate green; compiled bin
+      shebang intact. This was the last engineering-completable-offline item.
 
 ### Cycle 1 — Dev
 - CLEAN: the relicense changed only metadata/text/docs, no executable code.
@@ -689,6 +703,23 @@ Docs, Workflow, Error Handling, MCP.
 4. **DX22-DX24**: UI improvements (dry-run table, progress bar, rate limiting) — 2 hours.
 
 ---
+
+## BA GAP PASS — 2026-06-22 (implementable gap-closers)
+A second BA lens asked "what's still missing". Engineering-implementable gaps
+closed with new artifacts (the rest are owner/market actions — see BA1–8):
+- [x] **G-C** SECURITY.md "AI / MCP data flow" — documents the SN-data → LLM
+  trust boundary (the differentiator's enterprise-trust gap); + at-rest section
+  refreshed for the D5 keychain default.
+- [x] **G-G** docs/COMPATIBILITY.md — honest Node/OS/ServiceNow matrix
+  (expected-compatible; live verification still open, CR22).
+- [x] **G-D** GOVERNANCE.md — support model, triage, decision-making, bus-factor
+  mitigation + co-maintainer invitation (no SLA; bus factor still 1).
+- [x] **G-B** docs/GO_TO_MARKET.md — beachhead, channels, content, launch
+  checklist (gated on demand validation).
+- [x] **G-A** docs/VALIDATION_INTERVIEWS.md — the interview script (owner runs).
+- [ ] **STILL THE #1 GAP:** demand validation itself is unstarted (BA1). Every
+  artifact above assumes demand that has not been measured. Highest-ROI next
+  action is owner-run interviews, not more build.
 
 ## BUSINESS ANALYSIS (2026-06-13) — BA lens
 Deep BA review + implemented artifacts. Full report: docs/BUSINESS_ANALYSIS.md
