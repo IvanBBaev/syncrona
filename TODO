@@ -51,9 +51,15 @@ owner/business decisions (incl. npm publish, which is owner-gated).
       credentials were ever placed there manually. See also CR2.
 - [x] AR2 (residual): DONE 2026-06-21 — at-rest key resolves SYNCRONA_STORE_KEY > OS keychain (opt-in SYNCRONA_USE_KEYCHAIN, @napi-rs/keyring) > legacy machine key, with decrypt fallback. See DONE.
 - [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — DEFERRED
-      2026-06-21 (conscious decision, not a gap): HIGH RISK (88 tests against
-      dist) for ZERO behavior change; the dispatch logic already has dedicated
-      tests. New tests are written in the existing node:test/dist style instead.
+      2026-06-21, RE-CONFIRMED 2026-06-24 (conscious decision, not a gap): HIGH
+      RISK for ZERO behavior change. Concretely it means rewriting 12 test files
+      / ~4800 lines from the node:test + assert/strict API (run against dist via
+      `npm run build && node --test`) to ts-jest/expect against src, AND replacing
+      the custom coverage gate (scripts/check-coverage-gate.js parses node --test
+      coverage) plus the governance node:test harness. Testing the compiled dist
+      is a legitimate choice (it exercises the shipped artifact); the dispatch
+      logic already has dedicated tests. New tests are written in the existing
+      node:test/dist style instead.
 - [x] AR11: DONE 2026-06-21 — TOOL_METRICS (the in-memory ring buffer) is no
       longer an exported, externally-spliced array. It is encapsulated behind
       getToolMetrics / clearToolMetrics / replaceToolMetrics / pushToolMetric in
@@ -74,9 +80,16 @@ owner/business decisions (incl. npm publish, which is owner-gated).
       the test). Details and fix under AR1.
 - [ ] CR22 (residual): verify the sys.scripts.do fallback against a real instance —
       documented as best-effort (CSRF/session limitations) but not tested live.
-- [~] CR26 (follow-up): coverage thresholds ratcheted 2026-06-13 to st 70 / br 57 /
-      fn 61 / ln 70 (measured 70.7/57.7/61.8/70.5 after DX/contract tests); CI
-      labels updated. Keep ratcheting toward 80 as tests are added; never down.
+- [~] CR26 (follow-up): coverage thresholds ratcheted again 2026-06-24 to
+      st 76 / br 63 / fn 71 / ln 76 (measured 77.8/64.9/72.8/77.5 after the
+      logMessages, bootstrap, gitUtils and devCommands suites landed; up from the
+      2026-06-21 floor of 72/60/65/72). Credential-store mutation score lifted in
+      the same pass from 63.2% to 81.6% (Stryker; keychain backend, key-material
+      parser, decrypt fallback and sync-read fallbacks now covered) — above the
+      conf's "high" mark, though the gate stays non-blocking (break: null) by
+      design. Keep ratcheting toward 80 as tests are added; never down. Remaining
+      core branch headroom (toward 70+) is concentrated in appUtils.ts IO/network
+      paths (43% branch), addressed opportunistically.
 
 ---
 
@@ -365,16 +378,18 @@ Findings prefixed ARCH-/DEV-/QA-.
   dependency-cruiser — 2026-06-21.)
 
 ### Dev
-- [~] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — these wrap a
-      body in try/catch only to re-throw the same error: dead structure that
-      obscures which code actually has error handling. FIXED the 3 in
-      PluginManager.ts (clean rewrite, behavior identical, core suite green).
-      REMAINING 9 DEFERRED (commands.ts:177/211/302, appUtils.ts:277/595/705,
-      wizard.ts:212/225, FileUtils.ts:296): each wraps a whole function body, so
-      removal means de-indenting large bodies — a big diff with real risk for
-      ZERO behavior change. Per the review rule (don't fix mechanically-risky
-      noise), left as-is intentionally. Reopen only if touching those functions
-      for another reason.
+- [x] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — DONE
+      2026-06-24. These wrapped a body in try/catch only to re-throw the same
+      error: dead structure that obscures which code actually has error handling.
+      The 3 in PluginManager.ts were fixed earlier (clean rewrite). The remaining
+      9 (commands.ts downloadCommand/initCommand/deployCommand-inner,
+      appUtils.ts processMissingFiles/swapScope/checkScope, wizard.ts setupDotEnv/
+      writeDefaultConfig, FileUtils.ts) are now removed: outer no-op try unwrapped
+      and bodies de-indented, while the genuine inner try/catch (scoped-endpoint
+      fallback, best-effort gitignore, docs generation) is preserved untouched.
+      Guarded against regression by enabling `no-useless-catch: error` in .eslintrc
+      (the config extended only @typescript-eslint/recommended, so this rule was
+      off). Typecheck + lint:core + full core suite (347 tests) green.
 - [x] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** — CLOSED
       2026-06-13 as won't-do: swapping to native changes the typed call sites
       (Sync.PromiseResult casts in appUtils) for zero behavior gain; the custom
