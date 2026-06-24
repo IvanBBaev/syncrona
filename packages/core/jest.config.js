@@ -7,11 +7,12 @@ module.exports = {
   setupFiles: ['<rootDir>/jest.setup.js'],
   // Whole-source coverage: the gate previously measured only src/commands.ts,
   // which made the "core >= 80%" CI claim meaningless. Thresholds below are a
-  // ratchet floor set just under the measured baseline (2026-06-21: statements
-  // 73.5%, branches 61.7%, functions 66.7%, lines 73.1% — up from the 2026-06-13
-  // baseline as the pure-helper test suites landed: genericUtils, FileUtils,
-  // commandHelpers, snClient, appUtils) — raise them as coverage grows; never
-  // lower them. Remaining headroom toward 70%+ branches is in the IO-heavy paths
+  // ratchet floor set just under the measured baseline (2026-06-24: statements
+  // 77.3%, branches 64.2%, functions 72.2%, lines 77.0% — up from the 2026-06-21
+  // baseline as the logMessages, bootstrap and gitUtils suites landed on top of
+  // the earlier pure-helper suites: genericUtils, FileUtils, commandHelpers,
+  // snClient, appUtils) — raise them as coverage grows; never lower them.
+  // Remaining headroom toward 80%+ branches is in the IO-heavy paths
   // (commands/wizard/snClient request paths), addressed opportunistically.
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -22,10 +23,10 @@ module.exports = {
   ],
   coverageThreshold: {
     global: {
-      statements: 72,
-      branches: 60,
-      functions: 65,
-      lines: 72,
+      statements: 76,
+      branches: 63,
+      functions: 71,
+      lines: 76,
     },
   },
 }
