@@ -1,6 +1,6 @@
 {
   "name": "@syncro-now-ai/eslint-plugin",
-  "version": "0.4.2-alpha.8",
+  "version": "0.4.2",
   "description": "ESLint plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "eslint": "8.51.0"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2-alpha.8",
+    "@syncro-now-ai/types": "^0.4.2",
     "@types/eslint": "^8.44.4",
     "@types/prettier": "^2.7.3",
     "typescript": "^5.2.2"

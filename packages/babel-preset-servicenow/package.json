@@ -1,6 +1,6 @@
 {
   "name": "@syncro-now-ai/babel-preset-servicenow",
-  "version": "0.4.2-alpha.8",
+  "version": "0.4.2",
   "description": "ServiceNow Sanitizer Plugin",
   "main": "./dist/index.js",
   "scripts": {
@@ -13,7 +13,7 @@
     "@babel/types": "^7.23.0"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2-alpha.8",
+    "@syncro-now-ai/types": "^0.4.2",
     "@types/babel__core": "^7.20.2",
     "typescript": "^5.2.2"
   },

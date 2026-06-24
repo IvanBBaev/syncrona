@@ -1,6 +1,6 @@
 {
   "name": "@syncro-now-ai/prettier-plugin",
-  "version": "0.4.2-alpha.8",
+  "version": "0.4.2",
   "description": "Prettier plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
@@ -9,7 +9,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2-alpha.8",
+    "@syncro-now-ai/types": "^0.4.2",
     "@types/prettier": "^2.7.3",
     "typescript": "^5.2.2"
   },

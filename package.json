@@ -1,6 +1,6 @@
 {
   "name": "syncro-now-ai",
-  "version": "0.4.2-alpha.8",
+  "version": "0.4.2",
   "private": true,
   "description": "AI-ready ServiceNow MCP server for metadata analysis, dependency graphs, impact analysis, and scoped application documentation.",
   "engines": {
