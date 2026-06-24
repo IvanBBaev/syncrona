@@ -212,7 +212,7 @@
           <div class="hero-grid">
             <div class="hero-copy">
               <span class="eyebrow">ServiceNow · Git · Modern tooling</span>
-              <h1>Treat ServiceNow code like real source code.</h1>
+              <h1>Treat ServiceNow code like <span class="accent">real source code.</span></h1>
               <p class="lead">
                 <strong>SyncroNow AI</strong> downloads your scoped-app code as
                 plain, editable files, builds them with modern tooling
@@ -232,31 +232,36 @@
                 <a class="btn" href="#compare">How it compares</a>
               </div>
               <div class="badges">
-                <span class="badge ok">GPL-3.0 licensed</span>
+                <span class="badge">GPL-3.0 licensed</span>
                 <span class="badge">Node.js 22+</span>
                 <span class="badge">TypeScript · ESM</span>
-                <span class="badge ok">Basic &amp; OAuth 2.0</span>
+                <span class="badge">Basic &amp; OAuth 2.0</span>
                 <span class="badge">MCP server included</span>
               </div>
             </div>
             <div class="hero-visual">
-              <div class="term" aria-hidden="true">
-                <div class="term-bar">
-                  <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-                  <span class="term-title">zsh · ~/acme-app</span>
-                </div>
-                <div class="term-body">
-<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona login</span></span>
-<span class="l"><span class="ok">✔</span> Saved credentials · <span class="accent">dev12345.service-now.com</span></span>
+              <div class="term-shell">
+                <div class="term" aria-hidden="true">
+                  <div class="term-bar">
+                    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+                    <span class="term-title">zsh · ~/acme-app</span>
+                    <span class="term-live"><i></i>live</span>
+                  </div>
+                  <!-- Static fallback (mirrors scenario 1); app.js animates and
+                       cycles this when JavaScript is available. -->
+                  <div class="term-body" id="term-body">
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona login</span></span>
+<span class="l"><span class="ok">✔ </span><span class="muted">Saved credentials · </span>dev12345.service-now.com</span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona init</span></span>
-<span class="l"><span class="ok">✔</span> Wrote sync.config.js · sync.manifest.json · .env</span>
-<span class="l"><span class="ok">✔</span> Scope <span class="accent">x_acme_app</span> · 142 files tracked</span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona init</span></span>
+<span class="l"><span class="ok">✔ </span><span class="muted">Wrote </span>sync.config.js · sync.manifest.json · .env</span>
+<span class="l"><span class="ok">✔ </span><span class="muted">Scope </span><span class="accent">x_acme_app</span><span class="muted"> · 142 files tracked</span></span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">$</span> <span class="cmd">syncrona dev</span></span>
-<span class="l"><span class="accent">▸</span> watching <span class="dim">src/</span> · build &amp; push on save</span>
-<span class="l"><span class="dim">~</span> PriceCalc/script.ts <span class="dim">→ babel + typescript</span></span>
-<span class="l"><span class="ok">✔</span> pushed <span class="accent">PriceCalc</span> <span class="dim">· 312ms</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona dev</span></span>
+<span class="l"><span class="blue">▸ </span><span class="muted">watching </span>src/<span class="muted"> · build &amp; push on save</span></span>
+<span class="l"><span class="warn">~ </span>PriceCalc/script.ts<span class="muted"> → babel + typescript</span></span>
+<span class="l"><span class="ok">✔ </span><span class="muted">pushed </span>PriceCalc<span class="dim"> · 312ms</span></span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -269,6 +274,16 @@
             <div class="stat"><b>22+</b><span>Node.js</span></div>
           </div>
         </section>
+
+        <!-- TRUST STRIP -->
+        <div class="trust-strip" aria-label="Compatibility and stack">
+          <span class="trust-label">Works with</span>
+          <span class="trust-items">Claude Desktop · Claude Code · VS Code Chat</span>
+          <span class="trust-div" aria-hidden="true"></span>
+          <span class="trust-items">Node 22 · TypeScript · ESM</span>
+          <span class="trust-div" aria-hidden="true"></span>
+          <span class="trust-items">13 workspace packages</span>
+        </div>
 
         <!-- WHAT IS IT -->
         <section id="what-is-it">
@@ -295,6 +310,53 @@
           </div>
         </section>
 
+        <!-- COMPARE -->
+        <section id="compare">
+          <span class="eyebrow">How it compares</span>
+          <h2>Why teams pick SyncroNow AI</h2>
+          <p>
+            For teams deciding how to manage ServiceNow scoped-app code. SyncroNow
+            AI is pre-1.0 and early — these are the honest trade-offs.
+          </p>
+          <div class="table-wrap">
+            <table class="compare">
+              <thead>
+                <tr>
+                  <th>&nbsp;</th>
+                  <th class="hl">SyncroNow AI</th>
+                  <th>Studio + native Git</th>
+                  <th>Sincronia</th>
+                  <th>Update sets</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Edit in your own editor</td><td class="hl"><span class="yes">✓</span></td><td><span class="partial">partial</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td></tr>
+                <tr><td>Git diff / PR review of code</td><td class="hl"><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td></tr>
+                <tr><td>Local build pipeline (TS / Babel / Webpack / Sass)</td><td class="hl"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td></tr>
+                <tr><td>Multi-scope CLI from one repo</td><td class="hl"><span class="yes">✓</span></td><td><span class="partial">partial</span></td><td><span class="yes">✓</span></td><td><span class="no">✕</span></td></tr>
+                <tr><td>AI / MCP analysis</td><td class="hl"><span class="yes">✓</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td><td><span class="no">✕</span></td></tr>
+                <tr><td>Works without a companion app</td><td class="hl"><span class="yes">✓</span></td><td><span class="na">n/a</span></td><td><span class="no">✕</span></td><td><span class="na">n/a</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <span class="c-ico">🎯</span>
+            <p>
+              <strong>The one-line difference:</strong> ServiceNow's native Git
+              moved your <em>code</em> into Git. SyncroNow AI moves your
+              <em>workflow</em> into modern engineering — local build pipelines, a
+              multi-scope CLI, and an AI layer that understands your scope.
+            </p>
+          </div>
+          <p class="compare-note">
+            <strong>Honest gaps today:</strong> versus first-party tooling it
+            still lacks OAuth/SSO in the MCP server, a support SLA, and a packaged
+            distribution (Homebrew / Windows installer). These are the active
+            priorities — see the
+            <a href="https://github.com/LeassTaTT/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.
+          </p>
+        </section>
+
         <!-- CAPABILITIES -->
         <section id="capabilities">
           <h2>Capabilities</h2>
@@ -304,7 +366,7 @@
           </p>
           <div class="cards">
             <div class="card">
-              <div class="ico">🐙</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg></div>
               <h3>Git-native source control</h3>
               <p>
                 Scoped-app code becomes plain editable files in a project tree,
@@ -313,7 +375,7 @@
               </p>
             </div>
             <div class="card">
-              <div class="ico">⚙️</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" /><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" /><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" /></svg></div>
               <h3>Modern build pipeline</h3>
               <p>
                 Write TypeScript, modern JavaScript or Sass and compile to
@@ -322,7 +384,7 @@
               </p>
             </div>
             <div class="card">
-              <div class="ico">🔄</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M3 21v-5h5" /></svg></div>
               <h3>Bidirectional sync</h3>
               <p>
                 <code>dev</code> mode watches your files and pushes builds on
@@ -332,7 +394,7 @@
               </p>
             </div>
             <div class="card">
-              <div class="ico">🏢</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2" /><rect width="20" height="8" x="2" y="14" rx="2" ry="2" /><line x1="6" x2="6.01" y1="6" y2="6" /><line x1="6" x2="6.01" y1="18" y2="18" /></svg></div>
               <h3>Multi-instance &amp; monorepo</h3>
               <p>
                 An encrypted credential store and instance profiles route one
@@ -341,7 +403,7 @@
               </p>
             </div>
             <div class="card">
-              <div class="ico">🤖</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z" /><path d="M20 3v4" /><path d="M22 5h-4" /><path d="M4 17v2" /><path d="M5 18H3" /></svg></div>
               <h3>AI &amp; MCP analysis</h3>
               <p>
                 A bundled MCP server gives an AI assistant metadata inventory,
@@ -350,7 +412,7 @@
               </p>
             </div>
             <div class="card">
-              <div class="ico">🩺</div>
+              <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></svg></div>
               <h3>Diagnostics &amp; safety</h3>
               <p>
                 <code>check-env</code>, <code>doctor</code> and
@@ -885,54 +947,6 @@ syncrona login          # prompts for instance, user, password (or OAuth)</code>
               fast way to explore what a real project looks like.
             </p>
           </div>
-        </section>
-
-        <!-- COMPARE -->
-        <section id="compare">
-          <h2>How it compares</h2>
-          <p>
-            For teams deciding how to manage ServiceNow scoped-app code. SyncroNow AI
-            is pre-1.0 and early — these are the honest trade-offs.
-          </p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>&nbsp;</th>
-                  <th>SyncroNow AI</th>
-                  <th>Studio + native Git</th>
-                  <th>Sincronia (predecessor)</th>
-                  <th>Update sets</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td>Edit in your own editor</td><td class="yes">✅</td><td>partial</td><td class="yes">✅</td><td class="no">❌</td></tr>
-                <tr><td>Git diff / PR review of code</td><td class="yes">✅</td><td class="yes">✅</td><td class="yes">✅</td><td class="no">❌</td></tr>
-                <tr><td>Local build pipeline (TS/Babel/Webpack/Sass)</td><td class="yes">✅</td><td class="no">❌</td><td class="yes">✅</td><td class="no">❌</td></tr>
-                <tr><td>Multi-scope CLI from one repo</td><td class="yes">✅</td><td>partial</td><td class="yes">✅</td><td class="no">❌</td></tr>
-                <tr><td>AI / MCP analysis</td><td class="yes">✅</td><td class="no">❌</td><td class="no">❌</td><td class="no">❌</td></tr>
-                <tr><td>Works without a companion scoped app</td><td class="yes">✅</td><td>n/a</td><td class="no">❌</td><td>n/a</td></tr>
-                <tr><td>OAuth / SSO auth</td><td>✅ CLI · ⏳ MCP</td><td class="yes">✅</td><td class="no">❌</td><td class="yes">✅</td></tr>
-                <tr><td>First-party support &amp; SLA</td><td class="no">❌</td><td class="yes">✅</td><td class="no">❌</td><td>n/a</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="callout">
-            <span class="c-ico">🎯</span>
-            <p>
-              <strong>The one-line difference:</strong> ServiceNow's native Git
-              moved your <em>code</em> into Git. SyncroNow AI moves your
-              <em>workflow</em> into modern engineering — local build pipelines, a
-              multi-scope CLI, and an AI layer that understands your scope.
-            </p>
-          </div>
-          <p>
-            <strong>Honest gaps today:</strong> versus first-party tooling it
-            still lacks OAuth/SSO in the MCP server, a support SLA, and a packaged
-            distribution (Homebrew / Windows installer). These are the active
-            priorities — see the
-            <a href="https://github.com/LeassTaTT/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.
-          </p>
         </section>
 
         <!-- SECURITY -->
