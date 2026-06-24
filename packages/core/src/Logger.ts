@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import winston, { format, transports } from "winston";
 import chalk from "chalk";
 import fs from "fs";

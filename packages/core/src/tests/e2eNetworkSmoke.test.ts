@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import http from "http";
 import { AddressInfo } from "net";
 import { snClient } from "../snClient";

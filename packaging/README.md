@@ -39,6 +39,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 Credential storage on Windows uses the **Windows Credential Manager** natively
-via the optional `@napi-rs/keyring` dependency (enable with
-`SYNCRONA_USE_KEYCHAIN=1`). Native Windows is supported in addition to WSL; WSL
-remains the recommended path for parity with the documented Unix workflows.
+via the optional `@napi-rs/keyring` dependency. As of D5 the keychain is the
+**default** backend (opt out with `SYNCRONA_USE_KEYCHAIN=0`). Native Windows is
+supported in addition to WSL; WSL remains the recommended path for parity with
+the documented Unix workflows.

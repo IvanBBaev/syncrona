@@ -38,7 +38,7 @@
     "release": "npm run build && changeset publish"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
     "@typescript-eslint/eslint-plugin": "^6.7.5",

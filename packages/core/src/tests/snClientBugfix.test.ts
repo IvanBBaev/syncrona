@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 const mockPatch = jest.fn();
 const mockPost = jest.fn();
 const mockPut = jest.fn();

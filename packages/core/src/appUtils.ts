@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
 import path from "path";
 import ProgressBar from "progress";
@@ -22,7 +23,7 @@ import {
   isScopedEndpointUnavailableError,
 } from "./manifestBuilder";
 import { logger } from "./Logger";
-import { aggregateErrorMessages, allSettled } from "./genericUtils";
+import { aggregateErrorMessages, allSettled, formatDuration } from "./genericUtils";
 import {
   DownloadCheckpoint,
   readDownloadCheckpoint,
@@ -31,12 +32,18 @@ import {
 } from "./downloadCheckpoint";
 
 const processFilesInManRec = async (
-  recPath: string,
+  // In folder mode this is the per-record directory; in flat mode it is the
+  // table directory and the record name is encoded into each file name (DX17).
+  dirPath: string,
   rec: SN.MetaRecord,
-  forceWrite: boolean
+  forceWrite: boolean,
+  flat: boolean
 ) => {
-  const fileWrite = fUtils.writeSNFileCurry(!forceWrite);
-  const filePromises = rec.files.map((file) => fileWrite(file, recPath));
+  const fileWrite = flat
+    ? (file: SN.File) =>
+        fUtils.writeFlatSNFileCurry(!forceWrite)(file, dirPath, rec.name)
+    : (file: SN.File) => fUtils.writeSNFileCurry(!forceWrite)(file, dirPath);
+  const filePromises = rec.files.map(fileWrite);
   await Promise.all(filePromises);
   // Side effect, remove content from files so it doesn't get written to manifest
   rec.files.forEach((file) => {
@@ -47,10 +54,23 @@ const processFilesInManRec = async (
 const processRecsInManTable = async (
   tablePath: string,
   table: SN.TableConfig,
-  forceWrite: boolean
+  forceWrite: boolean,
+  flat: boolean
 ) => {
   const { records } = table;
   const recKeys = Object.keys(records);
+
+  if (flat) {
+    // DX17: flat layout writes every field file directly under the table
+    // directory as `<record>~<field>.<ext>`, so there are no per-record folders.
+    await fUtils.createDirRecursively(tablePath);
+    return Promise.all(
+      recKeys.map((recKey) =>
+        processFilesInManRec(tablePath, records[recKey], forceWrite, true)
+      )
+    );
+  }
+
   const recKeyToPath = (key: string) => path.join(tablePath, records[key].name);
   const recPathPromises = recKeys
     .map(recKeyToPath)
@@ -61,7 +81,12 @@ const processRecsInManTable = async (
     (acc: Promise<void>[], recKey: string) => {
       return [
         ...acc,
-        processFilesInManRec(recKeyToPath(recKey), records[recKey], forceWrite),
+        processFilesInManRec(
+          recKeyToPath(recKey),
+          records[recKey],
+          forceWrite,
+          false
+        ),
       ];
     },
     [] as Promise<void>[]
@@ -73,12 +98,16 @@ const processTablesInManifest = async (
   tables: SN.TableMap,
   forceWrite: boolean
 ) => {
+  // DX17: read flat mode straight off the loaded config (not getFlatMode()) so
+  // this single seam governs every pull path — wizard, refresh and download.
+  const flat = ConfigManager.getConfig().flat === true;
   const tableNames = Object.keys(tables);
   const tablePromises = tableNames.map((tableName) => {
     return processRecsInManTable(
       path.join(ConfigManager.getSourcePath(), tableName),
       tables[tableName],
-      forceWrite
+      forceWrite,
+      flat
     );
   });
   await Promise.all(tablePromises);
@@ -260,37 +289,33 @@ export const findMissingFiles = async (
 export const processMissingFiles = async (
   newManifest: SN.AppManifest
 ): Promise<void> => {
+  const missing = await findMissingFiles(newManifest);
+  // DX21: surface how much work the refresh found (visible at --log-level debug).
+  const missingRecords = Object.values(missing).reduce(
+    (sum, recs) => sum + Object.keys(recs).length,
+    0
+  );
+  logger.debug(
+    `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
+  );
+  const { tableOptions = {} } = ConfigManager.getConfig();
+  const client = defaultClient();
+
+  let filesToProcess: SN.TableMap;
   try {
-    const missing = await findMissingFiles(newManifest);
-    // DX21: surface how much work the refresh found (visible at --log-level debug).
-    const missingRecords = Object.values(missing).reduce(
-      (sum, recs) => sum + Object.keys(recs).length,
-      0
+    filesToProcess = await unwrapSNResponse(
+      client.getMissingFiles(missing, tableOptions)
     );
-    logger.debug(
-      `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
-    );
-    const { tableOptions = {} } = ConfigManager.getConfig();
-    const client = defaultClient();
-
-    let filesToProcess: SN.TableMap;
-    try {
-      filesToProcess = await unwrapSNResponse(
-        client.getMissingFiles(missing, tableOptions)
-      );
-    } catch (e) {
-      if (isScopedEndpointUnavailableError(e)) {
-        logger.info("Custom scope not found — fetching missing files from Table API...");
-        filesToProcess = await buildBulkDownloadFromTableAPI(missing, client, tableOptions);
-      } else {
-        throw e;
-      }
-    }
-
-    await processTablesInManifest(filesToProcess, false);
   } catch (e) {
-    throw e;
+    if (isScopedEndpointUnavailableError(e)) {
+      logger.info("Custom scope not found — fetching missing files from Table API...");
+      filesToProcess = await buildBulkDownloadFromTableAPI(missing, client, tableOptions);
+    } else {
+      throw e;
+    }
   }
+
+  await processTablesInManifest(filesToProcess, false);
 };
 
 // Build a missing-file map that covers every file in the manifest, used to
@@ -590,17 +615,34 @@ export const pushFiles = async (
 export const summarizeRecord = (table: string, recDescriptor: string): string =>
   `${table} > ${recDescriptor}`;
 
-const getProgTick = (
+// Exported for tests (progressTick.test.ts renders this with a faked TTY to lock
+// DEV-3: the format token must not start with a built-in progress token).
+export const getProgTick = (
   logLevel: string,
-  total: number
+  total: number,
+  stream: NodeJS.WritableStream = process.stderr
 ): (() => void) | undefined => {
   if (logLevel === "info") {
-    const progBar = new ProgressBar(":bar (:percent)", {
+    // DX24: show count and an ETA derived from observed throughput, e.g.
+    //   [=====       ] 30/100 (30%) ~2m 10s left
+    // NB: the token name must not start with a built-in progress token (`:eta`,
+    // `:current`, …) — `:etaHuman` would be parsed as `:eta` + "Human". `:remaining`
+    // is collision-free.
+    const progBar = new ProgressBar(":bar :current/:total (:percent) ~:remaining left", {
       total,
-      width: 60,
+      width: 40,
+      stream,
     });
+    const startedAt = Date.now();
+    let completed = 0;
     return () => {
-      progBar.tick();
+      completed += 1;
+      const elapsed = Date.now() - startedAt;
+      const remainingMs =
+        completed > 0 && completed < total
+          ? (elapsed / completed) * (total - completed)
+          : 0;
+      progBar.tick({ remaining: formatDuration(remainingMs) });
     };
   }
   // no-op at other log levels
@@ -674,18 +716,14 @@ export const buildFiles = async (
 };
 
 export const swapScope = async (currentScope: string): Promise<SN.ScopeObj> => {
-  try {
-    const client = defaultClient();
-    const scopeId = await unwrapTableAPIFirstItem(
-      client.getScopeId(currentScope),
-      "sys_id"
-    );
-    await swapServerScope(scopeId);
-    const scopeObj = await unwrapSNResponse(client.getCurrentScope());
-    return scopeObj;
-  } catch (e) {
-    throw e;
-  }
+  const client = defaultClient();
+  const scopeId = await unwrapTableAPIFirstItem(
+    client.getScopeId(currentScope),
+    "sys_id"
+  );
+  await swapServerScope(scopeId);
+  const scopeObj = await unwrapSNResponse(client.getCurrentScope());
+  return scopeObj;
 };
 
 const swapServerScope = async (scopeId: string): Promise<void> => {
@@ -749,51 +787,47 @@ export const createAndAssignUpdateSet = async (updateSetName = "") => {
 export const checkScope = async (
   swap: boolean
 ): Promise<Sync.ScopeCheckResult> => {
-  try {
-    const man = ConfigManager.getManifest();
-    if (man) {
-      const client = defaultClient();
-      let scopeObj: SN.ScopeObj;
-      try {
-        scopeObj = await unwrapSNResponse(client.getCurrentScope());
-      } catch (e) {
-        if (isScopedEndpointUnavailableError(e)) {
-          return {
-            match: true,
-            sessionScope: man.scope,
-            manifestScope: man.scope,
-          };
-        }
-        throw e;
-      }
-      if (scopeObj.scope === man.scope) {
+  const man = ConfigManager.getManifest();
+  if (man) {
+    const client = defaultClient();
+    let scopeObj: SN.ScopeObj;
+    try {
+      scopeObj = await unwrapSNResponse(client.getCurrentScope());
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
         return {
           match: true,
-          sessionScope: scopeObj.scope,
-          manifestScope: man.scope,
-        };
-      } else if (swap) {
-        const swappedScopeObj = await swapScope(man.scope);
-        return {
-          match: swappedScopeObj.scope === man.scope,
-          sessionScope: swappedScopeObj.scope,
-          manifestScope: man.scope,
-        };
-      } else {
-        return {
-          match: false,
-          sessionScope: scopeObj.scope,
+          sessionScope: man.scope,
           manifestScope: man.scope,
         };
       }
+      throw e;
     }
-    //first time case
-    return {
-      match: true,
-      sessionScope: "",
-      manifestScope: "",
-    };
-  } catch (e) {
-    throw e;
+    if (scopeObj.scope === man.scope) {
+      return {
+        match: true,
+        sessionScope: scopeObj.scope,
+        manifestScope: man.scope,
+      };
+    } else if (swap) {
+      const swappedScopeObj = await swapScope(man.scope);
+      return {
+        match: swappedScopeObj.scope === man.scope,
+        sessionScope: swappedScopeObj.scope,
+        manifestScope: man.scope,
+      };
+    } else {
+      return {
+        match: false,
+        sessionScope: scopeObj.scope,
+        manifestScope: man.scope,
+      };
+    }
   }
+  //first time case
+  return {
+    match: true,
+    sessionScope: "",
+    manifestScope: "",
+  };
 };

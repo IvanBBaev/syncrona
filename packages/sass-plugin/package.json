@@ -13,7 +13,7 @@
     "access": "public"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "sass": "^1.93.2"
   },

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp, readFileSync } from "fs";
 import path from "path";
@@ -5,6 +6,7 @@ import * as ConfigManager from "./config";
 import * as AppUtils from "./appUtils";
 import { logger } from "./Logger";
 import { scopeCheckMessage } from "./logMessages";
+import { classifyError } from "./errorTaxonomy";
 import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient";
 import { getActiveInstance, loadCredentials } from "./auth";
 
@@ -92,6 +94,14 @@ export function logScopedEndpointCapability(context: string): void {
   );
 }
 
+// DX19: single home for the actionable next-step line so the `→ <hint>`
+// presentation policy is not copy-pasted across the CLI error sinks (it would
+// otherwise drift). classifyError stays pure (no logger); this is the one
+// place that renders + logs it.
+export function logErrorHint(e: unknown): void {
+  logger.info(`→ ${classifyError(e).hint}`);
+}
+
 export async function scopeCheck(
   successFunc: () => void | Promise<void>,
   swapScopes: boolean = false
@@ -113,6 +123,7 @@ export async function scopeCheck(
     logger.error(
       "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncro-now-ai init`"
     );
+    logErrorHint(e); // DX19: actionable next step
     process.exitCode = 1;
     return;
   }
@@ -127,6 +138,7 @@ export async function scopeCheck(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message || "Command failed with an unknown error.");
+    logErrorHint(e); // DX19: actionable next step
     process.exitCode = 1;
   }
 }

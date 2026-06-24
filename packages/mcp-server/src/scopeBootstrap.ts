@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { AUTO_PULL_ALL_SCOPES_ENV, PROJECT_DIR, SCOPE_BOOTSTRAP_TIMEOUT_MS } from "./runtimeConfig";

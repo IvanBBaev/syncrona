@@ -7,7 +7,7 @@
     "prepack": "tsc"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@syncro-now-ai/types": "^0.4.2-alpha.8",
     "@types/prettier": "^2.7.3",

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { SN } from "@syncro-now-ai/types";
 import { downloadTablesWithResume, DownloadTableDeps } from "../appUtils";
 import { DownloadCheckpoint } from "../downloadCheckpoint";

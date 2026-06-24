@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { z } from "zod";
 
 export const TABLE_NAME_REGEX = /^[a-z][a-z0-9_]*$/;

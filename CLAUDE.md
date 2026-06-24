@@ -24,6 +24,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncro-now-ai build` builds local artifacts.
 - `npx syncro-now-ai deploy` deploys built files.
 - `npx syncro-now-ai docs` generates or logically updates scope Markdown docs and diagrams.
+- `npx syncro-now-ai repair` reconciles the manifest with local files and re-downloads missing or prunes orphan files.
 - `npx syncro-now-ai status` prints extended diagnostics.
 - `npx syncro-now-ai check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncro-now-ai doctor` runs diagnostic checks.

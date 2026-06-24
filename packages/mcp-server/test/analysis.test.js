@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

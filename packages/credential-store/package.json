@@ -5,13 +5,15 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "test": "jest",
+    "test:mutation": "stryker run"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "files": [
     "dist"
   ],
@@ -19,7 +21,12 @@
     "access": "public"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/jest-runner": "^8.7.1",
+    "@types/jest": "^29.5.5",
     "@types/node": "^20.8.4",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
     "typescript": "^5.2.2"
   },
   "repository": {

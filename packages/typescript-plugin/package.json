@@ -7,7 +7,7 @@
     "prepack": "npx tsc"
   },
   "author": "Ivan Baev",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "typescript": "^5.2.2"
   },

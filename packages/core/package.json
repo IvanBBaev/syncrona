@@ -2,7 +2,7 @@
   "name": "@syncro-now-ai/core",
   "version": "0.4.2-alpha.8",
   "description": "Next-gen file syncer",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "main": "./dist/index.js",
   "author": "Ivan Baev",
   "private": false,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export type DiffRecordInput = {
   name: string;
   value: string;

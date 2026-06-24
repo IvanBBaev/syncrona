@@ -5,21 +5,40 @@
 2. Completed work is tracked in DONE.
 
 ## Goal: real-world readiness 9.5/10
-Current: ~8.5/10 — the AR review (2026-06-11) and the CR fix series (2026-06-12) are
-applied; what remains is distribution polish (D5), a few manual/infrastructure
-residuals, and the DX backlog.
+Current: ~9/10 — as of 2026-06-21 the engineering-completable backlog is closed:
+D5 (keychain default + Homebrew/Windows scaffolding), AR11, G13, QA-2 and the DX
+items (DX17 core, DX18 repair, DX19, DX24) are done; `npm run check` is green and
+prod `npm audit` is clean. What remains is NOT engineering-completable offline:
+AR9 (deferred by decision), CR22 + DX17 pipeline wiring + Homebrew/Windows real
+verification (need a live instance / first publish / Windows host), and the BA1–8
+owner/business decisions (incl. npm publish, which is owner-gated).
 
 ---
 
 ## PHASE D — Distribution polish (remainder)
 
 ### D5. Distribution polish
-- [~] macOS Keychain for the CredentialStore — AR2 DONE 2026-06-21 (opt-in keychain via @napi-rs/keyring + SYNCRONA_STORE_KEY; see DONE). Remaining for D5: make the keychain the default backend.
-- [ ] Homebrew tap: syncrona/homebrew-tap repo + Formula
-- [ ] GitHub Actions to auto-update the Homebrew formula on each release
-- [ ] Windows: PowerShell install script + Windows Credential Manager
+- [x] macOS Keychain for the CredentialStore — DONE 2026-06-21. Keychain is now
+      the DEFAULT at-rest backend (was opt-in): isKeychainEnabled defaults on,
+      opt out with SYNCRONA_USE_KEYCHAIN=0, graceful fallback to machine key when
+      @napi-rs/keyring/keychain is unavailable; decrypt retries with the machine
+      key so pre-D5 stores keep opening. + clearStoreKeyCache, hermetic test
+      harness (jest.setup.js forces keychain off; storeKey/storeKeyResolution
+      mock the keyring). Docs synced (core README, packaging README, install.ps1).
+- [x] Homebrew formula — DONE (code-complete, UNVERIFIED) 2026-06-21:
+      packaging/homebrew/syncro-now-ai.rb (Node-CLI pattern). Cannot brew-install
+      until first npm publish + tap repo exist.
+- [x] GitHub Actions to auto-update the Homebrew formula on each release — DONE
+      2026-06-21: dormant `update-homebrew` job in release.yml (computes sha256
+      from the published tarball, renders the formula, pushes to the tap). Gated
+      on HOMEBREW_TAP_READY var + HOMEBREW_TAP_TOKEN secret.
+- [x] Windows: PowerShell install script + Windows Credential Manager — DONE
+      2026-06-21: packaging/windows/install.ps1 (Node check + global npm install);
+      Windows Credential Manager comes from the cross-platform @napi-rs/keyring
+      used by D5. UNVERIFIED (no Windows host).
 
-**Definition of Done for Phase D:** `brew install syncrona && syncrona login && syncrona init` works.
+**Definition of Done for Phase D:** `brew install syncrona && syncrona login && syncrona init` works
+(blocked only on the first npm publish + tap repo — both owner-gated).
 
 ---
 
@@ -31,14 +50,22 @@ residuals, and the DX backlog.
       lingers on disk. No evidence of a real password — rotate only if real
       credentials were ever placed there manually. See also CR2.
 - [x] AR2 (residual): DONE 2026-06-21 — at-rest key resolves SYNCRONA_STORE_KEY > OS keychain (opt-in SYNCRONA_USE_KEYCHAIN, @napi-rs/keyring) > legacy machine key, with decrypt fallback. See DONE.
-- [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — HIGH RISK
-      (88 tests against dist); the dispatch logic already has dedicated tests.
-- [ ] AR11: Encapsulate module-level mutable state (TOOL_METRICS, caches) in an
-      explicit context object. Note 2026-06-12: the secrets cache in servicenowCore
-      (CR21) has a reset function (clearServiceNowSecretsCache), the prefix cache has
-      clearScopedApiPrefixCache — follow that model. The modular architecture
-      (cliCommands.ts / toolModules.ts registries, docs/ARCHITECTURE.md §5) is in
-      place — AR11 is its natural continuation.
+- [ ] AR9 (residual): Full ts-jest migration of the mcp-server tests — DEFERRED
+      2026-06-21, RE-CONFIRMED 2026-06-24 (conscious decision, not a gap): HIGH
+      RISK for ZERO behavior change. Concretely it means rewriting 12 test files
+      / ~4800 lines from the node:test + assert/strict API (run against dist via
+      `npm run build && node --test`) to ts-jest/expect against src, AND replacing
+      the custom coverage gate (scripts/check-coverage-gate.js parses node --test
+      coverage) plus the governance node:test harness. Testing the compiled dist
+      is a legitimate choice (it exercises the shipped artifact); the dispatch
+      logic already has dedicated tests. New tests are written in the existing
+      node:test/dist style instead.
+- [x] AR11: DONE 2026-06-21 — TOOL_METRICS (the in-memory ring buffer) is no
+      longer an exported, externally-spliced array. It is encapsulated behind
+      getToolMetrics / clearToolMetrics / replaceToolMetrics / pushToolMetric in
+      toolService.ts (mirrors clearServiceNowSecretsCache / clearScopedApiPrefixCache),
+      so it is mutated in one place and reset/rehydrated explicitly. index.ts and
+      toolModules.ts use the accessors; 5 tests (toolMetrics.test.js).
 
 ## Remaining from CODE REVIEW CR1–CR30 (2026-06-12) — implementation in DONE
 - [x] CR1 (residual): DONE 2026-06-12 — all work is committed (8 commits) and the
@@ -53,9 +80,16 @@ residuals, and the DX backlog.
       the test). Details and fix under AR1.
 - [ ] CR22 (residual): verify the sys.scripts.do fallback against a real instance —
       documented as best-effort (CSRF/session limitations) but not tested live.
-- [~] CR26 (follow-up): coverage thresholds ratcheted 2026-06-13 to st 70 / br 57 /
-      fn 61 / ln 70 (measured 70.7/57.7/61.8/70.5 after DX/contract tests); CI
-      labels updated. Keep ratcheting toward 80 as tests are added; never down.
+- [~] CR26 (follow-up): coverage thresholds ratcheted again 2026-06-24 to
+      st 76 / br 63 / fn 71 / ln 76 (measured 77.8/64.9/72.8/77.5 after the
+      logMessages, bootstrap, gitUtils and devCommands suites landed; up from the
+      2026-06-21 floor of 72/60/65/72). Credential-store mutation score lifted in
+      the same pass from 63.2% to 81.6% (Stryker; keychain backend, key-material
+      parser, decrypt fallback and sync-read fallbacks now covered) — above the
+      conf's "high" mark, though the gate stays non-blocking (break: null) by
+      design. Keep ratcheting toward 80 as tests are added; never down. Remaining
+      core branch headroom (toward 70+) is concentrated in appUtils.ts IO/network
+      paths (43% branch), addressed opportunistically.
 
 ---
 
@@ -150,8 +184,12 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [x] **G12. Branch coverage for mcp-server** — DONE 2026-06-12:
       check-coverage-gate.js accepts --branch-threshold (opt-in); root
       test:coverage:mcp uses 70 (measured 74.99%).
-- [ ] **G13. Mutation testing** — Stryker on credential-store + sn-transport
-      (small, critical packages) would show whether the assertions actually guard.
+- [x] **G13. Mutation testing** — DONE 2026-06-21: Stryker (jest runner,
+      non-blocking break:null, `npm run test:mutation`) on the two foundation
+      packages, which also got their first unit tests. Baseline scores:
+      sn-transport 80.2%, credential-store 47.0% total (covered 70%; the
+      uncovered remainder is the keychain/native path). Stryker added as a devDep
+      (does not affect the prod `npm audit --omit=dev` gate).
 - [x] **G14. Performance baseline** — DONE 2026-06-21: `npm run bench`
       (scripts/bench.mjs) processes a deterministic synthetic manifest (default
       40 tables × 80 records = 3200 records / 4280 files) through the pure
@@ -188,6 +226,116 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 4. G7, G13–G14, G17 — incrementally. (~~G4~~, ~~G6~~, ~~G10~~, ~~G12~~ done.)
 
 ---
+
+## FULL REVIEW — 2026-06-22 (b) (architect / dev / qa × 5 over SPDX headers + BA docs)
+
+### Cycle 1 — Architect
+- [x] **ARCH-9. SPDX header coverage was inconsistent** — DONE 2026-06-22:
+      ARCH-7 only headered packages/*/src, so the separate `/test` dirs
+      (credential-store, sn-transport, mcp-server), the mcp-server `scripts/*.js`
+      and the jest config/setup files were left without a license header — a
+      header policy applied by directory accident, not intent. Completed it: all
+      166 hand-written source files (ts/js/mjs) now carry
+      `// SPDX-License-Identifier: GPL-3.0-or-later`; generated `coverage/` (already
+      gitignored) and `dist/` are correctly excluded. Verified 0 source files
+      remain without a header.
+
+## FULL REVIEW — 2026-06-22 (architect / dev / qa × 4 over the GPL relicense)
+Scope: the MIT→GPL-3.0 relicense (LICENSE, NOTICE, package.json, README) + repo.
+
+### Cycle 1 — Architect
+- [x] **ARCH-5. Relicense incomplete: Homebrew formula still `license "MIT"`** —
+      DONE 2026-06-22: packaging/homebrew/syncro-now-ai.rb declared MIT (would
+      publish wrong license metadata to the tap). → `GPL-3.0-or-later`.
+- [x] **ARCH-6. Relicense incomplete: docs site advertised MIT (4 places)** —
+      DONE 2026-06-22: docs/index.html (the public GitHub Pages site) claimed MIT
+      in the meta description (×2), JSON-LD `license`, a "MIT licensed" badge, and
+      the footer — a public license misstatement. → GPL-3.0 (GNU URL for JSON-LD).
+- [x] **ARCH-8. package-lock workspace entries cached as MIT** — DONE 2026-06-22:
+      our workspace packages still showed `"license": "MIT"` in package-lock
+      (stale vs the updated package.json). Regenerated via `npm install`; all
+      workspace entries are now GPL-3.0-or-later (third-party deps keep their own
+      real licenses, untouched).
+- [x] **ARCH-7. Per-file SPDX/GPL headers** — DONE 2026-06-22: added
+      `// SPDX-License-Identifier: GPL-3.0-or-later` to all 141 source `.ts` files
+      under packages/*/src (shebang-aware: header after `#!` on the 2 bin files;
+      idempotent). License-only identifier is correct for both Sincronia-origin
+      and new files; the mixed copyright stays in NOTICE. Gate green; compiled bin
+      shebang intact. This was the last engineering-completable-offline item.
+
+### Cycle 1 — Dev
+- CLEAN: the relicense changed only metadata/text/docs, no executable code.
+  Verified LICENSE is the verbatim canonical GPL-3.0, all package.json stay valid
+  JSON (npm install + gate green), the Homebrew `.rb` and JSON-LD edits parse. No
+  defects, no edits.
+
+### Cycle 1 — QA
+- [x] **QA-6. No guard against license drift** — DONE 2026-06-22: the ARCH-5/6/8
+      drift slipped in because nothing checked license consistency. Added
+      licenseConsistency.test.ts (4 tests, runs in the gate): LICENSE is GPL-3.0
+      (not MIT), NOTICE exists + attributes Sincronia, root + every workspace
+      package.json declare GPL-3.0-or-later. A future revert to MIT now fails CI.
+
+### Cycle 2 — CLEAN (early stop)
+- Architect: no residual MIT license claim in owned artifacts (LICENSE/NOTICE/
+  package.json/docs/Homebrew all GPL); dependency-cruiser ✔. The QA-6 guard
+  covers the legally-binding artifacts; docs/Homebrew display strings are lower
+  risk and were fixed in cycle 1.
+- Dev: no executable code touched this run; CLEAN.
+- QA: license guard green; no further gap.
+- Whole clean cycle → per the early-stop rule, cycles 3–4 not run. Asked 4, ran 2.
+
+## FULL REVIEW — 2026-06-21 (architect / dev / qa × 4 over the engineering-100 branch)
+Scope: the PR #9 changes (QA-2, G13, AR11, DX17-19/24, D5, distribution).
+Ids continue from the project's running ARCH-/DEV-/QA- numbering.
+
+### Cycle 1 — Architect
+- [x] **ARCH-3. `flat` config flag is an inert no-op (contract lie)** — DONE
+      2026-06-21: config.ts getFlatMode() and flatLayout.ts helpers had zero src
+      callers (DX17 pipeline wiring is deferred), yet `flat: true` was accepted +
+      shape-validated, so a user got the folder layout silently. Fix: loadConfigs
+      now logs a one-time warning when `flat: true` that the flat layout is a
+      preview not yet applied on pull/push. (Full wiring stays deferred — needs
+      live validation.) config.ts:170.
+- [x] **ARCH-4. Error-hint presentation duplicated across 5 sinks** — DONE
+      2026-06-21: `logger.info(\`→ ${classifyError(e).hint}\`)` was copy-pasted in
+      commander, commandHelpers (×2), pushCommand and repairCommand — a
+      presentation policy that would drift. Extracted `logErrorHint(e)` in
+      commandHelpers (keeps errorTaxonomy pure / logger-free); all 5 sinks call it.
+
+### Cycle 1 — Dev
+- [x] **DEV-3. DX24 progress ETA never rendered (`~0.0Human left`)** — DONE
+      2026-06-21: the custom progress token `:etaHuman` prefix-collides with the
+      `progress` lib's built-in `:eta` token, so it rendered as `:eta` ("0.0") +
+      literal "Human". Verified with a faked-TTY render. Fix: rename the token to
+      the collision-free `:remaining` (and the local var to remainingMs).
+      appUtils.ts getProgTick. Rest of the new code (flatLayout edge cases,
+      repairCommand async/error paths, AR11 accessors) reviewed CLEAN.
+
+### Cycle 1 — QA
+- [x] **QA-4. DEV-3 had no regression test** — DONE 2026-06-21: the ETA token
+      bug would not have failed any test. getProgTick is now exported with an
+      injectable stream; progressTick.test.ts renders it against a faked TTY and
+      asserts the token substitutes (no surviving `:remaining`, no `:eta`-collision
+      "Human" leftover, count + "left" present). 2 tests.
+- [x] **QA-5. repair `--prune` deletion path untested (data-loss risk)** — DONE
+      2026-06-21: `--apply --prune` calls fsp.unlink on orphans with no test.
+      Added 3 real-temp-file tests (fs unmocked): `--apply --prune --ci` deletes
+      the orphan, `--apply` without `--prune` keeps it, report-only never deletes.
+- Other new code: flatLayout (13 round-trip tests), AR11 (5), D5 (storeKey +
+      storeKeyResolution, keychain mocked/hermetic), QA-2 handler suites — all
+      adequately covered; no further gaps this cycle.
+
+### Cycle 2 — CLEAN (early stop)
+- Architect: dependency-cruiser ✔ (94 modules, no cycles/boundary violations);
+  the new commander→commandHelpers edge introduces no cycle; the only other
+  progress bar (wizard.renderProgressBar) is a pure string renderer, not the
+  `progress` lib, so no token-collision class elsewhere.
+- Dev: cycle-1 fixes verified correct; no new defects.
+- QA: new tests green; remaining wrappers (logErrorHint) / cosmetic warning are
+  low-risk and adequately backed by classifyError's own tests.
+- A whole clean cycle (no findings from any persona) → per the skill's
+  early-stop rule, cycles 3–4 were not run for show. Asked for 4, ran 2.
 
 ## FULL REVIEW — cycle 2026-06-14 (architect / dev / qa over session additions)
 - Architect: CLEAN — no new duplicated types (ARCH-1/2 hold), the new helpers
@@ -230,16 +378,18 @@ Findings prefixed ARCH-/DEV-/QA-.
   dependency-cruiser — 2026-06-21.)
 
 ### Dev
-- [~] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — these wrap a
-      body in try/catch only to re-throw the same error: dead structure that
-      obscures which code actually has error handling. FIXED the 3 in
-      PluginManager.ts (clean rewrite, behavior identical, core suite green).
-      REMAINING 9 DEFERRED (commands.ts:177/211/302, appUtils.ts:277/595/705,
-      wizard.ts:212/225, FileUtils.ts:296): each wraps a whole function body, so
-      removal means de-indenting large bodies — a big diff with real risk for
-      ZERO behavior change. Per the review rule (don't fix mechanically-risky
-      noise), left as-is intentionally. Reopen only if touching those functions
-      for another reason.
+- [x] **DEV-1. No-op `catch (e) { throw e; }` blocks (12 sites)** — DONE
+      2026-06-24. These wrapped a body in try/catch only to re-throw the same
+      error: dead structure that obscures which code actually has error handling.
+      The 3 in PluginManager.ts were fixed earlier (clean rewrite). The remaining
+      9 (commands.ts downloadCommand/initCommand/deployCommand-inner,
+      appUtils.ts processMissingFiles/swapScope/checkScope, wizard.ts setupDotEnv/
+      writeDefaultConfig, FileUtils.ts) are now removed: outer no-op try unwrapped
+      and bodies de-indented, while the genuine inner try/catch (scoped-endpoint
+      fallback, best-effort gitignore, docs generation) is preserved untouched.
+      Guarded against regression by enabling `no-useless-catch: error` in .eslintrc
+      (the config extended only @typescript-eslint/recommended, so this rule was
+      off). Typecheck + lint:core + full core suite (347 tests) green.
 - [x] **DEV-2. `allSettled` reinvents native `Promise.allSettled`** — CLOSED
       2026-06-13 as won't-do: swapping to native changes the typed call sites
       (Sync.PromiseResult casts in appUtils) for zero behavior gain; the custom
@@ -251,9 +401,12 @@ Findings prefixed ARCH-/DEV-/QA-.
       test locked it — a refactor could quietly restore the dangerous default
       fallback. Added a regression test (syntactically broken config → rejects)
       to configValidation.test.ts. 5/5 green.
-- [ ] **QA-2. Thin handler coverage** — 5 mcp test files for 11 handlers; mcp
-      tests run against compiled `dist/` not `src/` (AR9, known). Adding
-      per-handler tests against dist is the path; tracked, not done here.
+- [x] **QA-2. Thin handler coverage** — DONE 2026-06-21: added 5 per-handler
+      test files (against dist, per the AR9 decision) for the weakest handlers —
+      serviceNowCrud 2%→90%, scriptAnalysis 8%→100%, developerTool 10%→55%,
+      metadataAnalysis 3%→42%, sessionHandlers 3%→40%. MCP line coverage
+      82.6%→86.4%, 175→228 tests. Validation/guard/dry-run paths are covered
+      without the network; happy-path network calls stay with the e2e suites.
 - [x] **QA-3. Single-file `npx jest` from repo root** — DONE 2026-06-13:
       documented in CONTRIBUTING ("Running a single test file") — run from inside
       the package or via `npm --workspace`. Runner-resolution quirk, not a bug.
@@ -451,14 +604,25 @@ Docs, Workflow, Error Handling, MCP.
 **DX17: The file structure is strange for new users**
 - "Records are shown as folders…", but users expect a flat structure
   (src/scripts/my.js).
-- [ ] Add a `--flat` mode: flat locally, converted automatically before push/pull.
+- [~] `--flat` mode — CORE DONE 2026-06-21: lossless, reversible conversion
+      (flatLayout.ts folderRelToFlat / flatRelToFolder, `~` field separator since
+      it never appears in a dictionary field name; 13 round-trip tests) + `flat`
+      config flag (shape-validated, getFlatMode) + README "Flat layout" docs.
+      REMAINING: the automatic pull/push pipeline wiring touches the hot
+      getFileContextFromPath parser + the write path and needs a live round-trip
+      against an instance to validate safely — kept as an opt-in preview until then.
 
 **DX18: Error recovery is undocumented**
 - Partial push failure (network dies). The user does not know whether a retry is safe.
 - Note 2026-06-12: checkpoint/resume no longer leaves bogus state after a declined
   prompt (CR5); the lock is released even on errors (CR6); behavior is documented
   in the core README ("Push recovery and locking").
-- [ ] `syncrona repair` should compare manifest vs actual files and repair.
+- [x] `syncrona repair` — DONE 2026-06-21: new command (cliCommands registry +
+      repairCommand.ts) reconciles the manifest against local files — reports
+      missing (in manifest, not on disk) and orphan (on disk, no manifest record)
+      files. `--apply` re-downloads missing (reuses processMissingFiles),
+      `--apply --prune` deletes orphans (confirm unless `--ci`). Report-only by
+      default; `--dry-run` overrides `--apply`. 6 tests; README + CLAUDE.md (19 cmds).
 
 ---
 
@@ -472,9 +636,10 @@ Docs, Workflow, Error Handling, MCP.
 - [x] Error categorization + actionable next steps — DONE 2026-06-21:
       errorTaxonomy.ts `classifyError` sorts any failure into network / auth /
       config / data / unknown (by transport code, then HTTP status, then message
-      keywords) and the top-level CLI error boundary (commander.ts runHandler)
-      now prints a `→ <hint>` next-step line after the error. Pure + tested
-      (errorTaxonomy.test.ts, 5 tests).
+      keywords). The `→ <hint>` next-step line is now printed at ALL three CLI
+      error sinks: commander.ts runHandler, commandHelpers.ts scopeCheck (both the
+      scope-check and command-body catches, covering dev/refresh/deploy/build) and
+      pushCommand.ts. Pure + tested (errorTaxonomy.test.ts, 5 tests).
 
 **DX20: Silent error swallowing during credential loading**
 - As AR10 noted, secrets-loading errors are swallowed. Users do not know whether
@@ -530,8 +695,10 @@ Docs, Workflow, Error Handling, MCP.
       pushConcurrency, clamped 1-50, falls back to 10. resolvePushConcurrency
       takes an optional override; pushFiles threads args.pushConcurrency (deploy
       and watch keep the config default). 4 unit tests + help example.
-- [ ] Progress bar: "Pushing [███░] 30/100 (2m remaining)". (push already has a
-      progress tick via getProgTick; a richer ETA bar remains.)
+- [x] Progress bar ETA — DONE 2026-06-21: getProgTick now renders
+      `:current/:total (:percent) ~<eta> left`, with the ETA derived from observed
+      throughput (elapsed / completed × remaining) via formatDuration
+      (genericUtils, tested: s / m / h, clamps non-finite). No new dependency.
 
 ---
 
@@ -551,6 +718,23 @@ Docs, Workflow, Error Handling, MCP.
 4. **DX22-DX24**: UI improvements (dry-run table, progress bar, rate limiting) — 2 hours.
 
 ---
+
+## BA GAP PASS — 2026-06-22 (implementable gap-closers)
+A second BA lens asked "what's still missing". Engineering-implementable gaps
+closed with new artifacts (the rest are owner/market actions — see BA1–8):
+- [x] **G-C** SECURITY.md "AI / MCP data flow" — documents the SN-data → LLM
+  trust boundary (the differentiator's enterprise-trust gap); + at-rest section
+  refreshed for the D5 keychain default.
+- [x] **G-G** docs/COMPATIBILITY.md — honest Node/OS/ServiceNow matrix
+  (expected-compatible; live verification still open, CR22).
+- [x] **G-D** GOVERNANCE.md — support model, triage, decision-making, bus-factor
+  mitigation + co-maintainer invitation (no SLA; bus factor still 1).
+- [x] **G-B** docs/GO_TO_MARKET.md — beachhead, channels, content, launch
+  checklist (gated on demand validation).
+- [x] **G-A** docs/VALIDATION_INTERVIEWS.md — the interview script (owner runs).
+- [ ] **STILL THE #1 GAP:** demand validation itself is unstarted (BA1). Every
+  artifact above assumes demand that has not been measured. Highest-ROI next
+  action is owner-run interviews, not more build.
 
 ## BUSINESS ANALYSIS (2026-06-13) — BA lens
 Deep BA review + implemented artifacts. Full report: docs/BUSINESS_ANALYSIS.md
@@ -581,5 +765,15 @@ roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
       @syncrona) — unify on one name across npm/repo/CLI [owner decision].
 - [ ] **BA7. No success metrics / KPIs** — instrument once opt-in telemetry (G7)
       lands; KPI set defined in §7.
-- [ ] **BA8. Provenance / IP (Risk R1)** — verify ownership of pre-existing code
-      and clearance to distribute BEFORE any public release [owner/legal].
+- [~] **BA8. Provenance / IP (Risk R1)** — LICENSING FIX APPLIED 2026-06-21.
+      Deep BA found the real conflict: upstream Sincronia is **GPL-3.0**
+      (LICENSE file + @sincronia/core package.json) but this fork was relicensed
+      to **MIT** with no attribution — a GPL violation that blocked any
+      distribution. Fixed: LICENSE replaced with verbatim GPL-3.0, all 14
+      package.json `license` fields → `GPL-3.0-or-later`, added `NOTICE`
+      (copyright + Sincronia/Nuvolo attribution + trademark notice), README
+      license section rewritten. Gate green. REMAINING [owner/legal]: a lawyer's
+      sign-off on the GPL-3.0-only vs -or-later variant and that no
+      employer-proprietary code is mixed in, BEFORE the first public publish.
+      Note: GPL copyleft forecloses a closed-source/proprietary paid tier
+      (see deep BA §1/§3 — OSS or SaaS/support monetization only).

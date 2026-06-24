@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Pure tool-dispatch primitives for the MCP CallTool handler.
  *

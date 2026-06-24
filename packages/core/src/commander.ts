@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import yargs from "yargs";
 import type { Argv, Arguments } from "yargs";
 import { logger } from "./Logger";
-import { classifyError } from "./errorTaxonomy";
+import { logErrorHint } from "./commandHelpers";
 import {
   CLI_COMMANDS,
   SHARED_CLI_OPTIONS,
@@ -19,8 +20,7 @@ const runHandler =
       .catch((e) => {
         const message = e instanceof Error ? e.message : String(e);
         logger.error(message || "Command failed with an unknown error.");
-        // DX19: append an actionable next step based on the error category.
-        logger.info(`→ ${classifyError(e).hint}`);
+        logErrorHint(e); // DX19: actionable next step based on error category
         process.exitCode = 1;
       });
   };
