@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import path from "path";
@@ -14,6 +15,7 @@ import {
   scopeCheck,
   logScopedEndpointCapability,
   getActiveStoreDecryptWarning,
+  logErrorHint,
 } from "./commandHelpers";
 
 type PushCheckpoint = {
@@ -309,6 +311,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       logPushResults(pushResults);
     } catch (e) {
       logger.getInternalLogger().error(e);
+      logErrorHint(e); // DX19: actionable next step based on error category
       // exitCode instead of process.exit so the finally block can still
       // release the collaboration lock before the process ends.
       process.exitCode = 1;

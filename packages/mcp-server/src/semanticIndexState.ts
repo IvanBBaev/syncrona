@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { buildSemanticIndexFromWorkspace, type SemanticSymbol } from "./analysis";
 import { writeAuditEvent } from "./audit";
 import { AUDIT_DIR, AUDIT_FILE, PROJECT_DIR } from "./runtimeConfig";

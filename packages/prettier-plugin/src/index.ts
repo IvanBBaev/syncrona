@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import prettier from "prettier";
 const run: Sync.PluginFunc = async function(

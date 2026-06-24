@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { writeAuditEvent } from "./audit";
 import { AUDIT_DIR, AUDIT_FILE } from "./runtimeConfig";
 

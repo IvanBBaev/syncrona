@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp, readFileSync } from "fs";
 import { execFileSync } from "child_process";

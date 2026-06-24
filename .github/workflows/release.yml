@@ -42,3 +42,46 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
+
+  # D5: auto-update the Homebrew formula from the freshly published npm tarball.
+  # DORMANT until the tap repo (LeassTaTT/homebrew-tap) exists and the repo
+  # variable HOMEBREW_TAP_READY=true + secret HOMEBREW_TAP_TOKEN are set. Until
+  # then it is skipped, exactly like the owner-gated publish above.
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ vars.HOMEBREW_TAP_READY == 'true' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Resolve published version, tarball URL and sha256
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          URL="https://registry.npmjs.org/@syncro-now-ai/core/-/core-${VERSION}.tgz"
+          curl -fsSL "$URL" -o core.tgz
+          SHA=$(shasum -a 256 core.tgz | cut -d' ' -f1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Render formula from the template
+        run: |
+          mkdir -p out
+          sed -e "s|url \".*\"|url \"${{ steps.meta.outputs.url }}\"|" \
+              -e "s|sha256 \".*\"|sha256 \"${{ steps.meta.outputs.sha }}\"|" \
+              packaging/homebrew/syncro-now-ai.rb > out/syncro-now-ai.rb
+
+      - name: Commit the formula to the tap repo
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/LeassTaTT/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp out/syncro-now-ai.rb tap/Formula/syncro-now-ai.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/syncro-now-ai.rb
+          git commit -m "syncro-now-ai ${{ steps.meta.outputs.version }}" || { echo "No formula changes"; exit 0; }
+          git push

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // DX19: error taxonomy. Every CLI failure is sorted into a small set of
 // categories so the user gets an actionable next step instead of a bare message.
 // Pure (no I/O, no axios import): it inspects the error shape generically, so it

@@ -12,7 +12,7 @@ class SyncroNowAi < Formula
   #   https://registry.npmjs.org/@syncro-now-ai/core/-/core-<version>.tgz
   url "https://registry.npmjs.org/@syncro-now-ai/core/-/core-0.0.0.tgz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  license "MIT"
+  license "GPL-3.0-or-later"
 
   depends_on "node"
 

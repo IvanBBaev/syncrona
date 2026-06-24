@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export {};
 
 // full-review C1 QA: lock the shared DX20b helper used by status + push.

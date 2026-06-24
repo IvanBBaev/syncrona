@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { GraphNode, GraphEdge } from "../analysis/graph";
 import { buildScopeKnowledgeIndex, buildTableFieldMarkdownDocs, rankMinimalFootprintTargets, renderScopeKnowledgeMarkdown, renderTableRelationshipMermaid, validateScopeKnowledgeIndex } from "../analysis";
 import { getScopeDocsPaths, getScopeKnowledgePaths, getTableDependencyReportPaths, normalizeScopeCode } from "../scopePaths";

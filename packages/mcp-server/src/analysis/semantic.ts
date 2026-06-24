@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { readdirSync, readFileSync, statSync } from "fs";
 import path from "path";
 

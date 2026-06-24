@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import {Sync} from "@syncro-now-ai/types";
 import * as babel from "@babel/core";
 export async function run(

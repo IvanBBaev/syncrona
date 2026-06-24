@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 const { spawnSync } = require('node:child_process');
 
 function parseArgs(argv) {

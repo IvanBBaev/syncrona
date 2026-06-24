@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 const fs = require('node:fs');
 const path = require('node:path');
 

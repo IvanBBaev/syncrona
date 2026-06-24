@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { GraphNode, GraphEdge } from "../analysis/graph";
 import { buildOnboardingPlan } from "../analysis";
 import { normalizeScopeCode } from "../scopePaths";

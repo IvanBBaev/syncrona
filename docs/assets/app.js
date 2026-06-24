@@ -219,4 +219,164 @@
       });
     });
   }
+
+  /* ---- Hero terminal: typed commands, color-coded output, cycling scenarios ---- */
+  (function heroTerminal() {
+    var body = document.getElementById("term-body");
+    if (!body) return;
+
+    // Each step is { cmd } (typed out), { out: [[text, class], …] } (rendered
+    // instantly) or { wait: ms } (pause). Colours reference .term-body token
+    // classes so they stay themeable and consistent with the rest of the UI;
+    // a segment with no class inherits the terminal's foreground colour.
+    var scenarios = [
+      // 1 · Dev workflow
+      [
+        { cmd: "syncrona login" },
+        { out: [["✔ ", "ok"], ["Saved credentials · ", "muted"], ["dev12345.service-now.com"]] },
+        { cmd: "syncrona init" },
+        { out: [["✔ ", "ok"], ["Wrote ", "muted"], ["sync.config.js · sync.manifest.json · .env"]] },
+        { out: [["✔ ", "ok"], ["Scope ", "muted"], ["x_acme_app", "accent"], [" · 142 files tracked", "muted"]] },
+        { cmd: "syncrona dev" },
+        { out: [["▸ ", "blue"], ["watching ", "muted"], ["src/"], [" · build & push on save", "muted"]] },
+        { wait: 700 },
+        { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 280 },
+        { out: [["✔ ", "ok"], ["pushed ", "muted"], ["PriceCalc"], [" · 312ms", "dim"]] },
+        { wait: 900 },
+        { out: [["~ ", "warn"], ["Utils/helpers.ts"], [" → babel + typescript", "muted"]], delay: 280 },
+        { out: [["✔ ", "ok"], ["pushed ", "muted"], ["Utils"], [" · 198ms", "dim"]] },
+        { wait: 2000 },
+      ],
+      // 2 · Diff push
+      [
+        { cmd: "syncrona push --diff main" },
+        { out: [["▸ ", "blue"], ["git diff main"], [" · 3 files changed", "muted"]] },
+        { wait: 350 },
+        { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 240 },
+        { out: [["~ ", "warn"], ["TaxRule/rule.ts"], [" → typescript", "muted"]], delay: 240 },
+        { out: [["~ ", "warn"], ["theme.scss"], [" → sass", "muted"]], delay: 240 },
+        { out: [["✔ ", "ok"], ["pushed ", "muted"], ["3 records"], [" · 1.2s", "dim"]] },
+        { wait: 2200 },
+      ],
+      // 3 · MCP / AI analysis
+      [
+        { cmd: "syncrona mcp" },
+        { out: [["▸ ", "blue"], ["MCP server listening"], [" · stdio · 59 tools", "muted"]] },
+        { wait: 600 },
+        { out: [["🤖 ", "accent"], ["sn_build_dependency_graph"]], delay: 320 },
+        { out: [["✔ ", "ok"], ["142 nodes · 318 edges"], [" · 2 cycles", "warn"]] },
+        { wait: 700 },
+        { out: [["🤖 ", "accent"], ["sn_analyze_impact "], ["PriceCalc", "accent"]], delay: 320 },
+        { out: [["✔ ", "ok"], ["blast radius: ", "muted"], ["7 downstream records"]] },
+        { wait: 2200 },
+      ],
+      // 4 · Docs
+      [
+        { cmd: "syncrona docs" },
+        { out: [["▸ ", "blue"], ["generating ", "muted"], ["markdown + mermaid"]] },
+        { wait: 650 },
+        { out: [["✔ ", "ok"], ["overview.md"], [" · 12 tables · 142 records", "muted"]], delay: 300 },
+        { out: [["✔ ", "ok"], ["dependency-graph.mmd"], [" · rendered", "muted"]], delay: 300 },
+        { out: [["✔ ", "ok"], ["wrote ", "muted"], ["docs/"], [" · 3.4s", "dim"]] },
+        { wait: 2200 },
+      ],
+    ];
+
+    var reduce =
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var scenario = 0;
+
+    function span(text, cls) {
+      var s = document.createElement("span");
+      if (cls) s.className = cls;
+      s.textContent = text;
+      return s;
+    }
+    function row() {
+      var r = document.createElement("div");
+      r.className = "l";
+      return r;
+    }
+    function cursor() {
+      var c = document.createElement("span");
+      c.className = "term-cursor";
+      return c;
+    }
+    function addLine(segs) {
+      var r = row();
+      segs.forEach(function (sg) {
+        r.appendChild(span(sg[0], sg[1]));
+      });
+      body.appendChild(r);
+    }
+    function idlePrompt() {
+      var r = row();
+      r.appendChild(span("❯ ", "prompt"));
+      r.appendChild(cursor());
+      body.appendChild(r);
+    }
+    function typeCmd(text, done) {
+      var r = row();
+      r.appendChild(span("❯ ", "prompt"));
+      var typed = span("", "cmd");
+      var cur = cursor();
+      r.appendChild(typed);
+      r.appendChild(cur);
+      body.appendChild(r);
+      var k = 0;
+      function tick() {
+        k++;
+        typed.textContent = text.slice(0, k);
+        if (k < text.length) setTimeout(tick, 42 + Math.random() * 55);
+        else
+          setTimeout(function () {
+            r.removeChild(cur);
+            done();
+          }, 480);
+      }
+      setTimeout(tick, 360);
+    }
+
+    function run(i) {
+      var seq = scenarios[scenario];
+      if (i >= seq.length) {
+        setTimeout(function () {
+          body.innerHTML = "";
+          scenario = (scenario + 1) % scenarios.length;
+          run(0);
+        }, 650);
+        return;
+      }
+      var step = seq[i];
+      if (step.cmd != null) {
+        typeCmd(step.cmd, function () {
+          run(i + 1);
+        });
+      } else if (step.out) {
+        setTimeout(function () {
+          addLine(step.out);
+          run(i + 1);
+        }, step.delay || 170);
+      } else if (step.wait) {
+        setTimeout(function () {
+          run(i + 1);
+        }, step.wait);
+      } else {
+        run(i + 1);
+      }
+    }
+
+    body.innerHTML = "";
+    if (reduce) {
+      // Static fallback: render the first scenario in full, no typing.
+      scenarios[0].forEach(function (s) {
+        if (s.cmd != null) addLine([["❯ ", "prompt"], [s.cmd, "cmd"]]);
+        else if (s.out) addLine(s.out);
+      });
+      idlePrompt();
+    } else {
+      run(0);
+    }
+  })();
 })();

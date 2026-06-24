@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { groupAppFiles } from "../appUtils";
 import { Sync } from "@syncro-now-ai/types";
 

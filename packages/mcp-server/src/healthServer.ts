@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { createServer } from "http";
 import type { AddressInfo } from "net";
 

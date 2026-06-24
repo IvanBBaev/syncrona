@@ -30,6 +30,8 @@ export namespace Sync {
     excludes?: TablePropMap;
     tableOptions: ITableOptionsMap;
     refreshInterval: number;
+    /** DX17: store records as a flat <table>/<record>~<field>.<ext> tree. */
+    flat?: boolean;
   }
 
   interface ITableOptionsMap {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import { MCP_TOOLS } from "./toolSchemas";
@@ -38,7 +39,7 @@ import { handleRelationOnboardingTool } from "./handlers/relationOnboardingHandl
 import { handleWorkflowTool } from "./handlers/workflowHandlers";
 import { handleDeveloperTool } from "./handlers/developerToolHandlers";
 import {
-  TOOL_METRICS,
+  getToolMetrics,
   buildPreflightReport,
   checkSyncronaCapabilities,
   createAndSyncScriptInclude,
@@ -193,7 +194,7 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
             .map((item) => toStringField(asRecord(item).name))
             .filter((name) => name.length > 0),
         getDeclaredTools: () => MCP_TOOLS.map((item) => asRecord(item)),
-        getToolMetrics: () => TOOL_METRICS,
+        getToolMetrics: () => [...getToolMetrics()],
         getHealthEndpointStatus,
         checkSyncronaCapabilities,
         toGraphFromUnknown,
