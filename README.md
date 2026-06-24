@@ -461,8 +461,11 @@ The `~` separator never appears in a ServiceNow dictionary field name, so the
 record is everything before the last `~` and the field everything after it. The
 conversion is implemented as pure, fully-tested helpers
 (`folderRelToFlat` / `flatRelToFolder` in `packages/core/src/flatLayout.ts`).
-Automatic conversion inside `pull`/`push` is being rolled out and validated
-against a live instance; until then, treat `flat` as an opt-in preview.
+`pull`/`push`/`build` honour `flat: true` automatically — files are written and
+read back in the flat shape, and the build tree mirrors it so `deploy` works
+unchanged. It remains opt-in and labelled experimental pending broad validation
+against a live instance; switching `flat` on an existing workspace re-lays files
+on the next `refresh`.
 
 ### There are WAY too many files in here!
 

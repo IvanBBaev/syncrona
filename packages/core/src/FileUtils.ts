@@ -4,6 +4,7 @@ import { PATH_DELIMITER } from "./constants";
 import fs, { promises as fsp } from "fs";
 import path from "path";
 import * as ConfigManager from "./config";
+import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout";
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,6 +91,23 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
   }
 };
 
+// DX17: write a record's field file in the flat layout — a single file named
+// `<record>~<field>.<ext>` directly under the table directory, instead of a
+// per-record folder. Reuses writeSNFileCurry (and its zero-byte / already-exists
+// checks) by composing the flat base name, so flat and folder layouts share one
+// writer and stay byte-for-byte identical apart from the path.
+export const writeFlatSNFileCurry = (checkExists: boolean) => (
+  file: SN.File,
+  tableDirPath: string,
+  recordName: string
+): Promise<void> => {
+  const flatFile: SN.File = {
+    ...file,
+    name: `${recordName}${FLAT_FIELD_SEPARATOR}${file.name}`,
+  };
+  return writeSNFileCurry(checkExists)(flatFile, tableDirPath);
+};
+
 export const createDirRecursively = async (path: string): Promise<void> => {
   await fsp.mkdir(path, { recursive: true });
 };
@@ -159,11 +177,28 @@ export const getFileContextFromPath = (
   filePath: string
 ): Sync.FileContext | undefined => {
   const ext = getFileExtension(filePath);
-  const [tableName, recordName] = path
-    .dirname(filePath)
-    .split(path.sep)
-    .slice(-2);
-  const targetField = getTargetFieldFromPath(filePath, tableName, ext);
+  let tableName: string;
+  let recordName: string;
+  let targetField: string;
+  // DX17: a flat-encoded path (`<table>/<record>~<field>.<ext>`) is self
+  // describing — keyed off the file stem, never the config — so build/deploy
+  // re-reads work even though the build tree mirrors the flat source layout.
+  if (isFlatEncoded(filePath)) {
+    tableName = path.basename(path.dirname(filePath));
+    const stem = path.basename(filePath, ext);
+    const sepIndex = stem.lastIndexOf(FLAT_FIELD_SEPARATOR);
+    recordName = stem.slice(0, sepIndex);
+    targetField =
+      tableName === "sys_atf_step"
+        ? "inputs.script"
+        : stem.slice(sepIndex + 1);
+  } else {
+    [tableName, recordName] = path
+      .dirname(filePath)
+      .split(path.sep)
+      .slice(-2);
+    targetField = getTargetFieldFromPath(filePath, tableName, ext);
+  }
   const manifest = ConfigManager.getManifest();
   if (!manifest) {
     throw new Error("No manifest has been loaded!");

@@ -32,12 +32,18 @@ import {
 } from "./downloadCheckpoint";
 
 const processFilesInManRec = async (
-  recPath: string,
+  // In folder mode this is the per-record directory; in flat mode it is the
+  // table directory and the record name is encoded into each file name (DX17).
+  dirPath: string,
   rec: SN.MetaRecord,
-  forceWrite: boolean
+  forceWrite: boolean,
+  flat: boolean
 ) => {
-  const fileWrite = fUtils.writeSNFileCurry(!forceWrite);
-  const filePromises = rec.files.map((file) => fileWrite(file, recPath));
+  const fileWrite = flat
+    ? (file: SN.File) =>
+        fUtils.writeFlatSNFileCurry(!forceWrite)(file, dirPath, rec.name)
+    : (file: SN.File) => fUtils.writeSNFileCurry(!forceWrite)(file, dirPath);
+  const filePromises = rec.files.map(fileWrite);
   await Promise.all(filePromises);
   // Side effect, remove content from files so it doesn't get written to manifest
   rec.files.forEach((file) => {
@@ -48,10 +54,23 @@ const processFilesInManRec = async (
 const processRecsInManTable = async (
   tablePath: string,
   table: SN.TableConfig,
-  forceWrite: boolean
+  forceWrite: boolean,
+  flat: boolean
 ) => {
   const { records } = table;
   const recKeys = Object.keys(records);
+
+  if (flat) {
+    // DX17: flat layout writes every field file directly under the table
+    // directory as `<record>~<field>.<ext>`, so there are no per-record folders.
+    await fUtils.createDirRecursively(tablePath);
+    return Promise.all(
+      recKeys.map((recKey) =>
+        processFilesInManRec(tablePath, records[recKey], forceWrite, true)
+      )
+    );
+  }
+
   const recKeyToPath = (key: string) => path.join(tablePath, records[key].name);
   const recPathPromises = recKeys
     .map(recKeyToPath)
@@ -62,7 +81,12 @@ const processRecsInManTable = async (
     (acc: Promise<void>[], recKey: string) => {
       return [
         ...acc,
-        processFilesInManRec(recKeyToPath(recKey), records[recKey], forceWrite),
+        processFilesInManRec(
+          recKeyToPath(recKey),
+          records[recKey],
+          forceWrite,
+          false
+        ),
       ];
     },
     [] as Promise<void>[]
@@ -74,12 +98,16 @@ const processTablesInManifest = async (
   tables: SN.TableMap,
   forceWrite: boolean
 ) => {
+  // DX17: read flat mode straight off the loaded config (not getFlatMode()) so
+  // this single seam governs every pull path — wizard, refresh and download.
+  const flat = ConfigManager.getConfig().flat === true;
   const tableNames = Object.keys(tables);
   const tablePromises = tableNames.map((tableName) => {
     return processRecsInManTable(
       path.join(ConfigManager.getSourcePath(), tableName),
       tables[tableName],
-      forceWrite
+      forceWrite,
+      flat
     );
   });
   await Promise.all(tablePromises);

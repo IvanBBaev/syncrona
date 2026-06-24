@@ -171,13 +171,13 @@ export class ConfigStore {
     if (cfg) {
       this.state.config = cfg;
       if (cfg.flat === true) {
-        // DX17: the flat layout is shipped as a preview — the conversion helpers
-        // exist and are tested, but pull/push do not yet apply them. Warn so a
-        // user who sets `flat: true` is not silently given the folder layout.
-        logger.warn(
-          "Config `flat: true` is an experimental preview — the flat " +
-            "<table>/<record>~<field> layout is not yet applied automatically on " +
-            "pull/push (see the README \"Flat layout\" section)."
+        // DX17: the flat layout is applied on pull/push (single file per field
+        // named <table>/<record>~<field>.<ext>) but is still experimental — note
+        // it so the on-disk shape change is never silent.
+        logger.info(
+          "Config `flat: true` — using the experimental flat " +
+            "<table>/<record>~<field> layout for pull/push " +
+            "(see the README \"Flat layout\" section)."
         );
       }
     }
