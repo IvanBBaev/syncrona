@@ -1,6 +1,6 @@
 {
   "name": "@syncro-now-ai/sass-plugin",
-  "version": "0.4.2-alpha.8",
+  "version": "0.4.2",
   "description": "SASS plugin for SyncroNow AI",
   "main": "./dist/index.js",
   "scripts": {
@@ -18,7 +18,7 @@
     "sass": "^1.93.2"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2-alpha.8",
+    "@syncro-now-ai/types": "^0.4.2",
     "@types/node": "^20.8.4"
   },
   "engines": {
