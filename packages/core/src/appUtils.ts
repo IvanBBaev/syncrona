@@ -261,37 +261,33 @@ export const findMissingFiles = async (
 export const processMissingFiles = async (
   newManifest: SN.AppManifest
 ): Promise<void> => {
+  const missing = await findMissingFiles(newManifest);
+  // DX21: surface how much work the refresh found (visible at --log-level debug).
+  const missingRecords = Object.values(missing).reduce(
+    (sum, recs) => sum + Object.keys(recs).length,
+    0
+  );
+  logger.debug(
+    `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
+  );
+  const { tableOptions = {} } = ConfigManager.getConfig();
+  const client = defaultClient();
+
+  let filesToProcess: SN.TableMap;
   try {
-    const missing = await findMissingFiles(newManifest);
-    // DX21: surface how much work the refresh found (visible at --log-level debug).
-    const missingRecords = Object.values(missing).reduce(
-      (sum, recs) => sum + Object.keys(recs).length,
-      0
+    filesToProcess = await unwrapSNResponse(
+      client.getMissingFiles(missing, tableOptions)
     );
-    logger.debug(
-      `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
-    );
-    const { tableOptions = {} } = ConfigManager.getConfig();
-    const client = defaultClient();
-
-    let filesToProcess: SN.TableMap;
-    try {
-      filesToProcess = await unwrapSNResponse(
-        client.getMissingFiles(missing, tableOptions)
-      );
-    } catch (e) {
-      if (isScopedEndpointUnavailableError(e)) {
-        logger.info("Custom scope not found — fetching missing files from Table API...");
-        filesToProcess = await buildBulkDownloadFromTableAPI(missing, client, tableOptions);
-      } else {
-        throw e;
-      }
-    }
-
-    await processTablesInManifest(filesToProcess, false);
   } catch (e) {
-    throw e;
+    if (isScopedEndpointUnavailableError(e)) {
+      logger.info("Custom scope not found — fetching missing files from Table API...");
+      filesToProcess = await buildBulkDownloadFromTableAPI(missing, client, tableOptions);
+    } else {
+      throw e;
+    }
   }
+
+  await processTablesInManifest(filesToProcess, false);
 };
 
 // Build a missing-file map that covers every file in the manifest, used to
@@ -692,18 +688,14 @@ export const buildFiles = async (
 };
 
 export const swapScope = async (currentScope: string): Promise<SN.ScopeObj> => {
-  try {
-    const client = defaultClient();
-    const scopeId = await unwrapTableAPIFirstItem(
-      client.getScopeId(currentScope),
-      "sys_id"
-    );
-    await swapServerScope(scopeId);
-    const scopeObj = await unwrapSNResponse(client.getCurrentScope());
-    return scopeObj;
-  } catch (e) {
-    throw e;
-  }
+  const client = defaultClient();
+  const scopeId = await unwrapTableAPIFirstItem(
+    client.getScopeId(currentScope),
+    "sys_id"
+  );
+  await swapServerScope(scopeId);
+  const scopeObj = await unwrapSNResponse(client.getCurrentScope());
+  return scopeObj;
 };
 
 const swapServerScope = async (scopeId: string): Promise<void> => {
@@ -767,51 +759,47 @@ export const createAndAssignUpdateSet = async (updateSetName = "") => {
 export const checkScope = async (
   swap: boolean
 ): Promise<Sync.ScopeCheckResult> => {
-  try {
-    const man = ConfigManager.getManifest();
-    if (man) {
-      const client = defaultClient();
-      let scopeObj: SN.ScopeObj;
-      try {
-        scopeObj = await unwrapSNResponse(client.getCurrentScope());
-      } catch (e) {
-        if (isScopedEndpointUnavailableError(e)) {
-          return {
-            match: true,
-            sessionScope: man.scope,
-            manifestScope: man.scope,
-          };
-        }
-        throw e;
-      }
-      if (scopeObj.scope === man.scope) {
+  const man = ConfigManager.getManifest();
+  if (man) {
+    const client = defaultClient();
+    let scopeObj: SN.ScopeObj;
+    try {
+      scopeObj = await unwrapSNResponse(client.getCurrentScope());
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
         return {
           match: true,
-          sessionScope: scopeObj.scope,
-          manifestScope: man.scope,
-        };
-      } else if (swap) {
-        const swappedScopeObj = await swapScope(man.scope);
-        return {
-          match: swappedScopeObj.scope === man.scope,
-          sessionScope: swappedScopeObj.scope,
-          manifestScope: man.scope,
-        };
-      } else {
-        return {
-          match: false,
-          sessionScope: scopeObj.scope,
+          sessionScope: man.scope,
           manifestScope: man.scope,
         };
       }
+      throw e;
     }
-    //first time case
-    return {
-      match: true,
-      sessionScope: "",
-      manifestScope: "",
-    };
-  } catch (e) {
-    throw e;
+    if (scopeObj.scope === man.scope) {
+      return {
+        match: true,
+        sessionScope: scopeObj.scope,
+        manifestScope: man.scope,
+      };
+    } else if (swap) {
+      const swappedScopeObj = await swapScope(man.scope);
+      return {
+        match: swappedScopeObj.scope === man.scope,
+        sessionScope: swappedScopeObj.scope,
+        manifestScope: man.scope,
+      };
+    } else {
+      return {
+        match: false,
+        sessionScope: scopeObj.scope,
+        manifestScope: man.scope,
+      };
+    }
   }
+  //first time case
+  return {
+    match: true,
+    sessionScope: "",
+    manifestScope: "",
+  };
 };

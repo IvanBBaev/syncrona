@@ -292,11 +292,7 @@ export const writeBuildFile = async (
   } catch (e) {
     await fsp.mkdir(folderPath, { recursive: true });
   }
-  try {
-    await writeFileForce(newPath, fileContents);
-  } catch (e) {
-    throw e;
-  }
+  await writeFileForce(newPath, fileContents);
 };
 
 export const writeSNFileIfNotExists = writeSNFileCurry(true);

@@ -156,58 +156,54 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
 
 export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   setLogLevel(args);
-  try {
-    const dryRun = args.dryRun === true;
-    if (dryRun) {
-      logger.info(`Dry run: would download scope ${args.scope} and overwrite local manifest/files.`);
+  const dryRun = args.dryRun === true;
+  if (dryRun) {
+    logger.info(`Dry run: would download scope ${args.scope} and overwrite local manifest/files.`);
+    return;
+  }
+
+  const skipPrompt = args.ci === true;
+  if (!skipPrompt) {
+    const answers: { confirmed: boolean } = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "confirmed",
+        message: "Downloading will overwrite manifest and files. Are you sure?",
+        default: false,
+      },
+    ]);
+    if (!answers["confirmed"]) {
       return;
     }
-
-    const skipPrompt = args.ci === true;
-    if (!skipPrompt) {
-      const answers: { confirmed: boolean } = await inquirer.prompt([
-        {
-          type: "confirm",
-          name: "confirmed",
-          message: "Downloading will overwrite manifest and files. Are you sure?",
-          default: false,
-        },
-      ]);
-      if (!answers["confirmed"]) {
-        return;
-      }
-    }
-    logger.info("Downloading manifest...");
-    const client = defaultClient(args.instanceProfile);
-    const config = ConfigManager.getConfig();
-
-    let man: import("@syncro-now-ai/types").SN.AppManifest;
-    try {
-      man = await unwrapSNResponse(client.getManifest(args.scope, config));
-    } catch (e) {
-      if (isScopedEndpointUnavailableError(e)) {
-        logger.info("Custom scope not found — building manifest from Table API...");
-        man = await buildManifestFromTableAPI(args.scope, client, config);
-      } else {
-        throw e;
-      }
-    }
-
-    logger.info("Creating local files from manifest...");
-    await AppUtils.processManifest(man, true);
-    logger.info("Fetching file contents...");
-    await AppUtils.downloadAllFiles(man, args.instanceProfile);
-    try {
-      const docPath = await generateScopeDocs(man);
-      logger.success(`Scope documentation written to ${docPath}`);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      logger.warn(`Could not generate scope documentation: ${message}`);
-    }
-    logger.success("Download complete ✅");
-  } catch (e) {
-    throw e;
   }
+  logger.info("Downloading manifest...");
+  const client = defaultClient(args.instanceProfile);
+  const config = ConfigManager.getConfig();
+
+  let man: import("@syncro-now-ai/types").SN.AppManifest;
+  try {
+    man = await unwrapSNResponse(client.getManifest(args.scope, config));
+  } catch (e) {
+    if (isScopedEndpointUnavailableError(e)) {
+      logger.info("Custom scope not found — building manifest from Table API...");
+      man = await buildManifestFromTableAPI(args.scope, client, config);
+    } else {
+      throw e;
+    }
+  }
+
+  logger.info("Creating local files from manifest...");
+  await AppUtils.processManifest(man, true);
+  logger.info("Fetching file contents...");
+  await AppUtils.downloadAllFiles(man, args.instanceProfile);
+  try {
+    const docPath = await generateScopeDocs(man);
+    logger.success(`Scope documentation written to ${docPath}`);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.warn(`Could not generate scope documentation: ${message}`);
+  }
+  logger.success("Download complete ✅");
 }
 export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
   setLogLevel(args);
@@ -228,27 +224,23 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
 }
 export async function initCommand(args: Sync.SharedCmdArgs) {
   setLogLevel(args);
-  try {
-    const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
-    if (hasEnvFile) {
-      // DX2: name the instance the .env resolves to so the user knows which
-      // server init will talk to before it proceeds (folder creation is then
-      // confirmed in initAllScopesFromEnv — DX4 — unless --ci).
-      const detectedInstance = resolveCredentials(args.instanceProfile).instance;
-      logger.info(
-        `Detected .env in current directory${detectedInstance ? ` (SN_INSTANCE=${detectedInstance})` : ""}. ` +
-          "Running all-scope initialization — you'll confirm before any folders are created."
-      );
-      await initAllScopesFromEnv(args);
-      logger.success("Init complete: all discoverable scopes initialized. ✅");
-      return;
-    }
-
-    await startWizard();
-    await mcpCommand({ ...args, autoConfigure: true, start: false });
-  } catch (e) {
-    throw e;
+  const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
+  if (hasEnvFile) {
+    // DX2: name the instance the .env resolves to so the user knows which
+    // server init will talk to before it proceeds (folder creation is then
+    // confirmed in initAllScopesFromEnv — DX4 — unless --ci).
+    const detectedInstance = resolveCredentials(args.instanceProfile).instance;
+    logger.info(
+      `Detected .env in current directory${detectedInstance ? ` (SN_INSTANCE=${detectedInstance})` : ""}. ` +
+        "Running all-scope initialization — you'll confirm before any folders are created."
+    );
+    await initAllScopesFromEnv(args);
+    logger.success("Init complete: all discoverable scopes initialized. ✅");
+    return;
   }
+
+  await startWizard();
+  await mcpCommand({ ...args, autoConfigure: true, start: false });
 }
 
 export async function buildCommand(args: Sync.BuildCmdArgs) {
@@ -312,52 +304,48 @@ async function getDeployPaths(): Promise<string[]> {
 export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
   setLogLevel(args);
   await scopeCheck(async () => {
-    try {
-      const dryRun = args.dryRun === true;
-      const credentials = resolveCredentials(args.instanceProfile);
-      const targetServer = credentials.instance;
-      if (!targetServer) {
-        logger.error("No server configured for deploy!");
-        return;
-      }
-
-      const client = defaultClient(args.instanceProfile);
-      try {
-        await client.checkConnection(5000);
-        logScopedEndpointCapability("deploy");
-      } catch (e) {
-        logger.error(
-          "Unable to reach ServiceNow instance before deploy. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
-        );
-        return;
-      }
-
-      const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
-        {
-          type: "confirm",
-          name: "confirmed",
-          message:
-            "Deploying will overwrite code in your instance. Are you sure?",
-          default: false,
-        },
-      ]);
-      if (!confirmed) {
-        return;
-      }
-      const paths = await getDeployPaths();
-      logger.silly(`${paths.length} paths found...`);
-      logger.silly(JSON.stringify(paths, null, 2));
-      const appFileList = await AppUtils.getAppFileList(paths);
-      if (dryRun) {
-        logger.info(
-          `Dry run: would deploy ${appFileList.length} records to ${targetServer}, skipping remote push.`
-        );
-        return;
-      }
-      const pushResults = await AppUtils.pushFiles(appFileList);
-      logPushResults(pushResults);
-    } catch (e) {
-      throw e;
+    const dryRun = args.dryRun === true;
+    const credentials = resolveCredentials(args.instanceProfile);
+    const targetServer = credentials.instance;
+    if (!targetServer) {
+      logger.error("No server configured for deploy!");
+      return;
     }
+
+    const client = defaultClient(args.instanceProfile);
+    try {
+      await client.checkConnection(5000);
+      logScopedEndpointCapability("deploy");
+    } catch (e) {
+      logger.error(
+        "Unable to reach ServiceNow instance before deploy. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
+      );
+      return;
+    }
+
+    const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+      {
+        type: "confirm",
+        name: "confirmed",
+        message:
+          "Deploying will overwrite code in your instance. Are you sure?",
+        default: false,
+      },
+    ]);
+    if (!confirmed) {
+      return;
+    }
+    const paths = await getDeployPaths();
+    logger.silly(`${paths.length} paths found...`);
+    logger.silly(JSON.stringify(paths, null, 2));
+    const appFileList = await AppUtils.getAppFileList(paths);
+    if (dryRun) {
+      logger.info(
+        `Dry run: would deploy ${appFileList.length} records to ${targetServer}, skipping remote push.`
+      );
+      return;
+    }
+    const pushResults = await AppUtils.pushFiles(appFileList);
+    logPushResults(pushResults);
   });
 }

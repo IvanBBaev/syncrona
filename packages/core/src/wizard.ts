@@ -193,38 +193,30 @@ async function checkConfig(): Promise<boolean> {
 async function setupDotEnv(answers: Sync.LoginAnswers) {
   // Persist the instance and credentials to .env for the synced workspace.
   // The .env is added to .gitignore so plain-text credentials are not committed.
+  let envPath = path.join(process.cwd(), ".env");
   try {
-    let envPath = path.join(process.cwd(), ".env");
-    try {
-      envPath = ConfigManager.getEnvPath();
-    } catch (_) {
-      envPath = path.join(process.cwd(), ".env");
-    }
-    await writeDotEnv(envPath, {
-      SN_INSTANCE: answers.instance,
-      SN_USER: answers.username,
-      SN_PASSWORD: answers.password,
-    });
-    try {
-      await ensureGitignored(path.dirname(envPath), ".env");
-    } catch (_) {
-      // Updating .gitignore is best-effort and must not fail setup.
-    }
-  } catch (e) {
-    throw e;
+    envPath = ConfigManager.getEnvPath();
+  } catch (_) {
+    envPath = path.join(process.cwd(), ".env");
+  }
+  await writeDotEnv(envPath, {
+    SN_INSTANCE: answers.instance,
+    SN_USER: answers.username,
+    SN_PASSWORD: answers.password,
+  });
+  try {
+    await ensureGitignored(path.dirname(envPath), ".env");
+  } catch (_) {
+    // Updating .gitignore is best-effort and must not fail setup.
   }
 }
 
 async function writeDefaultConfig(hasConfig: boolean, sourceDirectory = "src") {
-  try {
-    let pth;
-    if (hasConfig) pth = ConfigManager.getConfigPath();
-    else pth = path.join(process.cwd(), "sync.config.js");
-    if (pth) {
-      await fsp.writeFile(pth, ConfigManager.getDefaultConfigFile(sourceDirectory));
-    }
-  } catch (e) {
-    throw e;
+  let pth;
+  if (hasConfig) pth = ConfigManager.getConfigPath();
+  else pth = path.join(process.cwd(), "sync.config.js");
+  if (pth) {
+    await fsp.writeFile(pth, ConfigManager.getDefaultConfigFile(sourceDirectory));
   }
 }
 
