@@ -65,6 +65,14 @@ jobs:
           path: packages/core/coverage
           if-no-files-found: ignore
 
+      - name: Upload coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/core/coverage/lcov.info
+          fail_ci_if_error: false
+
   # G16: secret scanning across the full git history. Test fixtures and example
   # files use placeholder credentials and are allowlisted in .gitleaks.toml.
   secret-scan:

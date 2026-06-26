@@ -2,6 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/LeassTaTT/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/LeassTaTT/syncrona/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/LeassTaTT/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/LeassTaTT/syncrona/actions/workflows/codeql.yml)
+[![coverage](https://img.shields.io/codecov/c/github/LeassTaTT/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/LeassTaTT/syncrona)
 [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/github/license/LeassTaTT/syncrona?style=flat-square&color=blue&label=license)](LICENSE)
 [![last commit](https://img.shields.io/github/last-commit/LeassTaTT/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/LeassTaTT/syncrona/commits/main)
