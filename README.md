@@ -5,6 +5,7 @@
 [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/github/license/LeassTaTT/syncrona?style=flat-square&color=blue&label=license)](LICENSE)
 [![last commit](https://img.shields.io/github/last-commit/LeassTaTT/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/LeassTaTT/syncrona/commits/main)
+[![Known Vulnerabilities](https://snyk.io/test/github/LeassTaTT/syncrona/badge.svg)](https://snyk.io/test/github/LeassTaTT/syncrona)
 
 ## Overview
 
