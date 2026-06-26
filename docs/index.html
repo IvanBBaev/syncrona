@@ -179,7 +179,9 @@
         <nav>
           <a href="#overview">Overview</a>
           <a href="#what-is-it">What is it?</a>
+          <a href="#compare">How it compares</a>
           <a href="#capabilities">Capabilities</a>
+          <a href="#mcp-ai">AI &amp; MCP</a>
           <a href="#quickstart">Quick start</a>
         </nav>
         <h4>Reference</h4>
@@ -196,7 +198,6 @@
         <h4>Guides</h4>
         <nav>
           <a href="#workflow">Workflow</a>
-          <a href="#compare">How it compares</a>
           <a href="#security">Security</a>
           <a href="#architecture">Architecture</a>
         </nav>
@@ -424,6 +425,36 @@
           </div>
         </section>
 
+        <!-- MCP / AI -->
+        <section id="mcp-ai" class="mcp-ai">
+          <div class="mcp-ai-grid">
+            <div class="mcp-ai-intro">
+              <span class="eyebrow">AI layer</span>
+              <h2>An AI that understands your scope</h2>
+              <p>
+                The bundled MCP server turns any MCP-capable client — Claude
+                Desktop, Claude Code, VS Code Chat — into a teammate that can read
+                your scope, map dependencies, analyse scripts and propose gated
+                changes behind a dry-run guardrail.
+              </p>
+              <p class="mcp-ai-stat">
+                <span class="mcp-ai-num">59</span>
+                <span class="mcp-ai-stat-label">MCP tools across<br />7 tool families</span>
+              </p>
+              <a class="btn" href="#mcp">Explore the tool families →</a>
+            </div>
+            <div class="mcp-ai-families">
+              <article class="fam"><h3>Session &amp; guardrails</h3><p>Scope, update set and preflight control.</p></article>
+              <article class="fam"><h3>Records &amp; metadata</h3><p>Query, read and update instance records.</p></article>
+              <article class="fam"><h3>Dependency &amp; impact</h3><p>Graphs, blast radius and relations.</p></article>
+              <article class="fam"><h3>Code analysis</h3><p>Static analysis and semantic indexing.</p></article>
+              <article class="fam"><h3>Change &amp; release</h3><p>Drift, validation, diffs and release notes.</p></article>
+              <article class="fam"><h3>Scope docs &amp; knowledge</h3><p>Durable, reusable scope context.</p></article>
+              <article class="fam"><h3>Workflow &amp; orchestration</h3><p>CLI wrappers, ATF, health and AI planning.</p></article>
+            </div>
+          </div>
+        </section>
+
         <!-- QUICK START -->
         <section id="quickstart">
           <h2>Quick start</h2>
@@ -437,31 +468,46 @@
             <a href="https://learn.microsoft.com/windows/wsl/" target="_blank" rel="noopener">WSL</a>.
           </p>
 
-          <h3>1 · Install the CLI and log in</h3>
-          <p>
-            Install globally for the <code>syncrona</code> command, then save
-            credentials in the encrypted global store.
-          </p>
-          <div class="codeblock" data-lang="bash">
-            <pre><code>npm i -g @syncro-now-ai/core
-syncrona login          # prompts for instance, user, password (or OAuth)</code></pre>
+          <div class="steps">
+            <article class="step">
+              <span class="step-num">1</span>
+              <h3>Install the CLI and log in</h3>
+              <p>
+                Install globally for the <code>syncrona</code> command, then save
+                credentials in the encrypted global store.
+              </p>
+              <div class="codeblock" data-lang="bash">
+                <pre><code>npm i -g @syncro-now-ai/core
+syncrona login</code></pre>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-num">2</span>
+              <h3>Initialise the project</h3>
+              <p>
+                From an empty project folder (run <code>npm init</code> first),
+                the wizard writes <code>sync.config.js</code>,
+                <code>sync.manifest.json</code> and <code>.env</code>, then runs
+                a quick connection check.
+              </p>
+              <div class="codeblock" data-lang="bash">
+                <pre><code>npx syncrona init</code></pre>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-num">3</span>
+              <h3>Start dev mode and work</h3>
+              <p>
+                Every time you save a tracked file, SyncroNow AI builds it with
+                your ruleset and pushes the result to the matching record in
+                ServiceNow.
+              </p>
+              <div class="codeblock" data-lang="bash">
+                <pre><code>npx syncrona dev</code></pre>
+              </div>
+            </article>
           </div>
-          <p class="lead" style="font-size: 14px">
-            Prefer a per-project dev dependency? Use
-            <code>npm i -D @syncro-now-ai/core</code> and call it with
-            <code>npx syncrona …</code>.
-          </p>
 
-          <h3>2 · Initialise the project</h3>
-          <p>
-            From an empty project folder (run <code>npm init</code> first), the
-            wizard writes <code>sync.config.js</code>,
-            <code>sync.manifest.json</code> and <code>.env</code>, then runs a
-            quick connection check.
-          </p>
-          <div class="codeblock" data-lang="bash">
-            <pre><code>npx syncrona init</code></pre>
-          </div>
           <div class="callout">
             <span class="c-ico">🔒</span>
             <p>
@@ -470,21 +516,37 @@ syncrona login          # prompts for instance, user, password (or OAuth)</code>
               commit — you really don't want credentials in your repository.
             </p>
           </div>
-
-          <h3>3 · Start dev mode and work</h3>
           <p>
-            Every time you save a tracked file, SyncroNow AI builds it with your
-            ruleset and pushes the result to the matching record in ServiceNow.
-          </p>
-          <div class="codeblock" data-lang="bash">
-            <pre><code>npx syncrona dev</code></pre>
-          </div>
-          <p>
-            Optionally install the companion server scoped app for a few
-            enhanced endpoints — the CLI works <strong>with or without</strong>
-            it against plain REST APIs.
+            Prefer a per-project dev dependency? Use
+            <code>npm i -D @syncro-now-ai/core</code> and call it with
+            <code>npx syncrona …</code>. Optionally install the companion server
+            scoped app for a few enhanced endpoints — the CLI works
+            <strong>with or without</strong> it against plain REST APIs.
           </p>
         </section>
+
+        <!-- FINAL CTA -->
+        <section id="get-started" class="final-cta">
+          <h2>Bring your ServiceNow code into Git</h2>
+          <p>
+            Open source, GPL-3.0, free to start. All you need is Node 22+ and a
+            ServiceNow instance you can reach.
+          </p>
+          <div class="final-cta-actions">
+            <a class="btn primary" href="#quickstart">Get started →</a>
+            <a class="btn" href="https://github.com/LeassTaTT/syncrona" target="_blank" rel="noopener">View on GitHub</a>
+          </div>
+        </section>
+
+        <!-- REFERENCE DIVIDER -->
+        <div class="ref-divider" id="reference">
+          <span class="eyebrow">Reference documentation</span>
+          <h2>Everything, in detail</h2>
+          <p>
+            The complete reference for the CLI, configuration, build plugins,
+            credentials, the MCP server, security model and architecture.
+          </p>
+        </div>
 
         <!-- COMMANDS -->
         <section id="commands">
