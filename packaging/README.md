@@ -23,7 +23,7 @@ formula template. On each tagged core release, the release workflow copies it to
 the `homebrew-tap` repo and fills in the published tarball `url` + `sha256`.
 
 ```sh
-brew tap leasstatt/tap
+brew tap ivanbbaev/tap
 brew install syncro-now-ai
 ```
 

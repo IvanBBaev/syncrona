@@ -69,7 +69,7 @@ owner/business decisions (incl. npm publish, which is owner-gated).
 
 ## Remaining from CODE REVIEW CR1–CR30 (2026-06-12) — implementation in DONE
 - [x] CR1 (residual): DONE 2026-06-12 — all work is committed (8 commits) and the
-      repo is pushed to https://github.com/LeassTaTT/syncrona (private), author
+      repo is pushed to https://github.com/IvanBBaev/syncrona (private), author
       email ivanbbaev@gmail.com (history rewritten before first push — the old
       nuvolo address never left the machine). The remote's previous 2026-05-31
       snapshot (which contained packages/core/.env and build artifacts in-tree)

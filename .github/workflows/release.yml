@@ -44,7 +44,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
 
   # D5: auto-update the Homebrew formula from the freshly published npm tarball.
-  # DORMANT until the tap repo (LeassTaTT/homebrew-tap) exists and the repo
+  # DORMANT until the tap repo (IvanBBaev/homebrew-tap) exists and the repo
   # variable HOMEBREW_TAP_READY=true + secret HOMEBREW_TAP_TOKEN are set. Until
   # then it is skipped, exactly like the owner-gated publish above.
   update-homebrew:
@@ -76,7 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/LeassTaTT/homebrew-tap.git" tap
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/IvanBBaev/homebrew-tap.git" tap
           mkdir -p tap/Formula
           cp out/syncro-now-ai.rb tap/Formula/syncro-now-ai.rb
           cd tap

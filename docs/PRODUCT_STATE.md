@@ -13,7 +13,7 @@
 | Tests | **381 green** — core: 33 suites / 206 tests (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: 175 tests (node:test vs dist) |
 | Coverage | core **70.3%** lines / mcp **82.7%** lines (≈75–77% combined) — see [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
-| Version control | git on `main`; remote `origin` → github.com/LeassTaTT/syncrona (**private**) |
+| Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**private**) |
 | Biggest gaps | distribution (Homebrew/Windows), live-instance compatibility matrix, DX backlog (DX1–DX24); **owner-gated** publish decisions (IP/provenance, brand, npm scope) |
 
 ## Metrics snapshot (2026-06-12)

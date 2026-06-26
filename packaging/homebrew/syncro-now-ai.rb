@@ -7,7 +7,7 @@
 # publish (npm publish is owner-gated: scope ownership + 2FA).
 class SyncroNowAi < Formula
   desc "Local-first CLI + AI (MCP) toolchain for ServiceNow scoped-app development"
-  homepage "https://github.com/LeassTaTT/syncrona"
+  homepage "https://github.com/IvanBBaev/syncrona"
   # Filled by the release workflow from the published tarball:
   #   https://registry.npmjs.org/@syncro-now-ai/core/-/core-<version>.tgz
   url "https://registry.npmjs.org/@syncro-now-ai/core/-/core-0.0.0.tgz"

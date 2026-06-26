@@ -7,7 +7,7 @@ build plugins (e.g. `Sync.Config`, `Sync.PluginRule`, `Sync.FileContext`,
 
 This package ships type declarations only (`index.d.ts`); there is no runtime
 code. It is an internal building block of the
-[SyncroNow AI](https://github.com/LeassTaTT/syncrona) monorepo rather than a
+[SyncroNow AI](https://github.com/IvanBBaev/syncrona) monorepo rather than a
 general-purpose standalone library.
 
 ## Usage

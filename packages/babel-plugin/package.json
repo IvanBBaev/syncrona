@@ -27,7 +27,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LeassTaTT/syncrona.git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/babel-plugin"
   }
 }
