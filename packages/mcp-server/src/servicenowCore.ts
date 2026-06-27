@@ -50,7 +50,21 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
       body,
     });
     const text = await res.text();
-    return JSON.parse(text) as OAuthTokenResponse;
+    if (!res.ok) {
+      // The token endpoint returns 4xx/5xx with an error body (often HTML on a
+      // gateway failure). Surface a clear error instead of letting JSON.parse
+      // throw a cryptic SyntaxError or — worse — caching `Bearer undefined`.
+      throw new Error(
+        `OAuth token request failed (${res.status} ${res.statusText}): ${text.slice(0, 200)}`
+      );
+    }
+    try {
+      return JSON.parse(text) as OAuthTokenResponse;
+    } catch {
+      throw new Error(
+        `OAuth token response was not valid JSON: ${text.slice(0, 200)}`
+      );
+    }
   };
   const manager = createTokenManager(
     { username: config.user, password: config.password },

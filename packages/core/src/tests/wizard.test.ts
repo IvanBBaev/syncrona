@@ -111,6 +111,13 @@ jest.mock("../manifestBuilder", () => ({
 
 describe("wizard", () => {
   const oldEnv = { ...process.env };
+  const oldExitCode = process.exitCode;
+
+  afterEach(() => {
+    // startWizard now sets process.exitCode=1 on failure; don't let that leak
+    // into the jest runner's own exit status.
+    process.exitCode = oldExitCode;
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();

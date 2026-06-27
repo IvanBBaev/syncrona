@@ -361,6 +361,39 @@ test('cycle detection and hotspot ranking work', () => {
   assert.equal(hotspots[0].outDegree >= hotspots[1].outDegree, true);
 });
 
+test('cycle detection uses iterative DFS: exact path and deep-graph safety', () => {
+  // Locks the exact cycle path output for a known small cycle.
+  const small = {
+    nodes: [
+      { id: 'A', kind: 'script', label: 'A' },
+      { id: 'B', kind: 'script', label: 'B' },
+      { id: 'C', kind: 'script', label: 'C' },
+    ],
+    edges: [
+      { from: 'A', to: 'B', relation: 'depends_on', why: 'x' },
+      { from: 'B', to: 'C', relation: 'depends_on', why: 'x' },
+      { from: 'C', to: 'A', relation: 'depends_on', why: 'x' },
+    ],
+  };
+  assert.deepEqual(detectGraphCycles(small), [
+    { path: ['A', 'B', 'C', 'A'], length: 4 },
+  ]);
+
+  // A long linear chain forces deep traversal. The previous recursive DFS would
+  // overflow the call stack around ~10k frames; the iterative version must
+  // handle it and report no cycle.
+  const N = 50000;
+  const nodes = [];
+  const edges = [];
+  for (let i = 0; i < N; i += 1) {
+    nodes.push({ id: `n${i}`, kind: 'script', label: `n${i}` });
+    if (i > 0) {
+      edges.push({ from: `n${i - 1}`, to: `n${i}`, relation: 'depends_on', why: 'x' });
+    }
+  }
+  assert.deepEqual(detectGraphCycles({ nodes, edges }), []);
+});
+
 test('drift report identifies missing and changed records', () => {
   const drift = buildDriftReport(
     [

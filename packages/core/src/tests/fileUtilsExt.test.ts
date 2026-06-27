@@ -96,4 +96,23 @@ describe("SNFileExists regex safety", () => {
 
     expect(exists).toBe(false);
   });
+
+  it("does not treat a longer-stemmed sibling as the field's file", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-snexists-"));
+    // Only `foo.min.js` exists; the field `foo` (foo.js) has not been written.
+    fs.writeFileSync(path.join(root, "foo.min.js"), "x");
+
+    const exists = await SNFileExists(root)({ name: "foo", type: "js" } as any);
+
+    expect(exists).toBe(false);
+  });
+
+  it("reports a zero-byte placeholder as missing", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-snexists-"));
+    fs.writeFileSync(path.join(root, "empty.js"), "");
+
+    const exists = await SNFileExists(root)({ name: "empty", type: "js" } as any);
+
+    expect(exists).toBe(false);
+  });
 });

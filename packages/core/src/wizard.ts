@@ -29,6 +29,16 @@ function normalizeInstance(instance: string): string {
     .replace(/\/$/, "");
 }
 
+// inquirer throws an ExitPromptError when the user aborts a prompt (Ctrl-C).
+// That is a cancellation, not a setup failure — we should exit quietly without
+// the diagnostics banner or a non-zero exit code.
+function isPromptAbort(e: unknown): boolean {
+  if (!(e instanceof Error)) {
+    return false;
+  }
+  return e.name === "ExitPromptError" || /force closed the prompt/i.test(e.message);
+}
+
 function countManifestFiles(manifest: SN.AppManifest): number {
   return Object.values(manifest.tables || {}).reduce((tableAcc, tableConfig) => {
     const records = Object.values(tableConfig.records || {});
@@ -138,12 +148,19 @@ export async function startWizard() {
     );
     await ConfigManager.loadConfigs();
   } catch (e) {
+    if (isPromptAbort(e)) {
+      // User cancelled — exit quietly, leaving the exit code untouched.
+      return;
+    }
     if (e instanceof Error && e.message.trim().length > 0) {
       logger.error(e.message);
     }
     logger.error(
       "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
     );
+    // Signal failure so CI and scripted runs can detect the wizard did not
+    // complete; previously this returned with a success (0) exit code.
+    process.exitCode = 1;
     return;
   }
 }
@@ -173,7 +190,8 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
   return {
     instance: normalizedInstance,
     username: String(storedCreds.user || "").trim(),
-    password: String(storedCreds.password || "").trim(),
+    // Do not trim the stored password — edge whitespace can be significant.
+    password: String(storedCreds.password || ""),
   };
 }
 

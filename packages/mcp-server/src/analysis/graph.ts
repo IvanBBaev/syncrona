@@ -317,14 +317,38 @@ export function detectGraphCycles(graph: {
   const visiting = new Set<string>();
   const visited = new Set<string>();
 
-  const dfs = (node: string) => {
-    visiting.add(node);
-    stack.push(node);
-    const next = adjacency.get(node) || [];
+  // Iterative DFS using an explicit frame stack so a deep dependency graph
+  // cannot overflow the call stack. Each frame mirrors one recursive call: a
+  // node plus a cursor over its children. Traversal order — and therefore the
+  // recorded cycle strings — is identical to the previous recursive version.
+  const dfs = (start: string) => {
+    const frames: Array<{ node: string; childIndex: number }> = [];
 
-    for (const child of next) {
+    const enter = (node: string) => {
+      visiting.add(node);
+      stack.push(node);
+      frames.push({ node, childIndex: 0 });
+    };
+
+    enter(start);
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      const next = adjacency.get(frame.node) || [];
+
+      if (frame.childIndex >= next.length) {
+        // All children explored — unwind this frame (post-order bookkeeping).
+        stack.pop();
+        visiting.delete(frame.node);
+        visited.add(frame.node);
+        frames.pop();
+        continue;
+      }
+
+      const child = next[frame.childIndex];
+      frame.childIndex += 1;
+
       if (!visited.has(child) && !visiting.has(child)) {
-        dfs(child);
+        enter(child);
         continue;
       }
       if (visiting.has(child)) {
@@ -335,10 +359,6 @@ export function detectGraphCycles(graph: {
         }
       }
     }
-
-    stack.pop();
-    visiting.delete(node);
-    visited.add(node);
   };
 
   for (const node of graph.nodes) {

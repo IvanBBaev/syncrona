@@ -31,34 +31,31 @@ export const withRetry = async <T>(
 export const SNFileExists = (parentDirPath: string) => async (
   file: SN.File
 ): Promise<boolean> => {
+  // Check for the exact file the writer produces (`<name>.<type>`). A prefix
+  // regex like /^name\..*$/ also matched unrelated files that merely share the
+  // stem (e.g. field `foo` matching `foo.min.js`), wrongly reporting them as
+  // already present and skipping the real download.
+  const expected = path.join(parentDirPath, `${file.name}.${file.type}`);
   try {
-    const files = await fsp.readdir(parentDirPath);
-    const escapedName = file.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const reg = new RegExp(`^${escapedName}\\..*$`);
-    const match = files.find((f) => reg.test(f));
-    if (!match) {
-      return false;
-    }
+    const stats = await fsp.stat(expected);
     // Treat zero-byte placeholder files as missing so their content gets
     // (re)fetched on refresh instead of being skipped as "already present".
-    try {
-      const stats = await fsp.stat(path.join(parentDirPath, match));
-      return stats.size > 0;
-    } catch (_) {
-      return false;
-    }
-  } catch (e) {
+    return stats.size > 0;
+  } catch (_) {
     return false;
   }
 };
 
 export const writeManifestFile = async (man: SN.AppManifest) => {
-  return withRetry(() =>
-    fsp.writeFile(
-      ConfigManager.getManifestPath(),
-      JSON.stringify(man, null, 2)
-    )
-  );
+  const manifestPath = ConfigManager.getManifestPath();
+  // Write to a sibling temp file then rename — rename is atomic on the same
+  // filesystem, so a crash mid-write can never leave a truncated/corrupt
+  // manifest (the previous version stays intact until the rename completes).
+  const tmpPath = `${manifestPath}.${process.pid}.tmp`;
+  return withRetry(async () => {
+    await fsp.writeFile(tmpPath, JSON.stringify(man, null, 2));
+    await fsp.rename(tmpPath, manifestPath);
+  });
 };
 
 export const writeSNFileCurry = (checkExists: boolean) => async (
@@ -79,6 +76,19 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
   }
   const write = async () => {
       const fullPath = path.join(parentPath, `${name}.${type}`);
+      // Containment guard: a record/field name that slips a path separator or
+      // ".." past upstream sanitization must not let the write escape the
+      // target directory.
+      const resolvedParent = path.resolve(parentPath);
+      const resolvedFull = path.resolve(fullPath);
+      if (
+        resolvedFull !== resolvedParent &&
+        !resolvedFull.startsWith(resolvedParent + path.sep)
+      ) {
+        throw new Error(
+          `Refusing to write "${name}.${type}" outside its table directory.`
+        );
+      }
       return await withRetry(() => fsp.writeFile(fullPath, content));
     };
     if (checkExists) {
