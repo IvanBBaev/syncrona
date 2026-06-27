@@ -838,10 +838,36 @@ async function handleCompareInstances(
       continue;
     }
 
-    const [resA, resB] = await Promise.all([
+    // Use allSettled so one table (or one instance) failing does not abort the
+    // entire comparison — record the per-table error and keep going.
+    const [settledA, settledB] = await Promise.allSettled([
       fetchScopeScriptRows(configA, table, config.scriptField, config.nameField, scope, limit, timeoutMs),
       fetchScopeScriptRows(configB, table, config.scriptField, config.nameField, scope, limit, timeoutMs),
     ]);
+
+    if (settledA.status === "rejected" || settledB.status === "rejected") {
+      const reasonMessage = (reason: unknown): string =>
+        reason instanceof Error ? reason.message : String(reason);
+      tableResults.push({
+        table,
+        statusA:
+          settledA.status === "fulfilled"
+            ? settledA.value.status
+            : `error: ${reasonMessage(settledA.reason)}`,
+        statusB:
+          settledB.status === "fulfilled"
+            ? settledB.value.status
+            : `error: ${reasonMessage(settledB.reason)}`,
+        onlyInA: [],
+        onlyInB: [],
+        different: [],
+        error: "Comparison skipped for this table because an instance request failed.",
+      });
+      continue;
+    }
+
+    const resA = settledA.value;
+    const resB = settledB.value;
 
     const diff = diffInstanceRecords(resA.rows, resB.rows, {
       nameField: config.nameField,

@@ -58,7 +58,12 @@ function toRecordArray(value: unknown): Array<Record<string, unknown>> {
 }
 
 function isSafeRemoteEndpoint(endpointPath: string): boolean {
-  return /^\/[a-z0-9_./-]*$/i.test(endpointPath);
+  if (!/^\/[a-z0-9_./-]*$/i.test(endpointPath)) {
+    return false;
+  }
+  // The character class above permits "." and "/", so it still admits "/../"
+  // path-traversal sequences. Reject any ".." segment explicitly.
+  return !endpointPath.split("/").some((segment) => segment === "..");
 }
 
 function slugifyText(value: string, fallback: string): string {

@@ -154,4 +154,32 @@ describe("createTokenManager", () => {
     expect(bodies.some((b) => b.includes("grant_type=refresh_token"))).toBe(true);
     expect(bodies.filter((b) => b.includes("grant_type=password"))).toHaveLength(2);
   });
+
+  it("rejects a token response that carries no access_token", async () => {
+    const post = async (): Promise<OAuthTokenResponse> =>
+      ({ expires_in: 3600 } as unknown as OAuthTokenResponse);
+    const mgr = createTokenManager(creds, oauth, post);
+    await expect(mgr.getToken()).rejects.toThrow(/access_token/);
+  });
+
+  it("de-duplicates concurrent acquisitions into a single token call", async () => {
+    let calls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const post = async (): Promise<OAuthTokenResponse> => {
+      calls += 1;
+      await gate;
+      return { access_token: "tok", refresh_token: "ref", expires_in: 3600 };
+    };
+    const mgr = createTokenManager(creds, oauth, post);
+    const p1 = mgr.getToken();
+    const p2 = mgr.getToken();
+    release();
+    const [a, b] = await Promise.all([p1, p2]);
+    expect(a).toBe("tok");
+    expect(b).toBe("tok");
+    expect(calls).toBe(1);
+  });
 });

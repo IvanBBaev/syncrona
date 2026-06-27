@@ -62,7 +62,8 @@ export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: strin
 
   // Test connection before saving
   const { snClient: createClient } = await import("./snClient");
-  const testClient = createClient(`https://${normalizedInstance}/`, user.trim(), password.trim());
+  // Do not trim the password — leading/trailing spaces can be significant.
+  const testClient = createClient(`https://${normalizedInstance}/`, user.trim(), password);
   try {
     await testClient.checkConnection(8000);
   } catch (e) {
@@ -72,7 +73,7 @@ export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: strin
     process.exit(1);
   }
 
-  await saveCredentials(normalizedInstance, user.trim(), password.trim());
+  await saveCredentials(normalizedInstance, user.trim(), password);
 
   // Persist instance + credentials to a local .env for the workspace and keep
   // it out of version control.
@@ -81,7 +82,7 @@ export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: strin
     await writeDotEnv(envPath, {
       SN_INSTANCE: normalizedInstance,
       SN_USER: user.trim(),
-      SN_PASSWORD: password.trim(),
+      SN_PASSWORD: password,
     });
     await ensureGitignored(process.cwd(), ".env");
   } catch (e) {
@@ -138,6 +139,9 @@ export async function logoutCommand(
 
   if (args.all) {
     const count = await removeAllCredentials();
+    // Removing every credential must also clear the active-instance marker;
+    // otherwise it points at an instance that no longer has stored credentials.
+    await setActiveInstance("");
     clearStoredCredentialsCache();
     logger.success(`Removed credentials for ${count} instance(s).`);
     return;
@@ -164,6 +168,10 @@ export async function logoutCommand(
     if (remaining.length > 0) {
       await setActiveInstance(remaining[0]);
       logger.info(`Active instance reset to ${remaining[0]}.`);
+    } else {
+      // No instances left — clear the marker instead of leaving it pointing at
+      // the instance we just removed.
+      await setActiveInstance("");
     }
   }
 

@@ -22,7 +22,16 @@ class PluginManager {
   determinePlugins(context: Sync.FileContext): Sync.PluginConfig[] {
     let plugins: Sync.PluginConfig[] = [];
     for (const rule of this.pluginRules) {
-      const reg = rule.match;
+      const reg = rule?.match;
+      // sync.config.js is user-authored, so `match` may not actually be a
+      // RegExp at runtime (e.g. a string slipped in). Skip malformed rules with
+      // a clear warning instead of throwing `reg.test is not a function`.
+      if (!(reg instanceof RegExp)) {
+        logger.warn(
+          `Skipping plugin rule with a non-RegExp 'match' (got ${typeof reg}). Use a regular expression, e.g. match: /\\.ts$/.`
+        );
+        continue;
+      }
       if (reg.test(context.filePath)) {
         plugins = rule.plugins;
         //only match first rule
@@ -44,7 +53,21 @@ class PluginManager {
         "node_modules",
         pConfig.name
       );
-      const plugin: Sync.Plugin = await import(pluginPath);
+      let plugin: Sync.Plugin;
+      try {
+        plugin = await import(pluginPath);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        throw new Error(
+          `Build plugin "${pConfig.name}" could not be loaded from ${pluginPath}. ` +
+            `Is it installed? Run 'npm install ${pConfig.name}'. (${message})`
+        );
+      }
+      if (typeof plugin?.run !== "function") {
+        throw new Error(
+          `Build plugin "${pConfig.name}" does not export a run(context, content, options) function.`
+        );
+      }
       const results = await plugin.run(context, output, pConfig.options);
       if (!results.success) {
         return {

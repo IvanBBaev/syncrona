@@ -44,14 +44,41 @@ export function createTokenManager(
   post: TokenPoster
 ): TokenManager {
   let cached: { accessToken: string; refreshToken?: string; expiresAt: number } | null = null;
+  // De-duplicates concurrent acquire/refresh: a burst of parallel requests that
+  // all see an expired (or missing) token must trigger ONE token call, not N.
+  let inFlight: Promise<string> | null = null;
 
   const store = (res: OAuthTokenResponse): string => {
+    const token = res?.access_token;
+    if (typeof token !== "string" || token.length === 0) {
+      // A malformed response (e.g. an error payload with no access_token) must
+      // not poison the cache with `undefined` — that would make every later
+      // request send `Authorization: Bearer undefined` until restart.
+      throw new Error("OAuth token response did not include an access_token");
+    }
     cached = {
-      accessToken: res.access_token,
+      accessToken: token,
       refreshToken: res.refresh_token ?? cached?.refreshToken,
       expiresAt: Date.now() + (res.expires_in ? res.expires_in * 1000 : DEFAULT_TTL_MS),
     };
-    return cached.accessToken;
+    return token;
+  };
+
+  // Serializes token acquisition so concurrent callers share a single network
+  // round-trip. The in-flight promise is cleared once settled (success or
+  // failure) so the next miss starts fresh.
+  const runExclusive = (fn: () => Promise<string>): Promise<string> => {
+    if (inFlight) {
+      return inFlight;
+    }
+    inFlight = (async () => {
+      try {
+        return await fn();
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
   };
 
   const acquireWithPassword = async (): Promise<string> => {
@@ -91,16 +118,13 @@ export function createTokenManager(
 
   return {
     async getToken(): Promise<string> {
-      if (!cached) {
-        return acquireWithPassword();
+      if (cached && Date.now() < cached.expiresAt - EXPIRY_SKEW_MS) {
+        return cached.accessToken;
       }
-      if (Date.now() >= cached.expiresAt - EXPIRY_SKEW_MS) {
-        return refresh();
-      }
-      return cached.accessToken;
+      return runExclusive(() => (cached ? refresh() : acquireWithPassword()));
     },
     async forceRefresh(): Promise<string> {
-      return refresh();
+      return runExclusive(refresh);
     },
   };
 }
