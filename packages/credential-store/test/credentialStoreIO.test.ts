@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -13,6 +13,7 @@ import {
   resolveCredentialsFromStore,
   getActiveInstanceSync,
   loadCredentialsSync,
+  getSyncronaDir,
 } from "../src/index";
 
 // CRITICAL: the store resolves its directory from os.homedir(), which on macOS
@@ -78,6 +79,22 @@ test("active instance can be set, read, and resolves credentials", async () => {
     user: "admin",
     password: "pw",
   });
+});
+
+test("setActiveInstance writes config atomically and leaves no temp residue", async () => {
+  // Concurrent writers must not corrupt config.json; the temp+rename strategy
+  // means the directory never retains a half-written ".tmp" file afterwards.
+  await Promise.all([
+    setActiveInstance("a.service-now.com"),
+    setActiveInstance("b.service-now.com"),
+    setActiveInstance("c.service-now.com"),
+  ]);
+
+  const active = await getActiveInstance();
+  expect(["a.service-now.com", "b.service-now.com", "c.service-now.com"]).toContain(active);
+
+  const leftovers = readdirSync(getSyncronaDir()).filter((name) => name.endsWith(".tmp"));
+  expect(leftovers).toEqual([]);
 });
 
 test("resolveCredentialsFromStore returns null when nothing matches", async () => {

@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from "fs";
 import path from "path";
 
 export type PersistedToolMetricEvent = {
@@ -11,6 +20,45 @@ export type PersistedToolMetricEvent = {
 };
 
 const DEFAULT_METRICS_MAX_BYTES = 5 * 1024 * 1024;
+const DEFAULT_METRICS_MAX_BACKUPS = 5;
+
+// Delete the oldest rotated metrics backups so the directory stays bounded.
+// Without this, every rotation leaves a timestamped file behind forever.
+function pruneRotatedMetricsFiles(
+  metricsFile: string,
+  maxBackups: number
+): void {
+  try {
+    const dir = path.dirname(metricsFile);
+    const ext = path.extname(metricsFile);
+    const base = path.basename(metricsFile, ext);
+    const prefix = `${base}.`;
+    const active = `${base}${ext}`;
+    const rotated = readdirSync(dir)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(ext) && name !== active)
+      .map((name) => {
+        const full = path.join(dir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs;
+        } catch (_) {
+          mtimeMs = 0;
+        }
+        return { full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const stale of rotated.slice(maxBackups)) {
+      try {
+        unlinkSync(stale.full);
+      } catch (_) {
+        // best-effort prune
+      }
+    }
+  } catch (_) {
+    // Cleanup is best-effort; never let it break a metrics write.
+  }
+}
 
 function toRotatedMetricsPath(metricsFile: string): string {
   const dir = path.dirname(metricsFile);
@@ -56,7 +104,8 @@ export function appendMetricEvent(
   metricsDir: string,
   metricsFile: string,
   event: PersistedToolMetricEvent,
-  maxBytes: number = DEFAULT_METRICS_MAX_BYTES
+  maxBytes: number = DEFAULT_METRICS_MAX_BYTES,
+  maxBackups: number = DEFAULT_METRICS_MAX_BACKUPS
 ): void {
   try {
     if (!existsSync(metricsDir)) {
@@ -65,6 +114,7 @@ export function appendMetricEvent(
 
     if (existsSync(metricsFile) && statSync(metricsFile).size >= maxBytes) {
       renameSync(metricsFile, toRotatedMetricsPath(metricsFile));
+      pruneRotatedMetricsFiles(metricsFile, maxBackups);
     }
 
     appendFileSync(metricsFile, `${JSON.stringify(event)}\n`, "utf-8");

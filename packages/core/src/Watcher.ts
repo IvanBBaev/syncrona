@@ -18,11 +18,16 @@ const drainQueue = async (): Promise<void> => {
     return;
   }
   processing = true;
+  // Tracks the batch currently being pushed so it can be requeued if the push
+  // throws — the queue is cleared before the push runs, so without this those
+  // file changes would be silently dropped and never retried.
+  let inFlight: string[] = [];
   try {
     while (pushQueue.length > 0) {
       // dedupe pushes
       const toProcess = Array.from(new Set([...pushQueue]));
       pushQueue = [];
+      inFlight = toProcess;
       const fileContexts = toProcess
         .map(getFileContextFromPath)
         .filter((ctx): ctx is Sync.FileContext => !!ctx);
@@ -47,8 +52,15 @@ const drainQueue = async (): Promise<void> => {
           logFilePush(ctx, res);
         }
       });
+      // Batch pushed successfully — nothing to requeue if a later batch fails.
+      inFlight = [];
     }
   } catch (e) {
+    // Requeue the in-flight batch (ahead of anything that arrived since) so the
+    // failed changes are retried on the next drain instead of being lost.
+    if (inFlight.length > 0) {
+      pushQueue = Array.from(new Set([...inFlight, ...pushQueue]));
+    }
     let message;
     if (e instanceof Error) {
       message = e.message;

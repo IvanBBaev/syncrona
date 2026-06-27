@@ -11,6 +11,12 @@ export type CmdResult = {
   timedOut: boolean;
 };
 
+// Cap captured output per stream. Without this a runaway child (an infinite log
+// loop, a binary dump) grows the in-memory string until the server OOMs; the
+// captured text is only ever shown/parsed, so truncating it is safe.
+const MAX_OUTPUT_CHARS = 5_000_000;
+const TRUNCATION_NOTICE = "\n[output truncated: exceeded capture limit]";
+
 export function runCommand(
   command: string,
   args: string[],
@@ -30,6 +36,8 @@ export function runCommand(
 
     let stdout = "";
     let stderr = "";
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let timedOut = false;
     let finished = false;
 
@@ -44,20 +52,37 @@ export function runCommand(
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
+      if (stdoutTruncated) {
+        return;
+      }
       stdout += chunk.toString();
+      if (stdout.length > MAX_OUTPUT_CHARS) {
+        stdout = stdout.slice(0, MAX_OUTPUT_CHARS);
+        stdoutTruncated = true;
+      }
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
+      if (stderrTruncated) {
+        return;
+      }
       stderr += chunk.toString();
+      if (stderr.length > MAX_OUTPUT_CHARS) {
+        stderr = stderr.slice(0, MAX_OUTPUT_CHARS);
+        stderrTruncated = true;
+      }
     });
+
+    const finalStdout = (): string => (stdoutTruncated ? stdout + TRUNCATION_NOTICE : stdout);
+    const finalStderr = (): string => (stderrTruncated ? stderr + TRUNCATION_NOTICE : stderr);
 
     child.on("error", (err: Error) => {
       clearTimeout(timeout);
       finished = true;
       resolve({
         exitCode: 1,
-        stdout,
-        stderr: `${stderr}\n${err.message}`,
+        stdout: finalStdout(),
+        stderr: `${finalStderr()}\n${err.message}`,
         timedOut,
       });
     });
@@ -67,8 +92,8 @@ export function runCommand(
       finished = true;
       resolve({
         exitCode: code ?? 1,
-        stdout,
-        stderr,
+        stdout: finalStdout(),
+        stderr: finalStderr(),
         timedOut,
       });
     });

@@ -19,6 +19,10 @@ const DEFAULT_MINIMAL_FOOTPRINT_BUDGET: MinimalFootprintBudget = {
   maxObjects: 10,
 };
 
+// Upper bound for a caller-supplied budget. Anything larger is treated as an
+// attempt (deliberate or accidental) to disable the minimal-footprint gate.
+const MAX_MINIMAL_FOOTPRINT_BUDGET = 10_000;
+
 const BLOCKED_COMMANDS = new Set([
   "rm",
   "sudo",
@@ -58,16 +62,26 @@ function hasUnsafeShellArg(args: string[]): boolean {
   return args.some((arg) => arg === "-c" || arg === "--command");
 }
 
+function commandBaseName(command: string): string {
+  // Strip any leading directory so a path to a blocked binary ("/bin/rm",
+  // "..\\rm", "./sudo") is still recognised — an exact-string blocklist alone
+  // is trivially bypassed by qualifying the command. Handle both separators
+  // regardless of host OS, and drop surrounding whitespace.
+  const normalized = command.trim().replace(/\\/g, "/");
+  return normalized.slice(normalized.lastIndexOf("/") + 1);
+}
+
 export function isMutatingTool(toolName: string): boolean {
   return MUTATING_TOOLS.has(toolName);
 }
 
 export function isUnsafeWorkspaceCommand(command: string, args: string[]): boolean {
-  if (BLOCKED_COMMANDS.has(command)) {
+  const base = commandBaseName(command);
+  if (BLOCKED_COMMANDS.has(base)) {
     return true;
   }
 
-  if (BLOCKED_SHELL_INTERPRETERS.has(command) && hasUnsafeShellArg(args)) {
+  if (BLOCKED_SHELL_INTERPRETERS.has(base) && hasUnsafeShellArg(args)) {
     return true;
   }
 
@@ -202,6 +216,16 @@ export function validateRollbackEvidence(
   };
 }
 
+function sanitizeBudgetValue(value: unknown, fallback: number): number {
+  // A non-finite (Infinity/NaN), negative, or absurdly large override would
+  // silently neuter the footprint gate. Fall back to the default for an unusable
+  // value and clamp the rest to a sane positive integer ceiling.
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+  return Math.min(Math.floor(value), MAX_MINIMAL_FOOTPRINT_BUDGET);
+}
+
 export function evaluateMinimalFootprint(
   changes: Array<Record<string, unknown>>,
   budgetOverride?: Partial<MinimalFootprintBudget>
@@ -227,9 +251,14 @@ export function evaluateMinimalFootprint(
     lines += estimatedLines;
   }
 
+  const override = budgetOverride || {};
   const budget: MinimalFootprintBudget = {
-    ...DEFAULT_MINIMAL_FOOTPRINT_BUDGET,
-    ...(budgetOverride || {}),
+    maxFiles: sanitizeBudgetValue(override.maxFiles, DEFAULT_MINIMAL_FOOTPRINT_BUDGET.maxFiles),
+    maxLines: sanitizeBudgetValue(override.maxLines, DEFAULT_MINIMAL_FOOTPRINT_BUDGET.maxLines),
+    maxObjects: sanitizeBudgetValue(
+      override.maxObjects,
+      DEFAULT_MINIMAL_FOOTPRINT_BUDGET.maxObjects
+    ),
   };
   const metrics: MinimalFootprintMetrics = {
     changedFiles: files.size,

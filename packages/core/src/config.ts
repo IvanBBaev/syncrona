@@ -339,14 +339,19 @@ export class ConfigStore {
 
   private async loadSourcePath(): Promise<void> {
     const rootDir = this.getRootDir();
-    const { sourceDirectory = "src" } = this.getConfig();
-    this.state.source_path = path.join(rootDir, sourceDirectory);
+    const { sourceDirectory } = this.getConfig();
+    // A default only triggers on `undefined`; an empty/whitespace string would
+    // collapse source_path onto the project root (path.join(root, "") === root),
+    // so coerce blank values back to the default the same way defaults are written.
+    const dir = String(sourceDirectory || "src").trim() || "src";
+    this.state.source_path = path.join(rootDir, dir);
   }
 
   private async loadBuildPath(): Promise<void> {
     const rootDir = this.getRootDir();
-    const { buildDirectory = "build" } = this.getConfig();
-    this.state.build_path = path.join(rootDir, buildDirectory);
+    const { buildDirectory } = this.getConfig();
+    const dir = String(buildDirectory || "build").trim() || "build";
+    this.state.build_path = path.join(rootDir, dir);
   }
 
   private async loadEnvPath(): Promise<void> {

@@ -986,6 +986,17 @@ test('isUnsafeWorkspaceCommand blocks shell -c patterns', () => {
   assert.equal(isUnsafeWorkspaceCommand('rm', ['-rf', '/tmp/a']), true);
 });
 
+test('isUnsafeWorkspaceCommand recognizes blocked binaries given by path', () => {
+  // A path-qualified blocked command must not slip past the bare-name blocklist.
+  assert.equal(isUnsafeWorkspaceCommand('/bin/rm', ['-rf', '/tmp/a']), true);
+  assert.equal(isUnsafeWorkspaceCommand('/usr/bin/sudo', ['ls']), true);
+  assert.equal(isUnsafeWorkspaceCommand('..\\rm', ['-rf', 'x']), true);
+  assert.equal(isUnsafeWorkspaceCommand('  rm  ', ['-rf', 'x']), true);
+  assert.equal(isUnsafeWorkspaceCommand('/usr/bin/bash', ['-c', 'echo hi']), true);
+  // A non-blocked binary that merely lives in a directory stays allowed.
+  assert.equal(isUnsafeWorkspaceCommand('/usr/local/bin/npm', ['test']), false);
+});
+
 test('isMutatingTool supports allow/deny matrix by tool type', () => {
   assert.equal(isMutatingTool('sn_create_record'), true);
   assert.equal(isMutatingTool('sn_update_metadata_record'), true);
@@ -1071,6 +1082,40 @@ test('minimal-footprint evaluator reports budget violations deterministically', 
   assert.equal(over.violations.length >= 1, true);
 });
 
+test('minimal-footprint evaluator rejects budget overrides that would disable the gate', () => {
+  const changes = [
+    { filePath: 'a.js', objectId: 'o1', estimatedLines: 120 },
+    { filePath: 'b.js', objectId: 'o2', estimatedLines: 120 },
+    { filePath: 'c.js', objectId: 'o3', estimatedLines: 20 },
+    { filePath: 'd.js', objectId: 'o4', estimatedLines: 20 },
+    { filePath: 'e.js', objectId: 'o5', estimatedLines: 20 },
+    { filePath: 'f.js', objectId: 'o6', estimatedLines: 20 },
+  ];
+
+  // An unusable override (Infinity / NaN / negative) must fall back to the
+  // default budget so the gate still fires — 6 files exceeds the default of 5.
+  for (const bad of [
+    { maxFiles: Infinity, maxLines: Infinity, maxObjects: Infinity },
+    { maxFiles: Number.NaN, maxLines: Number.NaN, maxObjects: Number.NaN },
+    { maxFiles: -1, maxLines: -1, maxObjects: -1 },
+  ]) {
+    const res = evaluateMinimalFootprint(changes, bad);
+    assert.equal(res.withinBudget, false);
+    assert.equal(res.budget.maxFiles, 5);
+  }
+
+  // An absurdly large override is clamped to a finite ceiling rather than left
+  // unbounded, so the gate can never be silently disabled.
+  const clamped = evaluateMinimalFootprint(changes, {
+    maxFiles: 1e9,
+    maxLines: 1e9,
+    maxObjects: 1e9,
+  });
+  assert.ok(Number.isFinite(clamped.budget.maxFiles));
+  assert.ok(clamped.budget.maxFiles <= 10000);
+  assert.ok(clamped.budget.maxLines <= 10000);
+});
+
 test('scope code and artifact paths are normalized safely', () => {
   assert.equal(normalizeScopeCode(' X-Nuvo.Sync '), 'x_nuvo_sync');
 
@@ -1120,6 +1165,26 @@ test('writeAuditEvent rotates file when log exceeds max bytes', () => {
   assert.equal(fs.existsSync(auditFile), true);
   const latest = fs.readFileSync(auditFile, 'utf8');
   assert.equal(latest.includes('"event":"rotate"'), true);
+});
+
+test('writeAuditEvent prunes old rotated backups beyond the limit', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-mcp-audit-'));
+  const auditFile = path.join(tempDir, 'audit.log');
+
+  // maxBytes=1 forces a rotation on every call after the first; with
+  // maxBackups=2 the directory must never accumulate more than two backups.
+  for (let i = 0; i < 8; i += 1) {
+    writeAuditEvent(tempDir, auditFile, { event: `e${i}` }, 1, 2);
+  }
+
+  const rotatedFiles = fs
+    .readdirSync(tempDir)
+    .filter(
+      (name) => name !== 'audit.log' && name.startsWith('audit.') && name.endsWith('.log')
+    );
+
+  assert.equal(rotatedFiles.length, 2);
+  assert.equal(fs.existsSync(auditFile), true);
 });
 
 test('writeAuditEvent appends without rotation under max bytes', () => {
@@ -1236,6 +1301,35 @@ test('metricsStore appends and reloads persisted tool metrics', () => {
   assert.equal(rows[0].tool, 'sync_tool_a');
   assert.equal(rows[1].tool, 'sync_tool_b');
   assert.equal(rows[1].correlationId, 'corr-metric-1');
+});
+
+test('metricsStore prunes old rotated backups beyond the limit', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-mcp-metrics-'));
+  const metricsFile = path.join(tempDir, 'metrics.jsonl');
+
+  // maxBytes=1 rotates on every call after the first; maxBackups=2 caps the
+  // number of timestamped backups left on disk.
+  for (let i = 0; i < 8; i += 1) {
+    appendMetricEvent(
+      tempDir,
+      metricsFile,
+      { tool: `t${i}`, ok: true, latencyMs: 1, timestamp: new Date().toISOString() },
+      1,
+      2
+    );
+  }
+
+  const rotated = fs
+    .readdirSync(tempDir)
+    .filter(
+      (name) =>
+        name !== 'metrics.jsonl' &&
+        name.startsWith('metrics.') &&
+        name.endsWith('.jsonl')
+    );
+
+  assert.equal(rotated.length, 2);
+  assert.equal(fs.existsSync(metricsFile), true);
 });
 
 test('metricsStore ignores malformed jsonl lines while loading', () => {

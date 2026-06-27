@@ -27,6 +27,18 @@ describe("isUnderPath", () => {
     const p = path.join(path.sep, "a", "b");
     expect(isUnderPath(p, p)).toBe(true);
   });
+
+  it("ignores a trailing separator on the parent", () => {
+    const parent = path.join(path.sep, "a", "b") + path.sep;
+    const child = path.join(path.sep, "a", "b", "c");
+    expect(isUnderPath(parent, child)).toBe(true);
+  });
+
+  it("ignores doubled separators in either path", () => {
+    const parent = `${path.sep}a${path.sep}${path.sep}b`;
+    const child = path.join(path.sep, "a", "b", "c");
+    expect(isUnderPath(parent, child)).toBe(true);
+  });
 });
 
 describe("toAbsolutePath", () => {

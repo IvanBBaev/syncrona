@@ -325,10 +325,18 @@ async function loadGlobalConfig(): Promise<GlobalConfig> {
 
 async function saveGlobalConfig(config: GlobalConfig): Promise<void> {
   await ensureDirs();
-  await fsp.writeFile(getConfigFile(), JSON.stringify(config, null, 2), {
+  const target = getConfigFile();
+  // Write to a sibling temp file then rename — rename is atomic on the same
+  // filesystem, so a crash or a concurrent reader mid-write can never observe a
+  // truncated/corrupt config.json (the previous version stays intact until the
+  // rename completes). The random suffix keeps concurrent writers in the same
+  // process from colliding on one temp path (pid alone is not unique there).
+  const tmpPath = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  await fsp.writeFile(tmpPath, JSON.stringify(config, null, 2), {
     encoding: "utf8",
     mode: 0o600,
   });
+  await fsp.rename(tmpPath, target);
 }
 
 export async function setActiveInstance(instance: string): Promise<void> {

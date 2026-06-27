@@ -452,9 +452,27 @@ async function getRecordsForTable(
 
   const toRecords = (rows: TableAPIRecord[]): SN.TableConfigRecords => {
     const records: SN.TableConfigRecords = {};
+    // Surface names that collide once written to disk. A case-insensitive volume
+    // (macOS/Windows) or Unicode-normalization differences can map two distinct
+    // record names onto one file, silently dropping a record. We keep the
+    // server-parity name (renaming would break push/pull round-trips) but warn
+    // so the collision is visible rather than an invisibly missing record.
+    const normalizedSeen = new Map<string, string>();
 
     for (const row of rows) {
       const name = buildRecordName(row, displayField, tableOptions);
+      const normalized = name.normalize("NFC").toLowerCase();
+      const prior = normalizedSeen.get(normalized);
+      if (prior !== undefined && prior !== name) {
+        logger.warn(
+          `Record name collision in ${tableName}: "${name}" and "${prior}" resolve to the same file on case-insensitive or Unicode-normalizing filesystems; one will overwrite the other.`
+        );
+      } else if (records[name] && records[name].sys_id !== row.sys_id) {
+        logger.warn(
+          `Duplicate record name "${name}" in ${tableName} (sys_id ${records[name].sys_id} and ${row.sys_id}); the later record overwrites the earlier one in the manifest.`
+        );
+      }
+      normalizedSeen.set(normalized, name);
       records[name] = {
         sys_id: row.sys_id,
         name,

@@ -1,9 +1,64 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from "fs";
 import path from "path";
 import { logger } from "./logger";
 
 const DEFAULT_AUDIT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_AUDIT_MAX_BACKUPS = 5;
+
+// Delete the oldest size-rotated backups so the audit directory stays bounded.
+// Rotation alone (rename to a timestamped file) would otherwise let backups
+// accumulate forever. `.corrupt.` quarantine files are left untouched — they are
+// forensic and rare.
+function pruneRotatedAuditFiles(
+  dir: string,
+  base: string,
+  ext: string,
+  maxBackups: number
+): void {
+  try {
+    const prefix = `${base}.`;
+    const active = `${base}${ext}`;
+    const rotated = readdirSync(dir)
+      .filter(
+        (name) =>
+          name.startsWith(prefix) &&
+          name.endsWith(ext) &&
+          name !== active &&
+          !name.includes(".corrupt.")
+      )
+      .map((name) => {
+        const full = path.join(dir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs;
+        } catch (_) {
+          mtimeMs = 0;
+        }
+        return { full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const stale of rotated.slice(maxBackups)) {
+      try {
+        unlinkSync(stale.full);
+      } catch (_) {
+        // best-effort prune
+      }
+    }
+  } catch (_) {
+    // Cleanup is best-effort; never let it break an audit write.
+  }
+}
 
 type AuditIntegrityResult = {
   ok: boolean;
@@ -54,7 +109,8 @@ export function writeAuditEvent(
   auditDir: string,
   auditFile: string,
   entry: Record<string, unknown>,
-  maxBytes = DEFAULT_AUDIT_MAX_BYTES
+  maxBytes = DEFAULT_AUDIT_MAX_BYTES,
+  maxBackups = DEFAULT_AUDIT_MAX_BACKUPS
 ): void {
   try {
     if (!existsSync(auditDir)) {
@@ -75,6 +131,7 @@ export function writeAuditEvent(
           rotatedPath = path.join(dir, `${base}.${stamp}.${suffix}${ext}`);
         }
         renameSync(auditFile, rotatedPath);
+        pruneRotatedAuditFiles(dir, base, ext, maxBackups);
       }
     }
 

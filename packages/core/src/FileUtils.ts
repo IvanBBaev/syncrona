@@ -5,6 +5,7 @@ import fs, { promises as fsp } from "fs";
 import path from "path";
 import * as ConfigManager from "./config";
 import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout";
+import { logger } from "./Logger";
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -143,8 +144,13 @@ export const isUnderPath = (
   parentPath: string,
   potentialChildPath: string
 ): boolean => {
-  const parentTokens = parentPath.split(path.sep);
-  const childTokens = potentialChildPath.split(path.sep);
+  // Drop empty segments so a trailing separator (".../src/") or a doubled
+  // separator does not introduce a phantom "" token that never matches the
+  // child and makes a genuine descendant look outside the parent.
+  const parentTokens = parentPath.split(path.sep).filter((token) => token !== "");
+  const childTokens = potentialChildPath
+    .split(path.sep)
+    .filter((token) => token !== "");
   return parentTokens.every((token, index) => token === childTokens[index]);
 };
 
@@ -274,12 +280,25 @@ export const getPathsInPath = async (p: string): Promise<string[]> => {
       continue;
     }
 
+    // Skip symlinks outright. The isUnderPath guard above only vetted the
+    // requested root; following a link could escape the source/build tree or
+    // spin in a cycle. Collecting links as plain paths would also push the same
+    // bytes twice (link + target).
+    if (stat.isSymbolicLink()) {
+      continue;
+    }
+
     if (!stat.isDirectory()) {
       files.push(next.filePath);
       continue;
     }
 
     if (next.depth === maxDepth) {
+      // The tree is deeper than we walk. Warn rather than truncate silently so a
+      // partial push/build is not mistaken for having covered every file.
+      logger.warn(
+        `Directory tree deeper than ${maxDepth} levels at ${next.filePath}; not descending further.`
+      );
       continue;
     }
 

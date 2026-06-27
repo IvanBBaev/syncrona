@@ -78,11 +78,32 @@ const getRepoRootDir = async (): Promise<string> => {
   return execGit(["rev-parse", "--show-toplevel"]);
 };
 
+/**
+ * Current git branch name, or null when unavailable (not a repo, detached HEAD,
+ * or git missing). Never throws — callers use this for best-effort issue-key
+ * inference, so a missing branch should degrade gracefully, not error out.
+ */
+export const getCurrentBranch = async (): Promise<string | null> => {
+  try {
+    const branch = await execGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+    // Detached HEAD reports the literal "HEAD" — no branch name to mine.
+    if (!branch || branch === "HEAD") {
+      return null;
+    }
+    return branch;
+  } catch {
+    return null;
+  }
+};
+
 const isValidScope = (
   file: string,
   scope: string,
   baseRepoPath: string
 ): boolean => {
   const relativePath = path.relative(baseRepoPath, scope);
-  return file.startsWith(relativePath) ? true : false;
+  // Require a full path-segment match. A bare startsWith also accepted sibling
+  // directories that merely share the prefix (scope "src" leaking "src-other"),
+  // so a file is in scope only when it equals the scope dir or sits beneath it.
+  return file === relativePath || file.startsWith(relativePath + path.sep);
 };
