@@ -210,6 +210,9 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
   - Builds comprehensive table relation map for a scope (explicit dictionary links, hidden attribute hints, inferred workspace links)
 - `sync_onboarding_bootstrap`
   - Returns onboarding checklist and readiness state
+- `jira_get_issue`
+  - Fetches rich context for the Jira issue you are working on (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, linked issues, fix versions, recent comments)
+  - Resolves the issue key from the argument or the current git branch name; supports Jira Cloud and Server/Data Center
 
 ## Typical flow
 

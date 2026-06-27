@@ -51,7 +51,10 @@ jobs:
       - name: Test @syncro-now-ai/mcp-server
         run: npm run test:mcp
 
-      - name: Coverage gates (core jest thresholds 70/57/61/70, mcp lines>=70% branches>=70%)
+      - name: Test shared packages (@syncro-now-ai/jira + credential-store)
+        run: npm run test:shared
+
+      - name: Coverage gates (core jest thresholds 85/71/80/85, mcp lines>=70% branches>=70%)
         run: npm run test:coverage:gates
 
       - name: Quality gates (tool contract, docs drift, release checklist)

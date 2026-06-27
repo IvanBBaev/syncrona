@@ -8,11 +8,12 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "build:deps": "npm --workspace @syncro-now-ai/credential-store run prepack && npm --workspace @syncro-now-ai/sn-transport run prepack",
+    "build:deps": "npm --workspace @syncro-now-ai/credential-store run prepack && npm --workspace @syncro-now-ai/jira run prepack && npm --workspace @syncro-now-ai/sn-transport run prepack",
     "build": "npm run build:deps && npm --workspaces --if-present run prepack",
-    "test": "npm run test:core && npm run test:mcp",
+    "test": "npm run test:core && npm run test:mcp && npm run test:shared",
     "test:core": "npm --workspace @syncro-now-ai/core test",
     "test:mcp": "npm --workspace @syncro-now-ai/mcp-server test",
+    "test:shared": "npm --workspace @syncro-now-ai/jira test && npm --workspace @syncro-now-ai/credential-store test",
     "test:coverage:core": "npm --workspace @syncro-now-ai/core test",
     "test:coverage:mcp": "npm --workspace @syncro-now-ai/mcp-server run test:coverage:gate -- --line-threshold 70 --branch-threshold 70",
     "test:coverage:gates": "npm run test:coverage:core && npm run test:coverage:mcp",

@@ -12,7 +12,9 @@ import type { JiraDeployment } from "./types";
 export function detectDeployment(baseUrl: string): JiraDeployment {
   let host = "";
   try {
-    host = new URL(baseUrl).host.toLowerCase();
+    // Use the hostname (no port): `acme.atlassian.net:8443` must still detect as
+    // Cloud — `.host` would carry the `:8443` and break the suffix match.
+    host = new URL(baseUrl).hostname.toLowerCase();
   } catch {
     // Not a parseable URL — fall back to a substring check so callers that pass
     // a bare host still get a sensible default.

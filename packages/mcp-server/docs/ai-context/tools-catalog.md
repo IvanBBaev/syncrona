@@ -84,6 +84,10 @@
 - sync_analyze_scope_relations
 - sync_onboarding_bootstrap
 
+## Jira integration tools
+
+- jira_get_issue: fetch rich context for the Jira issue you are working on (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, linked issues, fix versions, recent comments). Resolves the issue key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center.
+
 ## Tool usage heuristics for AI agents
 
 1. Prefer read-only diagnostics first.

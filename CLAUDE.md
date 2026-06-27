@@ -35,6 +35,9 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncro-now-ai logout` removes stored credentials.
 - `npx syncro-now-ai instances` lists stored instances and active marker.
 - `npx syncro-now-ai use` sets the active stored instance.
+- `npx syncro-now-ai jira` fetches rich context for a Jira issue (key argument or git branch fallback).
+- `npx syncro-now-ai jira-login` saves Jira credentials in the global credential store (Cloud or Server/Data Center).
+- `npx syncro-now-ai jira-logout` removes stored Jira credentials.
 
 ## Documentation Drift Policy
 - README command table and this document must stay aligned for core CLI commands.

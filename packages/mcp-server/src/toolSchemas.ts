@@ -1494,6 +1494,40 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
       },
     },
   },
+  {
+    name: "jira_get_issue",
+    description:
+      "Fetch rich context for the Jira issue you are working on (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, linked issues, fix versions, and recent comments). Supports Jira Cloud and Server/Data Center. Provide an issue key, or omit it to infer the key from the current git branch name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description:
+            "Jira issue key (for example PROJ-123). If omitted, the key is inferred from the current git branch name.",
+        },
+        profile: {
+          type: "string",
+          description: "Jira credential profile to use (default: default).",
+        },
+        comments: {
+          type: "number",
+          minimum: 0,
+          description: "Number of most-recent comments to include (default 5; 0 to omit).",
+        },
+        logLevel: {
+          type: "string",
+          enum: ["error", "warn", "info", "debug", "silly"],
+          default: "info",
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1000,
+          maximum: 900000,
+        },
+      },
+    },
+  },
 ];
 
 export const MCP_TOOLS: Array<Record<string, unknown>> = withToolLifecycleMetadata(BASE_MCP_TOOLS);

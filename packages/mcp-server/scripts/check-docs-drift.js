@@ -13,7 +13,7 @@ const DEFAULT_CATALOG_SOURCE = path.resolve(
 const DEFAULT_README_SOURCE = path.resolve(__dirname, '..', 'README.md');
 
 const TOOL_NAME_REGEX = /name:\s*"([^"]+)"/g;
-const DOC_TOOL_REGEX = /\b(?:sync_[a-z0-9_]+|sn_[a-z0-9_]+|run_workspace_command|run_node_code)\b/g;
+const DOC_TOOL_REGEX = /\b(?:sync_[a-z0-9_]+|sn_[a-z0-9_]+|jira_[a-z0-9_]+|run_workspace_command|run_node_code)\b/g;
 
 function parseToolNamesFromSchemas(raw) {
   return [...new Set([...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1]))].sort();

@@ -8,4 +8,14 @@ module.exports = {
   },
   testMatch: ['**/test/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts'],
+  // Ratchet: floors sit just under the measured coverage (95/75/97/96) so a
+  // regression fails CI, while ADF edge nodes keep a little branch headroom.
+  coverageThreshold: {
+    global: {
+      statements: 92,
+      branches: 72,
+      functions: 92,
+      lines: 92,
+    },
+  },
 }

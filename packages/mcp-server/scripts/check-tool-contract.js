@@ -30,6 +30,7 @@ const REQUIRED_TOOLS = [
   'sync_unified_change_workflow',
   'sync_health_check',
   'sync_metrics_trend',
+  'jira_get_issue',
 ];
 
 function hashToolContract(toolNames) {

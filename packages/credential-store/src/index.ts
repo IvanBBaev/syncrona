@@ -412,6 +412,13 @@ export function loadCredentialsSync(
  * ~/.syncrona/jira/<profile>.enc, separate from the ServiceNow credentials dir.
  * ------------------------------------------------------------------------- */
 
+/**
+ * Persisted Jira deployment flavour. Mirrors `JiraDeployment` in
+ * `@syncro-now-ai/jira`; the two unions are kept separate (rather than imported)
+ * because the foundation packages must not depend on each other (no import
+ * cycle / boundaries rule). This package is the single normalizer for the
+ * *stored* value — see {@link normalizeStoredJira}.
+ */
 export type JiraDeploymentKind = "cloud" | "server";
 
 export type StoredJiraCredentials = {
@@ -431,11 +438,16 @@ function getJiraDir(): string {
 }
 
 export function jiraProfileToFilename(profile: string): string {
-  return profile.replace(/[^a-zA-Z0-9.-]/g, "_") + ".enc";
+  // Reversible, collision-free encoding: percent-encode every character that is
+  // unsafe in a filename. A naive `replace(/[^a-zA-Z0-9.-]/g, "_")` would map
+  // distinct profiles ("work a", "work/a", "work_a") to the same file and lose
+  // credentials; it would also let a "/" escape the jira dir. encodeURIComponent
+  // neutralizes "/" (→ %2F) and spaces (→ %20) and round-trips exactly.
+  return encodeURIComponent(profile) + ".enc";
 }
 
 export function filenameToJiraProfile(filename: string): string {
-  return filename.replace(/\.enc$/, "");
+  return decodeURIComponent(filename.replace(/\.enc$/, ""));
 }
 
 function jiraCredentialFilePath(profile: string): string {
@@ -455,6 +467,11 @@ function normalizeStoredJira(
   data: Partial<StoredJiraCredentials>,
   profile: string
 ): StoredJiraCredentials {
+  // Coerce any non-"cloud" value to "server": that is the safe default for a
+  // self-hosted instance and matches `detectDeployment`'s fallback in
+  // `@syncro-now-ai/jira` (anything not on a known Cloud host is Server/DC). The
+  // value reaching `resolveJiraConfig` is therefore always a valid kind, so the
+  // two packages never disagree on a corrupted/legacy stored value.
   const deployment: JiraDeploymentKind = data.deployment === "cloud" ? "cloud" : "server";
   const stored: StoredJiraCredentials = {
     profile: String(data.profile || profile || DEFAULT_JIRA_PROFILE),
@@ -513,21 +530,28 @@ export async function listJiraProfiles(): Promise<string[]> {
   }
 }
 
-export async function removeJiraCredentials(profile?: string): Promise<void> {
+/** Remove one profile's credentials. Returns true only if a file was deleted. */
+export async function removeJiraCredentials(profile?: string): Promise<boolean> {
   const filePath = jiraCredentialFilePath(normalizeJiraProfile(profile));
   try {
     await fsp.unlink(filePath);
+    return true;
   } catch {
-    // not found — silently ignore
+    // not found (or unlink failed) — report nothing removed
+    return false;
   }
 }
 
+/** Remove every stored profile; returns the count actually deleted. */
 export async function removeAllJiraCredentials(): Promise<number> {
   const profiles = await listJiraProfiles();
+  let removed = 0;
   for (const profile of profiles) {
-    await removeJiraCredentials(profile);
+    if (await removeJiraCredentials(profile)) {
+      removed += 1;
+    }
   }
-  return profiles.length;
+  return removed;
 }
 
 /**

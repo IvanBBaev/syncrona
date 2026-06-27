@@ -38,6 +38,7 @@ import { handleScopeKnowledgeTool } from "./handlers/scopeKnowledgeHandlers";
 import { handleRelationOnboardingTool } from "./handlers/relationOnboardingHandlers";
 import { handleWorkflowTool } from "./handlers/workflowHandlers";
 import { handleDeveloperTool } from "./handlers/developerToolHandlers";
+import { handleJiraTool } from "./handlers/jiraToolHandlers";
 import {
   getToolMetrics,
   buildPreflightReport,
@@ -278,6 +279,14 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
         sourceDirectory: getSourceDirectory(PROJECT_DIR),
         resolveScope: (preferredScope) => resolveScopeCode(preferredScope, ctx.timeoutMs),
         tableGet,
+      }),
+  },
+  {
+    name: "jira",
+    invoke: (ctx) =>
+      handleJiraTool(ctx.toolName, ctx.args, {
+        timeoutMs: ctx.timeoutMs,
+        projectDir: PROJECT_DIR,
       }),
   },
 ];

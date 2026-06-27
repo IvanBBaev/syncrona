@@ -4,8 +4,8 @@
  * Enforces the ARCHITECTURE §5 / §6 contract in `npm run lint`:
  *  - no circular dependencies anywhere;
  *  - the shared foundation packages (`types`, `credential-store`,
- *    `sn-transport`) never depend on the `core` / `mcp-server` consumers —
- *    dependency arrows point down only;
+ *    `jira`, `sn-transport`) never depend on the `core` / `mcp-server`
+ *    consumers — dependency arrows point down only;
  *  - `@syncro-now-ai/types` stays a pure leaf.
  *
  * @type {import('dependency-cruiser').IConfiguration}
@@ -23,9 +23,9 @@ module.exports = {
     {
       name: "foundation-no-consumers",
       comment:
-        "Shared foundation packages (types, credential-store, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only.",
+        "Shared foundation packages (types, credential-store, jira, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only.",
       severity: "error",
-      from: { path: "^packages/(types|credential-store|sn-transport)/src" },
+      from: { path: "^packages/(types|credential-store|jira|sn-transport)/src" },
       to: {
         path: "(@syncro-now-ai/(core|mcp-server)(/|$)|^packages/(core|mcp-server)/)",
       },

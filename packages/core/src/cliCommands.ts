@@ -19,6 +19,11 @@ import {
   instancesCommand,
   useCommand,
 } from "./authCommands";
+import {
+  jiraCommand,
+  jiraLoginCommand,
+  jiraLogoutCommand,
+} from "./jiraCommands";
 
 /**
  * Declarative contract for one CLI command module.
@@ -364,5 +369,79 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     },
     examples: [["$0 use dev12345.service-now.com", "Make this stored instance the active one for later commands"]],
     handler: typedHandler<Sync.SharedCmdArgs & { instance: string }>((args) => useCommand(args)),
+  },
+  {
+    command: "jira [key]",
+    describe:
+      "Show rich context for a Jira issue (key, or inferred from the git branch)",
+    includeSharedOptions: false,
+    positionals: {
+      key: {
+        type: "string",
+        describe: "Jira issue key (e.g. PROJ-123); omit to infer from the branch",
+      },
+    },
+    options: {
+      logLevel: { ...SHARED_CLI_OPTIONS.logLevel },
+      profile: {
+        type: "string",
+        describe: "Jira credential profile to use (default: default)",
+      },
+      comments: {
+        type: "number",
+        default: 5,
+        describe: "Number of most-recent comments to include (0 to omit)",
+      },
+      json: {
+        type: "boolean",
+        default: false,
+        describe: "Print the normalized issue as raw JSON instead of formatted text",
+      },
+    },
+    examples: [
+      ["$0 jira PROJ-123", "Print rich context for issue PROJ-123"],
+      ["$0 jira", "Infer the issue key from the current git branch and print it"],
+      ["$0 jira PROJ-123 --json", "Emit the normalized issue as JSON for scripting"],
+    ],
+    handler: typedHandler<Sync.SharedCmdArgs & { key?: string; profile?: string; comments?: number; json?: boolean }>(
+      (args) => jiraCommand(args)
+    ),
+  },
+  {
+    command: "jira-login",
+    describe: "Save Jira credentials (Cloud API token or Server/DC PAT) to the credential store",
+    includeSharedOptions: false,
+    options: {
+      logLevel: { ...SHARED_CLI_OPTIONS.logLevel },
+      profile: {
+        type: "string",
+        describe: "Jira credential profile to save under (default: default)",
+      },
+    },
+    examples: [
+      ["$0 jira-login", "Prompt for base URL, deployment, and token, then verify and save"],
+      ["$0 jira-login --profile work", "Save Jira credentials under the 'work' profile"],
+    ],
+    handler: typedHandler<Sync.SharedCmdArgs & { profile?: string }>((args) => jiraLoginCommand(args)),
+  },
+  {
+    command: "jira-logout",
+    describe: "Remove saved Jira credentials from the credential store",
+    includeSharedOptions: false,
+    options: {
+      logLevel: { ...SHARED_CLI_OPTIONS.logLevel },
+      profile: {
+        type: "string",
+        describe: "Jira credential profile to remove (default: default)",
+      },
+      all: {
+        type: "boolean",
+        default: false,
+        describe: "Remove credentials for all Jira profiles",
+      },
+    },
+    handler: typedHandler<Sync.SharedCmdArgs & { profile?: string; all?: boolean }>(
+      (args) => jiraLogoutCommand(args)
+    ),
   },
 ];

@@ -185,6 +185,9 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `logout [instance]`| **none** | Removes stored credentials for one instance (or all with `--all`) from the global CredentialStore.                                                       | `npx syncro-now-ai logout dev123.service-now.com` |
 | `instances`        | **none** | Lists instances saved in the global CredentialStore and marks the active one.                                                                              | `npx syncro-now-ai instances`            |
 | `use <instance>`   | **none** | Sets active instance from the global CredentialStore for subsequent commands.                                                                              | `npx syncro-now-ai use dev123.service-now.com` |
+| `jira [key]`       | `--profile`, `--comments`, `--json` | Fetches rich context for a Jira issue (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, links, fix versions, recent comments). Resolves the key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center. | `npx syncro-now-ai jira SCRUM-123` |
+| `jira-login`       | `--profile` | Saves Jira credentials in the encrypted global CredentialStore. Auto-detects Cloud vs Server/Data Center from the base URL and verifies the connection. | `npx syncro-now-ai jira-login` |
+| `jira-logout`      | `--profile`, `--all` | Removes stored Jira credentials for one profile (or all with `--all`) from the global CredentialStore. | `npx syncro-now-ai jira-logout` |
 
 `init` wizard behavior notes:
 

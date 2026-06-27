@@ -14,3 +14,4 @@ export { adfToText } from "./adf";
 export { normalizeIssue } from "./normalize";
 export { getIssue, verifyAuth, buildAuthHeader } from "./client";
 export { resolveJiraConfig, resolveJiraConfigSync } from "./resolveConfig";
+export { NO_JIRA_CONFIG_MESSAGE } from "./messages";

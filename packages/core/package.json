@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@syncro-now-ai/credential-store": "^0.4.2",
+    "@syncro-now-ai/jira": "^0.4.2",
     "@syncro-now-ai/sn-transport": "^0.4.2",
     "axios": "^1.5.1",
     "axios-rate-limit": "^1.3.0",
