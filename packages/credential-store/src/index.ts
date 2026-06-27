@@ -401,3 +401,152 @@ export function loadCredentialsSync(
     return null;
   }
 }
+
+/* ----------------------------------------------------------------------------
+ * Jira credential family
+ *
+ * Mirrors the ServiceNow credential API above and reuses the exact same crypto
+ * (getStoreKey + encrypt/decrypt + decryptWithFallback). Jira logins are keyed by
+ * a free-form *profile* name (default "default") rather than an instance host, so
+ * a developer can keep more than one Jira site configured. Files live under
+ * ~/.syncrona/jira/<profile>.enc, separate from the ServiceNow credentials dir.
+ * ------------------------------------------------------------------------- */
+
+export type JiraDeploymentKind = "cloud" | "server";
+
+export type StoredJiraCredentials = {
+  profile: string;
+  baseUrl: string;
+  deployment: JiraDeploymentKind;
+  /** Account email — Cloud only. */
+  email?: string;
+  /** API token (Cloud) or personal access token (Server/DC). */
+  token: string;
+};
+
+const DEFAULT_JIRA_PROFILE = "default";
+
+function getJiraDir(): string {
+  return path.join(getSyncronaDir(), "jira");
+}
+
+export function jiraProfileToFilename(profile: string): string {
+  return profile.replace(/[^a-zA-Z0-9.-]/g, "_") + ".enc";
+}
+
+export function filenameToJiraProfile(filename: string): string {
+  return filename.replace(/\.enc$/, "");
+}
+
+function jiraCredentialFilePath(profile: string): string {
+  return path.join(getJiraDir(), jiraProfileToFilename(profile));
+}
+
+function normalizeJiraProfile(profile?: string): string {
+  const trimmed = String(profile || "").trim();
+  return trimmed || DEFAULT_JIRA_PROFILE;
+}
+
+async function ensureJiraDir(): Promise<void> {
+  await fsp.mkdir(getJiraDir(), { recursive: true, mode: 0o700 });
+}
+
+function normalizeStoredJira(
+  data: Partial<StoredJiraCredentials>,
+  profile: string
+): StoredJiraCredentials {
+  const deployment: JiraDeploymentKind = data.deployment === "cloud" ? "cloud" : "server";
+  const stored: StoredJiraCredentials = {
+    profile: String(data.profile || profile || DEFAULT_JIRA_PROFILE),
+    baseUrl: String(data.baseUrl || ""),
+    deployment,
+    // Do not coerce/trim the token — surrounding whitespace can be significant.
+    token: String(data.token || ""),
+  };
+  const email = String(data.email || "").trim();
+  if (email) {
+    stored.email = email;
+  }
+  return stored;
+}
+
+export async function saveJiraCredentials(
+  creds: StoredJiraCredentials
+): Promise<void> {
+  await ensureJiraDir();
+  const profile = normalizeJiraProfile(creds.profile);
+  const key = getStoreKey();
+  const payload = normalizeStoredJira(creds, profile);
+  const encrypted = encrypt(JSON.stringify(payload), key);
+  const filePath = jiraCredentialFilePath(profile);
+  await fsp.writeFile(filePath, encrypted, { encoding: "utf8", mode: 0o600 });
+}
+
+export async function loadJiraCredentials(
+  profile?: string
+): Promise<StoredJiraCredentials | null> {
+  const normalized = normalizeJiraProfile(profile);
+  const filePath = jiraCredentialFilePath(normalized);
+  let raw: string;
+  try {
+    raw = await fsp.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const data = decryptWithFallback(raw.trim());
+    return normalizeStoredJira(JSON.parse(data) as Partial<StoredJiraCredentials>, normalized);
+  } catch {
+    return null;
+  }
+}
+
+export async function listJiraProfiles(): Promise<string[]> {
+  try {
+    await ensureJiraDir();
+    const files = await fsp.readdir(getJiraDir());
+    return files
+      .filter((f) => f.endsWith(".enc"))
+      .map((f) => filenameToJiraProfile(f));
+  } catch {
+    return [];
+  }
+}
+
+export async function removeJiraCredentials(profile?: string): Promise<void> {
+  const filePath = jiraCredentialFilePath(normalizeJiraProfile(profile));
+  try {
+    await fsp.unlink(filePath);
+  } catch {
+    // not found — silently ignore
+  }
+}
+
+export async function removeAllJiraCredentials(): Promise<number> {
+  const profiles = await listJiraProfiles();
+  for (const profile of profiles) {
+    await removeJiraCredentials(profile);
+  }
+  return profiles.length;
+}
+
+/**
+ * Sync read for the MCP runtime. Never throws: a missing file, decrypt failure,
+ * or parse error returns null so the caller can fall through to env resolution.
+ */
+export function loadJiraCredentialsSync(
+  profile?: string
+): StoredJiraCredentials | null {
+  const normalized = normalizeJiraProfile(profile);
+  const filePath = jiraCredentialFilePath(normalized);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(filePath, "utf8").trim();
+    const data = decryptWithFallback(raw);
+    return normalizeStoredJira(JSON.parse(data) as Partial<StoredJiraCredentials>, normalized);
+  } catch {
+    return null;
+  }
+}

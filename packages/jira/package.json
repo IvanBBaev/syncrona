@@ -1,0 +1,37 @@
+{
+  "name": "@syncro-now-ai/jira",
+  "version": "0.4.2",
+  "description": "Shared Jira read client for SyncroNow AI (Cloud and Server/Data Center auto-detection, issue context fetch) used by the core CLI and the MCP server.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepack": "tsc",
+    "test": "jest"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@syncro-now-ai/credential-store": "^0.4.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.5",
+    "@types/node": "^20.8.4",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.2.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/jira"
+  }
+}
