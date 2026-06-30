@@ -10,8 +10,8 @@
   "license": "GPL-3.0-or-later",
   "devDependencies": {
     "@syncro-now-ai/types": "^0.4.2",
-    "@types/prettier": "^2.7.3",
-    "typescript": "^5.2.2"
+    "@types/prettier": "^3.0.0",
+    "typescript": "^6.0.3"
   },
   "files": [
     "dist"

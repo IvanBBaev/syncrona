@@ -16,7 +16,7 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "memory-fs": "^0.5.0",
-    "webpack": "^5.88.2"
+    "webpack": "^5.108.3"
   },
   "devDependencies": {
     "@syncro-now-ai/types": "^0.4.2",

@@ -15,8 +15,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@babel/core": "^7.23.2",
-    "@babel/types": "^7.23.0"
+    "@babel/core": "^8.0.1",
+    "@babel/types": "^8.0.0"
   },
   "devDependencies": {
     "@syncro-now-ai/types": "^0.4.2",
