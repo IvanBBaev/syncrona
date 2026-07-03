@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { PluginItem, NodePath } from "@babel/core";
+import { PluginObject, NodePath } from "@babel/core";
 import * as t from "@babel/types";
 export default function() {
   const commentUsageTracker = new Set<string>();
@@ -126,5 +126,5 @@ export default function() {
         path.remove();
       }
     }
-  } as PluginItem;
+  } as PluginObject;
 }
