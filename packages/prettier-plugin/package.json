@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/prettier-plugin",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "SyncroNow AI build plugin that formats synced files with Prettier (honors .prettierrc and sync.config.js options).",
   "main": "./dist/index.js",
   "scripts": {
@@ -30,7 +30,7 @@
     "directory": "packages/prettier-plugin"
   },
   "dependencies": {
-    "@syncrona/types": "^0.9.0"
+    "@syncrona/types": "^0.9.1"
   },
   "types": "./dist/index.d.ts",
   "homepage": "https://ivanbbaev.github.io/syncrona/"

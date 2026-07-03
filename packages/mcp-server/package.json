@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/mcp-server",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "MCP server for SyncroNow AI automation and script execution",
   "main": "./dist/index.js",
   "bin": {
@@ -26,9 +26,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
-    "@syncrona/credential-store": "^0.9.0",
-    "@syncrona/jira": "^0.9.0",
-    "@syncrona/sn-transport": "^0.9.0",
+    "@syncrona/credential-store": "^0.9.1",
+    "@syncrona/jira": "^0.9.1",
+    "@syncrona/sn-transport": "^0.9.1",
     "undici": "^6.21.0",
     "zod": "^3.23.8"
   },

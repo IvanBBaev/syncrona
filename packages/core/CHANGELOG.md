@@ -1,5 +1,21 @@
 # syncrona
 
+## 0.9.1
+
+### Patch Changes
+
+- Fix `syncrona --version` so it reports the CLI's own version. It is now wired
+  explicitly from the package's `package.json`; yargs' default detection derived
+  the path from the yargs module's `node_modules` parent, which under a
+  hoisted/symlinked install resolved to an unrelated `package.json`.
+- Package metadata: set the npm `homepage` to the project site
+  (https://ivanbbaev.github.io/syncrona/) and sharpen the package descriptions.
+- Updated dependencies
+  - @syncrona/sn-transport@0.9.1
+  - @syncrona/credential-store@0.9.1
+  - @syncrona/jira@0.9.1
+  - @syncrona/types@0.9.1
+
 ## 0.4.2
 
 ### Patch Changes
