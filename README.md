@@ -6,9 +6,11 @@
      [![npm version](https://img.shields.io/npm/v/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncro-now-ai/core)
      [![npm downloads](https://img.shields.io/npm/dm/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/@syncro-now-ai/core) -->
 
+<!-- badges:start -->
 | ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
 |:--:|:--:|:--:|:--:|:--:|
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
+<!-- badges:end -->
 
 _Built and maintained in my own time. If SyncroNow AI helps you or your team,
 a sponsorship keeps it moving — it directly funds new features, fixes and
