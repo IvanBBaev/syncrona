@@ -11,7 +11,7 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - ✅ **OAuth 2.0 (CLI)** — password grant, Bearer + refresh, `SN_OAUTH_*`; Basic
   stays default (G1).
 - ✅ **OAuth 2.0 (MCP server)** — DONE: `createTokenManager` moved to
-  `@syncro-now-ai/sn-transport` (shared); `servicenowCore` sends Bearer + refresh on
+  `@syncrona/sn-transport` (shared); `servicenowCore` sends Bearer + refresh on
   401, Basic fallback, via the same `SN_OAUTH_*` vars (3 mcp tests). The legacy
   `sys.scripts.do` fallback stays Basic (best-effort; CR22).
 - 🔴 **SSO / authorization-code grant** — beyond password grant; needs product
@@ -38,14 +38,14 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   it reaches an LLM, so it cannot be read as instructions. No write path exists.
 
 ## 2. Distribution & release (D5)
-- 🔴 **npm publish** — `@syncro-now-ai/*` not yet published; verify scope
+- 🔴 **npm publish** — `@syncrona/*` not yet published; verify scope
   ownership + enable 2FA, add the `NPM_TOKEN` secret, then release via the
   `Release` workflow (`changeset publish`, exposed locally as `npm run release`).
 - 🔴 **Homebrew tap** — create `homebrew-tap` repo + Formula + release action.
 - 🔴 **Windows** — PowerShell install script + Windows Credential Manager (and
   native-Windows support beyond WSL).
 - ✅ **Release automation (G6)** — DONE: Changesets wired in (`.changeset/`,
-  `npm run changeset` / `version-packages` / `release`); all `@syncro-now-ai/*`
+  `npm run changeset` / `version-packages` / `release`); all `@syncrona/*`
   packages version in lockstep. Publishing itself stays owner-gated (npm scope +
   2FA).
 - 🟡 **CI publish with provenance** — publish from CI with `--provenance` + 2FA
@@ -82,7 +82,7 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   "ServiceNow" trademark disclaimer is in place.
 - ✅ **Repository public** — done 2026-06-21; CodeQL now active. (Was gated on IP
   clearance below — confirm that clearance is settled.)
-- 🔴 **Brand unification (BA6)** — `syncro-now-ai` / `@syncro-now-ai/*` / `syncrona`
+- 🔴 **Brand unification (BA6)** — `syncrona` / `@syncrona/*` / `syncrona`
   CLI; pick one name before a public launch (changes the published package name).
 - 🟡 **Per-package READMEs** — npm landing pages for published packages.
 

@@ -24,7 +24,7 @@ npm run mcp:build
 ## Start MCP for Scope Project
 
 Prefer the global credential store over inline env vars: run
-`npx syncro-now-ai login` once, then start the server. If you must use env vars,
+`npx syncrona login` once, then start the server. If you must use env vars,
 set your own values (never commit real credentials):
 
 ```bash
