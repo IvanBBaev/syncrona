@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { PluginItem } from "@babel/core";
+import { PluginObject } from "@babel/core";
 import * as t from "@babel/types";
 import { isReservedWord } from "./sanitizerHelper";
 export default function() {
@@ -39,5 +39,5 @@ export default function() {
         }
       }
     }
-  } as PluginItem;
+  } as PluginObject;
 }
