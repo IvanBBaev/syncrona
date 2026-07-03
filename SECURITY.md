@@ -31,16 +31,26 @@ understand what it touches:
   Prefer the keychain or an explicit key; treat the machine as the trust boundary
   for the fallback. For CI/shared environments use `SYNCRONA_STORE_KEY` from a
   secrets manager. See the "Credential storage security" section in the core README.
-- **Transport.** Authentication uses HTTP Basic auth over HTTPS by default.
-  **OAuth 2.0** (Resource Owner Password Credentials grant) is supported in the
-  CLI: set `SN_OAUTH_CLIENT_ID` + `SN_OAUTH_CLIENT_SECRET` and the same
-  username/password are exchanged at `oauth_token.do` for a short-lived Bearer
-  token (refreshed on expiry/401). Tokens are held in memory per process and
-  never written to disk. **Both the CLI and the MCP server** support OAuth via
-  the same `SN_OAUTH_CLIENT_ID`/`SN_OAUTH_CLIENT_SECRET` vars. Use a dedicated
-  least-privilege integration user and rotate its password if a credential file
-  may have been exposed. (The MCP server's legacy `sys.scripts.do` fallback
-  remains Basic-only; it is a best-effort last resort — see CR22.)
+- **Transport.** Authentication uses HTTP Basic auth over HTTPS by default, and
+  every ServiceNow inbound REST auth method is supported in **both** the CLI and
+  the MCP server, selected with `SN_AUTH_METHOD` (see the README authentication
+  table):
+  - **OAuth 2.0** — password, client-credentials, and JWT-bearer grants. All
+    exchange at `oauth_token.do` for a short-lived Bearer token (refreshed on
+    expiry/401). JWT-bearer signs an RS256 assertion with the key at `SN_JWT_KEY`.
+    Tokens are held in memory per process and **never written to disk**.
+  - **Inbound REST API key** — `SN_API_KEY` sent as a header (default
+    `x-sn-apikey`, override `SN_API_KEY_HEADER`).
+  - **Mutual TLS** — client certificate/key at `SN_CLIENT_CERT` / `SN_CLIENT_KEY`
+    (optional `SN_CLIENT_KEY_PASSPHRASE`), applied at the TLS layer and
+    combinable with any of the above.
+
+  Key material for JWT-bearer and mTLS is referenced **by path** and read at
+  request time — it is never copied into the encrypted credential store or logs.
+  Use a dedicated least-privilege integration user/credential and rotate it if a
+  credential file, API key, or private key may have been exposed. (The MCP
+  server's legacy `sys.scripts.do` fallback remains Basic-only; it is a
+  best-effort last resort — see CR22.)
 - **What is read/written.** SyncroNow AI reads scoped-application source/metadata
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP

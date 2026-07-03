@@ -8,17 +8,35 @@ import {
   CA_BUNDLE_ENV,
   SCOPED_API_PREFIXES_ENV,
   TLS_REJECT_UNAUTHORIZED_ENV,
+  CLIENT_CERT_ENV,
+  CLIENT_KEY_ENV,
+  CLIENT_KEY_PASSPHRASE_ENV,
+  AUTH_METHOD_ENV,
+  API_KEY_ENV,
+  API_KEY_HEADER_ENV,
+  OAUTH_CLIENT_ID_ENV,
+  OAUTH_CLIENT_SECRET_ENV,
+  JWT_KEY_ENV,
+  JWT_KID_ENV,
+  JWT_ISS_ENV,
+  JWT_SUB_ENV,
+  JWT_AUD_ENV,
   escapeQueryValue,
   isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
   resolveTlsPolicy,
+  resolveAuthMethod,
+  apiKeyHeaderName,
+  buildJwtClaims,
+  createJwtAssertion,
   shouldRetryStatus,
+  type AuthMethod,
 } from "@syncrona/sn-transport";
 import { wait } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth.js";
-import { resolveCredentialsFromStore } from "./auth.js";
+import { resolveCredentialsFromStore, type StoredCredentials } from "./auth.js";
 
 let cachedScopedEndpointPrefix: string | undefined;
 
@@ -38,13 +56,18 @@ function endpointPrefixOrder(): string[] {
 
 // G9: corporate proxy + TLS support. HTTPS_PROXY / NO_PROXY are honored
 // automatically by axios's Node adapter, so proxying needs no extra wiring. A
-// custom CA bundle (corporate / self-signed CA) or an explicit verification
-// opt-out are applied here via a shared https.Agent. Returns undefined when no
-// non-default TLS setting is configured, so the standard agent is used.
+// custom CA bundle (corporate / self-signed CA), an explicit verification
+// opt-out, or a mutual-TLS client certificate are applied here via a shared
+// https.Agent. Returns undefined when no non-default TLS setting is configured,
+// so the standard agent is used. TLS material is process-global (like the CA
+// bundle) — it is not per-profile suffixed.
 export function buildHttpsAgent(): https.Agent | undefined {
   const policy = resolveTlsPolicy(
     process.env[CA_BUNDLE_ENV],
-    process.env[TLS_REJECT_UNAUTHORIZED_ENV]
+    process.env[TLS_REJECT_UNAUTHORIZED_ENV],
+    process.env[CLIENT_CERT_ENV],
+    process.env[CLIENT_KEY_ENV],
+    process.env[CLIENT_KEY_PASSPHRASE_ENV]
   );
   if (!policy.custom) {
     return undefined;
@@ -59,12 +82,32 @@ export function buildHttpsAgent(): https.Agent | undefined {
       );
     }
   }
+  // Mutual TLS: the client certificate + private key authenticate THIS client to
+  // the instance (orthogonal to the Authorization method — combines with Basic,
+  // OAuth, or API key). Referenced by path, never copied into the credential
+  // store. Unlike the CA bundle, an unreadable cert/key is fatal for mTLS — let
+  // the read throw so the misconfiguration is loud rather than silently degrading
+  // to a request with no client certificate.
+  let cert: Buffer | undefined;
+  let key: Buffer | undefined;
+  if (policy.clientCertPath) {
+    cert = fs.readFileSync(policy.clientCertPath);
+  }
+  if (policy.clientKeyPath) {
+    key = fs.readFileSync(policy.clientKeyPath);
+  }
   if (!policy.rejectUnauthorized) {
     logger.warn(
       `TLS certificate verification is DISABLED (${TLS_REJECT_UNAUTHORIZED_ENV}). Use only against trusted test instances.`
     );
   }
-  return new https.Agent({ ca, rejectUnauthorized: policy.rejectUnauthorized });
+  return new https.Agent({
+    ca,
+    cert,
+    key,
+    ...(policy.clientKeyPassphrase ? { passphrase: policy.clientKeyPassphrase } : {}),
+    rejectUnauthorized: policy.rejectUnauthorized,
+  });
 }
 
 function isEndpointNotFound(error: unknown): boolean {
@@ -138,23 +181,37 @@ export const processPushResponse = (
   };
 };
 
+/** Inbound-REST API key auth: a static key sent as a fixed HTTP header. */
+export type ApiKeyAuth = { header: string; value: string };
+
 export const snClient = (
   baseURL: string,
   username: string,
   password: string,
-  oauth?: OAuthConfig
+  oauth?: OAuthConfig,
+  apiKey?: ApiKeyAuth
 ) => {
-  // OAuth mode (G1): Bearer token instead of Basic, refreshed on expiry/401.
-  // Basic auth stays the default when no OAuth client is configured.
-  // G9: a shared https.Agent carries any custom CA bundle / TLS opt-out to every
-  // request (and to the OAuth token endpoint), so corporate CAs work end-to-end.
+  // Authorization modes, in precedence order:
+  //  - OAuth (G1): Bearer token (password / client_credentials / jwt-bearer),
+  //    refreshed on expiry/401.
+  //  - API key: a static header (default `x-sn-apikey`), no Basic/Bearer.
+  //  - Basic (default): username + password, used whenever both are present and
+  //    no OAuth/API-key mode is selected. Empty credentials send no Authorization
+  //    header (supports mTLS-only, where the client cert maps to a user).
+  // G9: a shared https.Agent carries any custom CA bundle / TLS opt-out / mTLS
+  // client cert to every request (and to the OAuth token endpoint).
   const httpsAgent = buildHttpsAgent();
+  const useApiKey = !oauth && !!apiKey;
+  const useBasic = !oauth && !useApiKey && !!username && !!password;
   const base = axios.create({
     withCredentials: true,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(useApiKey && apiKey ? { [apiKey.header]: apiKey.value } : {}),
+    },
     baseURL,
     ...(httpsAgent ? { httpsAgent } : {}),
-    ...(oauth ? {} : { auth: { username, password } }),
+    ...(useBasic ? { auth: { username, password } } : {}),
   });
 
   if (oauth) {
@@ -436,17 +493,15 @@ let internalClient: SNClient | undefined = undefined;
 let internalClientKey: string | undefined = undefined;
 let activeInstanceProfile: string | undefined;
 
-// In-memory cache populated from auth store at bootstrap
-let storedCredentialsCache: { user: string; password: string; instance: string } | null = null;
+// In-memory cache populated from auth store at bootstrap. Carries the full
+// stored record (including any multi-method material) so a login with no `.env`
+// still drives the right auth method on the next command, not just Basic.
+let storedCredentialsCache: StoredCredentials | null = null;
 
 export async function preloadStoredCredentials(profile?: string): Promise<void> {
   const creds = await resolveCredentialsFromStore(profile);
   if (creds) {
-    storedCredentialsCache = {
-      instance: creds.instance,
-      user: creds.user,
-      password: creds.password,
-    };
+    storedCredentialsCache = creds;
   }
 }
 
@@ -463,6 +518,18 @@ export type SNCredentials = {
   // optional _<PROFILE> suffix), the client uses OAuth 2.0 instead of Basic auth.
   clientId?: string;
   clientSecret?: string;
+  // Multi-method auth: the resolved method (from SN_AUTH_METHOD or inference) and
+  // the fields the newer methods need. All optional so a Basic/OAuth-password
+  // setup keeps behaving exactly as before.
+  authMethod?: AuthMethod;
+  apiKey?: string;
+  apiKeyHeader?: string;
+  /** Path to (or inline PEM of) the JWT bearer signing key. */
+  jwtKey?: string;
+  jwtKid?: string;
+  jwtIss?: string;
+  jwtSub?: string;
+  jwtAud?: string;
 };
 
 function normalizeProfileName(profile?: string): string | undefined {
@@ -502,41 +569,99 @@ function resolveCredentialsInternal(profile?: string): {
   const instanceFromProfile = process.env[profileEnvVar("SN_INSTANCE", normalizedProfile)] || "";
   const { SN_USER = "", SN_PASSWORD = "", SN_INSTANCE = "" } = process.env;
 
-  // Env vars take priority only when user credentials are present; instance-only env vars
-  // do not suppress the credential store so a stale .env cannot block a fresh login.
-  const hasEnvCreds = !!(SN_USER || userFromProfile);
+  // Resolve the newer auth fields up front (before the store-path gate) so an
+  // API-key or client-credentials setup with no SN_USER still counts as
+  // configured-via-env and doesn't fall through to a stale stored login.
+  const envVar = (base: string): string =>
+    process.env[profileEnvVar(base, normalizedProfile)] || process.env[base] || "";
+  const clientId = envVar(OAUTH_CLIENT_ID_ENV);
+  const clientSecret = envVar(OAUTH_CLIENT_SECRET_ENV);
+  const apiKey = envVar(API_KEY_ENV);
+  const apiKeyHeader = envVar(API_KEY_HEADER_ENV);
+  const jwtKey = envVar(JWT_KEY_ENV);
+  const jwtKid = envVar(JWT_KID_ENV);
+  const jwtIss = envVar(JWT_ISS_ENV);
+  const jwtSub = envVar(JWT_SUB_ENV);
+  const jwtAud = envVar(JWT_AUD_ENV);
+  const explicitMethod = envVar(AUTH_METHOD_ENV);
+  const password = passwordFromProfile || SN_PASSWORD;
+
+  // Env vars take priority only when a usable credential is present; instance-only
+  // env vars do not suppress the credential store so a stale .env cannot block a
+  // fresh login. "Usable" now spans every method: a user, an OAuth client, or an
+  // API key.
+  const hasEnvCreds = !!(SN_USER || userFromProfile || clientId || apiKey);
   if (!hasEnvCreds && storedCredentialsCache && !normalizedProfile) {
+    const stored = storedCredentialsCache;
+    // Re-infer the method when the stored record predates the multi-method
+    // fields (legacy three-field logins have no authMethod), so old stores keep
+    // resolving to Basic / OAuth-password exactly as before.
+    const storedMethod = resolveAuthMethod({
+      explicit: stored.authMethod || "",
+      hasPassword: !!stored.password,
+      hasClientId: !!stored.clientId,
+      hasClientSecret: !!stored.clientSecret,
+      hasApiKey: !!stored.apiKey,
+      hasJwtKey: !!stored.jwtKeyPath,
+    });
     return {
       creds: {
-        user: storedCredentialsCache.user,
-        password: storedCredentialsCache.password,
-        instance: storedCredentialsCache.instance,
+        user: stored.user,
+        password: stored.password,
+        instance: stored.instance,
         profile: undefined,
+        clientId: stored.clientId || undefined,
+        clientSecret: stored.clientSecret || undefined,
+        authMethod: storedMethod.method,
+        apiKey: stored.apiKey || undefined,
+        apiKeyHeader: stored.apiKeyHeader || undefined,
+        jwtKey: stored.jwtKeyPath || undefined,
+        jwtKid: stored.jwtKid || undefined,
+        jwtIss: stored.jwtIss || undefined,
+        jwtSub: stored.jwtSub || undefined,
+        jwtAud: stored.jwtAud || undefined,
       },
       source: "credential store (syncrona login)",
     };
   }
 
-  const clientId =
-    process.env[profileEnvVar("SN_OAUTH_CLIENT_ID", normalizedProfile)] ||
-    process.env.SN_OAUTH_CLIENT_ID ||
-    "";
-  const clientSecret =
-    process.env[profileEnvVar("SN_OAUTH_CLIENT_SECRET", normalizedProfile)] ||
-    process.env.SN_OAUTH_CLIENT_SECRET ||
-    "";
+  const resolved = resolveAuthMethod({
+    explicit: explicitMethod,
+    hasPassword: !!password,
+    hasClientId: !!clientId,
+    hasClientSecret: !!clientSecret,
+    hasApiKey: !!apiKey,
+    hasJwtKey: !!jwtKey,
+  });
+
   const creds: SNCredentials = {
     user: userFromProfile || SN_USER,
-    password: passwordFromProfile || SN_PASSWORD,
+    password,
     instance: instanceFromProfile || SN_INSTANCE,
     profile: normalizedProfile,
     clientId: clientId || undefined,
     clientSecret: clientSecret || undefined,
+    authMethod: resolved.method,
+    apiKey: apiKey || undefined,
+    apiKeyHeader: apiKeyHeader || undefined,
+    jwtKey: jwtKey || undefined,
+    jwtKid: jwtKid || undefined,
+    jwtIss: jwtIss || undefined,
+    jwtSub: jwtSub || undefined,
+    jwtAud: jwtAud || undefined,
   };
   // profileEnvVar() falls back to the base var name when no profile is set, so
-  // "came from a profile" requires both a profile AND a profile-specific value.
-  const usedProfile = !!normalizedProfile && !!userFromProfile;
-  const source: CredentialSource = creds.user
+  // "came from a profile" requires both a profile AND a profile-specific value
+  // (for any of the methods).
+  const usedProfile =
+    !!normalizedProfile &&
+    (!!userFromProfile ||
+      !!process.env[profileEnvVar(API_KEY_ENV, normalizedProfile)] ||
+      !!process.env[profileEnvVar(OAUTH_CLIENT_ID_ENV, normalizedProfile)]);
+  // A configuration is "present" when any method has its identifying credential.
+  const hasCredential =
+    !!creds.user || !!creds.apiKey || !!(creds.clientId && creds.clientSecret);
+  const source: CredentialSource = hasCredential
     ? usedProfile
       ? "instance profile env vars"
       : "environment (.env / shell SN_* vars)"
@@ -593,7 +718,16 @@ export function diagnoseCredentials(profile?: string): CredentialDiagnostics {
 }
 
 function credentialsKey(credentials: SNCredentials): string {
-  return `${credentials.profile || "default"}|${credentials.instance}|${credentials.user}|${credentials.password}|${credentials.clientId || ""}`;
+  return [
+    credentials.profile || "default",
+    credentials.instance,
+    credentials.user,
+    credentials.password,
+    credentials.clientId || "",
+    credentials.authMethod || "",
+    credentials.apiKey || "",
+    credentials.jwtKey || "",
+  ].join("|");
 }
 
 export function setActiveInstanceProfile(profile?: string): void {
@@ -610,6 +744,74 @@ export const resetClient = (): void => {
   cachedScopedEndpointPrefix = undefined;
 };
 
+// Read PEM material that may be supplied inline (starts with a PEM armor) or as
+// a filesystem path. Used for the JWT bearer signing key (SN_JWT_KEY).
+function readPemMaterial(value: string): string {
+  if (value.includes("-----BEGIN")) {
+    return value;
+  }
+  return fs.readFileSync(value, "utf8");
+}
+
+// Translate resolved credentials into the transport-level auth descriptor the
+// snClient factory consumes: an OAuth config (for the three OAuth grants) or an
+// API-key header. Basic auth needs neither — username/password flow directly.
+// mTLS is orthogonal and applied by buildHttpsAgent, so it is not represented here.
+export function buildClientAuth(credentials: SNCredentials): {
+  oauth?: OAuthConfig;
+  apiKey?: ApiKeyAuth;
+} {
+  const method = credentials.authMethod ?? "basic";
+  const { clientId, clientSecret } = credentials;
+  const hasOAuthClient = !!clientId && !!clientSecret;
+
+  if (method === "api-key" && credentials.apiKey) {
+    return {
+      apiKey: {
+        header: apiKeyHeaderName(credentials.apiKeyHeader),
+        value: credentials.apiKey,
+      },
+    };
+  }
+  if (method === "oauth-client-credentials" && hasOAuthClient) {
+    return {
+      oauth: { clientId, clientSecret, grantType: "client_credentials" },
+    };
+  }
+  if (method === "oauth-jwt-bearer" && hasOAuthClient && credentials.jwtKey) {
+    const keyPem = readPemMaterial(credentials.jwtKey);
+    const instanceBaseUrl = `https://${credentials.instance}/`;
+    return {
+      oauth: {
+        clientId,
+        clientSecret,
+        grantType: "jwt-bearer",
+        // A fresh, unexpired assertion is minted for every acquisition.
+        buildAssertion: () =>
+          createJwtAssertion(
+            keyPem,
+            buildJwtClaims({
+              iss: credentials.jwtIss,
+              sub: credentials.jwtSub,
+              aud: credentials.jwtAud,
+              clientId,
+              user: credentials.user || undefined,
+              instanceBaseUrl,
+              nowSeconds: Math.floor(Date.now() / 1000),
+            }),
+            credentials.jwtKid ? { kid: credentials.jwtKid } : {}
+          ),
+      },
+    };
+  }
+  if (method === "oauth-password" && hasOAuthClient) {
+    return {
+      oauth: { clientId, clientSecret, grantType: "password" },
+    };
+  }
+  return {};
+}
+
 export const defaultClient = (profile?: string) => {
   const credentials = resolveCredentials(profile);
   const nextKey = credentialsKey(credentials);
@@ -618,15 +820,13 @@ export const defaultClient = (profile?: string) => {
     return internalClient;
   }
 
-  const oauth =
-    credentials.clientId && credentials.clientSecret
-      ? { clientId: credentials.clientId, clientSecret: credentials.clientSecret }
-      : undefined;
+  const { oauth, apiKey } = buildClientAuth(credentials);
   internalClient = snClient(
     `https://${credentials.instance}/`,
     credentials.user,
     credentials.password,
-    oauth
+    oauth,
+    apiKey
   );
   internalClientKey = nextKey;
   return internalClient;

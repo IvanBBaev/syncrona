@@ -38,10 +38,17 @@ guaranteed, until a record-replay or live smoke test lands.
 
 ## Authentication
 
+All methods are implemented in **both** clients (CLI axios + MCP native fetch) and
+selected via `SN_AUTH_METHOD`; see the README authentication table for the env vars.
+
 | Method | Status |
 |---|---|
 | HTTP Basic (over HTTPS) | ✅ default |
-| OAuth 2.0 (Resource Owner Password grant) | ✅ CLI + MCP (`SN_OAUTH_CLIENT_ID`/`SN_OAUTH_CLIENT_SECRET`) |
+| OAuth 2.0 — Resource Owner Password grant | ✅ CLI + MCP (`SN_OAUTH_CLIENT_ID`/`SN_OAUTH_CLIENT_SECRET`) |
+| OAuth 2.0 — Client Credentials grant | ✅ CLI + MCP (`SN_AUTH_METHOD=oauth-client-credentials`) |
+| OAuth 2.0 — JWT Bearer grant | ✅ CLI + MCP (`SN_AUTH_METHOD=oauth-jwt-bearer`, RS256 via `SN_JWT_KEY`) |
+| Inbound REST API Key | ✅ CLI + MCP (`SN_AUTH_METHOD=api-key`, header `x-sn-apikey`) |
+| Mutual TLS (client certificate) | ✅ CLI + MCP (`SN_CLIENT_CERT`/`SN_CLIENT_KEY`, combinable with any method) |
 | SSO / authorization-code / SAML | 🔴 not yet |
 
 ## How to report a compatibility result

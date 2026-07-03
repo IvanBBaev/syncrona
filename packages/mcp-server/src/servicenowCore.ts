@@ -15,11 +15,40 @@ import {
   parseConfiguredScopedApiPrefixes,
   shouldRetryStatus,
   createTokenManager,
+  resolveAuthMethod,
+  apiKeyHeaderName,
+  resolveTlsPolicy,
+  buildJwtClaims,
+  createJwtAssertion,
+  AUTH_METHOD_ENV,
+  API_KEY_ENV,
+  API_KEY_HEADER_ENV,
+  OAUTH_CLIENT_ID_ENV,
+  OAUTH_CLIENT_SECRET_ENV,
+  JWT_KEY_ENV,
+  JWT_KID_ENV,
+  JWT_ISS_ENV,
+  JWT_SUB_ENV,
+  JWT_AUD_ENV,
+  CA_BUNDLE_ENV,
+  TLS_REJECT_UNAUTHORIZED_ENV,
+  CLIENT_CERT_ENV,
+  CLIENT_KEY_ENV,
+  CLIENT_KEY_PASSPHRASE_ENV,
+  type AuthMethod,
+  type OAuthConfig,
   type TokenManager,
   type TokenPoster,
   type OAuthTokenResponse,
 } from "@syncrona/sn-transport";
+import { Agent } from "undici";
 import { logger } from "./logger";
+
+// Node's global fetch honours a non-standard `dispatcher` option (it is undici
+// under the hood) but the DOM `RequestInit` type omits it. Widen it locally so
+// mutual-TLS / custom-CA requests can attach an undici Agent as the dispatcher
+// without resorting to an `any` cast.
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]> & { dispatcher?: Agent };
 
 type SNConfig = {
   instance: string;
@@ -29,19 +58,187 @@ type SNConfig = {
   // MCP client authenticates with OAuth 2.0 Bearer instead of Basic.
   clientId?: string;
   clientSecret?: string;
+  // Explicit auth-method selector (SN_AUTH_METHOD). When absent it is inferred
+  // exactly as before: oauth-password if client id+secret+password are all
+  // present, else basic — so existing setups keep behaving identically.
+  authMethod?: AuthMethod;
+  // Inbound REST API Key (api-key method).
+  apiKey?: string;
+  apiKeyHeader?: string;
+  // JWT bearer grant material (oauth-jwt-bearer method).
+  jwtKey?: string;
+  jwtKid?: string;
+  jwtIss?: string;
+  jwtSub?: string;
+  jwtAud?: string;
+  // Mutual TLS / custom CA — orthogonal to the Authorization method above and
+  // applied at the transport layer via an undici dispatcher.
+  caBundlePath?: string;
+  clientCertPath?: string;
+  clientKeyPath?: string;
+  clientKeyPassphrase?: string;
+  rejectUnauthorized?: boolean;
+  /** True when any non-default TLS setting requires a custom dispatcher. */
+  tlsCustom?: boolean;
 };
 
 // Cache one token manager per instance+client across the long-running server,
 // so token caching/refresh actually persists between tool calls.
 const tokenManagers = new Map<string, TokenManager>();
 
+// Test seam: token managers are module state and otherwise leak cached tokens
+// between unit tests that reuse the same instance/client identity.
+export function clearTokenManagerCache(): void {
+  tokenManagers.clear();
+}
+
 function credentialFingerprint(config: SNConfig): string {
   // Key managers by the full secret set, not just instance+clientId. Two users
   // on one instance (or the same user after a password/secret rotation) would
   // otherwise share a cached token and act as the wrong — or stale — identity.
+  // The method + jwt key + api key are included so distinct grants configured
+  // with the same client secret never collide on one cached token.
   return createHash("sha256")
-    .update(`${config.password}\0${config.clientSecret ?? ""}`)
+    .update(
+      [
+        config.password,
+        config.clientSecret ?? "",
+        config.authMethod ?? "",
+        config.jwtKey ?? "",
+        config.apiKey ?? "",
+      ].join("\0")
+    )
     .digest("hex");
+}
+
+// Read PEM material that may be supplied inline (starts with a PEM armor) or as
+// a filesystem path. Used for the JWT bearer signing key (SN_JWT_KEY).
+function readPemMaterial(value: string): string {
+  if (value.includes("-----BEGIN")) {
+    return value;
+  }
+  return readFileSync(value, "utf-8");
+}
+
+// Translate a resolved config into the OAuth grant descriptor the shared token
+// manager consumes. Mirrors the core CLI's buildClientAuth so the two clients
+// cannot drift on grant selection. Only called when the config uses OAuth.
+function buildOAuthConfig(config: SNConfig, baseUrl: string): OAuthConfig {
+  const clientId = config.clientId as string;
+  const clientSecret = config.clientSecret as string;
+  if (config.authMethod === "oauth-client-credentials") {
+    return { clientId, clientSecret, grantType: "client_credentials" };
+  }
+  if (config.authMethod === "oauth-jwt-bearer") {
+    const keyPem = readPemMaterial(config.jwtKey || "");
+    return {
+      clientId,
+      clientSecret,
+      grantType: "jwt-bearer",
+      // A fresh, unexpired assertion is minted for every acquisition.
+      buildAssertion: () =>
+        createJwtAssertion(
+          keyPem,
+          buildJwtClaims({
+            iss: config.jwtIss,
+            sub: config.jwtSub,
+            aud: config.jwtAud,
+            clientId,
+            user: config.user || undefined,
+            instanceBaseUrl: baseUrl,
+            nowSeconds: Math.floor(Date.now() / 1000),
+          }),
+          config.jwtKid ? { kid: config.jwtKid } : {}
+        ),
+    };
+  }
+  return { clientId, clientSecret, grantType: "password" };
+}
+
+// Whether this config authenticates with an OAuth Bearer token. Backward
+// compatible: an unset method with a client id+secret pair still means the
+// password grant, exactly as before the multi-method work.
+function usesOAuth(config: SNConfig): boolean {
+  const method = config.authMethod;
+  if (
+    method === "oauth-password" ||
+    method === "oauth-client-credentials" ||
+    method === "oauth-jwt-bearer"
+  ) {
+    return !!(config.clientId && config.clientSecret);
+  }
+  if (!method) {
+    return !!(config.clientId && config.clientSecret);
+  }
+  return false;
+}
+
+// Non-OAuth Authorization headers: the inbound API key header, or Basic when a
+// username+password are present. Returns none for an mTLS-only config, where the
+// client certificate is the identity and no Authorization header is sent.
+function staticAuthHeaders(config: SNConfig): Record<string, string> {
+  if (config.authMethod === "api-key" && config.apiKey) {
+    return { [apiKeyHeaderName(config.apiKeyHeader)]: config.apiKey };
+  }
+  if (config.user && config.password) {
+    return {
+      Authorization: `Basic ${Buffer.from(
+        `${config.user}:${config.password}`
+      ).toString("base64")}`,
+    };
+  }
+  return {};
+}
+
+// Cache one undici dispatcher per distinct TLS material so mutual-TLS / custom-CA
+// connections reuse a single Agent across the long-running server instead of
+// rebuilding (and re-reading the cert/key files) on every request.
+const dispatchers = new Map<string, Agent>();
+
+// Test seam: dispatcher cache is module state.
+export function clearDispatcherCache(): void {
+  dispatchers.clear();
+}
+
+// Build (or reuse) the undici Agent that carries the client certificate / custom
+// CA for a config. Returns undefined when default TLS applies, so callers omit
+// the dispatcher and let global fetch use its built-in agent. Exported as a test
+// seam so the dispatcher-building path can be exercised without a live handshake.
+export function getDispatcher(config: SNConfig): Agent | undefined {
+  if (!config.tlsCustom) {
+    return undefined;
+  }
+  const key = [
+    config.caBundlePath ?? "",
+    config.clientCertPath ?? "",
+    config.clientKeyPath ?? "",
+    config.clientKeyPassphrase ?? "",
+    config.rejectUnauthorized === false ? "0" : "1",
+  ].join("|");
+  const existing = dispatchers.get(key);
+  if (existing) {
+    return existing;
+  }
+  const connect: Record<string, unknown> = {
+    rejectUnauthorized: config.rejectUnauthorized !== false,
+  };
+  if (config.caBundlePath) {
+    connect.ca = readFileSync(config.caBundlePath);
+  }
+  // A client cert/key misconfiguration must be loud, not silently downgraded to
+  // no-mTLS — readFileSync throws here and surfaces the bad path immediately.
+  if (config.clientCertPath) {
+    connect.cert = readFileSync(config.clientCertPath);
+  }
+  if (config.clientKeyPath) {
+    connect.key = readFileSync(config.clientKeyPath);
+  }
+  if (config.clientKeyPassphrase) {
+    connect.passphrase = config.clientKeyPassphrase;
+  }
+  const agent = new Agent({ connect });
+  dispatchers.set(key, agent);
+  return agent;
 }
 
 function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
@@ -52,15 +249,20 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
   if (existing) {
     return existing;
   }
+  const dispatcher = getDispatcher(config);
   const poster: TokenPoster = async (tokenPath, body) => {
-    const res = await fetch(`${baseUrl}${tokenPath}`, {
+    const init: FetchInit = {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
       },
       body,
-    });
+    };
+    if (dispatcher) {
+      init.dispatcher = dispatcher;
+    }
+    const res = await fetch(`${baseUrl}${tokenPath}`, init);
     const text = await res.text();
     if (!res.ok) {
       // The token endpoint returns 4xx/5xx with an error body (often HTML on a
@@ -80,7 +282,7 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
   };
   const manager = createTokenManager(
     { username: config.user, password: config.password },
-    { clientId: config.clientId as string, clientSecret: config.clientSecret as string },
+    buildOAuthConfig(config, baseUrl),
     poster
   );
   tokenManagers.set(key, manager);
@@ -295,15 +497,64 @@ export function resolveServiceNowSecrets(
   const user = merged.SN_USER;
   const password = merged.SN_PASSWORD;
 
-  if (!instance || !user || !password) {
+  // Every method targets an instance, so that is the one always-required field.
+  if (!instance) {
     throw new Error(
-      "Missing ServiceNow credentials. Provide SN_INSTANCE, SN_USER, SN_PASSWORD via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root."
+      "Missing ServiceNow instance. Provide SN_INSTANCE via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root."
     );
   }
 
-  // G1: optional OAuth 2.0 — env-configured; absent → Basic auth (default).
-  const clientId = cleanEnvValue(process.env.SN_OAUTH_CLIENT_ID || "");
-  const clientSecret = cleanEnvValue(process.env.SN_OAUTH_CLIENT_SECRET || "");
+  // Additional auth material (OAuth client, API key, JWT, mTLS) is read straight
+  // from the process environment, mirroring how SN_OAUTH_CLIENT_ID/SECRET have
+  // always been read here. The credential store persists these in a later phase.
+  const env = (name: string): string => cleanEnvValue(process.env[name] || "");
+  const clientId = env(OAUTH_CLIENT_ID_ENV);
+  const clientSecret = env(OAUTH_CLIENT_SECRET_ENV);
+  const apiKey = env(API_KEY_ENV);
+  const apiKeyHeader = env(API_KEY_HEADER_ENV);
+  const jwtKey = env(JWT_KEY_ENV);
+  const jwtKid = env(JWT_KID_ENV);
+  const jwtIss = env(JWT_ISS_ENV);
+  const jwtSub = env(JWT_SUB_ENV);
+  const jwtAud = env(JWT_AUD_ENV);
+  const explicitMethod = env(AUTH_METHOD_ENV);
+
+  const resolved = resolveAuthMethod({
+    explicit: explicitMethod,
+    hasPassword: !!password,
+    hasClientId: !!clientId,
+    hasClientSecret: !!clientSecret,
+    hasApiKey: !!apiKey,
+    hasJwtKey: !!jwtKey,
+  });
+
+  // Mutual TLS / custom CA is orthogonal to the Authorization method.
+  const tls = resolveTlsPolicy(
+    process.env[CA_BUNDLE_ENV],
+    process.env[TLS_REJECT_UNAUTHORIZED_ENV],
+    process.env[CLIENT_CERT_ENV],
+    process.env[CLIENT_KEY_ENV],
+    process.env[CLIENT_KEY_PASSPHRASE_ENV]
+  );
+  const hasMtls = !!(tls.clientCertPath && tls.clientKeyPath);
+
+  // Per-method credential validation. Basic and OAuth password additionally
+  // need a username (the shared resolver only checks the password). mTLS-only
+  // is allowed to skip the Authorization-material requirement, because the
+  // client certificate provides transport-level identity on its own.
+  const needsUser =
+    resolved.method === "basic" || resolved.method === "oauth-password";
+  const issues = [...resolved.issues];
+  if (needsUser && !user) {
+    issues.push(`${resolved.method} requires SN_USER.`);
+  }
+  if (issues.length > 0 && !hasMtls) {
+    throw new Error(
+      `Missing ServiceNow credentials for ${resolved.method} auth: ${issues.join(
+        " "
+      )} Provide them via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root.`
+    );
+  }
 
   return {
     instance,
@@ -311,6 +562,20 @@ export function resolveServiceNowSecrets(
     password,
     clientId: clientId || undefined,
     clientSecret: clientSecret || undefined,
+    authMethod: resolved.method,
+    apiKey: apiKey || undefined,
+    apiKeyHeader: apiKeyHeader || undefined,
+    jwtKey: jwtKey || undefined,
+    jwtKid: jwtKid || undefined,
+    jwtIss: jwtIss || undefined,
+    jwtSub: jwtSub || undefined,
+    jwtAud: jwtAud || undefined,
+    caBundlePath: tls.caBundlePath,
+    clientCertPath: tls.clientCertPath,
+    clientKeyPath: tls.clientKeyPath,
+    clientKeyPassphrase: tls.clientKeyPassphrase,
+    rejectUnauthorized: tls.rejectUnauthorized,
+    tlsCustom: tls.custom,
   };
 }
 
@@ -433,19 +698,23 @@ export async function snRequestWithConfig(
   body: unknown,
   timeoutMs: number
 ): Promise<{ status: number; data: unknown; text: string }> {
-  const { instance, user, password } = config;
+  const { instance } = config;
   const baseUrl = instanceToBaseUrl(instance);
   const startedAt = Date.now();
-  // G1: OAuth Bearer when configured, else Basic (default). One token manager
-  // per instance+client (cached) so refresh persists across tool calls.
-  const useOAuth = !!(config.clientId && config.clientSecret);
+  // Authorization: OAuth Bearer for the OAuth grants, the inbound API-key header
+  // for api-key, else Basic. One token manager per instance+client (cached) so
+  // refresh persists across tool calls. An mTLS-only config sends none of these
+  // (the client certificate is the identity); mTLS/custom CA is applied via the
+  // dispatcher attached below.
+  const useOAuth = usesOAuth(config);
   const tokens = useOAuth ? getTokenManager(config, baseUrl) : null;
+  const dispatcher = getDispatcher(config);
   let oauthRetried = false;
 
-  const authHeader = async (): Promise<string> =>
+  const buildAuthHeaders = async (): Promise<Record<string, string>> =>
     tokens
-      ? `Bearer ${await tokens.getToken()}`
-      : `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
+      ? { Authorization: `Bearer ${await tokens.getToken()}` }
+      : staticAuthHeaders(config);
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
@@ -456,16 +725,23 @@ export async function snRequestWithConfig(
     const timer = setTimeout(() => controller.abort(), remaining);
 
     try {
-      const response = await fetch(`${baseUrl}${endpoint.replace(/^\//, "")}`, {
+      const requestInit: FetchInit = {
         method,
         headers: {
-          Authorization: await authHeader(),
+          ...(await buildAuthHeaders()),
           "Content-Type": "application/json",
           Accept: "application/json, text/plain, text/html",
         },
         body: body === undefined || body === null ? undefined : JSON.stringify(body),
         signal: controller.signal,
-      });
+      };
+      if (dispatcher) {
+        requestInit.dispatcher = dispatcher;
+      }
+      const response = await fetch(
+        `${baseUrl}${endpoint.replace(/^\//, "")}`,
+        requestInit
+      );
 
       // OAuth: a 401 usually means the token expired — refresh once and retry.
       if (
@@ -562,9 +838,8 @@ export async function runBackgroundScript(
     return apiAttempt;
   }
 
-  const { instance, user, password } = getServiceNowConfig(projectDir);
-  const baseUrl = instanceToBaseUrl(instance);
-  const auth = Buffer.from(`${user}:${password}`).toString("base64");
+  const config = getServiceNowConfig(projectDir);
+  const baseUrl = instanceToBaseUrl(config.instance);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -573,16 +848,32 @@ export async function runBackgroundScript(
     form.set("script", script);
     form.set("runscript", "Run script");
 
-    const response = await fetch(`${baseUrl}sys.scripts.do`, {
+    // sys.scripts.do is a UI processor that accepts Basic (and OAuth Bearer)
+    // session auth. Reuse the same Authorization the REST path would send, plus
+    // the mTLS/custom-CA dispatcher, so mTLS-secured instances still reach it.
+    const authHeaders = usesOAuth(config)
+      ? {
+          Authorization: `Bearer ${await getTokenManager(
+            config,
+            baseUrl
+          ).getToken()}`,
+        }
+      : staticAuthHeaders(config);
+    const init: FetchInit = {
       method: "POST",
       headers: {
-        Authorization: `Basic ${auth}`,
+        ...authHeaders,
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "text/html,application/json,text/plain",
       },
       body: form.toString(),
       signal: controller.signal,
-    });
+    };
+    const dispatcher = getDispatcher(config);
+    if (dispatcher) {
+      init.dispatcher = dispatcher;
+    }
+    const response = await fetch(`${baseUrl}sys.scripts.do`, init);
 
     const text = await response.text();
     return {

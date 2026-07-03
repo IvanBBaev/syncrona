@@ -156,13 +156,37 @@ release-agnostic. It is actively used against recent ServiceNow releases; a
 formal supported-version matrix is being established — if you hit a
 release-specific issue, please open an issue with your instance version.
 
-**Authentication:** HTTP Basic auth over HTTPS by default. **OAuth 2.0** is
-supported (CLI): set `SN_OAUTH_CLIENT_ID` and `SN_OAUTH_CLIENT_SECRET` (with the
-same `SN_USER`/`SN_PASSWORD`, optionally per-profile `_<PROFILE>` suffixes) and
-the CLI exchanges them for a Bearer token at `oauth_token.do`, refreshing on
-expiry/401. Without those vars it stays on Basic. Use a dedicated least-privilege
-integration user. See [SECURITY.md](SECURITY.md) and
-[docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
+**Authentication:** SyncroNow AI supports every inbound REST authentication method
+ServiceNow offers, in **both** clients (CLI axios and the MCP server's native
+fetch). Select the method explicitly with `SN_AUTH_METHOD`, or let it be inferred
+for backward compatibility. Every auth variable also accepts a per-profile
+`_<PROFILE>` suffix.
+
+| Method (`SN_AUTH_METHOD`) | Required vars | Notes |
+| --- | --- | --- |
+| Basic — `basic` (default) | `SN_USER`, `SN_PASSWORD` | HTTP Basic over HTTPS. |
+| OAuth password — `oauth-password` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET`, `SN_USER`, `SN_PASSWORD` | OAuth 2.0 Resource Owner Password grant; Bearer token from `oauth_token.do`, refreshed on expiry/401. |
+| OAuth client credentials — `oauth-client-credentials` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET` | OAuth 2.0 Client Credentials grant — service-to-service, no user password (Tokyo+). |
+| OAuth JWT bearer — `oauth-jwt-bearer` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET`, `SN_JWT_KEY` | OAuth 2.0 JWT Bearer grant. `SN_JWT_KEY` is a path to (or inline) RS256 private-key PEM; a fresh signed assertion is minted per token. Optional `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` override the JWT header/claims (defaults derived from client id + user + instance). |
+| API key — `api-key` | `SN_API_KEY` | Inbound REST API Key sent as a header — default `x-sn-apikey`, override with `SN_API_KEY_HEADER` (Vancouver+). |
+
+Without `SN_AUTH_METHOD` the method is inferred exactly as before — OAuth password
+when a client id/secret pair **and** a password are present, otherwise Basic — so
+existing setups keep working unchanged. Use a dedicated least-privilege
+integration user.
+
+**Mutual TLS (client certificate)** is orthogonal to the method above and combines
+with any of them (or works alone): point `SN_CLIENT_CERT` and `SN_CLIENT_KEY` at
+PEM files (plus `SN_CLIENT_KEY_PASSPHRASE` if the key is encrypted). It is applied
+at the TLS layer in both the CLI and the MCP server.
+
+`syncrona login` walks you through any of these interactively (method picker), or
+runs non-interactively with flags — for example
+`syncrona login --auth-method api-key --api-key XXXX` or
+`syncrona login --auth-method oauth-client-credentials --client-id … --client-secret …`.
+Secrets are kept in the encrypted global credential store; the JWT key and TLS
+cert/key are referenced **by path**, never copied into it. See
+[SECURITY.md](SECURITY.md) and [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
 
 **Corporate proxies & custom TLS (G9):** the CLI honors the standard
 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment variables automatically, so

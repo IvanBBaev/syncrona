@@ -113,3 +113,55 @@ test("sync API mirrors the async reads", async () => {
 test("loadCredentialsSync returns null for an unknown instance", () => {
   expect(loadCredentialsSync("missing.service-now.com")).toBeNull();
 });
+
+test("saveCredentials persists the richer multi-method record and omits blanks", async () => {
+  await saveCredentials(INSTANCE, "", "", {
+    authMethod: "oauth-jwt-bearer",
+    clientId: "cid",
+    clientSecret: "csecret",
+    jwtKeyPath: "/keys/sn.pem",
+    jwtKid: "kid-1",
+    clientCertPath: "/certs/client.pem",
+  });
+  const loaded = await loadCredentials(INSTANCE);
+  // Provided fields round-trip; absent optionals (apiKey, jwtIss, …) are omitted
+  // so the record stays minimal. Cert/key are stored by PATH only.
+  expect(loaded).toEqual({
+    instance: INSTANCE,
+    user: "",
+    password: "",
+    authMethod: "oauth-jwt-bearer",
+    clientId: "cid",
+    clientSecret: "csecret",
+    jwtKeyPath: "/keys/sn.pem",
+    jwtKid: "kid-1",
+    clientCertPath: "/certs/client.pem",
+  });
+});
+
+test("saveCredentials round-trips an api-key record with a header override", async () => {
+  await saveCredentials(INSTANCE, "", "", {
+    authMethod: "api-key",
+    apiKey: "KEY-123",
+    apiKeyHeader: "x-custom-key",
+  });
+  expect(await loadCredentials(INSTANCE)).toEqual({
+    instance: INSTANCE,
+    user: "",
+    password: "",
+    authMethod: "api-key",
+    apiKey: "KEY-123",
+    apiKeyHeader: "x-custom-key",
+  });
+});
+
+test("saveCredentials drops an unrecognized authMethod so it can be re-inferred", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw", { authMethod: "bogus" as never });
+  // A value outside the StoredAuthMethod union is dropped rather than persisted,
+  // leaving a clean legacy-shaped record.
+  expect(await loadCredentials(INSTANCE)).toEqual({
+    instance: INSTANCE,
+    user: "admin",
+    password: "pw",
+  });
+});
