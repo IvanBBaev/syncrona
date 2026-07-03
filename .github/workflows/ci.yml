@@ -62,7 +62,7 @@ jobs:
       - name: Test shared packages (@syncrona/jira + credential-store)
         run: npm run test:shared
 
-      - name: Coverage gates (core jest thresholds 92/79/89/92, mcp lines>=70% branches>=70%)
+      - name: Coverage gates (core jest thresholds 92/79/89/92, mcp lines>=90% branches>=80%)
         run: npm run test:coverage:gates
 
       # SKIP_TESTS=1: the mcp suite already ran in the two steps above, so the

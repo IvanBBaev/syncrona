@@ -4,8 +4,9 @@
 #   core, jira, credential-store, sn-transport.
 # The thin build-tool plugin packages (babel-*, webpack, sass, prettier,
 # eslint, typescript) have no tests yet, and mcp-server carries its own
-# node --test coverage gate (>=70% lines, see packages/mcp-server/scripts).
-# Both groups are ignored below so they do not distort the project number.
+# node --test coverage gate (>=90% lines, >=80% branches over its own dist/**;
+# see packages/mcp-server/scripts). Both groups are ignored below so they do not
+# distort the project number.
 #
 # The project gate is a hard 90% floor (threshold 0% => no drop tolerated):
 # aligning with the "coverage must not fall below 90%" policy. Raise `target`
