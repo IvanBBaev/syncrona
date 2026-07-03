@@ -9,6 +9,7 @@ import {
   SHARED_CLI_OPTIONS,
   type CliCommandModule,
 } from "./cliCommands.js";
+import { resolveCurrentVersion } from "./updateNotifier.js";
 
 // yargs invokes handlers without awaiting them; this wrapper turns an async
 // command failure into a logged error + non-zero exit instead of an
@@ -69,8 +70,15 @@ export async function initCommands(argv?: string[]) {
     );
   }
 
-  cli
+  let parser = cli
     .demandCommand(1, "Specify a command to run. Use --help to list available commands.")
-    .strict()
-    .help().argv;
+    .strict();
+  // Wire `--version` to our own package.json explicitly. yargs' default version
+  // detection derives the path from the yargs module's node_modules parent, which
+  // (under a hoisted/symlinked install) resolves to the wrong package.json.
+  const version = resolveCurrentVersion();
+  if (version) {
+    parser = parser.version(version);
+  }
+  parser.help().argv;
 }

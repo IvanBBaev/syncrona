@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-04
+
+### Fixed
+
+- `syncrona --version` now reports the CLI's own version. It is wired explicitly
+  from the package's `package.json`; yargs' default detection derived the path
+  from the yargs module's `node_modules` parent, which under a hoisted/symlinked
+  install resolved to an unrelated `package.json`.
+
+### Changed
+
+- Package metadata: set the npm `homepage` of every published package to the
+  project site (https://ivanbbaev.github.io/syncrona/) instead of the
+  auto-generated GitHub `#readme` URL, and sharpened the `syncrona`,
+  `@syncrona/babel-plugin` and `@syncrona/babel-preset-servicenow` descriptions.
+  All packages remain in lockstep.
+
 ## [0.9.0] - 2026-07-03
 
 First public release to npm. The `syncrona` core CLI, the `@syncrona/mcp-server`
@@ -179,7 +196,9 @@ TLS) and the shared encrypted credential store.
 
 - nothing removed
 
-[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/IvanBBaev/syncrona/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.9.0
 [0.4.1]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.1
 [0.4.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.0
 [0.3.6]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.3.6

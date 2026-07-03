@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/sass-plugin",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "SyncroNow AI build plugin that compiles Sass/SCSS to CSS in the ServiceNow sync pipeline.",
   "main": "./dist/index.js",
   "scripts": {
@@ -15,7 +15,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@syncrona/types": "^0.9.0",
+    "@syncrona/types": "^0.9.1",
     "sass": "^1.101.0"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-# @syncrona/sn-transport
+# @syncrona/jira
 
 ## 0.9.1
 
@@ -7,5 +7,5 @@
 - Package metadata: set the npm `homepage` to the project site
   (https://ivanbbaev.github.io/syncrona/) and sharpen the package descriptions.
   No runtime or API changes.
-
-## 0.4.2
+- Updated dependencies
+  - @syncrona/credential-store@0.9.1

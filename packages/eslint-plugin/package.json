@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/eslint-plugin",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "SyncroNow AI build plugin that runs ESLint on synced files and blocks pushes on lint errors (uses sync.config.js options or an .eslintrc).",
   "main": "./dist/index.js",
   "scripts": {
@@ -31,7 +31,7 @@
     "directory": "packages/eslint-plugin"
   },
   "dependencies": {
-    "@syncrona/types": "^0.9.0"
+    "@syncrona/types": "^0.9.1"
   },
   "types": "./dist/index.d.ts",
   "homepage": "https://ivanbbaev.github.io/syncrona/"

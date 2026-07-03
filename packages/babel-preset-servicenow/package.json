@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/babel-preset-servicenow",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Babel preset for ServiceNow scoped apps (SyncroNow AI).",
   "main": "./dist/index.js",
   "scripts": {
@@ -13,7 +13,7 @@
     "@babel/types": "^8.0.0"
   },
   "devDependencies": {
-    "@syncrona/types": "^0.9.0",
+    "@syncrona/types": "^0.9.1",
     "typescript": "~5.9.3"
   },
   "files": [

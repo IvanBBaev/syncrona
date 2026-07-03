@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/credential-store",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Shared encrypted credential store for SyncroNow AI (core CLI and MCP server).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
