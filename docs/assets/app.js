@@ -232,12 +232,12 @@
     var scenarios = [
       // 1 · Dev workflow
       [
-        { cmd: "syncro-now-ai login" },
+        { cmd: "syncrona login" },
         { out: [["✔ ", "ok"], ["Saved credentials · ", "muted"], ["dev12345.service-now.com"]] },
-        { cmd: "syncro-now-ai init" },
+        { cmd: "syncrona init" },
         { out: [["✔ ", "ok"], ["Wrote ", "muted"], ["sync.config.js · sync.manifest.json · .env"]] },
         { out: [["✔ ", "ok"], ["Scope ", "muted"], ["x_acme_app", "accent"], [" · 142 files tracked", "muted"]] },
-        { cmd: "syncro-now-ai dev" },
+        { cmd: "syncrona dev" },
         { out: [["▸ ", "blue"], ["watching ", "muted"], ["src/"], [" · build & push on save", "muted"]] },
         { wait: 700 },
         { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 280 },
@@ -249,7 +249,7 @@
       ],
       // 2 · Diff push
       [
-        { cmd: "syncro-now-ai push --diff main" },
+        { cmd: "syncrona push --diff main" },
         { out: [["▸ ", "blue"], ["git diff main"], [" · 3 files changed", "muted"]] },
         { wait: 350 },
         { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 240 },
@@ -260,7 +260,7 @@
       ],
       // 3 · MCP / AI analysis
       [
-        { cmd: "syncro-now-ai mcp" },
+        { cmd: "syncrona mcp" },
         { out: [["▸ ", "blue"], ["MCP server listening"], [" · stdio · 61 tools", "muted"]] },
         { wait: 600 },
         { out: [["🤖 ", "accent"], ["sn_build_dependency_graph"]], delay: 320 },
@@ -272,7 +272,7 @@
       ],
       // 4 · Docs
       [
-        { cmd: "syncro-now-ai docs" },
+        { cmd: "syncrona docs" },
         { out: [["▸ ", "blue"], ["generating ", "muted"], ["markdown + mermaid"]] },
         { wait: 650 },
         { out: [["✔ ", "ok"], ["overview.md"], [" · 12 tables · 142 records", "muted"]], delay: 300 },

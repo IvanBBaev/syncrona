@@ -47,5 +47,5 @@ guaranteed, until a record-replay or live smoke test lands.
 ## How to report a compatibility result
 
 If you run SyncroNow AI against a specific ServiceNow release, please open an
-issue with the release name and the outcome (`syncro-now-ai doctor` /
+issue with the release name and the outcome (`syncrona doctor` /
 `check-env` output helps). Verified results will be promoted from 🟡 to ✅ here.

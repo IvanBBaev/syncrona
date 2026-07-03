@@ -12,11 +12,11 @@ AI agents through ~60 governed tools.
 
 ```
 packages/
-  core/                 @syncro-now-ai/core           — the CLI (bin: syncrona)
-  mcp-server/           @syncro-now-ai/mcp-server     — MCP runtime (stdio JSON-RPC)
-  types/                @syncro-now-ai/types          — shared .d.ts type surface
-  credential-store/     @syncro-now-ai/credential-store — at-rest credential crypto
-  sn-transport/         @syncro-now-ai/sn-transport   — shared HTTP transport policy
+  core/                 syncrona           — the CLI (bin: syncrona)
+  mcp-server/           @syncrona/mcp-server     — MCP runtime (stdio JSON-RPC)
+  types/                @syncrona/types          — shared .d.ts type surface
+  credential-store/     @syncrona/credential-store — at-rest credential crypto
+  sn-transport/         @syncrona/sn-transport   — shared HTTP transport policy
   babel-plugin/  babel-plugin-remove-modules/  babel-preset-servicenow/
   typescript-plugin/  webpack-plugin/  sass-plugin/  prettier-plugin/  eslint-plugin/
                         — build-pipeline plugins loaded via sync.config.js rules
@@ -27,13 +27,13 @@ packages/
 ```mermaid
 graph TD
     subgraph shared["Shared foundation (pure, no IO)"]
-        types["@syncro-now-ai/types<br/>.d.ts only"]
-        transport["@syncro-now-ai/sn-transport<br/>prefix + retry + endpoint policy"]
-        credstore["@syncro-now-ai/credential-store<br/>AES-256-GCM at-rest store"]
+        types["@syncrona/types<br/>.d.ts only"]
+        transport["@syncrona/sn-transport<br/>prefix + retry + endpoint policy"]
+        credstore["@syncrona/credential-store<br/>AES-256-GCM at-rest store"]
     end
 
-    core["@syncro-now-ai/core<br/>CLI (yargs, axios)"]
-    mcp["@syncro-now-ai/mcp-server<br/>MCP runtime (fetch, node:test)"]
+    core["syncrona<br/>CLI (yargs, axios)"]
+    mcp["@syncrona/mcp-server<br/>MCP runtime (fetch, node:test)"]
     plugins["build plugins<br/>(babel/ts/webpack/sass/prettier)"]
 
     core --> types
@@ -51,7 +51,7 @@ Build order is enforced by the root `build:deps` script: `credential-store` and
 **Two HTTP clients by design.** The CLI uses axios (+ rate limit, one-shot
 process); the MCP server uses native `fetch` (long-lived process, per-status
 backoff). They are deliberately not merged — instead, every policy they must
-agree on lives in `@syncro-now-ai/sn-transport`:
+agree on lives in `@syncrona/sn-transport`:
 
 - scoped API prefix order (`x_nuvo_sinc`/`x_nuvo_sync`, `SYNCRONA_SCOPED_API_PREFIXES` override),
 - retryable HTTP statuses (408/425/429/5xx),
@@ -84,7 +84,7 @@ sequenceDiagram
     participant Build as PluginManager
     participant SN as ServiceNow
 
-    Dev->>CLI: syncro-now-ai push [--diff main] [--ci]
+    Dev->>CLI: syncrona push [--diff main] [--ci]
     CLI->>SN: checkConnection (5s preflight)
     CLI->>CLI: resolve file list (target | git diff | full src)
     CLI->>CP: load checkpoint — offer resume of failed records
@@ -106,7 +106,7 @@ the next push offers to resume only the failed records. A stale lock
 
 ### Manifest and download
 
-`syncro-now-ai download <scope>` / `refresh` prefer the scoped companion app
+`syncrona download <scope>` / `refresh` prefer the scoped companion app
 endpoints (`api/<prefix>/sinc/getManifest`, `bulkDownload`). When the scoped
 app is not installed (any 400/403/404), `manifestBuilder` reconstructs the
 manifest purely from the standard Table API:
@@ -267,7 +267,7 @@ Every tool family is one `ToolHandlerModule` in `TOOL_HANDLER_MODULES`:
 
 1. **stdout belongs to JSON-RPC** in the MCP server; anything human-readable
    goes to stderr.
-2. **Both HTTP clients consume `@syncro-now-ai/sn-transport`** for prefix order,
+2. **Both HTTP clients consume `@syncrona/sn-transport`** for prefix order,
    retry statuses, and endpoint-not-found statuses; never re-hardcode them.
 3. **Manifest builds are all-or-nothing** per refresh: a partial result must
    never overwrite a good manifest.
