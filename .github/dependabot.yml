@@ -2,17 +2,56 @@ version: 2
 updates:
   # Production + dev npm dependencies across the workspace root (npm workspaces
   # resolve from the single root lockfile, so a root-level entry covers all
-  # packages/*). Security and version updates land as grouped weekly PRs.
+  # packages/*).
+  #
+  # Grouping strategy (gap-analysis #32): the previous single production group
+  # bundled unmergeable breaking majors (chalk 4->5 ESM, inquirer 8->14,
+  # eslint 8->10, typescript 5->6, zod 3->4, chokidar 3->4) together with safe
+  # in-range fixes, so PRs #6/#7/#8/#10 died and #13 starved every wanted
+  # patch/minor. We now:
+  #   * land patch + minor bumps as small, mergeable weekly groups (prod and dev
+  #     kept separate), and
+  #   * raise majors as isolated per-dependency PRs, while `ignore`-ing the
+  #     CJS/ESM-locked majors that cannot be adopted until a tracked migration.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     groups:
-      dev-dependencies:
-        dependency-type: development
-      production-dependencies:
+      # Safe, in-range fixes for the credential-carrying HTTP client and the
+      # rest of the runtime — grouped so they land as one small weekly PR.
+      production-minor-patch:
         dependency-type: production
+        update-types:
+          - minor
+          - patch
+      # Tooling/test/build deps: batch minor+patch together too.
+      development-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Breaking majors blocked by the CommonJS build / current toolchain.
+      # Each must land via a dedicated, tracked migration (ESM conversion,
+      # eslint flat-config, TS 6 parser support) rather than an auto-PR.
+      - dependency-name: chalk
+        update-types: ["version-update:semver-major"] # v5 is ESM-only
+      - dependency-name: inquirer
+        update-types: ["version-update:semver-major"] # v9+ ESM/API rewrite
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"] # v9+ flat config migration
+      - dependency-name: "@typescript-eslint/eslint-plugin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@typescript-eslint/parser"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"] # v6 parser support first
+      - dependency-name: zod
+        update-types: ["version-update:semver-major"] # v4 API changes
+      - dependency-name: chokidar
+        update-types: ["version-update:semver-major"] # v4 dropped globs
 
   # Keep the SHA-pinned GitHub Actions current (Dependabot bumps the pin and
   # the version comment together).
@@ -21,3 +60,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"

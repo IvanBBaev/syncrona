@@ -75,6 +75,15 @@ export async function writeDotEnv(
   }
   const next = upsertEnvVars(existing, vars);
   await fsp.writeFile(envPath, next, { encoding: "utf8", mode: 0o600 });
+  // `mode` on writeFile only applies when the file is CREATED; an existing .env
+  // keeps its old (possibly world-readable) permissions. Re-assert 0o600 every
+  // write so credentials never sit in a loosely-permissioned file. Best-effort:
+  // platforms without POSIX modes (Windows) simply ignore this.
+  try {
+    await fsp.chmod(envPath, 0o600);
+  } catch {
+    // chmod unsupported (e.g. Windows) — the file content is still written.
+  }
 }
 
 /**

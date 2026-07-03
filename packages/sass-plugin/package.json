@@ -15,11 +15,11 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
+    "@syncro-now-ai/types": "^0.4.2",
     "sass": "^1.93.2"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2",
-    "@types/node": "^20.8.4"
+    "@types/node": "^22.0.0"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -28,5 +28,6 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/sass-plugin"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

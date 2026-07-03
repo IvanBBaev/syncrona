@@ -29,6 +29,7 @@ import {
   setLogLevel,
   scopeCheck,
   logScopedEndpointCapability,
+  logErrorHint,
 } from "./commandHelpers";
 import { mcpCommand } from "./mcpCommand";
 
@@ -129,28 +130,40 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
   }
 
   logger.info(`Auto init: preparing ${plan.length} scoped packages...`);
-  for (const { scope, dirName } of plan) {
-    const scopeDir = path.join(packagesRoot, dirName);
-    await ensureScopeWorkspace(scopeDir);
+  // #50: each iteration chdir's into a scope and reloads the singleton
+  // ConfigManager for THAT scope. Restoring only process.cwd() in the inner
+  // finally leaves the singleton pointed at the last scope, so any later
+  // workspace-root command (or the caller) reads stale scope paths (same bug
+  // class as #1). Restore the config store to originalCwd once the loop ends.
+  const originalCwd = process.cwd();
+  try {
+    for (const { scope, dirName } of plan) {
+      const scopeDir = path.join(packagesRoot, dirName);
+      await ensureScopeWorkspace(scopeDir);
 
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(scopeDir);
-      // Re-resolve config/manifest/source paths for this scope. The config
-      // store is a singleton initialized once at startup, so without this the
-      // chdir is ignored and every scope would write to the workspace root.
-      ConfigManager.resetConfigState();
-      await ConfigManager.loadConfigs();
-      await downloadCommand({
-        logLevel: args.logLevel,
-        scope,
-        dryRun: args.dryRun,
-        instanceProfile: args.instanceProfile,
-        ci: true,
-      });
-    } finally {
-      process.chdir(originalCwd);
+      try {
+        process.chdir(scopeDir);
+        // Re-resolve config/manifest/source paths for this scope. The config
+        // store is a singleton initialized once at startup, so without this the
+        // chdir is ignored and every scope would write to the workspace root.
+        ConfigManager.resetConfigState();
+        await ConfigManager.loadConfigs();
+        await downloadCommand({
+          logLevel: args.logLevel,
+          scope,
+          dryRun: args.dryRun,
+          instanceProfile: args.instanceProfile,
+          ci: true,
+        });
+      } finally {
+        process.chdir(originalCwd);
+      }
     }
+  } finally {
+    // Reload the singleton for the workspace root so the ConfigManager no longer
+    // points at the last scope's directory once auto-init returns.
+    ConfigManager.resetConfigState();
+    await ConfigManager.loadConfigs();
   }
 }
 
@@ -282,10 +295,20 @@ export async function buildCommand(args: Sync.BuildCmdArgs) {
 }
 
 async function getDeployPaths(): Promise<string[]> {
+  // #46: a corrupt sync.diff.manifest.json must ABORT, not silently fall through
+  // to a full-scope deploy. getDiffFile() throws DiffFileCorruptError only when
+  // the file is present-but-unreadable; a genuinely absent diff file leaves
+  // isDiffFileCorrupt() false and we proceed to a full deploy as before.
+  if (ConfigManager.isDiffFileCorrupt()) {
+    ConfigManager.getDiffFile(); // throws DiffFileCorruptError with the reason
+  }
   let changedPaths: string[] = [];
   try {
     changedPaths = ConfigManager.getDiffFile().changed || [];
-  } catch (e) {}
+  } catch (e) {
+    // Only "no diff file present" reaches here (the corrupt case threw above);
+    // fall back to a full-scope deploy.
+  }
   if (changedPaths.length > 0) {
     const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
       {
@@ -309,6 +332,11 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
     const targetServer = credentials.instance;
     if (!targetServer) {
       logger.error("No server configured for deploy!");
+      // #49: route the next step through the DX19 taxonomy (config category)
+      // instead of hardcoding SN_* advice.
+      logErrorHint(new Error("missing config: no instance configured for deploy"));
+      // #3: a misconfigured deploy must fail the shell, not report success.
+      process.exitCode = 1;
       return;
     }
 
@@ -318,8 +346,12 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
       logScopedEndpointCapability("deploy");
     } catch (e) {
       logger.error(
-        "Unable to reach ServiceNow instance before deploy. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
+        `Unable to reach ServiceNow instance ${targetServer} before deploy. Check the instance URL and network connectivity.`
       );
+      // #49: classify the real reason (network vs auth) via the DX19 taxonomy.
+      logErrorHint(e);
+      // #3: an unreachable instance must fail the shell.
+      process.exitCode = 1;
       return;
     }
 
@@ -346,6 +378,12 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
       return;
     }
     const pushResults = await AppUtils.pushFiles(appFileList);
+    // #3: deploy shares push's failure model — per-record failures are folded
+    // into { success: false } results, so a partially-failed deploy previously
+    // exited 0. Fail the shell whenever any record failed.
+    if (pushResults.some((res) => !res.success)) {
+      process.exitCode = 1;
+    }
     logPushResults(pushResults);
   });
 }

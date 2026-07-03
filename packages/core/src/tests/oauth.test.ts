@@ -33,7 +33,12 @@ describe("createTokenManager (OAuth)", () => {
 
   it("refreshes with the refresh_token when the access token has expired", async () => {
     const { post, calls } = poster([
-      { access_token: "A", refresh_token: "R", expires_in: -1 }, // forces immediate expiry
+      // A 1-second lifetime is shorter than EXPIRY_SKEW_MS (30s), so the manager
+      // treats the token as already needing refresh on the next getToken. (A
+      // non-positive expires_in is no longer a valid expiry trick — it now falls
+      // back to the default TTL so a malformed server value can't force a refresh
+      // storm.)
+      { access_token: "A", refresh_token: "R", expires_in: 1 },
       { access_token: "B", refresh_token: "R2", expires_in: 3600 },
     ]);
     const tm = createTokenManager(creds, oauth, post);
@@ -60,7 +65,8 @@ describe("createTokenManager (OAuth)", () => {
     let call = 0;
     const post: TokenPoster = async (_p, body) => {
       call += 1;
-      if (call === 1) return { access_token: "A", refresh_token: "R", expires_in: -1 };
+      // 1s lifetime < EXPIRY_SKEW_MS (30s) ⇒ treated as expired on the next call.
+      if (call === 1) return { access_token: "A", refresh_token: "R", expires_in: 1 };
       if (body.includes("grant_type=refresh_token")) throw new Error("invalid_grant");
       return { access_token: "C", refresh_token: "R3", expires_in: 3600 };
     };

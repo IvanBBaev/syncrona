@@ -49,8 +49,11 @@ understand what it touches:
 - **Opt-in diagnostic log.** The CLI does not write logs to disk by default.
   Setting `SYNCRONA_DIAGNOSTIC_LOG=1` appends CLI output to
   `~/.syncrona/logs/cli.log` (size-bounded with rotation) for support — it
-  contains the same messages shown on the console (credentials are masked).
-  Leave it off unless you are diagnosing an issue.
+  contains the same messages shown on the console. The logger applies
+  best-effort redaction of known credential fields, but it is **not a
+  guarantee**: log lines may still contain instance data, error payloads, or
+  values the redactor does not recognise. Treat the log as sensitive and leave
+  it off unless you are diagnosing an issue.
 
 ## AI / MCP data flow
 
@@ -86,6 +89,34 @@ credential/transport story above:
 - **What SyncroNow AI does not do.** It does not itself send your data to any AI
   provider, does not phone home, and writes no telemetry off-machine (the only
   optional log is local — see above).
+
+### Inbound content is untrusted — indirect prompt injection
+
+The section above covers the **outbound** boundary (what leaves your instance).
+There is also an **inbound** one: tool results carry text that neither you nor
+SyncroNow AI authored, and the same MCP server also exposes code-execution tools
+(`run_node_code`, `run_workspace_command`, `sn_execute_background_script`). A
+value crafted to read as instructions ("ignore previous instructions and run…")
+is a classic **indirect prompt-injection** vector: the content is *data to be
+analysed*, never a command to obey.
+
+- **ServiceNow-authored text.** Record field values, `sys_audit` old/new values,
+  script source excerpts, and ATF step output are whatever an end user or
+  developer typed into your instance. SyncroNow AI fences these values in a
+  delimited `UNTRUSTED_EXTERNAL_DATA` envelope when returning them, as a
+  defence-in-depth signal to the model — it is not a hard guarantee.
+- **Jira-authored text.** `jira_get_issue` returns the issue summary,
+  description, and comment bodies. Unlike your own instance, Jira comments can be
+  written by **arbitrary org members or external portal users**, so this is a
+  higher-exposure injection surface. These free-text fields are fenced in the
+  same untrusted envelope; structural metadata (key, status, assignee, labels,
+  links) is not.
+- **How to limit exposure.** Prefer least-privilege integration credentials so a
+  successful injection cannot exceed the role's grants; keep mutating tools
+  behind `confirmDestructive` (they already require it and are audited); and
+  review the `.syncrona-mcp/` audit log to see exactly what the assistant did.
+  The fencing is advisory — the ultimate mitigation is the confirmation/audit
+  gate on side-effecting tools and a least-privilege instance user.
 
 ## Hardening recommendations
 

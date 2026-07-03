@@ -6,7 +6,7 @@ import {
   suggestAtfTest,
   type DiffRecordInput,
 } from "../analysis";
-import { toJsonText } from "../runtimeUtils";
+import { escapeQueryValue, toJsonText } from "../runtimeUtils";
 
 import type { ToolResponse } from "../toolResponse";
 
@@ -54,10 +54,6 @@ function errorResponse(message: string): ToolResponse {
     isError: true,
     content: [{ type: "text", text: message }],
   };
-}
-
-function escapeQueryValue(value: string): string {
-  return value.replace(/\^/g, " ");
 }
 
 function readLocalRecordsFromManifest(

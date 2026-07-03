@@ -96,14 +96,22 @@ export const getCurrentBranch = async (): Promise<string | null> => {
   }
 };
 
+// Collapse either separator to a single "/" so a segment comparison works no
+// matter the OS. On Windows this matters twice over: `git diff` always emits
+// forward slashes, while path.relative()/path.sep produce backslashes — so the
+// two would never line up and every in-scope file would be dropped (an empty
+// `push --diff`). Normalizing both sides removes that platform trap.
+const toPosixSeparators = (p: string): string => p.replace(/\\/g, "/");
+
 const isValidScope = (
   file: string,
   scope: string,
   baseRepoPath: string
 ): boolean => {
-  const relativePath = path.relative(baseRepoPath, scope);
+  const relativePath = toPosixSeparators(path.relative(baseRepoPath, scope));
+  const normalizedFile = toPosixSeparators(file);
   // Require a full path-segment match. A bare startsWith also accepted sibling
   // directories that merely share the prefix (scope "src" leaking "src-other"),
   // so a file is in scope only when it equals the scope dir or sits beneath it.
-  return file === relativePath || file.startsWith(relativePath + path.sep);
+  return normalizedFile === relativePath || normalizedFile.startsWith(relativePath + "/");
 };

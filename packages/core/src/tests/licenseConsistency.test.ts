@@ -49,4 +49,37 @@ describe("license consistency (GPL relicense, BA8)", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  // #26: the package.json `license` field alone is not enough — a package can
+  // ship an SPDX pointer to GPL while its LICENSE file still contains stale MIT
+  // text (a GPL violation in the published tarball). Assert the FILE content.
+  // The LICENSE files are added by a separate work stream; where a LICENSE is
+  // not present yet, skip that package (tolerant of the in-flight race) but
+  // still fail hard on any package whose LICENSE contains MIT text.
+  it("every package LICENSE file, when present, is GPL text (never MIT)", () => {
+    const packagesDir = path.join(REPO_ROOT, "packages");
+    const mitOffenders: string[] = [];
+    const nonGplOffenders: string[] = [];
+    for (const name of readdirSync(packagesDir)) {
+      const pkgPath = path.join(packagesDir, name, "package.json");
+      if (!existsSync(pkgPath)) continue; // not a package dir
+      const licensePath = path.join(packagesDir, name, "LICENSE");
+      if (!existsSync(licensePath)) {
+        // LICENSE not copied in yet — tolerate the race, don't fail spuriously.
+        continue;
+      }
+      const text = readFileSync(licensePath, "utf-8");
+      // The MIT preamble is the unambiguous marker of stale MIT text.
+      if (text.includes("Permission is hereby granted, free of charge")) {
+        mitOffenders.push(name);
+      }
+      if (!text.includes("GNU GENERAL PUBLIC LICENSE") || !text.includes("Version 3")) {
+        nonGplOffenders.push(name);
+      }
+    }
+    expect({ mitOffenders, nonGplOffenders }).toEqual({
+      mitOffenders: [],
+      nonGplOffenders: [],
+    });
+  });
 });

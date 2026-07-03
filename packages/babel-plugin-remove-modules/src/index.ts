@@ -10,7 +10,7 @@ export default function() {
     else throw new Error("Issues with comment.loc on babel plugin. Talk to a dev to resolve this.");
   }
   function getCommentTags(path: NodePath<t.ImportDeclaration>) {
-    let node = path.node;
+    const node = path.node;
     let comments = "";
     if (node.leadingComments && node.leadingComments.length > 0) {
       comments = node.leadingComments
@@ -25,13 +25,13 @@ export default function() {
     }
     const tags = new Map<string, string | boolean>();
     const tagRegex = /@\w+\s*=?\s*\w+/g;
-    let matches = comments.match(tagRegex);
+    const matches = comments.match(tagRegex);
     if (matches) {
-      for (let match of matches) {
+      for (const match of matches) {
         if (match.includes("=")) {
-          let chunks = match.split("=");
-          let tag = chunks[0].trim().substring(1);
-          let value = chunks[1].trim();
+          const chunks = match.split("=");
+          const tag = chunks[0].trim().substring(1);
+          const value = chunks[1].trim();
           tags.set(tag, value);
         } else {
           tags.set(match.substring(1), true);
@@ -45,7 +45,7 @@ export default function() {
     _imports: string[],
     path: NodePath<t.ImportDeclaration>
   ) {
-    for (let _import of _imports) {
+    for (const _import of _imports) {
       path.scope.rename(_import, [moduleName, _import].join("."));
     }
   }
@@ -61,7 +61,7 @@ export default function() {
           return;
         }
         //load all imported modules
-        let _imports = path.node.specifiers.reduce(
+        const _imports = path.node.specifiers.reduce(
           (acc, cur) => {
             if (cur.type === "ImportSpecifier") {
               if(cur.imported.type == "Identifier")
@@ -91,11 +91,6 @@ export default function() {
         }
         //remove import path
         path.remove();
-
-        function isLocal(moduleName: string) {
-          let reg = /\./;
-          return reg.test(moduleName);
-        }
       },
       ExportNamedDeclaration(path) {
         if (path.node.declaration) {
@@ -105,7 +100,7 @@ export default function() {
         }
       },
       ExportDefaultDeclaration(path) {
-        let type = path.node.declaration.type;
+        const type = path.node.declaration.type;
         if (type === "FunctionDeclaration") {
           //anonymous function
           if (!(path.node.declaration as t.FunctionDeclaration).id) {

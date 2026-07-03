@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
-import memoryFS from "memory-fs";
+import { createFsFromVolume, Volume } from "memfs";
 import webpack from "webpack";
 import path from "path";
 interface webpackPluginOpts {
@@ -12,7 +12,7 @@ const run: Sync.PluginFunc = async function (
   content: string,
   options: webpackPluginOpts
 ): Promise<Sync.PluginResults> {
-  const memFS = new memoryFS();
+  const memFS = createFsFromVolume(new Volume());
   let wpOptions: webpack.Configuration = {};
   const configFile = await loadWebpackConfig();
   //First, try to load configuration file
@@ -48,7 +48,7 @@ const run: Sync.PluginFunc = async function (
         reject(new Error("Webpack failed to create the bundle."));
         return;
       }
-      resolve(memFS.readFileSync("/bundle.js", "utf-8"));
+      resolve(memFS.readFileSync("/bundle.js", "utf-8") as string);
     });
   });
   try {

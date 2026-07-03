@@ -5,6 +5,7 @@ import {
   snRequest,
   toTableResultRows,
 } from "./servicenowCore";
+import { escapeQueryValue } from "./runtimeUtils";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
@@ -47,7 +48,7 @@ async function getCurrentUserSysId(timeoutMs: number): Promise<string> {
   const users = await tableGet(
     "sys_user",
     {
-      query: `user_name=${snCfg.user}`,
+      query: `user_name=${escapeQueryValue(snCfg.user)}`,
       fields: ["sys_id", "user_name"],
       limit: 1,
     },
@@ -67,7 +68,7 @@ async function getUserPreference(
   const prefs = await tableGet(
     "sys_user_preference",
     {
-      query: `user=${userSysId}^name=${prefName}`,
+      query: `user=${escapeQueryValue(userSysId)}^name=${escapeQueryValue(prefName)}`,
       fields: ["sys_id", "name", "value", "user"],
       limit: 1,
     },
@@ -115,7 +116,7 @@ async function getScopeByCode(
   const scopes = await tableGet(
     "sys_scope",
     {
-      query: `scope=${scopeCode}`,
+      query: `scope=${escapeQueryValue(scopeCode)}`,
       fields: ["sys_id", "scope", "name"],
       limit: 1,
     },
@@ -131,7 +132,7 @@ async function getScopeBySysId(
   const scopes = await tableGet(
     "sys_scope",
     {
-      query: `sys_id=${scopeSysId}`,
+      query: `sys_id=${escapeQueryValue(scopeSysId)}`,
       fields: ["sys_id", "scope", "name"],
       limit: 1,
     },
@@ -147,7 +148,7 @@ async function getUpdateSetByName(
   const sets = await tableGet(
     "sys_update_set",
     {
-      query: `name=${updateSetName}`,
+      query: `name=${escapeQueryValue(updateSetName)}`,
       fields: ["sys_id", "name", "state", "application"],
       limit: 1,
     },
@@ -163,7 +164,7 @@ async function getUpdateSetBySysId(
   const sets = await tableGet(
     "sys_update_set",
     {
-      query: `sys_id=${updateSetSysId}`,
+      query: `sys_id=${escapeQueryValue(updateSetSysId)}`,
       fields: ["sys_id", "name", "state", "application"],
       limit: 1,
     },

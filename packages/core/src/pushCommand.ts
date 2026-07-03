@@ -106,9 +106,34 @@ async function loadCollaborationLock(): Promise<CollaborationLock | null> {
   }
 }
 
+// process.kill(pid, 0) sends no signal but performs the permission/existence
+// check: it throws ESRCH when no such process exists (owner crashed/exited) and
+// EPERM when the process exists but is owned by another user. "Alive" therefore
+// means "did not throw ESRCH". A non-finite/absent pid is treated as unknown →
+// alive, so the age check stays the sole authority for legacy/foreign locks.
+function isProcessAlive(pid: number | undefined): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return true;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM = the process exists (we just can't signal it) → still alive.
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 function isCollaborationLockStale(lock: CollaborationLock): boolean {
   const createdAtMs = Date.parse(lock.createdAt);
   if (!Number.isFinite(createdAtMs)) {
+    return true;
+  }
+  // A lock whose owning process is gone is stale immediately, even inside the
+  // 30-minute window: a crashed push must not block collaborators for half an
+  // hour. Age remains the backstop for locks whose owner is still alive (or
+  // whose pid can't be checked, e.g. a lock written on another host).
+  if (!isProcessAlive(lock.pid)) {
     return true;
   }
   return Date.now() - createdAtMs > COLLABORATION_LOCK_MAX_AGE_MS;
@@ -161,6 +186,21 @@ async function releaseCollaborationLock(): Promise<void> {
   }
 }
 
+// #18: the collaboration-lock primitives are otherwise reachable only through
+// the full pushCommand flow (network client, inquirer prompts, config). This
+// test-facing surface lets the lock lifecycle — atomic acquire, stale-pid
+// reclaim, real-filesystem release — be exercised directly against a temp dir.
+// Not part of the public CLI API; exported solely for coverage of the lock
+// contract that guards concurrent pushes.
+export const __lockInternals = {
+  acquireCollaborationLock,
+  releaseCollaborationLock,
+  loadCollaborationLock,
+  isCollaborationLockStale,
+  isProcessAlive,
+  getCollaborationLockPath,
+};
+
 export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
   setLogLevel(args);
   await scopeCheck(async () => {
@@ -177,6 +217,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         if (decryptWarning) {
           logger.warn(decryptWarning);
         }
+        // #49: tailor the next step to how credentials are configured instead of
+        // hardcoding SN_* advice, and route it through the DX19 taxonomy sink.
+        // No instance resolved is a configuration problem (missing config/.env).
+        logErrorHint(new Error("missing config: no instance configured for push"));
+        // #3: a misconfigured push (including `push --ci`) must fail the shell.
+        process.exitCode = 1;
         return;
       }
 
@@ -186,8 +232,13 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         logScopedEndpointCapability("push");
       } catch (e) {
         logger.error(
-          "Unable to reach ServiceNow instance before push. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
+          `Unable to reach ServiceNow instance ${targetServer} before push. Check the instance URL and network connectivity.`
         );
+        // #49: classify the real reason (network vs auth) via the DX19 taxonomy
+        // rather than hardcoding SN_* env-var advice.
+        logErrorHint(e);
+        // #3: an unreachable instance must fail the shell, not report success.
+        process.exitCode = 1;
         return;
       }
 
@@ -306,6 +357,11 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       await writePushCheckpoint({ attempted, succeeded, failed });
       if (failed.length === 0) {
         await clearPushCheckpoint();
+      } else {
+        // #3: per-record push failures never reach the outer catch (pushFiles
+        // converts them to { success: false } results), so `push --ci` used to
+        // exit 0 on a broken deployment. Fail the shell whenever any record failed.
+        process.exitCode = 1;
       }
 
       logPushResults(pushResults);

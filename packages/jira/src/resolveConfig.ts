@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * Resolve a {@link JiraConfig} for a profile. Precedence: environment variables
- * first (so CI / one-off runs need no stored login), then the encrypted
- * credential store. Returns null when nothing is configured.
+ * Resolve a {@link JiraConfig} for a profile.
+ *
+ * Precedence depends on intent:
+ * - An *explicit* profile (a non-empty name the caller passed via `--profile`)
+ *   is a deliberate choice, so it is tried first; only if it has no usable stored
+ *   credentials do we fall back to the environment.
+ * - With *no* explicit profile, environment variables win (so CI / one-off runs
+ *   need no stored login), then the `"default"` stored profile.
+ *
+ * Returns null when nothing is configured.
  */
 import {
   loadJiraCredentials,
@@ -60,27 +67,34 @@ function configFromStored(stored: StoredJiraCredentials | null): JiraConfig | nu
   return config;
 }
 
-/** Async resolution (core CLI): env first, then the credential store. */
+/** Async resolution (core CLI). See the precedence note on the module doc. */
 export async function resolveJiraConfig(opts: { profile?: string } = {}): Promise<JiraConfig | null> {
+  const explicitProfile = (opts.profile || "").trim();
+  if (explicitProfile) {
+    // Deliberately named profile wins over ambient env.
+    const fromStore = configFromStored(await loadJiraCredentials(explicitProfile));
+    return fromStore ?? configFromEnv(process.env);
+  }
   const fromEnv = configFromEnv(process.env);
   if (fromEnv) {
     return fromEnv;
   }
-  const profile = (opts.profile || "").trim() || DEFAULT_PROFILE;
-  const stored = await loadJiraCredentials(profile);
-  return configFromStored(stored);
+  return configFromStored(await loadJiraCredentials(DEFAULT_PROFILE));
 }
 
 /**
- * Sync resolution (MCP runtime): env first, then the credential store. Never
- * throws — returns null when nothing usable is configured.
+ * Sync resolution (MCP runtime). Same precedence as {@link resolveJiraConfig}.
+ * Never throws — returns null when nothing usable is configured.
  */
 export function resolveJiraConfigSync(opts: { profile?: string } = {}): JiraConfig | null {
+  const explicitProfile = (opts.profile || "").trim();
+  if (explicitProfile) {
+    const fromStore = configFromStored(loadJiraCredentialsSync(explicitProfile));
+    return fromStore ?? configFromEnv(process.env);
+  }
   const fromEnv = configFromEnv(process.env);
   if (fromEnv) {
     return fromEnv;
   }
-  const profile = (opts.profile || "").trim() || DEFAULT_PROFILE;
-  const stored = loadJiraCredentialsSync(profile);
-  return configFromStored(stored);
+  return configFromStored(loadJiraCredentialsSync(DEFAULT_PROFILE));
 }

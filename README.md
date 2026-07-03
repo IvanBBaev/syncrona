@@ -1,6 +1,12 @@
 # SyncroNow AI
 
-| [![npm version](https://img.shields.io/npm/v/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncro-now-ai/core) | [![npm downloads](https://img.shields.io/npm/dm/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/@syncro-now-ai/core) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+<!-- npm badges intentionally omitted: the @syncro-now-ai/* packages are not yet
+     published to npm, so live npm version/downloads shields would render as
+     "invalid". Restore them at first publish:
+     [![npm version](https://img.shields.io/npm/v/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncro-now-ai/core)
+     [![npm downloads](https://img.shields.io/npm/dm/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/@syncro-now-ai/core) -->
+
+| ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
 |:--:|:--:|:--:|:--:|:--:|
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
 
@@ -14,7 +20,10 @@ SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It all
 
 Because your scoped-app code is downloaded as plain, editable files in a project folder, SyncroNow AI is well suited for **tracking your ServiceNow source code in Git** — giving you real diffs, history, branches and pull requests over code that would otherwise live only inside the instance.
 
-Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list=PL1myMMPgZzOrOeu03YsuNmsDI2k0vadTq)!
+> **Heritage:** SyncroNow AI is a modern successor to
+> [Sincronia](https://github.com/nuvolo/sincronia) (`sinc`). If you know that
+> tool, the mental model carries over — but the CLI, package scope and build
+> pipeline here are different (see [Installation](#installation)).
 
 **Project documentation**
 
@@ -81,7 +90,29 @@ Check out the [tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list
 
 ## Installation
 
-### Global CLI quick start
+> ⚠️ **Not yet published to npm.** The `@syncro-now-ai/*` packages are
+> pre-release and are **not on the npm registry yet**, so `npm i -g` /
+> `npx @syncro-now-ai/core` will not resolve. Until the first publish, install
+> **from source** (below). The published-install snippet is shown for when the
+> packages go live.
+
+### Install from source (works today)
+
+```bash
+git clone https://github.com/IvanBBaev/syncrona
+cd syncrona
+npm ci
+npm run build
+# expose the CLI as `syncro-now-ai` on your PATH:
+npm link --workspace @syncro-now-ai/core
+syncro-now-ai login
+syncro-now-ai init
+```
+
+Prefer not to link globally? Run the built CLI directly from the repo with
+`node packages/core/dist/index.js <command>`.
+
+### Global CLI quick start (once published to npm)
 
 ```bash
 npm i -g @syncro-now-ai/core
@@ -100,7 +131,7 @@ In order to use SyncroNow AI, you will need:
 >
 > - Install WSL with an Ubuntu distribution (Windows version 1903+; earlier
 >   versions are untested/not working)
-> - Run all `syncrona` commands from inside the WSL shell
+> - Run all `syncro-now-ai` commands from inside the WSL shell
 > - (Optional) Windows Terminal is recommended for proper text rendering
 >
 > Native Windows support (PowerShell install, Windows Credential Manager) is
@@ -234,7 +265,9 @@ Recommendations:
   (`~/.syncrona` is created with user-only access) and full-disk encryption.
 - For **CI/CD and shared environments**, set `SYNCRONA_STORE_KEY` from a secrets
   manager (or prefer plain environment variables over the on-disk store).
-- On a workstation, enable `SYNCRONA_USE_KEYCHAIN=1` for keychain-backed keys.
+- On a workstation, the OS keychain is used automatically (as long as the
+  optional `@napi-rs/keyring` dependency is installed) — no flag needed. Set
+  `SYNCRONA_USE_KEYCHAIN=0` only to opt out (e.g. headless environments).
 - Always use a dedicated integration user with least-privilege roles, and rotate
   its password if a credential file may have been exposed.
 
@@ -298,6 +331,34 @@ npx syncro-now-ai dev --refresh-interval 0    # disable polling; refresh manuall
 
 Run with `--log-level debug` to see `Manifest refresh took Xms` and per-file
 rule matches.
+
+#### Jira integration
+
+`syncro-now-ai jira [key]` pulls read-only context for a Jira issue (summary,
+description, status, type, priority, assignee/reporter, labels, components,
+parent, subtasks, links, fix versions and recent comments) — handy for pairing
+an issue with the ServiceNow change you are working on. If you omit the key, the
+CLI parses it from the current git branch name (e.g. `feature/SCRUM-123-foo` →
+`SCRUM-123`). It supports both **Jira Cloud** and **Jira Server / Data Center**.
+
+Save credentials once with `syncro-now-ai jira-login`; they are stored in the
+same encrypted global CredentialStore as ServiceNow credentials. Configuration
+is resolved with this precedence (first match wins):
+
+1. `--profile <name>` — a named profile in the CredentialStore.
+2. Environment variables (below).
+3. The default stored Jira profile.
+
+| Variable           | Purpose                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| `JIRA_BASE_URL`    | Jira base URL, e.g. `https://acme.atlassian.net` (Cloud) or `https://jira.acme.com` (Server / DC). |
+| `JIRA_TOKEN`       | Cloud API token, or a Server / Data Center Personal Access Token (PAT).                      |
+| `JIRA_EMAIL`       | Account email — **required for Cloud** (paired with the API token as Basic auth). Omit for Server / DC PAT (Bearer) auth. |
+| `JIRA_DEPLOYMENT`  | Force the deployment type: `cloud` or `server`. Auto-detected from the base URL when unset.  |
+
+See [packages/jira/README.md](packages/jira/README.md) for the full
+configuration reference (Cloud vs Server/DC auth semantics, profiles and
+precedence).
 
 ### Workflow
 
@@ -664,9 +725,7 @@ scope directory, and share `node_modules`/plugins at the root. Full guide:
 
 After downloading a scope, run `npx syncro-now-ai docs` to generate Markdown
 documentation and Mermaid diagrams for it (overview, tables, per-record files) —
-a quick way to explore what a real SyncroNow AI project looks like. The
-[tutorial videos](https://www.youtube.com/watch?v=CqdppnM-FvM&list=PL1myMMPgZzOrOeu03YsuNmsDI2k0vadTq)
-linked above also walk through a complete project setup.
+a quick way to explore what a real SyncroNow AI project looks like.
 
 ## Plugin List
 

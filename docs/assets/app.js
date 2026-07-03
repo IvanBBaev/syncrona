@@ -232,12 +232,12 @@
     var scenarios = [
       // 1 · Dev workflow
       [
-        { cmd: "syncrona login" },
+        { cmd: "syncro-now-ai login" },
         { out: [["✔ ", "ok"], ["Saved credentials · ", "muted"], ["dev12345.service-now.com"]] },
-        { cmd: "syncrona init" },
+        { cmd: "syncro-now-ai init" },
         { out: [["✔ ", "ok"], ["Wrote ", "muted"], ["sync.config.js · sync.manifest.json · .env"]] },
         { out: [["✔ ", "ok"], ["Scope ", "muted"], ["x_acme_app", "accent"], [" · 142 files tracked", "muted"]] },
-        { cmd: "syncrona dev" },
+        { cmd: "syncro-now-ai dev" },
         { out: [["▸ ", "blue"], ["watching ", "muted"], ["src/"], [" · build & push on save", "muted"]] },
         { wait: 700 },
         { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 280 },
@@ -249,7 +249,7 @@
       ],
       // 2 · Diff push
       [
-        { cmd: "syncrona push --diff main" },
+        { cmd: "syncro-now-ai push --diff main" },
         { out: [["▸ ", "blue"], ["git diff main"], [" · 3 files changed", "muted"]] },
         { wait: 350 },
         { out: [["~ ", "warn"], ["PriceCalc/script.ts"], [" → babel + typescript", "muted"]], delay: 240 },
@@ -260,8 +260,8 @@
       ],
       // 3 · MCP / AI analysis
       [
-        { cmd: "syncrona mcp" },
-        { out: [["▸ ", "blue"], ["MCP server listening"], [" · stdio · 59 tools", "muted"]] },
+        { cmd: "syncro-now-ai mcp" },
+        { out: [["▸ ", "blue"], ["MCP server listening"], [" · stdio · 61 tools", "muted"]] },
         { wait: 600 },
         { out: [["🤖 ", "accent"], ["sn_build_dependency_graph"]], delay: 320 },
         { out: [["✔ ", "ok"], ["142 nodes · 318 edges"], [" · 2 cycles", "warn"]] },
@@ -272,7 +272,7 @@
       ],
       // 4 · Docs
       [
-        { cmd: "syncrona docs" },
+        { cmd: "syncro-now-ai docs" },
         { out: [["▸ ", "blue"], ["generating ", "muted"], ["markdown + mermaid"]] },
         { wait: 650 },
         { out: [["✔ ", "ok"], ["overview.md"], [" · 12 tables · 142 records", "muted"]], delay: 300 },

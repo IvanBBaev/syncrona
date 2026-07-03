@@ -2,11 +2,12 @@
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
-const { mkdtempSync, rmSync } = require('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
 const { handleJiraTool } = require('../dist/handlers/jiraToolHandlers.js');
+const { wrapUntrustedData } = require('../dist/runtimeUtils.js');
 
 /** Run a git command in `cwd`, returning trimmed stdout. */
 function git(cwd, ...args) {
@@ -118,6 +119,32 @@ test('jira_get_issue: missing credentials is a clear error', async () => {
   assert.match(res.content[0].text, /No Jira credentials configured/);
 });
 
+test('jira_get_issue: an undecryptable stored profile points at re-login, not at missing config', async () => {
+  // A stored profile that exists but cannot be decrypted (credentials copied from
+  // another machine/user) must produce re-login guidance — the generic "No Jira
+  // credentials configured" would send the user to fix the wrong thing.
+  const { jiraProfileToFilename } = require('@syncro-now-ai/credential-store');
+  const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'syncrona-jira-home-'));
+  const realHomedir = os.homedir;
+  try {
+    const jiraDir = path.join(tmpHome, '.syncrona', 'jira');
+    mkdirSync(jiraDir, { recursive: true });
+    writeFileSync(path.join(jiraDir, jiraProfileToFilename('default')), 'not-valid-ciphertext');
+    // The credential store resolves its dir via os.homedir() at call time.
+    os.homedir = () => tmpHome;
+
+    const res = await handleJiraTool('jira_get_issue', { key: 'ABC-1' }, NO_GIT_CTX);
+
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /could not be decrypted/);
+    assert.match(res.content[0].text, /jira-login --profile default/);
+    assert.doesNotMatch(res.content[0].text, /No Jira credentials configured/);
+  } finally {
+    os.homedir = realHomedir;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
 test('jira_get_issue: fetches and returns normalized JSON for an explicit key', async () => {
   setCloudEnv();
   stubFetch(200, CLOUD_RAW);
@@ -127,8 +154,10 @@ test('jira_get_issue: fetches and returns normalized JSON for an explicit key', 
   assert.equal(res.isError, false);
   const issue = JSON.parse(res.content[0].text);
   assert.equal(issue.key, 'ABC-1');
-  assert.equal(issue.summary, 'Do the thing');
-  assert.equal(issue.description, 'Details here.');
+  // Issue prose is attacker-controllable, so summary/description are fenced as
+  // untrusted data; structured fields (key, status, assignee) stay verbatim.
+  assert.equal(issue.summary, wrapUntrustedData('Do the thing', 'jira'));
+  assert.equal(issue.description, wrapUntrustedData('Details here.', 'jira'));
   assert.equal(issue.status, 'In Progress');
   assert.equal(issue.assignee, 'Alice');
   assert.deepEqual(issue.labels, ['backend']);

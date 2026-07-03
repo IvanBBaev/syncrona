@@ -9,6 +9,7 @@ const mockVerifyAuth = jest.fn();
 const mockSaveJiraCredentials = jest.fn();
 const mockRemoveJiraCredentials = jest.fn();
 const mockRemoveAllJiraCredentials = jest.fn();
+const mockJiraCredentialHealth = jest.fn();
 const mockGetCurrentBranch = jest.fn();
 const mockPrompt = jest.fn();
 const mockLoggerInfo = jest.fn();
@@ -24,12 +25,15 @@ jest.mock("@syncro-now-ai/jira", () => ({
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
   NO_JIRA_CONFIG_MESSAGE:
     "No Jira credentials configured. Run `syncro-now-ai jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.",
+  jiraUndecryptableMessage: (profile: string) =>
+    `Stored Jira credentials for profile "${profile}" could not be decrypted — re-run jira-login.`,
 }));
 
 jest.mock("@syncro-now-ai/credential-store", () => ({
   saveJiraCredentials: (...args: unknown[]) => mockSaveJiraCredentials(...args),
   removeJiraCredentials: (...args: unknown[]) => mockRemoveJiraCredentials(...args),
   removeAllJiraCredentials: (...args: unknown[]) => mockRemoveAllJiraCredentials(...args),
+  jiraCredentialHealth: (...args: unknown[]) => mockJiraCredentialHealth(...args),
 }));
 
 jest.mock("../Logger", () => ({
@@ -96,6 +100,7 @@ beforeEach(() => {
     token: "tok",
   });
   mockGetIssue.mockResolvedValue(SAMPLE_ISSUE);
+  mockJiraCredentialHealth.mockReturnValue("missing");
   mockSaveJiraCredentials.mockResolvedValue(undefined);
   mockRemoveJiraCredentials.mockResolvedValue(undefined);
   mockRemoveAllJiraCredentials.mockResolvedValue(2);
@@ -205,11 +210,29 @@ describe("jiraCommand", () => {
 
   it("errors when no credentials are configured", async () => {
     mockResolveJiraConfig.mockResolvedValue(null);
+    mockJiraCredentialHealth.mockReturnValue("missing");
 
     await jiraCommand({ ...BASE_ARGS, key: "ABC-1" });
 
     expect(mockGetIssue).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("No Jira credentials"));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("points at re-login when a stored profile exists but won't decrypt", async () => {
+    mockResolveJiraConfig.mockResolvedValue(null);
+    mockJiraCredentialHealth.mockReturnValue("undecryptable");
+
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1", profile: "work" });
+
+    expect(mockJiraCredentialHealth).toHaveBeenCalledWith("work");
+    expect(mockGetIssue).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("could not be decrypted")
+    );
+    expect(mockLoggerError).not.toHaveBeenCalledWith(
+      expect.stringContaining("No Jira credentials")
+    );
     expect(process.exitCode).toBe(1);
   });
 

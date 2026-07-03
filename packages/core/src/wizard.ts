@@ -7,7 +7,13 @@ import fs from "fs";
 const fsp = fs.promises;
 import { logger } from "./Logger";
 import path from "path";
-import { snClient, unwrapSNResponse, defaultClient, preloadStoredCredentials } from "./snClient";
+import {
+  snClient,
+  unwrapSNResponse,
+  defaultClient,
+  preloadStoredCredentials,
+  type SNClient,
+} from "./snClient";
 import {
   buildManifestFromTableAPI,
   listAppsFromTableAPI,
@@ -120,7 +126,7 @@ export async function startWizard() {
       if (!selectedApp) {
         return;
       }
-      const downloadedManifest = await downloadApp(selectedApp);
+      const downloadedManifest = await downloadApp(selectedApp, client);
       filesReady = countManifestFiles(downloadedManifest);
       await generateDocsForManifest(downloadedManifest);
     } else {
@@ -290,9 +296,12 @@ function renderProgressBar(current: number, total: number): string {
   return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
 }
 
-async function downloadApp(scope: string) {
+async function downloadApp(scope: string, client: SNClient = defaultClient()) {
+  // #48: the wizard lists apps via the explicit store-backed client built from
+  // the just-saved credentials, so the download must use the SAME client.
+  // Falling back to defaultClient() (which prefers ambient SN_* env vars) could
+  // silently pull the scope from a different instance than the one listed.
   try {
-    const client = defaultClient();
     const config = ConfigManager.getConfig();
     let man: SN.AppManifest;
     try {

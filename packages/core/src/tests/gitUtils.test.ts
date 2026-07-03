@@ -101,6 +101,30 @@ describe("gitUtils", () => {
     );
   });
 
+  // #19: on Windows path.relative()/path.sep yield "\\" for the scope while git
+  // always emits "/", so a bare separator match dropped every in-scope file (an
+  // empty `push --diff`). isValidScope now normalizes both sides, so a file
+  // whose diff path uses the FOREIGN separator relative to the scope is still
+  // recognized. We feed a backslash-separated diff path to prove the classifier
+  // is separator-agnostic on Linux (where path.sep is "/").
+  it("keeps an in-scope file even when the diff path uses the foreign separator (#19)", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        if (args.includes("rev-parse")) {
+          cb(null, "/repo\n");
+        } else {
+          // A Windows-shaped diff path (backslashes) under the same scope.
+          cb(null, "M\tpackages\\scope\\src\\win.js");
+        }
+      }
+    );
+
+    const result = await gitDiffToEncodedPaths("HEAD~1");
+    // The file is recognized as in-scope and resolved to an absolute path.
+    expect(result).toContain("win.js");
+  });
+
   it("writeDiff resolves encoded paths and writes them to the diff file as JSON", async () => {
     mockEncodedPathsToFilePaths.mockResolvedValue(["/a/b.js", "/a/c.js"]);
     mockGetDiffPath.mockReturnValue("/repo/.syncrona/diff.json");

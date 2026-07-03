@@ -38,6 +38,36 @@ describe("encrypt / decrypt", () => {
     const ciphertext = encrypt("top-secret", KEY);
     expect(() => decrypt(ciphertext, randomBytes(32))).toThrow();
   });
+
+  it("rejects a truncated GCM auth tag (forgery resistance)", () => {
+    const [iv, tag, data] = encrypt("secret", KEY).split(":");
+    const shortTag = tag.slice(0, 16); // 8 bytes instead of the full 16
+    expect(() => decrypt(`${iv}:${shortTag}:${data}`, KEY)).toThrow(
+      /Invalid credential file format/
+    );
+  });
+
+  it("rejects a wrong-length IV", () => {
+    const [iv, tag, data] = encrypt("secret", KEY).split(":");
+    const shortIv = iv.slice(0, 30); // 15 bytes instead of 16
+    expect(() => decrypt(`${shortIv}:${tag}:${data}`, KEY)).toThrow(
+      /Invalid credential file format/
+    );
+  });
+
+  it("rejects a non-hex IV", () => {
+    const [, tag, data] = encrypt("secret", KEY).split(":");
+    expect(() => decrypt(`${"z".repeat(32)}:${tag}:${data}`, KEY)).toThrow(
+      /Invalid credential file format/
+    );
+  });
+
+  it("rejects an odd-length ciphertext body", () => {
+    const [iv, tag, data] = encrypt("secret", KEY).split(":");
+    expect(() => decrypt(`${iv}:${tag}:${data}a`, KEY)).toThrow(
+      /Invalid credential file format/
+    );
+  });
 });
 
 describe("instanceToFilename / filenameToInstance", () => {

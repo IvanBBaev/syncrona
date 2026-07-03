@@ -39,6 +39,32 @@ describe("isUnderPath", () => {
     const child = path.join(path.sep, "a", "b", "c");
     expect(isUnderPath(parent, child)).toBe(true);
   });
+
+  // #19: Windows path normalization, made Linux-testable by feeding literal
+  // Windows-shaped inputs (backslashes, drive letters, mixed separators). These
+  // used to hinge on path.sep, so on Linux a "\\"-separated path collapsed into
+  // one token and containment silently misfired. They now split on either
+  // separator, so the same logic holds on both platforms.
+  describe("cross-platform separators (#19)", () => {
+    it("recognizes containment for pure backslash (Windows) paths", () => {
+      expect(isUnderPath("C:\\proj\\src", "C:\\proj\\src\\table\\rec.js")).toBe(true);
+    });
+
+    it("rejects a divergent branch under a backslash parent", () => {
+      expect(isUnderPath("C:\\proj\\src", "C:\\proj\\other\\rec.js")).toBe(false);
+    });
+
+    it("matches a parent and child that mix separators (git '/' under Node '\\')", () => {
+      // git and globs emit forward slashes even on Windows, where Node builds
+      // paths with backslashes — the two must still line up.
+      expect(isUnderPath("C:\\proj\\src", "C:/proj/src/table/rec.js")).toBe(true);
+      expect(isUnderPath("C:/proj/src", "C:\\proj\\src\\table\\rec.js")).toBe(true);
+    });
+
+    it("ignores a trailing backslash on the parent", () => {
+      expect(isUnderPath("C:\\proj\\src\\", "C:\\proj\\src\\table\\rec.js")).toBe(true);
+    });
+  });
 });
 
 describe("toAbsolutePath", () => {

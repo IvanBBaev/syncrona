@@ -1322,13 +1322,24 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           default: false,
           description: "Run all ATF suites in the scope. Used when suiteId and testId are omitted.",
         },
+        confirmDestructive: {
+          type: "boolean",
+          default: false,
+          description:
+            "Required acknowledgement — running ATF tests executes a background script and mutates the instance. Must be true to run.",
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description: "Plan the run and record an audit entry without triggering ATF execution.",
+        },
         timeoutMs: {
           type: "number",
           minimum: 1000,
           maximum: 900000,
         },
       },
-      required: ["scope"],
+      required: ["scope", "confirmDestructive"],
     },
   },
   {

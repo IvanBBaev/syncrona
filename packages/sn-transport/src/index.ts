@@ -81,6 +81,19 @@ export function shouldRetryStatus(status: number): boolean {
 }
 
 /**
+ * Neutralize a user/config-supplied value before it is interpolated into a
+ * ServiceNow encoded query. `^` separates query conditions, so an unescaped `^`
+ * in a value lets a caller inject extra conditions and slip past a scope filter
+ * (e.g. `scope=app^sys_id=...`). Replacing `^` with a space keeps the value as a
+ * single condition operand. Use this for EVERY interpolated value, never on an
+ * already-assembled query string. Shared here so the CLI and the MCP server
+ * cannot drift on the escaping rule.
+ */
+export function escapeQueryValue(value: string): string {
+  return value.replace(/\^/g, " ");
+}
+
+/**
  * Maximum sustained request rate against a ServiceNow instance. The core CLI
  * enforces this via axios-rate-limit; the MCP server spaces requests by
  * 1000 / MAX_REQUESTS_PER_SECOND ms. Keep the two clients in agreement.

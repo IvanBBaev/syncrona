@@ -16,6 +16,7 @@ import { sanitizeForAudit, writeAuditEvent } from "./audit";
 import { appendMetricEvent } from "./metricsStore";
 import {
   commandResultToText,
+  structuredErrorText,
   toJsonText,
 } from "./runtimeUtils";
 import {
@@ -26,7 +27,7 @@ import {
 } from "./servicenowCore";
 import { getSessionContext } from "./sessionContext";
 import { MCP_TOOLS } from "./toolSchemas";
-import { getScopeDocsPaths, getScopeTableDocPath } from "./scopePaths";
+import { getScopeDocsPaths, getScopeTableDocPath, resolveContainedPath } from "./scopePaths";
 import {
   classifyRelationVisibility,
   toGraphFromUnknown,
@@ -199,7 +200,7 @@ export function withCorrelationIdInResponse(
   try {
     const parsed = JSON.parse(text);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return response;
+      return convergePlainTextError(response, text, correlationId);
     }
     const payload = parsed as Record<string, unknown>;
     if (typeof payload.correlationId === "string" && payload.correlationId.trim()) {
@@ -211,8 +212,39 @@ export function withCorrelationIdInResponse(
       content: [{ type: "text", text: toJsonText(payload) }, ...response.content.slice(1)],
     };
   } catch (_) {
+    return convergePlainTextError(response, text, correlationId);
+  }
+}
+
+/**
+ * Converge a plain-text response (one whose first content block is not a JSON
+ * object) onto the single structured error envelope. Only error responses are
+ * rewritten — successful plain-text output is left untouched — so every error
+ * the client sees carries a stable `code` and a `correlationId`, closing the
+ * gap where handler-local `errorResponse` strings had neither. Text already in
+ * the `Tool execution failed [CODE]:` envelope is left as-is.
+ */
+function convergePlainTextError(
+  response: { isError: boolean; content: Array<{ type: string; text: string }> },
+  text: string,
+  correlationId: string
+): { isError: boolean; content: Array<{ type: string; text: string }> } {
+  if (response.isError !== true) {
     return response;
   }
+  if (/^Tool execution failed \[/.test(text)) {
+    return response;
+  }
+  return {
+    ...response,
+    content: [
+      {
+        type: "text",
+        text: structuredErrorText(text, "TOOL_EXECUTION", { correlationId }),
+      },
+      ...response.content.slice(1),
+    ],
+  };
 }
 
 
@@ -746,7 +778,8 @@ export async function executeMcpToolIntegration(
       const docsRoot = getScopeDocsPaths(scopeCode);
       const writtenPaths: string[] = [];
       for (const file of files) {
-        const targetPath = path.join(docsRoot.dir, file.relativePath);
+        // relativePath is model-supplied; keep every write inside the bundle.
+        const targetPath = resolveContainedPath(docsRoot.dir, file.relativePath);
         mkdirSync(path.dirname(targetPath), { recursive: true });
         writeFileWithStableBackup(targetPath, file.content);
         writtenPaths.push(targetPath);

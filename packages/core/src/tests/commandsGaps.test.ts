@@ -15,7 +15,9 @@ const mockGetManifest = jest.fn();
 const mockGetConfig = jest.fn();
 const mockCheckRuleOrder = jest.fn();
 const mockGetDiffFile = jest.fn();
+const mockIsDiffFileCorrupt = jest.fn();
 const mockGetBuildPath = jest.fn();
+const mockLogErrorHint = jest.fn();
 
 const mockProcessManifest = jest.fn();
 const mockDownloadAllFiles = jest.fn();
@@ -51,6 +53,7 @@ jest.mock("../commandHelpers", () => ({
   setLogLevel: (...a: unknown[]) => mockSetLogLevel(...a),
   scopeCheck: (fn: () => Promise<void>) => fn(),
   logScopedEndpointCapability: jest.fn(),
+  logErrorHint: (...a: unknown[]) => mockLogErrorHint(...a),
 }));
 
 jest.mock("../config", () => ({
@@ -58,6 +61,7 @@ jest.mock("../config", () => ({
   getConfig: (...a: unknown[]) => mockGetConfig(...a),
   checkRuleOrder: (...a: unknown[]) => mockCheckRuleOrder(...a),
   getDiffFile: (...a: unknown[]) => mockGetDiffFile(...a),
+  isDiffFileCorrupt: (...a: unknown[]) => mockIsDiffFileCorrupt(...a),
   getBuildPath: (...a: unknown[]) => mockGetBuildPath(...a),
   getDefaultConfigFile: () => "module.exports = {};",
 }));
@@ -115,6 +119,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGetConfig.mockReturnValue({});
   mockGetDiffFile.mockReturnValue({ changed: [] });
+  mockIsDiffFileCorrupt.mockReturnValue(false);
   mockGetBuildPath.mockReturnValue("encoded-build-path");
   mockProcessManifest.mockResolvedValue(undefined);
   mockDownloadAllFiles.mockResolvedValue(undefined);
@@ -206,14 +211,21 @@ describe("buildCommand failure handling", () => {
 });
 
 describe("deployCommand", () => {
-  it("aborts when the connection preflight fails", async () => {
+  it("aborts, hints and sets a failing exit code when the connection preflight fails", async () => {
+    const oldExit = process.exitCode;
     mockCheckConnection.mockRejectedValueOnce(new Error("offline"));
     const { deployCommand } = await import("../commands");
     await deployCommand({ logLevel: "info" });
+    // #3/#49: the message now names the target instance and the failure is
+    // routed through logErrorHint (credential-source-aware advice) instead of
+    // hardcoded SN_* text; the deploy exits non-zero so CI sees the failure.
     expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Unable to reach ServiceNow instance before deploy")
+      expect.stringContaining("Unable to reach ServiceNow instance dev.service-now.com before deploy")
     );
+    expect(mockLogErrorHint).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
     expect(mockPushFiles).not.toHaveBeenCalled();
+    process.exitCode = oldExit;
   });
 
   it("returns without pushing when the deploy confirmation is declined", async () => {
@@ -236,6 +248,71 @@ describe("deployCommand", () => {
     expect(mockGetAppFileList).toHaveBeenCalledWith(["/build/changed.js"]);
     expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
     expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("#3: sets a failing exit code when any record fails to push", async () => {
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockGetAppFileList.mockResolvedValue([
+      { table: "sys_script", sysId: "1", fields: {} },
+    ]);
+    // One record failed — deploy folds per-record failures into { success:false }
+    // results, so before the fix this exited 0. It must now fail the shell.
+    mockPushFiles.mockResolvedValue([
+      { success: true, message: "ok" },
+      { success: false, message: "boom" },
+    ]);
+    const { deployCommand } = await import("../commands");
+    await deployCommand({ logLevel: "info" });
+    expect(mockPushFiles).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
+  });
+
+  it("#3: leaves the exit code clean when every record pushes successfully", async () => {
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockGetAppFileList.mockResolvedValue([
+      { table: "sys_script", sysId: "1", fields: {} },
+    ]);
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    const { deployCommand } = await import("../commands");
+    await deployCommand({ logLevel: "info" });
+    expect(mockPushFiles).toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
+    process.exitCode = oldExit;
+  });
+
+  it("#3/#49: hints and fails the shell when no instance is configured", async () => {
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockResolveCredentials.mockReturnValueOnce({ instance: undefined });
+    const { deployCommand } = await import("../commands");
+    await deployCommand({ logLevel: "info" });
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("No server configured for deploy")
+    );
+    expect(mockLogErrorHint).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+    process.exitCode = oldExit;
+  });
+
+  it("#46: aborts a scoped deploy when the diff manifest is present-but-corrupt", async () => {
+    // A corrupt sync.diff.manifest.json must abort (getDiffFile throws), never
+    // silently degrade a scoped deploy into a full-scope deploy.
+    mockIsDiffFileCorrupt.mockReturnValue(true);
+    mockGetDiffFile.mockImplementation(() => {
+      throw new Error("sync.diff.manifest.json is present but unreadable");
+    });
+    mockPrompt.mockResolvedValueOnce({ confirmed: true }); // deploy confirm
+    const { deployCommand } = await import("../commands");
+    await expect(deployCommand({ logLevel: "info" })).rejects.toThrow(
+      /present but unreadable/
+    );
+    // It aborted before falling back to a full-scope build path.
+    expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
   });
 });
 

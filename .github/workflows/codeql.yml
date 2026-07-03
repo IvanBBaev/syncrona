@@ -16,6 +16,12 @@ on:
   pull_request:
     branches: [main]
 
+# gap-analysis #24: cancel a superseded scan when commits land in quick
+# succession (own group so it never contends with the CI workflow).
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Least-privilege default; the analyze job widens to what CodeQL needs.
 permissions:
   contents: read

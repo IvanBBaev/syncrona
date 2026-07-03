@@ -7,6 +7,15 @@ import { createRequire } from "module";
 import { logger } from "./Logger";
 import { includes, excludes, tableOptions } from "./defaultOptions";
 
+// #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
+// so a scoped deploy never silently degrades into a full deploy.
+export class DiffFileCorruptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DiffFileCorruptError";
+  }
+}
+
 const DEFAULT_CONFIG: Sync.Config = {
   sourceDirectory: "src",
   buildDirectory: "build",
@@ -29,6 +38,10 @@ type ConfigState = {
   manifest_path?: string;
   diff_path?: string;
   diff_file?: Sync.DiffFile;
+  // #46: set only when sync.diff.manifest.json is PRESENT but unreadable
+  // (parse error / read error). Absent-file is left as undefined on both, so
+  // callers can tell "no diff" (full scope) apart from "corrupt diff" (abort).
+  diff_file_error?: string;
   refresh_interval?: number;
 };
 
@@ -111,8 +124,10 @@ export type RuleOrderIssue = { laterIndex: number; earlierIndex: number; sample:
 // Build a representative filename from an anchored, literal extension pattern
 // (e.g. /\.secret\.ts$/ -> "file.secret.ts"). Returns null for patterns with
 // regex metacharacters we can't safely turn into a concrete filename, so the
-// shadowing check never guesses.
-function synthesizeFilename(pattern: RegExp): string | null {
+// shadowing check never guesses. Exported for property-based testing (#20): the
+// invariant checkRuleOrder depends on — a synthesized sample matches its own
+// suffix-anchored pattern — is pinned directly against this helper.
+export function synthesizeFilename(pattern: RegExp): string | null {
   const literal = pattern.source.replace(/^\^/, "").replace(/\$$/, "").replace(/\\\./g, ".");
   if (!/^[A-Za-z0-9._-]+$/.test(literal)) {
     return null;
@@ -244,8 +259,20 @@ export class ConfigStore {
   }
 
   getDiffFile(): Sync.DiffFile {
+    // #46: a corrupt diff file must abort with a distinct error, never be
+    // treated the same as "no diff file present" (which would silently promote
+    // a scoped deploy to a full deploy).
+    if (this.state.diff_file_error) {
+      throw new DiffFileCorruptError(this.state.diff_file_error);
+    }
     if (this.state.diff_file) return this.state.diff_file;
     throw new Error("Error getting diff file");
+  }
+
+  // Distinguishes "diff file is corrupt" from "no diff file" so callers can
+  // abort on the former without a full read of getDiffFile().
+  isDiffFileCorrupt(): boolean {
+    return this.state.diff_file_error !== undefined;
   }
 
   getRefresh(): number {
@@ -370,11 +397,30 @@ export class ConfigStore {
   }
 
   private async loadDiffFile(): Promise<void> {
+    this.state.diff_file = undefined;
+    this.state.diff_file_error = undefined;
+    let diffString: string;
     try {
-      const diffString = await fsp.readFile(this.getDiffPath(), "utf-8");
-      this.state.diff_file = JSON.parse(diffString);
-    } catch (_) {
-      this.state.diff_file = undefined;
+      diffString = await fsp.readFile(this.getDiffPath(), "utf-8");
+    } catch (e) {
+      // #46: an ABSENT diff file is a normal state (full-scope deploy). Only
+      // a present-but-unreadable file is a corruption we must not swallow.
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+      this.state.diff_file_error = `Could not read ${this.getDiffPath()}: ${
+        e instanceof Error ? e.message : String(e)
+      }`;
+      return;
+    }
+    try {
+      this.state.diff_file = JSON.parse(diffString) as Sync.DiffFile;
+    } catch (e) {
+      // Present but not valid JSON → corrupt. Record it so getDiffFile() can
+      // refuse to silently fall back to a FULL deploy.
+      this.state.diff_file_error = `${this.getDiffPath()} is present but not valid JSON: ${
+        e instanceof Error ? e.message : String(e)
+      }`;
     }
   }
 
@@ -442,6 +488,10 @@ export function getDiffPath() {
 
 export function getDiffFile() {
   return defaultConfigStore.getDiffFile();
+}
+
+export function isDiffFileCorrupt() {
+  return defaultConfigStore.isDiffFileCorrupt();
 }
 
 export function getRefresh() {

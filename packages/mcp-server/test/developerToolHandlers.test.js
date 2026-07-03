@@ -53,6 +53,34 @@ test('sync_diff_instance_vs_local: returns a response (no manifest => empty loca
   assert.equal(res.content[0].type, 'text');
 });
 
+test('sync_diff_instance_vs_local: a caret-bearing scope cannot inject extra query conditions', async () => {
+  // A scope resolved from user input could carry `^`, the encoded-query condition
+  // separator. Without escaping, `sys_scope.scope=x_app^sys_id=ADMIN` would widen
+  // the lookup. The handler must neutralize the caret before composing the query.
+  let capturedQuery = null;
+  const ctx = makeContext({
+    resolveScope: async () => 'x_app^sys_id=ADMIN',
+    tableGet: async (_table, opts) => {
+      capturedQuery = opts.query;
+      return [];
+    },
+  });
+  await handleDeveloperTool(
+    'sync_diff_instance_vs_local',
+    { table: 'sys_script_include', recordName: 'MyUtil' },
+    ctx
+  );
+  assert.ok(capturedQuery, 'tableGet should have been called with a query');
+  assert.ok(
+    !capturedQuery.includes('scope=x_app^'),
+    `caret must be escaped out of the scope condition; got: ${capturedQuery}`
+  );
+  assert.ok(
+    capturedQuery.includes('sys_scope.scope=x_app sys_id=ADMIN'),
+    `caret should become a space; got: ${capturedQuery}`
+  );
+});
+
 test('unknown tool returns null so dispatch can fall through', async () => {
   const res = await handleDeveloperTool('not_a_real_tool', {}, makeContext());
   assert.equal(res, null);

@@ -81,6 +81,19 @@ describe("envFile", () => {
       expect(content).toContain("SN_USER=admin");
       expect(content).toContain("SN_PASSWORD=secret");
     });
+
+    // chmod is a no-op on Windows; the .env carries plaintext credentials, so on
+    // POSIX it must end up owner-only (0o600) even when the file pre-existed with
+    // looser permissions.
+    const itPosix = process.platform === "win32" ? it.skip : it;
+    itPosix("restricts an existing .env to owner-only (0o600)", async () => {
+      const envPath = path.join(tempDir, ".env");
+      await fs.promises.writeFile(envPath, "SYNCRONA_OTHER=1\n", { mode: 0o644 });
+      await fs.promises.chmod(envPath, 0o644); // ensure loose perms regardless of umask
+      await writeDotEnv(envPath, { SN_PASSWORD: "secret" });
+      const mode = (await fs.promises.stat(envPath)).mode & 0o777;
+      expect(mode).toBe(0o600);
+    });
   });
 
   describe("ensureGitignored", () => {

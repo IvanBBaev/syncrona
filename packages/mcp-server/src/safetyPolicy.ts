@@ -49,6 +49,9 @@ const MUTATING_TOOLS = new Set([
   "sn_update_metadata_record",
   "sn_autonomous_remediation_workflow",
   "sync_unified_change_workflow",
+  // Triggers ATF execution via a background script — a side effect on the
+  // instance — so it must go through the same preflight/audit/confirm gates.
+  "sync_run_atf_tests",
 ]);
 
 function asRecord(value: unknown): Record<string, unknown> {

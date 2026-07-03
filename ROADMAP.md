@@ -12,12 +12,13 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `0.4.2-alpha.8` (public alpha)
+- **Current version:** `0.4.2` (public alpha)
 - **Engineering readiness:** ~9/10 — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
-  a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8) and an
-  error taxonomy (DX19) now shipped.
-- **Last updated:** 2026-06-21
+  a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
+  error taxonomy (DX19), the `repair` command, flat layout (DX17), mutation
+  testing (G13) and read-only **Jira issue context** now shipped.
+- **Last updated:** 2026-07-02
 
 ## Status legend
 
@@ -37,9 +38,9 @@ applications. The following are **shipped**:
 
 ### CLI core & workflow ✅
 - Registry-driven CLI (`commander` interpreter, open/closed command registry),
-  16 commands: `init`, `refresh`, `dev`, `push`, `download`, `build`, `deploy`,
-  `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`, `login`,
-  `logout`, `instances`, `use`.
+  22 commands: `init`, `refresh`, `dev`, `push`, `download`, `build`, `deploy`,
+  `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`, `repair`, `mcp`,
+  `login`, `logout`, `instances`, `use`, `jira`, `jira-login`, `jira-logout`.
 - Typed CLI args (`typedHandler<TArgs>`), `--dry-run` across mutating commands,
   `--log-level` profiling, column-aligned dry-run tables.
 - Push safety: connection preflight, partial-push checkpoint/resume,
@@ -60,10 +61,11 @@ applications. The following are **shipped**:
   calls, VM-sandboxed script execution.
 
 ### MCP & AI ✅
-- ~60 MCP tools across 11 handler modules: metadata/impact/dependency analysis,
+- 61 MCP tools across the handler modules: metadata/impact/dependency analysis,
   scope knowledge graphs, scope docs + Mermaid diagrams, minimal-footprint
   planning, unified change workflow (with gates and optional remote apply),
-  health/metrics, AI next-action suggestions.
+  health/metrics, AI next-action suggestions, and read-only Jira issue context
+  (`jira_get_issue`).
 - Tool contract + lifecycle metadata, rate limiting, graceful shutdown,
   correlation IDs, structured logging, audit log rotation + integrity checks.
 
@@ -117,9 +119,9 @@ mostly by **owner decisions**, with a small amount of engineering left.
 - ✅ **Per-package READMEs** — npm landing pages for every published package
   (all 13 have a README and `repository`/`author` metadata).
 - ✅ **OS keychain credential strength** (AR2) — the at-rest key resolves from
-  `SYNCRONA_STORE_KEY` (CI / secrets manager) or the OS keychain (opt-in
-  `SYNCRONA_USE_KEYCHAIN`, optional `@napi-rs/keyring`), falling back to the
-  legacy machine-derived key.
+  `SYNCRONA_STORE_KEY` (CI / secrets manager) or the OS keychain (the DEFAULT
+  backend via the optional `@napi-rs/keyring`; opt out with
+  `SYNCRONA_USE_KEYCHAIN=0`), falling back to the legacy machine-derived key.
 
 ---
 
@@ -134,7 +136,8 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   tarball `url`/`sha256`).
 - 🚧 **Windows support** (D5) — [`packaging/windows/install.ps1`](packaging/windows/install.ps1)
   shipped; Windows Credential Manager works natively via `@napi-rs/keyring`
-  (`SYNCRONA_USE_KEYCHAIN=1`). Remaining: broader native-Windows path testing.
+  (the keychain is the default; disable with `SYNCRONA_USE_KEYCHAIN=0`).
+  Remaining: broader native-Windows path testing.
 
 ### Auth & connectivity
 - ✅ **Proxy / TLS configuration** (G9) — CLI honors `HTTPS_PROXY` / `NO_PROXY`

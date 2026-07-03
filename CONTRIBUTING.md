@@ -27,9 +27,14 @@ npm run check      # the full gate: build + typecheck + lint + tests + coverage 
 ```
 
 CI runs the same gates plus governance checks (tool-contract hash,
-README/CLAUDE.md docs-drift, release checklist) — on GitHub via
-`.github/workflows/ci.yml` (matrix: ubuntu + macOS) and, for Azure DevOps,
-`azure-pipelines.yml`.
+README/CLAUDE.md docs-drift, release checklist) — on GitHub Actions via
+`.github/workflows/ci.yml` (matrix: ubuntu + macOS), with CodeQL SAST in
+`.github/workflows/codeql.yml` and the owner-gated publish in
+`.github/workflows/release.yml`.
+
+The core Jest coverage floor is a ratchet in `packages/core/jest.config.js`:
+**statements 85 / branches 71 / functions 80 / lines 85** (set just under the
+measured baseline; raise, never lower).
 
 **Running a single test file:** run it from inside the package — ts-jest is
 configured per-package — e.g. `cd packages/core && npx jest src/tests/foo.test.ts`,
