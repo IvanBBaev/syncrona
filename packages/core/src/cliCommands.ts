@@ -326,11 +326,110 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "Instance hostname (e.g. dev12345.service-now.com)",
       },
     },
+    options: {
+      authMethod: {
+        alias: "auth-method",
+        type: "string",
+        describe:
+          "Authentication method: basic | oauth-password | oauth-client-credentials | oauth-jwt-bearer | api-key",
+      },
+      user: {
+        type: "string",
+        describe: "Username (basic / oauth-password)",
+      },
+      password: {
+        type: "string",
+        describe: "Password (basic / oauth-password)",
+      },
+      clientId: {
+        alias: "client-id",
+        type: "string",
+        describe: "OAuth client id (oauth-password / client-credentials / jwt-bearer)",
+      },
+      clientSecret: {
+        alias: "client-secret",
+        type: "string",
+        describe: "OAuth client secret",
+      },
+      apiKey: {
+        alias: "api-key",
+        type: "string",
+        describe: "Inbound REST API key value (api-key method)",
+      },
+      apiKeyHeader: {
+        alias: "api-key-header",
+        type: "string",
+        describe: "Override the API key header name (default x-sn-apikey)",
+      },
+      jwtKey: {
+        alias: "jwt-key",
+        type: "string",
+        describe: "Path to the JWT signing key PEM (jwt-bearer method)",
+      },
+      jwtKid: {
+        alias: "jwt-kid",
+        type: "string",
+        describe: "JWT header key id (jwt-bearer)",
+      },
+      jwtIss: {
+        alias: "jwt-iss",
+        type: "string",
+        describe: "JWT issuer claim (jwt-bearer)",
+      },
+      jwtSub: {
+        alias: "jwt-sub",
+        type: "string",
+        describe: "JWT subject claim (jwt-bearer)",
+      },
+      jwtAud: {
+        alias: "jwt-aud",
+        type: "string",
+        describe: "JWT audience claim (jwt-bearer)",
+      },
+      clientCert: {
+        alias: "client-cert",
+        type: "string",
+        describe: "Path to the client certificate PEM for mutual TLS",
+      },
+      clientKey: {
+        alias: "client-key",
+        type: "string",
+        describe: "Path to the client private key PEM for mutual TLS",
+      },
+      clientKeyPassphrase: {
+        alias: "client-key-passphrase",
+        type: "string",
+        describe: "Passphrase for the mutual TLS client private key",
+      },
+    },
     examples: [
-      ["$0 login", "Prompt for instance and credentials, then save them"],
+      ["$0 login", "Prompt for instance, method, and credentials, then save them"],
       ["$0 login dev12345.service-now.com", "Save credentials for a specific instance"],
+      [
+        "$0 login --auth-method api-key --api-key XXXX",
+        "Non-interactive login with an inbound REST API key",
+      ],
     ],
-    handler: typedHandler<Sync.SharedCmdArgs & { instance?: string }>((args) => loginCommand(args)),
+    handler: typedHandler<
+      Sync.SharedCmdArgs & {
+        instance?: string;
+        authMethod?: string;
+        user?: string;
+        password?: string;
+        clientId?: string;
+        clientSecret?: string;
+        apiKey?: string;
+        apiKeyHeader?: string;
+        jwtKey?: string;
+        jwtKid?: string;
+        jwtIss?: string;
+        jwtSub?: string;
+        jwtAud?: string;
+        clientCert?: string;
+        clientKey?: string;
+        clientKeyPassphrase?: string;
+      }
+    >((args) => loginCommand(args)),
   },
   {
     command: "logout [instance]",

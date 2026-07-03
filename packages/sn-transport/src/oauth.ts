@@ -1,13 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Shared, IO-free OAuth 2.0 token manager (Resource Owner Password Credentials
-// grant). Lives in @syncrona/sn-transport so both the CLI (axios) and the MCP
+// Shared, IO-free OAuth 2.0 token manager. Supports the Resource Owner Password
+// Credentials, Client Credentials, and JWT Bearer grants, plus refresh_token
+// re-use. Lives in @syncrona/sn-transport so both the CLI (axios) and the MCP
 // server (fetch) use one implementation. The HTTP call is injected as `post`,
 // so this module performs no IO itself and stays pure.
 //
 // OAuth is ADDITIVE everywhere — Basic auth stays the default; OAuth engages
-// only when a client id + secret are configured.
+// only when a client id + secret (and, for jwt-bearer, a signing key) are
+// configured.
 
-export type OAuthConfig = { clientId: string; clientSecret: string };
+/** OAuth grant used for the INITIAL token acquisition (refresh always reuses a
+ * cached refresh_token when the server issued one). "password" is the historical
+ * default and keeps today's behaviour when `grantType` is omitted. */
+export type OAuthGrantType = "password" | "client_credentials" | "jwt-bearer";
+
+/** RFC 7523 grant-type URN for the OAuth 2.0 JWT bearer assertion flow. */
+export const JWT_BEARER_GRANT_TYPE =
+  "urn:ietf:params:oauth:grant-type:jwt-bearer";
+
+export type OAuthConfig = {
+  clientId: string;
+  clientSecret: string;
+  /** Grant for the initial acquisition. Defaults to "password" (backward compatible). */
+  grantType?: OAuthGrantType;
+  /**
+   * For `grantType: "jwt-bearer"` — mints a freshly signed JWT assertion for
+   * each acquisition. A function (not a static string) so a re-acquisition
+   * after expiry produces a new, unexpired assertion. Ignored for other grants.
+   */
+  buildAssertion?: () => string | Promise<string>;
+};
 
 export type OAuthTokenResponse = {
   access_token: string;
@@ -39,7 +61,7 @@ export function oauthFormBody(fields: Record<string, string>): string {
 }
 
 export function createTokenManager(
-  credentials: { username: string; password: string },
+  credentials: { username?: string; password?: string } = {},
   oauth: OAuthConfig,
   post: TokenPoster
 ): TokenManager {
@@ -91,23 +113,58 @@ export function createTokenManager(
     return inFlight;
   };
 
-  const acquireWithPassword = async (): Promise<string> => {
-    const res = await post(
-      OAUTH_TOKEN_PATH,
-      oauthFormBody({
-        grant_type: "password",
-        username: credentials.username,
-        password: credentials.password,
-        client_id: oauth.clientId,
-        client_secret: oauth.clientSecret,
-      })
+  // Acquire a NEW token per the configured grant. client_credentials and
+  // jwt-bearer typically return no refresh_token, so refresh() re-runs this.
+  const acquire = async (): Promise<string> => {
+    const grant = oauth.grantType ?? "password";
+    if (grant === "client_credentials") {
+      return store(
+        await post(
+          OAUTH_TOKEN_PATH,
+          oauthFormBody({
+            grant_type: "client_credentials",
+            client_id: oauth.clientId,
+            client_secret: oauth.clientSecret,
+          })
+        )
+      );
+    }
+    if (grant === "jwt-bearer") {
+      if (!oauth.buildAssertion) {
+        throw new Error(
+          "OAuth jwt-bearer grant requires an assertion builder (buildAssertion)"
+        );
+      }
+      const assertion = await oauth.buildAssertion();
+      return store(
+        await post(
+          OAUTH_TOKEN_PATH,
+          oauthFormBody({
+            grant_type: JWT_BEARER_GRANT_TYPE,
+            assertion,
+            client_id: oauth.clientId,
+            client_secret: oauth.clientSecret,
+          })
+        )
+      );
+    }
+    return store(
+      await post(
+        OAUTH_TOKEN_PATH,
+        oauthFormBody({
+          grant_type: "password",
+          username: credentials.username ?? "",
+          password: credentials.password ?? "",
+          client_id: oauth.clientId,
+          client_secret: oauth.clientSecret,
+        })
+      )
     );
-    return store(res);
   };
 
   const refresh = async (): Promise<string> => {
     if (!cached?.refreshToken) {
-      return acquireWithPassword();
+      return acquire();
     }
     try {
       const res = await post(
@@ -121,8 +178,8 @@ export function createTokenManager(
       );
       return store(res);
     } catch (_) {
-      // Refresh token expired/revoked — fall back to a fresh password grant.
-      return acquireWithPassword();
+      // Refresh token expired/revoked — fall back to a fresh grant acquisition.
+      return acquire();
     }
   };
 
@@ -131,7 +188,7 @@ export function createTokenManager(
       if (cached && Date.now() < cached.expiresAt - EXPIRY_SKEW_MS) {
         return cached.accessToken;
       }
-      return runExclusive(() => (cached ? refresh() : acquireWithPassword()));
+      return runExclusive(() => (cached ? refresh() : acquire()));
     },
     async forceRefresh(): Promise<string> {
       return runExclusive(refresh);

@@ -135,6 +135,12 @@ export const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
 export interface ResolvedTlsPolicy {
   /** Path to a CA bundle file the caller should read and trust, if configured. */
   caBundlePath?: string;
+  /** Path to a client certificate (PEM) for mutual TLS, if configured. */
+  clientCertPath?: string;
+  /** Path to the client private key (PEM) for mutual TLS, if configured. */
+  clientKeyPath?: string;
+  /** Passphrase for the client private key, if it is encrypted. */
+  clientKeyPassphrase?: string;
   /** Whether the server certificate must be verified. False only on explicit opt-out. */
   rejectUnauthorized: boolean;
   /** True when any non-default TLS setting is in effect (caller builds a custom agent). */
@@ -143,24 +149,42 @@ export interface ResolvedTlsPolicy {
 
 /**
  * Resolve the ServiceNow TLS policy from raw environment values. Pure (no I/O):
- * the caller passes the env strings in and performs the actual file read and
- * HTTPS-agent construction. Shared so every client agrees on the same opt-out
- * semantics. An unset/blank reject value keeps verification ON; only the
- * explicit falsey tokens (`0`, `false`, `no`) turn it off.
+ * the caller passes the env strings in and performs the actual file reads and
+ * HTTPS-agent/dispatcher construction. Shared so every client agrees on the
+ * same opt-out and mutual-TLS semantics. An unset/blank reject value keeps
+ * verification ON; only the explicit falsey tokens (`0`, `false`, `no`) turn it
+ * off. Mutual TLS engages when both a client cert and key path are provided.
  */
 export function resolveTlsPolicy(
   caBundleEnv: string | undefined,
-  rejectUnauthorizedEnv: string | undefined
+  rejectUnauthorizedEnv: string | undefined,
+  clientCertEnv?: string | undefined,
+  clientKeyEnv?: string | undefined,
+  clientKeyPassphraseEnv?: string | undefined
 ): ResolvedTlsPolicy {
   const caBundlePath = (caBundleEnv || "").trim() || undefined;
+  const clientCertPath = (clientCertEnv || "").trim() || undefined;
+  const clientKeyPath = (clientKeyEnv || "").trim() || undefined;
+  const clientKeyPassphrase = (clientKeyPassphraseEnv || "").trim() || undefined;
   const raw = (rejectUnauthorizedEnv || "").trim().toLowerCase();
   const rejectUnauthorized = !(raw === "0" || raw === "false" || raw === "no");
   return {
     caBundlePath,
+    clientCertPath,
+    clientKeyPath,
+    clientKeyPassphrase,
     rejectUnauthorized,
-    custom: !!caBundlePath || !rejectUnauthorized,
+    custom:
+      !!caBundlePath ||
+      !!clientCertPath ||
+      !!clientKeyPath ||
+      !rejectUnauthorized,
   };
 }
 
 // Shared OAuth 2.0 token manager (IO-free; HTTP injected). Used by both clients.
 export * from "./oauth";
+// Shared auth-method resolution (basic / oauth-* / api-key) and env var names.
+export * from "./auth";
+// Shared JWT bearer-assertion builder (RS256 via node:crypto; IO-free).
+export * from "./jwt";

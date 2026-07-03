@@ -61,9 +61,32 @@ The last check is cached in `~/.syncrona/update-check.json`.
 
 ## Environment variables
 
+### Authentication method selection
+
+`SN_AUTH_METHOD` selects the ServiceNow inbound REST auth method: `basic`
+(default), `oauth-password`, `oauth-client-credentials`, `oauth-jwt-bearer`, or
+`api-key`. When unset it is inferred for backward compatibility (OAuth password
+when a client id/secret pair **and** a password are present, otherwise Basic).
+Every variable below also accepts a per-profile `_<NAME>` suffix.
+
+| Variable | Method | Purpose |
+| --- | --- | --- |
+| `SN_OAUTH_CLIENT_ID` / `SN_OAUTH_CLIENT_SECRET` | oauth-* | OAuth client id/secret (reused by password, client-credentials, jwt-bearer). |
+| `SN_API_KEY` | api-key | Inbound REST API key value. |
+| `SN_API_KEY_HEADER` | api-key | Header name override (default `x-sn-apikey`). |
+| `SN_JWT_KEY` | oauth-jwt-bearer | Path to (or inline) RS256 private-key PEM used to sign the assertion. |
+| `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` | oauth-jwt-bearer | Optional JWT header `kid` and `iss`/`sub`/`aud` claim overrides (defaults derived from client id + user + instance). |
+| `SN_CLIENT_CERT` / `SN_CLIENT_KEY` | mTLS | Client certificate + private-key PEM paths (mutual TLS, combinable with any method). |
+| `SN_CLIENT_KEY_PASSPHRASE` | mTLS | Passphrase for an encrypted client key. |
+
+`SN_JWT_KEY`, `SN_CLIENT_CERT` and `SN_CLIENT_KEY` are file **paths** — the key
+material is read at request time and never copied into the credential store.
+
+### Other variables
+
 Besides the credential variables above (`SN_INSTANCE` / `SN_USER` / `SN_PASSWORD`
-and their named `SN_*_<NAME>` forms) and the update-notifier opt-outs, the core
-CLI reads:
+and their named `SN_*_<NAME>` forms), the auth-method variables, and the
+update-notifier opt-outs, the core CLI reads:
 
 | Variable                       | Purpose                                                                                                                                                                 |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
