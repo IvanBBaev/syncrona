@@ -1,10 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// This config is CommonJS (.cjs) on purpose: the package is now "type": "module"
+// (ESM), so a plain jest.config.js would be parsed as ESM and break module.exports.
+//
+// The source tree is native ESM under TypeScript NodeNext, so tests run as real
+// ESM via ts-jest (useESM) + Node's --experimental-vm-modules (set in the "test"
+// script). Consequences that shape this config:
+//   - extensionsToTreatAsEsm marks .ts files as ESM for the jest runtime.
+//   - moduleNameMapper strips the mandatory ".js" suffix off relative specifiers
+//     so jest resolves "./foo.js" back to the "./foo.ts" source.
+//   - jest.mock() is NOT hoisted/applied under ESM; suites use
+//     jest.unstable_mockModule() + a deferred await import() of the subject.
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
+  extensionsToTreatAsEsm: ['.ts'],
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', { useESM: true }],
+  },
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
   // Force the OS keychain off by default so no test touches the real keychain
   // (hermetic + deterministic); keychain behaviour is tested via mocks.
-  setupFiles: ['<rootDir>/jest.setup.js'],
+  setupFiles: ['<rootDir>/jest.setup.cjs'],
   // Whole-source coverage: the gate previously measured only src/commands.ts,
   // which made the "core >= 80%" CI claim meaningless. Thresholds below are a
   // ratchet floor set just under the measured baseline (2026-07-03: statements
@@ -21,7 +38,7 @@ module.exports = {
     '!src/tests/**',
   ],
   testPathIgnorePatterns: [
-    ".js"
+    ".js",
   ],
   coverageThreshold: {
     global: {

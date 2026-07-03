@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // DX24: --push-concurrency overrides sync.config.js pushConcurrency, which
@@ -6,12 +7,16 @@ export {};
 
 const mockGetConfig = jest.fn();
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
 // appUtils pulls in many siblings; stub the heavy/IO ones it imports at load.
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  isRetryableRequestError: jest.fn(),
+  processPushResponse: jest.fn(),
+  retryOnErr: jest.fn(),
+  SNClient: jest.fn(),
   defaultClient: jest.fn(),
   resolveCredentials: jest.fn(),
   unwrapSNResponse: jest.fn(),
@@ -20,9 +25,15 @@ jest.mock("../snClient", () => ({
   getErrorResponseStatus: jest.fn(),
 }));
 
-import { resolvePushConcurrency } from "../appUtils";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real config (whose getConfig throws) before the mock takes effect.
+let resolvePushConcurrency: typeof import("../appUtils.js").resolvePushConcurrency;
 
 describe("resolvePushConcurrency (DX24)", () => {
+  beforeEach(async () => {
+    ({ resolvePushConcurrency } = await import("../appUtils.js"));
+  });
   afterEach(() => jest.clearAllMocks());
 
   it("uses the config value when no override is given", () => {

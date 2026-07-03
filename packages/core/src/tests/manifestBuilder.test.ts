@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { SN, Sync } from "@syncro-now-ai/types";
 import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
   listAppsFromTableAPI,
   isNotFoundError,
-} from "../manifestBuilder";
+} from "../manifestBuilder.js";
 
 type TableApiGet = jest.Mock<Promise<{ data: { result: Record<string, string>[] } }>, [string, string, string, number?]>;
 

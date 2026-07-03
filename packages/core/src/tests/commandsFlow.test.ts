@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import os from "os";
 import path from "path";
 
@@ -40,22 +41,23 @@ const mockGetConfig = jest.fn();
 const mockGetManifest = jest.fn();
 const mockGetRootDir = jest.fn();
 
-jest.mock("../Watcher", () => ({
+jest.unstable_mockModule("../Watcher.js", () => ({
+  stopWatching: jest.fn(),
   startWatching: (...args: unknown[]) => mockStartWatching(...args),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   checkScope: (...args: unknown[]) => mockCheckScope(...args),
   getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
   buildFiles: (...args: unknown[]) => mockBuildFiles(...args),
 }));
 
-jest.mock("../gitUtils", () => ({
+jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
     info: jest.fn(),
@@ -68,13 +70,20 @@ jest.mock("../Logger", () => ({
 }));
 
 // statusCommand inspects the credential store (DX20/DX20b); keep it hermetic.
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
+  saveCredentials: jest.fn(),
+  setActiveInstance: jest.fn(),
+  resolveCredentialsFromStore: jest.fn(),
   getActiveInstance: jest.fn().mockResolvedValue(null),
   listInstances: jest.fn().mockResolvedValue([]),
   loadCredentials: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  snClient: jest.fn(),
+  preloadStoredCredentials: jest.fn(),
+  getErrorResponseStatus: jest.fn(),
+  diagnoseCredentials: jest.fn(),
   defaultClient: () => ({
     checkConnection: (...args: unknown[]) => mockCheckConnection(...args),
     getCurrentScope: jest.fn(),
@@ -86,14 +95,14 @@ jest.mock("../snClient", () => ({
   setActiveInstanceProfile: (...args: unknown[]) => mockSetActiveInstanceProfile(...args),
 }));
 
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../logMessages.js", () => ({
   scopeCheckMessage: jest.fn(),
   devModeLog: (...args: unknown[]) => mockDevModeLog(...args),
   logPushResults: (...args: unknown[]) => mockLogPushResults(...args),
   logBuildResults: (...args: unknown[]) => mockLogBuildResults(...args),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getSourcePath: (...args: unknown[]) => mockGetSourcePath(...args),
   getRefresh: (...args: unknown[]) => mockGetRefresh(...args),
   getDiffFile: (...args: unknown[]) => mockGetDiffFile(...args),
@@ -111,25 +120,36 @@ jest.mock("../config", () => ({
   checkConfigPath: (...args: unknown[]) => mockCheckConfigPath(...args),
 }));
 
-jest.mock("child_process", () => ({
-  spawn: (...args: unknown[]) => mockSpawn(...args),
-}));
+// child_process is a CJS core module; spread the real surface so named imports
+// elsewhere in the graph (e.g. execFileSync) still link, overriding only spawn.
+jest.unstable_mockModule("child_process", () => {
+  const actual = jest.requireActual("child_process") as typeof import("child_process");
+  const spawn = (...args: unknown[]) => mockSpawn(...args);
+  return { ...actual, spawn, default: { ...actual, spawn } };
+});
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   encodedPathsToFilePaths: (...args: unknown[]) => mockEncodedPathsToFilePaths(...args),
 }));
 
-jest.mock("fs", () => ({
-  promises: {
+// fs is a CommonJS core module, so requireActual loads it synchronously. Spread
+// the real surface and override only the promises members the flows touch, so
+// callers doing `import fs from "fs"` (default) or `import { readFileSync }`
+// (named) still link while filesystem writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     readFile: (...args: unknown[]) => mockReadFile(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
     stat: (...args: unknown[]) => mockStat(...args),
     mkdir: (...args: unknown[]) => mockMkdir(...args),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
     prompt: (...args: unknown[]) => mockPrompt(...args),
@@ -182,7 +202,7 @@ describe("command flows", () => {
   });
 
   it("devCommand starts watcher when scope matches", async () => {
-    const { devCommand } = await import("../devCommands");
+    const { devCommand } = await import("../devCommands.js");
 
     await devCommand({ logLevel: "info" });
 
@@ -196,7 +216,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     const pushResults = [{ success: true, message: "ok" }];
 
@@ -227,7 +247,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -267,7 +287,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
@@ -303,7 +323,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     mockPrompt.mockResolvedValueOnce({ confirmed: false });
@@ -333,7 +353,7 @@ describe("command flows", () => {
     const oldExitCode = process.exitCode;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     mockPushFiles.mockRejectedValue(new Error("network died"));
@@ -361,7 +381,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
 
@@ -386,7 +406,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [
       { table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } },
       { table: "sys_script", sysId: "2", fields: { script: { filePath: "/tmp/b.js" } } },
@@ -425,7 +445,7 @@ describe("command flows", () => {
     process.env.SN_INSTANCE = "instance.service-now.com";
     mockCheckConnection.mockRejectedValue(new Error("offline"));
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
 
     await pushCommand({
       logLevel: "info",
@@ -455,7 +475,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     delete process.env.SN_INSTANCE;
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
 
     await pushCommand({
       logLevel: "info",
@@ -476,7 +496,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     const pushResults = [{ success: true, message: "ok" }];
 
@@ -501,7 +521,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";
 
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
 
@@ -519,7 +539,7 @@ describe("command flows", () => {
     const oldInstance = process.env.SN_INSTANCE;
     delete process.env.SN_INSTANCE;
 
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
 
     expect(mockLoggerError).toHaveBeenCalledWith("No server configured for deploy!");
@@ -529,7 +549,7 @@ describe("command flows", () => {
   });
 
   it("buildCommand dry-run skips build output generation", async () => {
-    const { buildCommand } = await import("../commands");
+    const { buildCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
 
     mockGitDiffToEncodedPaths.mockResolvedValue(["encoded:/tmp/a.js"]);
@@ -542,7 +562,7 @@ describe("command flows", () => {
   });
 
   it("buildCommand executes build pipeline when dry-run is disabled", async () => {
-    const { buildCommand } = await import("../commands");
+    const { buildCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     const buildResults = [{ success: true, message: "built" }];
 
@@ -569,7 +589,7 @@ describe("command flows", () => {
     mockGetBuildPathConfig.mockReturnValue("/tmp/build");
     mockCheckConnection.mockResolvedValue(undefined);
 
-    const { doctorCommand } = await import("../commands");
+    const { doctorCommand } = await import("../commands.js");
     const result = await doctorCommand({ logLevel: "info" });
 
     expect(result.ok).toBe(true);
@@ -582,7 +602,7 @@ describe("command flows", () => {
   });
 
   it("pluginsCommand returns empty summary when no plugin rules are configured", async () => {
-    const { pluginsCommand } = await import("../commands");
+    const { pluginsCommand } = await import("../commands.js");
     mockGetConfig.mockReturnValue({ rules: [] });
 
     const result = await pluginsCommand({ logLevel: "info" });
@@ -595,7 +615,7 @@ describe("command flows", () => {
   });
 
   it("pluginsCommand reports installed and missing plugins", async () => {
-    const { pluginsCommand } = await import("../commands");
+    const { pluginsCommand } = await import("../commands.js");
     mockGetConfig.mockReturnValue({
       rules: [
         {
@@ -632,7 +652,7 @@ describe("command flows", () => {
   });
 
   it("mcpCommand auto-configures mcp client and secrets files", async () => {
-    const { mcpCommand } = await import("../commands");
+    const { mcpCommand } = await import("../commands.js");
     mockResolveCredentials.mockReturnValue({
       instance: "dev.service-now.com",
       user: "dev-user",
@@ -678,7 +698,7 @@ describe("command flows", () => {
   });
 
   it("mcpCommand updates discovered MCP client configs without removing existing entries", async () => {
-    const { mcpCommand } = await import("../commands");
+    const { mcpCommand } = await import("../commands.js");
     const homeDir = os.homedir();
     const appData = process.env.APPDATA || "";
 
@@ -745,7 +765,7 @@ describe("command flows", () => {
   });
 
   it("mcpCommand requires login before start when credentials are missing", async () => {
-    const { mcpCommand } = await import("../commands");
+    const { mcpCommand } = await import("../commands.js");
     mockResolveCredentials.mockReturnValue({
       instance: "",
       user: "",
@@ -781,7 +801,7 @@ describe("command flows", () => {
     delete process.env.SN_PASSWORD;
     mockCheckConfigPath.mockReturnValue(false);
 
-    const { doctorCommand } = await import("../commands");
+    const { doctorCommand } = await import("../commands.js");
     const result = await doctorCommand({ logLevel: "info" });
 
     expect(result.ok).toBe(false);
@@ -811,7 +831,7 @@ describe("command flows", () => {
     mockCheckConnection.mockResolvedValue(undefined);
     mockUnwrapSNResponse.mockRejectedValue({ response: { status: 400 } });
 
-    const { statusCommand } = await import("../commands");
+    const { statusCommand } = await import("../commands.js");
     const result = await statusCommand({ logLevel: "info" });
 
     expect(result.connectivityOk).toBe(true);
@@ -860,7 +880,7 @@ describe("command flows", () => {
       };
     });
 
-    const { pushCommand } = await import("../commands");
+    const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
 
@@ -901,7 +921,7 @@ describe("command flows", () => {
     mockCheckConnection.mockResolvedValue(undefined);
     mockUnwrapSNResponse.mockResolvedValue({ scope: "x_qa" });
 
-    const { statusCommand } = await import("../commands");
+    const { statusCommand } = await import("../commands.js");
     const result = await statusCommand({ logLevel: "info", instanceProfile: "qa" });
 
     expect(result.ok).toBe(true);
@@ -911,7 +931,7 @@ describe("command flows", () => {
   });
 
   it("downloadCommand dry-run skips prompt and network calls", async () => {
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
 
     await downloadCommand({ logLevel: "info", scope: "x_test", dryRun: true });
 
@@ -933,7 +953,7 @@ describe("command flows", () => {
     mockCheckConnection.mockResolvedValue(undefined);
     mockUnwrapSNResponse.mockResolvedValue({ scope: "x_demo" });
 
-    const { statusCommand } = await import("../commands");
+    const { statusCommand } = await import("../commands.js");
     const result = await statusCommand({ logLevel: "info" });
 
     expect(result.ok).toBe(true);
@@ -961,7 +981,7 @@ describe("command flows", () => {
     delete process.env.SN_PASSWORD;
     mockCheckConfigPath.mockReturnValue(false);
 
-    const { statusCommand } = await import("../commands");
+    const { statusCommand } = await import("../commands.js");
     const result = await statusCommand({ logLevel: "info" });
 
     expect(result.ok).toBe(false);
@@ -988,7 +1008,7 @@ describe("command flows", () => {
     process.env.SN_PASSWORD = "secret";
     mockCheckConnection.mockRejectedValue(new Error("offline"));
 
-    const { statusCommand } = await import("../commands");
+    const { statusCommand } = await import("../commands.js");
     const result = await statusCommand({ logLevel: "info" });
 
     expect(result.ok).toBe(false);

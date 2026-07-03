@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -14,16 +15,19 @@ import { Sync } from "@syncro-now-ai/types";
 //      and exercised, asserting the call shape, output chaining, first-match
 //      rule selection, and short-circuit-on-failure behavior.
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getRootDir: jest.fn(),
   getConfig: jest.fn(),
 }));
 
-import * as ConfigManager from "../config";
-import PluginManager from "../PluginManager";
-
-const getRootDir = ConfigManager.getRootDir as jest.Mock;
-const getConfig = ConfigManager.getConfig as jest.Mock;
+// Under ESM, jest.unstable_mockModule does not hoist: a static import of the
+// mocked config namespace or of the SUT (PluginManager) binds the real module
+// before the mock registers. Both are imported dynamically in beforeAll, after
+// the mock is in place.
+let ConfigManager: typeof import("../config.js");
+let PluginManager: typeof import("../PluginManager.js").default;
+let getRootDir: jest.Mock;
+let getConfig: jest.Mock;
 
 // The contract an external plugin module must satisfy, written the way a
 // plugin author writes it. If `Sync.Plugin`/`PluginFunc`/`FileContext`/
@@ -69,7 +73,12 @@ const context: Sync.FileContext = {
   scope: "x_demo",
 };
 
-beforeAll(() => {
+beforeAll(async () => {
+  ConfigManager = await import("../config.js");
+  ({ default: PluginManager } = await import("../PluginManager.js"));
+  getRootDir = ConfigManager.getRootDir as jest.Mock;
+  getConfig = ConfigManager.getConfig as jest.Mock;
+
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-plugin-contract-"));
 
   // Records the exact (context, content, options) it was called with, then

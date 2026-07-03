@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import dotenv from "dotenv";
-import * as ConfigManager from "./config";
-import { preloadStoredCredentials } from "./snClient";
-import { runUpdateNotifier } from "./updateNotifier";
+import * as ConfigManager from "./config.js";
+import { preloadStoredCredentials } from "./snClient.js";
+import { runUpdateNotifier } from "./updateNotifier.js";
 
 export async function init() {
   try {
@@ -37,5 +37,5 @@ export async function init() {
   // Best-effort "new version available" notice (once/day, opt-out, never blocks).
   await runUpdateNotifier();
 
-  (await import("./commander")).initCommands();
+  (await import("./commander.js")).initCommands();
 }

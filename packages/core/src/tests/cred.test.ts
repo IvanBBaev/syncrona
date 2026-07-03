@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import fs from "fs"
 import path from "path";
-import {init} from "../bootstrap"
+import {init} from "../bootstrap.js"
 
 const envPath = path.join(process.cwd(), ".env");
 

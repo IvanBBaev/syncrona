@@ -2,7 +2,7 @@
 import { Sync } from "@syncro-now-ai/types";
 import path from "path";
 import inquirer from "inquirer";
-import { logger } from "./Logger";
+import { logger } from "./Logger.js";
 import {
   saveCredentials,
   listInstances,
@@ -10,13 +10,13 @@ import {
   removeAllCredentials,
   setActiveInstance,
   getActiveInstance,
-} from "./auth";
+} from "./auth.js";
 import {
   preloadStoredCredentials,
   clearStoredCredentialsCache,
-} from "./snClient";
-import { writeDotEnv, ensureGitignored } from "./envFile";
-import { setLogLevel, bootstrapWorkspaceOnLogin } from "./commandHelpers";
+} from "./snClient.js";
+import { writeDotEnv, ensureGitignored } from "./envFile.js";
+import { setLogLevel, bootstrapWorkspaceOnLogin } from "./commandHelpers.js";
 
 export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: string }): Promise<void> {
   setLogLevel(args);
@@ -61,7 +61,7 @@ export async function loginCommand(args: Sync.SharedCmdArgs & { instance?: strin
   logger.info(`Connecting to ${normalizedInstance}...`);
 
   // Test connection before saving
-  const { snClient: createClient } = await import("./snClient");
+  const { snClient: createClient } = await import("./snClient.js");
   // Do not trim the password — leading/trailing spaces can be significant.
   const testClient = createClient(`https://${normalizedInstance}/`, user.trim(), password);
   try {

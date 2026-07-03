@@ -1,18 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // full-review C1 QA: lock the shared DX20b helper used by status + push.
 const mockGetActiveInstance = jest.fn();
 const mockLoadCredentials = jest.fn();
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
+  resolveCredentialsFromStore: jest.fn(),
   getActiveInstance: (...a: unknown[]) => mockGetActiveInstance(...a),
   loadCredentials: (...a: unknown[]) => mockLoadCredentials(...a),
 }));
 
-import { getActiveStoreDecryptWarning, activeStoreHealth } from "../commandHelpers";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real auth.js before the mock takes effect.
+let getActiveStoreDecryptWarning: typeof import("../commandHelpers.js").getActiveStoreDecryptWarning;
+let activeStoreHealth: typeof import("../commandHelpers.js").activeStoreHealth;
 
 describe("getActiveStoreDecryptWarning / activeStoreHealth (DX20b)", () => {
+  beforeEach(async () => {
+    ({ getActiveStoreDecryptWarning, activeStoreHealth } = await import(
+      "../commandHelpers.js"
+    ));
+  });
   afterEach(() => jest.clearAllMocks());
 
   it("returns null when there is no active stored instance", async () => {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import type { SN, Sync } from "@syncro-now-ai/types";
 
 // Mocked snClient surface. The unwrap helpers are mocked so each test can drive
@@ -37,7 +38,7 @@ const encodedPathsToFilePaths = jest.fn(async (..._a: unknown[]) => [] as string
 
 const loggerError = jest.fn();
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   defaultClient: jest.fn(() => mockClient),
   unwrapSNResponse: (...a: unknown[]) => mockUnwrapSNResponse(...a),
   unwrapTableAPIFirstItem: (...a: unknown[]) => mockUnwrapFirst(...a),
@@ -50,19 +51,19 @@ jest.mock("../snClient", () => ({
   SNClient: class {},
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig,
   getManifest,
   getSourcePath,
   getBuildPath,
 }));
 
-jest.mock("../PluginManager", () => ({
+jest.unstable_mockModule("../PluginManager.js", () => ({
   __esModule: true,
   default: { getFinalFileContents },
 }));
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   createDirRecursively,
   writeFileForce,
   getFileContextFromPath: (...a: unknown[]) => getFileContextFromPath(...a),
@@ -74,14 +75,14 @@ jest.mock("../FileUtils", () => ({
   SNFileExists: () => async () => true,
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   buildManifestFromTableAPI: jest.fn(),
   buildBulkDownloadFromTableAPI: (...a: unknown[]) => mockBuildBulk(...a),
   isScopedEndpointUnavailableError: (e: { response?: { status?: number } } | null) =>
     Boolean(e && [400, 403, 404].includes(e.response?.status as number)),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: jest.fn(),
     error: (...a: unknown[]) => loggerError(...a),
@@ -91,7 +92,8 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../downloadCheckpoint", () => ({
+jest.unstable_mockModule("../downloadCheckpoint.js", () => ({
+  DownloadCheckpoint: jest.fn(),
   readDownloadCheckpoint: jest.fn(async () => null),
   writeDownloadCheckpoint: jest.fn(async () => undefined),
   deleteDownloadCheckpoint: jest.fn(async () => undefined),
@@ -129,7 +131,7 @@ describe("swapScope / swapServerScope", () => {
     mockUnwrapFirstOrEmpty.mockResolvedValueOnce("prefId"); // existing pref
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "x_app" }); // getCurrentScope
 
-    const { swapScope } = await import("../appUtils");
+    const { swapScope } = await import("../appUtils.js");
     const res = await swapScope("x_app");
 
     expect(res).toEqual({ scope: "x_app" });
@@ -144,7 +146,7 @@ describe("swapScope / swapServerScope", () => {
     mockUnwrapFirstOrEmpty.mockResolvedValueOnce(""); // no existing pref
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "x_app" });
 
-    const { swapScope } = await import("../appUtils");
+    const { swapScope } = await import("../appUtils.js");
     await swapScope("x_app");
 
     expect(mockClient.createCurrentAppUserPref).toHaveBeenCalledWith("scopeId123", "userId");
@@ -156,7 +158,7 @@ describe("swapScope / swapServerScope", () => {
       .mockResolvedValueOnce("scopeId123") // getScopeId
       .mockRejectedValueOnce(new Error("no user")); // getUserSysId fails
 
-    const { swapScope } = await import("../appUtils");
+    const { swapScope } = await import("../appUtils.js");
     await expect(swapScope("x_app")).rejects.toThrow("no user");
     expect(loggerError).toHaveBeenCalledWith("no user");
   });
@@ -165,7 +167,7 @@ describe("swapScope / swapServerScope", () => {
 describe("checkScope", () => {
   it("returns the first-time result when there is no manifest", async () => {
     getManifest.mockReturnValue(undefined);
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(false);
     expect(res).toEqual({ match: true, sessionScope: "", manifestScope: "" });
   });
@@ -173,7 +175,7 @@ describe("checkScope", () => {
   it("matches when the session scope equals the manifest scope", async () => {
     getManifest.mockReturnValue({ scope: "x_app" });
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "x_app" });
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(false);
     expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
   });
@@ -181,7 +183,7 @@ describe("checkScope", () => {
   it("reports a mismatch without swapping when swap=false", async () => {
     getManifest.mockReturnValue({ scope: "x_app" });
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "other" });
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(false);
     expect(res).toEqual({ match: false, sessionScope: "other", manifestScope: "x_app" });
   });
@@ -196,7 +198,7 @@ describe("checkScope", () => {
       .mockResolvedValueOnce("userId"); // getUserSysId
     mockUnwrapFirstOrEmpty.mockResolvedValueOnce("prefId");
 
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(true);
     expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
   });
@@ -204,7 +206,7 @@ describe("checkScope", () => {
   it("treats a missing scoped endpoint as a match", async () => {
     getManifest.mockReturnValue({ scope: "x_app" });
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(false);
     expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
   });
@@ -212,7 +214,7 @@ describe("checkScope", () => {
   it("rethrows a non-scoped error from getCurrentScope", async () => {
     getManifest.mockReturnValue({ scope: "x_app" });
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 500 } });
-    const { checkScope } = await import("../appUtils");
+    const { checkScope } = await import("../appUtils.js");
     await expect(checkScope(false)).rejects.toEqual({ response: { status: 500 } });
   });
 });
@@ -223,7 +225,7 @@ describe("createAndAssignUpdateSet", () => {
     mockUnwrapFirst.mockResolvedValueOnce("userId"); // getUserSysId
     mockUnwrapFirstOrEmpty.mockResolvedValueOnce("pref1"); // existing pref
 
-    const { createAndAssignUpdateSet } = await import("../appUtils");
+    const { createAndAssignUpdateSet } = await import("../appUtils.js");
     const res = await createAndAssignUpdateSet("My Set");
 
     expect(res).toEqual({ name: "My Set", id: "us123" });
@@ -236,7 +238,7 @@ describe("createAndAssignUpdateSet", () => {
     mockUnwrapFirst.mockResolvedValueOnce("userId");
     mockUnwrapFirstOrEmpty.mockResolvedValueOnce("");
 
-    const { createAndAssignUpdateSet } = await import("../appUtils");
+    const { createAndAssignUpdateSet } = await import("../appUtils.js");
     await createAndAssignUpdateSet("My Set");
 
     expect(mockClient.createCurrentUpdateSetUserPref).toHaveBeenCalledWith("us123", "userId");
@@ -249,7 +251,7 @@ describe("pushFiles error paths", () => {
     getConfig.mockReturnValue({ pushConcurrency: 1 });
     mockClient.updateRecord.mockRejectedValueOnce({ response: { status: 404 } });
 
-    const { pushFiles } = await import("../appUtils");
+    const { pushFiles } = await import("../appUtils.js");
     const [res] = await pushFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(false);
@@ -261,7 +263,7 @@ describe("pushFiles error paths", () => {
     getConfig.mockReturnValue({ pushConcurrency: 1 });
     mockClient.updateRecord.mockRejectedValueOnce(new Error("boom"));
 
-    const { pushFiles } = await import("../appUtils");
+    const { pushFiles } = await import("../appUtils.js");
     const [res] = await pushFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(false);
@@ -272,7 +274,7 @@ describe("pushFiles error paths", () => {
     getConfig.mockReturnValue({ pushConcurrency: 1 });
     getFinalFileContents.mockRejectedValueOnce(new Error("plugin blew up"));
 
-    const { pushFiles } = await import("../appUtils");
+    const { pushFiles } = await import("../appUtils.js");
     const [res] = await pushFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(false);
@@ -283,7 +285,7 @@ describe("pushFiles error paths", () => {
 
 describe("buildFiles", () => {
   it("writes built field contents to the build path on success", async () => {
-    const { buildFiles } = await import("../appUtils");
+    const { buildFiles } = await import("../appUtils.js");
     const [res] = await buildFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(true);
@@ -293,7 +295,7 @@ describe("buildFiles", () => {
 
   it("returns a build failure when a plugin rejects", async () => {
     getFinalFileContents.mockRejectedValueOnce(new Error("plugin blew up"));
-    const { buildFiles } = await import("../appUtils");
+    const { buildFiles } = await import("../appUtils.js");
     const [res] = await buildFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(false);
@@ -302,7 +304,7 @@ describe("buildFiles", () => {
 
   it("returns a write failure when the build file cannot be written", async () => {
     writeFileForce.mockRejectedValueOnce(new Error("disk full"));
-    const { buildFiles } = await import("../appUtils");
+    const { buildFiles } = await import("../appUtils.js");
     const [res] = await buildFiles([buildableRecord("s1")]);
 
     expect(res.success).toBe(false);
@@ -323,7 +325,7 @@ describe("downloadAllFiles scoped-endpoint probe", () => {
     getConfig.mockReturnValue({ tableOptions: {} });
     mockUnwrapSNResponse.mockResolvedValue({});
 
-    const { downloadAllFiles } = await import("../appUtils");
+    const { downloadAllFiles } = await import("../appUtils.js");
     await downloadAllFiles(manifest);
 
     expect(mockUnwrapSNResponse).toHaveBeenCalledTimes(2);
@@ -336,7 +338,7 @@ describe("downloadAllFiles scoped-endpoint probe", () => {
     // second table goes straight to the Table API without re-probing.
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
 
-    const { downloadAllFiles } = await import("../appUtils");
+    const { downloadAllFiles } = await import("../appUtils.js");
     await downloadAllFiles(manifest);
 
     expect(mockUnwrapSNResponse).toHaveBeenCalledTimes(1);
@@ -353,7 +355,7 @@ describe("getAppFileList", () => {
       targetField: "script",
     });
 
-    const { getAppFileList } = await import("../appUtils");
+    const { getAppFileList } = await import("../appUtils.js");
     const out = await getAppFileList("encoded-paths");
 
     expect(encodedPathsToFilePaths).toHaveBeenCalledWith("encoded-paths");
@@ -366,7 +368,7 @@ describe("getAppFileList", () => {
       .mockReturnValueOnce({ tableName: "sys_script", sys_id: "s1", targetField: "script" })
       .mockReturnValueOnce(null);
 
-    const { getAppFileList } = await import("../appUtils");
+    const { getAppFileList } = await import("../appUtils.js");
     const out = await getAppFileList(["/a.js", "/bad"]);
 
     expect(encodedPathsToFilePaths).not.toHaveBeenCalled();

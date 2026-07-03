@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
 import inquirer from "inquirer";
-import * as ConfigManager from "./config";
-import * as AppUtils from "./appUtils";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
 import fs from "fs";
 const fsp = fs.promises;
-import { logger } from "./Logger";
+import { logger } from "./Logger.js";
 import path from "path";
 import {
   snClient,
@@ -13,20 +13,20 @@ import {
   defaultClient,
   preloadStoredCredentials,
   type SNClient,
-} from "./snClient";
+} from "./snClient.js";
 import {
   buildManifestFromTableAPI,
   listAppsFromTableAPI,
   isScopedEndpointUnavailableError,
-} from "./manifestBuilder";
+} from "./manifestBuilder.js";
 import {
   saveCredentials,
   setActiveInstance,
   getActiveInstance,
   resolveCredentialsFromStore,
-} from "./auth";
-import { writeDotEnv, ensureGitignored } from "./envFile";
-import { generateScopeDocs } from "./scopeDocs";
+} from "./auth.js";
+import { writeDotEnv, ensureGitignored } from "./envFile.js";
+import { generateScopeDocs } from "./scopeDocs.js";
 
 function normalizeInstance(instance: string): string {
   return String(instance || "")

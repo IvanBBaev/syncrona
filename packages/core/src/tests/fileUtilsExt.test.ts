@@ -1,17 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
 
 const getManifest = jest.fn();
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getManifest,
   getSourcePath: jest.fn(() => "/tmp/source"),
   getBuildPath: jest.fn(() => "/tmp/build"),
 }));
 
-import { getFileContextFromPath, SNFileExists } from "../FileUtils";
+// R1: defer the SUT import so it binds to the mocked ../config.js rather than the
+// real module (jest.unstable_mockModule does not hoist).
+let getFileContextFromPath: typeof import("../FileUtils.js").getFileContextFromPath;
+let SNFileExists: typeof import("../FileUtils.js").SNFileExists;
+
+beforeAll(async () => {
+  ({ getFileContextFromPath, SNFileExists } = await import("../FileUtils.js"));
+});
 
 describe("getFileContextFromPath extension handling", () => {
   beforeEach(() => {

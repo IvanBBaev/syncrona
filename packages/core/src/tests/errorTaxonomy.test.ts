@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { classifyError, ErrorCategory } from "../errorTaxonomy";
+import { classifyError, ErrorCategory } from "../errorTaxonomy.js";
 
 // DX19: every CLI failure is classified so the user gets an actionable hint.
 

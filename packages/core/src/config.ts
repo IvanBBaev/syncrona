@@ -4,8 +4,8 @@ import path from "path";
 import { promises as fsp } from "fs";
 import vm from "vm";
 import { createRequire } from "module";
-import { logger } from "./Logger";
-import { includes, excludes, tableOptions } from "./defaultOptions";
+import { logger } from "./Logger.js";
+import { includes, excludes, tableOptions } from "./defaultOptions.js";
 
 // #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
 // so a scoped deploy never silently degrades into a full deploy.

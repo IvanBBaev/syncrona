@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -15,15 +16,15 @@ export {};
 
 const mockGetRootDir = jest.fn();
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getRootDir: (...a: unknown[]) => mockGetRootDir(...a),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { __lockInternals } from "../pushCommand";
+import { __lockInternals } from "../pushCommand.js";
 
 const {
   acquireCollaborationLock,

@@ -2,21 +2,21 @@
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import path from "path";
-import * as AppUtils from "./appUtils";
-import * as ConfigManager from "./config";
-import { logger } from "./Logger";
-import { logPushResults } from "./logMessages";
-import { defaultClient, resolveCredentials } from "./snClient";
+import * as AppUtils from "./appUtils.js";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
+import { logPushResults } from "./logMessages.js";
+import { defaultClient, resolveCredentials } from "./snClient.js";
 import inquirer from "inquirer";
-import { formatTable } from "./genericUtils";
-import { gitDiffToEncodedPaths } from "./gitUtils";
+import { formatTable } from "./genericUtils.js";
+import { gitDiffToEncodedPaths } from "./gitUtils.js";
 import {
   setLogLevel,
   scopeCheck,
   logScopedEndpointCapability,
   getActiveStoreDecryptWarning,
   logErrorHint,
-} from "./commandHelpers";
+} from "./commandHelpers.js";
 
 type PushCheckpoint = {
   attempted: string[];

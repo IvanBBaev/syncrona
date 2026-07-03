@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
-import { PATH_DELIMITER } from "./constants";
+import { PATH_DELIMITER } from "./constants.js";
 import fs, { promises as fsp } from "fs";
 import path from "path";
-import * as ConfigManager from "./config";
-import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout";
-import { logger } from "./Logger";
+import * as ConfigManager from "./config.js";
+import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout.js";
+import { logger } from "./Logger.js";
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));

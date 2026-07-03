@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { createTokenManager, OAuthTokenResponse, TokenPoster } from "../oauth";
+import { createTokenManager, OAuthTokenResponse, TokenPoster } from "../oauth.js";
 
 export {};
 

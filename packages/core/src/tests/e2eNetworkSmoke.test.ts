@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import http from "http";
 import { AddressInfo } from "net";
-import { snClient } from "../snClient";
-import { buildManifestFromTableAPI } from "../manifestBuilder";
+import { snClient } from "../snClient.js";
+import { buildManifestFromTableAPI } from "../manifestBuilder.js";
 
 // G11 network slice: drives the REAL snClient (axios, basic auth, rate
 // limiter) against a local mock ServiceNow Table API over actual sockets —

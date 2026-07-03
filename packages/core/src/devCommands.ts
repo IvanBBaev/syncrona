@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
-import * as ConfigManager from "./config";
-import { startWatching, stopWatching } from "./Watcher";
-import * as AppUtils from "./appUtils";
-import { logger } from "./Logger";
-import { devModeLog } from "./logMessages";
-import { setLogLevel, scopeCheck } from "./commandHelpers";
+import * as ConfigManager from "./config.js";
+import { startWatching, stopWatching } from "./Watcher.js";
+import * as AppUtils from "./appUtils.js";
+import { logger } from "./Logger.js";
+import { devModeLog } from "./logMessages.js";
+import { setLogLevel, scopeCheck } from "./commandHelpers.js";
 
 export async function devCommand(
   args: Sync.SharedCmdArgs & { refreshInterval?: number }

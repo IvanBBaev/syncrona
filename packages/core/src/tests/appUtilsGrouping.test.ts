@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { groupAppFiles } from "../appUtils";
+import { groupAppFiles } from "../appUtils.js";
 import { Sync } from "@syncro-now-ai/types";
 
 const ctx = (

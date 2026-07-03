@@ -15,10 +15,10 @@ import {
   resolveTlsPolicy,
   shouldRetryStatus,
 } from "@syncro-now-ai/sn-transport";
-import { wait } from "./genericUtils";
-import { logger } from "./Logger";
-import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth";
-import { resolveCredentialsFromStore } from "./auth";
+import { wait } from "./genericUtils.js";
+import { logger } from "./Logger.js";
+import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth.js";
+import { resolveCredentialsFromStore } from "./auth.js";
 
 let cachedScopedEndpointPrefix: string | undefined;
 
