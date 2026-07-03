@@ -24,8 +24,8 @@ Re-measure with `npx jest --coverage` (core) and
 
 | Package | Lines | Statements | Branches | Functions | Tests | Gate |
 |---|---|---|---|---|---|---|
-| @syncro-now-ai/core | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
-| @syncro-now-ai/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
+| syncrona | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
+| @syncrona/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
 
 Notes:
 - `credential-store` and `sn-transport` are covered through their consumers'
@@ -64,7 +64,7 @@ timeline
 
 ## What works today
 
-### CLI (`npx syncro-now-ai …`)
+### CLI (`npx syncrona …`)
 
 | Command | State | Notes |
 |---|---|---|
@@ -103,15 +103,15 @@ companion scoped app via the Table-API fallback layer.
 
 ### Shared foundation
 
-- `@syncro-now-ai/credential-store` — single source of truth for at-rest crypto
+- `@syncrona/credential-store` — single source of truth for at-rest crypto
   (AES-256-GCM), async API for the CLI + sync API for the MCP server. Key source
   precedence: explicit `SYNCRONA_STORE_KEY` > OS keychain (DEFAULT backend via the
   optional `@napi-rs/keyring`; opt out with `SYNCRONA_USE_KEYCHAIN=0`) >
   machine-derived fallback (obfuscation-grade; keeps old files decrypting). Also
   stores Jira credential profiles.
-- `@syncro-now-ai/sn-transport` — shared scoped-prefix, retry-status, and
+- `@syncrona/sn-transport` — shared scoped-prefix, retry-status, and
   endpoint-not-found policies consumed by both HTTP clients.
-- `@syncro-now-ai/jira` — shared read-only Jira client (Cloud v3 + Server/DC v2),
+- `@syncrona/jira` — shared read-only Jira client (Cloud v3 + Server/DC v2),
   ADF-to-text rendering, branch-key inference, and config/credential resolution;
   consumed by both the CLI `jira` command and the MCP `jira_get_issue` tool.
 
@@ -158,7 +158,7 @@ mindmap
    workflow); activation is **owner-gated** on npm publish (scope ownership +
    2FA) and repo-public. macOS/Windows/libsecret keychain for the at-rest key
    shipped via AR2 (opt-in). Remaining: `homebrew-tap` repo + first publish to
-   complete the "brew install syncro-now-ai" definition of done.
+   complete the "brew install syncrona" definition of done.
 2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2).
    CR22 is closed: the `sys.scripts.do` fallback was live-verified 2026-07-03
    (fixed a 404-only trigger that missed the real `400` response; confirmed it
