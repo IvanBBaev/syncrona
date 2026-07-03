@@ -750,5 +750,6 @@ SyncroNow AI is licensed under the **[GNU General Public License v3.0](LICENSE)*
 [Sincronia ("sinc")](https://github.com/nuvolo/sincronia) by Nuvolo, which is
 licensed under GPL-3.0; substantial portions of the build/plugin packages, CLI
 core, and shared types originate from that project and remain under GPL-3.0. See
-[NOTICE](NOTICE) for full attribution. As required by the GPL, redistributions
+[NOTICE](NOTICE) for full attribution and [docs/PROVENANCE.md](docs/PROVENANCE.md)
+for the complete provenance/IP analysis. As required by the GPL, redistributions
 must preserve these notices and make the corresponding source available.
