@@ -1,10 +1,10 @@
 name: Release
 
-# Publishes the @syncro-now-ai/* packages to npm with build provenance.
+# Publishes the @syncrona/* packages to npm with build provenance.
 #
 # OWNER-GATED: this workflow stays dormant until the owner decisions land
 # (IP/provenance clearance, repo public, npm scope ownership + 2FA). To enable:
-#   1. Claim the @syncro-now-ai scope on npm and enable 2FA (automation token).
+#   1. Claim the @syncrona scope on npm and enable 2FA (automation token).
 #   2. Add the token as the NPM_TOKEN repository secret.
 #   3. Run via "Run workflow" (workflow_dispatch) or push a v* tag.
 # Provenance requires `id-token: write` and a public repo (npm attestations).
@@ -69,7 +69,7 @@ jobs:
         id: meta
         run: |
           VERSION=$(node -p "require('./packages/core/package.json').version")
-          URL="https://registry.npmjs.org/@syncro-now-ai/core/-/core-${VERSION}.tgz"
+          URL="https://registry.npmjs.org/syncrona/-/syncrona-${VERSION}.tgz"
           curl -fsSL "$URL" -o core.tgz
           SHA=$(shasum -a 256 core.tgz | cut -d' ' -f1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -81,7 +81,7 @@ jobs:
           mkdir -p out
           sed -e "s|url \".*\"|url \"${{ steps.meta.outputs.url }}\"|" \
               -e "s|sha256 \".*\"|sha256 \"${{ steps.meta.outputs.sha }}\"|" \
-              packaging/homebrew/syncro-now-ai.rb > out/syncro-now-ai.rb
+              packaging/homebrew/syncrona.rb > out/syncrona.rb
 
       - name: Commit the formula to the tap repo
         env:
@@ -89,10 +89,10 @@ jobs:
         run: |
           git clone "https://x-access-token:${GH_TOKEN}@github.com/IvanBBaev/homebrew-tap.git" tap
           mkdir -p tap/Formula
-          cp out/syncro-now-ai.rb tap/Formula/syncro-now-ai.rb
+          cp out/syncrona.rb tap/Formula/syncrona.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/syncro-now-ai.rb
-          git commit -m "syncro-now-ai ${{ steps.meta.outputs.version }}" || { echo "No formula changes"; exit 0; }
+          git add Formula/syncrona.rb
+          git commit -m "syncrona ${{ steps.meta.outputs.version }}" || { echo "No formula changes"; exit 0; }
           git push

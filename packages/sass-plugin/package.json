@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/sass-plugin",
+  "name": "@syncrona/sass-plugin",
   "version": "0.4.2",
   "description": "SASS plugin for SyncroNow AI",
   "main": "./dist/index.js",
@@ -15,7 +15,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@syncro-now-ai/types": "^0.4.2",
+    "@syncrona/types": "^0.4.2",
     "sass": "^1.101.0"
   },
   "devDependencies": {

@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/webpack-plugin",
+  "name": "@syncrona/webpack-plugin",
   "version": "0.4.2",
   "description": "Webpack plugin for SyncroNow AI",
   "main": "./dist/index.js",
@@ -15,7 +15,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@syncro-now-ai/types": "^0.4.2",
+    "@syncrona/types": "^0.4.2",
     "memfs": "^4.6.0",
     "webpack": "^5.108.3"
   },

@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Jira issue context** (`@syncro-now-ai/jira`): new `jira`, `jira-login` and
+- **Jira issue context** (`@syncrona/jira`): new `jira`, `jira-login` and
   `jira-logout` CLI commands and a `jira_get_issue` MCP tool that fetch
   read-only issue context (summary, description, status, comments, links, …).
   Supports Jira Cloud (email + API token) and Server / Data Center (PAT),
@@ -43,7 +43,7 @@ All notable changes to this project will be documented in this file.
   the tables not yet fetched instead of restarting after an interruption.
 - Flat project layout support: projects can keep source directly under the
   project root (flat) in addition to the `src/` layout.
-  `npm run changeset` / `version-packages` / `release`; all `@syncro-now-ai/*`
+  `npm run changeset` / `version-packages` / `release`; all `@syncrona/*`
   packages version in lockstep.
 - Machine-enforced module boundaries (G10): dependency-cruiser runs in
   `npm run lint` (`lint:boundaries`) — no circular dependencies, and the shared
@@ -61,7 +61,7 @@ All notable changes to this project will be documented in this file.
   with more than 500 records are now fully enumerated; `sys_idIN` queries
   are chunked to avoid URL-length failures.
 - Client-side rate limiting in the MCP server (shared 20 req/s policy from
-  `@syncro-now-ai/sn-transport`, matching the CLI's axios-rate-limit).
+  `@syncrona/sn-transport`, matching the CLI's axios-rate-limit).
 
 ### Fixed
 

@@ -9,8 +9,8 @@ please set expectations accordingly.
    [docs/](docs/) (multi-instance, monorepo, plugin development, MCP quickstart),
    and the FAQ / "Getting unstuck" section of the README cover most questions.
 2. **Run the built-in diagnostics:**
-   - `syncro-now-ai check-env` — verifies Node/platform/WSL/Git prerequisites.
-   - `syncro-now-ai status` (and `status --debug-credentials`) — instance, scope,
+   - `syncrona check-env` — verifies Node/platform/WSL/Git prerequisites.
+   - `syncrona status` (and `status --debug-credentials`) — instance, scope,
      and credential resolution.
    - Re-run any command with `--log-level debug` for detail; set
      `SYNCRONA_DIAGNOSTIC_LOG=1` to capture a local log for a report.
@@ -19,7 +19,7 @@ please set expectations accordingly.
 
 ## Reporting bugs / requesting features
 
-Open a GitHub issue with the template. For bugs, include the `syncro-now-ai check-env`
+Open a GitHub issue with the template. For bugs, include the `syncrona check-env`
 output, the command + `--log-level debug` output (redact credentials), and your
 ServiceNow release if relevant.
 

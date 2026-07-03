@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { SN, Sync } from "@syncro-now-ai/types";
+import { SN, Sync } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import inquirer from "inquirer";
 import * as ConfigManager from "./config.js";
@@ -47,7 +47,7 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
   }
   if (!manifest) {
     logger.error(
-      "No manifest found. Run `syncro-now-ai refresh` or `syncro-now-ai download <scope>` first."
+      "No manifest found. Run `syncrona refresh` or `syncrona download <scope>` first."
     );
     process.exitCode = 1;
     return;

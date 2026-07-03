@@ -20,38 +20,38 @@ export interface KnownPlugin {
 export const KNOWN_PLUGINS: readonly KnownPlugin[] = [
   {
     short: "typescript",
-    pkg: "@syncro-now-ai/typescript-plugin",
+    pkg: "@syncrona/typescript-plugin",
     description: "Type-check and compile TypeScript files.",
     match: "/\\.ts$/",
     options: "{ transpile: true }",
   },
   {
     short: "babel",
-    pkg: "@syncro-now-ai/babel-plugin",
+    pkg: "@syncrona/babel-plugin",
     description: "Run Babel on .js / .ts files.",
     match: "/\\.(js|ts)$/",
   },
   {
     short: "webpack",
-    pkg: "@syncro-now-ai/webpack-plugin",
+    pkg: "@syncrona/webpack-plugin",
     description: "Bundle files with Webpack.",
     match: "/\\.bundle\\.js$/",
   },
   {
     short: "sass",
-    pkg: "@syncro-now-ai/sass-plugin",
+    pkg: "@syncrona/sass-plugin",
     description: "Compile Sass / SCSS to CSS.",
     match: "/\\.s[ac]ss$/",
   },
   {
     short: "prettier",
-    pkg: "@syncro-now-ai/prettier-plugin",
+    pkg: "@syncrona/prettier-plugin",
     description: "Format output files with Prettier.",
     match: "/\\.(js|ts|json)$/",
   },
   {
     short: "eslint",
-    pkg: "@syncro-now-ai/eslint-plugin",
+    pkg: "@syncrona/eslint-plugin",
     description: "Run ESLint over files on build.",
     match: "/\\.(js|ts)$/",
   },
@@ -59,7 +59,7 @@ export const KNOWN_PLUGINS: readonly KnownPlugin[] = [
 
 /**
  * Resolve a plugin from a user query, accepting the short alias
- * ("typescript"), the full package name ("@syncro-now-ai/typescript-plugin"),
+ * ("typescript"), the full package name ("@syncrona/typescript-plugin"),
  * or a loose form ("typescript-plugin"). Case-insensitive.
  */
 export function findKnownPlugin(query: string): KnownPlugin | undefined {
@@ -69,7 +69,7 @@ export function findKnownPlugin(query: string): KnownPlugin | undefined {
   }
   const normalized = raw
     .toLowerCase()
-    .replace(/^@syncro-now-ai\//, "")
+    .replace(/^@syncrona\//, "")
     .replace(/-plugin$/, "");
   return KNOWN_PLUGINS.find(
     (p) => p.short === normalized || p.pkg.toLowerCase() === raw.toLowerCase()

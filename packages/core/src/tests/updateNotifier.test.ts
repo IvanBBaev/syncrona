@@ -83,7 +83,7 @@ describe("updateNotifier pure helpers", () => {
       const notice = buildUpdateNotice("0.4.2-alpha.8", "0.5.0");
       expect(notice).toContain("0.4.2-alpha.8");
       expect(notice).toContain("0.5.0");
-      expect(notice).toContain("npm i -g @syncro-now-ai/core");
+      expect(notice).toContain("npm i -g syncrona");
     });
   });
 

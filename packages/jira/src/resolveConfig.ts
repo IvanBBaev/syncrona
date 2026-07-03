@@ -15,7 +15,7 @@ import {
   loadJiraCredentials,
   loadJiraCredentialsSync,
   type StoredJiraCredentials,
-} from "@syncro-now-ai/credential-store";
+} from "@syncrona/credential-store";
 import { detectDeployment } from "./deployment";
 import type { JiraConfig, JiraDeployment } from "./types";
 

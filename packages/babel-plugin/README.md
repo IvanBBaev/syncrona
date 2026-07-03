@@ -1,4 +1,4 @@
-# @syncro-now-ai/babel-plugin
+# @syncrona/babel-plugin
 
 <!-- badges:start -->
 | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
@@ -14,7 +14,7 @@ Whatever Babel plugins and presets you use, you still need to `npm install` them
 ## Installation
 
 ```bash
-npm i -D @syncro-now-ai/babel-plugin
+npm i -D @syncrona/babel-plugin
 ```
 
 ## Options
@@ -41,12 +41,12 @@ module.exports={
   rules:{
     match:/\.ts$/,
     plugins:[
-      name:"@syncro-now-ai/babel-plugin",
+      name:"@syncrona/babel-plugin",
       //Babel options. Numbering shows order of execution
       options:{
         presets: [
           //6. Sanitize output code for ServiceNow
-          "@syncro-now-ai/servicenow",
+          "@syncrona/servicenow",
           //5. Babel env preset, transforms syntactic sugar to valid older javascript
           "@babel/env",
           //4. Typescript preset. Removes type information and makes it valid javascript
@@ -54,7 +54,7 @@ module.exports={
           ],
         plugins: [
           //1. Remove import/export statements used for type inference
-          "@syncro-now-ai/remove-modules",
+          "@syncrona/remove-modules",
           //2 and 3. Required babel plugins for typescript
           "@babel/proposal-class-properties",
           "@babel/proposal-object-rest-spread"

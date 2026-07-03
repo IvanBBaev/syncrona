@@ -1,6 +1,6 @@
 # Packaging & distribution
 
-Install paths for the SyncroNow AI CLI (`@syncro-now-ai/core`). All published
+Install paths for the SyncroNow AI CLI (`syncrona`). All published
 distribution is **owner-gated** behind IP/provenance clearance, repo-public, and
 npm scope ownership + 2FA — the scaffolding here is ready to activate once those
 decisions land.
@@ -8,8 +8,8 @@ decisions land.
 ## 1. npm (primary)
 
 ```sh
-npm install -g @syncro-now-ai/core
-syncro-now-ai --help
+npm install -g syncrona
+syncrona --help
 ```
 
 Publishing is automated via Changesets + provenance in
@@ -18,13 +18,13 @@ Publishing is automated via Changesets + provenance in
 
 ## 2. Homebrew (macOS / Linux)
 
-[`homebrew/syncro-now-ai.rb`](homebrew/syncro-now-ai.rb) is the source-of-truth
+[`homebrew/syncrona.rb`](homebrew/syncrona.rb) is the source-of-truth
 formula template. On each tagged core release, the release workflow copies it to
 the `homebrew-tap` repo and fills in the published tarball `url` + `sha256`.
 
 ```sh
 brew tap ivanbbaev/tap
-brew install syncro-now-ai
+brew install syncrona
 ```
 
 > The `url`/`sha256` in the template are placeholders until the first npm publish.

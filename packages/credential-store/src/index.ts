@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * @syncro-now-ai/credential-store
+ * @syncrona/credential-store
  *
  * Single source of truth for SyncroNow AI's at-rest credential storage. Both the
  * core CLI (async API) and the MCP server (sync API) consume this package so
@@ -300,7 +300,7 @@ export async function loadCredentials(
     raw = await fsp.readFile(filePath, "utf8");
   } catch {
     throw new Error(
-      `No credentials found for "${instance}". Run: syncro-now-ai login ${instance}`
+      `No credentials found for "${instance}". Run: syncrona login ${instance}`
     );
   }
   const data = decryptWithFallback(raw.trim());
@@ -436,7 +436,7 @@ export function loadCredentialsSync(
 
 /**
  * Persisted Jira deployment flavour. Mirrors `JiraDeployment` in
- * `@syncro-now-ai/jira`; the two unions are kept separate (rather than imported)
+ * `@syncrona/jira`; the two unions are kept separate (rather than imported)
  * because the foundation packages must not depend on each other (no import
  * cycle / boundaries rule). This package is the single normalizer for the
  * *stored* value — see {@link normalizeStoredJira}.
@@ -491,7 +491,7 @@ function normalizeStoredJira(
 ): StoredJiraCredentials {
   // Coerce any non-"cloud" value to "server": that is the safe default for a
   // self-hosted instance and matches `detectDeployment`'s fallback in
-  // `@syncro-now-ai/jira` (anything not on a known Cloud host is Server/DC). The
+  // `@syncrona/jira` (anything not on a known Cloud host is Server/DC). The
   // value reaching `resolveJiraConfig` is therefore always a valid kind, so the
   // two packages never disagree on a corrupted/legacy stored value.
   const deployment: JiraDeploymentKind = data.deployment === "cloud" ? "cloud" : "server";

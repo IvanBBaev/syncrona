@@ -621,18 +621,18 @@ describe("command flows", () => {
         {
           match: /\\.ts$/,
           plugins: [
-            { name: "@syncro-now-ai/typescript-plugin", options: {} },
-            { name: "@syncro-now-ai/prettier-plugin", options: {} },
+            { name: "@syncrona/typescript-plugin", options: {} },
+            { name: "@syncrona/prettier-plugin", options: {} },
           ],
         },
         {
           match: /\\.js$/,
-          plugins: [{ name: "@syncro-now-ai/typescript-plugin", options: {} }],
+          plugins: [{ name: "@syncrona/typescript-plugin", options: {} }],
         },
       ],
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath.includes("@syncro-now-ai/typescript-plugin")) {
+      if (candidatePath.includes("@syncrona/typescript-plugin")) {
         return { isDirectory: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -643,11 +643,11 @@ describe("command flows", () => {
     expect(result.totalRules).toBe(2);
     expect(result.totalPlugins).toBe(2);
     expect(result.plugins).toEqual([
-      { name: "@syncro-now-ai/prettier-plugin", installed: false, rulesMatched: 1 },
-      { name: "@syncro-now-ai/typescript-plugin", installed: true, rulesMatched: 2 },
+      { name: "@syncrona/prettier-plugin", installed: false, rulesMatched: 1 },
+      { name: "@syncrona/typescript-plugin", installed: true, rulesMatched: 2 },
     ]);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      "plugin:@syncro-now-ai/prettier-plugin is configured but not installed in node_modules."
+      "plugin:@syncrona/prettier-plugin is configured but not installed in node_modules."
     );
   });
 
@@ -758,8 +758,8 @@ describe("command flows", () => {
       expect(match).toBeDefined();
       const writtenConfig = JSON.parse(String(match?.[1] ?? "{}"));
       expect(writtenConfig.mcpServers?.existing).toBeDefined();
-      expect(writtenConfig.mcpServers?.["syncro-now-ai"]).toBeDefined();
-      expect(writtenConfig.mcpServers?.["syncro-now-ai"]?.args).toEqual(["/tmp/mcp/dist/index.js"]);
+      expect(writtenConfig.mcpServers?.["syncrona"]).toBeDefined();
+      expect(writtenConfig.mcpServers?.["syncrona"]?.args).toEqual(["/tmp/mcp/dist/index.js"]);
     }
 
   });
@@ -786,7 +786,7 @@ describe("command flows", () => {
       mcpServerPath: "/tmp/mcp/dist/index.js",
     });
 
-    expect(mockLoggerError).toHaveBeenCalledWith("Run syncro-now-ai login first.");
+    expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 

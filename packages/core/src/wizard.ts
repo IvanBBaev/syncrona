@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { SN, Sync } from "@syncro-now-ai/types";
+import { SN, Sync } from "@syncrona/types";
 import inquirer from "inquirer";
 import * as ConfigManager from "./config.js";
 import * as AppUtils from "./appUtils.js";
@@ -84,7 +84,7 @@ export async function startWizard() {
     if (apps.length === 0) {
       logger.info("No scoped apps were found on this instance.");
       logger.info(
-        "Create a new scoped app in ServiceNow Studio first, then re-run 'syncro-now-ai init'."
+        "Create a new scoped app in ServiceNow Studio first, then re-run 'syncrona init'."
       );
       logger.info(
         "Or enter a scope code manually if the app exists but wasn't returned by the API (ACL restriction)."
@@ -150,7 +150,7 @@ export async function startWizard() {
     }
     logger.success(`${filesReady} files ready. Open Claude and start coding.`);
     logger.success(
-      "You are all set up 👍 Try running 'npx syncro-now-ai dev' to begin development mode."
+      "You are all set up 👍 Try running 'npx syncrona dev' to begin development mode."
     );
     await ConfigManager.loadConfigs();
   } catch (e) {
@@ -162,7 +162,7 @@ export async function startWizard() {
       logger.error(e.message);
     }
     logger.error(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
     // Signal failure so CI and scripted runs can detect the wizard did not
     // complete; previously this returned with a success (0) exit code.
@@ -175,7 +175,7 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
   const activeInstance = await getActiveInstance();
   if (!activeInstance) {
     throw new Error(
-      "No active credentials profile found. Run 'syncro-now-ai login' first."
+      "No active credentials profile found. Run 'syncrona login' first."
     );
   }
 
@@ -187,7 +187,7 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
     !storedCreds.password
   ) {
     throw new Error(
-      "No active credentials profile found. Run 'syncro-now-ai login' first."
+      "No active credentials profile found. Run 'syncrona login' first."
     );
   }
 

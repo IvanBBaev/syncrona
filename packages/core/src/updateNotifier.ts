@@ -21,8 +21,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
-export const PACKAGE_NAME = "@syncro-now-ai/core";
-export const DISPLAY_NAME = "syncro-now-ai";
+export const PACKAGE_NAME = "syncrona";
+export const DISPLAY_NAME = "syncrona";
 const REGISTRY_BASE = "https://registry.npmjs.org";
 const FETCH_TIMEOUT_MS = 1500;
 const CACHE_FILE_NAME = "update-check.json";

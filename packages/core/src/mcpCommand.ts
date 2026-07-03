@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import os from "os";
 import path from "path";
@@ -70,7 +70,7 @@ async function resolveMcpServerPath(explicitPath: string | undefined, workspaceR
   }
 
   throw new Error(
-    "Unable to find MCP server entrypoint. Build @syncro-now-ai/mcp-server or provide --mcp-server-path."
+    "Unable to find MCP server entrypoint. Build @syncrona/mcp-server or provide --mcp-server-path."
   );
 }
 
@@ -94,7 +94,7 @@ async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string
 
   config.mcpServers = {
     ...existingServers,
-    "syncro-now-ai": {
+    "syncrona": {
       command: "node",
       args: [mcpServerPath],
       cwd: workspaceRoot,
@@ -235,7 +235,7 @@ export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
     if (secretsPath) {
       logger.success(`MCP secrets config updated: ${secretsPath}`);
     } else {
-      logger.error("Run syncro-now-ai login first.");
+      logger.error("Run syncrona login first.");
       return;
     }
 
