@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/types",
-  "version": "0.4.2",
+  "version": "0.9.0",
   "description": "Type Declarations for SyncroNow AI",
   "main": "index.d.ts",
   "scripts": {

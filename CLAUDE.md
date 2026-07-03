@@ -31,7 +31,9 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona plugins` reports configured plugin rules and plugin package availability.
 - `npx syncrona config` inspects or extends configuration (e.g. `config show-defaults`, `config add-plugin`).
 - `npx syncrona mcp` starts standalone MCP server with optional local auto-configure.
-- `npx syncrona login` saves credentials in the global credential store.
+- `npx syncrona login` saves credentials in the global credential store; a method
+  picker (or `--auth-method`) selects Basic, OAuth (password / client-credentials /
+  JWT-bearer), or an inbound REST API key, with optional mutual TLS.
 - `npx syncrona logout` removes stored credentials.
 - `npx syncrona instances` lists stored instances and active marker.
 - `npx syncrona use` sets the active stored instance.

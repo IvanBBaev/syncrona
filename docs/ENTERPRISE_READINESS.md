@@ -14,8 +14,18 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   `@syncrona/sn-transport` (shared); `servicenowCore` sends Bearer + refresh on
   401, Basic fallback, via the same `SN_OAUTH_*` vars (3 mcp tests). The legacy
   `sys.scripts.do` fallback stays Basic (best-effort; CR22).
-- 🔴 **SSO / authorization-code grant** — beyond password grant; needs product
-  decision + per-instance OAuth app config.
+- ✅ **Full ServiceNow auth-method coverage** — DONE: one `SN_AUTH_METHOD`-driven
+  layer in `@syncrona/sn-transport`, wired identically into CLI (axios) and MCP
+  (native fetch). Adds OAuth **client-credentials** and **JWT-bearer** grants
+  (RS256 via Node `crypto`, `SN_JWT_KEY`), **inbound REST API key**
+  (`SN_API_KEY`, header `x-sn-apikey`), and orthogonal **mutual TLS**
+  (`SN_CLIENT_CERT`/`SN_CLIENT_KEY`, combinable with any method). `syncrona login`
+  gains a method picker + non-interactive flags; cert/JWT keys are referenced by
+  path, never copied into the encrypted store. Backward-compatible: absent config
+  infers Basic or OAuth-password exactly as before.
+- 🔴 **SSO / authorization-code grant** — interactive browser flow; needs product
+  decision + per-instance OAuth app config. (Non-interactive service auth is now
+  fully covered by the methods above.)
 - ✅ **At-rest credential strength (AR2)** — DONE: the store key is resolved via
   `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets managers) > OS
   keychain (the DEFAULT backend, via the optional `@napi-rs/keyring`; opt out with

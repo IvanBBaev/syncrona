@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-03
+
+First public release to npm. The `syncrona` core CLI, the `@syncrona/mcp-server`
+runtime, their shared libraries (`@syncrona/sn-transport`,
+`@syncrona/credential-store`, `@syncrona/jira`, `@syncrona/types`) and the
+first-party build plugins (`@syncrona/babel-plugin`,
+`@syncrona/babel-plugin-remove-modules`, `@syncrona/babel-preset-servicenow`,
+`@syncrona/webpack-plugin`, `@syncrona/typescript-plugin`, `@syncrona/sass-plugin`,
+`@syncrona/prettier-plugin`, `@syncrona/eslint-plugin`) are published together at
+`0.9.0` with build provenance.
+
+This release consolidates everything previously developed under the `0.x` line,
+including the ServiceNow authentication methods work (Basic, OAuth
+password / client-credentials / JWT-bearer, inbound REST API key, optional mutual
+TLS) and the shared encrypted credential store.
+
 ### Security
 
 - Stronger at-rest credential key (AR2 / D5): the credential-store encryption key

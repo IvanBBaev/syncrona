@@ -28,10 +28,59 @@ import { existsSync, promises as fsp, readFileSync } from "fs";
 import os from "os";
 import path from "path";
 
+/**
+ * ServiceNow authentication method persisted alongside a login. Kept as a local
+ * union (rather than imported from `@syncrona/sn-transport`) because the
+ * foundation packages must not depend on each other — this package is the single
+ * normalizer for the *stored* value, mirroring {@link JiraDeploymentKind}.
+ */
+export type StoredAuthMethod =
+  | "basic"
+  | "oauth-password"
+  | "oauth-client-credentials"
+  | "oauth-jwt-bearer"
+  | "api-key";
+
+const STORED_AUTH_METHODS: readonly StoredAuthMethod[] = [
+  "basic",
+  "oauth-password",
+  "oauth-client-credentials",
+  "oauth-jwt-bearer",
+  "api-key",
+];
+
 export type StoredCredentials = {
   instance: string;
   user: string;
   password: string;
+  /**
+   * Explicit auth method selector. Absent on legacy three-field stores (Basic /
+   * OAuth-password are inferred by the caller for backward compatibility).
+   */
+  authMethod?: StoredAuthMethod;
+  /** OAuth client id — client-credentials / jwt-bearer / password grants. */
+  clientId?: string;
+  /** OAuth client secret — stored encrypted like the password. */
+  clientSecret?: string;
+  /** Inbound REST API key value — stored encrypted like the password. */
+  apiKey?: string;
+  /** API-key header name override (default `x-sn-apikey`). */
+  apiKeyHeader?: string;
+  /**
+   * Path to the JWT-bearer signing key (PEM). Referenced by path — the key
+   * material itself is never copied into the encrypted store.
+   */
+  jwtKeyPath?: string;
+  jwtKid?: string;
+  jwtIss?: string;
+  jwtSub?: string;
+  jwtAud?: string;
+  /** mTLS client certificate path — referenced by path, never inlined. */
+  clientCertPath?: string;
+  /** mTLS client private key path — referenced by path, never inlined. */
+  clientKeyPath?: string;
+  /** Passphrase protecting the mTLS client key — stored encrypted. */
+  clientKeyPassphrase?: string;
 };
 
 type GlobalConfig = {
@@ -274,18 +323,79 @@ async function ensureDirs(): Promise<void> {
   await fsp.mkdir(getCredentialsDir(), { recursive: true, mode: 0o700 });
 }
 
+/**
+ * Normalize a decoded credential record into the on-disk shape. The three core
+ * fields are always present; the optional multi-method fields are only carried
+ * through when set, so a legacy three-field store round-trips byte-for-byte and
+ * a Basic login never grows empty OAuth/mTLS keys. `authMethod` is validated
+ * against the known union (unknown/legacy values drop to undefined, letting the
+ * caller re-infer) — mirroring {@link normalizeStoredJira}.
+ */
+function normalizeStoredCredentials(
+  data: Partial<StoredCredentials>,
+  instance: string
+): StoredCredentials {
+  const stored: StoredCredentials = {
+    instance: String(data.instance || instance || ""),
+    user: String(data.user || ""),
+    // Do not coerce/trim secrets — surrounding characters can be significant.
+    password: String(data.password || ""),
+  };
+  if (
+    typeof data.authMethod === "string" &&
+    STORED_AUTH_METHODS.includes(data.authMethod as StoredAuthMethod)
+  ) {
+    stored.authMethod = data.authMethod as StoredAuthMethod;
+  }
+  const optional: (keyof StoredCredentials)[] = [
+    "clientId",
+    "clientSecret",
+    "apiKey",
+    "apiKeyHeader",
+    "jwtKeyPath",
+    "jwtKid",
+    "jwtIss",
+    "jwtSub",
+    "jwtAud",
+    "clientCertPath",
+    "clientKeyPath",
+    "clientKeyPassphrase",
+  ];
+  for (const field of optional) {
+    const value = data[field];
+    if (typeof value === "string" && value.length > 0) {
+      (stored as Record<string, unknown>)[field] = value;
+    }
+  }
+  return stored;
+}
+
 /* ----------------------------------------------------------------------------
  * Async API — used by the core CLI (read + write).
  * ------------------------------------------------------------------------- */
 
+/**
+ * Persist ServiceNow credentials for `instance`, encrypted at rest.
+ *
+ * Backward compatible: called as `saveCredentials(instance, user, password)` it
+ * writes the classic three-field record. Pass `extra` to persist multi-method
+ * material (auth method, OAuth client id/secret, API key, JWT/mTLS *paths*).
+ * Certificate and private-key material is referenced by path only — the key
+ * bytes are never copied into the encrypted store.
+ */
 export async function saveCredentials(
   instance: string,
   user: string,
-  password: string
+  password: string,
+  extra?: Partial<StoredCredentials>
 ): Promise<void> {
   await ensureDirs();
   const key = getStoreKey();
-  const data = JSON.stringify({ instance, user, password });
+  const record = normalizeStoredCredentials(
+    { ...(extra || {}), instance, user, password },
+    instance
+  );
+  const data = JSON.stringify(record);
   const encrypted = encrypt(data, key);
   const filePath = credentialFilePath(instance);
   await fsp.writeFile(filePath, encrypted, { encoding: "utf8", mode: 0o600 });
@@ -304,7 +414,10 @@ export async function loadCredentials(
     );
   }
   const data = decryptWithFallback(raw.trim());
-  return JSON.parse(data) as StoredCredentials;
+  return normalizeStoredCredentials(
+    JSON.parse(data) as Partial<StoredCredentials>,
+    instance
+  );
 }
 
 export async function listInstances(): Promise<string[]> {
@@ -413,12 +526,10 @@ export function loadCredentialsSync(
   try {
     const raw = readFileSync(filePath, "utf8").trim();
     const data = decryptWithFallback(raw);
-    const creds = JSON.parse(data) as Partial<StoredCredentials>;
-    return {
-      instance: String(creds.instance || instance || ""),
-      user: String(creds.user || ""),
-      password: String(creds.password || ""),
-    };
+    return normalizeStoredCredentials(
+      JSON.parse(data) as Partial<StoredCredentials>,
+      instance
+    );
   } catch {
     return null;
   }

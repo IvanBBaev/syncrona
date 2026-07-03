@@ -3,11 +3,16 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { generateKeyPairSync } from "crypto";
 
 // Mirrors @syncrona/sn-transport's CA_BUNDLE_ENV / TLS_REJECT_UNAUTHORIZED_ENV
 // (kept inline so the test file stays a leaf with no workspace-package imports).
 const CA_BUNDLE_ENV = "SYNCRONA_CA_BUNDLE";
 const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
+// Mirrors @syncrona/sn-transport's mutual-TLS + multi-method auth env var names.
+const CLIENT_CERT_ENV = "SN_CLIENT_CERT";
+const CLIENT_KEY_ENV = "SN_CLIENT_KEY";
+const CLIENT_KEY_PASSPHRASE_ENV = "SN_CLIENT_KEY_PASSPHRASE";
 
 // Exercises the snClient request wrappers (endpoint + params), the scoped-
 // endpoint rethrow, the OAuth 401 refresh interceptor, the response unwrap
@@ -26,6 +31,24 @@ type InterceptorRefs = {
 };
 const mockInterceptors: InterceptorRefs = {};
 
+// Captures every axios.create(config) call so tests can assert the request
+// defaults (auth headers, basic auth, https agent) the factory wired in.
+const mockAxiosCreate = jest.fn((_config?: unknown) => ({
+  get: mockGet,
+  post: mockPost,
+  put: mockPut,
+  patch: mockPatch,
+  request: mockRequest,
+  interceptors: {
+    request: { use: (fn: (cfg: unknown) => unknown) => { mockInterceptors.request = fn; } },
+    response: {
+      use: (_ok: unknown, errFn: (err: unknown) => unknown) => {
+        mockInterceptors.responseError = errFn;
+      },
+    },
+  },
+}));
+
 const mockGetToken = jest.fn();
 const mockForceRefresh = jest.fn();
 const mockResolveStore = jest.fn();
@@ -40,21 +63,7 @@ jest.unstable_mockModule("axios", () => ({
       const candidate = value as { response?: unknown } | null;
       return Boolean(candidate && typeof candidate === "object" && "response" in candidate);
     },
-    create: jest.fn(() => ({
-      get: mockGet,
-      post: mockPost,
-      put: mockPut,
-      patch: mockPatch,
-      request: mockRequest,
-      interceptors: {
-        request: { use: (fn: (cfg: unknown) => unknown) => { mockInterceptors.request = fn; } },
-        response: {
-          use: (_ok: unknown, errFn: (err: unknown) => unknown) => {
-            mockInterceptors.responseError = errFn;
-          },
-        },
-      },
-    })),
+    create: mockAxiosCreate,
   },
 }));
 
@@ -553,5 +562,310 @@ describe("buildHttpsAgent", () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.stringContaining("TLS certificate verification is DISABLED")
     );
+  });
+});
+
+describe("buildHttpsAgent mutual TLS", () => {
+  const TLS_ENV = [CLIENT_CERT_ENV, CLIENT_KEY_ENV, CLIENT_KEY_PASSPHRASE_ENV] as const;
+  const saved: Record<string, string | undefined> = {};
+  let dir: string;
+  let certFile: string;
+  let keyFile: string;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of TLS_ENV) saved[k] = process.env[k];
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-mtls-"));
+    certFile = path.join(dir, "client.crt");
+    keyFile = path.join(dir, "client.key");
+    fs.writeFileSync(certFile, "-----BEGIN CERTIFICATE-----\nMIICerr\n-----END CERTIFICATE-----\n");
+    fs.writeFileSync(keyFile, "-----BEGIN PRIVATE KEY-----\nMIIEkey\n-----END PRIVATE KEY-----\n");
+  });
+
+  afterEach(() => {
+    for (const k of TLS_ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k] as string;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("loads the client certificate and key into the agent for mTLS", async () => {
+    process.env[CLIENT_CERT_ENV] = certFile;
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent?.options.cert).toBeInstanceOf(Buffer);
+    expect(agent?.options.key).toBeInstanceOf(Buffer);
+    // No passphrase configured ⇒ the option is omitted, not set to undefined.
+    expect("passphrase" in (agent?.options ?? {})).toBe(false);
+  });
+
+  it("passes through the private-key passphrase when configured", async () => {
+    process.env[CLIENT_CERT_ENV] = certFile;
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    process.env[CLIENT_KEY_PASSPHRASE_ENV] = "s3cret";
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent?.options.passphrase).toBe("s3cret");
+  });
+
+  it("throws loudly when the client certificate cannot be read", async () => {
+    process.env[CLIENT_CERT_ENV] = path.join(dir, "missing.crt");
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    const { buildHttpsAgent } = await import("../snClient.js");
+    // Unlike the (warn-only) CA bundle, an unreadable mTLS cert is fatal.
+    expect(() => buildHttpsAgent()).toThrow();
+  });
+});
+
+describe("snClient authorization modes", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env[CA_BUNDLE_ENV];
+    delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+    delete process.env[CLIENT_CERT_ENV];
+    delete process.env[CLIENT_KEY_ENV];
+  });
+
+  const baseConfig = () => mockAxiosCreate.mock.calls[0][0] as {
+    headers: Record<string, string>;
+    auth?: { username: string; password: string };
+  };
+
+  it("sends Basic auth when a username and password are provided", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "u", "p");
+    expect(baseConfig().auth).toEqual({ username: "u", password: "p" });
+    expect(baseConfig().headers["x-sn-apikey"]).toBeUndefined();
+  });
+
+  it("sends the API key header (and no Basic auth) in api-key mode", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "", undefined, {
+      header: "x-sn-apikey",
+      value: "APIKEY-123",
+    });
+    expect(baseConfig().headers["x-sn-apikey"]).toBe("APIKEY-123");
+    expect(baseConfig().auth).toBeUndefined();
+  });
+
+  it("honors a custom API key header name", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "", undefined, {
+      header: "X-Company-Key",
+      value: "ZZZ",
+    });
+    expect(baseConfig().headers["X-Company-Key"]).toBe("ZZZ");
+  });
+
+  it("sends no Authorization for an mTLS-only config (empty credentials)", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "");
+    expect(baseConfig().auth).toBeUndefined();
+    expect(baseConfig().headers["x-sn-apikey"]).toBeUndefined();
+  });
+});
+
+describe("resolveCredentials multi-method auth resolution", () => {
+  const AUTH_ENV = [
+    "SN_USER",
+    "SN_PASSWORD",
+    "SN_INSTANCE",
+    "SN_AUTH_METHOD",
+    "SN_API_KEY",
+    "SN_API_KEY_HEADER",
+    "SN_OAUTH_CLIENT_ID",
+    "SN_OAUTH_CLIENT_SECRET",
+    "SN_JWT_KEY",
+    "SN_JWT_KID",
+    "SN_JWT_ISS",
+    "SN_JWT_SUB",
+    "SN_JWT_AUD",
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of AUTH_ENV) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of AUTH_ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k] as string;
+    }
+  });
+
+  it("infers oauth-password from client id + secret + password (backward compatible)", async () => {
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("oauth-password");
+  });
+
+  it("defaults to basic when only a username and password are present", async () => {
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("basic");
+  });
+
+  it("resolves an explicit api-key method with its key and header override", async () => {
+    process.env.SN_AUTH_METHOD = "api-key";
+    process.env.SN_API_KEY = "APIKEY-9";
+    process.env.SN_API_KEY_HEADER = "X-Company-Key";
+    const { resolveCredentials, describeCredentialSource, setActiveInstanceProfile } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    const creds = resolveCredentials();
+    expect(creds.authMethod).toBe("api-key");
+    expect(creds.apiKey).toBe("APIKEY-9");
+    expect(creds.apiKeyHeader).toBe("X-Company-Key");
+    // An API key alone is a usable env credential (no SN_USER required).
+    expect(describeCredentialSource()).toBe("environment (.env / shell SN_* vars)");
+  });
+
+  it("resolves an explicit client-credentials method", async () => {
+    process.env.SN_AUTH_METHOD = "client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("oauth-client-credentials");
+  });
+
+  it("captures the JWT bearer claim overrides", async () => {
+    process.env.SN_AUTH_METHOD = "jwt-bearer";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    process.env.SN_JWT_KEY = "/path/to/key.pem";
+    process.env.SN_JWT_KID = "kid-1";
+    process.env.SN_JWT_ISS = "issuer";
+    process.env.SN_JWT_SUB = "subject";
+    process.env.SN_JWT_AUD = "https://aud/";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    const creds = resolveCredentials();
+    expect(creds.authMethod).toBe("oauth-jwt-bearer");
+    expect(creds).toMatchObject({
+      jwtKey: "/path/to/key.pem",
+      jwtKid: "kid-1",
+      jwtIss: "issuer",
+      jwtSub: "subject",
+      jwtAud: "https://aud/",
+    });
+  });
+});
+
+describe("buildClientAuth per-method descriptor", () => {
+  const creds = (overrides: Record<string, unknown>) => ({
+    user: "svc",
+    password: "",
+    instance: "example.service-now.com",
+    ...overrides,
+  });
+
+  it("builds an API-key descriptor with the default header", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(creds({ authMethod: "api-key", apiKey: "K1" }) as never);
+    expect(out.apiKey).toEqual({ header: "x-sn-apikey", value: "K1" });
+    expect(out.oauth).toBeUndefined();
+  });
+
+  it("builds an API-key descriptor with a custom header", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({ authMethod: "api-key", apiKey: "K1", apiKeyHeader: "X-Custom" }) as never
+    );
+    expect(out.apiKey).toEqual({ header: "X-Custom", value: "K1" });
+  });
+
+  it("builds a client-credentials OAuth config", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({
+        authMethod: "oauth-client-credentials",
+        clientId: "cid",
+        clientSecret: "secret",
+      }) as never
+    );
+    expect(out.oauth).toEqual({
+      clientId: "cid",
+      clientSecret: "secret",
+      grantType: "client_credentials",
+    });
+  });
+
+  it("builds an oauth-password config", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({ authMethod: "oauth-password", clientId: "cid", clientSecret: "secret" }) as never
+    );
+    expect(out.oauth).toEqual({ clientId: "cid", clientSecret: "secret", grantType: "password" });
+  });
+
+  it("returns an empty descriptor for basic auth", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    expect(buildClientAuth(creds({ authMethod: "basic" }) as never)).toEqual({});
+  });
+
+  it("builds a jwt-bearer config that mints a signed assertion from an inline PEM key", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({
+        authMethod: "oauth-jwt-bearer",
+        clientId: "cid",
+        clientSecret: "secret",
+        jwtKey: privateKey,
+        jwtKid: "kid-1",
+      }) as never
+    );
+    expect(out.oauth?.grantType).toBe("jwt-bearer");
+    const assertion = await out.oauth?.buildAssertion?.();
+    // A compact JWS has three base64url segments.
+    expect((assertion ?? "").split(".")).toHaveLength(3);
+  });
+
+  it("reads the jwt-bearer key from a filesystem path when not inline PEM", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-jwt-"));
+    const keyPath = path.join(dir, "jwt.pem");
+    fs.writeFileSync(keyPath, privateKey);
+    try {
+      const { buildClientAuth } = await import("../snClient.js");
+      const out = buildClientAuth(
+        creds({
+          authMethod: "oauth-jwt-bearer",
+          clientId: "cid",
+          clientSecret: "secret",
+          jwtKey: keyPath,
+        }) as never
+      );
+      const assertion = await out.oauth?.buildAssertion?.();
+      expect((assertion ?? "").split(".")).toHaveLength(3);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
