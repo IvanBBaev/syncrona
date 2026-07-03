@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/sn-transport",
+  "name": "@syncrona/sn-transport",
   "version": "0.4.2",
   "description": "Shared ServiceNow transport policy for SyncroNow AI (scoped API prefix resolution and retryable status policy) used by the core CLI client and the MCP server client.",
   "main": "./dist/index.js",

@@ -123,7 +123,7 @@ test('jira_get_issue: an undecryptable stored profile points at re-login, not at
   // A stored profile that exists but cannot be decrypted (credentials copied from
   // another machine/user) must produce re-login guidance — the generic "No Jira
   // credentials configured" would send the user to fix the wrong thing.
-  const { jiraProfileToFilename } = require('@syncro-now-ai/credential-store');
+  const { jiraProfileToFilename } = require('@syncrona/credential-store');
   const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'syncrona-jira-home-'));
   const realHomedir = os.homedir;
   try {

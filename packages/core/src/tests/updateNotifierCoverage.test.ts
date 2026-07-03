@@ -94,41 +94,40 @@ describe("fetchLatestVersion with a mocked global fetch", () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await expect(fetchLatestVersion("@syncro-now-ai/core")).resolves.toBe("9.9.9");
+    await expect(fetchLatestVersion("syncrona")).resolves.toBe("9.9.9");
 
-    // The scoped package name must be URL-encoded when the registry URL is built.
+    // The unscoped package name sits directly in the registry path (no scope
+    // slash to URL-encode).
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestedUrl = String(fetchMock.mock.calls[0][0]);
-    expect(requestedUrl).toContain("registry.npmjs.org");
-    expect(requestedUrl).toContain("%2F");
-    expect(requestedUrl.endsWith("/latest")).toBe(true);
+    expect(requestedUrl).toBe("https://registry.npmjs.org/syncrona/latest");
   });
 
   it("returns null when the response is not ok", async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
-    await expect(fetchLatestVersion("@syncro-now-ai/core")).resolves.toBeNull();
+    await expect(fetchLatestVersion("syncrona")).resolves.toBeNull();
   });
 
   it("returns null when the payload has no string version", async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({ version: 123 }) }) as unknown as typeof fetch;
-    await expect(fetchLatestVersion("@syncro-now-ai/core")).resolves.toBeNull();
+    await expect(fetchLatestVersion("syncrona")).resolves.toBeNull();
   });
 
   it("returns null (swallows) when fetch rejects", async () => {
     global.fetch = jest
       .fn()
       .mockRejectedValue(new Error("network down")) as unknown as typeof fetch;
-    await expect(fetchLatestVersion("@syncro-now-ai/core")).resolves.toBeNull();
+    await expect(fetchLatestVersion("syncrona")).resolves.toBeNull();
   });
 
   it("returns null when the global fetch is unavailable", async () => {
     // typeof fetch !== "function" short-circuits before any network attempt.
     (global as { fetch?: unknown }).fetch = undefined;
-    await expect(fetchLatestVersion("@syncro-now-ai/core")).resolves.toBeNull();
+    await expect(fetchLatestVersion("syncrona")).resolves.toBeNull();
   });
 });
 

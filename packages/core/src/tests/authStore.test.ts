@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-// The credential store lives in the compiled `@syncro-now-ai/credential-store`
+// The credential store lives in the compiled `@syncrona/credential-store`
 // package, which is CommonJS and reaches `os` through `require("os")`. A
 // `jest.unstable_mockModule("os", …)` factory only rewires the ESM import graph
 // and never reaches that CJS `require`, so the store would still resolve the
@@ -111,7 +111,7 @@ describe("auth credential store", () => {
     const auth = await loadAuthWithHome();
 
     await expect(auth.loadCredentials("missing.service-now.com")).rejects.toThrow(
-      'No credentials found for "missing.service-now.com". Run: syncro-now-ai login missing.service-now.com'
+      'No credentials found for "missing.service-now.com". Run: syncrona login missing.service-now.com'
     );
   });
 

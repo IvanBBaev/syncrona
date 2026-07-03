@@ -2,7 +2,7 @@
 //
 // Claims-drift gate. Product claims live in three public artifacts — the root
 // README, the marketing comparison page, and the live site (docs/index.html).
-// The `syncrona` -> `syncro-now-ai` rename and the license/OAuth stories have
+// The `syncro-now-ai` -> `syncrona` rename and the license/OAuth stories have
 // each drifted between these surfaces before. This asserts a tiny hand-curated
 // manifest of stable markers (brand name, current bin name) against each
 // artifact, and forbids the old bin invocation from creeping back in. It is a
@@ -16,15 +16,15 @@ const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');
 // repo-root-relative).
 const REQUIRED_MARKERS = [
   { marker: 'SyncroNow AI', files: ['README.md', 'docs/COMPARISON.md', 'docs/index.html'] },
-  { marker: 'syncro-now-ai', files: ['README.md', 'docs/index.html'] },
+  { marker: 'syncrona', files: ['README.md', 'docs/index.html'] },
 ];
 
 // The old bin name must not return as a command invocation in any public
-// artifact. `syncrona` still legitimately appears in paths (`~/.syncrona/`),
-// scopes and prose, so only the command forms are forbidden.
+// artifact. `syncro-now-ai` may still be referenced in prose (e.g. a
+// "formerly syncro-now-ai" note), so only the command forms are forbidden.
 const FORBIDDEN_PATTERNS = [
-  { pattern: /npx syncrona\b/, label: 'npx syncrona (old bin invocation)' },
-  { pattern: /`syncrona /, label: '`syncrona <cmd>` (old bin command form)' },
+  { pattern: /npx syncro-now-ai\b/, label: 'npx syncro-now-ai (old bin invocation)' },
+  { pattern: /`syncro-now-ai /, label: '`syncro-now-ai <cmd>` (old bin command form)' },
 ];
 const FORBIDDEN_FILES = ['README.md', 'docs/COMPARISON.md', 'docs/index.html'];
 

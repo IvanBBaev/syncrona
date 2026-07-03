@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * @syncro-now-ai/jira — shared Jira read client.
+ * @syncrona/jira — shared Jira read client.
  *
  * Single source of truth for Jira awareness across SyncroNow AI: the core CLI
  * (`jira` / `jira-login` / `jira-logout` commands) and the MCP server

@@ -26,7 +26,7 @@ owner/business decisions (incl. npm publish, which is owner-gated).
       harness (jest.setup.js forces keychain off; storeKey/storeKeyResolution
       mock the keyring). Docs synced (core README, packaging README, install.ps1).
 - [x] Homebrew formula — DONE (code-complete, UNVERIFIED) 2026-06-21:
-      packaging/homebrew/syncro-now-ai.rb (Node-CLI pattern). Cannot brew-install
+      packaging/homebrew/syncrona.rb (Node-CLI pattern). Cannot brew-install
       until first npm publish + tap repo exist.
 - [x] GitHub Actions to auto-update the Homebrew formula on each release — DONE
       2026-06-21: dormant `update-homebrew` job in release.yml (computes sha256
@@ -123,7 +123,7 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 - [x] **G1. OAuth 2.0 auth** — DONE 2026-06-16 (CLI + MCP; additive, Basic default):
       SN_OAUTH_CLIENT_ID + SN_OAUTH_CLIENT_SECRET (CLI also _<PROFILE>) → OAuth 2.0
       password grant at oauth_token.do → Bearer + refresh on expiry/401. The token
-      manager lives in @syncro-now-ai/sn-transport (shared, IO-free; ARCH-001); the CLI
+      manager lives in @syncrona/sn-transport (shared, IO-free; ARCH-001); the CLI
       (snClient axios interceptors) and the MCP server (servicenowCore fetch) both
       use it. Tests: oauth.test.ts (4) + e2e Bearer-on-wire + mcp oauth.test.js (3).
       Legacy sys.scripts.do fallback stays Basic (best-effort; CR22). Full
@@ -154,7 +154,7 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 
 ### Architect — missing infrastructure
 - [x] **G6. Release automation** — DONE 2026-06-21: Changesets wired in
-      (.changeset/, npm run changeset / version-packages / release); @syncro-now-ai/*
+      (.changeset/, npm run changeset / version-packages / release); @syncrona/*
       version in lockstep. Publishing stays owner-gated (npm scope + 2FA). See DONE.
 - [~] **G7. CLI diagnostics telemetry** — PARTIAL 2026-06-13: opt-in local
       diagnostic log shipped — SYNCRONA_DIAGNOSTIC_LOG=1 appends CLI output to
@@ -359,7 +359,7 @@ Scope: the MIT→GPL-3.0 relicense (LICENSE, NOTICE, package.json, README) + rep
 
 ### Cycle 1 — Architect
 - [x] **ARCH-5. Relicense incomplete: Homebrew formula still `license "MIT"`** —
-      DONE 2026-06-22: packaging/homebrew/syncro-now-ai.rb declared MIT (would
+      DONE 2026-06-22: packaging/homebrew/syncrona.rb declared MIT (would
       publish wrong license metadata to the tap). → `GPL-3.0-or-later`.
 - [x] **ARCH-6. Relicense incomplete: docs site advertised MIT (4 places)** —
       DONE 2026-06-22: docs/index.html (the public GitHub Pages site) claimed MIT
@@ -624,7 +624,7 @@ Docs, Workflow, Error Handling, MCP.
 ### CONFIGURATION COMPLEXITY (DX8-DX11)
 
 **DX8: Plugin discovery requires manual names**
-- The user must know the "TypeScript plugin" is called "@syncro-now-ai/typescript-plugin" on npm.
+- The user must know the "TypeScript plugin" is called "@syncrona/typescript-plugin" on npm.
 - `syncrona plugins` shows some but does not help when adding new plugins.
 - [x] Add `config add-plugin` — DONE 2026-06-21: new action on the existing
       `config` command (so no new top-level command). With `--plugin <name>` it
@@ -875,7 +875,7 @@ roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
       promote G1 (OAuth/SSO) to "Must". (Tech work tracked as G1.)
 - [ ] **BA5. No business model / sustainability / bus factor 1** — decide
       OSS-only vs OSS+paid-support; document ownership; recruit co-maintainer.
-- [ ] **BA6. Brand fragmentation** (syncro-now-ai / SyncroNow AI / syncrona /
+- [ ] **BA6. Brand fragmentation** (syncrona / SyncroNow AI / syncrona /
       @syncrona) — unify on one name across npm/repo/CLI [owner decision].
 - [ ] **BA7. No success metrics / KPIs** — instrument once opt-in telemetry (G7)
       lands; KPI set defined in §7.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import type { SN, Sync } from "@syncro-now-ai/types";
+import type { SN, Sync } from "@syncrona/types";
 
 // Mocked snClient surface. The unwrap helpers are mocked so each test can drive
 // the return values directly without constructing real Table-API envelopes.

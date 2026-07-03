@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
  * Shared Jira types for SyncroNow AI. Co-located in this package (rather than in
- * `@syncro-now-ai/types`) so the Jira client stays self-contained — only the CLI
+ * `@syncrona/types`) so the Jira client stays self-contained — only the CLI
  * and the MCP server consume it, and both already depend on this package.
  */
 

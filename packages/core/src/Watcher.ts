@@ -5,7 +5,7 @@ import { logFilePush } from "./logMessages.js";
 // by Node, so import the default and destructure the method we need.
 import lodash from "lodash";
 import { getFileContextFromPath } from "./FileUtils.js";
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import { groupAppFiles, pushFiles } from "./appUtils.js";
 import { logger } from "./Logger.js";
 const { debounce } = lodash;

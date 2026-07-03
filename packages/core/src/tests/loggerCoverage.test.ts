@@ -21,7 +21,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-logger-"));
 // mutable override lets a single test point it at an invalid location to force
 // the mkdir failure branch.
 let syncronaDirOverride: string | null = null;
-jest.unstable_mockModule("@syncro-now-ai/credential-store", () => ({
+jest.unstable_mockModule("@syncrona/credential-store", () => ({
   getSyncronaDir: () => syncronaDirOverride ?? tempRoot,
 }));
 

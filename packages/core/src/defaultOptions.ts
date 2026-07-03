@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 const excludes: Sync.TablePropMap = {
   sys_scope_privilege: true,
   sys_dictionary: true,

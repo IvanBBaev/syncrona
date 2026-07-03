@@ -1,3 +1,3 @@
-# @syncro-now-ai/prettier-plugin
+# @syncrona/prettier-plugin
 
 ## 0.4.2

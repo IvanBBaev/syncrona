@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 
 const mockLogFilePush = jest.fn();
 const mockGroupAppFiles = jest.fn();

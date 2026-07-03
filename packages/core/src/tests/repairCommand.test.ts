@@ -20,7 +20,7 @@ jest.unstable_mockModule("../FileUtils.js", () => ({
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
-import type { SN } from "@syncro-now-ai/types";
+import type { SN } from "@syncrona/types";
 
 // R1: the mocks do not hoist, so the mocked namespaces and the SUT are imported
 // dynamically after the mocks register.

@@ -3,9 +3,9 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 
-// G8: lock the public plugin contract that external `@syncro-now-ai/*-plugin`
+// G8: lock the public plugin contract that external `@syncrona/*-plugin`
 // authors depend on. Two layers of protection:
 //   1. Type — `referencePlugin` is written exactly as an external author
 //      would, typed against the published `Sync.Plugin`/`PluginFunc`. Any

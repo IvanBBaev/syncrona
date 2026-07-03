@@ -38,7 +38,7 @@ type FakeKeyringControls = { store: Map<string, string>; throwOnAccess?: boolean
 async function loadAuthWithKeychain(tempHome: string, controls: FakeKeyringControls) {
   jest.resetModules();
   mockHomeOs(tempHome);
-  // The built @syncro-now-ai/credential-store loads the native keyring via a
+  // The built @syncrona/credential-store loads the native keyring via a
   // CommonJS `require("@napi-rs/keyring")`, which jest.unstable_mockModule (an
   // ESM-only mock) does not intercept. jest.mock, being the CJS-registry mock,
   // does intercept that require — so it is the correct seam for this dependency.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import { SN } from "@syncro-now-ai/types";
+import { SN } from "@syncrona/types";
 
 const createDirRecursively = jest.fn(async () => undefined);
 const writeSNFileCurry = jest.fn(() => async () => undefined);

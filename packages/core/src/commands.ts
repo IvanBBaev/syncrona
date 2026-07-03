@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import path from "path";
 import * as ConfigManager from "./config.js";
@@ -68,7 +68,7 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
   await fsp.mkdir(packagesRoot, { recursive: true });
 
   const client = defaultClient(args.instanceProfile);
-  let apps: import("@syncro-now-ai/types").SN.App[] = [];
+  let apps: import("@syncrona/types").SN.App[] = [];
   try {
     apps = await unwrapSNResponse(client.getAppList());
   } catch (e) {
@@ -193,7 +193,7 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   const client = defaultClient(args.instanceProfile);
   const config = ConfigManager.getConfig();
 
-  let man: import("@syncro-now-ai/types").SN.AppManifest;
+  let man: import("@syncrona/types").SN.AppManifest;
   try {
     man = await unwrapSNResponse(client.getManifest(args.scope, config));
   } catch (e) {
@@ -223,7 +223,7 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
   const man = ConfigManager.getManifest();
   if (!man) {
     logger.error(
-      "No manifest found. Run 'syncro-now-ai init' or 'syncro-now-ai download <scope>' first."
+      "No manifest found. Run 'syncrona init' or 'syncrona download <scope>' first."
     );
     return;
   }

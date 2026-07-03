@@ -51,12 +51,12 @@ applications. The following are **shipped**:
 
 ### Auth & security ✅
 - **OAuth 2.0** on both the CLI and the MCP server (password grant, Bearer +
-  refresh on 401/expiry, shared token manager in `@syncro-now-ai/sn-transport`).
+  refresh on 401/expiry, shared token manager in `@syncrona/sn-transport`).
   Basic auth stays the default; OAuth is opt-in via `SN_OAUTH_CLIENT_ID` /
   `SN_OAUTH_CLIENT_SECRET`.
 - Multi-instance credentials (env / encrypted store / interactive, profile
   aware), credential-source visibility in `status`, decrypt-failure warnings.
-- Encrypted credential store (`@syncro-now-ai/credential-store`, AES-256-GCM),
+- Encrypted credential store (`@syncrona/credential-store`, AES-256-GCM),
   policy-as-code + secrets-provider chain, Zod input validation, audited tool
   calls, VM-sandboxed script execution.
 
@@ -98,21 +98,21 @@ mostly by **owner decisions**, with a small amount of engineering left.
   public step below.** Full analysis, current compliance state, and the exact
   legal sign-off still required: [docs/PROVENANCE.md](docs/PROVENANCE.md).
 - ✅ **Brand unification** (BA6) — **decided & implemented**: product **SyncroNow
-  AI**, npm scope `@syncro-now-ai/*`, CLI command `syncro-now-ai`, MCP server
-  `syncro-now-ai-mcp-server`. On-disk conventions (`.syncrona*`) and the
+  AI**, npm scope `@syncrona/*`, CLI command `syncrona`, MCP server
+  `syncrona-mcp-server`. On-disk conventions (`.syncrona*`) and the
   versioned at-rest crypto salt are intentionally left unchanged (no migration
   pre-publish). Repo rename to match is the only owner step left (cosmetic).
 - ✅ **Repository → public** — done 2026-06-21; the repo is now public and the
   CodeQL workflow (guarded to public repos) activates automatically. (Confirm IP
   clearance below is settled, since it was the intended gate for this step.)
-- 🔒 **npm publish + 2FA** (D5) — claim the `@syncro-now-ai` scope, enable 2FA,
+- 🔒 **npm publish + 2FA** (D5) — claim the `@syncrona` scope, enable 2FA,
   then run the `release` workflow (Changesets publish with provenance).
 - 🔒 **Business model / sustainability** (BA5) — OSS-only vs OSS + paid support;
   ownership and co-maintainer (bus factor is 1 today).
 
 ### Engineering (completable once decisions land)
 - ✅ **Release automation** (G6) — Changesets wired in (`.changeset/`,
-  `npm run changeset` / `version-packages` / `release`); `@syncro-now-ai/*` packages
+  `npm run changeset` / `version-packages` / `release`); `@syncrona/*` packages
   version in lockstep. The publish step itself stays owner-gated.
 - ✅ **CI publish with provenance** (D5) — [`release.yml`](.github/workflows/release.yml)
   publishes via Changesets with `--provenance` (`id-token: write`); dormant until
@@ -132,7 +132,7 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 
 ### Distribution
 - 🚧 **Homebrew tap** (D5) — formula template shipped in
-  [`packaging/homebrew/`](packaging/homebrew/syncro-now-ai.rb); owner step left is
+  [`packaging/homebrew/`](packaging/homebrew/syncrona.rb); owner step left is
   creating the `homebrew-tap` repo and the first publish (release action fills the
   tarball `url`/`sha256`).
 - 🚧 **Windows support** (D5) — [`packaging/windows/install.ps1`](packaging/windows/install.ps1)

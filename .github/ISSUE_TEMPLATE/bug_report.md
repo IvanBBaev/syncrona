@@ -16,12 +16,12 @@ A clear description of the bug.
 - Expected:
 - Actual:
 
-**Environment** (paste `syncro-now-ai check-env` output)
-- syncro-now-ai version:
+**Environment** (paste `syncrona check-env` output)
+- syncrona version:
 - Node version:
 - OS (and WSL?):
 - ServiceNow release (if relevant):
 
 **Logs**
 Run the command with `--log-level debug` and paste relevant output (redact
-credentials). For credential issues, `syncro-now-ai status --debug-credentials`.
+credentials). For credential issues, `syncrona status --debug-credentials`.

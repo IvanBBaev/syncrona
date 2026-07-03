@@ -1,3 +1,3 @@
-# @syncro-now-ai/types
+# @syncrona/types
 
 ## 0.4.2

@@ -37,9 +37,9 @@ contract.test.js:
 
 scripts:
 
-- npm run --workspace=@syncro-now-ai/mcp-server test
-- npm run --workspace=@syncro-now-ai/mcp-server quality-gates
-- npm run --workspace=@syncro-now-ai/mcp-server validate-release-checklist
+- npm run --workspace=@syncrona/mcp-server test
+- npm run --workspace=@syncrona/mcp-server quality-gates
+- npm run --workspace=@syncrona/mcp-server validate-release-checklist
 
 ## Recommended next quality step
 

@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-// Mirrors @syncro-now-ai/sn-transport's CA_BUNDLE_ENV / TLS_REJECT_UNAUTHORIZED_ENV
+// Mirrors @syncrona/sn-transport's CA_BUNDLE_ENV / TLS_REJECT_UNAUTHORIZED_ENV
 // (kept inline so the test file stays a leaf with no workspace-package imports).
 const CA_BUNDLE_ENV = "SYNCRONA_CA_BUNDLE";
 const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
@@ -465,7 +465,7 @@ describe("snClient credential cache and active profile", () => {
 
     await preloadStoredCredentials();
     expect(resolveCredentials().user).toBe("store.user");
-    expect(describeCredentialSource()).toBe("credential store (syncro-now-ai login)");
+    expect(describeCredentialSource()).toBe("credential store (syncrona login)");
 
     clearStoredCredentialsCache();
     expect(resolveCredentials().user).toBe("");

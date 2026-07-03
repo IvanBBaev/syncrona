@@ -14,13 +14,13 @@ export interface ClassifiedError {
 
 const HINTS: Record<ErrorCategory, string> = {
   network:
-    "Network issue: check your connection, VPN and the instance URL (SN_INSTANCE), then retry. `syncro-now-ai check-env` verifies your environment and `syncro-now-ai doctor` tests connectivity.",
-  auth: "Authentication issue: verify the integration user and password (re-run `syncro-now-ai login`) and its roles; if you use OAuth, check SN_OAUTH_*. `syncro-now-ai status --debug-credentials` shows which credentials resolve.",
+    "Network issue: check your connection, VPN and the instance URL (SN_INSTANCE), then retry. `syncrona check-env` verifies your environment and `syncrona doctor` tests connectivity.",
+  auth: "Authentication issue: verify the integration user and password (re-run `syncrona login`) and its roles; if you use OAuth, check SN_OAUTH_*. `syncrona status --debug-credentials` shows which credentials resolve.",
   config:
-    "Configuration issue: check `sync.config.js` and `.env` in this project. `syncro-now-ai config show-defaults` prints the built-in defaults and `syncro-now-ai doctor` validates your setup.",
+    "Configuration issue: check `sync.config.js` and `.env` in this project. `syncrona config show-defaults` prints the built-in defaults and `syncrona doctor` validates your setup.",
   data: "Not found: the scope, table or record may not exist or you may lack access to it. Verify the name / sys_id and that the scope has been downloaded.",
   unknown:
-    "Run again with `--log-level debug` for detail, or `syncro-now-ai doctor` to check configuration and connectivity.",
+    "Run again with `--log-level debug` for detail, or `syncrona doctor` to check configuration and connectivity.",
 };
 
 const NETWORK_CODES = new Set([

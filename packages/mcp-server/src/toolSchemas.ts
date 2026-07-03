@@ -1388,7 +1388,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
       properties: {
         profileA: {
           type: "string",
-          description: "First stored instance profile name (as saved by syncro-now-ai login).",
+          description: "First stored instance profile name (as saved by syncrona login).",
         },
         profileB: {
           type: "string",
