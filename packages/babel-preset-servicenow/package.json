@@ -9,7 +9,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@babel/core": "^7.23.2",
+    "@babel/core": "^8.0.1",
     "@babel/types": "^7.23.0"
   },
   "devDependencies": {
