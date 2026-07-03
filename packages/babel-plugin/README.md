@@ -1,5 +1,10 @@
 # @syncro-now-ai/babel-plugin
 
+<!-- badges:start -->
+| ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+|:--:|:--:|:--:|:--:|:--:|
+<!-- badges:end -->
+
 ## Overview
 
 This plugin allows you to run [Babel](https://babeljs.io/) on your javascript and TypeScript files. This enables you to do all kinds of interesting things with your code structure. It also lets you use more modern javascript features in your ServiceNow development.
