@@ -8,7 +8,7 @@
 // the pattern it came from, the helper never throws / never emits a malformed
 // name, and every reported issue is a real double-match (soundness).
 import fc from "fast-check";
-import { synthesizeFilename, checkRuleOrder } from "../config";
+import { synthesizeFilename, checkRuleOrder } from "../config.js";
 
 const LIT_CHARS = "abAB01._-".split("");
 // A literal safe to embed in a suffix-anchored pattern, matching the shape

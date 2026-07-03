@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import * as cp from "child_process";
 import path from "path";
-import { logger } from "./Logger";
-import { PATH_DELIMITER } from "./constants";
-import * as ConfigManager from "./config";
+import { logger } from "./Logger.js";
+import { PATH_DELIMITER } from "./constants.js";
+import * as ConfigManager from "./config.js";
 import fs from "fs";
-import * as fUtils from "./FileUtils";
+import * as fUtils from "./FileUtils.js";
 
 export const gitDiffToEncodedPaths = async (diff: string) => {
   if (diff !== "") return gitDiff(diff, ConfigManager.getSourcePath());

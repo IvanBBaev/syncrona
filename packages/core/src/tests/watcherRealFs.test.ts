@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -18,24 +19,33 @@ const mockPushFiles = jest.fn();
 const mockGroupAppFiles = jest.fn();
 const mockGetFileContextFromPath = jest.fn();
 
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../logMessages.js", () => ({
   logFilePush: jest.fn(),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   groupAppFiles: (...args: unknown[]) => mockGroupAppFiles(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
 }));
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   getFileContextFromPath: (...args: unknown[]) => mockGetFileContextFromPath(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: { error: jest.fn() },
 }));
 
-import { startWatching, stopWatching } from "../Watcher";
+// Under ESM, jest.unstable_mockModule does not hoist: a static import of the SUT
+// (Watcher) binds the real appUtils/FileUtils/logMessages/Logger dependencies
+// before the mocks register. The SUT is imported dynamically in beforeAll, after
+// the mocks are in place.
+let startWatching: typeof import("../Watcher.js").startWatching;
+let stopWatching: typeof import("../Watcher.js").stopWatching;
+
+beforeAll(async () => {
+  ({ startWatching, stopWatching } = await import("../Watcher.js"));
+});
 
 // A real editor save can take a moment to surface through chokidar's polling on
 // some filesystems; wait for pushFiles rather than a fixed sleep.

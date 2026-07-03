@@ -7,7 +7,7 @@ import {
   upsertEnvVars,
   writeDotEnv,
   ensureGitignored,
-} from "../envFile";
+} from "../envFile.js";
 
 describe("envFile", () => {
   let tempDir: string;

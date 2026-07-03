@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { Sync } from "@syncro-now-ai/types";
 
 const mockLogFilePush = jest.fn();
@@ -11,26 +12,26 @@ const mockClose = jest.fn();
 
 let changeHandler: ((path: string) => void) | undefined;
 
-jest.mock("./../logMessages", () => ({
+jest.unstable_mockModule("./../logMessages.js", () => ({
   logFilePush: (...args: unknown[]) => mockLogFilePush(...args),
 }));
 
-jest.mock("./../appUtils", () => ({
+jest.unstable_mockModule("./../appUtils.js", () => ({
   groupAppFiles: (...args: unknown[]) => mockGroupAppFiles(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
 }));
 
-jest.mock("./../FileUtils", () => ({
+jest.unstable_mockModule("./../FileUtils.js", () => ({
   getFileContextFromPath: (...args: unknown[]) => mockGetFileContextFromPath(...args),
 }));
 
-jest.mock("./../Logger", () => ({
+jest.unstable_mockModule("./../Logger.js", () => ({
   logger: {
     error: (...args: unknown[]) => mockLoggerError(...args),
   },
 }));
 
-jest.mock("chokidar", () => ({
+jest.unstable_mockModule("chokidar", () => ({
   __esModule: true,
   default: {
     watch: (...args: unknown[]) => mockWatch(...args),
@@ -102,7 +103,7 @@ describe("Watcher queue behavior", () => {
     const res2 = { success: false, message: "ok-2" };
     mockPushFiles.mockResolvedValue([res1, res2]);
 
-    const { startWatching, stopWatching } = await import("../Watcher");
+    const { startWatching, stopWatching } = await import("../Watcher.js");
 
     startWatching("/tmp");
     expect(changeHandler).toBeDefined();
@@ -132,7 +133,7 @@ describe("Watcher queue behavior", () => {
     ]);
     mockPushFiles.mockRejectedValue(new Error("kaboom"));
 
-    const { startWatching, stopWatching } = await import("../Watcher");
+    const { startWatching, stopWatching } = await import("../Watcher.js");
 
     startWatching("/tmp");
     expect(changeHandler).toBeDefined();

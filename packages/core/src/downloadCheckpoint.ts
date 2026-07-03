@@ -7,7 +7,7 @@
 
 import { promises as fsp } from "fs";
 import path from "path";
-import * as ConfigManager from "./config";
+import * as ConfigManager from "./config.js";
 
 export const DOWNLOAD_CHECKPOINT_FILE = "sync.download.checkpoint.json";
 

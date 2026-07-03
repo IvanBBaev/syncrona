@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -8,7 +9,7 @@ export {};
 const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -37,7 +38,7 @@ describe("config coverage", () => {
       fs.writeFileSync(path.join(project, name), contents);
     }
     process.chdir(project);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
     await store.loadConfigs();
     return { cfg, store, project };
@@ -46,7 +47,7 @@ describe("config coverage", () => {
   // ---- getters throw before any config is loaded (empty state) ----------
 
   it("every getter throws its own error before configs are loaded", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
 
     expect(() => store.getConfig()).toThrow("Error getting config");
@@ -65,7 +66,7 @@ describe("config coverage", () => {
 
   // getManifest(setup=true) returns undefined instead of throwing when absent.
   it("getManifest(true) returns undefined instead of throwing when no manifest", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
     expect(store.getManifest(true)).toBeUndefined();
   });
@@ -145,7 +146,7 @@ describe("config coverage", () => {
   // ---- DiffFileCorruptError constructor --------------------------------
 
   it("DiffFileCorruptError carries its message and name", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const err = new cfg.DiffFileCorruptError("boom");
     expect(err).toBeInstanceOf(Error);
     expect(err.name).toBe("DiffFileCorruptError");
@@ -176,7 +177,7 @@ describe("config coverage", () => {
   });
 
   it("flags an invalid-JSON diff file as corrupt and getDiffFile throws DiffFileCorruptError", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const project = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-cov-"));
     fs.writeFileSync(
       path.join(project, "sync.config.js"),
@@ -196,7 +197,7 @@ describe("config coverage", () => {
   });
 
   it("flags a present-but-unreadable diff file (non-ENOENT) as corrupt", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const project = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-cov-"));
     fs.writeFileSync(
       path.join(project, "sync.config.js"),
@@ -235,7 +236,7 @@ describe("config coverage", () => {
     // via a monorepo-style layout below.
 
     process.chdir(sibling);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
     await store.loadConfigs();
     // No config found up the tree → cwd is root, default config is used.
@@ -287,7 +288,7 @@ describe("config coverage", () => {
   // ---- getDefaultConfig / getDefaultConfigFile --------------------------
 
   it("getDefaultConfig returns the built-in defaults", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const defaults = cfg.getDefaultConfig();
     expect(defaults.sourceDirectory).toBe("src");
     expect(defaults.buildDirectory).toBe("build");
@@ -296,7 +297,7 @@ describe("config coverage", () => {
   });
 
   it("getDefaultConfigFile normalizes a blank source directory to 'src'", async () => {
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const blank = cfg.getDefaultConfigFile("   ");
     expect(blank).toContain('sourceDirectory: "src"');
 
@@ -308,7 +309,7 @@ describe("config coverage", () => {
   // ---- validateConfigShape: direct unit coverage of every branch --------
 
   it("validateConfigShape rejects a non-object export", async () => {
-    const { validateConfigShape } = await import("../config");
+    const { validateConfigShape } = await import("../config.js");
     expect(() => validateConfigShape([1, 2, 3], "/p/sync.config.js")).toThrow(
       /expected module.exports to be an object/
     );
@@ -318,7 +319,7 @@ describe("config coverage", () => {
   });
 
   it("validateConfigShape warns on unknown keys and errors on wrong types", async () => {
-    const { validateConfigShape } = await import("../config");
+    const { validateConfigShape } = await import("../config.js");
 
     // Unknown key → warning, no throw.
     expect(() =>
@@ -340,7 +341,7 @@ describe("config coverage", () => {
   // ---- synthesizeFilename ----------------------------------------------
 
   it("synthesizeFilename builds concrete samples and rejects metacharacters", async () => {
-    const { synthesizeFilename } = await import("../config");
+    const { synthesizeFilename } = await import("../config.js");
 
     // Leading-dot literal → prefixed with "file".
     expect(synthesizeFilename(/^\.secret\.ts$/)).toBe("file.secret.ts");
@@ -353,7 +354,7 @@ describe("config coverage", () => {
   // ---- checkRuleOrder ---------------------------------------------------
 
   it("checkRuleOrder reports a broad rule shadowing a later specific one", async () => {
-    const { checkRuleOrder } = await import("../config");
+    const { checkRuleOrder } = await import("../config.js");
 
     const issues = checkRuleOrder([
       { match: /\.ts$/ }, // broad, placed first
@@ -366,7 +367,7 @@ describe("config coverage", () => {
   });
 
   it("checkRuleOrder finds no shadowing when the specific rule comes first", async () => {
-    const { checkRuleOrder } = await import("../config");
+    const { checkRuleOrder } = await import("../config.js");
 
     const issues = checkRuleOrder([
       { match: /\.secret\.ts$/ },
@@ -409,7 +410,7 @@ describe("config coverage", () => {
       "module.exports = { sourceDirectory: 'src',\n" // unterminated object literal
     );
     process.chdir(project);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
 
     await expect(store.loadConfigs()).rejects.toThrow(/Failed to load config file/);
@@ -429,7 +430,7 @@ describe("config coverage", () => {
     );
 
     process.chdir(scopeDir);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
     await store.loadConfigs();
 

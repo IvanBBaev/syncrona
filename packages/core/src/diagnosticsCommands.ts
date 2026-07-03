@@ -4,24 +4,24 @@ import { promises as fsp, readFileSync } from "fs";
 import { execFileSync } from "child_process";
 import os from "os";
 import path from "path";
-import * as ConfigManager from "./config";
-import { logger } from "./Logger";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
 import {
   defaultClient,
   resolveCredentials,
   describeCredentialSource,
   diagnoseCredentials,
   unwrapSNResponse,
-} from "./snClient";
-import { listInstances } from "./auth";
-import { isScopedEndpointUnavailableError } from "./manifestBuilder";
-import { KNOWN_PLUGINS, findKnownPlugin, renderPluginRule } from "./pluginCatalog";
+} from "./snClient.js";
+import { listInstances } from "./auth.js";
+import { isScopedEndpointUnavailableError } from "./manifestBuilder.js";
+import { KNOWN_PLUGINS, findKnownPlugin, renderPluginRule } from "./pluginCatalog.js";
 import {
   setLogLevel,
   logScopedEndpointCapability,
   activeStoreHealth,
   getActiveStoreDecryptWarning,
-} from "./commandHelpers";
+} from "./commandHelpers.js";
 
 type StatusSummary = {
   ok: boolean;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockStartWatching = jest.fn();
@@ -14,31 +15,31 @@ const mockLoggerDebug = jest.fn();
 const mockLoggerSetLogLevel = jest.fn();
 const mockLoggerGetLogLevel = jest.fn((..._a: unknown[]) => "info");
 
-jest.mock("../Watcher", () => ({
+jest.unstable_mockModule("../Watcher.js", () => ({
   startWatching: (...a: unknown[]) => mockStartWatching(...a),
   stopWatching: (...a: unknown[]) => mockStopWatching(...a),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   syncManifest: (...a: unknown[]) => mockSyncManifest(...a),
 }));
 
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../logMessages.js", () => ({
   devModeLog: (...a: unknown[]) => mockDevModeLog(...a),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getSourcePath: (...a: unknown[]) => mockGetSourcePath(...a),
   getRefresh: (...a: unknown[]) => mockGetRefresh(...a),
 }));
 
-jest.mock("../commandHelpers", () => ({
+jest.unstable_mockModule("../commandHelpers.js", () => ({
   setLogLevel: (...a: unknown[]) => mockSetLogLevel(...a),
   // Run the wrapped callback directly so the real devCommand body executes.
   scopeCheck: (fn: () => unknown) => fn(),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: (...a: unknown[]) => mockLoggerInfo(...a),
     success: (...a: unknown[]) => mockLoggerSuccess(...a),
@@ -48,12 +49,19 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-import { devCommand, refreshCommand } from "../devCommands";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real dependencies before the mocks take effect.
+let devCommand: typeof import("../devCommands.js").devCommand;
+let refreshCommand: typeof import("../devCommands.js").refreshCommand;
 
 describe("devCommands", () => {
   const prevExit = process.exitCode;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ devCommand, refreshCommand } = await import("../devCommands.js"));
+  });
   afterEach(() => {
     jest.restoreAllMocks();
     process.removeAllListeners("SIGINT");

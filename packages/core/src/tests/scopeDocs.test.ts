@@ -12,7 +12,7 @@ import {
   generateScopeDocs,
   DOCS_AUTO_START,
   DOCS_AUTO_END,
-} from "../scopeDocs";
+} from "../scopeDocs.js";
 
 function sampleManifest(): SN.AppManifest {
   return {

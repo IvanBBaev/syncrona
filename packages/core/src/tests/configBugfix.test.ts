@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -29,14 +30,14 @@ describe("config merge bugfixes", () => {
     );
 
     process.chdir(projectA);
-    const cfgA = await import("../config");
+    const cfgA = await import("../config.js");
     await cfgA.loadConfigs();
     const projectAIncludes = cfgA.getConfig().includes || {};
     expect(projectAIncludes.zzz_a_only).toBe(true);
 
     jest.resetModules();
     process.chdir(projectB);
-    const cfgB = await import("../config");
+    const cfgB = await import("../config.js");
     await cfgB.loadConfigs();
     const projectBIncludes = cfgB.getConfig().includes || {};
 
@@ -54,7 +55,7 @@ describe("config merge bugfixes", () => {
     );
 
     process.chdir(project);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     await cfg.loadConfigs();
     expect(cfg.getConfig().refreshInterval).toBe(12);
 
@@ -83,7 +84,7 @@ describe("config merge bugfixes", () => {
       "module.exports = { refreshInterval: 22, includes: { beta_only: true } };\n"
     );
 
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
 
     process.chdir(projectA);
     await cfg.loadConfigs();
@@ -118,7 +119,7 @@ describe("config merge bugfixes", () => {
     );
 
     process.chdir(scopeDir);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     await cfg.loadConfigs();
 
     const expectedScopeDir = fs.realpathSync(scopeDir);

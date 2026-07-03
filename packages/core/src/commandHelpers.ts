@@ -2,13 +2,13 @@
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp, readFileSync } from "fs";
 import path from "path";
-import * as ConfigManager from "./config";
-import * as AppUtils from "./appUtils";
-import { logger } from "./Logger";
-import { scopeCheckMessage } from "./logMessages";
-import { classifyError } from "./errorTaxonomy";
-import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient";
-import { getActiveInstance, loadCredentials } from "./auth";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
+import { logger } from "./Logger.js";
+import { scopeCheckMessage } from "./logMessages.js";
+import { classifyError } from "./errorTaxonomy.js";
+import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient.js";
+import { getActiveInstance, loadCredentials } from "./auth.js";
 
 export const LOGIN_DEFAULT_SOURCE_DIRECTORY = "src";
 

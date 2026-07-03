@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { withRetry, writeFileForce, writeSNFileCurry } from "../FileUtils";
+import { withRetry, writeFileForce, writeSNFileCurry } from "../FileUtils.js";
 
 describe("writeSNFileCurry", () => {
   it("does not overwrite existing file when checkExists=true", async () => {

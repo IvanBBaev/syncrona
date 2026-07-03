@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // Targets the command branches commandsFlow.test.ts does not exercise:
@@ -38,7 +39,7 @@ const mockBuildManifestFromTableAPI = jest.fn();
 
 const mockPrompt = jest.fn();
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: jest.fn(),
     success: (...a: unknown[]) => mockLoggerSuccess(...a),
@@ -48,7 +49,9 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../commandHelpers", () => ({
+jest.unstable_mockModule("../commandHelpers.js", () => ({
+  getActiveStoreDecryptWarning: jest.fn(),
+  activeStoreHealth: jest.fn(),
   LOGIN_DEFAULT_SOURCE_DIRECTORY: "src",
   setLogLevel: (...a: unknown[]) => mockSetLogLevel(...a),
   scopeCheck: (fn: () => Promise<void>) => fn(),
@@ -56,7 +59,7 @@ jest.mock("../commandHelpers", () => ({
   logErrorHint: (...a: unknown[]) => mockLogErrorHint(...a),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getManifest: (...a: unknown[]) => mockGetManifest(...a),
   getConfig: (...a: unknown[]) => mockGetConfig(...a),
   checkRuleOrder: (...a: unknown[]) => mockCheckRuleOrder(...a),
@@ -66,7 +69,7 @@ jest.mock("../config", () => ({
   getDefaultConfigFile: () => "module.exports = {};",
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...a: unknown[]) => mockProcessManifest(...a),
   downloadAllFiles: (...a: unknown[]) => mockDownloadAllFiles(...a),
   getAppFileList: (...a: unknown[]) => mockGetAppFileList(...a),
@@ -74,19 +77,23 @@ jest.mock("../appUtils", () => ({
   pushFiles: (...a: unknown[]) => mockPushFiles(...a),
 }));
 
-jest.mock("../scopeDocs", () => ({
+jest.unstable_mockModule("../scopeDocs.js", () => ({
   generateScopeDocs: (...a: unknown[]) => mockGenerateScopeDocs(...a),
 }));
 
-jest.mock("../gitUtils", () => ({
+jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...a: unknown[]) => mockGitDiffToEncodedPaths(...a),
 }));
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   encodedPathsToFilePaths: (...a: unknown[]) => mockEncodedPathsToFilePaths(...a),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  describeCredentialSource: jest.fn(),
+  diagnoseCredentials: jest.fn(),
+  snClient: jest.fn(),
+  preloadStoredCredentials: jest.fn(),
   defaultClient: () => ({
     checkConnection: (...a: unknown[]) => mockCheckConnection(...a),
     getManifest: (...a: unknown[]) => mockGetManifestApi(...a),
@@ -96,21 +103,21 @@ jest.mock("../snClient", () => ({
   resolveCredentials: (...a: unknown[]) => mockResolveCredentials(...a),
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   isScopedEndpointUnavailableError: (...a: unknown[]) => mockIsScopedUnavailable(...a),
   buildManifestFromTableAPI: (...a: unknown[]) => mockBuildManifestFromTableAPI(...a),
   listAppsFromTableAPI: jest.fn(),
 }));
 
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../logMessages.js", () => ({
   logPushResults: jest.fn(),
   logBuildResults: jest.fn(),
 }));
 
-jest.mock("../wizard", () => ({ startWizard: jest.fn() }));
-jest.mock("../mcpCommand", () => ({ mcpCommand: jest.fn() }));
+jest.unstable_mockModule("../wizard.js", () => ({ startWizard: jest.fn() }));
+jest.unstable_mockModule("../mcpCommand.js", () => ({ mcpCommand: jest.fn() }));
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: { prompt: (...a: unknown[]) => mockPrompt(...a) },
 }));
@@ -139,7 +146,7 @@ beforeEach(() => {
 describe("docsCommand", () => {
   it("errors when no manifest is available", async () => {
     mockGetManifest.mockReturnValue(undefined);
-    const { docsCommand } = await import("../commands");
+    const { docsCommand } = await import("../commands.js");
     await docsCommand({ logLevel: "info" });
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("No manifest found")
@@ -149,7 +156,7 @@ describe("docsCommand", () => {
 
   it("writes scope docs when a manifest exists", async () => {
     mockGetManifest.mockReturnValue({ scope: "x_test", tables: {} });
-    const { docsCommand } = await import("../commands");
+    const { docsCommand } = await import("../commands.js");
     await docsCommand({ logLevel: "info" });
     expect(mockGenerateScopeDocs).toHaveBeenCalled();
     expect(mockLoggerSuccess).toHaveBeenCalledWith(
@@ -160,7 +167,7 @@ describe("docsCommand", () => {
   it("logs an error when doc generation fails", async () => {
     mockGetManifest.mockReturnValue({ scope: "x_test", tables: {} });
     mockGenerateScopeDocs.mockRejectedValueOnce(new Error("render failed"));
-    const { docsCommand } = await import("../commands");
+    const { docsCommand } = await import("../commands.js");
     await docsCommand({ logLevel: "info" });
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("render failed")
@@ -172,7 +179,7 @@ describe("buildCommand --check-config", () => {
   it("reports a clean rule order when nothing is shadowed", async () => {
     mockGetConfig.mockReturnValue({ rules: [{ match: "*.ts" }] });
     mockCheckRuleOrder.mockReturnValue([]);
-    const { buildCommand } = await import("../commands");
+    const { buildCommand } = await import("../commands.js");
     await buildCommand({ logLevel: "info", diff: "", checkConfig: true });
     expect(mockLoggerSuccess).toHaveBeenCalledWith(
       expect.stringContaining("Config rule order OK")
@@ -188,7 +195,7 @@ describe("buildCommand --check-config", () => {
     mockCheckRuleOrder.mockReturnValue([
       { laterIndex: 1, earlierIndex: 0, sample: "x.ts" },
     ]);
-    const { buildCommand } = await import("../commands");
+    const { buildCommand } = await import("../commands.js");
     await buildCommand({ logLevel: "info", diff: "", checkConfig: true });
     expect(mockLoggerWarn).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -200,7 +207,7 @@ describe("buildCommand failure handling", () => {
   it("logs the error and sets a failing exit code when the pipeline throws", async () => {
     const oldExit = process.exitCode;
     mockGitDiffToEncodedPaths.mockRejectedValueOnce(new Error("git exploded"));
-    const { buildCommand } = await import("../commands");
+    const { buildCommand } = await import("../commands.js");
     await buildCommand({ logLevel: "info", diff: "" });
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("git exploded")
@@ -214,7 +221,7 @@ describe("deployCommand", () => {
   it("aborts, hints and sets a failing exit code when the connection preflight fails", async () => {
     const oldExit = process.exitCode;
     mockCheckConnection.mockRejectedValueOnce(new Error("offline"));
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     // #3/#49: the message now names the target instance and the failure is
     // routed through logErrorHint (credential-source-aware advice) instead of
@@ -230,7 +237,7 @@ describe("deployCommand", () => {
 
   it("returns without pushing when the deploy confirmation is declined", async () => {
     mockPrompt.mockResolvedValueOnce({ confirmed: false }); // deploy confirm
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     expect(mockGetAppFileList).not.toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
@@ -243,7 +250,7 @@ describe("deployCommand", () => {
       .mockResolvedValueOnce({ confirmed: true }); // diff-only confirm
     mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "1", fields: {} }]);
     mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     expect(mockGetAppFileList).toHaveBeenCalledWith(["/build/changed.js"]);
     expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
@@ -262,7 +269,7 @@ describe("deployCommand", () => {
       { success: true, message: "ok" },
       { success: false, message: "boom" },
     ]);
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     expect(mockPushFiles).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -276,7 +283,7 @@ describe("deployCommand", () => {
       { table: "sys_script", sysId: "1", fields: {} },
     ]);
     mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     expect(mockPushFiles).toHaveBeenCalled();
     expect(process.exitCode).toBe(0);
@@ -287,7 +294,7 @@ describe("deployCommand", () => {
     const oldExit = process.exitCode;
     process.exitCode = 0;
     mockResolveCredentials.mockReturnValueOnce({ instance: undefined });
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await deployCommand({ logLevel: "info" });
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("No server configured for deploy")
@@ -306,7 +313,7 @@ describe("deployCommand", () => {
       throw new Error("sync.diff.manifest.json is present but unreadable");
     });
     mockPrompt.mockResolvedValueOnce({ confirmed: true }); // deploy confirm
-    const { deployCommand } = await import("../commands");
+    const { deployCommand } = await import("../commands.js");
     await expect(deployCommand({ logLevel: "info" })).rejects.toThrow(
       /present but unreadable/
     );
@@ -319,7 +326,7 @@ describe("deployCommand", () => {
 describe("downloadCommand", () => {
   it("returns early when the overwrite prompt is declined", async () => {
     mockPrompt.mockResolvedValueOnce({ confirmed: false });
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
     await downloadCommand({ logLevel: "info", scope: "x_test" });
     expect(mockProcessManifest).not.toHaveBeenCalled();
   });
@@ -327,7 +334,7 @@ describe("downloadCommand", () => {
   it("falls back to the Table API when the scoped manifest endpoint is missing", async () => {
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
     mockIsScopedUnavailable.mockReturnValue(true);
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
     await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalled();
     expect(mockProcessManifest).toHaveBeenCalled();
@@ -337,7 +344,7 @@ describe("downloadCommand", () => {
   it("rethrows a non-scoped manifest error", async () => {
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 500 } });
     mockIsScopedUnavailable.mockReturnValue(false);
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
     await expect(
       downloadCommand({ logLevel: "info", scope: "x_test", ci: true })
     ).rejects.toEqual({ response: { status: 500 } });

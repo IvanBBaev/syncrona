@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -32,7 +33,7 @@ const mockResolveStore = jest.fn();
 const mockLoggerError = jest.fn();
 const mockLoggerWarn = jest.fn();
 
-jest.mock("axios", () => ({
+jest.unstable_mockModule("axios", () => ({
   __esModule: true,
   default: {
     isAxiosError: (value: unknown) => {
@@ -57,20 +58,22 @@ jest.mock("axios", () => ({
   },
 }));
 
-jest.mock("axios-rate-limit", () => ({
+jest.unstable_mockModule("axios-rate-limit", () => ({
   __esModule: true,
   default: (client: unknown) => client,
 }));
 
-jest.mock("../oauth", () => ({
+jest.unstable_mockModule("../oauth.js", () => ({
+  OAuthConfig: jest.fn(),
+  TokenPoster: jest.fn(),
   createTokenManager: () => ({ getToken: mockGetToken, forceRefresh: mockForceRefresh }),
 }));
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   resolveCredentialsFromStore: (...a: unknown[]) => mockResolveStore(...a),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     error: (...a: unknown[]) => mockLoggerError(...a),
     warn: (...a: unknown[]) => mockLoggerWarn(...a),
@@ -111,7 +114,7 @@ describe("snClient request wrappers", () => {
   });
 
   const makeClient = async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
     return snClient("https://example.service-now.com/", "u", "p");
   };
@@ -268,12 +271,12 @@ describe("snClient request wrappers", () => {
 
 describe("isRetryableRequestError", () => {
   it("retries when there is no HTTP response (network error)", async () => {
-    const { isRetryableRequestError } = await import("../snClient");
+    const { isRetryableRequestError } = await import("../snClient.js");
     expect(isRetryableRequestError(new Error("ECONNRESET"))).toBe(true);
   });
 
   it("delegates to the shared retry-status policy for HTTP errors", async () => {
-    const { isRetryableRequestError } = await import("../snClient");
+    const { isRetryableRequestError } = await import("../snClient.js");
     expect(isRetryableRequestError({ response: { status: 503 } })).toBe(true);
     expect(isRetryableRequestError({ response: { status: 404 } })).toBe(false);
   });
@@ -288,7 +291,7 @@ describe("snClient OAuth refresh interceptor", () => {
   });
 
   it("attaches a Bearer token on request and refreshes once on a 401", async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
     snClient("https://example.service-now.com/", "u", "p", {
       clientId: "cid",
@@ -308,7 +311,7 @@ describe("snClient OAuth refresh interceptor", () => {
   });
 
   it("rejects a non-401 response without refreshing", async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
     snClient("https://example.service-now.com/", "u", "p", {
       clientId: "cid",
@@ -327,7 +330,7 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapSNResponse returns the result payload", async () => {
-    const { unwrapSNResponse } = await import("../snClient");
+    const { unwrapSNResponse } = await import("../snClient.js");
     const out = await unwrapSNResponse(
       Promise.resolve({ data: { result: { scope: "x_app" } } }) as never
     );
@@ -335,7 +338,7 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapSNResponse logs and rethrows on an unexpected (non-404) error", async () => {
-    const { unwrapSNResponse } = await import("../snClient");
+    const { unwrapSNResponse } = await import("../snClient.js");
     const err = { response: { status: 500 }, message: "boom" };
     await expect(
       unwrapSNResponse(Promise.reject(err) as never)
@@ -344,7 +347,7 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapSNResponse stays quiet on an expected 404 fallback", async () => {
-    const { unwrapSNResponse } = await import("../snClient");
+    const { unwrapSNResponse } = await import("../snClient.js");
     const err = { response: { status: 404 } };
     await expect(unwrapSNResponse(Promise.reject(err) as never)).rejects.toBe(err);
     expect(mockLoggerError).not.toHaveBeenCalled();
@@ -355,7 +358,7 @@ describe("snClient response unwrap helpers", () => {
   // first downstream `Object.keys()` crashed with an opaque error. The guard now
   // throws a typed NonApiResponseError that names the real cause.
   it("unwrapSNResponse throws a typed NonApiResponseError on a 200 HTML body", async () => {
-    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
     const htmlBody = "<!DOCTYPE html><html><body>Instance hibernating…</body></html>";
     const promise = unwrapSNResponse(
       Promise.resolve({
@@ -373,7 +376,7 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapSNResponse rejects a 200 object body that lacks a `result` key", async () => {
-    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
     await expect(
       unwrapSNResponse(
         Promise.resolve({ status: 200, data: { error: "no api here" }, headers: {} }) as never
@@ -382,14 +385,14 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapSNResponse rejects a 200 with a null/undefined body", async () => {
-    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
     await expect(
       unwrapSNResponse(Promise.resolve({ status: 200, data: undefined, headers: {} }) as never)
     ).rejects.toBeInstanceOf(NonApiResponseError);
   });
 
   it("unwrapSNResponse accepts a valid { result } body even when result is falsy", async () => {
-    const { unwrapSNResponse } = await import("../snClient");
+    const { unwrapSNResponse } = await import("../snClient.js");
     // `result: null` is a legitimate API response (e.g. a not-found single record)
     // and must pass the shape guard — only a *missing* result key is rejected.
     await expect(
@@ -398,7 +401,7 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapTableAPIFirstItem returns the first row or an extracted field", async () => {
-    const { unwrapTableAPIFirstItem } = await import("../snClient");
+    const { unwrapTableAPIFirstItem } = await import("../snClient.js");
     const rows = [{ sys_id: "1", name: "A" }];
     await expect(
       unwrapTableAPIFirstItem(Promise.resolve({ data: { result: rows } }) as never)
@@ -409,14 +412,14 @@ describe("snClient response unwrap helpers", () => {
   });
 
   it("unwrapTableAPIFirstItem throws on an empty result", async () => {
-    const { unwrapTableAPIFirstItem } = await import("../snClient");
+    const { unwrapTableAPIFirstItem } = await import("../snClient.js");
     await expect(
       unwrapTableAPIFirstItem(Promise.resolve({ data: { result: [] } }) as never)
     ).rejects.toThrow("Response was not a populated array!");
   });
 
   it("unwrapTableAPIFirstItemOrEmpty returns '' on empty and the field otherwise", async () => {
-    const { unwrapTableAPIFirstItemOrEmpty } = await import("../snClient");
+    const { unwrapTableAPIFirstItemOrEmpty } = await import("../snClient.js");
     await expect(
       unwrapTableAPIFirstItemOrEmpty(Promise.resolve({ data: { result: [] } }) as never, "sys_id")
     ).resolves.toBe("");
@@ -457,7 +460,7 @@ describe("snClient credential cache and active profile", () => {
       resolveCredentials,
       describeCredentialSource,
       setActiveInstanceProfile,
-    } = await import("../snClient");
+    } = await import("../snClient.js");
     setActiveInstanceProfile(undefined);
 
     await preloadStoredCredentials();
@@ -469,7 +472,7 @@ describe("snClient credential cache and active profile", () => {
   });
 
   it("setActiveInstanceProfile normalizes and getActiveInstanceProfile reads it back", async () => {
-    const { setActiveInstanceProfile, getActiveInstanceProfile } = await import("../snClient");
+    const { setActiveInstanceProfile, getActiveInstanceProfile } = await import("../snClient.js");
     setActiveInstanceProfile("dev-instance");
     expect(getActiveInstanceProfile()).toBe("DEV_INSTANCE");
     setActiveInstanceProfile(undefined);
@@ -482,7 +485,7 @@ describe("snClient credential cache and active profile", () => {
     process.env.SN_INSTANCE = "base.service-now.com";
     process.env.SN_USER_DEV = "dev.user";
     process.env.SN_INSTANCE_DEV = "dev.service-now.com";
-    const { diagnoseCredentials } = await import("../snClient");
+    const { diagnoseCredentials } = await import("../snClient.js");
 
     const diag = diagnoseCredentials("dev");
     expect(diag.profile).toBe("DEV");
@@ -519,14 +522,14 @@ describe("buildHttpsAgent", () => {
   it("returns undefined when no custom TLS policy is configured", async () => {
     delete process.env[CA_BUNDLE_ENV];
     delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
-    const { buildHttpsAgent } = await import("../snClient");
+    const { buildHttpsAgent } = await import("../snClient.js");
     expect(buildHttpsAgent()).toBeUndefined();
   });
 
   it("builds an agent loaded with the configured CA bundle", async () => {
     process.env[CA_BUNDLE_ENV] = caFile;
     delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
-    const { buildHttpsAgent } = await import("../snClient");
+    const { buildHttpsAgent } = await import("../snClient.js");
     const agent = buildHttpsAgent();
     expect(agent).toBeDefined();
     expect(agent?.options.ca).toBeInstanceOf(Buffer);
@@ -534,7 +537,7 @@ describe("buildHttpsAgent", () => {
 
   it("warns when the CA bundle cannot be read", async () => {
     process.env[CA_BUNDLE_ENV] = path.join(path.dirname(caFile), "missing.pem");
-    const { buildHttpsAgent } = await import("../snClient");
+    const { buildHttpsAgent } = await import("../snClient.js");
     expect(buildHttpsAgent()).toBeDefined();
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.stringContaining("Could not read CA bundle")
@@ -544,7 +547,7 @@ describe("buildHttpsAgent", () => {
   it("warns and disables verification when TLS rejection is turned off", async () => {
     delete process.env[CA_BUNDLE_ENV];
     process.env[TLS_REJECT_UNAUTHORIZED_ENV] = "0";
-    const { buildHttpsAgent } = await import("../snClient");
+    const { buildHttpsAgent } = await import("../snClient.js");
     const agent = buildHttpsAgent();
     expect(agent?.options.rejectUnauthorized).toBe(false);
     expect(mockLoggerWarn).toHaveBeenCalledWith(

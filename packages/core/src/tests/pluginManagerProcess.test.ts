@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -36,12 +37,12 @@ afterAll(() => {
 const getConfig = jest.fn();
 const getRootDir = jest.fn();
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...a: unknown[]) => getConfig(...a),
   getRootDir: (...a: unknown[]) => getRootDir(...a),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: { debug: jest.fn(), info: jest.fn(), error: jest.fn() },
 }));
 
@@ -64,14 +65,14 @@ beforeEach(() => {
 describe("PluginManager.getFinalFileContents", () => {
   it("returns raw file contents when processFile is disabled", async () => {
     getConfig.mockReturnValue({ rules: [] });
-    const PluginManager = (await import("../PluginManager")).default;
+    const PluginManager = (await import("../PluginManager.js")).default;
     const out = await PluginManager.getFinalFileContents(context(SOURCE_FILE), false);
     expect(out).toContain('gs.info("hello")');
   });
 
   it("copies a file as-is when no rule matches its path", async () => {
     getConfig.mockReturnValue({ rules: [{ match: /\.ts$/, plugins: [] }] });
-    const PluginManager = (await import("../PluginManager")).default;
+    const PluginManager = (await import("../PluginManager.js")).default;
     const out = await PluginManager.getFinalFileContents(context(SOURCE_FILE));
     expect(out).toContain('gs.info("hello")');
     expect(out).not.toContain("transformed");
@@ -81,7 +82,7 @@ describe("PluginManager.getFinalFileContents", () => {
     getConfig.mockReturnValue({
       rules: [{ match: /\.js$/, plugins: [{ name: "okplugin", options: {} }] }],
     });
-    const PluginManager = (await import("../PluginManager")).default;
+    const PluginManager = (await import("../PluginManager.js")).default;
     const out = await PluginManager.getFinalFileContents(context(SOURCE_FILE));
     expect(out).toContain("// transformed");
   });
@@ -90,7 +91,7 @@ describe("PluginManager.getFinalFileContents", () => {
     getConfig.mockReturnValue({
       rules: [{ match: /\.js$/, plugins: [{ name: "failplugin", options: {} }] }],
     });
-    const PluginManager = (await import("../PluginManager")).default;
+    const PluginManager = (await import("../PluginManager.js")).default;
     await expect(
       PluginManager.getFinalFileContents(context(SOURCE_FILE))
     ).rejects.toThrow("Failed to build sys_script=>abc");

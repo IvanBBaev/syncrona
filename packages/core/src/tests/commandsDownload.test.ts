@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockSetLogLevel = jest.fn();
@@ -7,7 +8,7 @@ const mockGetConfig = jest.fn();
 const mockProcessManifest = jest.fn();
 const mockGetManifestApi = jest.fn();
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
     info: jest.fn(),
@@ -16,11 +17,11 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...args: unknown[]) => mockProcessManifest(...args),
   downloadAllFiles: jest.fn().mockResolvedValue(undefined),
 }));
@@ -28,11 +29,17 @@ jest.mock("../appUtils", () => ({
 // downloadCommand also generates scope docs; stub it so the test does not
 // write the real packages/core/docs/scopes/<scope>.md (which generateScopeDocs
 // resolves from process.cwd() and would dirty the tracked tree). (G17)
-jest.mock("../scopeDocs", () => ({
+jest.unstable_mockModule("../scopeDocs.js", () => ({
   generateScopeDocs: jest.fn().mockResolvedValue("/tmp/docs/scopes/x_test.md"),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  snClient: jest.fn(),
+  preloadStoredCredentials: jest.fn(),
+  getErrorResponseStatus: jest.fn(),
+  getScopedEndpointPrefix: jest.fn(),
+  describeCredentialSource: jest.fn(),
+  diagnoseCredentials: jest.fn(),
   defaultClient: () => ({
     getManifest: (...args: unknown[]) => mockGetManifestApi(...args),
   }),
@@ -46,7 +53,7 @@ jest.mock("../snClient", () => ({
   }),
 }));
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
     prompt: (...args: unknown[]) => mockPrompt(...args),
@@ -64,7 +71,7 @@ describe("downloadCommand flow", () => {
     const manifest = { scope: "x_test", tables: {} };
     mockGetManifestApi.mockResolvedValue({ data: { result: manifest } });
 
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
 
     await downloadCommand({ logLevel: "info", scope: "x_test" });
 
@@ -81,7 +88,7 @@ describe("downloadCommand flow", () => {
     const manifest = { scope: "x_test", tables: {} };
     mockGetManifestApi.mockResolvedValue({ data: { result: manifest } });
 
-    const { downloadCommand } = await import("../commands");
+    const { downloadCommand } = await import("../commands.js");
 
     await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
 

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import type { AxiosResponse } from "axios";
 import {
   retryOnErr,
   processPushResponse,
   getErrorResponseStatus,
   isRetryableRequestError,
-} from "../snClient";
+} from "../snClient.js";
 
 const resp = (status: number): AxiosResponse =>
   ({ status } as AxiosResponse);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN } from "@syncro-now-ai/types";
-import { downloadTablesWithResume, DownloadTableDeps } from "../appUtils";
-import { DownloadCheckpoint } from "../downloadCheckpoint";
+import { downloadTablesWithResume, DownloadTableDeps } from "../appUtils.js";
+import { DownloadCheckpoint } from "../downloadCheckpoint.js";
 
 // G3: the resumable download loop — progress, per-table checkpointing, resume
 // skipping and checkpoint cleanup, tested with injected deps (no net / disk).

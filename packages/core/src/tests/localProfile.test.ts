@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -8,13 +9,13 @@ export {};
 // DX7: .syncrona-local can set a default instance profile; an explicit
 // --instance-profile flag still wins.
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   setActiveInstanceProfile: jest.fn(),
   getScopedEndpointPrefix: jest.fn(),
 }));
-jest.mock("../appUtils", () => ({}));
+jest.unstable_mockModule("../appUtils.js", () => ({}));
 
-import { resolveInstanceProfile } from "../commandHelpers";
+import { resolveInstanceProfile } from "../commandHelpers.js";
 
 describe("resolveInstanceProfile (DX7 .syncrona-local)", () => {
   const originalCwd = process.cwd();

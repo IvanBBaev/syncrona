@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { checkRuleOrder } from "../config";
+import { checkRuleOrder } from "../config.js";
 
 export {};
 

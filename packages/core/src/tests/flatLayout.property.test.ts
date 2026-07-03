@@ -11,7 +11,7 @@
 // can later claim unconditional losslessness without tripping a test.
 import path from "path";
 import fc from "fast-check";
-import { folderRelToFlat, flatRelToFolder, isFlatEncoded } from "../flatLayout";
+import { folderRelToFlat, flatRelToFolder, isFlatEncoded } from "../flatLayout.js";
 
 const p = (...segs: string[]) => segs.join(path.sep);
 

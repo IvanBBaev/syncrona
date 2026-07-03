@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockPrompt = jest.fn();
@@ -28,23 +29,28 @@ const mockUnwrapSNResponse = jest.fn();
 const mockBuildManifestFromTableAPI = jest.fn();
 const mockListAppsFromTableAPI = jest.fn();
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
     prompt: (...args: unknown[]) => mockPrompt(...args),
   },
 }));
 
-jest.mock("fs", () => ({
-  constants: { F_OK: 0 },
-  promises: {
+// fs is a CJS core module; spread the real surface and override only the
+// promises members the wizard drives, so callers doing `import fs from "fs"`
+// (default) or a named import still link while disk writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     access: (...args: unknown[]) => mockAccess(...args),
     mkdir: (...args: unknown[]) => mockMkdir(...args),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getEnvPath: (...args: unknown[]) => mockGetEnvPath(...args),
   getManifest: (...args: unknown[]) => mockGetManifest(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
@@ -54,18 +60,18 @@ jest.mock("../config", () => ({
   loadConfigs: (...args: unknown[]) => mockLoadConfigs(...args),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...args: unknown[]) => mockProcessManifest(...args),
 }));
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   saveCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
   setActiveInstance: (...args: unknown[]) => mockSetActiveInstance(...args),
   getActiveInstance: (...args: unknown[]) => mockGetActiveInstance(...args),
   resolveCredentialsFromStore: (...args: unknown[]) => mockResolveCredentialsFromStore(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: (...args: unknown[]) => mockLoggerInfo(...args),
     success: (...args: unknown[]) => mockLoggerSuccess(...args),
@@ -78,7 +84,7 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   // #48: getManifest lives on the store-backed snClient() instance the wizard
   // built to list apps — the download uses that SAME client, not defaultClient().
   snClient: jest.fn(() => ({
@@ -93,7 +99,7 @@ jest.mock("../snClient", () => ({
   preloadStoredCredentials: jest.fn(async () => undefined),
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   buildManifestFromTableAPI: (...args: unknown[]) => mockBuildManifestFromTableAPI(...args),
   listAppsFromTableAPI: (...args: unknown[]) => mockListAppsFromTableAPI(...args),
   isScopedEndpointUnavailableError: jest.fn((e: unknown) =>
@@ -175,7 +181,7 @@ describe("wizard", () => {
       .mockResolvedValueOnce([{ scope: "x_app", displayName: "App" }])
       .mockResolvedValueOnce({ scope: "x_app" });
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockPrompt).toHaveBeenCalledTimes(1);
@@ -205,7 +211,7 @@ describe("wizard", () => {
   it("fails fast and asks for login when no active CredentialStore instance exists", async () => {
     mockGetActiveInstance.mockResolvedValue(null);
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockPrompt).not.toHaveBeenCalled();
@@ -256,7 +262,7 @@ describe("wizard", () => {
       })
       .mockResolvedValueOnce({ scope: "x_demo" });
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     const appPrompt = mockPrompt.mock.calls[1]?.[0]?.[0];
@@ -302,7 +308,7 @@ describe("wizard", () => {
       },
     });
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -347,7 +353,7 @@ describe("wizard", () => {
       })
       .mockRejectedValueOnce({ response: { status: 400 } });
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(

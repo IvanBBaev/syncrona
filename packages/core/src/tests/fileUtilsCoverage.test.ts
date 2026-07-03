@@ -1,39 +1,59 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
 
 // The config module is mocked so the path-derivation helpers (manifest,
 // source/build roots) are driven from the tests rather than a real project on
-// disk. requireActual keeps every other export intact so unrelated helpers are
-// unaffected.
-jest.mock("../config", () => {
-  const actual = jest.requireActual("../config");
-  return {
-    ...actual,
-    getManifest: jest.fn(),
-    getManifestPath: jest.fn(),
-    getSourcePath: jest.fn(),
-    getBuildPath: jest.fn(),
-  };
-});
+// disk. FileUtils accesses config only through a namespace import and touches
+// exactly these four helpers, so stubbing just them is sufficient; any other
+// config name a graph neighbour hard-links is stubbed below as needed.
+jest.unstable_mockModule("../config.js", () => ({
+  getManifest: jest.fn(),
+  getManifestPath: jest.fn(),
+  getSourcePath: jest.fn(),
+  getBuildPath: jest.fn(),
+}));
 
-import {
-  writeManifestFile,
-  writeSNFileCurry,
-  writeFlatSNFileCurry,
-  pathExists,
-  getBuildExt,
-  getFileContextFromPath,
-  isDirectory,
-  getPathsInPath,
-  isValidPath,
-  encodedPathsToFilePaths,
-  writeBuildFile,
-} from "../FileUtils";
-import { PATH_DELIMITER } from "../constants";
-import * as ConfigManager from "../config";
-import { logger } from "../Logger";
+import { PATH_DELIMITER } from "../constants.js";
+
+// Under ESM, jest.unstable_mockModule does not hoist: a static import of the SUT
+// or of a mocked module is evaluated (and bound to the real module) before the
+// mock registers. So the SUT, the mocked config namespace, and the logger
+// singleton the tests spy on are all imported dynamically in beforeAll, after
+// the mock is in place. PATH_DELIMITER is a plain constant and can stay static.
+let writeManifestFile: typeof import("../FileUtils.js").writeManifestFile;
+let writeSNFileCurry: typeof import("../FileUtils.js").writeSNFileCurry;
+let writeFlatSNFileCurry: typeof import("../FileUtils.js").writeFlatSNFileCurry;
+let pathExists: typeof import("../FileUtils.js").pathExists;
+let getBuildExt: typeof import("../FileUtils.js").getBuildExt;
+let getFileContextFromPath: typeof import("../FileUtils.js").getFileContextFromPath;
+let isDirectory: typeof import("../FileUtils.js").isDirectory;
+let getPathsInPath: typeof import("../FileUtils.js").getPathsInPath;
+let isValidPath: typeof import("../FileUtils.js").isValidPath;
+let encodedPathsToFilePaths: typeof import("../FileUtils.js").encodedPathsToFilePaths;
+let writeBuildFile: typeof import("../FileUtils.js").writeBuildFile;
+let ConfigManager: typeof import("../config.js");
+let logger: typeof import("../Logger.js").logger;
+
+beforeAll(async () => {
+  ({
+    writeManifestFile,
+    writeSNFileCurry,
+    writeFlatSNFileCurry,
+    pathExists,
+    getBuildExt,
+    getFileContextFromPath,
+    isDirectory,
+    getPathsInPath,
+    isValidPath,
+    encodedPathsToFilePaths,
+    writeBuildFile,
+  } = await import("../FileUtils.js"));
+  ConfigManager = await import("../config.js");
+  ({ logger } = await import("../Logger.js"));
+});
 
 const asMock = (fn: unknown): jest.Mock => fn as unknown as jest.Mock;
 

@@ -3,7 +3,7 @@ import {
   buildFullMissingMap,
   downloadTablesWithResume,
   groupAppFiles,
-} from "../appUtils";
+} from "../appUtils.js";
 import type { SN, Sync } from "@syncro-now-ai/types";
 
 const manifest = {

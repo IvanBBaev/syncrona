@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import chokidar from "chokidar";
-import { logFilePush } from "./logMessages";
-import { debounce } from "lodash";
-import { getFileContextFromPath } from "./FileUtils";
+import { logFilePush } from "./logMessages.js";
+// lodash is CommonJS; under ESM its named exports are not statically detectable
+// by Node, so import the default and destructure the method we need.
+import lodash from "lodash";
+import { getFileContextFromPath } from "./FileUtils.js";
 import { Sync } from "@syncro-now-ai/types";
-import { groupAppFiles, pushFiles } from "./appUtils";
-import { logger } from "./Logger";
+import { groupAppFiles, pushFiles } from "./appUtils.js";
+import { logger } from "./Logger.js";
+const { debounce } = lodash;
 const DEBOUNCE_MS = 300;
 let pushQueue: string[] = [];
 let watcher: chokidar.FSWatcher | undefined = undefined;

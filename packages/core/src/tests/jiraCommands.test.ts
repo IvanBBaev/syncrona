@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockDetectDeployment = jest.fn();
@@ -17,7 +18,7 @@ const mockLoggerSuccess = jest.fn();
 const mockLoggerError = jest.fn();
 const mockLoggerWarn = jest.fn();
 
-jest.mock("@syncro-now-ai/jira", () => ({
+jest.unstable_mockModule("@syncro-now-ai/jira", () => ({
   detectDeployment: (...args: unknown[]) => mockDetectDeployment(...args),
   extractIssueKey: (...args: unknown[]) => mockExtractIssueKey(...args),
   getIssue: (...args: unknown[]) => mockGetIssue(...args),
@@ -29,14 +30,14 @@ jest.mock("@syncro-now-ai/jira", () => ({
     `Stored Jira credentials for profile "${profile}" could not be decrypted — re-run jira-login.`,
 }));
 
-jest.mock("@syncro-now-ai/credential-store", () => ({
+jest.unstable_mockModule("@syncro-now-ai/credential-store", () => ({
   saveJiraCredentials: (...args: unknown[]) => mockSaveJiraCredentials(...args),
   removeJiraCredentials: (...args: unknown[]) => mockRemoveJiraCredentials(...args),
   removeAllJiraCredentials: (...args: unknown[]) => mockRemoveAllJiraCredentials(...args),
   jiraCredentialHealth: (...args: unknown[]) => mockJiraCredentialHealth(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: jest.fn(),
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -49,18 +50,22 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../gitUtils", () => ({
+jest.unstable_mockModule("../gitUtils.js", () => ({
   getCurrentBranch: (...args: unknown[]) => mockGetCurrentBranch(...args),
 }));
 
-jest.mock("../commandHelpers", () => ({ setLogLevel: jest.fn() }));
-jest.mock("inquirer", () => ({ prompt: (...args: unknown[]) => mockPrompt(...args) }));
+jest.unstable_mockModule("../commandHelpers.js", () => ({ setLogLevel: jest.fn() }));
+jest.unstable_mockModule("inquirer", () => ({
+  __esModule: true,
+  default: { prompt: (...args: unknown[]) => mockPrompt(...args) },
+}));
 
-import {
-  jiraCommand,
-  jiraLoginCommand,
-  jiraLogoutCommand,
-} from "../jiraCommands";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real dependencies before the mocks take effect.
+let jiraCommand: typeof import("../jiraCommands.js").jiraCommand;
+let jiraLoginCommand: typeof import("../jiraCommands.js").jiraLoginCommand;
+let jiraLogoutCommand: typeof import("../jiraCommands.js").jiraLogoutCommand;
 
 const BASE_ARGS = { logLevel: "info", dryRun: false } as const;
 
@@ -90,8 +95,11 @@ const SAMPLE_ISSUE = {
 
 let stdoutSpy: jest.SpyInstance;
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
+  ({ jiraCommand, jiraLoginCommand, jiraLogoutCommand } = await import(
+    "../jiraCommands.js"
+  ));
   process.exitCode = 0;
   mockResolveJiraConfig.mockResolvedValue({
     baseUrl: "https://acme.atlassian.net",

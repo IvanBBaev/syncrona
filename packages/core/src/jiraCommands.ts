@@ -19,9 +19,9 @@ import {
   removeAllJiraCredentials,
   jiraCredentialHealth,
 } from "@syncro-now-ai/credential-store";
-import { logger } from "./Logger";
-import { getCurrentBranch } from "./gitUtils";
-import { setLogLevel } from "./commandHelpers";
+import { logger } from "./Logger.js";
+import { getCurrentBranch } from "./gitUtils.js";
+import { setLogLevel } from "./commandHelpers.js";
 
 const DEFAULT_COMMENT_LIMIT = 5;
 
