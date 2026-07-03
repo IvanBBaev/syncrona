@@ -1,0 +1,77 @@
+# Codecov configuration for the syncrona monorepo.
+#
+# Only the four packages that ship real unit-test suites are measured:
+#   core, jira, credential-store, sn-transport.
+# The thin build-tool plugin packages (babel-*, webpack, sass, prettier,
+# eslint, typescript) have no tests yet, and mcp-server carries its own
+# node --test coverage gate (>=70% lines, see packages/mcp-server/scripts).
+# Both groups are ignored below so they do not distort the project number.
+#
+# The project gate is a hard 90% floor (threshold 0% => no drop tolerated):
+# aligning with the "coverage must not fall below 90%" policy. Raise `target`
+# as coverage grows; never lower it.
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "85...100"
+  status:
+    project:
+      default:
+        target: 90%
+        threshold: 0%
+        # Only fail on the packages we actually measure.
+        flags:
+          - core
+          - jira
+          - credential-store
+          - sn-transport
+    patch:
+      default:
+        # New / changed lines in a PR must themselves be >=90% covered.
+        target: 90%
+        threshold: 0%
+
+# Per-package flags give a coverage breakdown per workspace and let the
+# project status above aggregate only the tested surface.
+flags:
+  core:
+    paths:
+      - packages/core/src
+    carryforward: true
+  jira:
+    paths:
+      - packages/jira/src
+    carryforward: true
+  credential-store:
+    paths:
+      - packages/credential-store/src
+    carryforward: true
+  sn-transport:
+    paths:
+      - packages/sn-transport/src
+    carryforward: true
+
+# Exclude everything that is not part of the measured, tested surface.
+ignore:
+  - "packages/babel-plugin"
+  - "packages/babel-plugin-remove-modules"
+  - "packages/babel-preset-servicenow"
+  - "packages/eslint-plugin"
+  - "packages/prettier-plugin"
+  - "packages/sass-plugin"
+  - "packages/typescript-plugin"
+  - "packages/webpack-plugin"
+  - "packages/types"
+  - "packages/mcp-server"
+  - "**/dist/**"
+  - "**/tests/**"
+  - "**/*.test.ts"
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

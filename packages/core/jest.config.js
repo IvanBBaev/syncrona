@@ -7,14 +7,15 @@ module.exports = {
   setupFiles: ['<rootDir>/jest.setup.js'],
   // Whole-source coverage: the gate previously measured only src/commands.ts,
   // which made the "core >= 80%" CI claim meaningless. Thresholds below are a
-  // ratchet floor set just under the measured baseline (2026-06-24: statements
-  // 85.7%, branches ~71.9-72.5%, functions 80.7%, lines 85.6% — up from the
-  // earlier 77.3/64.2/72.2/77.0 baseline as the offline appUtils/commands/wizard/
-  // PluginManager/snClient suites landed on the IO-heavy paths that the
-  // pure-helper suites could not reach) — raise them as coverage grows; never
-  // lower them. The branch floor sits under the lower platform: OS-specific
-  // branches (keychain/homedir/platform) make Linux CI measure ~71.9% vs macOS
-  // ~72.5%, so 71 keeps the gate green on both. Headroom is in live-only branches.
+  // ratchet floor set just under the measured baseline (2026-07-03: statements
+  // 95.5%, branches 83.2%, functions 91.8%, lines 95.5% — up from the earlier
+  // 85.7/71.9/80.7/85.6 baseline after per-file coverage suites landed for
+  // diagnosticsCommands, downloadPipeline, config, FileUtils, manifestBuilder,
+  // updateNotifier, pushCommand and Logger). Raise these as coverage grows;
+  // never lower them. The lines/statements floors sit ~3pts under the measured
+  // numbers so a real regression fails CI while cross-OS noise does not; the
+  // branch floor keeps extra headroom because OS-specific branches
+  // (keychain/homedir/platform) still make Linux CI measure a touch below macOS.
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/tests/**',
@@ -24,10 +25,10 @@ module.exports = {
   ],
   coverageThreshold: {
     global: {
-      statements: 85,
-      branches: 71,
-      functions: 80,
-      lines: 85,
+      statements: 92,
+      branches: 79,
+      functions: 89,
+      lines: 92,
     },
   },
 }

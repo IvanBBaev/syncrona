@@ -1,0 +1,356 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+export {};
+
+// Closes the pushCommand.ts branches the flow/lock suites leave uncovered:
+//  - getStateBaseDir's cwd fallback when no config root is loaded,
+//  - loadPushCheckpoint rejecting a shape-invalid payload and swallowing a
+//    non-ENOENT read error,
+//  - clearPushCheckpoint / releaseCollaborationLock re-throwing a non-ENOENT
+//    unlink error,
+//  - loadCollaborationLock rejecting an invalid object and swallowing errors,
+//  - acquireCollaborationLock re-throwing a non-EEXIST write error and giving up
+//    after both atomic-create attempts lose to a (repeatedly stale) lock,
+//  - the decrypt-warning branch when no server is configured,
+//  - the git-diff path selection, the declined-resume clearPushCheckpoint call,
+//    and the update-set confirm/decline/create prompts.
+//
+// fs.promises is fully mocked (like commandsFlow.test.ts) so every ENOENT /
+// EEXIST / EACCES branch is deterministic and no write leaves the temp process.
+
+const mockCheckScope = jest.fn();
+const mockGetAppFileList = jest.fn();
+const mockPushFiles = jest.fn();
+const mockCreateAndAssignUpdateSet = jest.fn();
+const mockLogPushResults = jest.fn();
+const mockPrompt = jest.fn();
+const mockCheckConnection = jest.fn();
+const mockResolveCredentials = jest.fn();
+const mockGetScopedEndpointPrefix = jest.fn();
+const mockSetActiveInstanceProfile = jest.fn();
+const mockLoggerInfo = jest.fn();
+const mockLoggerError = jest.fn();
+const mockLoggerWarn = jest.fn();
+const mockLoggerDebug = jest.fn();
+const mockInternalError = jest.fn();
+const mockGitDiffToEncodedPaths = jest.fn();
+const mockReadFile = jest.fn();
+const mockWriteFile = jest.fn();
+const mockUnlink = jest.fn();
+const mockGetRootDir = jest.fn();
+const mockGetActiveInstance = jest.fn();
+const mockLoadCredentials = jest.fn();
+
+jest.mock("../appUtils", () => ({
+  checkScope: (...args: unknown[]) => mockCheckScope(...args),
+  getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
+  pushFiles: (...args: unknown[]) => mockPushFiles(...args),
+  createAndAssignUpdateSet: (...args: unknown[]) => mockCreateAndAssignUpdateSet(...args),
+}));
+
+jest.mock("../gitUtils", () => ({
+  gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
+}));
+
+jest.mock("../Logger", () => ({
+  logger: {
+    setLogLevel: jest.fn(),
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    success: jest.fn(),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    debug: (...args: unknown[]) => mockLoggerDebug(...args),
+    silly: jest.fn(),
+    getInternalLogger: () => ({ error: (...args: unknown[]) => mockInternalError(...args) }),
+  },
+}));
+
+jest.mock("../logMessages", () => ({
+  scopeCheckMessage: jest.fn(),
+  logPushResults: (...args: unknown[]) => mockLogPushResults(...args),
+}));
+
+jest.mock("../snClient", () => ({
+  defaultClient: () => ({
+    checkConnection: (...args: unknown[]) => mockCheckConnection(...args),
+  }),
+  resolveCredentials: (...args: unknown[]) => mockResolveCredentials(...args),
+  getScopedEndpointPrefix: (...args: unknown[]) => mockGetScopedEndpointPrefix(...args),
+  setActiveInstanceProfile: (...args: unknown[]) => mockSetActiveInstanceProfile(...args),
+}));
+
+jest.mock("../auth", () => ({
+  getActiveInstance: (...args: unknown[]) => mockGetActiveInstance(...args),
+  loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
+}));
+
+jest.mock("../config", () => ({
+  getRootDir: (...args: unknown[]) => mockGetRootDir(...args),
+}));
+
+jest.mock("fs", () => ({
+  promises: {
+    readFile: (...args: unknown[]) => mockReadFile(...args),
+    writeFile: (...args: unknown[]) => mockWriteFile(...args),
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+  },
+}));
+
+jest.mock("inquirer", () => ({
+  __esModule: true,
+  default: {
+    prompt: (...args: unknown[]) => mockPrompt(...args),
+  },
+}));
+
+import { pushCommand, __lockInternals } from "../pushCommand";
+
+const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });
+const eexist = () => Object.assign(new Error("exists"), { code: "EEXIST" });
+const eacces = () => Object.assign(new Error("denied"), { code: "EACCES" });
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rec = (sysId: string) => ({ table: "sys_script", sysId, fields: { script: { filePath: `/tmp/${sysId}.js` } } }) as any;
+
+const runPush = (overrides: Record<string, unknown> = {}) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pushCommand({
+    logLevel: "info",
+    ci: true,
+    target: "encoded:/tmp/a.js",
+    diff: "",
+    scopeSwap: false,
+    updateSet: "",
+    ...overrides,
+  } as any);
+
+describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetRootDir.mockReturnValue("/tmp/project");
+    mockUnlink.mockResolvedValue(undefined);
+    mockWriteFile.mockResolvedValue(undefined);
+    mockReadFile.mockRejectedValue(enoent());
+  });
+
+  it("getStateBaseDir falls back to cwd when no config root is loaded", () => {
+    mockGetRootDir.mockImplementation(() => {
+      throw new Error("no config loaded");
+    });
+    const lockPath = __lockInternals.getCollaborationLockPath();
+    expect(lockPath).toContain(process.cwd());
+    expect(lockPath).toContain("sync.collaboration.lock.json");
+  });
+
+  it("loadCollaborationLock returns null for a shape-invalid payload", async () => {
+    // Valid JSON but missing the required command/createdAt string fields.
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({ pid: 1 }));
+    await expect(__lockInternals.loadCollaborationLock()).resolves.toBeNull();
+  });
+
+  it("loadCollaborationLock swallows a non-ENOENT read error and returns null", async () => {
+    mockReadFile.mockRejectedValueOnce(Object.assign(new Error("is dir"), { code: "EISDIR" }));
+    await expect(__lockInternals.loadCollaborationLock()).resolves.toBeNull();
+  });
+
+  it("acquireCollaborationLock re-throws a non-EEXIST write error", async () => {
+    mockWriteFile.mockRejectedValueOnce(eacces());
+    await expect(__lockInternals.acquireCollaborationLock("push")).rejects.toMatchObject({
+      code: "EACCES",
+    });
+  });
+
+  it("gives up after both attempts lose to a repeatedly stale lock", async () => {
+    // Every atomic create hits EEXIST; the existing lock is always stale (dead
+    // pid), so it is released and retried — but after two rounds acquire returns
+    // the "could not acquire" fallback rather than looping forever.
+    mockWriteFile.mockRejectedValue(eexist());
+    mockReadFile.mockResolvedValue(
+      JSON.stringify({ command: "push", pid: 2 ** 22, createdAt: new Date().toISOString() })
+    );
+
+    const result = await __lockInternals.acquireCollaborationLock("push");
+    expect(result.acquired).toBe(false);
+    expect(result.reason).toBe("Could not acquire collaboration lock.");
+    // Two atomic-create attempts, each followed by a stale-lock release.
+    expect(mockWriteFile).toHaveBeenCalledTimes(2);
+    expect(mockUnlink).toHaveBeenCalledTimes(2);
+  });
+
+  it("releaseCollaborationLock re-throws a non-ENOENT unlink error", async () => {
+    mockUnlink.mockRejectedValueOnce(eacces());
+    await expect(__lockInternals.releaseCollaborationLock()).rejects.toMatchObject({
+      code: "EACCES",
+    });
+  });
+});
+
+describe("pushCommand orchestration branches (mocked fs)", () => {
+  const originalInstance = process.env.SN_INSTANCE;
+  const originalExitCode = process.exitCode;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Establish a clean exit-code baseline: another suite may run first in the
+    // same worker and leave process.exitCode set, which would otherwise make
+    // the "does not fail" assertions order-dependent.
+    process.exitCode = undefined;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    mockCheckScope.mockResolvedValue({ match: true });
+    mockGetRootDir.mockReturnValue("/tmp/project");
+    mockGetScopedEndpointPrefix.mockReturnValue("x_nuvo_sinc");
+    mockCheckConnection.mockResolvedValue(undefined);
+    mockGetAppFileList.mockResolvedValue([rec("1")]);
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    mockPrompt.mockResolvedValue({ confirmed: true });
+    mockGitDiffToEncodedPaths.mockResolvedValue(["encoded:/tmp/from-diff.js"]);
+    mockCreateAndAssignUpdateSet.mockResolvedValue({ name: "MySet", id: "us-123" });
+    mockGetActiveInstance.mockResolvedValue(null);
+    mockLoadCredentials.mockResolvedValue({});
+    mockResolveCredentials.mockImplementation(() => ({
+      instance: process.env.SN_INSTANCE || "",
+      user: "u",
+      password: "p",
+      profile: undefined,
+    }));
+    mockReadFile.mockRejectedValue(enoent());
+    mockWriteFile.mockResolvedValue(undefined);
+    mockUnlink.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    process.env.SN_INSTANCE = originalInstance;
+    process.exitCode = originalExitCode;
+  });
+
+  it("surfaces the decrypt warning when no server is configured but a stored instance won't decrypt", async () => {
+    delete process.env.SN_INSTANCE;
+    mockResolveCredentials.mockReturnValue({ instance: "", user: "", password: "", profile: undefined });
+    // A stored instance exists but its credentials fail to decrypt → warning.
+    mockGetActiveInstance.mockResolvedValue("dev");
+    mockLoadCredentials.mockRejectedValue(new Error("bad key"));
+
+    await runPush();
+
+    expect(mockLoggerError).toHaveBeenCalledWith("No server configured for push!");
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Stored credentials for "dev" failed to decrypt')
+    );
+    expect(process.exitCode).toBe(1);
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+  });
+
+  it("derives encoded paths from the git diff when no target is provided", async () => {
+    await runPush({ target: "" });
+
+    expect(mockGitDiffToEncodedPaths).toHaveBeenCalledWith("");
+    expect(mockGetAppFileList).toHaveBeenCalledWith(["encoded:/tmp/from-diff.js"]);
+    expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("clears the checkpoint when the user declines to resume a failed run", async () => {
+    // An existing checkpoint with failures + an interactive decline must wipe the
+    // stale checkpoint (unlink) instead of resuming it.
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({ attempted: ["sys_script:1"], succeeded: [], failed: ["sys_script:1"] });
+      }
+      throw enoent();
+    });
+    mockPrompt.mockResolvedValueOnce({ confirmed: false });
+
+    await runPush({ ci: false });
+
+    const unlinked = mockUnlink.mock.calls.map((c) => String(c[0]));
+    expect(unlinked.some((p) => p.includes("sync.push.checkpoint.json"))).toBe(true);
+    expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("ignores a shape-invalid checkpoint file and pushes normally", async () => {
+    // Valid JSON but the arrays are missing → loadPushCheckpoint returns null,
+    // so the run behaves as if there were no checkpoint at all.
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({ attempted: "not-an-array" });
+      }
+      throw enoent();
+    });
+
+    await runPush();
+
+    expect(mockPushFiles).toHaveBeenCalled();
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it("swallows a non-ENOENT checkpoint read error and pushes normally", async () => {
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        throw eacces();
+      }
+      throw enoent();
+    });
+
+    await runPush();
+
+    expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("fails the run when clearing a declined checkpoint hits a non-ENOENT unlink error", async () => {
+    // Existing failed checkpoint + declined resume → clearPushCheckpoint runs and
+    // its unlink rejects with EACCES, which must propagate (not be swallowed) and
+    // fail the shell via the outer catch.
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({ attempted: ["sys_script:1"], succeeded: [], failed: ["sys_script:1"] });
+      }
+      throw enoent();
+    });
+    mockPrompt.mockResolvedValueOnce({ confirmed: false });
+    mockUnlink.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        throw eacces();
+      }
+      return undefined;
+    });
+
+    await runPush({ ci: false });
+
+    expect(mockInternalError).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("creates the update set after the confirm prompts are accepted", async () => {
+    // Overwrite prompt + update-set prompt both accepted → the update set is
+    // created and its details are logged.
+    mockPrompt.mockResolvedValue({ confirmed: true });
+
+    await runPush({ ci: false, updateSet: "MySet" });
+
+    expect(mockCreateAndAssignUpdateSet).toHaveBeenCalledWith("MySet");
+    expect(mockLoggerDebug).toHaveBeenCalledWith(
+      expect.stringContaining("New Update Set Created(MySet) sys_id:us-123")
+    );
+    expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("aborts before creating an update set when its confirm prompt is declined", async () => {
+    // First prompt (overwrite) accepted, second prompt (update-set) declined.
+    mockPrompt
+      .mockResolvedValueOnce({ confirmed: true })
+      .mockResolvedValueOnce({ confirmed: false });
+
+    await runPush({ ci: false, updateSet: "MySet" });
+
+    expect(mockCreateAndAssignUpdateSet).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("skips the update-set prompt under --ci but still creates the set", async () => {
+    // skipPrompt short-circuits both confirmations; the set is still created.
+    await runPush({ ci: true, updateSet: "MySet" });
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockCreateAndAssignUpdateSet).toHaveBeenCalledWith("MySet");
+    expect(mockPushFiles).toHaveBeenCalled();
+  });
+});
