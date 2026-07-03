@@ -34,3 +34,16 @@ This is community/maintainer best-effort support — there is **no commercial SL
 today. Response times vary. A supported/commercial tier is not yet offered;
 enterprise adopters who need an SLA should track this via an issue so demand is
 visible (see the roadmap in [docs/BUSINESS_ANALYSIS.md](docs/BUSINESS_ANALYSIS.md)).
+
+## Sponsor development
+
+SyncroNow AI is built and maintained in my own time. If it saves you or your team
+time, sponsorship directly funds new features, bug fixes and keeping pace with
+ServiceNow's REST surface.
+
+- **[GitHub Sponsors](https://github.com/sponsors/IvanBBaev)** — one-off or
+  recurring, with no platform fee taken out (the preferred option).
+- **[Ko-fi](https://ko-fi.com/ivanbbaev)** — quick one-off support; it also
+  accepts **PayPal**, so it's the fallback for anyone without a GitHub account.
+- **[Donate (Donatree)](https://donatr.ee/ivanbbaev/)** — a no-account donation
+  page (card, PayPal and more) for a one-off tip.

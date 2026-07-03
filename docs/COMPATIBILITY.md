@@ -28,7 +28,7 @@ core workflow largely **release-version-agnostic**.
 
 | ServiceNow release | Status | Notes |
 |---|---|---|
-| Current family (Xanadu / Yokohama / Zurich era) | 🟡 expected-compatible | Table API + scoped fallback are stable; **not yet formally verified on a live instance** (tracked as CR22) |
+| Current family (Xanadu / Yokohama / Zurich era) | 🟡 expected-compatible | Table API + scoped fallback are stable; the `sys.scripts.do` fallback path was **manually live-verified on a PDI 2026-07-03** (CR22), but the named-release matrix is **not yet covered by a CI live-instance test** |
 | Earlier releases | 🟡 likely | Table API has been stable for many releases; same caveat |
 
 **Honest gap:** there is no live-instance compatibility test in CI yet (it needs

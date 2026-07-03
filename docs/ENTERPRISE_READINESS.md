@@ -58,7 +58,10 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - ✅ **Support docs** — SUPPORT.md (channels, diagnostics, no-SLA disclaimer),
   CODE_OF_CONDUCT.md, issue/feature templates.
 - 🔴 **Support SLA / commercial tier** — business decision (BA5).
-- 🔴 **CR22** — verify the `sys.scripts.do` fallback against a live instance.
+- ✅ **CR22** — verified live 2026-07-03: fixed the fallback trigger (it keyed on
+  HTTP 404, but a live instance without the scoped app answers `400`) and
+  confirmed the documented CSRF limit — `sys.scripts.do` under Basic-only auth
+  returns 200 but does not execute the script without a UI session token.
 
 ## 4. Quality, CI/CD, governance
 - ✅ **Gates** — `npm run check` green (381 tests: 206 core + 175 mcp); coverage ratchet

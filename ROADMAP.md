@@ -71,7 +71,7 @@ applications. The following are **shipped**:
 
 ### Quality & CI ✅
 - Full gate suite green: core + MCP unit/integration tests, coverage ratchet
-  (core lines ~70%, MCP lines ~83% / branches ~75%), tool-contract, docs-drift,
+  (core lines ~95%, MCP lines ~83%), tool-contract, docs-drift,
   CLAUDE-docs-drift, and release-checklist gates.
 - GitHub Actions CI matrix (Ubuntu + macOS), least-privilege token, all actions
   SHA-pinned.
@@ -162,7 +162,11 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 - 🔒 **ServiceNow compatibility matrix** — test against named ServiceNow releases
   on live instances (today: documented as release-agnostic via REST/Table API).
 - 🔒 **Support SLA / commercial tier** (BA5) — business decision.
-- 🔒 **CR22** — verify the `sys.scripts.do` fallback against a live instance.
+- ✅ **CR22** — verified live (2026-07-03). Fixed a trigger bug (the fallback
+  keyed on HTTP 404, but a real instance without the scoped app answers `400`)
+  and confirmed the documented limit: `sys.scripts.do` under Basic-only auth
+  returns 200 but does **not** execute the script without a UI session/CSRF
+  token. Now correctly reachable; still Basic-auth-limited as documented.
 - 🚧/📋 **Telemetry + KPIs** (G7 / BA7) — opt-in local diagnostic log shipped;
   structured metrics + KPI instrumentation (downloads, activation, retention)
   to follow.

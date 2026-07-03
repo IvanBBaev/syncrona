@@ -62,6 +62,7 @@ const {
   getSemanticIndexState,
   invalidateSemanticIndex,
 } = require('../dist/index.js');
+const { runBackgroundScript } = require('../dist/servicenowCore.js');
 const { handleWorkspaceTool } = require('../dist/handlers/workspaceHandlers.js');
 const { handleHealthPlanningTool } = require('../dist/handlers/healthPlanningHandlers.js');
 const { writeAuditEvent } = require('../dist/audit.js');
@@ -686,6 +687,75 @@ test('checkSyncronaCapabilities uses provided scope for manifest check', async (
       assert.equal(requestedManifestUrl.includes('/getManifest/x_custom_scope'), true);
     }
   );
+
+  global.fetch = originalFetch;
+});
+
+test('runBackgroundScript falls back to sys.scripts.do when the scoped API answers 400 (CR22)', async () => {
+  // Live-verified: an instance without the scoped app installed answers the
+  // scoped sinc/runBackgroundScript route with 400 "Requested URI does not
+  // represent any resource", not 404. The fallback must still fire.
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, options) => {
+    const uri = String(url);
+    const method = (options && options.method) || 'GET';
+    if (uri.includes('/sinc/runBackgroundScript')) {
+      return mkResponse(400, {
+        error: { message: 'Requested URI does not represent any resource', detail: null },
+        status: 'failure',
+      });
+    }
+    if (uri.includes('sys.scripts.do')) {
+      posted.push({ uri, method, body: options && options.body });
+      return mkResponse(200, 'BG_OK');
+    }
+    return mkResponse(500, { error: 'unexpected route' });
+  };
+
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      const res = await runBackgroundScript("gs.info('x');", 5000);
+      assert.equal(res.usedEndpoint, '/sys.scripts.do');
+      assert.equal(res.status, 200);
+    }
+  );
+
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].method, 'POST');
+  assert.equal(String(posted[0].body).includes('runscript=Run+script'), true);
+
+  global.fetch = originalFetch;
+});
+
+test('runBackgroundScript does NOT fall back on a non-endpoint error (500)', async () => {
+  // The fallback is scoped to "endpoint unavailable" (400/403/404). A genuine
+  // server error must surface as-is, not be masked by a sys.scripts.do retry.
+  const originalFetch = global.fetch;
+  let sysScriptsHit = false;
+  global.fetch = async (url) => {
+    const uri = String(url);
+    if (uri.includes('/sinc/runBackgroundScript')) {
+      return mkResponse(500, { error: { message: 'boom' } });
+    }
+    if (uri.includes('sys.scripts.do')) {
+      sysScriptsHit = true;
+      return mkResponse(200, 'BG_OK');
+    }
+    return mkResponse(500, { error: 'unexpected route' });
+  };
+
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      const res = await runBackgroundScript("gs.info('x');", 5000);
+      assert.equal(res.status, 500);
+      assert.notEqual(res.usedEndpoint, '/sys.scripts.do');
+    }
+  );
+
+  assert.equal(sysScriptsHit, false);
 
   global.fetch = originalFetch;
 });
