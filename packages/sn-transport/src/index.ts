@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /**
- * @syncro-now-ai/sn-transport — shared ServiceNow transport policy.
+ * @syncrona/sn-transport — shared ServiceNow transport policy.
  *
  * The SyncroNow AI project ships two independent ServiceNow HTTP clients: the core
  * CLI client (`packages/core/src/snClient.ts`, built on axios) and the MCP

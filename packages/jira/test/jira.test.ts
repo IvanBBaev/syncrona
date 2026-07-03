@@ -990,14 +990,14 @@ describe("resolveJiraConfig (env precedence)", () => {
     delete process.env.JIRA_BASE_URL;
     delete process.env.JIRA_TOKEN;
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn().mockResolvedValue(null),
       loadJiraCredentialsSync: jest.fn().mockReturnValue(null),
     }));
     const { resolveJiraConfig } = await import("../src/resolveConfig");
     const config = await resolveJiraConfig({ profile: "nope" });
     expect(config).toBeNull();
-    jest.dontMock("@syncro-now-ai/credential-store");
+    jest.dontMock("@syncrona/credential-store");
   });
 
   it("prefers an explicit profile's stored credentials over the environment", async () => {
@@ -1007,7 +1007,7 @@ describe("resolveJiraConfig (env precedence)", () => {
     process.env.JIRA_EMAIL = "env@acme.com";
     process.env.JIRA_TOKEN = "env-tok";
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn().mockResolvedValue({
         profile: "work",
         baseUrl: "https://stored.atlassian.net",
@@ -1024,7 +1024,7 @@ describe("resolveJiraConfig (env precedence)", () => {
       email: "stored@acme.com",
       token: "stored-tok",
     });
-    jest.dontMock("@syncro-now-ai/credential-store");
+    jest.dontMock("@syncrona/credential-store");
   });
 
   it("falls back to the environment when the explicit profile has no stored creds", async () => {
@@ -1033,7 +1033,7 @@ describe("resolveJiraConfig (env precedence)", () => {
     process.env.JIRA_TOKEN = "env-tok";
     delete process.env.JIRA_DEPLOYMENT;
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn().mockResolvedValue(null),
       loadJiraCredentialsSync: jest.fn(),
     }));
@@ -1044,7 +1044,7 @@ describe("resolveJiraConfig (env precedence)", () => {
       email: "env@acme.com",
       token: "env-tok",
     });
-    jest.dontMock("@syncro-now-ai/credential-store");
+    jest.dontMock("@syncrona/credential-store");
   });
 
   it('falls back to the stored "default" profile when no profile and no env are set', async () => {
@@ -1065,7 +1065,7 @@ describe("resolveJiraConfig (env precedence)", () => {
             }
           : null
       );
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials,
       loadJiraCredentialsSync: jest.fn(),
     }));
@@ -1077,7 +1077,7 @@ describe("resolveJiraConfig (env precedence)", () => {
       token: "stored-tok",
     });
     expect(loadJiraCredentials).toHaveBeenCalledWith("default");
-    jest.dontMock("@syncro-now-ai/credential-store");
+    jest.dontMock("@syncrona/credential-store");
   });
 });
 
@@ -1087,7 +1087,7 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
   afterEach(() => {
     process.env = { ...ORIGINAL };
     jest.resetModules();
-    jest.dontMock("@syncro-now-ai/credential-store");
+    jest.dontMock("@syncrona/credential-store");
   });
 
   it("builds a config from environment variables", async () => {
@@ -1118,7 +1118,7 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
     delete process.env.JIRA_TOKEN;
     delete process.env.JIRA_DEPLOYMENT;
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn(),
       loadJiraCredentialsSync: jest.fn().mockReturnValue({
         profile: "work",
@@ -1139,7 +1139,7 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
     delete process.env.JIRA_BASE_URL;
     delete process.env.JIRA_TOKEN;
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn(),
       loadJiraCredentialsSync: jest.fn().mockReturnValue(null),
     }));
@@ -1165,7 +1165,7 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
             }
           : null
       );
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn(),
       loadJiraCredentialsSync,
     }));
@@ -1184,7 +1184,7 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
     delete process.env.JIRA_BASE_URL;
     delete process.env.JIRA_TOKEN;
     jest.resetModules();
-    jest.doMock("@syncro-now-ai/credential-store", () => ({
+    jest.doMock("@syncrona/credential-store", () => ({
       loadJiraCredentials: jest.fn(),
       loadJiraCredentialsSync: jest.fn().mockReturnValue({
         profile: "work",
@@ -1205,6 +1205,6 @@ describe("jiraUndecryptableMessage", () => {
     const msg = jiraUndecryptableMessage("work");
     expect(msg).toMatch(/could not be decrypted/);
     expect(msg).toContain('profile "work"');
-    expect(msg).toContain("syncro-now-ai jira-login --profile work");
+    expect(msg).toContain("syncrona jira-login --profile work");
   });
 });

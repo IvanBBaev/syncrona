@@ -1,4 +1,4 @@
-# @syncro-now-ai/jira
+# @syncrona/jira
 
 <!-- badges:start -->
 | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?flag=jira&style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
@@ -8,7 +8,7 @@
 Shared **read-only Jira client** for SyncroNow AI. It fetches rich issue context
 (summary, description, status, type, priority, assignee/reporter, labels,
 components, parent, subtasks, links, fix versions and recent comments) and is
-consumed by both the core CLI (`syncro-now-ai jira`) and the MCP server
+consumed by both the core CLI (`syncrona jira`) and the MCP server
 (`jira_get_issue` tool).
 
 It supports **Jira Cloud** and **Jira Server / Data Center**, auto-detecting the
@@ -47,7 +47,7 @@ set; otherwise it is ignored and resolution falls through to stored credentials.
 
 ### Stored credentials & profiles
 
-`syncro-now-ai jira-login` saves credentials in the same encrypted global
+`syncrona jira-login` saves credentials in the same encrypted global
 CredentialStore used for ServiceNow logins (AES-256-GCM at rest). Each login is
 keyed by a **profile** name (default: `default`); pass `--profile <name>` to
 `jira-login`, `jira-logout` and `jira` to keep several Jira sites side by side.
@@ -67,7 +67,7 @@ Returns `null` when nothing is configured.
 
 ## Issue-key resolution from git branches
 
-`syncro-now-ai jira` (with no key argument) derives the issue key from the
+`syncrona jira` (with no key argument) derives the issue key from the
 current git branch via `extractIssueKey`. It matches the first
 `([A-Z][A-Z0-9]+)-(\d+)` token (case-insensitively), so
 `feature/SCRUM-123-add-widget` resolves to `SCRUM-123`.
@@ -75,7 +75,7 @@ current git branch via `extractIssueKey`. It matches the first
 ## Programmatic use
 
 ```ts
-import { resolveJiraConfig, getIssue, verifyAuth } from "@syncro-now-ai/jira";
+import { resolveJiraConfig, getIssue, verifyAuth } from "@syncrona/jira";
 
 const config = await resolveJiraConfig({ profile: "default" });
 if (!config) throw new Error("No Jira configuration");

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import { SN, Sync } from "@syncro-now-ai/types";
+import { SN, Sync } from "@syncrona/types";
 import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,

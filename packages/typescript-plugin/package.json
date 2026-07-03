@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/typescript-plugin",
+  "name": "@syncrona/typescript-plugin",
   "version": "0.4.2",
   "description": "TypeScript plugin for SyncroNow AI",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "directory": "packages/typescript-plugin"
   },
   "dependencies": {
-    "@syncro-now-ai/types": "^0.4.2"
+    "@syncrona/types": "^0.4.2"
   },
   "types": "./dist/index.d.ts"
 }

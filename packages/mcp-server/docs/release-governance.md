@@ -2,7 +2,7 @@
 
 ## Versioning
 
-- Follow semantic versioning for `@syncro-now-ai/mcp-server`.
+- Follow semantic versioning for `@syncrona/mcp-server`.
 - Increment minor for backward-compatible feature additions.
 - Increment major for breaking tool contract changes.
 

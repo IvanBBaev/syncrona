@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync, SN } from "@syncro-now-ai/types";
+import { Sync, SN } from "@syncrona/types";
 import https from "node:https";
 import fs from "node:fs";
 import axios, { AxiosPromise, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from "axios";
@@ -14,7 +14,7 @@ import {
   parseConfiguredScopedApiPrefixes,
   resolveTlsPolicy,
   shouldRetryStatus,
-} from "@syncro-now-ai/sn-transport";
+} from "@syncrona/sn-transport";
 import { wait } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth.js";
@@ -485,7 +485,7 @@ function profileEnvVar(baseName: string, profile?: string): string {
 // Human-readable origin of the resolved credentials, surfaced by `status` so
 // users can tell whether a command is talking to .env, a profile, or the store.
 export type CredentialSource =
-  | "credential store (syncro-now-ai login)"
+  | "credential store (syncrona login)"
   | "instance profile env vars"
   | "environment (.env / shell SN_* vars)"
   | "none (credentials missing)";
@@ -513,7 +513,7 @@ function resolveCredentialsInternal(profile?: string): {
         instance: storedCredentialsCache.instance,
         profile: undefined,
       },
-      source: "credential store (syncro-now-ai login)",
+      source: "credential store (syncrona login)",
     };
   }
 

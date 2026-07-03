@@ -3,7 +3,7 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import type { SN } from "@syncro-now-ai/types";
+import type { SN } from "@syncrona/types";
 
 // DX17: exercise the flat-layout wiring end to end with mocked config but a real
 // filesystem, so the pull write path (processManifest) and the push/build read

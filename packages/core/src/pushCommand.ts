@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import path from "path";
 import * as AppUtils from "./appUtils.js";

@@ -18,19 +18,19 @@ const mockLoggerSuccess = jest.fn();
 const mockLoggerError = jest.fn();
 const mockLoggerWarn = jest.fn();
 
-jest.unstable_mockModule("@syncro-now-ai/jira", () => ({
+jest.unstable_mockModule("@syncrona/jira", () => ({
   detectDeployment: (...args: unknown[]) => mockDetectDeployment(...args),
   extractIssueKey: (...args: unknown[]) => mockExtractIssueKey(...args),
   getIssue: (...args: unknown[]) => mockGetIssue(...args),
   resolveJiraConfig: (...args: unknown[]) => mockResolveJiraConfig(...args),
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
   NO_JIRA_CONFIG_MESSAGE:
-    "No Jira credentials configured. Run `syncro-now-ai jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.",
+    "No Jira credentials configured. Run `syncrona jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.",
   jiraUndecryptableMessage: (profile: string) =>
     `Stored Jira credentials for profile "${profile}" could not be decrypted — re-run jira-login.`,
 }));
 
-jest.unstable_mockModule("@syncro-now-ai/credential-store", () => ({
+jest.unstable_mockModule("@syncrona/credential-store", () => ({
   saveJiraCredentials: (...args: unknown[]) => mockSaveJiraCredentials(...args),
   removeJiraCredentials: (...args: unknown[]) => mockRemoveJiraCredentials(...args),
   removeAllJiraCredentials: (...args: unknown[]) => mockRemoveAllJiraCredentials(...args),

@@ -1,3 +1,3 @@
-# @syncro-now-ai/babel-plugin
+# @syncrona/babel-plugin
 
 ## 0.4.2

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { SN, Sync } from "@syncro-now-ai/types";
+import { SN, Sync } from "@syncrona/types";
 import * as ConfigManager from "./config.js";
 import {
   defaultClient,

@@ -1,3 +1,3 @@
-# @syncro-now-ai/typescript-plugin
+# @syncrona/typescript-plugin
 
 ## 0.4.2

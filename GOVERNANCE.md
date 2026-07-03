@@ -55,7 +55,7 @@ require a vendor support SLA.
 
 Releases use Changesets and are **owner-gated** (npm scope ownership + 2FA, IP
 clearance) — see `.github/workflows/release.yml`. Versions move in lockstep
-across the `@syncro-now-ai/*` packages.
+across the `@syncrona/*` packages.
 
 ## Sustainability & continuity
 

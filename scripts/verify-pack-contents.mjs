@@ -131,13 +131,13 @@ function checkPackage(entry) {
 }
 
 function smokeTestCore() {
-  const coreDir = dirByName.get("@syncro-now-ai/core");
+  const coreDir = dirByName.get("syncrona");
   const pkg = JSON.parse(readFileSync(path.join(coreDir, "package.json"), "utf8"));
   const tmp = mkdtempSync(path.join(tmpdir(), "syncrona-pack-"));
   try {
     const out = execFileSync(
       "npm",
-      ["pack", "--workspace", "@syncro-now-ai/core", "--pack-destination", tmp, "--json"],
+      ["pack", "--workspace", "syncrona", "--pack-destination", tmp, "--json"],
       { cwd: repoRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] }
     );
     const meta = JSON.parse(out);
@@ -150,7 +150,7 @@ function smokeTestCore() {
     // can require its (unpublished) sibling packages without a registry.
     symlinkSync(path.join(repoRoot, "node_modules"), path.join(pkgRoot, "node_modules"), "dir");
 
-    const binRel = norm(typeof pkg.bin === "string" ? pkg.bin : pkg.bin["syncro-now-ai"]);
+    const binRel = norm(typeof pkg.bin === "string" ? pkg.bin : pkg.bin["syncrona"]);
     const stdout = execFileSync("node", [path.join(pkgRoot, binRel), "--version"], {
       cwd: pkgRoot,
       encoding: "utf8",
@@ -190,7 +190,7 @@ if (smoke) {
   failed = true;
   console.log(`  ✗  ${smoke}`);
 } else {
-  console.log("  ✓  @syncro-now-ai/core CLI runs from packed tarball");
+  console.log("  ✓  syncrona CLI runs from packed tarball");
 }
 
 if (failed) {

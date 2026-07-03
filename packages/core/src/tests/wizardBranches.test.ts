@@ -281,7 +281,7 @@ describe("startWizard branches", () => {
 
     expect(mockLoggerError).toHaveBeenCalledWith("write to disk failed");
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 
@@ -296,7 +296,7 @@ describe("startWizard branches", () => {
     await startWizard();
 
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 
@@ -342,7 +342,7 @@ describe("startWizard branches", () => {
 
     expect(mockListAppsFromTableAPI).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 
@@ -369,7 +369,7 @@ describe("startWizard branches", () => {
 
     expect(mockSaveCredentials).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 
@@ -417,7 +417,7 @@ describe("startWizard branches", () => {
     expect(mockBuildManifestFromTableAPI).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith("[object Object]");
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 });

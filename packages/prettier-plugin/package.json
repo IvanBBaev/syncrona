@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/prettier-plugin",
+  "name": "@syncrona/prettier-plugin",
   "version": "0.4.2",
   "description": "Prettier plugin for SyncroNow AI",
   "main": "./dist/index.js",
@@ -30,7 +30,7 @@
     "directory": "packages/prettier-plugin"
   },
   "dependencies": {
-    "@syncro-now-ai/types": "^0.4.2"
+    "@syncrona/types": "^0.4.2"
   },
   "types": "./dist/index.d.ts"
 }

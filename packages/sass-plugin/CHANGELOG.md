@@ -1,3 +1,3 @@
-# @syncro-now-ai/sass-plugin
+# @syncrona/sass-plugin
 
 ## 0.4.2

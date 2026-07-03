@@ -7,7 +7,7 @@
 
 /** Shown when no Jira config (environment or stored credentials) can be resolved. */
 export const NO_JIRA_CONFIG_MESSAGE =
-  "No Jira credentials configured. Run `syncro-now-ai jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.";
+  "No Jira credentials configured. Run `syncrona jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.";
 
 /**
  * Shown when a Jira *Cloud* site is targeted with a token but no account email.
@@ -19,7 +19,7 @@ export const NO_JIRA_CONFIG_MESSAGE =
  */
 export const CLOUD_MISSING_EMAIL_MESSAGE =
   "Jira Cloud requires an account email for authentication. Set JIRA_EMAIL (the address that owns the API token), " +
-  "or run `syncro-now-ai jira-login` and provide the email.";
+  "or run `syncrona jira-login` and provide the email.";
 
 /**
  * Shown when a stored Jira profile *exists* but cannot be decrypted — almost
@@ -31,6 +31,6 @@ export function jiraUndecryptableMessage(profile: string): string {
   return (
     `Stored Jira credentials for profile "${profile}" could not be decrypted — ` +
     `they were likely encrypted on a different machine or user account. ` +
-    `Re-run \`syncro-now-ai jira-login --profile ${profile}\`.`
+    `Re-run \`syncrona jira-login --profile ${profile}\`.`
   );
 }

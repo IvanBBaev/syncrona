@@ -8,7 +8,7 @@ import {
   appendToPath,
 } from "../FileUtils.js";
 import { PATH_DELIMITER } from "../constants.js";
-import type { Sync } from "@syncro-now-ai/types";
+import type { Sync } from "@syncrona/types";
 
 describe("isUnderPath", () => {
   it("returns true when the child sits under the parent", () => {

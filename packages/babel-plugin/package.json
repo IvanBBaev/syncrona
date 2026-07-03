@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/babel-plugin",
+  "name": "@syncrona/babel-plugin",
   "version": "0.4.2",
   "description": "Babel Plugin for syncrona",
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
   "dependencies": {
     "@babel/core": "^8.0.0",
     "@babel/types": "^8.0.0",
-    "@syncro-now-ai/types": "^0.4.2"
+    "@syncrona/types": "^0.4.2"
   },
   "engines": {
     "node": ">=22.0.0"
