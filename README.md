@@ -1,10 +1,10 @@
 # SyncroNow AI
 
-<!-- npm badges intentionally omitted: the @syncro-now-ai/* packages are not yet
+<!-- npm badges intentionally omitted: the @syncrona/* packages are not yet
      published to npm, so live npm version/downloads shields would render as
      "invalid". Restore them at first publish:
-     [![npm version](https://img.shields.io/npm/v/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncro-now-ai/core)
-     [![npm downloads](https://img.shields.io/npm/dm/@syncro-now-ai/core?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/@syncro-now-ai/core) -->
+     [![npm version](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona)
+     [![npm downloads](https://img.shields.io/npm/dm/syncrona?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/syncrona) -->
 
 <!-- badges:start -->
 | ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
@@ -103,9 +103,9 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 
 ## Installation
 
-> ⚠️ **Not yet published to npm.** The `@syncro-now-ai/*` packages are
+> ⚠️ **Not yet published to npm.** The `@syncrona/*` packages are
 > pre-release and are **not on the npm registry yet**, so `npm i -g` /
-> `npx @syncro-now-ai/core` will not resolve. Until the first publish, install
+> `npx syncrona` will not resolve. Until the first publish, install
 > **from source** (below). The published-install snippet is shown for when the
 > packages go live.
 
@@ -116,10 +116,10 @@ git clone https://github.com/IvanBBaev/syncrona
 cd syncrona
 npm ci
 npm run build
-# expose the CLI as `syncro-now-ai` on your PATH:
-npm link --workspace @syncro-now-ai/core
-syncro-now-ai login
-syncro-now-ai init
+# expose the CLI as `syncrona` on your PATH:
+npm link --workspace syncrona
+syncrona login
+syncrona init
 ```
 
 Prefer not to link globally? Run the built CLI directly from the repo with
@@ -128,9 +128,9 @@ Prefer not to link globally? Run the built CLI directly from the repo with
 ### Global CLI quick start (once published to npm)
 
 ```bash
-npm i -g @syncro-now-ai/core
-syncro-now-ai login
-syncro-now-ai init
+npm i -g syncrona
+syncrona login
+syncrona init
 ```
 
 ### Requirements
@@ -144,7 +144,7 @@ In order to use SyncroNow AI, you will need:
 >
 > - Install WSL with an Ubuntu distribution (Windows version 1903+; earlier
 >   versions are untested/not working)
-> - Run all `syncro-now-ai` commands from inside the WSL shell
+> - Run all `syncrona` commands from inside the WSL shell
 > - (Optional) Windows Terminal is recommended for proper text rendering
 >
 > Native Windows support (PowerShell install, Windows Credential Manager) is
@@ -178,16 +178,16 @@ never use it against a real instance.
 1. Create a folder to store the scoped app code.
 2. In a terminal, run `npm init` inside the newly created folder and follow the instructions to set up your node module.
 3. (Optional) Install the companion server scoped app on your instance — the CLI works against plain ServiceNow REST APIs **with or without** it; the scoped app only enables a few enhanced endpoints.
-4. Install `@syncro-now-ai/core`
+4. Install `syncrona`
 
 ```bash
-npm i -D @syncro-now-ai/core
+npm i -D syncrona
 ```
 
 4. Initialize your SyncroNow AI project
 
 ```bash
-npx syncro-now-ai init
+npx syncrona init
 ```
 
 If your repository is a monorepo with many scoped apps under `packages/`, run SyncroNow AI from the specific scope directory, for example `packages/cs`. Each scope package should get its own `.env`, `sync.config.js`, and `sync.manifest.json`.
@@ -197,7 +197,7 @@ If your repository is a monorepo with many scoped apps under `packages/`, run Sy
 7. Start dev mode and start working! Every time you save a file that is tracked by SyncroNow AI, it will be built with your ruleset and the result will be placed in ServiceNow!
 
 ```bash
-npx syncro-now-ai dev
+npx syncrona dev
 ```
 
 ## How does it work?
@@ -210,28 +210,28 @@ SyncroNow AI has a few basic commands to help you get the job done
 
 | Command            | Aliases  | Description                                                                                                                                                 | Usage                           |
 | ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncro-now-ai refresh`              |
-| `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncro-now-ai dev`                  |
-| `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch.                               | `npx syncro-now-ai init`                 |
-| `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file                                                  | `npx syncro-now-ai push`                 |
-| `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncro-now-ai download my_test_app` |
-| `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncro-now-ai build`                |
-| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance.                                                                                           | `npx syncro-now-ai deploy`               |
-| `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncro-now-ai docs`                 |
-| `repair`           | `--apply`, `--prune`, `--ci` | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files no record claims. | `npx syncro-now-ai repair`               |
-| `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncro-now-ai status`               |
-| `check-env`        | **none** | Checks machine prerequisites (Node 22+, supported platform/WSL, Git) and prints actionable fixes.                                                          | `npx syncro-now-ai check-env`            |
-| `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncro-now-ai doctor`               |
-| `plugins`          | **none** | Shows configured plugin rules and reports plugin package availability (installed or missing) from the current workspace.                                  | `npx syncro-now-ai plugins`              |
-| `config <action>`  | **none** | Inspect or extend configuration. `config show-defaults` prints the built-in default includes/excludes; `config add-plugin [--plugin <name>]` lists the first-party build plugins (with install status) and prints a paste-ready `rules` snippet. | `npx syncro-now-ai config add-plugin --plugin typescript` |
-| `mcp`              | **none** | Starts standalone MCP server and can auto-configure local MCP client files (`.vscode/mcp.json`, `.syncrona-mcp/secrets.json`).                            | `npx syncro-now-ai mcp`                  |
-| `login [instance]` | **none** | Saves ServiceNow credentials in the encrypted global CredentialStore and optionally sets active instance.                                                  | `npx syncro-now-ai login dev123.service-now.com` |
-| `logout [instance]`| **none** | Removes stored credentials for one instance (or all with `--all`) from the global CredentialStore.                                                       | `npx syncro-now-ai logout dev123.service-now.com` |
-| `instances`        | **none** | Lists instances saved in the global CredentialStore and marks the active one.                                                                              | `npx syncro-now-ai instances`            |
-| `use <instance>`   | **none** | Sets active instance from the global CredentialStore for subsequent commands.                                                                              | `npx syncro-now-ai use dev123.service-now.com` |
-| `jira [key]`       | `--profile`, `--comments`, `--json` | Fetches rich context for a Jira issue (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, links, fix versions, recent comments). Resolves the key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center. | `npx syncro-now-ai jira SCRUM-123` |
-| `jira-login`       | `--profile` | Saves Jira credentials in the encrypted global CredentialStore. Auto-detects Cloud vs Server/Data Center from the base URL and verifies the connection. | `npx syncro-now-ai jira-login` |
-| `jira-logout`      | `--profile`, `--all` | Removes stored Jira credentials for one profile (or all with `--all`) from the global CredentialStore. | `npx syncro-now-ai jira-logout` |
+| `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncrona refresh`              |
+| `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncrona dev`                  |
+| `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch.                               | `npx syncrona init`                 |
+| `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file                                                  | `npx syncrona push`                 |
+| `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncrona download my_test_app` |
+| `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncrona build`                |
+| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance.                                                                                           | `npx syncrona deploy`               |
+| `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncrona docs`                 |
+| `repair`           | `--apply`, `--prune`, `--ci` | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files no record claims. | `npx syncrona repair`               |
+| `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncrona status`               |
+| `check-env`        | **none** | Checks machine prerequisites (Node 22+, supported platform/WSL, Git) and prints actionable fixes.                                                          | `npx syncrona check-env`            |
+| `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncrona doctor`               |
+| `plugins`          | **none** | Shows configured plugin rules and reports plugin package availability (installed or missing) from the current workspace.                                  | `npx syncrona plugins`              |
+| `config <action>`  | **none** | Inspect or extend configuration. `config show-defaults` prints the built-in default includes/excludes; `config add-plugin [--plugin <name>]` lists the first-party build plugins (with install status) and prints a paste-ready `rules` snippet. | `npx syncrona config add-plugin --plugin typescript` |
+| `mcp`              | **none** | Starts standalone MCP server and can auto-configure local MCP client files (`.vscode/mcp.json`, `.syncrona-mcp/secrets.json`).                            | `npx syncrona mcp`                  |
+| `login [instance]` | **none** | Saves ServiceNow credentials in the encrypted global CredentialStore and optionally sets active instance.                                                  | `npx syncrona login dev123.service-now.com` |
+| `logout [instance]`| **none** | Removes stored credentials for one instance (or all with `--all`) from the global CredentialStore.                                                       | `npx syncrona logout dev123.service-now.com` |
+| `instances`        | **none** | Lists instances saved in the global CredentialStore and marks the active one.                                                                              | `npx syncrona instances`            |
+| `use <instance>`   | **none** | Sets active instance from the global CredentialStore for subsequent commands.                                                                              | `npx syncrona use dev123.service-now.com` |
+| `jira [key]`       | `--profile`, `--comments`, `--json` | Fetches rich context for a Jira issue (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, links, fix versions, recent comments). Resolves the key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center. | `npx syncrona jira SCRUM-123` |
+| `jira-login`       | `--profile` | Saves Jira credentials in the encrypted global CredentialStore. Auto-detects Cloud vs Server/Data Center from the base URL and verifies the connection. | `npx syncrona jira-login` |
+| `jira-logout`      | `--profile`, `--all` | Removes stored Jira credentials for one profile (or all with `--all`) from the global CredentialStore. | `npx syncrona jira-logout` |
 
 `init` wizard behavior notes:
 
@@ -269,7 +269,7 @@ encryption key is resolved with this precedence:
 > at-rest protection.
 
 Reads fall back to the machine-derived key, so credential files written before
-this change keep decrypting; the next `syncro-now-ai login` re-encrypts them with the
+this change keep decrypting; the next `syncrona login` re-encrypts them with the
 resolved key.
 
 Recommendations:
@@ -289,20 +289,20 @@ Recommendations:
 `--diff <branch>` means **different things for `push` and `build`** — both use
 `git diff <branch>...` against your source folder, but apply it differently:
 
-- **`syncro-now-ai push --diff <branch>`** pushes **only the files that changed**
+- **`syncrona push --diff <branch>`** pushes **only the files that changed**
   versus that branch. This is the "changed-only" push — use it to push just your
   feature's edits instead of the whole scope.
 
   ```bash
-  npx syncro-now-ai push --diff main
+  npx syncrona push --diff main
   ```
 
-- **`syncro-now-ai build --diff <branch>`** builds **all** source files but also
+- **`syncrona build --diff <branch>`** builds **all** source files but also
   writes a `sync.diff.manifest.json` recording which files changed, so a later
-  `syncro-now-ai deploy` can target just those (an audit/deploy-tracking trail).
+  `syncrona deploy` can target just those (an audit/deploy-tracking trail).
 
   ```bash
-  npx syncro-now-ai build --diff main
+  npx syncrona build --diff main
   ```
 
 Without `--diff`, `push` and `build` act on the entire source folder.
@@ -322,8 +322,8 @@ automation:
   `--ci` too, to skip its overwrite confirmation.
 
 ```bash
-npx syncro-now-ai push --update-set "PRJ-123 changes" --scope-swap
-npx syncro-now-ai push --ci --concurrency 5
+npx syncrona push --update-set "PRJ-123 changes" --scope-swap
+npx syncrona push --ci --concurrency 5
 ```
 
 #### Using dry-run mode
@@ -331,7 +331,7 @@ npx syncro-now-ai push --ci --concurrency 5
 For commands that can change remote or local artifacts (`push`, `deploy`, `download`, and `build`), you can preview effects without applying writes by adding `--dry-run`.
 
 ```bash
-npx syncro-now-ai push --dry-run
+npx syncrona push --dry-run
 ```
 
 #### Using instance profiles
@@ -343,7 +343,7 @@ SN_INSTANCE_DEV=dev123.service-now.com
 SN_USER_DEV=dev.user
 SN_PASSWORD_DEV=dev.password
 
-npx syncro-now-ai status --instance-profile dev
+npx syncrona status --instance-profile dev
 ```
 
 Profile vars (`SN_INSTANCE_<PROFILE>`, `SN_USER_<PROFILE>`, `SN_PASSWORD_<PROFILE>`) fall back to base vars when a specific value is missing.
@@ -357,8 +357,8 @@ file contents). The interval defaults to **30 seconds** (`refreshInterval` in
 stacks. On a slow network, raise the interval or disable polling:
 
 ```bash
-npx syncro-now-ai dev --refresh-interval 60   # poll every 60s
-npx syncro-now-ai dev --refresh-interval 0    # disable polling; refresh manually with `syncro-now-ai refresh`
+npx syncrona dev --refresh-interval 60   # poll every 60s
+npx syncrona dev --refresh-interval 0    # disable polling; refresh manually with `syncrona refresh`
 ```
 
 Run with `--log-level debug` to see `Manifest refresh took Xms` and per-file
@@ -366,14 +366,14 @@ rule matches.
 
 #### Jira integration
 
-`syncro-now-ai jira [key]` pulls read-only context for a Jira issue (summary,
+`syncrona jira [key]` pulls read-only context for a Jira issue (summary,
 description, status, type, priority, assignee/reporter, labels, components,
 parent, subtasks, links, fix versions and recent comments) — handy for pairing
 an issue with the ServiceNow change you are working on. If you omit the key, the
 CLI parses it from the current git branch name (e.g. `feature/SCRUM-123-foo` →
 `SCRUM-123`). It supports both **Jira Cloud** and **Jira Server / Data Center**.
 
-Save credentials once with `syncro-now-ai jira-login`; they are stored in the
+Save credentials once with `syncrona jira-login`; they are stored in the
 same encrypted global CredentialStore as ServiceNow credentials. Configuration
 is resolved with this precedence (first match wins):
 
@@ -409,10 +409,10 @@ flowchart TD
     end
 
     subgraph SY["SyncroNow AI Project"]
-        REF["npx syncro-now-ai refresh"]:::cmd
+        REF["npx syncrona refresh"]:::cmd
         LC["Local copy gets created"]
         CE["Change extension if desired"]
-        DEV["npx syncro-now-ai dev"]:::cmd
+        DEV["npx syncrona dev"]:::cmd
         SV["Save changes"]
         BP["Build process starts automatically"]
         REF --> LC --> CE --> DEV --> SV --> BP
@@ -439,7 +439,7 @@ flowchart TD
 
     subgraph SY["SyncroNow AI Project (prod)"]
         LM["Load master version of code"]
-        PUSH["npx syncro-now-ai push"]:::cmd
+        PUSH["npx syncrona push"]:::cmd
         AB["All files get built"]
         LM --> PUSH --> AB
     end
@@ -626,13 +626,13 @@ on the next `refresh`.
 
 ### I'm not seeing all my code files!
 
-When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultOptions.ts) (and you can list them with `syncro-now-ai config show-defaults`).
+When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultOptions.ts) (and you can list them with `syncrona config show-defaults`).
 
 If you think there is something wrong with the default setup, feel free to submit a pull request! 🐙👍
 
 The `excludes` and `includes` sections in your `sync.config.js` act as additions to that default setting. You can override parts of it or turn parts of it off.
 
-Once you have updated your includes and excludes, run `npx syncro-now-ai refresh` to load the new files and update the manifest. You will have to manually delete any newly excluded tables/fields.
+Once you have updated your includes and excludes, run `npx syncrona refresh` to load the new files and update the manifest. You will have to manually delete any newly excluded tables/fields.
 
 ```javascript
 // sync.config.js
@@ -693,7 +693,7 @@ module.exports = {
         {
           // The name of the plugin, it is the same as the name of the NPM package of
           // the plugin.
-          name: "@syncro-now-ai/typescript-plugin",
+          name: "@syncrona/typescript-plugin",
           // Options to pass to the plugin. This will be defined by the plugin itself.
           // In this case, we are telling the typescript plugin to only type check and
           // not transpile.
@@ -763,7 +763,7 @@ Deleting something in SyncroNow AI is relatively simple. Just follow these steps
 
 1. Turn off dev mode if you are currently running SyncroNow AI
 2. Delete the record in ServiceNow
-3. Run `npx syncro-now-ai refresh`
+3. Run `npx syncrona refresh`
 4. Remove the files from your project
 
 Why is this not automatic? Deleting files can be a dangerous game and it should be a deliberate action!
@@ -772,12 +772,12 @@ Why is this not automatic? Deleting files can be a dangerous game and it should 
 
 1. Turn off dev mode if you are currently running SyncroNow AI
 2. Create the record in ServiceNow
-3. Run `npx syncro-now-ai refresh` and the files will get created automatically 👍
+3. Run `npx syncrona refresh` and the files will get created automatically 👍
 
 ### How do I work with multiple instances?
 
-Use the global credential store (`syncro-now-ai login` / `syncro-now-ai use`) or
-instance-profile env vars and `--instance-profile`. `syncro-now-ai status` shows
+Use the global credential store (`syncrona login` / `syncrona use`) or
+instance-profile env vars and `--instance-profile`. `syncrona status` shows
 which instance and credential source are active. Full guide:
 [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
 
@@ -790,27 +790,27 @@ scope directory, and share `node_modules`/plugins at the root. Full guide:
 ### Getting unstuck
 
 - **"credentials missing" after logging in** — the stored credential file may
-  not decrypt on this machine. Run `syncro-now-ai status --debug-credentials`; if it
-  reports a decrypt failure, re-run `syncro-now-ai login`.
-- **Connecting to the wrong instance** — run `syncro-now-ai status` and check
+  not decrypt on this machine. Run `syncrona status --debug-credentials`; if it
+  reports a decrypt failure, re-run `syncrona login`.
+- **Connecting to the wrong instance** — run `syncrona status` and check
   `Credentials from:`. A stale project `.env` wins over the store; fix or remove
   it, or pass `--instance-profile`.
-- **`syncro-now-ai download` overwrote my edits** — `download` is destructive by
+- **`syncrona download` overwrote my edits** — `download` is destructive by
   design (it confirms first; `--ci` skips the prompt). Keep your source in git
   so a bad download is a `git checkout` away.
-- **A push failed partway** — fix the cause and run `syncro-now-ai push` again; it
+- **A push failed partway** — fix the cause and run `syncrona push` again; it
   offers to resume only the records that failed last time.
-- **A download failed partway** — just run `syncro-now-ai download <scope>` again;
+- **A download failed partway** — just run `syncrona download <scope>` again;
   it records completed tables in `sync.download.checkpoint.json` and resumes with
   the tables it has not fetched yet instead of starting over.
-- **Slow network** — `syncro-now-ai dev --refresh-interval 60` polls less often, and
-  `syncro-now-ai push --concurrency 5` throttles parallel pushes.
-- **Environment problems** — `syncro-now-ai check-env` verifies Node, platform/WSL,
+- **Slow network** — `syncrona dev --refresh-interval 60` polls less often, and
+  `syncrona push --concurrency 5` throttles parallel pushes.
+- **Environment problems** — `syncrona check-env` verifies Node, platform/WSL,
   and Git, and prints actionable fixes.
 
 ## Examples
 
-After downloading a scope, run `npx syncro-now-ai docs` to generate Markdown
+After downloading a scope, run `npx syncrona docs` to generate Markdown
 documentation and Mermaid diagrams for it (overview, tables, per-record files) —
 a quick way to explore what a real SyncroNow AI project looks like.
 
@@ -818,12 +818,12 @@ a quick way to explore what a real SyncroNow AI project looks like.
 
 | Name                                                                       | Description                                 |
 | -------------------------------------------------------------------------- | ------------------------------------------- |
-| [@syncro-now-ai/babel-plugin](packages/babel-plugin/README.md)                 | Runs Babel on .js/.ts files                 |
-| [@syncro-now-ai/prettier-plugin](packages/prettier-plugin/README.md)           | Prettifies your output files using Prettier |
-| [@syncro-now-ai/sass-plugin](packages/sass-plugin/README.md)                   | Runs the Sass compiler on your files        |
-| [@syncro-now-ai/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
-| [@syncro-now-ai/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
-| [@syncro-now-ai/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
+| [@syncrona/babel-plugin](packages/babel-plugin/README.md)                 | Runs Babel on .js/.ts files                 |
+| [@syncrona/prettier-plugin](packages/prettier-plugin/README.md)           | Prettifies your output files using Prettier |
+| [@syncrona/sass-plugin](packages/sass-plugin/README.md)                   | Runs the Sass compiler on your files        |
+| [@syncrona/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
+| [@syncrona/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
+| [@syncrona/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
 
 ## Support
 

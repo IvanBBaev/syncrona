@@ -135,7 +135,7 @@ export function jiraHttpError(args: {
   if (status === 401) {
     message =
       `Jira authentication failed (HTTP 401) for ${context}: credentials were rejected. ` +
-      `Check your credentials with 'syncro-now-ai jira-login', and for Jira Cloud verify JIRA_EMAIL matches the API token.`;
+      `Check your credentials with 'syncrona jira-login', and for Jira Cloud verify JIRA_EMAIL matches the API token.`;
   } else if (status === 403) {
     message =
       `Jira access forbidden (HTTP 403) for ${context}: you are authenticated but not permitted. ` +

@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/babel-plugin-remove-modules",
+  "name": "@syncrona/babel-plugin-remove-modules",
   "version": "0.4.2",
   "description": "Babel plugin that removes imports and exports from code",
   "main": "./dist/index.js",
@@ -13,7 +13,7 @@
     "@babel/types": "^8.0.0"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2"
+    "@syncrona/types": "^0.4.2"
   },
   "publishConfig": {
     "access": "public"

@@ -314,9 +314,9 @@ test('CLAUDE docs drift parser extracts command names from README and CLAUDE doc
     '| `status` | none |',
   ].join('\n');
   const claudeRaw = [
-    '- `npx syncro-now-ai refresh`',
-    '- `npx syncro-now-ai download`',
-    '- `npx syncro-now-ai status`',
+    '- `npx syncrona refresh`',
+    '- `npx syncrona download`',
+    '- `npx syncrona status`',
   ].join('\n');
 
   assert.deepEqual(parseCommandNamesFromReadme(readmeRaw), ['download', 'refresh', 'status']);
@@ -326,7 +326,7 @@ test('CLAUDE docs drift parser extracts command names from README and CLAUDE doc
 test('CLAUDE docs drift parser ignores non-command tables (e.g. env-var references)', () => {
   // README also documents environment variables in backticked-first-cell tables.
   // Those UPPERCASE names are not CLI commands and must not be parsed as such,
-  // otherwise the drift gate demands nonexistent `npx syncro-now-ai jira_base_url`
+  // otherwise the drift gate demands nonexistent `npx syncrona jira_base_url`
   // entries in CLAUDE.md.
   const readmeRaw = [
     '| `jira` | none |',
@@ -350,7 +350,7 @@ test('CLAUDE docs drift validator reports missing sections and missing command d
   );
   fs.writeFileSync(
     claudePath,
-    ['## Purpose', '## Command Reference', '- `npx syncro-now-ai refresh`'].join('\n'),
+    ['## Purpose', '## Command Reference', '- `npx syncrona refresh`'].join('\n'),
     'utf-8'
   );
 
@@ -382,8 +382,8 @@ test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
       '## Quality Gates',
       '## Command Reference',
       '## Documentation Drift Policy',
-      '- `npx syncro-now-ai refresh`',
-      '- `npx syncro-now-ai status`',
+      '- `npx syncrona refresh`',
+      '- `npx syncrona status`',
     ].join('\n'),
     'utf-8'
   );
@@ -417,15 +417,15 @@ test('claims drift checker flags a missing marker and a resurrected old bin name
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claims-drift-'));
   fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
   // README keeps the brand but drops the bin name; the comparison page resurrects
-  // the old `npx syncrona` invocation; the site is missing entirely.
+  // the old `npx syncro-now-ai` invocation; the site is missing entirely.
   fs.writeFileSync(path.join(tempDir, 'README.md'), 'SyncroNow AI is great.', 'utf-8');
-  fs.writeFileSync(path.join(tempDir, 'docs', 'COMPARISON.md'), 'SyncroNow AI\nRun `npx syncrona push`.', 'utf-8');
+  fs.writeFileSync(path.join(tempDir, 'docs', 'COMPARISON.md'), 'SyncroNow AI\nRun `npx syncro-now-ai push`.', 'utf-8');
 
   const result = validateClaimsDrift({ rootDir: tempDir });
 
   assert.equal(result.ok, false);
-  assert.ok(result.errors.some((e) => /Missing required claim "syncro-now-ai" in README\.md/.test(e)));
-  assert.ok(result.errors.some((e) => /Forbidden claim npx syncrona .* in docs\/COMPARISON\.md/.test(e)));
+  assert.ok(result.errors.some((e) => /Missing required claim "syncrona" in README\.md/.test(e)));
+  assert.ok(result.errors.some((e) => /Forbidden claim npx syncro-now-ai .* in docs\/COMPARISON\.md/.test(e)));
   assert.ok(result.errors.some((e) => /Missing claims artifact: docs\/index\.html/.test(e)));
 });
 

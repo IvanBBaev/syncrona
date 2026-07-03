@@ -2,7 +2,7 @@
 
 This folder is managed by [Changesets](https://github.com/changesets/changesets).
 It records intended version bumps and changelog entries for the publishable
-`@syncro-now-ai/*` packages.
+`@syncrona/*` packages.
 
 ## Workflow
 
@@ -29,7 +29,7 @@ It records intended version bumps and changelog entries for the publishable
 
 ## Notes
 
-- All `@syncro-now-ai/*` packages are versioned in lockstep (`fixed` group in
+- All `@syncrona/*` packages are versioned in lockstep (`fixed` group in
   `config.json`), so a single changeset bumps every published package together.
 - `access` is `public`; `commit` is `false` (we never auto-commit — see the
   repo policy on explicit commits).

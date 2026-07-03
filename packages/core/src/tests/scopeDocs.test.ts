@@ -2,7 +2,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { SN } from "@syncro-now-ai/types";
+import { SN } from "@syncrona/types";
 import {
   summarizeManifest,
   buildScopeMermaid,

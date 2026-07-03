@@ -6,7 +6,7 @@ import {
   wait,
   formatDuration,
 } from "../genericUtils.js";
-import type { Sync } from "@syncro-now-ai/types";
+import type { Sync } from "@syncrona/types";
 
 const fc = (name: string): Sync.FileContext =>
   ({ name } as unknown as Sync.FileContext);

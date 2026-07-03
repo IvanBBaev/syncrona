@@ -54,7 +54,7 @@ export function wrapUntrustedData(value: unknown, source = "external"): string {
 // Encoded-query escaping is a shared transport policy (the core CLI builds the
 // same queries); the implementation lives in sn-transport so the two clients
 // cannot drift. Re-exported here to keep the mcp-server import surface stable.
-export { escapeQueryValue } from "@syncro-now-ai/sn-transport";
+export { escapeQueryValue } from "@syncrona/sn-transport";
 
 export function commandResultToText(result: CmdResult): string {
   const parts: string[] = [];

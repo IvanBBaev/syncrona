@@ -3,7 +3,7 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import type { Sync } from "@syncro-now-ai/types";
+import type { Sync } from "@syncrona/types";
 
 // Drives PluginManager.processFile / runPlugins / getFinalFileContents against
 // real on-disk plugin fixtures (built into a temp dir at runtime so the test is

@@ -56,7 +56,7 @@ function buildCommandBuilder(mod: CliCommandModule) {
 export async function initCommands(argv?: string[]) {
   const base: Argv =
     argv === undefined ? yargs(hideBin(process.argv)) : yargs(argv);
-  let cli = base.scriptName("syncro-now-ai");
+  let cli = base.scriptName("syncrona");
   if (argv !== undefined) {
     cli = cli.exitProcess(false);
   }

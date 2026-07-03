@@ -1,4 +1,4 @@
-# @syncro-now-ai/core
+# syncrona
 
 ## 0.4.2
 
@@ -7,7 +7,7 @@
 - 5898869: Release automation and hardening:
 
   - Adopt Changesets for versioning, changelog generation, and publishing
-    (`npm run changeset` / `version-packages` / `release`); all `@syncro-now-ai/*`
+    (`npm run changeset` / `version-packages` / `release`); all `@syncrona/*`
     packages version in lockstep.
   - Enforce module boundaries in CI via dependency-cruiser (`npm run
 lint:boundaries`): no circular dependencies and the shared foundation
@@ -17,5 +17,5 @@ lint:boundaries`): no circular dependencies and the shared foundation
     now resolved from `SYNCRONA_STORE_KEY` (CI / secrets manager) or the OS
     keychain when available, falling back to the legacy machine-derived key so
     existing stores keep decrypting.
-  - @syncro-now-ai/credential-store@0.4.2
-  - @syncro-now-ai/sn-transport@0.4.2
+  - @syncrona/credential-store@0.4.2
+  - @syncrona/sn-transport@0.4.2

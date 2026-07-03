@@ -4,7 +4,7 @@ import {
   downloadTablesWithResume,
   groupAppFiles,
 } from "../appUtils.js";
-import type { SN, Sync } from "@syncro-now-ai/types";
+import type { SN, Sync } from "@syncrona/types";
 
 const manifest = {
   scope: "x_app",

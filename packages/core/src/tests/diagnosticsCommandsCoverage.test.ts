@@ -552,8 +552,8 @@ describe("configCommand", () => {
 
   it("marks a plugin [installed] in the add-plugin listing when present in node_modules (line 461)", async () => {
     const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "syncrona-list-installed-"));
-    // The first KNOWN_PLUGINS entry is @syncro-now-ai/typescript-plugin.
-    await fsp.mkdir(path.join(tmpRoot, "node_modules", "@syncro-now-ai", "typescript-plugin"), {
+    // The first KNOWN_PLUGINS entry is @syncrona/typescript-plugin.
+    await fsp.mkdir(path.join(tmpRoot, "node_modules", "@syncrona", "typescript-plugin"), {
       recursive: true,
     });
     mockGetRootDir.mockReturnValue(tmpRoot);
@@ -579,7 +579,7 @@ describe("configCommand", () => {
     // A real KNOWN_PLUGINS entry is listed; none resolve under a fresh temp cwd.
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("typescript"));
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("syncro-now-ai config add-plugin --plugin typescript")
+      expect.stringContaining("syncrona config add-plugin --plugin typescript")
     );
   });
 
@@ -591,10 +591,10 @@ describe("configCommand", () => {
       const { configCommand } = await import("../diagnosticsCommands.js");
       await configCommand({ logLevel: "info", action: "add-plugin", plugin: "typescript" } as never);
       expect(mockLoggerInfo).toHaveBeenCalledWith(
-        expect.stringContaining("@syncro-now-ai/typescript-plugin")
+        expect.stringContaining("@syncrona/typescript-plugin")
       );
       expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("not installed — run `npm i -D @syncro-now-ai/typescript-plugin`")
+        expect.stringContaining("not installed — run `npm i -D @syncrona/typescript-plugin`")
       );
     } finally {
       await fsp.rm(tmpRoot, { recursive: true, force: true });
@@ -603,7 +603,7 @@ describe("configCommand", () => {
 
   it("reports an installed status for a known plugin present in node_modules (lines 448, 480)", async () => {
     const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "syncrona-installed-"));
-    await fsp.mkdir(path.join(tmpRoot, "node_modules", "@syncro-now-ai", "typescript-plugin"), {
+    await fsp.mkdir(path.join(tmpRoot, "node_modules", "@syncrona", "typescript-plugin"), {
       recursive: true,
     });
     mockGetRootDir.mockReturnValue(tmpRoot);
@@ -626,7 +626,7 @@ describe("configCommand", () => {
     await configCommand({ logLevel: "info", action: "add-plugin", plugin: "typescript" } as never);
     // The plugin is not present under the test cwd's node_modules => "not installed".
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      expect.stringContaining("@syncro-now-ai/typescript-plugin")
+      expect.stringContaining("@syncrona/typescript-plugin")
     );
     expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("not installed"));
   });

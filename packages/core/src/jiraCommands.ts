@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import inquirer from "inquirer";
 import {
   detectDeployment,
@@ -12,13 +12,13 @@ import {
   type JiraComment,
   type JiraDeployment,
   type JiraIssue,
-} from "@syncro-now-ai/jira";
+} from "@syncrona/jira";
 import {
   saveJiraCredentials,
   removeJiraCredentials,
   removeAllJiraCredentials,
   jiraCredentialHealth,
-} from "@syncro-now-ai/credential-store";
+} from "@syncrona/credential-store";
 import { logger } from "./Logger.js";
 import { getCurrentBranch } from "./gitUtils.js";
 import { setLogLevel } from "./commandHelpers.js";
@@ -49,13 +49,13 @@ function formatComment(comment: JiraComment): string {
 /**
  * Emit a Jira-tailored, actionable next step after a failed request. The shared
  * ServiceNow error taxonomy (`logErrorHint`) gives ServiceNow-specific advice
- * (`syncro-now-ai login`, `SN_INSTANCE`) that would mislead here, so the `jira`
+ * (`syncrona login`, `SN_INSTANCE`) that would mislead here, so the `jira`
  * commands classify their own errors and point at the Jira equivalents.
  */
 function logJiraErrorHint(message: string): void {
   if (/HTTP 401|HTTP 403|authentication failed/i.test(message)) {
     logger.info(
-      "Hint: re-check your Jira credentials with `syncro-now-ai jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
+      "Hint: re-check your Jira credentials with `syncrona jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
     );
   } else if (/HTTP 404|not found/i.test(message)) {
     logger.info("Hint: verify the issue key and that your account can view it.");
@@ -146,7 +146,7 @@ export async function jiraCommand(
     logger.error(
       "No Jira issue key given and none could be inferred from the current git branch."
     );
-    logger.info("Pass a key explicitly, e.g. `syncro-now-ai jira PROJ-123`.");
+    logger.info("Pass a key explicitly, e.g. `syncrona jira PROJ-123`.");
     process.exitCode = 1;
     return;
   }

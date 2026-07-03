@@ -19,7 +19,7 @@ const DEFAULT_REQUIRED_SECTIONS = [
 // unrelated backticked-first-cell tables (e.g. UPPERCASE env-var references such as
 // `JIRA_BASE_URL`) from being misread as commands.
 const README_COMMAND_REGEX = /^\|\s*`([a-z][a-z0-9-]*)[^`]*`\s*\|/gm;
-const CLAUDE_COMMAND_REGEX = /`npx\s+syncro-now-ai\s+([a-z][a-z0-9-]*)\b/g;
+const CLAUDE_COMMAND_REGEX = /`npx\s+syncrona\s+([a-z][a-z0-9-]*)\b/g;
 
 function normalizeCommandName(raw) {
   const normalized = String(raw || '').trim().toLowerCase();

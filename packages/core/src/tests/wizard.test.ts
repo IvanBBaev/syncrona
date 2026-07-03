@@ -218,10 +218,10 @@ describe("wizard", () => {
     expect(mockSaveCredentials).not.toHaveBeenCalled();
     expect(mockSetActiveInstance).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "No active credentials profile found. Run 'syncro-now-ai login' first."
+      "No active credentials profile found. Run 'syncrona login' first."
     );
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Failed to set up workspace. Run 'syncro-now-ai doctor' or re-run 'syncro-now-ai login'."
+      "Failed to set up workspace. Run 'syncrona doctor' or re-run 'syncrona login'."
     );
   });
 

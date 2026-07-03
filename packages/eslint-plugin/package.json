@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/eslint-plugin",
+  "name": "@syncrona/eslint-plugin",
   "version": "0.4.2",
   "description": "ESLint plugin for SyncroNow AI",
   "main": "./dist/index.js",
@@ -31,7 +31,7 @@
     "directory": "packages/eslint-plugin"
   },
   "dependencies": {
-    "@syncro-now-ai/types": "^0.4.2"
+    "@syncrona/types": "^0.4.2"
   },
   "types": "./dist/index.d.ts"
 }

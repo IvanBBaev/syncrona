@@ -1,5 +1,5 @@
 {
-  "name": "@syncro-now-ai/core",
+  "name": "syncrona",
   "version": "0.4.2",
   "description": "Next-gen file syncer",
   "license": "GPL-3.0-or-later",
@@ -26,10 +26,10 @@
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "@syncro-now-ai/credential-store": "^0.4.2",
-    "@syncro-now-ai/jira": "^0.4.2",
-    "@syncro-now-ai/sn-transport": "^0.4.2",
-    "@syncro-now-ai/types": "^0.4.2",
+    "@syncrona/credential-store": "^0.4.2",
+    "@syncrona/jira": "^0.4.2",
+    "@syncrona/sn-transport": "^0.4.2",
+    "@syncrona/types": "^0.4.2",
     "axios": "^1.18.1",
     "axios-rate-limit": "^1.9.0",
     "chalk": "^4.1.2",
@@ -41,7 +41,7 @@
     "yargs": "^18.0.0"
   },
   "bin": {
-    "syncro-now-ai": "./dist/index.js"
+    "syncrona": "./dist/index.js"
   },
   "files": [
     "dist"

@@ -15,17 +15,17 @@ describe("plugin catalog", () => {
     const shorts = KNOWN_PLUGINS.map((p) => p.short);
     expect(new Set(shorts).size).toBe(shorts.length);
     for (const p of KNOWN_PLUGINS) {
-      expect(p.pkg.startsWith("@syncro-now-ai/")).toBe(true);
+      expect(p.pkg.startsWith("@syncrona/")).toBe(true);
       expect(p.match.length).toBeGreaterThan(0);
     }
   });
 
   it.each([
-    ["typescript", "@syncro-now-ai/typescript-plugin"],
-    ["TypeScript", "@syncro-now-ai/typescript-plugin"],
-    ["typescript-plugin", "@syncro-now-ai/typescript-plugin"],
-    ["@syncro-now-ai/sass-plugin", "@syncro-now-ai/sass-plugin"],
-    ["  babel  ", "@syncro-now-ai/babel-plugin"],
+    ["typescript", "@syncrona/typescript-plugin"],
+    ["TypeScript", "@syncrona/typescript-plugin"],
+    ["typescript-plugin", "@syncrona/typescript-plugin"],
+    ["@syncrona/sass-plugin", "@syncrona/sass-plugin"],
+    ["  babel  ", "@syncrona/babel-plugin"],
   ])("resolves %p to %p", (query, pkg) => {
     expect(findKnownPlugin(query)?.pkg).toBe(pkg);
   });
@@ -40,8 +40,8 @@ describe("plugin catalog", () => {
   it("renders an install command and a rules snippet", () => {
     const ts = findKnownPlugin("typescript")!;
     const snippet = renderPluginRule(ts);
-    expect(snippet).toContain("npm i -D @syncro-now-ai/typescript-plugin");
-    expect(snippet).toContain('name: "@syncro-now-ai/typescript-plugin"');
+    expect(snippet).toContain("npm i -D @syncrona/typescript-plugin");
+    expect(snippet).toContain('name: "@syncrona/typescript-plugin"');
     expect(snippet).toContain("options: { transpile: true }");
     expect(snippet).toContain("match: /\\.ts$/");
   });

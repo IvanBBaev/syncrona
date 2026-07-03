@@ -1,3 +1,3 @@
-# @syncro-now-ai/webpack-plugin
+# @syncrona/webpack-plugin
 
 ## 0.4.2

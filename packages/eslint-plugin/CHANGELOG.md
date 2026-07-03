@@ -1,3 +1,3 @@
-# @syncro-now-ai/eslint-plugin
+# @syncrona/eslint-plugin
 
 ## 0.4.2

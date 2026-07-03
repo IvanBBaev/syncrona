@@ -1,3 +1,3 @@
-# @syncro-now-ai/credential-store
+# @syncrona/credential-store
 
 ## 0.4.2

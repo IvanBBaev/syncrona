@@ -1,4 +1,4 @@
-# @syncro-now-ai/types
+# @syncrona/types
 
 <!-- badges:start -->
 | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
@@ -6,7 +6,7 @@
 <!-- badges:end -->
 
 Shared TypeScript type definitions for the SyncroNow AI toolchain — the `Sync` and
-`SN` namespaces consumed by `@syncro-now-ai/core`, `@syncro-now-ai/mcp-server`, and the
+`SN` namespaces consumed by `syncrona`, `@syncrona/mcp-server`, and the
 build plugins (e.g. `Sync.Config`, `Sync.PluginRule`, `Sync.FileContext`,
 `SN.AppManifest`).
 
@@ -18,7 +18,7 @@ general-purpose standalone library.
 ## Usage
 
 ```ts
-import type { Sync, SN } from "@syncro-now-ai/types";
+import type { Sync, SN } from "@syncrona/types";
 
 const rule: Sync.PluginRule = { match: /\.ts$/, plugins: [] };
 ```

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncro-now-ai/types";
+import { Sync } from "@syncrona/types";
 import { promises as fsp, readFileSync } from "fs";
 import { execFileSync } from "child_process";
 import os from "os";
@@ -210,7 +210,7 @@ async function printCredentialDiagnostics(profile?: string): Promise<void> {
       } else {
         logger.warn(
           `Active stored instance "${health.active}" FAILED to decrypt: ${health.error}. ` +
-            "The credential file was likely encrypted on a different machine or user — re-run 'syncro-now-ai login'."
+            "The credential file was likely encrypted on a different machine or user — re-run 'syncrona login'."
         );
       }
     }
@@ -461,7 +461,7 @@ async function addPluginAction(pluginQuery?: string): Promise<void> {
         `  ${plugin.short.padEnd(11)} ${installed ? "[installed]" : "[missing]   "} ${plugin.pkg} — ${plugin.description}`
       );
     }
-    logger.info("Example: syncro-now-ai config add-plugin --plugin typescript");
+    logger.info("Example: syncrona config add-plugin --plugin typescript");
     return;
   }
 

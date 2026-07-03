@@ -294,7 +294,7 @@ test('sync_tool_contract_info returns deterministic contract metadata', async ()
       timeoutMs: 5000,
       contractVersion: '1.0.0',
       serverInfo: {
-        name: 'syncro-now-ai-mcp-server',
+        name: 'syncrona-mcp-server',
         version: '0.1.0',
       },
       getDeclaredToolNames: () => ['b_tool', 'a_tool', 'a_tool'],
@@ -311,7 +311,7 @@ test('sync_tool_contract_info returns deterministic contract metadata', async ()
   assert.equal(response.isError, false);
   const payload = JSON.parse(response.content[0].text);
   assert.equal(payload.contractVersion, '1.0.0');
-  assert.equal(payload.server.name, 'syncro-now-ai-mcp-server');
+  assert.equal(payload.server.name, 'syncrona-mcp-server');
   assert.equal(payload.server.version, '0.1.0');
   assert.deepEqual(payload.tools.names, ['a_tool', 'b_tool']);
   assert.equal(payload.tools.count, 2);
@@ -336,7 +336,7 @@ test('sync_ai_next_actions returns prioritized safe orchestration steps', async 
       timeoutMs: 5000,
       contractVersion: '1.0.0',
       serverInfo: {
-        name: 'syncro-now-ai-mcp-server',
+        name: 'syncrona-mcp-server',
         version: '0.1.0',
       },
       getDeclaredToolNames: () => [
@@ -374,7 +374,7 @@ test('sync_ai_next_actions tokenizes multi-word objectives', async () => {
       timeoutMs: 5000,
       contractVersion: '1.0.0',
       serverInfo: {
-        name: 'syncro-now-ai-mcp-server',
+        name: 'syncrona-mcp-server',
         version: '0.1.0',
       },
       getDeclaredToolNames: () => [

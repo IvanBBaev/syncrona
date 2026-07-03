@@ -1,7 +1,7 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the SyncroNow AI CLI (@syncro-now-ai/core) on Windows.
+    Installs the SyncroNow AI CLI (syncrona) on Windows.
 
 .DESCRIPTION
     Verifies the Node.js / npm prerequisites and installs the CLI globally from
@@ -29,7 +29,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $MinNodeMajor = 22
-$Package = "@syncro-now-ai/core"
+$Package = "syncrona"
 
 function Test-Command($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
@@ -58,9 +58,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "npm install failed with exit code $LASTEXITCODE."
 }
 
-if (Test-Command "syncro-now-ai") {
-    Write-Host "Installed. Run 'syncro-now-ai --help' to get started." -ForegroundColor Green
+if (Test-Command "syncrona") {
+    Write-Host "Installed. Run 'syncrona --help' to get started." -ForegroundColor Green
     Write-Host "Credentials are stored in Windows Credential Manager by default (opt out with SYNCRONA_USE_KEYCHAIN=0)." -ForegroundColor Yellow
 } else {
-    Write-Warning "Install completed but 'syncro-now-ai' is not on PATH yet. Open a new terminal or check your npm global bin path (npm config get prefix)."
+    Write-Warning "Install completed but 'syncrona' is not on PATH yet. Open a new terminal or check your npm global bin path (npm config get prefix)."
 }

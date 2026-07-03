@@ -23,21 +23,21 @@ MCP server package for automating SyncroNow AI + ServiceNow operational tasks fr
   1. process environment variables
   2. `.syncrona-mcp/secrets.json` (or `SYNCRONA_SECRETS_FILE`)
   3. `.env` in project root
-  4. global credential store (`syncro-now-ai login`)
+  4. global credential store (`syncrona login`)
 
   The resolved secrets are cached for 30 seconds per project directory.
-- SyncroNow AI CLI available in the target project (`npx syncro-now-ai ...`)
+- SyncroNow AI CLI available in the target project (`npx syncrona ...`)
 
 ## Build
 
 ```bash
-npm run --workspace=@syncro-now-ai/mcp-server build
+npm run --workspace=@syncrona/mcp-server build
 ```
 
 ## Test
 
 ```bash
-npm run --workspace=@syncro-now-ai/mcp-server test
+npm run --workspace=@syncrona/mcp-server test
 ```
 
 ## Run
@@ -140,10 +140,10 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
   - Executes background scripts and returns output for analysis
 - `sync_create_script_include`
   - Creates record in `sys_script_include`
-  - Optionally runs `syncro-now-ai refresh` so local file is downloaded
+  - Optionally runs `syncrona refresh` so local file is downloaded
 - `sync_create_script_include_and_sync`
   - Creates Script Include
-  - Runs `syncro-now-ai refresh`
+  - Runs `syncrona refresh`
   - Returns candidate local file path(s) from manifest so AI can edit immediately
 - `sn_list_metadata_records`
   - Inventory tool for key metadata families (BR, Client Script, ACL, Dictionary, UI Policy, Scripted REST)
@@ -246,7 +246,7 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 5. Ask AI to create Script Include through `sync_create_script_include_and_sync`
 6. Auto-refresh pulls the new include locally
 7. AI receives candidate local path(s) and can edit immediately
-8. Build and push using `syncro-now-ai build` and `syncro-now-ai push`
+8. Build and push using `syncrona build` and `syncrona push`
 
 ## Safety note
 

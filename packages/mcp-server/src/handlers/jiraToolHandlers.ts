@@ -7,8 +7,8 @@ import {
   resolveJiraConfigSync,
   NO_JIRA_CONFIG_MESSAGE,
   jiraUndecryptableMessage,
-} from "@syncro-now-ai/jira";
-import { jiraCredentialHealth } from "@syncro-now-ai/credential-store";
+} from "@syncrona/jira";
+import { jiraCredentialHealth } from "@syncrona/credential-store";
 import { toJsonText, wrapUntrustedData } from "../runtimeUtils";
 import type { ToolResponse } from "../toolResponse";
 
