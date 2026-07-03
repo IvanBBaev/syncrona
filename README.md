@@ -10,9 +10,13 @@
 |:--:|:--:|:--:|:--:|:--:|
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
 
-_Built and maintained in my own time — if it helps, a
-[GitHub Sponsors](https://github.com/sponsors/IvanBBaev) tip keeps it going.
-Full [sponsor options](#sponsor--support) are near the end._
+_Built and maintained in my own time. If SyncroNow AI helps you or your team,
+a sponsorship keeps it moving — it directly funds new features, fixes and
+keeping pace with ServiceNow's REST surface._
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/IvanBBaev)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/ivanbbaev)
+[![Donate via Donatree](https://img.shields.io/badge/Donate-Donatree-22c55e?style=flat-square&logo=liberapay&logoColor=white)](https://donatr.ee/ivanbbaev/)
 
 ## Overview
 
@@ -94,7 +98,6 @@ Because your scoped-app code is downloaded as plain, editable files in a project
     - [Getting unstuck](#getting-unstuck)
   - [Examples](#examples)
   - [Plugin List](#plugin-list)
-  - [Sponsor & support](#sponsor--support)
 
 ## Installation
 
@@ -819,25 +822,6 @@ a quick way to explore what a real SyncroNow AI project looks like.
 | [@syncro-now-ai/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
 | [@syncro-now-ai/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
 | [@syncro-now-ai/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
-
-## Sponsor & support
-
-SyncroNow AI is built and maintained in my own time. If it saves you or your team
-time, please consider supporting its continued development — sponsorship directly
-funds new features, bug fixes and keeping pace with ServiceNow's REST surface.
-
-- **[GitHub Sponsors](https://github.com/sponsors/IvanBBaev)** — one-off or
-  recurring, with no platform fee taken out (the preferred option).
-- **[Ko-fi](https://ko-fi.com/ivanbbaev)** — quick one-off support; it also
-  accepts **PayPal**, so it's the fallback for anyone without a GitHub account.
-- **[Donate (Donatree)](https://donatr.ee/ivanbbaev/)** — a no-account donation
-  page (card, PayPal and more) for a one-off tip.
-
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/IvanBBaev)
-[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/ivanbbaev)
-[![Donate via Donatree](https://img.shields.io/badge/Donate-Donatree-22c55e?style=flat-square&logo=liberapay&logoColor=white)](https://donatr.ee/ivanbbaev/)
-
-For help, diagnostics and how to report bugs, see [SUPPORT.md](SUPPORT.md).
 
 ## Trademarks & license
 
