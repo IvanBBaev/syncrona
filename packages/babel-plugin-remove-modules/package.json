@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/babel-plugin-remove-modules",
-  "version": "0.4.2",
+  "version": "0.9.0",
   "description": "Babel plugin that removes imports and exports from code",
   "main": "./dist/index.js",
   "scripts": {
@@ -13,7 +13,7 @@
     "@babel/types": "^8.0.0"
   },
   "devDependencies": {
-    "@syncrona/types": "^0.4.2"
+    "@syncrona/types": "^0.9.0"
   },
   "publishConfig": {
     "access": "public"
