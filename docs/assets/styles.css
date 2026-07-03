@@ -1538,19 +1538,41 @@ table.grid-table td {
   }
 }
 
-/* ---- FIG.01 — THE SYNC LOOP: traveling-packet animation ---------------- */
-/* A vermilion record-dot rides the loop: SN instance → refresh ↓ → local git
-   pulse → build+push ↑ → SN record flash, then repeats. Transform/opacity
-   only (GPU-friendly). The global reduced-motion rule (* { animation: none })
-   disables all of this; base states below stay static and unobtrusive. */
+/* ---- FIG.01 — THE SYNC LOOP: traveling-file animation ------------------ */
+/* A source file rides the loop: SN instance → refresh ↓ (green, plain files)
+   → local git pulse → build+push ↑ (vermilion, ts→js output) → SN record
+   flash, then repeats. The file's fill shifts green→vermilion across the two
+   legs. Transform/opacity/fill only (GPU-friendly). The global reduced-motion
+   rule (* { animation: none }) disables all of this; base states below stay
+   static and unobtrusive. */
 .sync-packet {
   opacity: 0; /* hidden at rest and under prefers-reduced-motion */
   fill: var(--grn, #1c7a4a);
   animation: pk-run 4.2s linear infinite;
   will-change: transform, opacity;
 }
+/* the file sprite floats gently while the outer group carries it along */
+.pk-sprite {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pk-bob 1.6s ease-in-out infinite;
+}
 .pk-halo {
-  opacity: 0.28;
+  opacity: 0.22; /* soft glow card behind the sheet; inherits the animated fill */
+}
+.pk-sheet {
+  stroke: rgba(23, 20, 13, 0.35); /* thin ink outline; fill inherits animated color */
+  stroke-width: 0.75;
+}
+.pk-fold {
+  fill: #17140d; /* dark folded corner, dimmed so the sheet color reads through */
+  opacity: 0.22;
+}
+.pk-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92); /* legible "code" lines on both green & vermilion */
+  stroke-width: 1.1;
+  stroke-linecap: round;
 }
 .git-core {
   transform-box: fill-box;
@@ -1654,5 +1676,16 @@ table.grid-table td {
   8%,
   100% {
     stroke: #17140d;
+  }
+}
+
+/* gentle float+tilt so the traveling file feels alive (pivots on its center) */
+@keyframes pk-bob {
+  0%,
+  100% {
+    transform: translateY(-0.7px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(0.7px) rotate(2deg);
   }
 }
