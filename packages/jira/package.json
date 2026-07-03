@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/jira",
-  "version": "0.4.2",
+  "version": "0.9.0",
   "description": "Shared Jira read client for SyncroNow AI (Cloud and Server/Data Center auto-detection, issue context fetch) used by the core CLI and the MCP server.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +20,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@syncrona/credential-store": "^0.4.2"
+    "@syncrona/credential-store": "^0.9.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

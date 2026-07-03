@@ -1,6 +1,6 @@
 {
   "name": "syncrona",
-  "version": "0.4.2",
+  "version": "0.9.0",
   "description": "Next-gen file syncer",
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -26,10 +26,10 @@
     "typescript": "~5.9.3"
   },
   "dependencies": {
-    "@syncrona/credential-store": "^0.4.2",
-    "@syncrona/jira": "^0.4.2",
-    "@syncrona/sn-transport": "^0.4.2",
-    "@syncrona/types": "^0.4.2",
+    "@syncrona/credential-store": "^0.9.0",
+    "@syncrona/jira": "^0.9.0",
+    "@syncrona/sn-transport": "^0.9.0",
+    "@syncrona/types": "^0.9.0",
     "axios": "^1.18.1",
     "axios-rate-limit": "^1.9.0",
     "chalk": "^4.1.2",

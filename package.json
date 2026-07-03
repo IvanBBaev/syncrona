@@ -1,6 +1,6 @@
 {
   "name": "syncrona-monorepo",
-  "version": "0.4.2",
+  "version": "0.9.0",
   "private": true,
   "description": "AI-ready ServiceNow MCP server for metadata analysis, dependency graphs, impact analysis, and scoped application documentation.",
   "engines": {
