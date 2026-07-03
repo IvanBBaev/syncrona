@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/types",
   "version": "0.9.0",
-  "description": "Type Declarations for SyncroNow AI",
+  "description": "Shared TypeScript type declarations for the SyncroNow AI toolchain — the Sync and SN namespaces consumed by the core CLI, MCP server, and build plugins.",
   "main": "index.d.ts",
   "scripts": {
     "test": "echo \"No runtime tests for @syncrona/types\""
@@ -19,5 +19,6 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/types"
-  }
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

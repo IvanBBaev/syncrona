@@ -46,5 +46,6 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/mcp-server"
-  }
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

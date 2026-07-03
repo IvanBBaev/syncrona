@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/typescript-plugin",
   "version": "0.9.0",
-  "description": "TypeScript plugin for SyncroNow AI",
+  "description": "SyncroNow AI build plugin that type-checks and transpiles .ts files with the TypeScript compiler (honors tsconfig.json).",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "npx tsc"
@@ -31,5 +31,6 @@
   "dependencies": {
     "@syncrona/types": "^0.9.0"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }
