@@ -62,7 +62,7 @@ jobs:
       - name: Test shared packages (@syncro-now-ai/jira + credential-store)
         run: npm run test:shared
 
-      - name: Coverage gates (core jest thresholds 85/71/80/85, mcp lines>=70% branches>=70%)
+      - name: Coverage gates (core jest thresholds 92/79/89/92, mcp lines>=70% branches>=70%)
         run: npm run test:coverage:gates
 
       # SKIP_TESTS=1: the mcp suite already ran in the two steps above, so the
@@ -81,12 +81,55 @@ jobs:
           path: packages/core/coverage
           if-no-files-found: ignore
 
-      - name: Upload coverage to Codecov
+      # Codecov now measures the full tested surface: one flagged upload per
+      # workspace that ships a jest suite (core, jira, credential-store,
+      # sn-transport). The untested build-tool plugin packages and mcp-server
+      # (own node --test gate) are excluded via codecov.yml `ignore`. The 90%
+      # project floor is enforced by Codecov's PR status check, so a transient
+      # upload error must not fail CI (fail_ci_if_error: false); disable_search
+      # keeps Codecov from double-counting the cobertura report core also emits.
+      - name: Upload core coverage to Codecov
         if: always() && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: packages/core/coverage/lcov.info
+          flags: core
+          name: core
+          disable_search: true
+          fail_ci_if_error: false
+
+      - name: Upload jira coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/jira/coverage/lcov.info
+          flags: jira
+          name: jira
+          disable_search: true
+          fail_ci_if_error: false
+
+      - name: Upload credential-store coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/credential-store/coverage/lcov.info
+          flags: credential-store
+          name: credential-store
+          disable_search: true
+          fail_ci_if_error: false
+
+      - name: Upload sn-transport coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/sn-transport/coverage/lcov.info
+          flags: sn-transport
+          name: sn-transport
+          disable_search: true
           fail_ci_if_error: false
 
   # G16: secret scanning across the full git history. Test fixtures and example
