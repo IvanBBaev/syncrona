@@ -12,11 +12,11 @@ AI agents through ~60 governed tools.
 
 ```
 packages/
-  core/                 syncrona           — the CLI (bin: syncrona)
-  mcp-server/           @syncrona/mcp-server     — MCP runtime (stdio JSON-RPC)
-  types/                @syncrona/types          — shared .d.ts type surface
+  core/                 syncrona                   — the CLI (bin: syncrona)
+  mcp-server/           @syncrona/mcp-server       — MCP runtime (stdio JSON-RPC)
+  types/                @syncrona/types            — shared .d.ts type surface
   credential-store/     @syncrona/credential-store — at-rest credential crypto
-  sn-transport/         @syncrona/sn-transport   — shared HTTP transport policy
+  sn-transport/         @syncrona/sn-transport     — shared HTTP transport policy
   babel-plugin/  babel-plugin-remove-modules/  babel-preset-servicenow/
   typescript-plugin/  webpack-plugin/  sass-plugin/  prettier-plugin/  eslint-plugin/
                         — build-pipeline plugins loaded via sync.config.js rules
