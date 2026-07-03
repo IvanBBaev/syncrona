@@ -211,6 +211,15 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       stays inert until the repo is public, then activates automatically), and
       Dependabot (.github/dependabot.yml — weekly npm + github-actions updates).
       All actions SHA-pinned, least-privilege permissions.
+- [ ] **DEP1. Breaking-major dependency migration** (gap-analysis #32) — the
+      `.github/dependabot.yml` `ignore` list pins six CJS/ESM-locked majors out of
+      the auto-update stream so safe patch/minor bumps can land: chalk 4→5 (v5 is
+      ESM-only), inquirer 8→9+ (ESM/API rewrite), eslint 8→9+ (flat config),
+      @typescript-eslint 6→ (tracks the eslint/TS bump), typescript 5→6 (parser
+      support), zod 3→4 (API changes), chokidar 3→4 (dropped glob support). Each
+      needs a dedicated, tested migration (ESM conversion or a supported bridge)
+      before its `ignore` entry is removed — do NOT batch them. DEFERRED: the
+      current CommonJS build ships fine; this is forward-compat debt, not a gap.
 - [x] **G17. Tests must not dirty the tracked tree** — DONE 2026-06-13: the
       culprit was commandsDownload.test.ts — downloadCommand calls the REAL
       generateScopeDocs(man), which resolves its outDir from process.cwd() and
@@ -226,6 +235,102 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
 4. G7, G13–G14, G17 — incrementally. (~~G4~~, ~~G6~~, ~~G10~~, ~~G12~~ done.)
 
 ---
+
+## FULL REVIEW — 2026-07-01 (architect / dev / qa × 1 over the uncommitted hardening wave)
+Scope: the working-tree changes (Jira client retry/guards, resolveConfig precedence,
+credential health probe, encoded-query escaping, coverage gates, sn-transport TTL).
+Ids continue the running ARCH-/DEV-/QA- numbering.
+
+### Cycle 1 — Architect
+- [x] **ARCH-10. Encoded-query escaping policy had too narrow a home and missed
+      sites** — DONE 2026-07-01: `escapeQueryValue` lived in mcp-server's
+      runtimeUtils.ts while the same interpolation class exists in core
+      (snClient.ts:267 `scope=${scopeName}` from the project config file,
+      snClient.ts:281 `user_name=${resolvedUserName}`) with no escaping at all,
+      and two MCP sites missed the sweep: insightToolHandlers.ts:271
+      (`tablename=${table}^documentkey=${sysId}` — both model-supplied args to
+      the audit-history tool) and insightToolHandlers.ts:781
+      (`sys_scope.scope=${scope}` in fetchScopeScriptRows, reached from
+      compare-instances with a model-supplied scope). A policy that says "use
+      this for EVERY interpolated value" but is only importable inside one
+      package invites exactly this drift. Hoisted the implementation to
+      sn-transport (its charter: shared SN policies that previously drifted via
+      copy-paste), re-exported from mcp-server runtimeUtils (import surface and
+      the new runtimeUtils tests unchanged), and applied it at all four missed
+      sites.
+- [x] **ARCH-11. CLI and MCP diverged on the null-Jira-config diagnosis** —
+      DONE 2026-07-01: jiraCommands.ts:153-162 distinguishes an undecryptable
+      stored profile (points at re-login via `jiraUndecryptableMessage`), but
+      the MCP `jira_get_issue` (jiraToolHandlers.ts:70-72) always returned
+      NO_JIRA_CONFIG_MESSAGE — the same failure produced contradictory guidance
+      depending on the entry point. Mirrored the health probe in the MCP
+      handler (`jiraCredentialHealth` is sync + never throws, fits the MCP
+      resolution path).
+
+### Cycle 1 — Dev
+- [x] **DEV-4. 429 retry without a Retry-After header retried after 0ms** —
+      DONE 2026-07-01: jira client.ts jiraFetch used `await sleep(wait ?? 0)`,
+      so when the header is absent (proxies routinely strip it) the one retry
+      re-hit the throttling server immediately — almost certainly a second 429,
+      wasting the retry exactly in the case it exists for. Added
+      DEFAULT_RETRY_WAIT_MS (1000ms) as the no-header fallback. Existing 429
+      tests now pass a `Retry-After: 0` headers stub (which also exercises the
+      previously-uncovered header-parsing path in retryAfterMs), and a new
+      fake-timers test pins the 1s default backoff.
+- [x] **DEV-5. isHexOfBytes doc comment contradicted its regex** — DONE
+      2026-07-01: credential-store index.ts documented "[0-9a-f]" while the
+      regex accepts uppercase hex too (`Buffer.from(x, "hex")` parses both, so
+      the lenience is correct). In validation code guarding cipher input, a
+      misdocumented rule invites a future "tightening" that would silently
+      change behavior — comment fixed to say case-insensitive.
+- Verified and cleared (no defect): `sinceDateTime`/`startedAtIso` raw
+  interpolations are safe — `isoToServiceNowDateTime` re-serializes via
+  `toISOString()`, output is canonical and cannot carry `^`; adf.ts block and
+  inline recursion bounds are independent but each capped (max stack ≈
+  2×MAX_DEPTH); branch.ts denylist loop cannot spin (regex cannot match
+  zero-length); `comments: Infinity` flows only into a `slice` bound, not a
+  URL; retryAfterMs handles empty/whitespace/negative/Infinity headers.
+- Deferred (design observation, no change): with an explicit `--profile` that
+  resolves no stored credentials, resolveConfig silently falls back to env —
+  documented and strictly better than the old env-always-wins behavior, but a
+  typo'd profile name can silently target the env-configured site. Consider a
+  CLI warning when the explicit-profile fallback engages.
+
+### Cycle 1 — QA
+- [x] **QA-7. ARCH-11's MCP undecryptable branch had no test** — DONE
+      2026-07-01: jiraToolHandlers.ts:72-79 (re-login guidance when a stored
+      profile exists but won't decrypt) was exercised by nothing — a revert
+      to the misleading NO_JIRA_CONFIG message would have passed the suite.
+      Added a node:test in jiraToolHandlers.test.js that plants an invalid
+      `~/.syncrona/jira/default.enc` under a temp home (os.homedir
+      monkey-patched, restored in finally) and asserts the error names
+      "could not be decrypted" + `jira-login --profile default`, and does
+      NOT claim missing config.
+- [x] **QA-8. Default-profile store fallback untested in both resolveConfig
+      variants** — DONE 2026-07-01: resolveConfig.ts async (line 82) and sync
+      (line 99) fallbacks to the `"default"` stored profile — the primary
+      "jira-login, then just use it" path — were uncovered, as was the
+      configFromStored partial-record guard (line 59). Added three tests in
+      jira.test.ts: async + sync no-profile/no-env resolution via a mocked
+      store (asserting the store is asked for "default"), and a stored record
+      with a missing token resolving to null instead of a broken config.
+- [x] **QA-9. ARCH-10's caret escaping not pinned at the call sites** — DONE
+      2026-07-01: snClientMethods.test.ts exercised getScopeId/getUserSysId
+      only with benign values (`x_acme_app`, `admin`), and index.test.js
+      exercised buildRecentChangesQuery only with a benign scope — removing
+      `escapeQueryValue` from any interpolation site would have passed the
+      suite. Added caret-bearing assertions at both core sites
+      (`x_acme_app^sys_id=ADMIN` → `scope=x_acme_app sys_id=ADMIN`) and the
+      recent-changes query builder.
+- [x] **QA-10. jiraUndecryptableMessage contract asserted only through
+      mocks** — DONE 2026-07-01: messages.ts functions coverage was 0% — the
+      real string was pinned nowhere (core CLI tests mock it), so the
+      guidance could drift or lose the profile interpolation silently. Added
+      a direct unit test pinning "could not be decrypted", the quoted
+      profile name, and the exact `jira-login --profile <name>` command.
+      With QA-8/QA-10 the jira package measures 96.8/83.5/97.2/97 —
+      ratcheted coverage floors 92/72/92/92 → 95/80/95/95 and fixed the
+      stale "(95/75/97/96)" measured-coverage comment in jest.config.js.
 
 ## FULL REVIEW — 2026-06-22 (b) (architect / dev / qa × 5 over SPDX headers + BA docs)
 

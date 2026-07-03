@@ -16,7 +16,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write # push the per-package git tags `changeset publish` creates
   id-token: write # required for npm provenance attestations
 
 jobs:
@@ -37,11 +37,22 @@ jobs:
       - name: Full validation gate
         run: npm run check
 
+      # Publish gate: fail the release on a known-vulnerable runtime dependency.
+      # Scoped to production deps so dev-only advisories never block a release;
+      # ci.yml audits the full tree on pushes/PRs.
+      - name: Security audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Publish to npm with provenance
         run: npx changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
+
+      # `changeset publish` tags each published package locally; push them so the
+      # release history (and any tag-triggered automation) is not discarded.
+      - name: Push package tags
+        run: git push origin --tags
 
   # D5: auto-update the Homebrew formula from the freshly published npm tarball.
   # DORMANT until the tap repo (IvanBBaev/homebrew-tap) exists and the repo

@@ -38,19 +38,24 @@ export async function devCommand(
       typeof args.refreshInterval === "number" && Number.isFinite(args.refreshInterval)
         ? Math.max(0, Math.floor(args.refreshInterval))
         : ConfigManager.getRefresh();
+    let timer: ReturnType<typeof setInterval> | null = null;
     if (interval && interval > 0) {
       logger.info(`Checking for new manifest files every ${interval} seconds`);
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         void refresher();
       }, interval * 1000);
-      // Don't keep the process alive just for the refresh timer, and stop
-      // cleanly on Ctrl+C.
+      // Don't keep the process alive just for the refresh timer.
       timer.unref();
-      process.once("SIGINT", () => {
-        clearInterval(timer);
-        void stopWatching();
-      });
     }
+    // Always stop the file watcher cleanly on Ctrl+C — even when polling is
+    // disabled (interval 0), startWatching() above is still running and would
+    // otherwise leak with no SIGINT handler to release it.
+    process.once("SIGINT", () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+      void stopWatching();
+    });
   });
 }
 
@@ -59,15 +64,25 @@ export async function refreshCommand(
   log: boolean = true
 ) {
   setLogLevel(args);
+  // #1: quieting a background refresh must NOT reset the active instance
+  // profile. setLogLevel() also calls setActiveInstanceProfile(), and the
+  // dev refresher passes a bare { logLevel: "warn" } with no instanceProfile,
+  // which would reset the session profile mid-run and silently target the
+  // BASE instance. Drive the logger level directly so the profile that
+  // setLogLevel(args) established above is preserved through the refresh.
+  const previousLogLevel = logger.getLogLevel();
   await scopeCheck(async () => {
-    if (!log) setLogLevel({ logLevel: "warn" });
-    const ok = await AppUtils.syncManifest();
-    if (ok) {
-      logger.success("Refresh complete! ✅");
-    } else if (log) {
-      // Interactive refresh: surface the failure as a real error exit.
-      process.exitCode = 1;
+    if (!log) logger.setLogLevel("warn");
+    try {
+      const ok = await AppUtils.syncManifest();
+      if (ok) {
+        logger.success("Refresh complete! ✅");
+      } else if (log) {
+        // Interactive refresh: surface the failure as a real error exit.
+        process.exitCode = 1;
+      }
+    } finally {
+      if (!log) logger.setLogLevel(previousLogLevel);
     }
-    setLogLevel(args);
   });
 }

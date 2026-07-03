@@ -79,9 +79,12 @@ jest.mock("../Logger", () => ({
 }));
 
 jest.mock("../snClient", () => ({
+  // #48: getManifest lives on the store-backed snClient() instance the wizard
+  // built to list apps — the download uses that SAME client, not defaultClient().
   snClient: jest.fn(() => ({
     getAppList: (...args: unknown[]) => mockGetAppList(...args),
     getCurrentScope: (...args: unknown[]) => mockGetCurrentScope(...args),
+    getManifest: (...args: unknown[]) => mockGetManifestRemote(...args),
   })),
   defaultClient: jest.fn(() => ({
     getManifest: (...args: unknown[]) => mockGetManifestRemote(...args),

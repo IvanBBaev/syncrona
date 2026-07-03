@@ -44,8 +44,19 @@ function buildCommandBuilder(mod: CliCommandModule) {
 
 // Interprets the CLI_COMMANDS registry. New commands are added by appending a
 // module entry in cliCommands.ts — this file should not need to change.
-export async function initCommands() {
-  let cli = (yargs as Argv).scriptName("syncro-now-ai");
+//
+// `argv` is an optional, explicit argument vector. Production leaves it
+// undefined so the process-wide yargs singleton parses the real process.argv
+// exactly as before. Passing an argv (tests) builds an isolated parser from the
+// yargs(argv) factory and disables process.exit, so the async failure sink
+// (runHandler) can be driven without the singleton's shared state killing the
+// test runner.
+export async function initCommands(argv?: string[]) {
+  const base = argv === undefined ? (yargs as Argv) : yargs(argv);
+  let cli = base.scriptName("syncro-now-ai");
+  if (argv !== undefined) {
+    cli = cli.exitProcess(false);
+  }
   for (const mod of CLI_COMMANDS) {
     cli = cli.command(
       mod.command,

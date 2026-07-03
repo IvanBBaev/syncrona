@@ -13,8 +13,8 @@
     "test": "npm run test:core && npm run test:mcp && npm run test:shared",
     "test:core": "npm --workspace @syncro-now-ai/core test",
     "test:mcp": "npm --workspace @syncro-now-ai/mcp-server test",
-    "test:shared": "npm --workspace @syncro-now-ai/jira test && npm --workspace @syncro-now-ai/credential-store test",
-    "test:coverage:core": "npm --workspace @syncro-now-ai/core test",
+    "test:shared": "npm --workspace @syncro-now-ai/jira test && npm --workspace @syncro-now-ai/credential-store test && npm --workspace @syncro-now-ai/sn-transport test",
+    "test:coverage:core": "echo 'core coverage is enforced by test:core (jest --coverage ratchet 85/71/80/85); no-op alias avoids a duplicate full core run (gap-analysis #24)'",
     "test:coverage:mcp": "npm --workspace @syncro-now-ai/mcp-server run test:coverage:gate -- --line-threshold 70 --branch-threshold 70",
     "test:coverage:gates": "npm run test:coverage:core && npm run test:coverage:mcp",
     "typecheck:core": "npm --workspace @syncro-now-ai/core run prepack",
@@ -23,17 +23,18 @@
     "typecheck": "npm run typecheck:all",
     "lint:core": "npx eslint \"packages/core/src/**/*.ts\" --max-warnings=0",
     "lint:mcp": "npx eslint \"packages/mcp-server/src/**/*.ts\" --max-warnings=0",
-    "lint:boundaries": "npx depcruise packages --include-only \"^packages/[^/]+/src\" --config .dependency-cruiser.cjs --no-progress",
-    "lint": "npm run lint:core && npm run lint:mcp && npm run lint:boundaries",
+    "lint:packages": "npx eslint \"packages/*/src/**/*.ts\" --max-warnings=0",
+    "lint:boundaries": "npx depcruise packages --include-only \"^packages/([^/]+/src|types/)\" --config .dependency-cruiser.cjs --no-progress",
+    "lint:boundaries:selftest": "node scripts/depcruise-selftest.mjs",
+    "lint": "npm run lint:packages && npm run lint:boundaries && npm run lint:boundaries:selftest",
     "quality": "npm --workspace @syncro-now-ai/mcp-server run quality-gates",
     "quality:core": "npm --workspace @syncro-now-ai/core run prepack",
     "quality:mcp": "npm --workspace @syncro-now-ai/mcp-server run quality-gates",
     "quality:all": "npm run quality:core && npm run quality:mcp",
-    "check": "npm run build && npm run typecheck && npm run lint && npm run test && npm run test:coverage:gates && npm run quality:all",
+    "verify:pack": "node scripts/verify-pack-contents.mjs",
+    "check": "npm run build && npm run lint && npm run test && npm run test:coverage:gates && SKIP_TESTS=1 npm run quality:all && npm run verify:pack",
     "bench": "npm run build && node scripts/bench.mjs",
     "mcp:build": "npm --workspace @syncro-now-ai/mcp-server run build",
-    "release:core": "npm run build && npm publish --workspace @syncro-now-ai/core --access public && bash scripts/tag-core-release.sh",
-    "release:core:dry": "npm run build && npm publish --workspace @syncro-now-ai/core --access public --dry-run && bash scripts/tag-core-release.sh --dry-run",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "npm run build && changeset publish"
@@ -46,7 +47,7 @@
     "@typescript-eslint/parser": "^6.7.5",
     "dependency-cruiser": "^17.4.3",
     "eslint": "^8.51.0",
-    "typescript": "^5.2.2"
+    "typescript": "~5.2.2"
   },
   "workspaces": [
     "packages/*"

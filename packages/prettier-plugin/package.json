@@ -8,10 +8,12 @@
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
+  "peerDependencies": {
+    "prettier": "^3"
+  },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2",
-    "@types/prettier": "^2.7.3",
-    "typescript": "^5.2.2"
+    "prettier": "^3.0.3",
+    "typescript": "~5.2.2"
   },
   "files": [
     "dist"
@@ -26,5 +28,9 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/prettier-plugin"
-  }
+  },
+  "dependencies": {
+    "@syncro-now-ai/types": "^0.4.2"
+  },
+  "types": "./dist/index.d.ts"
 }

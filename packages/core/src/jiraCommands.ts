@@ -8,6 +8,7 @@ import {
   resolveJiraConfig,
   verifyAuth,
   NO_JIRA_CONFIG_MESSAGE,
+  jiraUndecryptableMessage,
   type JiraComment,
   type JiraDeployment,
   type JiraIssue,
@@ -16,6 +17,7 @@ import {
   saveJiraCredentials,
   removeJiraCredentials,
   removeAllJiraCredentials,
+  jiraCredentialHealth,
 } from "@syncro-now-ai/credential-store";
 import { logger } from "./Logger";
 import { getCurrentBranch } from "./gitUtils";
@@ -151,7 +153,14 @@ export async function jiraCommand(
 
   const config = await resolveJiraConfig({ profile: args.profile });
   if (!config) {
-    logger.error(NO_JIRA_CONFIG_MESSAGE);
+    const profile = (args.profile || "").trim() || "default";
+    // Distinguish "nothing configured" from "a stored profile exists but won't
+    // decrypt" so the user re-logs in instead of assuming they never set it up.
+    if (jiraCredentialHealth(profile) === "undecryptable") {
+      logger.error(jiraUndecryptableMessage(profile));
+    } else {
+      logger.error(NO_JIRA_CONFIG_MESSAGE);
+    }
     process.exitCode = 1;
     return;
   }

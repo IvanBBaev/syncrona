@@ -4,27 +4,23 @@ import * as babel from "@babel/core";
 export async function run(
   context: Sync.FileContext,
   content: string,
-  options: any
+  options: babel.TransformOptions
 ): Promise<Sync.PluginResults> {
-  try {
-    let output = "";
-    options = Object.assign(options, {
-      filename: `${context.targetField}${context.ext}`
-    });
-    let res = await babel.transformAsync(content, options || {});
-    if (res && res.code) {
-      output = res.code;
-    } else {
-      return {
-        output: "",
-        success: false
-      };
-    }
+  let output = "";
+  options = Object.assign(options, {
+    filename: `${context.targetField}${context.ext}`
+  });
+  const res = await babel.transformAsync(content, options || {});
+  if (res && res.code) {
+    output = res.code;
+  } else {
     return {
-      output,
-      success: true
+      output: "",
+      success: false
     };
-  } catch (e) {
-    throw e;
   }
+  return {
+    output,
+    success: true
+  };
 }

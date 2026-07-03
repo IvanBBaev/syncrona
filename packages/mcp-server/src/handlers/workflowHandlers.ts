@@ -21,6 +21,7 @@ import {
 } from "../safetyPolicy";
 import { getScopeKnowledgePaths, getWorkflowSimulationReportPaths } from "../scopePaths";
 import { toJsonText } from "../runtimeUtils";
+import { isSafeRemoteEndpoint } from "../endpointPolicy";
 
 import type { ToolResponse } from "../toolResponse";
 
@@ -55,15 +56,6 @@ function toRecordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     : [];
-}
-
-function isSafeRemoteEndpoint(endpointPath: string): boolean {
-  if (!/^\/[a-z0-9_./-]*$/i.test(endpointPath)) {
-    return false;
-  }
-  // The character class above permits "." and "/", so it still admits "/../"
-  // path-traversal sequences. Reject any ".." segment explicitly.
-  return !endpointPath.split("/").some((segment) => segment === "..");
 }
 
 function slugifyText(value: string, fallback: string): string {

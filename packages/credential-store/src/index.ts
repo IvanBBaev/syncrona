@@ -41,7 +41,14 @@ type GlobalConfig = {
 const ALGORITHM = "aes-256-gcm";
 const KEY_LENGTH = 32;
 const IV_LENGTH = 16;
+/** GCM authentication tag length in bytes — full 128-bit tag, never truncated. */
+const GCM_TAG_LENGTH = 16;
 const STORE_SALT = "syncrona-credential-store-v1";
+
+/** True when `value` is exactly `bytes` bytes of valid hex (even length, case-insensitive). */
+function isHexOfBytes(value: string, bytes: number): boolean {
+  return value.length === bytes * 2 && /^[0-9a-fA-F]+$/.test(value);
+}
 
 export function getSyncronaDir(): string {
   return path.join(os.homedir(), ".syncrona");
@@ -151,6 +158,8 @@ function isKeychainEnabled(): boolean {
 function openKeychainEntry(): KeyringEntry | null {
   try {
     // Optional native dependency — absent or unloadable on unsupported platforms.
+    // Loaded lazily via require so an absent optional dep never breaks module load.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require("@napi-rs/keyring") as KeyringModule;
     return new mod.Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
   } catch {
@@ -221,6 +230,19 @@ export function decrypt(ciphertext: string, key: Buffer): string {
     throw new Error("Invalid credential file format.");
   }
   const [ivHex, authTagHex, encryptedHex] = parts;
+  // Validate field shapes before handing bytes to the cipher. `Buffer.from(x,"hex")`
+  // silently truncates at the first bad nibble, and GCM's setAuthTag accepts a
+  // SHORT tag — a truncated tag weakens forgery resistance. Require an exact-length
+  // IV and a full 128-bit auth tag, and reject non-hex / odd-length ciphertext, so
+  // a tampered or corrupt credential file fails closed instead of decrypting weakly.
+  if (
+    !isHexOfBytes(ivHex, IV_LENGTH) ||
+    !isHexOfBytes(authTagHex, GCM_TAG_LENGTH) ||
+    encryptedHex.length % 2 !== 0 ||
+    !/^[0-9a-fA-F]*$/.test(encryptedHex)
+  ) {
+    throw new Error("Invalid credential file format.");
+  }
   const iv = Buffer.from(ivHex, "hex");
   const authTag = Buffer.from(authTagHex, "hex");
   const encrypted = Buffer.from(encryptedHex, "hex");
@@ -522,9 +544,20 @@ export async function listJiraProfiles(): Promise<string[]> {
   try {
     await ensureJiraDir();
     const files = await fsp.readdir(getJiraDir());
-    return files
-      .filter((f) => f.endsWith(".enc"))
-      .map((f) => filenameToJiraProfile(f));
+    const profiles: string[] = [];
+    for (const f of files) {
+      if (!f.endsWith(".enc")) {
+        continue;
+      }
+      try {
+        // Decode per file: one malformed name (e.g. a stray `%` that is not valid
+        // percent-encoding) must not throw out of the loop and hide EVERY profile.
+        profiles.push(filenameToJiraProfile(f));
+      } catch {
+        // Skip the unreadable name; the rest of the profiles still list.
+      }
+    }
+    return profiles;
   } catch {
     return [];
   }
@@ -552,6 +585,34 @@ export async function removeAllJiraCredentials(): Promise<number> {
     }
   }
   return removed;
+}
+
+/**
+ * Health of a stored Jira profile, mirroring the ServiceNow active-store probe:
+ * `"missing"` (no file), `"undecryptable"` (file present but decrypt/parse fails —
+ * usually credentials moved between machines/users), or `"ok"`. Sync and never
+ * throws, so the CLI/MCP can turn a null config into the *right* message instead
+ * of always blaming a missing login.
+ */
+export type JiraCredentialHealth = "missing" | "undecryptable" | "ok";
+
+export function jiraCredentialHealth(profile?: string): JiraCredentialHealth {
+  const filePath = jiraCredentialFilePath(normalizeJiraProfile(profile));
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8").trim();
+  } catch (err) {
+    // Read first (no existsSync) so we never misreport a file that vanished
+    // between the probe and the read. A genuine ENOENT is "missing"; any other
+    // read failure (permissions, etc.) still means we cannot use stored creds.
+    return (err as NodeJS.ErrnoException)?.code === "ENOENT" ? "missing" : "undecryptable";
+  }
+  try {
+    JSON.parse(decryptWithFallback(raw));
+    return "ok";
+  } catch {
+    return "undecryptable";
+  }
 }
 
 /**

@@ -13,7 +13,12 @@ const DEFAULT_REQUIRED_SECTIONS = [
   '## Documentation Drift Policy',
 ];
 
-const README_COMMAND_REGEX = /^\|\s*`([^`]+)`\s*\|/gm;
+// Match only the CLI command table: the first backticked cell must START with a
+// command-shaped token (lowercase kebab, optionally followed by an arg like
+// `download <scope>`). This is symmetric with CLAUDE_COMMAND_REGEX below and keeps
+// unrelated backticked-first-cell tables (e.g. UPPERCASE env-var references such as
+// `JIRA_BASE_URL`) from being misread as commands.
+const README_COMMAND_REGEX = /^\|\s*`([a-z][a-z0-9-]*)[^`]*`\s*\|/gm;
 const CLAUDE_COMMAND_REGEX = /`npx\s+syncro-now-ai\s+([a-z][a-z0-9-]*)\b/g;
 
 function normalizeCommandName(raw) {

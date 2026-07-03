@@ -31,6 +31,20 @@ const REQUIRED_TOOLS = [
   'sync_health_check',
   'sync_metrics_trend',
   'jira_get_issue',
+  // Mutating and code-execution tools are the highest-risk part of the surface;
+  // pin them explicitly so a rename/removal that silently drops a side-effecting
+  // tool from the manifest is caught here, not in the field.
+  'sync_set_scope',
+  'sync_set_update_set',
+  'sync_prepare_session',
+  'sync_push',
+  'sn_create_record',
+  'sn_execute_background_script',
+  'sync_create_script_include',
+  'sync_create_script_include_and_sync',
+  'sync_run_atf_tests',
+  'run_node_code',
+  'run_workspace_command',
 ];
 
 function hashToolContract(toolNames) {
@@ -46,7 +60,11 @@ function hashToolContract(toolNames) {
 
 function checkToolContract(sourceFilePath, requiredTools) {
   const raw = fs.readFileSync(sourceFilePath, 'utf-8');
-  const missing = requiredTools.filter((tool) => !raw.includes(`name: "${tool}"`));
+  // Parse the actual `name: "..."` tool declarations and match required tools
+  // against that exact set. Substring matching (`raw.includes('name: "x"')`)
+  // is brittle: it can be satisfied by an unrelated literal and does not model
+  // "this tool is declared". Exact-set membership is precise and also feeds the
+  // duplicate check below.
   const declared = [...raw.matchAll(/name:\s*"([^"]+)"/g)].map((m) => m[1]);
   const seen = new Set();
   const duplicates = [];
@@ -56,6 +74,8 @@ function checkToolContract(sourceFilePath, requiredTools) {
     }
     seen.add(name);
   }
+  const declaredSet = seen;
+  const missing = requiredTools.filter((tool) => !declaredSet.has(tool));
   return {
     ok: missing.length === 0 && duplicates.length === 0,
     missing,

@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "@babel/core": "^7.23.2",
-    "@babel/types": "^7.23.0"
+    "@babel/types": "^7.23.0",
+    "@syncro-now-ai/types": "^0.4.2"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2",
     "@types/babel__core": "^7.20.2"
   },
   "engines": {
@@ -29,5 +29,6 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/babel-plugin"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

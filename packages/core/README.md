@@ -54,4 +54,16 @@ To opt out explicitly, set either of these environment variables to `1` or
 
 The last check is cached in `~/.syncrona/update-check.json`.
 
+## Environment variables
+
+Besides the credential variables above (`SN_INSTANCE` / `SN_USER` / `SN_PASSWORD`
+and their named `SN_*_<NAME>` forms) and the update-notifier opt-outs, the core
+CLI reads:
+
+| Variable                       | Purpose                                                                                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SYNCRONA_DATA_TABLES`         | Comma-separated allowlist of table names whose data records are materialized into the manifest (e.g. `x_my_table,sys_choice`). Empty/unset materializes none by default. |
+| `SYNCRONA_INCLUDE_DATA_FIELDS` | Materialize data fields for **all** tables. Truthy (`1`/`true`/`yes`/`on`) enables it; falsey (`0`/`false`/`no`/`off`) disables. Unset falls back to the allowlist above. |
+| `SYNCRONA_MCP_SERVER_PATH`     | Explicit path to the MCP server entry (`dist/index.js`) used by `syncro-now-ai mcp`. Overrides the built-in workspace/`node_modules` lookup; useful for local development. |
+
 

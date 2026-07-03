@@ -7,6 +7,17 @@ import { runSyncroCliCommand } from "./processRunner";
 import { listScopes } from "./sessionContext";
 import { getServiceNowConfig } from "./servicenowCore";
 
+// A ServiceNow scope code is `x_<vendor>_<app>` — lowercase letters, digits and
+// underscores only. The instance is only semi-trusted here (auto-pull runs
+// unattended at startup, defaulting on), so a scope value must never be able to
+// carry `../` or absolute-path fragments into `path.join`/`mkdirSync`/a child
+// `cwd`. Anything that doesn't match is skipped and logged rather than written.
+const VALID_SCOPE_CODE = /^x_[a-z0-9_]+$/;
+
+export function isValidScopeCode(scopeCode: string): boolean {
+  return VALID_SCOPE_CODE.test(scopeCode);
+}
+
 function shouldAutoPullAllScopes(): boolean {
   const raw = toStringField(process.env[AUTO_PULL_ALL_SCOPES_ENV]).trim().toLowerCase();
   if (!raw) {
@@ -28,6 +39,11 @@ async function listScopedApplications(timeoutMs: number): Promise<Array<{ scope:
 }
 
 function writeScopeWorkspace(scopeCode: string): void {
+  // Defence in depth: never build a filesystem path from an unvalidated scope
+  // code even if a caller forgot to pre-filter.
+  if (!isValidScopeCode(scopeCode)) {
+    throw new Error(`Refusing to write workspace for invalid scope code: ${scopeCode}`);
+  }
   const scopeDir = path.join(PROJECT_DIR, "packages", scopeCode);
   const sourceDir = path.join(scopeDir, "src");
   mkdirSync(sourceDir, { recursive: true });
@@ -108,7 +124,19 @@ export async function autoPullAllScopesAndData(timeoutMs: number = SCOPE_BOOTSTR
 
   let successCount = 0;
   let failedCount = 0;
+  let skippedCount = 0;
   for (const scope of scopes) {
+    // The scope code becomes a filesystem path and a child process cwd below.
+    // A compromised/misconfigured instance could return a value with `../` or
+    // path separators; validate before any path join / fs write / child cwd and
+    // skip-and-log anything that doesn't match the strict scope-code shape.
+    if (!isValidScopeCode(scope.scope)) {
+      skippedCount += 1;
+      console.error(
+        `Auto scope pull: skipping invalid scope code ${JSON.stringify(scope.scope)}.`
+      );
+      continue;
+    }
     try {
       writeScopeWorkspace(scope.scope);
 
@@ -149,6 +177,6 @@ export async function autoPullAllScopesAndData(timeoutMs: number = SCOPE_BOOTSTR
   }
 
   console.error(
-    `Auto scope pull complete: ${successCount} succeeded, ${failedCount} failed, total ${scopes.length}.`
+    `Auto scope pull complete: ${successCount} succeeded, ${failedCount} failed, ${skippedCount} skipped (invalid scope code), total ${scopes.length}.`
   );
 }

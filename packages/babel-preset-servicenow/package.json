@@ -15,7 +15,7 @@
   "devDependencies": {
     "@syncro-now-ai/types": "^0.4.2",
     "@types/babel__core": "^7.20.2",
-    "typescript": "^5.2.2"
+    "typescript": "~5.2.2"
   },
   "files": [
     "dist"
@@ -30,5 +30,6 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/babel-preset-servicenow"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

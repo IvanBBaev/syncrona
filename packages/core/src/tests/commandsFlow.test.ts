@@ -16,6 +16,7 @@ const mockPrompt = jest.fn();
 const mockGetSourcePath = jest.fn();
 const mockGetRefresh = jest.fn();
 const mockGetDiffFile = jest.fn();
+const mockIsDiffFileCorrupt = jest.fn();
 const mockGetBuildPath = jest.fn();
 const mockBuildFiles = jest.fn();
 const mockEncodedPathsToFilePaths = jest.fn();
@@ -96,6 +97,7 @@ jest.mock("../config", () => ({
   getSourcePath: (...args: unknown[]) => mockGetSourcePath(...args),
   getRefresh: (...args: unknown[]) => mockGetRefresh(...args),
   getDiffFile: (...args: unknown[]) => mockGetDiffFile(...args),
+  isDiffFileCorrupt: (...args: unknown[]) => mockIsDiffFileCorrupt(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
   getManifest: (...args: unknown[]) => mockGetManifest(...args),
   getRootDir: (...args: unknown[]) => mockGetRootDir(...args),
@@ -143,6 +145,7 @@ describe("command flows", () => {
     mockGetSourcePath.mockReturnValue("/tmp/src");
     mockGetRefresh.mockReturnValue(0);
     mockGetDiffFile.mockReturnValue({ changed: [] });
+    mockIsDiffFileCorrupt.mockReturnValue(false);
     mockGetConfig.mockReturnValue({});
     mockGetRootDir.mockReturnValue("/tmp/project");
     mockGetBuildPath.mockReturnValue("encoded-build-path");
@@ -236,7 +239,11 @@ describe("command flows", () => {
     mockReadFile.mockResolvedValueOnce(
       JSON.stringify({
         command: "push",
-        pid: 4242,
+        // #18: the lock is only "active" if its owning process is still alive.
+        // Use THIS process's pid (guaranteed alive) so the pid-liveness check
+        // does not reclaim it as stale — the block-on-active-lock behavior is
+        // what this test asserts.
+        pid: process.pid,
         createdAt: new Date().toISOString(),
       })
     );
@@ -430,11 +437,17 @@ describe("command flows", () => {
     });
 
     expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    // #3/#49: the preflight message now names the resolved target instance and
+    // no longer hardcodes SN_* advice — the actionable next step is delegated to
+    // the DX19 taxonomy (logErrorHint), which tailors advice to the credential
+    // source. The unreachable-instance path also fails the shell (#3).
     expect(mockLoggerError).toHaveBeenCalledWith(
-      "Unable to reach ServiceNow instance before push. Check SN_INSTANCE/SN_USER/SN_PASSWORD and network connectivity."
+      "Unable to reach ServiceNow instance instance.service-now.com before push. Check the instance URL and network connectivity."
     );
     expect(mockGetAppFileList).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
 
+    process.exitCode = 0;
     process.env.SN_INSTANCE = oldInstance;
   });
 

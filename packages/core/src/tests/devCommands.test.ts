@@ -11,6 +11,8 @@ const mockSetLogLevel = jest.fn();
 const mockLoggerInfo = jest.fn();
 const mockLoggerSuccess = jest.fn();
 const mockLoggerDebug = jest.fn();
+const mockLoggerSetLogLevel = jest.fn();
+const mockLoggerGetLogLevel = jest.fn((..._a: unknown[]) => "info");
 
 jest.mock("../Watcher", () => ({
   startWatching: (...a: unknown[]) => mockStartWatching(...a),
@@ -41,6 +43,8 @@ jest.mock("../Logger", () => ({
     info: (...a: unknown[]) => mockLoggerInfo(...a),
     success: (...a: unknown[]) => mockLoggerSuccess(...a),
     debug: (...a: unknown[]) => mockLoggerDebug(...a),
+    setLogLevel: (...a: unknown[]) => mockLoggerSetLogLevel(...a),
+    getLogLevel: (...a: unknown[]) => mockLoggerGetLogLevel(...a),
   },
 }));
 
@@ -77,8 +81,28 @@ describe("devCommands", () => {
       process.exitCode = 0;
       await refreshCommand({ logLevel: "info" } as never, false);
       expect(process.exitCode).toBe(0);
-      // log=false drops the level to warn before syncing.
-      expect(mockSetLogLevel).toHaveBeenCalledWith({ logLevel: "warn" });
+      // #1: log=false quiets the logger DIRECTLY (logger.setLogLevel), and must
+      // NOT go through the profile-mutating setLogLevel({ logLevel: "warn" }),
+      // which would reset the active instance profile mid-session.
+      expect(mockLoggerSetLogLevel).toHaveBeenCalledWith("warn");
+      expect(mockSetLogLevel).not.toHaveBeenCalledWith({ logLevel: "warn" });
+    });
+
+    it("#1: a background refresh never resets the active instance profile", async () => {
+      // setLogLevel(args) is the ONLY call that may touch profile state, and it
+      // must always receive the real command args (with instanceProfile), never
+      // the bare log-only { logLevel: "warn" } object.
+      mockSyncManifest.mockResolvedValue(true);
+      await refreshCommand({ logLevel: "info", instanceProfile: "dev" } as never, false);
+      // Every setLogLevel (the profile helper) call carried the profile.
+      for (const call of mockSetLogLevel.mock.calls) {
+        expect(call[0]).toEqual(
+          expect.objectContaining({ instanceProfile: "dev" })
+        );
+      }
+      // The quiet-then-restore of the logger level happened via logger.setLogLevel.
+      expect(mockLoggerSetLogLevel).toHaveBeenCalledWith("warn");
+      expect(mockLoggerSetLogLevel).toHaveBeenCalledWith("info"); // restored
     });
   });
 

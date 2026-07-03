@@ -6,11 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
-- Stronger at-rest credential key (AR2): the credential-store encryption key is
-  resolved from `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets
-  managers) or the OS keychain (opt-in `SYNCRONA_USE_KEYCHAIN=1`, optional
-  `@napi-rs/keyring`), falling back to the legacy machine-derived key so existing
-  credential files keep decrypting.
+- Stronger at-rest credential key (AR2 / D5): the credential-store encryption key
+  is resolved from `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets
+  managers) or, **by default**, a random 256-bit key held in the OS keychain
+  (via the optional `@napi-rs/keyring`; opt out with `SYNCRONA_USE_KEYCHAIN=0`),
+  falling back to the legacy machine-derived key so existing credential files
+  keep decrypting.
+- Relicensed the project from MIT to **GPL-3.0-or-later** (SPDX headers across
+  the source tree; `LICENSE` and package `license` fields updated).
+- Custom CA bundle support in the shared transport (`SYNCRONA_CA_BUNDLE`, and
+  `NODE_EXTRA_CA_CERTS`) for corporate TLS-inspection / private-CA setups.
 - Updated production dependencies to clear all `npm audit` findings (13
   vulnerabilities, 7 high — including five axios advisories such as SSRF and
   credential leakage; axios 1.5.1 → 1.17.0, webpack bumped). `npm audit
@@ -18,7 +23,26 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Release automation via Changesets (G6): `.changeset/` config plus
+- **Jira issue context** (`@syncro-now-ai/jira`): new `jira`, `jira-login` and
+  `jira-logout` CLI commands and a `jira_get_issue` MCP tool that fetch
+  read-only issue context (summary, description, status, comments, links, …).
+  Supports Jira Cloud (email + API token) and Server / Data Center (PAT),
+  auto-detecting the deployment from the base URL; the `jira` command resolves
+  the issue key from its argument or the current git branch name. Credentials
+  are stored in the encrypted global CredentialStore, with named profiles.
+- OAuth 2.0 client-credentials auth for the CLI (G1): set `SN_OAUTH_CLIENT_ID` /
+  `SN_OAUTH_CLIENT_SECRET` (with `SN_USER` / `SN_PASSWORD`, optional per-profile
+  `_<PROFILE>` suffixes) and the CLI exchanges them for a Bearer token at
+  `oauth_token.do`, refreshing on expiry/401; without them it stays on Basic.
+- `repair` command: reconciles the manifest with local files — reports (default)
+  or re-downloads files the manifest expects but that are missing locally
+  (`--apply`), and optionally prunes orphan files no record claims (`--prune`).
+- `config add-plugin`: lists the first-party build plugins (with install status)
+  and prints a paste-ready `rules` snippet for `sync.config.js`.
+- Resumable downloads (G3): `download` / `refresh` checkpoint progress and resume
+  the tables not yet fetched instead of restarting after an interruption.
+- Flat project layout support: projects can keep source directly under the
+  project root (flat) in addition to the `src/` layout.
   `npm run changeset` / `version-packages` / `release`; all `@syncro-now-ai/*`
   packages version in lockstep.
 - Machine-enforced module boundaries (G10): dependency-cruiser runs in
@@ -139,10 +163,11 @@ All notable changes to this project will be documented in this file.
 
 - nothing removed
 
-[0.4.1]: https://github.com/nuvolo/syncrona/releases/tag/v0.4.1
-[0.4.0]: https://github.com/nuvolo/syncrona/releases/tag/v0.4.0
-[0.3.6]: https://github.com/nuvolo/
-[0.3.10-alpha.0]: https://github.com/nuvolo/syncrona/releases/tag/v0.3.10-alpha.0
+[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.1
+[0.4.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.0
+[0.3.6]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.3.6
+[0.3.10-alpha.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.3.10-alpha.0
 [@nrdurkin]: https://github.com/nrdurkin
 [@tyler-ed]: https://github.com/tyler-ed
 [@collinparker-nuvolo]: https://github.com/collinparker-nuvolo

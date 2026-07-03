@@ -14,6 +14,7 @@ import {
   type MetadataType,
 } from "../analysis";
 import { tableGet } from "../sessionContext";
+import { escapeQueryValue } from "../runtimeUtils";
 
 export type ScopeKnowledgeGraph = {
   nodes: Array<{
@@ -260,7 +261,7 @@ async function discoverServiceNowScopeKnowledge(
       );
     }
 
-    const rows = await safeTableGet(cfg.table, fields, `sys_scope.scope=${normalizedScope}`);
+    const rows = await safeTableGet(cfg.table, fields, `sys_scope.scope=${escapeQueryValue(normalizedScope)}`);
 
     for (const row of rows) {
       const normalized = normalizeMetadataRow(metadataType, row);
@@ -313,7 +314,7 @@ async function discoverServiceNowScopeKnowledge(
   const scriptIncludeRows = await safeTableGet(
     "sys_script_include",
     ["sys_id", "name", "script", "api_name", "sys_scope"],
-    `sys_scope.scope=${normalizedScope}`
+    `sys_scope.scope=${escapeQueryValue(normalizedScope)}`
   );
   for (const row of scriptIncludeRows) {
     const sysId = toStringField(row.sys_id);
@@ -340,7 +341,7 @@ async function discoverServiceNowScopeKnowledge(
   const scopedTables = await safeTableGet(
     "sys_db_object",
     ["sys_id", "name", "super_class", "sys_scope"],
-    `sys_scope.scope=${normalizedScope}`
+    `sys_scope.scope=${escapeQueryValue(normalizedScope)}`
   );
   for (const row of scopedTables) {
     const tableName = toStringField(row.name);

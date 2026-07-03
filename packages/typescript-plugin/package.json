@@ -8,11 +8,11 @@
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
-  "dependencies": {
-    "typescript": "^5.2.2"
+  "peerDependencies": {
+    "typescript": ">=5"
   },
   "devDependencies": {
-    "@syncro-now-ai/types": "^0.4.2"
+    "typescript": "~5.2.2"
   },
   "files": [
     "dist"
@@ -27,5 +27,9 @@
     "type": "git",
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/typescript-plugin"
-  }
+  },
+  "dependencies": {
+    "@syncro-now-ai/types": "^0.4.2"
+  },
+  "types": "./dist/index.d.ts"
 }

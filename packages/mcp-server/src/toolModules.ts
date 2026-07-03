@@ -5,7 +5,7 @@ import { MCP_TOOLS } from "./toolSchemas";
 import type { ToolHandlerInvocation, ToolHandlerResponse } from "./toolDispatch";
 import { runBackgroundScript } from "./servicenowCore";
 import { tableGet } from "./sessionContext";
-import { getScopeDocsPaths, getScopeTableDocPath } from "./scopePaths";
+import { getScopeDocsPaths, getScopeTableDocPath, resolveContainedPath } from "./scopePaths";
 import {
   classifyRelationVisibility,
   toGraphFromUnknown,
@@ -151,6 +151,10 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
     invoke: (ctx) =>
       handleInsightTool(ctx.toolName, ctx.args, {
         timeoutMs: ctx.timeoutMs,
+        dryRun: ctx.dryRun,
+        startedAt: ctx.startedAt,
+        makeDryRunAuditResponse: ctx.makeDryRunAuditResponse,
+        auditMutatingTool: ctx.auditMutatingTool,
       }),
   },
   {
@@ -227,7 +231,8 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
           const docsRoot = getScopeDocsPaths(scopeCode);
           const writtenPaths: string[] = [];
           for (const file of files) {
-            const targetPath = path.join(docsRoot.dir, file.relativePath);
+            // relativePath is model-supplied; keep every write inside the bundle.
+            const targetPath = resolveContainedPath(docsRoot.dir, file.relativePath);
             mkdirSync(path.dirname(targetPath), { recursive: true });
             writeFileWithStableBackup(targetPath, file.content);
             writtenPaths.push(targetPath);

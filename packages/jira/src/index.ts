@@ -13,5 +13,15 @@ export { detectDeployment, restApiBase } from "./deployment";
 export { adfToText } from "./adf";
 export { normalizeIssue } from "./normalize";
 export { getIssue, verifyAuth, buildAuthHeader } from "./client";
+export {
+  JiraHttpError,
+  isJiraHttpError,
+  jiraHttpError,
+  type JiraHttpErrorKind,
+} from "./errors";
 export { resolveJiraConfig, resolveJiraConfigSync } from "./resolveConfig";
-export { NO_JIRA_CONFIG_MESSAGE } from "./messages";
+export {
+  NO_JIRA_CONFIG_MESSAGE,
+  CLOUD_MISSING_EMAIL_MESSAGE,
+  jiraUndecryptableMessage,
+} from "./messages";

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -11,6 +11,7 @@ import {
   removeAllJiraCredentials,
   jiraProfileToFilename,
   filenameToJiraProfile,
+  jiraCredentialHealth,
   type StoredJiraCredentials,
 } from "../src/index";
 
@@ -120,5 +121,30 @@ describe("jira credential store", () => {
     expect((await listJiraProfiles()).sort()).toEqual(["work/a", "work_a"]);
     expect((await loadJiraCredentials("work/a"))?.deployment).toBe("cloud");
     expect((await loadJiraCredentials("work_a"))?.deployment).toBe("server");
+  });
+
+  describe("jiraCredentialHealth", () => {
+    it("reports \"missing\" when no profile file exists", () => {
+      expect(jiraCredentialHealth("ghost")).toBe("missing");
+    });
+
+    it("reports \"ok\" for a freshly saved, decryptable profile", async () => {
+      await saveJiraCredentials(CLOUD);
+      expect(jiraCredentialHealth("default")).toBe("ok");
+    });
+
+    it("reports \"undecryptable\" when the file exists but cannot be decrypted", async () => {
+      // Simulate credentials moved between machines: the file is present but its
+      // ciphertext does not decrypt under this machine's key.
+      await saveJiraCredentials(CLOUD);
+      const filePath = path.join(
+        tmpHome,
+        ".syncrona",
+        "jira",
+        jiraProfileToFilename("default")
+      );
+      writeFileSync(filePath, "not-valid-ciphertext", "utf8");
+      expect(jiraCredentialHealth("default")).toBe("undecryptable");
+    });
   });
 });

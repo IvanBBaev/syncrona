@@ -40,12 +40,16 @@ Low-level primitives are also exported: `getStoreKey`, `getStoreKeySource`,
 The encryption key is resolved by `getStoreKey()` with the precedence:
 
 1. **`SYNCRONA_STORE_KEY`** — an explicit 32-byte key (64 hex chars or base64),
-   for CI / secrets managers.
-2. **OS keychain** — opt in with `SYNCRONA_USE_KEYCHAIN=1`; a random 256-bit
-   master key is kept in the OS keychain via the optional `@napi-rs/keyring`.
-3. **Machine-derived key (default)** — obfuscation-grade; derived from the
+   for CI / secrets managers. Strongest option.
+2. **OS keychain (default)** — used automatically when the optional
+   `@napi-rs/keyring` dependency is installed; **opt out** with
+   `SYNCRONA_USE_KEYCHAIN=0` (e.g. a headless CI box with no keychain). A random
+   256-bit master key is kept in the OS keychain (macOS Keychain / Windows
+   Credential Manager / libsecret).
+3. **Machine-derived key (fallback)** — obfuscation-grade; derived from the
    machine hostname and OS username, so anyone able to run as the same user on
-   the same host can decrypt files written with it.
+   the same host can decrypt files written with it. Used only when the keychain /
+   `@napi-rs/keyring` is unavailable (or explicitly disabled).
 
 Reads fall back to the machine-derived key so pre-existing files keep
 decrypting. `getStoreKeySource()` reports which path won (`"env"` /

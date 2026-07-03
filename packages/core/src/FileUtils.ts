@@ -144,13 +144,15 @@ export const isUnderPath = (
   parentPath: string,
   potentialChildPath: string
 ): boolean => {
-  // Drop empty segments so a trailing separator (".../src/") or a doubled
-  // separator does not introduce a phantom "" token that never matches the
-  // child and makes a genuine descendant look outside the parent.
-  const parentTokens = parentPath.split(path.sep).filter((token) => token !== "");
-  const childTokens = potentialChildPath
-    .split(path.sep)
-    .filter((token) => token !== "");
+  // Split on EITHER separator: on Windows a mix of "\\" (Node) and "/" (git,
+  // globs, config) is routine, and keying solely off path.sep would fail to
+  // tokenize the foreign separator and misjudge containment. Drop empty
+  // segments so a trailing/doubled separator (".../src/") does not introduce a
+  // phantom "" token that never matches the child.
+  const splitSegments = (p: string): string[] =>
+    p.split(/[/\\]/).filter((token) => token !== "");
+  const parentTokens = splitSegments(parentPath);
+  const childTokens = splitSegments(potentialChildPath);
   return parentTokens.every((token, index) => token === childTokens[index]);
 };
 
@@ -179,6 +181,15 @@ export const getBuildExt = (
   return file.type;
 };
 
+// Basename that tolerates EITHER separator. path.basename() only recognizes the
+// current platform's separator, so a Windows-shaped path fed to a POSIX runtime
+// (git output on Windows, or the reverse in tests) would not be trimmed and the
+// whole path would leak into the field name. Splitting on /[/\\]/ makes it robust.
+const basenameAnySep = (filePath: string, ext: string): string => {
+  const last = filePath.split(/[/\\]/).filter((token) => token !== "").pop() || "";
+  return ext && last.endsWith(ext) ? last.slice(0, -ext.length) : last;
+};
+
 const getTargetFieldFromPath = (
   filePath: string,
   table: string,
@@ -186,7 +197,7 @@ const getTargetFieldFromPath = (
 ): string => {
   return table === "sys_atf_step"
     ? "inputs.script"
-    : path.basename(filePath, ext);
+    : basenameAnySep(filePath, ext);
 };
 
 export const getFileContextFromPath = (
@@ -209,10 +220,12 @@ export const getFileContextFromPath = (
         ? "inputs.script"
         : stem.slice(sepIndex + 1);
   } else {
-    [tableName, recordName] = path
-      .dirname(filePath)
-      .split(path.sep)
-      .slice(-2);
+    // Split on EITHER separator and drop empty/basename segments so the
+    // <table>/<record> pair is recovered even when the path arrives with the
+    // foreign separator (git output or globs on Windows produce "/" while
+    // path.sep is "\\") — keying on path.sep alone would fail to tokenize it.
+    const segments = filePath.split(/[/\\]/).filter((token) => token !== "");
+    [tableName, recordName] = segments.slice(-3, -1);
     targetField = getTargetFieldFromPath(filePath, tableName, ext);
   }
   const manifest = ConfigManager.getManifest();

@@ -138,6 +138,24 @@ describe("snClient request wrappers", () => {
     });
   });
 
+  it("getScopeId neutralizes caret separators so a scope cannot smuggle extra conditions", async () => {
+    // `^` separates conditions in a ServiceNow encoded query; an unescaped value
+    // could widen `scope=...` into an attacker-chosen instance-wide lookup.
+    const client = await makeClient();
+    await client.getScopeId("x_acme_app^sys_id=ADMIN");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_scope", {
+      params: { sysparm_query: "scope=x_acme_app sys_id=ADMIN", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getUserSysId neutralizes caret separators in the user name", async () => {
+    const client = await makeClient();
+    await client.getUserSysId("admin^ORuser_name=guest");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user", {
+      params: { sysparm_query: "user_name=admin ORuser_name=guest", sysparm_fields: "sys_id" },
+    });
+  });
+
   it("getCurrentAppUserPrefSysId queries the apps.current_app preference", async () => {
     const client = await makeClient();
     await client.getCurrentAppUserPrefSysId("user-1");
@@ -330,6 +348,53 @@ describe("snClient response unwrap helpers", () => {
     const err = { response: { status: 404 } };
     await expect(unwrapSNResponse(Promise.reject(err) as never)).rejects.toBe(err);
     expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+
+  // #12: a hibernating PDI, SSO redirect, or proxy error page is served 200 with
+  // an HTML body. Without a shape check the old code returned `undefined` and the
+  // first downstream `Object.keys()` crashed with an opaque error. The guard now
+  // throws a typed NonApiResponseError that names the real cause.
+  it("unwrapSNResponse throws a typed NonApiResponseError on a 200 HTML body", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    const htmlBody = "<!DOCTYPE html><html><body>Instance hibernating…</body></html>";
+    const promise = unwrapSNResponse(
+      Promise.resolve({
+        status: 200,
+        data: htmlBody,
+        headers: { "content-type": "text/html; charset=UTF-8" },
+      }) as never
+    );
+    await expect(promise).rejects.toBeInstanceOf(NonApiResponseError);
+    await expect(promise).rejects.toThrow(/non-API response/);
+    await expect(promise).rejects.toThrow(/text\/html/);
+    await expect(promise).rejects.toThrow(/hibernating/); // snippet of the body echoed back
+    // the guard fires the DX taxonomy log path (not an expected fallback)
+    expect(mockLoggerError).toHaveBeenCalledWith("Error processing server response");
+  });
+
+  it("unwrapSNResponse rejects a 200 object body that lacks a `result` key", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    await expect(
+      unwrapSNResponse(
+        Promise.resolve({ status: 200, data: { error: "no api here" }, headers: {} }) as never
+      )
+    ).rejects.toBeInstanceOf(NonApiResponseError);
+  });
+
+  it("unwrapSNResponse rejects a 200 with a null/undefined body", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient");
+    await expect(
+      unwrapSNResponse(Promise.resolve({ status: 200, data: undefined, headers: {} }) as never)
+    ).rejects.toBeInstanceOf(NonApiResponseError);
+  });
+
+  it("unwrapSNResponse accepts a valid { result } body even when result is falsy", async () => {
+    const { unwrapSNResponse } = await import("../snClient");
+    // `result: null` is a legitimate API response (e.g. a not-found single record)
+    // and must pass the shape guard — only a *missing* result key is rejected.
+    await expect(
+      unwrapSNResponse(Promise.resolve({ status: 200, data: { result: null } }) as never)
+    ).resolves.toBeNull();
   });
 
   it("unwrapTableAPIFirstItem returns the first row or an extracted field", async () => {

@@ -18,20 +18,29 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   decision + per-instance OAuth app config.
 - ✅ **At-rest credential strength (AR2)** — DONE: the store key is resolved via
   `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets managers) > OS
-  keychain (opt-in `SYNCRONA_USE_KEYCHAIN=1`, optional `@napi-rs/keyring`) > the
-  legacy machine-derived key (fallback, keeps old files decrypting). The
-  machine-derived default stays obfuscation-grade; configure a key/keychain for
-  strong protection.
+  keychain (the DEFAULT backend, via the optional `@napi-rs/keyring`; opt out with
+  `SYNCRONA_USE_KEYCHAIN=0` on headless CI without a keychain) > the legacy
+  machine-derived key (automatic fallback when the keychain / `@napi-rs/keyring` is
+  unavailable, and keeps old files decrypting). The machine-derived fallback stays
+  obfuscation-grade; the keychain default or an explicit key gives real at-rest
+  protection.
 - ✅ **Security policy & data-handling** — SECURITY.md (disclosure + what is
   read/written + opt-in diagnostic log).
 - ✅ **Secret scanning in CI** — gitleaks runs in the GitHub Actions workflow
   (full-history job, fixtures allowlisted via `.gitleaks.toml`).
 - ✅ **Dependency audit gate** — `npm audit --omit=dev --audit-level=high` = 0,
   enforced in CI.
+- ✅ **Jira integration (read-only)** — the `jira` CLI command and the
+  `jira_get_issue` MCP tool fetch issue context over HTTPS only. Credentials
+  (Cloud API token or Server/DC PAT) live in the same encrypted CredentialStore
+  as ServiceNow, resolved via `--profile` > `JIRA_*` env vars > default profile.
+  Untrusted issue prose (summary / description / comment bodies) is fenced before
+  it reaches an LLM, so it cannot be read as instructions. No write path exists.
 
 ## 2. Distribution & release (D5)
-- 🔴 **npm publish** — `@syncro-now-ai/core` not yet published; verify scope
-  ownership + enable 2FA, then `npm run release:core`.
+- 🔴 **npm publish** — `@syncro-now-ai/*` not yet published; verify scope
+  ownership + enable 2FA, add the `NPM_TOKEN` secret, then release via the
+  `Release` workflow (`changeset publish`, exposed locally as `npm run release`).
 - 🔴 **Homebrew tap** — create `homebrew-tap` repo + Formula + release action.
 - 🔴 **Windows** — PowerShell install script + Windows Credential Manager (and
   native-Windows support beyond WSL).

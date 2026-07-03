@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { toJsonText, trimOutput } from "../runtimeUtils";
+import { isSafeRemoteEndpoint } from "../endpointPolicy";
 import { runBackgroundScript, snRequest, summarizeRows, toTableResultRows } from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
@@ -168,6 +169,22 @@ export async function handleServiceNowCrudTool(
         return {
           isError: true,
           content: [{ type: "text", text: "Missing required field: script" }],
+        };
+      }
+
+      // endpointPath is model-controlled and becomes the background-script POST
+      // URL; constrain it the same way the unified-workflow remote path is so it
+      // cannot be pointed at an arbitrary path (traversal / protocol-relative).
+      if (endpointPath && !isSafeRemoteEndpoint(endpointPath)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text:
+                "Unsafe endpointPath: must be a rooted API path with no '..' segments.",
+            },
+          ],
         };
       }
 

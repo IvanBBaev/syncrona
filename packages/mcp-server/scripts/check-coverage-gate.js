@@ -54,7 +54,7 @@ function parseAllFilesLineCoverage(output) {
 function runCoverage() {
   const result = spawnSync(
     'node',
-    ['--test', '--experimental-test-coverage', 'test/*.test.js'],
+    ['--enable-source-maps', '--test', '--experimental-test-coverage', 'test/*.test.js'],
     {
       encoding: 'utf-8',
       shell: true,
@@ -66,8 +66,22 @@ function runCoverage() {
   const stderr = result.stderr || '';
   const combined = `${stdout}\n${stderr}`;
 
+  // A run killed by a signal (e.g. OOM, timeout) reports status=null; the old
+  // `status || 0` collapsed that to 0 and treated the kill as success, letting
+  // an aborted test run pass the gate. Surface signal deaths and a null status
+  // as a non-zero failure so the coverage gate cannot be silently bypassed.
+  if (result.error) {
+    return { exitCode: 1, output: `${combined}\nCoverage runner error: ${result.error.message}` };
+  }
+  if (result.signal) {
+    return { exitCode: 1, output: `${combined}\nCoverage run terminated by signal ${result.signal}.` };
+  }
+  if (result.status === null || result.status === undefined) {
+    return { exitCode: 1, output: `${combined}\nCoverage run ended with no exit status.` };
+  }
+
   return {
-    exitCode: result.status || 0,
+    exitCode: result.status,
     output: combined,
   };
 }

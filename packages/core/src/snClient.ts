@@ -8,6 +8,7 @@ import {
   CA_BUNDLE_ENV,
   SCOPED_API_PREFIXES_ENV,
   TLS_REJECT_UNAUTHORIZED_ENV,
+  escapeQueryValue,
   isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
@@ -264,7 +265,9 @@ export const snClient = (
     type ScopeResponse = Sync.SNAPIResponse<SN.ScopeRecord[]>;
     return client.get<ScopeResponse>(endpoint, {
       params: {
-        sysparm_query: `scope=${scopeName}`,
+        // Scope comes from the project config file — escape it so a crafted
+        // config cannot smuggle extra `^` conditions into the lookup.
+        sysparm_query: `scope=${escapeQueryValue(scopeName)}`,
         sysparm_fields: "sys_id",
       },
     });
@@ -278,7 +281,7 @@ export const snClient = (
     type UserResponse = Sync.SNAPIResponse<SN.UserRecord[]>;
     return client.get<UserResponse>(endpoint, {
       params: {
-        sysparm_query: `user_name=${resolvedUserName}`,
+        sysparm_query: `user_name=${escapeQueryValue(resolvedUserName)}`,
         sysparm_fields: "sys_id",
       },
     });
@@ -631,12 +634,48 @@ export const defaultClient = (profile?: string) => {
 
 export type SNClient = ReturnType<typeof snClient>;
 
+// #12: a hibernating PDI wake-up page, SSO redirect, or proxy error page is
+// often served with a 200 status and an HTML body. Without a shape check
+// `resp.data.result` is `undefined`, and the first downstream `Object.keys()`
+// crashes with an opaque "Cannot convert undefined or null to object" that the
+// DX19 taxonomy can't classify. This typed error names the real cause.
+export class NonApiResponseError extends Error {
+  readonly contentType?: string;
+  constructor(contentType: string | undefined, snippet: string) {
+    super(
+      "Instance returned a non-API response — likely an HTML login/" +
+        "hibernation page or proxy error, not JSON" +
+        (contentType ? ` (content-type: ${contentType})` : "") +
+        (snippet ? `. Response starts with: ${snippet}` : "") +
+        ". Confirm the instance is awake and the credentials are valid."
+    );
+    this.name = "NonApiResponseError";
+    this.contentType = contentType;
+  }
+}
+
+function assertSNApiResponse<T>(resp: AxiosResponse<Sync.SNAPIResponse<T>>): T {
+  const data: unknown = resp.data;
+  if (data && typeof data === "object" && !Array.isArray(data) && "result" in data) {
+    return (data as Sync.SNAPIResponse<T>).result;
+  }
+  const contentType =
+    typeof resp.headers?.["content-type"] === "string"
+      ? (resp.headers["content-type"] as string)
+      : undefined;
+  const snippet =
+    typeof data === "string"
+      ? data.slice(0, 120).replace(/\s+/g, " ").trim()
+      : "";
+  throw new NonApiResponseError(contentType, snippet);
+}
+
 export const unwrapSNResponse = async <T>(
   clientPromise: AxiosPromise<Sync.SNAPIResponse<T>>
 ): Promise<T> => {
   try {
     const resp = await clientPromise;
-    return resp.data.result;
+    return assertSNApiResponse(resp);
   } catch (e) {
     const status = axios.isAxiosError(e) ? e.response?.status : undefined;
     const isExpectedFallback = typeof status === "number" && isEndpointNotFoundStatus(status);

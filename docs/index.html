@@ -39,7 +39,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 18 commands, 13 packages, 6 build plugins, GPL-3.0."
+      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 22 commands, 14 packages, 6 build plugins, GPL-3.0."
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="SyncroNow AI — modern ServiceNow development" />
@@ -53,7 +53,7 @@
     />
     <meta
       name="twitter:image:alt"
-      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 18 commands, 13 packages, 6 build plugins, GPL-3.0."
+      content="SyncroNow AI — manage ServiceNow scoped-app code in Git. 22 commands, 14 packages, 6 build plugins, GPL-3.0."
     />
     <!-- Structured data: software listing + FAQ rich results -->
     <script type="application/ld+json">
@@ -69,7 +69,7 @@
             "description": "A CLI and MCP toolchain that manages ServiceNow scoped-application source code in Git, with a local build pipeline (TypeScript / Babel / Webpack / Sass), bidirectional sync, multi-instance profiles and AI-assisted metadata, dependency and impact analysis.",
             "url": "https://ivanbbaev.github.io/syncrona/",
             "downloadUrl": "https://www.npmjs.com/package/@syncro-now-ai/core",
-            "softwareVersion": "0.4.2-alpha.8",
+            "softwareVersion": "0.4.2",
             "license": "https://www.gnu.org/licenses/gpl-3.0.html",
             "author": { "@type": "Person", "name": "Ivan Baev" },
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -107,7 +107,7 @@
                 "name": "Does it run on Windows?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "On Windows, WSL (Windows Subsystem for Linux, Ubuntu) is currently required — run all syncrona commands from inside the WSL shell. Native Windows support (PowerShell install, Windows Credential Manager) is on the roadmap. macOS and Linux are first-class."
+                  "text": "On Windows, WSL (Windows Subsystem for Linux, Ubuntu) is currently required — run all syncro-now-ai commands from inside the WSL shell. Native Windows support (PowerShell install, Windows Credential Manager) is on the roadmap. macOS and Linux are first-class."
                 }
               },
               {
@@ -115,7 +115,7 @@
                 "name": "Can I work with multiple ServiceNow instances?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. Use the encrypted global credential store (syncrona login / use / instances) or instance-profile environment variables with --instance-profile to route a single command at dev, test or prod. syncrona status shows which instance and credential source are active."
+                  "text": "Yes. Use the encrypted global credential store (syncro-now-ai login / use / instances) or instance-profile environment variables with --instance-profile to route a single command at dev, test or prod. syncro-now-ai status shows which instance and credential source are active."
                 }
               }
             ]
@@ -251,14 +251,14 @@
                   <!-- Static fallback (mirrors scenario 1); app.js animates and
                        cycles this when JavaScript is available. -->
                   <div class="term-body" id="term-body">
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona login</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai login</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Saved credentials · </span>dev12345.service-now.com</span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona init</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai init</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Wrote </span>sync.config.js · sync.manifest.json · .env</span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Scope </span><span class="accent">x_acme_app</span><span class="muted"> · 142 files tracked</span></span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona dev</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai dev</span></span>
 <span class="l"><span class="blue">▸ </span><span class="muted">watching </span>src/<span class="muted"> · build &amp; push on save</span></span>
 <span class="l"><span class="warn">~ </span>PriceCalc/script.ts<span class="muted"> → babel + typescript</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">pushed </span>PriceCalc<span class="dim"> · 312ms</span></span>
@@ -268,9 +268,9 @@
             </div>
           </div>
           <div class="stat-row">
-            <div class="stat"><b>18</b><span>CLI commands</span></div>
-            <div class="stat"><b>13</b><span>workspace packages</span></div>
-            <div class="stat"><b>59</b><span>MCP tools</span></div>
+            <div class="stat"><b>22</b><span>CLI commands</span></div>
+            <div class="stat"><b>14</b><span>workspace packages</span></div>
+            <div class="stat"><b>61</b><span>MCP tools</span></div>
             <div class="stat"><b>6</b><span>build plugins</span></div>
             <div class="stat"><b>22+</b><span>Node.js</span></div>
           </div>
@@ -438,7 +438,7 @@
                 changes behind a dry-run guardrail.
               </p>
               <p class="mcp-ai-stat">
-                <span class="mcp-ai-num">59</span>
+                <span class="mcp-ai-num">61</span>
                 <span class="mcp-ai-stat-label">MCP tools across<br />7 tool families</span>
               </p>
               <a class="btn" href="#mcp">Explore the tool families →</a>
@@ -468,17 +468,38 @@
             <a href="https://learn.microsoft.com/windows/wsl/" target="_blank" rel="noopener">WSL</a>.
           </p>
 
+          <div class="callout">
+            <span class="c-ico">📦</span>
+            <p>
+              <strong>Not yet published to npm.</strong> The
+              <code>@syncro-now-ai/*</code> packages are pre-release — install
+              from source (clone, <code>npm ci</code>, <code>npm run build</code>,
+              then <code>npm link</code> the <code>core</code> workspace) to get
+              the <code>syncro-now-ai</code> command. The <code>npm i -g</code>
+              lines below are the intended install once the packages are
+              published.
+            </p>
+          </div>
+
           <div class="steps">
             <article class="step">
               <span class="step-num">1</span>
               <h3>Install the CLI and log in</h3>
               <p>
-                Install globally for the <code>syncrona</code> command, then save
-                credentials in the encrypted global store.
+                Install from source, or (once published) install globally for the
+                <code>syncro-now-ai</code> command, then save credentials in the
+                encrypted global store.
               </p>
               <div class="codeblock" data-lang="bash">
-                <pre><code>npm i -g @syncro-now-ai/core
-syncrona login</code></pre>
+                <pre><code># from source (works today)
+git clone https://github.com/IvanBBaev/syncrona
+cd syncrona &amp;&amp; npm ci &amp;&amp; npm run build
+npm link --workspace @syncro-now-ai/core
+
+# or, once published to npm:
+npm i -g @syncro-now-ai/core
+
+syncro-now-ai login</code></pre>
               </div>
             </article>
             <article class="step">
@@ -491,7 +512,7 @@ syncrona login</code></pre>
                 a quick connection check.
               </p>
               <div class="codeblock" data-lang="bash">
-                <pre><code>npx syncrona init</code></pre>
+                <pre><code>npx syncro-now-ai init</code></pre>
               </div>
             </article>
             <article class="step">
@@ -503,7 +524,7 @@ syncrona login</code></pre>
                 ServiceNow.
               </p>
               <div class="codeblock" data-lang="bash">
-                <pre><code>npx syncrona dev</code></pre>
+                <pre><code>npx syncro-now-ai dev</code></pre>
               </div>
             </article>
           </div>
@@ -519,7 +540,7 @@ syncrona login</code></pre>
           <p>
             Prefer a per-project dev dependency? Use
             <code>npm i -D @syncro-now-ai/core</code> and call it with
-            <code>npx syncrona …</code>. Optionally install the companion server
+            <code>npx syncro-now-ai …</code>. Optionally install the companion server
             scoped app for a few enhanced endpoints — the CLI works
             <strong>with or without</strong> it against plain REST APIs.
           </p>
@@ -552,9 +573,9 @@ syncrona login</code></pre>
         <section id="commands">
           <h2>Commands</h2>
           <p>
-            The full <code>syncrona</code> command surface. Run any of them with
-            <code>npx syncrona &lt;command&gt;</code> (or just
-            <code>syncrona</code> if installed globally).
+            The full <code>syncro-now-ai</code> command surface. Run any of them
+            with <code>npx syncro-now-ai &lt;command&gt;</code> (or just
+            <code>syncro-now-ai</code> if installed globally).
           </p>
           <div class="table-wrap">
             <table>
@@ -578,12 +599,16 @@ syncrona login</code></pre>
                 <tr><td><code>check-env</code></td><td>—</td><td>Check machine prerequisites (Node 22+, platform / WSL, Git) and print actionable fixes.</td></tr>
                 <tr><td><code>doctor</code></td><td>—</td><td>Run local config and connectivity diagnostics and report actionable failures.</td></tr>
                 <tr><td><code>plugins</code></td><td>—</td><td>Show configured plugin rules and report which plugin packages are installed or missing.</td></tr>
-                <tr><td><code>config &lt;action&gt;</code></td><td>—</td><td>Inspect configuration — e.g. <code>config show-defaults</code> prints built-in includes / excludes.</td></tr>
+                <tr><td><code>config &lt;action&gt;</code></td><td>—</td><td>Inspect or extend configuration — e.g. <code>config show-defaults</code> prints built-in includes / excludes; <code>config add-plugin</code> appends a plugin rule.</td></tr>
+                <tr><td><code>repair</code></td><td>—</td><td>Reconcile the manifest with local files — re-download missing files and prune orphaned ones. Destructive — confirms first.</td></tr>
                 <tr><td><code>mcp</code></td><td>—</td><td>Start the standalone MCP server and optionally auto-configure local MCP client files.</td></tr>
                 <tr><td><code>login [instance]</code></td><td>—</td><td>Save credentials in the encrypted global credential store and optionally set the active instance.</td></tr>
                 <tr><td><code>logout [instance]</code></td><td>—</td><td>Remove stored credentials for one instance (or all with <code>--all</code>).</td></tr>
                 <tr><td><code>instances</code></td><td>—</td><td>List instances saved in the global store and mark the active one.</td></tr>
                 <tr><td><code>use &lt;instance&gt;</code></td><td>—</td><td>Set the active stored instance for subsequent commands.</td></tr>
+                <tr><td><code>jira [key]</code></td><td>—</td><td>Fetch rich context for a Jira issue (summary, description, comments). Falls back to the issue key parsed from the current git branch.</td></tr>
+                <tr><td><code>jira-login</code></td><td>—</td><td>Save Jira credentials in the global store (Cloud email + API token, or Server / Data Center PAT).</td></tr>
+                <tr><td><code>jira-logout</code></td><td>—</td><td>Remove stored Jira credentials.</td></tr>
               </tbody>
             </table>
           </div>
@@ -645,8 +670,8 @@ syncrona login</code></pre>
           <p>
             Too many files, or some missing? <code>includes</code> and
             <code>excludes</code> are layered on top of sane built-in defaults.
-            List those defaults with <code>syncrona config show-defaults</code>,
-            then add overrides — and run <code>syncrona refresh</code> to apply.
+            List those defaults with <code>syncro-now-ai config show-defaults</code>,
+            then add overrides — and run <code>syncro-now-ai refresh</code> to apply.
           </p>
           <div class="codeblock" data-lang="javascript">
             <pre><code>module.exports = {
@@ -791,13 +816,13 @@ syncrona login</code></pre>
                   <td><span class="pill ro">Strongest</span></td>
                 </tr>
                 <tr>
-                  <td>OS keychain</td>
-                  <td>Opt in with <code>SYNCRONA_USE_KEYCHAIN=1</code> (macOS Keychain / Windows Credential Manager / libsecret) via optional <code>@napi-rs/keyring</code>.</td>
+                  <td>OS keychain (default)</td>
+                  <td>The default backend (macOS Keychain / Windows Credential Manager / libsecret) via optional <code>@napi-rs/keyring</code>; opt out with <code>SYNCRONA_USE_KEYCHAIN=0</code>.</td>
                   <td><span class="pill ro">Strong</span></td>
                 </tr>
                 <tr>
-                  <td>Machine-derived (default)</td>
-                  <td>Derived from hostname + username. Obfuscation-grade — guards against casual inspection, not a compromised account or stolen disk.</td>
+                  <td>Machine-derived (fallback)</td>
+                  <td>Derived from hostname + username. Used automatically when the keychain / <code>@napi-rs/keyring</code> is unavailable. Obfuscation-grade — guards against casual inspection, not a compromised account or stolen disk.</td>
                   <td><span class="pill wr">Obfuscation</span></td>
                 </tr>
               </tbody>
@@ -840,7 +865,7 @@ syncrona login</code></pre>
 
           <h3>Register it with your client</h3>
           <p>
-            Run <code>npx syncrona mcp</code> to start the server and optionally
+            Run <code>npx syncro-now-ai mcp</code> to start the server and optionally
             write local client config (<code>.vscode/mcp.json</code>,
             <code>.syncrona-mcp/secrets.json</code>), or register it directly:
           </p>
@@ -856,7 +881,7 @@ syncrona login</code></pre>
           </div>
 
           <h3>Tool families</h3>
-          <p>59 tools, grouped by what they do. Expand a family to see the tools inside.</p>
+          <p>61 tools, grouped by what they do. Expand a family to see the tools inside.</p>
           <div class="tools-controls">
             <button type="button" class="ghost-btn" id="expand-all-tools">Expand all</button>
             <button type="button" class="ghost-btn" id="collapse-all-tools">Collapse all</button>
@@ -996,15 +1021,15 @@ syncrona login</code></pre>
 
           <h3>Day-to-day</h3>
           <ul>
-            <li><strong>Add a record:</strong> create it in ServiceNow, run <code>syncrona refresh</code> — files appear automatically.</li>
-            <li><strong>Edit code:</strong> run <code>syncrona dev</code> and just save; builds push on save.</li>
-            <li><strong>Delete:</strong> stop dev mode, delete the record in ServiceNow, <code>syncrona refresh</code>, then remove the files (deliberately — deletion is never automatic).</li>
-            <li><strong>Ship:</strong> <code>syncrona push</code> (or <code>build</code> + <code>deploy</code>) for the whole scope, or <code>push --diff main</code> for just your feature's edits.</li>
+            <li><strong>Add a record:</strong> create it in ServiceNow, run <code>syncro-now-ai refresh</code> — files appear automatically.</li>
+            <li><strong>Edit code:</strong> run <code>syncro-now-ai dev</code> and just save; builds push on save.</li>
+            <li><strong>Delete:</strong> stop dev mode, delete the record in ServiceNow, <code>syncro-now-ai refresh</code>, then remove the files (deliberately — deletion is never automatic).</li>
+            <li><strong>Ship:</strong> <code>syncro-now-ai push</code> (or <code>build</code> + <code>deploy</code>) for the whole scope, or <code>push --diff main</code> for just your feature's edits.</li>
           </ul>
           <div class="callout">
             <span class="c-ico">📂</span>
             <p>
-              Once a scope is downloaded, <code>syncrona docs</code> generates
+              Once a scope is downloaded, <code>syncro-now-ai docs</code> generates
               Markdown and Mermaid diagrams (overview, tables, per-record) — a
               fast way to explore what a real project looks like.
             </p>
@@ -1145,7 +1170,7 @@ syncrona login</code></pre>
           <p>
             The project ships under the <code>@syncro-now-ai</code> npm scope (the
             CLI is <code>@syncro-now-ai/core</code>, exposing the
-            <code>syncrona</code> command); the GitHub repository is
+            <code>syncro-now-ai</code> command); the GitHub repository is
             <a href="https://github.com/IvanBBaev/syncrona" target="_blank" rel="noopener"><code>IvanBBaev/syncrona</code></a>.
             It is the modern successor to Sincronia / <code>sinc</code>.
           </p>
@@ -1171,14 +1196,14 @@ syncrona login</code></pre>
           <h3>Does it run on Windows?</h3>
           <p>
             On Windows, <strong>WSL is currently required</strong> (Ubuntu, build
-            1903+) — run every <code>syncrona</code> command inside the WSL
+            1903+) — run every <code>syncro-now-ai</code> command inside the WSL
             shell. Native Windows support (PowerShell install, Windows Credential
             Manager) is on the roadmap; macOS and Linux are first-class.
           </p>
 
           <h3>Can I work with multiple instances or scopes?</h3>
           <p>
-            Yes. Use the encrypted global store (<code>syncrona login</code> /
+            Yes. Use the encrypted global store (<code>syncro-now-ai login</code> /
             <code>use</code> / <code>instances</code>) or instance-profile env
             vars with <code>--instance-profile</code> to route a single command
             at dev, test or prod. For several scoped apps in one repo, treat each

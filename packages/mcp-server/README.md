@@ -72,6 +72,21 @@ for the JSON-RPC protocol stream). Each tool call is logged with its
 Set `SYNCRONA_LOG_LEVEL=debug` to surface otherwise-swallowed diagnostics, such
 as failed secrets/`.env` loading and audit-log write failures.
 
+## Environment variables
+
+The server reads the following environment variables (all optional):
+
+| Variable              | Purpose                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SYNCRONA_ENV`        | Selects the active guardrail environment by name, overriding `policy.activeEnvironment` in the guardrails config (drives per-environment policy such as `allowFullNodeAccess` and preflight enforcement). Defaults to `default`. |
+| `SYNCRONA_LOG_LEVEL`  | Log verbosity: `debug` \| `info` \| `warn` \| `error` \| `silent` (default `info`). See [Logging](#logging).                                |
+| `SYNCRONA_LOG_FORMAT` | Log output format: `text` \| `json` (default `text`); equivalent to `--log-format=json`. See [Logging](#logging).                          |
+
+ServiceNow and Jira credentials are **not** read from bare environment variables
+here — they are resolved through the shared encrypted CredentialStore (and, for
+local development, a workspace secrets file). See the core package for the
+`SN_*` / `JIRA_*` resolution order.
+
 ## Example MCP client config
 
 ```json

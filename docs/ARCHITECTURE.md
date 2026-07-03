@@ -187,8 +187,8 @@ is too expensive for per-request resolution — CR21).
 
 ```mermaid
 flowchart LR
-    subgraph CI["azure-pipelines.yml (Node 22)"]
-        B[build all workspaces] --> T1[core jest 146 tests<br/>coverage ratchet st68/br54/fn58/ln68]
+    subgraph CI[".github/workflows/ci.yml (Node 22, ubuntu + macOS)"]
+        B[build all workspaces] --> T1[core jest<br/>coverage ratchet st85/br71/fn80/ln85]
         T1 --> T2[mcp node:test 172 tests vs dist<br/>line gate 70%]
         T2 --> L[eslint core + mcp<br/>--max-warnings=0]
         L --> Q[quality-gates.sh:<br/>tool contract · docs drift ·<br/>CLAUDE drift · release checklist]

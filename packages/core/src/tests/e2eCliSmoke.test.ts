@@ -4,8 +4,24 @@ import { existsSync } from "fs";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { CLI_COMMANDS } from "../cliCommands";
 
 export {};
+
+// #21: derive the expected command names from the SINGLE source of truth (the
+// CLI_COMMANDS registry) instead of a hand-maintained literal list. A literal
+// list silently rots: a newly registered command is not asserted to appear in
+// --help, and a removed one leaves a dead expectation. The primary name is the
+// first token of the command string (or the first array element), with any
+// positional placeholder (`<scope>`, `[target]`) stripped.
+function primaryCommandName(command: string | string[]): string {
+  const spec = Array.isArray(command) ? command[0] : command;
+  return spec.trim().split(/\s+/)[0];
+}
+
+const REGISTRY_COMMAND_NAMES: string[] = CLI_COMMANDS.map((mod) =>
+  primaryCommandName(mod.command)
+);
 
 // E2E smoke (G11 first slice): boots the actual compiled CLI binary as a
 // child process — catches packaging/bootstrap breakage (wrong main, module
@@ -52,24 +68,9 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
     const out = res.stdout + res.stderr;
 
     expect(res.code).toBe(0);
-    for (const command of [
-      "dev",
-      "refresh",
-      "push",
-      "download",
-      "init",
-      "build",
-      "deploy",
-      "docs",
-      "status",
-      "doctor",
-      "plugins",
-      "mcp",
-      "login",
-      "logout",
-      "instances",
-      "use",
-    ]) {
+    // Guard against an empty derivation silently passing the loop below.
+    expect(REGISTRY_COMMAND_NAMES.length).toBeGreaterThan(15);
+    for (const command of REGISTRY_COMMAND_NAMES) {
       expect(out).toContain(command);
     }
   }, 30000);

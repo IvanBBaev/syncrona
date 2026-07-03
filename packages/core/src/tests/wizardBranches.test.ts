@@ -95,9 +95,15 @@ jest.mock("../Logger", () => ({
 }));
 
 jest.mock("../snClient", () => ({
+  // #48: the wizard must download the scope with the SAME store-backed client it
+  // used to LIST the apps (built from the just-saved credentials), not a fresh
+  // defaultClient() that prefers ambient SN_* env vars. So getManifest now lives
+  // on the snClient() instance; defaultClient stays wired as a guard to prove the
+  // wizard never falls back to it for the download.
   snClient: jest.fn(() => ({
     getAppList: (...a: unknown[]) => mockGetAppList(...a),
     getCurrentScope: (...a: unknown[]) => mockGetCurrentScope(...a),
+    getManifest: (...a: unknown[]) => mockGetManifestRemote(...a),
   })),
   defaultClient: jest.fn(() => ({
     getManifest: (...a: unknown[]) => mockGetManifestRemote(...a),

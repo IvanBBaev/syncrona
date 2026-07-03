@@ -89,3 +89,21 @@ export function getWorkflowSimulationReportPaths(scopeCode: string, simulationId
     ),
   };
 }
+
+/**
+ * Resolve a model-supplied relative path against a trusted base directory and
+ * guarantee the result stays inside it. Doc-bundle writers join a
+ * model-provided `relativePath` onto the scope docs root; without containment a
+ * value like `../../etc/whatever` or an absolute path would escape the bundle.
+ * Returns the absolute target path, or throws when the path escapes `baseDir`.
+ */
+export function resolveContainedPath(baseDir: string, relativePath: string): string {
+  const resolvedBase = path.resolve(baseDir);
+  const target = path.resolve(resolvedBase, relativePath);
+  if (target !== resolvedBase && !target.startsWith(resolvedBase + path.sep)) {
+    throw new Error(
+      `Refusing to write outside the docs bundle: ${JSON.stringify(relativePath)}`
+    );
+  }
+  return target;
+}

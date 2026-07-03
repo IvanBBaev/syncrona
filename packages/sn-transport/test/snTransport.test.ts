@@ -6,6 +6,7 @@ import {
   shouldRetryStatus,
   isEndpointNotFoundStatus,
   resolveTlsPolicy,
+  escapeQueryValue,
   DEFAULT_SCOPED_API_PREFIXES,
   oauthFormBody,
   createTokenManager,
@@ -50,6 +51,27 @@ describe("shouldRetryStatus", () => {
     for (const s of [400, 401, 403, 404, 200]) {
       expect(shouldRetryStatus(s)).toBe(false);
     }
+  });
+});
+
+describe("escapeQueryValue", () => {
+  // `^` is the condition separator in a ServiceNow encoded query. A
+  // user-controlled value carrying a caret could otherwise smuggle extra
+  // conditions (e.g. flip a scoped lookup into an instance-wide one).
+  it("replaces caret condition separators with spaces", () => {
+    expect(escapeQueryValue("x_app^sys_id=ADMIN")).toBe("x_app sys_id=ADMIN");
+  });
+
+  it("neutralizes every caret, including ^OR / ^NQ", () => {
+    expect(escapeQueryValue("a^ORb^NQc")).toBe("a ORb NQc");
+  });
+
+  it("leaves a benign value untouched", () => {
+    expect(escapeQueryValue("x_my_scope")).toBe("x_my_scope");
+  });
+
+  it("handles an empty string", () => {
+    expect(escapeQueryValue("")).toBe("");
   });
 });
 
@@ -136,6 +158,30 @@ describe("createTokenManager", () => {
     expect(bodies[1]).toContain("grant_type=refresh_token");
   });
 
+  it("forceRefresh re-runs a password grant when no refresh_token was cached (#68)", async () => {
+    // Some instances (or a misconfigured OAuth app) return an access_token with
+    // NO refresh_token. A later forceRefresh() — e.g. the snClient 401 re-auth
+    // interceptor — then has nothing to refresh with and must fall back to a
+    // fresh password grant instead of sending an empty refresh_token. This pins
+    // the `!cached?.refreshToken` branch inside refresh().
+    const bodies: string[] = [];
+    let n = 0;
+    const post = async (_path: string, body: string): Promise<OAuthTokenResponse> => {
+      bodies.push(body);
+      n += 1;
+      // Never hand out a refresh_token, so the cache has none to reuse.
+      return { access_token: `tok${n}`, expires_in: 3600 };
+    };
+    const mgr = createTokenManager(creds, oauth, post);
+    expect(await mgr.getToken()).toBe("tok1"); // password grant, no refresh_token
+    const refreshed = await mgr.forceRefresh(); // must re-acquire via password
+    expect(refreshed).toBe("tok2");
+    // Both calls were password grants; no refresh_token grant was ever attempted.
+    expect(bodies.every((b) => b.includes("grant_type=password"))).toBe(true);
+    expect(bodies.some((b) => b.includes("grant_type=refresh_token"))).toBe(false);
+    expect(n).toBe(2);
+  });
+
   it("falls back to a password grant when the refresh call fails", async () => {
     const bodies: string[] = [];
     let n = 0;
@@ -160,6 +206,44 @@ describe("createTokenManager", () => {
       ({ expires_in: 3600 } as unknown as OAuthTokenResponse);
     const mgr = createTokenManager(creds, oauth, post);
     await expect(mgr.getToken()).rejects.toThrow(/access_token/);
+  });
+
+  it("treats a non-positive expires_in as the default TTL, not an already-expired token", async () => {
+    for (const badTtl of [0, -100, Number.NaN]) {
+      let calls = 0;
+      const post = async (): Promise<OAuthTokenResponse> => {
+        calls += 1;
+        return { access_token: `tok${calls}`, expires_in: badTtl } as OAuthTokenResponse;
+      };
+      const mgr = createTokenManager(creds, oauth, post);
+      await mgr.getToken();
+      // A second call must reuse the cache: a 0/negative/NaN expires_in must NOT
+      // mint an instantly-expired token that re-acquires on every request.
+      expect(await mgr.getToken()).toBe("tok1");
+      expect(calls).toBe(1);
+    }
+  });
+
+  it("refreshes when a short-lived token falls inside the expiry skew window", async () => {
+    // A token whose lifetime (1s) is shorter than the 30s expiry skew must be
+    // treated as already needing refresh on the very next getToken. This pins the
+    // two halves of the boundary: a valid positive expires_in is honored as the
+    // real TTL (NOT silently routed to the 30-min default), and getToken subtracts
+    // the skew from expiry rather than adding it.
+    const bodies: string[] = [];
+    let n = 0;
+    const post = async (_path: string, body: string): Promise<OAuthTokenResponse> => {
+      bodies.push(body);
+      n += 1;
+      return n === 1
+        ? { access_token: "short", refresh_token: "R", expires_in: 1 }
+        : { access_token: "fresh", refresh_token: "R2", expires_in: 3600 };
+    };
+    const mgr = createTokenManager(creds, oauth, post);
+    expect(await mgr.getToken()).toBe("short");
+    expect(await mgr.getToken()).toBe("fresh"); // expired within skew -> refresh
+    expect(bodies[1]).toContain("grant_type=refresh_token");
+    expect(n).toBe(2);
   });
 
   it("de-duplicates concurrent acquisitions into a single token call", async () => {

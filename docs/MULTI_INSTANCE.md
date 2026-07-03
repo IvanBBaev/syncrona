@@ -28,9 +28,12 @@ syncro-now-ai status                            # confirm: "Credentials from: cr
 
 `syncro-now-ai logout <instance>` removes one; `syncro-now-ai logout --all` clears all.
 
-> At-rest protection is machine-key obfuscation, not strong cryptography — see
-> the "Credential storage security" section in the core README. Treat the
-> machine as the trust boundary.
+> At-rest credentials are AES-256-GCM encrypted. By **default** the encryption
+> key is a random 256-bit key held in the **OS keychain** (opt out with
+> `SYNCRONA_USE_KEYCHAIN=0`); set `SYNCRONA_STORE_KEY` for CI / shared
+> environments. When no keychain is available it falls back to a machine-derived
+> key, which is obfuscation-grade only. See the "Credential storage security"
+> section in the core README, and treat the machine as the trust boundary.
 
 ## Option B — instance profiles (recommended for scripts/CI)
 

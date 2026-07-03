@@ -66,6 +66,7 @@ const { handleWorkspaceTool } = require('../dist/handlers/workspaceHandlers.js')
 const { handleHealthPlanningTool } = require('../dist/handlers/healthPlanningHandlers.js');
 const { writeAuditEvent } = require('../dist/audit.js');
 const { appendMetricEvent, loadMetricEvents } = require('../dist/metricsStore.js');
+const { wrapUntrustedData } = require('../dist/runtimeUtils.js');
 const {
   handleInsightTool,
   buildScriptExcerpt,
@@ -2256,6 +2257,11 @@ test('buildRecentChangesQuery scopes by application and orders by created date',
     buildRecentChangesQuery('x_nuvo_sinc', ''),
     'application.scope=x_nuvo_sinc^ORDERBYDESCsys_created_on'
   );
+  // A caret in the scope must not smuggle extra conditions into the query.
+  assert.equal(
+    buildRecentChangesQuery('x_app^sys_id=ADMIN', ''),
+    'application.scope=x_app sys_id=ADMIN^ORDERBYDESCsys_created_on'
+  );
 });
 
 test('formatRecordHistory maps sys_audit rows to field-level diff entries', () => {
@@ -2268,13 +2274,15 @@ test('formatRecordHistory maps sys_audit rows to field-level diff entries', () =
       newvalue: 'b',
     },
   ]);
+  // sys_audit field values are instance-authored free text: they are fenced as
+  // untrusted so an injected old/new value cannot steer the model.
   assert.deepEqual(entries, [
     {
       changedBy: 'admin',
       changedAt: '2026-01-01 10:00:00',
       field: 'script',
-      oldValue: 'a',
-      newValue: 'b',
+      oldValue: wrapUntrustedData('a', 'servicenow'),
+      newValue: wrapUntrustedData('b', 'servicenow'),
     },
   ]);
 });
@@ -2476,13 +2484,46 @@ test('handleInsightTool sync_run_atf_tests triggers and polls suite results', as
     async () => {
       const res = await handleInsightTool(
         'sync_run_atf_tests',
-        { scope: 'x_nuvo_sinc', suiteId: 'suite1' },
-        { timeoutMs: 5000 }
+        { scope: 'x_nuvo_sinc', suiteId: 'suite1', confirmDestructive: true },
+        {
+          timeoutMs: 5000,
+          dryRun: false,
+          startedAt: Date.now(),
+          makeDryRunAuditResponse: () => ({ isError: false, content: [{ type: 'text', text: '{}' }] }),
+          auditMutatingTool: () => {},
+        }
       );
       const payload = JSON.parse(res.content[0].text);
       assert.equal(payload.completed, true);
       assert.equal(payload.summary.passed, 1);
       assert.equal(seenUrls.some((u) => u.includes('sys_atf_test_suite_result')), true);
+    }
+  );
+
+  global.fetch = originalFetch;
+});
+
+test('handleInsightTool sync_run_atf_tests refuses to run without confirmDestructive', async () => {
+  const originalFetch = global.fetch;
+  let called = false;
+  global.fetch = async (url, options) => {
+    called = true;
+    return mkResponse(200, { result: [] });
+  };
+
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      // Triggering ATF mutates the instance (runs a background script), so the
+      // tool must reject until the caller confirms — and must not hit the wire.
+      const res = await handleInsightTool(
+        'sync_run_atf_tests',
+        { scope: 'x_nuvo_sinc', suiteId: 'suite1' },
+        { timeoutMs: 5000 }
+      );
+      assert.equal(res.isError, true);
+      assert.match(res.content[0].text, /confirmDestructive=true/);
+      assert.equal(called, false, 'must not run a background script without confirmation');
     }
   );
 

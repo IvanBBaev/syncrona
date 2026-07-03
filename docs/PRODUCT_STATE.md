@@ -77,6 +77,8 @@ timeline
 | `status` / `doctor` / `plugins` | ✅ | diagnostics, connectivity, plugin-rule report |
 | `login` / `logout` / `instances` / `use` | ✅ | global encrypted credential store with active-instance marker |
 | `mcp` | ✅ | starts MCP server, auto-configures `.vscode/mcp.json` + secrets file |
+| `jira [key]` | ✅ | rich read-only Jira issue context; key from argument or current git branch; Cloud + Server/Data Center |
+| `jira-login` / `jira-logout` | ✅ | Jira credentials in the same encrypted global store; Cloud (Basic) vs Server/DC (Bearer PAT) auto-detected |
 
 Cross-cutting CLI behavior: strict yargs surface (unknown commands fail),
 every async handler reports real errors with non-zero exit; update notifier
@@ -88,7 +90,8 @@ companion scoped app via the Table-API fallback layer.
 - ~60 tools across 11 handler groups: session/preflight, workspace commands,
   ServiceNow CRUD, insights, metadata analysis, script analysis,
   health/planning, scope knowledge, relation onboarding, unified workflow,
-  developer tools (ATF test suggestion, instance-vs-local diff).
+  developer tools (ATF test suggestion, instance-vs-local diff), Jira issue
+  context (`jira_get_issue`).
 - Governance: zod validation (all mutating tools schema-covered), guardrail
   policy file, preflight enforcement for mutations, dry-run everywhere,
   redacted audit JSONL with rotation + startup integrity quarantine,
@@ -101,11 +104,16 @@ companion scoped app via the Table-API fallback layer.
 ### Shared foundation
 
 - `@syncro-now-ai/credential-store` — single source of truth for at-rest crypto
-  (AES-256-GCM, machine-derived key), async API for the CLI + sync API for
-  the MCP server. *Known limitation: key derivation is obfuscation-grade
-  until Keychain lands (AR2/D5).*
+  (AES-256-GCM), async API for the CLI + sync API for the MCP server. Key source
+  precedence: explicit `SYNCRONA_STORE_KEY` > OS keychain (DEFAULT backend via the
+  optional `@napi-rs/keyring`; opt out with `SYNCRONA_USE_KEYCHAIN=0`) >
+  machine-derived fallback (obfuscation-grade; keeps old files decrypting). Also
+  stores Jira credential profiles.
 - `@syncro-now-ai/sn-transport` — shared scoped-prefix, retry-status, and
   endpoint-not-found policies consumed by both HTTP clients.
+- `@syncro-now-ai/jira` — shared read-only Jira client (Cloud v3 + Server/DC v2),
+  ADF-to-text rendering, branch-key inference, and config/credential resolution;
+  consumed by both the CLI `jira` command and the MCP `jira_get_issue` tool.
 
 ## 2026-06-12 fix series — what changed (CR1–CR30)
 

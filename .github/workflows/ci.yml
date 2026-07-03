@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# gap-analysis #24: cancel superseded runs so a rapid push/PR sequence does not
+# queue a full 2-OS matrix per commit. Keyed per workflow + ref (push runs on a
+# branch and its PR share a ref, so the newer run wins).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Least-privilege default token (enterprise/supply-chain hardening): the
 # workflow only reads the repo. Actions are pinned to commit SHAs below.
 permissions:
@@ -36,11 +43,12 @@ jobs:
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Build all workspaces
+      # `npm run build` compiles every workspace with `tsc` (each package's
+      # `prepack`), which type-checks the whole tree — so a separate `typecheck`
+      # step (byte-identical to `build`) was pure duplication and was dropped
+      # (gap-analysis #24).
+      - name: Build all workspaces (also type-checks via tsc)
         run: npm run build
-
-      - name: Typecheck core + mcp-server
-        run: npm run typecheck
 
       - name: Lint core + mcp-server (zero warnings)
         run: npm run lint
@@ -57,8 +65,13 @@ jobs:
       - name: Coverage gates (core jest thresholds 85/71/80/85, mcp lines>=70% branches>=70%)
         run: npm run test:coverage:gates
 
+      # SKIP_TESTS=1: the mcp suite already ran in the two steps above, so the
+      # governance gate skips its redundant third run and only re-checks the
+      # tool contract / docs drift / release checklist (gap-analysis #24).
       - name: Quality gates (tool contract, docs drift, release checklist)
         run: npm run quality:all
+        env:
+          SKIP_TESTS: "1"
 
       - name: Upload core coverage artifact
         if: always() && matrix.os == 'ubuntu-latest'

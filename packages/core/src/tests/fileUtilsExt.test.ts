@@ -70,6 +70,37 @@ describe("getFileContextFromPath extension handling", () => {
     expect(ctx?.ext).toBe(".js");
     expect(ctx?.targetField).toBe("script");
   });
+
+  // #19: a Windows-shaped path (backslashes + drive letter) must resolve to the
+  // same table/record/field on any platform. Before the separator-agnostic
+  // split this was broken on non-Windows runtimes: path.sep did not tokenize
+  // "\\", so tableName/recordName came back undefined and the whole path leaked
+  // into the field name. Feeding a literal Windows path makes the fix
+  // Linux-testable.
+  it("resolves table/record/field from a Windows-style backslash path (#19)", () => {
+    getManifest.mockReturnValue({
+      scope: "x_test_app",
+      tables: {
+        sys_script_include: {
+          records: {
+            MyUtil: {
+              sys_id: "def456",
+              files: [{ name: "script", type: "js" }],
+            },
+          },
+        },
+      },
+    });
+
+    const winPath = "C:\\proj\\src\\sys_script_include\\MyUtil\\script.js";
+    const ctx = getFileContextFromPath(winPath);
+
+    expect(ctx).toBeDefined();
+    expect(ctx?.tableName).toBe("sys_script_include");
+    expect(ctx?.name).toBe("MyUtil");
+    expect(ctx?.targetField).toBe("script");
+    expect(ctx?.sys_id).toBe("def456");
+  });
 });
 
 describe("SNFileExists regex safety", () => {

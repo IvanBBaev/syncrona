@@ -18,7 +18,7 @@ import {
   type MetadataType,
   type SemanticSymbol,
 } from "../analysis";
-import { toJsonText } from "../runtimeUtils";
+import { escapeQueryValue, toJsonText } from "../runtimeUtils";
 import { snRequest } from "../servicenowCore";
 import { tableGet } from "../sessionContext";
 
@@ -111,7 +111,7 @@ export async function handleMetadataAnalysisTool(
       const rows = await tableGet(
         cfg.table,
         {
-          query: `sys_id=${sysId}`,
+          query: `sys_id=${escapeQueryValue(sysId)}`,
           limit: 1,
         },
         timeoutMs

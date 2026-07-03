@@ -56,10 +56,20 @@ export function createTokenManager(
       // request send `Authorization: Bearer undefined` until restart.
       throw new Error("OAuth token response did not include an access_token");
     }
+    // Trust `expires_in` only when it is a positive, finite number of seconds.
+    // A 0 / negative / NaN / non-number value (malformed server, or a string that
+    // would coerce oddly) falls back to DEFAULT_TTL_MS instead of producing an
+    // already-expired token that forces a refresh on the very next request.
+    const ttlMs =
+      typeof res.expires_in === "number" &&
+      Number.isFinite(res.expires_in) &&
+      res.expires_in > 0
+        ? res.expires_in * 1000
+        : DEFAULT_TTL_MS;
     cached = {
       accessToken: token,
       refreshToken: res.refresh_token ?? cached?.refreshToken,
-      expiresAt: Date.now() + (res.expires_in ? res.expires_in * 1000 : DEFAULT_TTL_MS),
+      expiresAt: Date.now() + ttlMs,
     };
     return token;
   };

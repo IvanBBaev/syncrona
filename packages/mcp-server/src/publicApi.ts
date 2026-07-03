@@ -40,6 +40,7 @@ export {
   getWorkflowSimulationReportPaths,
   getTableDependencyReportPaths,
   normalizeScopeCode,
+  resolveContainedPath,
 } from "./scopePaths";
 export { sanitizeForAudit } from "./audit";
 export { checkAuditLogIntegrity } from "./audit";
@@ -76,9 +77,13 @@ export {
   formatToolError,
   formatStructuredToolError,
   isDryRunRequested,
+  structuredErrorText,
   toJsonText,
   trimOutput,
+  wrapUntrustedData,
 } from "./runtimeUtils";
+export { isSafeRemoteEndpoint } from "./endpointPolicy";
+export { isValidScopeCode } from "./scopeBootstrap";
 export { McpError, normalizeMcpError } from "./errors";
 export {
   auditToolCall,

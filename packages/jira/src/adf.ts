@@ -23,16 +23,91 @@ type AdfNode = {
   [key: string]: unknown;
 };
 
+/**
+ * Hard cap on block-nesting recursion. ADF from Jira is acyclic and shallow, but
+ * a hand-crafted or corrupted document could nest deeply enough to overflow the
+ * stack; past this depth we stop descending and drop the remaining sub-tree. Set
+ * far above any realistic Jira nesting so normal documents are never truncated.
+ */
+const MAX_DEPTH = 100;
+
+/** Read a string attr, returning "" when absent or not a string. */
+function attrString(node: AdfNode, key: string): string {
+  const value = node.attrs?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Render an ADF node whose payload lives entirely in `attrs` (no `content`) —
+ * `inlineCard`/`blockCard` (pasted links), `status` (lozenge), `date`, and the
+ * `media`/`mediaInline` attachment nodes. These would otherwise flatten to the
+ * empty string and silently drop their text (finding #37). Returns null when the
+ * node is not one of these attrs-only kinds so the caller can fall through.
+ */
+function renderAttrsOnlyNode(node: AdfNode): string | null {
+  switch (node.type) {
+    case "inlineCard":
+    case "blockCard":
+      // A pasted URL: `attrs.url`, or a resolved smart-link `attrs.data.url`.
+      return attrString(node, "url") || dataUrl(node) || "";
+    case "status":
+      // A status lozenge, e.g. "IN PROGRESS": the label lives in `attrs.text`.
+      return attrString(node, "text");
+    case "date": {
+      // A date pill: `attrs.timestamp` is epoch millis (string or number).
+      const ts = node.attrs?.timestamp;
+      const millis =
+        typeof ts === "number"
+          ? ts
+          : typeof ts === "string" && ts.trim()
+            ? Number(ts)
+            : NaN;
+      if (Number.isFinite(millis)) {
+        return new Date(millis).toISOString().slice(0, 10);
+      }
+      return "";
+    }
+    case "media":
+    case "mediaInline": {
+      // An attachment: no readable text, so emit a placeholder naming it when a
+      // filename (`attrs.alt`) is present, otherwise a generic marker.
+      const alt = attrString(node, "alt");
+      return alt ? `[attachment: ${alt}]` : "[attachment]";
+    }
+    default:
+      return null;
+  }
+}
+
+/** Extract a URL from a smart-link's resolved `attrs.data.url`, if present. */
+function dataUrl(node: AdfNode): string {
+  const data = node.attrs?.data;
+  if (data && typeof data === "object") {
+    const url = (data as Record<string, unknown>).url;
+    if (typeof url === "string") {
+      return url;
+    }
+  }
+  return "";
+}
+
 /** Inline nodes that compose a single line of text (no block separators). */
-function renderInline(nodes: AdfNode[] | undefined): string {
+function renderInline(nodes: AdfNode[] | undefined, depth = 0): string {
   if (!Array.isArray(nodes)) {
     return "";
   }
-  return nodes.map((node) => renderInlineNode(node)).join("");
+  return nodes.map((node) => renderInlineNode(node, depth)).join("");
 }
 
-function renderInlineNode(node: AdfNode | undefined): string {
+function renderInlineNode(node: AdfNode | undefined, depth = 0): string {
   if (!node || typeof node !== "object") {
+    return "";
+  }
+  // Inline path has its own recursion bound: the default case below flattens an
+  // unknown node's children back through renderInline, so a hand-crafted deeply
+  // nested inline tree could overflow the stack just like the block path. Stop
+  // descending past MAX_DEPTH and drop the remaining sub-tree.
+  if (depth > MAX_DEPTH) {
     return "";
   }
   switch (node.type) {
@@ -46,18 +121,25 @@ function renderInlineNode(node: AdfNode | undefined): string {
       return typeof node.attrs?.shortName === "string"
         ? String(node.attrs.shortName)
         : "";
-    default:
+    default: {
+      // Attrs-only inline nodes (inlineCard/status/date/media) carry their text
+      // in `attrs` with no `content` — render that before falling through.
+      const attrsText = renderAttrsOnlyNode(node);
+      if (attrsText !== null) {
+        return attrsText;
+      }
       // Unknown inline node (or a stray block in inline position) — flatten its
       // text so nothing is dropped, joining inline so the line is not broken.
-      return renderInline(node.content);
+      return renderInline(node.content, depth + 1);
+    }
   }
 }
 
 /** Render the block children of a node, joining them with single newlines. */
-function renderBlockChildren(node: AdfNode): string {
+function renderBlockChildren(node: AdfNode, depth: number): string {
   const children = Array.isArray(node.content) ? node.content : [];
   return children
-    .map((child) => renderBlock(child))
+    .map((child) => renderBlock(child, depth))
     .filter((text) => text.length > 0)
     .join("\n");
 }
@@ -67,8 +149,8 @@ function renderBlockChildren(node: AdfNode): string {
  * lists), so render each as a block and hang them under the marker, indenting the
  * continuation lines to line up beneath the first.
  */
-function renderListItem(item: AdfNode, marker: string): string {
-  const body = renderBlockChildren(item);
+function renderListItem(item: AdfNode, marker: string, depth: number): string {
+  const body = renderBlockChildren(item, depth);
   const lines = body.split("\n");
   const first = lines.shift() ?? "";
   const pad = " ".repeat(marker.length);
@@ -76,11 +158,11 @@ function renderListItem(item: AdfNode, marker: string): string {
   return [`${marker}${first}`, ...rest].join("\n");
 }
 
-function renderList(node: AdfNode, ordered: boolean): string {
+function renderList(node: AdfNode, ordered: boolean, depth: number): string {
   const items = Array.isArray(node.content) ? node.content : [];
   return items
     .map((item, index) =>
-      renderListItem(item, ordered ? `${index + 1}. ` : "- ")
+      renderListItem(item, ordered ? `${index + 1}. ` : "- ", depth)
     )
     .filter((line) => line.trim().length > 0)
     .join("\n");
@@ -95,28 +177,34 @@ function renderCodeBlock(node: AdfNode): string {
 }
 
 /** Collapse a table cell's block content to a single ` `-joined line. */
-function renderTableCell(cell: AdfNode): string {
-  return renderBlockChildren(cell).split("\n").join(" ").trim();
+function renderTableCell(cell: AdfNode, depth: number): string {
+  return renderBlockChildren(cell, depth).split("\n").join(" ").trim();
 }
 
-function renderTableRow(row: AdfNode): string {
+function renderTableRow(row: AdfNode, depth: number): string {
   const cells = Array.isArray(row.content) ? row.content : [];
-  return cells.map((cell) => renderTableCell(cell)).join(" | ");
+  return cells.map((cell) => renderTableCell(cell, depth)).join(" | ");
 }
 
-function renderTable(node: AdfNode): string {
+function renderTable(node: AdfNode, depth: number): string {
   const rows = Array.isArray(node.content) ? node.content : [];
   return rows
-    .map((row) => renderTableRow(row))
+    .map((row) => renderTableRow(row, depth))
     .filter((line) => line.length > 0)
     .join("\n");
 }
 
 /** Render a block-level node to (possibly multi-line) text. */
-function renderBlock(node: AdfNode | undefined): string {
+function renderBlock(node: AdfNode | undefined, depth: number): string {
   if (!node || typeof node !== "object") {
     return "";
   }
+  // Defensive bound: stop descending into pathologically deep trees so the
+  // converter degrades gracefully (drops the sub-tree) instead of overflowing.
+  if (depth > MAX_DEPTH) {
+    return "";
+  }
+  const next = depth + 1;
 
   switch (node.type) {
     case "text":
@@ -129,24 +217,32 @@ function renderBlock(node: AdfNode | undefined): string {
     case "heading":
       return renderInline(node.content);
     case "bulletList":
-      return renderList(node, false);
+      return renderList(node, false, next);
     case "orderedList":
-      return renderList(node, true);
+      return renderList(node, true, next);
     case "listItem":
       // Normally reached via renderListItem; handle a direct call too.
-      return renderBlockChildren(node);
+      return renderBlockChildren(node, next);
     case "codeBlock":
       return renderCodeBlock(node);
     case "blockquote":
-      return renderBlockChildren(node);
+      return renderBlockChildren(node, next);
     case "table":
-      return renderTable(node);
+      return renderTable(node, next);
     case "rule":
       return "";
-    default:
+    default: {
+      // Attrs-only nodes (blockCard, or a bare status/date/media at block level)
+      // carry their text in `attrs` with no `content`; render that first so it is
+      // not lost to the empty-children recursion below.
+      const attrsText = renderAttrsOnlyNode(node);
+      if (attrsText !== null && attrsText.length > 0) {
+        return attrsText;
+      }
       // Unknown block/inline node — recurse over its block children so text is
-      // not lost (e.g. panel, expand, mediaSingle wrapping a paragraph).
-      return renderBlockChildren(node);
+      // not lost (e.g. panel, expand, mediaSingle/mediaGroup wrapping media).
+      return renderBlockChildren(node, next);
+    }
   }
 }
 
@@ -169,11 +265,11 @@ export function adfToText(value: unknown): string {
   const blocks = Array.isArray(doc.content) ? doc.content : [];
   if (blocks.length === 0) {
     // A bare node (not a full document) — render it directly.
-    return renderBlock(doc).trim();
+    return renderBlock(doc, 0).trim();
   }
 
   return blocks
-    .map((block) => renderBlock(block))
+    .map((block) => renderBlock(block, 0))
     .map((text) => text.replace(/[ \t]+\n/g, "\n").trimEnd())
     .filter((text) => text.length > 0)
     .join("\n\n")

@@ -130,6 +130,17 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       timeoutMs: timeoutSchema.optional(),
     })
     .passthrough(),
+  sync_run_atf_tests: z
+    .object({
+      scope: z.string().trim().min(1),
+      suiteId: z.string().optional(),
+      testId: z.string().optional(),
+      runAll: z.boolean().optional(),
+      confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    })
+    .passthrough(),
   sn_autonomous_remediation_workflow: z
     .object({
       script: z.string().min(1),
