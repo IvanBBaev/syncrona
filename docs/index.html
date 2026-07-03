@@ -68,7 +68,7 @@
             "operatingSystem": "Cross-platform (Node.js 22+; Windows via WSL)",
             "description": "A CLI and MCP toolchain that manages ServiceNow scoped-application source code in Git, with a local build pipeline (TypeScript / Babel / Webpack / Sass), bidirectional sync, multi-instance profiles and AI-assisted metadata, dependency and impact analysis.",
             "url": "https://ivanbbaev.github.io/syncrona/",
-            "downloadUrl": "https://www.npmjs.com/package/@syncro-now-ai/core",
+            "downloadUrl": "https://www.npmjs.com/package/syncrona",
             "softwareVersion": "0.4.2",
             "license": "https://www.gnu.org/licenses/gpl-3.0.html",
             "author": { "@type": "Person", "name": "Ivan Baev" },
@@ -107,7 +107,7 @@
                 "name": "Does it run on Windows?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "On Windows, WSL (Windows Subsystem for Linux, Ubuntu) is currently required — run all syncro-now-ai commands from inside the WSL shell. Native Windows support (PowerShell install, Windows Credential Manager) is on the roadmap. macOS and Linux are first-class."
+                  "text": "On Windows, WSL (Windows Subsystem for Linux, Ubuntu) is currently required — run all syncrona commands from inside the WSL shell. Native Windows support (PowerShell install, Windows Credential Manager) is on the roadmap. macOS and Linux are first-class."
                 }
               },
               {
@@ -115,7 +115,7 @@
                 "name": "Can I work with multiple ServiceNow instances?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. Use the encrypted global credential store (syncro-now-ai login / use / instances) or instance-profile environment variables with --instance-profile to route a single command at dev, test or prod. syncro-now-ai status shows which instance and credential source are active."
+                  "text": "Yes. Use the encrypted global credential store (syncrona login / use / instances) or instance-profile environment variables with --instance-profile to route a single command at dev, test or prod. syncrona status shows which instance and credential source are active."
                 }
               }
             ]
@@ -253,14 +253,14 @@
                   <!-- Static fallback (mirrors scenario 1); app.js animates and
                        cycles this when JavaScript is available. -->
                   <div class="term-body" id="term-body">
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai login</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona login</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Saved credentials · </span>dev12345.service-now.com</span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai init</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona init</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Wrote </span>sync.config.js · sync.manifest.json · .env</span>
 <span class="l"><span class="ok">✔ </span><span class="muted">Scope </span><span class="accent">x_acme_app</span><span class="muted"> · 142 files tracked</span></span>
 <span class="l"> </span>
-<span class="l"><span class="prompt">❯ </span><span class="cmd">syncro-now-ai dev</span></span>
+<span class="l"><span class="prompt">❯ </span><span class="cmd">syncrona dev</span></span>
 <span class="l"><span class="blue">▸ </span><span class="muted">watching </span>src/<span class="muted"> · build &amp; push on save</span></span>
 <span class="l"><span class="warn">~ </span>PriceCalc/script.ts<span class="muted"> → babel + typescript</span></span>
 <span class="l"><span class="ok">✔ </span><span class="muted">pushed </span>PriceCalc<span class="dim"> · 312ms</span></span>
@@ -474,10 +474,10 @@
             <span class="c-ico">📦</span>
             <p>
               <strong>Not yet published to npm.</strong> The
-              <code>@syncro-now-ai/*</code> packages are pre-release — install
+              <code>@syncrona/*</code> packages are pre-release — install
               from source (clone, <code>npm ci</code>, <code>npm run build</code>,
               then <code>npm link</code> the <code>core</code> workspace) to get
-              the <code>syncro-now-ai</code> command. The <code>npm i -g</code>
+              the <code>syncrona</code> command. The <code>npm i -g</code>
               lines below are the intended install once the packages are
               published.
             </p>
@@ -489,19 +489,19 @@
               <h3>Install the CLI and log in</h3>
               <p>
                 Install from source, or (once published) install globally for the
-                <code>syncro-now-ai</code> command, then save credentials in the
+                <code>syncrona</code> command, then save credentials in the
                 encrypted global store.
               </p>
               <div class="codeblock" data-lang="bash">
                 <pre><code># from source (works today)
 git clone https://github.com/IvanBBaev/syncrona
 cd syncrona &amp;&amp; npm ci &amp;&amp; npm run build
-npm link --workspace @syncro-now-ai/core
+npm link --workspace syncrona
 
 # or, once published to npm:
-npm i -g @syncro-now-ai/core
+npm i -g syncrona
 
-syncro-now-ai login</code></pre>
+syncrona login</code></pre>
               </div>
             </article>
             <article class="step">
@@ -514,7 +514,7 @@ syncro-now-ai login</code></pre>
                 a quick connection check.
               </p>
               <div class="codeblock" data-lang="bash">
-                <pre><code>npx syncro-now-ai init</code></pre>
+                <pre><code>npx syncrona init</code></pre>
               </div>
             </article>
             <article class="step">
@@ -526,7 +526,7 @@ syncro-now-ai login</code></pre>
                 ServiceNow.
               </p>
               <div class="codeblock" data-lang="bash">
-                <pre><code>npx syncro-now-ai dev</code></pre>
+                <pre><code>npx syncrona dev</code></pre>
               </div>
             </article>
           </div>
@@ -541,8 +541,8 @@ syncro-now-ai login</code></pre>
           </div>
           <p>
             Prefer a per-project dev dependency? Use
-            <code>npm i -D @syncro-now-ai/core</code> and call it with
-            <code>npx syncro-now-ai …</code>. Optionally install the companion server
+            <code>npm i -D syncrona</code> and call it with
+            <code>npx syncrona …</code>. Optionally install the companion server
             scoped app for a few enhanced endpoints — the CLI works
             <strong>with or without</strong> it against plain REST APIs.
           </p>
@@ -575,9 +575,9 @@ syncro-now-ai login</code></pre>
         <section id="commands">
           <h2>Commands</h2>
           <p>
-            The full <code>syncro-now-ai</code> command surface. Run any of them
-            with <code>npx syncro-now-ai &lt;command&gt;</code> (or just
-            <code>syncro-now-ai</code> if installed globally).
+            The full <code>syncrona</code> command surface. Run any of them
+            with <code>npx syncrona &lt;command&gt;</code> (or just
+            <code>syncrona</code> if installed globally).
           </p>
           <div class="table-wrap">
             <table>
@@ -592,7 +592,7 @@ syncro-now-ai login</code></pre>
                 <tr><td><code>init</code></td><td>—</td><td>Wizard that scaffolds a new project (config, manifest, <code>.env</code>) and runs an initial connection check.</td></tr>
                 <tr><td><code>dev</code></td><td><code>d</code></td><td>Watch mode — builds and pushes tracked files on save; periodically refreshes the manifest.</td></tr>
                 <tr><td><code>refresh</code></td><td><code>r</code></td><td>Refresh the manifest and download newly created records. Never overwrites local file contents.</td></tr>
-                <tr><td><code>push</code></td><td>—</td><td>Build and push local files to the instance. <code>--diff &lt;branch&gt;</code> pushes only changed files.</td></tr>
+                <tr><td><code>push</code></td><td>—</td><td>Build and push local files to the instance. <code>--diff &lt;branch&gt;</code> pushes only changed files; <code>--update-set</code> / <code>--scope-swap</code> wrap the push in a named update set or auto-swap scope.</td></tr>
                 <tr><td><code>download &lt;scope&gt;</code></td><td>—</td><td>Download a scoped app, overwriting local files. Destructive — confirms first.</td></tr>
                 <tr><td><code>build</code></td><td>—</td><td>Build the project locally into the build folder (<code>--diff</code> records changed files for deploy).</td></tr>
                 <tr><td><code>deploy</code></td><td>—</td><td>Deploy the built files in the build folder to the instance.</td></tr>
@@ -640,6 +640,16 @@ syncro-now-ai login</code></pre>
               tunes how often <code>dev</code> re-reads the manifest (default
               30s; <code>0</code> disables polling).
             </li>
+            <li>
+              <strong><code>--update-set &lt;name&gt;</code></strong> (alias
+              <code>--us</code>) wraps a <code>push</code> in a freshly created,
+              named update set so every pushed change is captured together.
+            </li>
+            <li>
+              <strong><code>--scope-swap</code></strong> (alias
+              <code>--ss</code>) auto-swaps <code>push</code> to the correct
+              application scope for the files being pushed.
+            </li>
           </ul>
         </section>
 
@@ -672,8 +682,8 @@ syncro-now-ai login</code></pre>
           <p>
             Too many files, or some missing? <code>includes</code> and
             <code>excludes</code> are layered on top of sane built-in defaults.
-            List those defaults with <code>syncro-now-ai config show-defaults</code>,
-            then add overrides — and run <code>syncro-now-ai refresh</code> to apply.
+            List those defaults with <code>syncrona config show-defaults</code>,
+            then add overrides — and run <code>syncrona refresh</code> to apply.
           </p>
           <div class="codeblock" data-lang="javascript">
             <pre><code>module.exports = {
@@ -704,7 +714,7 @@ syncro-now-ai login</code></pre>
     match: /\.ts$/,
     plugins: [
       {
-        name: "@syncro-now-ai/typescript-plugin",
+        name: "@syncrona/typescript-plugin",
         options: { transpile: false }, // type-check only
       },
     ],
@@ -755,7 +765,7 @@ syncro-now-ai login</code></pre>
           <h2>Build plugins</h2>
           <p>
             Plugins are where the power comes from. Each is a separate
-            <code>@syncro-now-ai/*</code> package you install as a dev dependency
+            <code>@syncrona/*</code> package you install as a dev dependency
             and wire into a rule. Chains run in order, threading each plugin's
             output into the next.
           </p>
@@ -765,18 +775,18 @@ syncro-now-ai login</code></pre>
                 <tr><th>Package</th><th>What it does</th></tr>
               </thead>
               <tbody>
-                <tr><td><code>@syncro-now-ai/typescript-plugin</code></td><td>Type-checks and compiles TypeScript files.</td></tr>
-                <tr><td><code>@syncro-now-ai/babel-plugin</code></td><td>Runs Babel on <code>.js</code> / <code>.ts</code> files.</td></tr>
-                <tr><td><code>@syncro-now-ai/webpack-plugin</code></td><td>Bundles your files with Webpack.</td></tr>
-                <tr><td><code>@syncro-now-ai/sass-plugin</code></td><td>Compiles Sass / SCSS to CSS.</td></tr>
-                <tr><td><code>@syncro-now-ai/prettier-plugin</code></td><td>Formats output files with Prettier.</td></tr>
-                <tr><td><code>@syncro-now-ai/eslint-plugin</code></td><td>Runs ESLint over your files on build.</td></tr>
+                <tr><td><code>@syncrona/typescript-plugin</code></td><td>Type-checks and compiles TypeScript files.</td></tr>
+                <tr><td><code>@syncrona/babel-plugin</code></td><td>Runs Babel on <code>.js</code> / <code>.ts</code> files.</td></tr>
+                <tr><td><code>@syncrona/webpack-plugin</code></td><td>Bundles your files with Webpack.</td></tr>
+                <tr><td><code>@syncrona/sass-plugin</code></td><td>Compiles Sass / SCSS to CSS.</td></tr>
+                <tr><td><code>@syncrona/prettier-plugin</code></td><td>Formats output files with Prettier.</td></tr>
+                <tr><td><code>@syncrona/eslint-plugin</code></td><td>Runs ESLint over your files on build.</td></tr>
               </tbody>
             </table>
           </div>
           <p class="lead" style="font-size: 14px">
-            Supporting presets — <code>@syncro-now-ai/babel-preset-servicenow</code>
-            and <code>@syncro-now-ai/babel-plugin-remove-modules</code> — adapt
+            Supporting presets — <code>@syncrona/babel-preset-servicenow</code>
+            and <code>@syncrona/babel-plugin-remove-modules</code> — adapt
             modern output for the ServiceNow runtime.
           </p>
           <div class="callout">
@@ -858,7 +868,7 @@ syncro-now-ai login</code></pre>
           <h2>MCP server</h2>
           <p>
             The bundled <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
-            server (<code>@syncro-now-ai/mcp-server</code>) lets an MCP-capable
+            server (<code>@syncrona/mcp-server</code>) lets an MCP-capable
             AI client — Claude Desktop, Claude Code, VS Code Chat — analyse and
             operate your scope: session &amp; scope control, metadata inventory,
             dependency and impact graphs, static script analysis, drift
@@ -867,7 +877,7 @@ syncro-now-ai login</code></pre>
 
           <h3>Register it with your client</h3>
           <p>
-            Run <code>npx syncro-now-ai mcp</code> to start the server and optionally
+            Run <code>npx syncrona mcp</code> to start the server and optionally
             write local client config (<code>.vscode/mcp.json</code>,
             <code>.syncrona-mcp/secrets.json</code>), or register it directly:
           </p>
@@ -876,7 +886,7 @@ syncro-now-ai login</code></pre>
   "mcpServers": {
     "syncrona": {
       "command": "npx",
-      "args": ["-y", "@syncro-now-ai/mcp-server"]
+      "args": ["-y", "@syncrona/mcp-server"]
     }
   }
 }</code></pre>
@@ -1023,15 +1033,15 @@ syncro-now-ai login</code></pre>
 
           <h3>Day-to-day</h3>
           <ul>
-            <li><strong>Add a record:</strong> create it in ServiceNow, run <code>syncro-now-ai refresh</code> — files appear automatically.</li>
-            <li><strong>Edit code:</strong> run <code>syncro-now-ai dev</code> and just save; builds push on save.</li>
-            <li><strong>Delete:</strong> stop dev mode, delete the record in ServiceNow, <code>syncro-now-ai refresh</code>, then remove the files (deliberately — deletion is never automatic).</li>
-            <li><strong>Ship:</strong> <code>syncro-now-ai push</code> (or <code>build</code> + <code>deploy</code>) for the whole scope, or <code>push --diff main</code> for just your feature's edits.</li>
+            <li><strong>Add a record:</strong> create it in ServiceNow, run <code>syncrona refresh</code> — files appear automatically.</li>
+            <li><strong>Edit code:</strong> run <code>syncrona dev</code> and just save; builds push on save.</li>
+            <li><strong>Delete:</strong> stop dev mode, delete the record in ServiceNow, <code>syncrona refresh</code>, then remove the files (deliberately — deletion is never automatic).</li>
+            <li><strong>Ship:</strong> <code>syncrona push</code> (or <code>build</code> + <code>deploy</code>) for the whole scope, or <code>push --diff main</code> for just your feature's edits.</li>
           </ul>
           <div class="callout">
             <span class="c-ico">📂</span>
             <p>
-              Once a scope is downloaded, <code>syncro-now-ai docs</code> generates
+              Once a scope is downloaded, <code>syncrona docs</code> generates
               Markdown and Mermaid diagrams (overview, tables, per-record) — a
               fast way to explore what a real project looks like.
             </p>
@@ -1085,7 +1095,7 @@ syncro-now-ai login</code></pre>
         <section id="architecture">
           <h2>Architecture</h2>
           <p>
-            A Node 22 monorepo of 13 <code>@syncro-now-ai/*</code> packages. Two
+            A Node 22 monorepo of 13 <code>@syncrona/*</code> packages. Two
             ServiceNow clients — the core CLI and the MCP server — share one
             transport policy (<code>sn-transport</code>) and one encrypted
             credential store, so authentication, scoped-API resolution and retry
@@ -1102,10 +1112,10 @@ syncro-now-ai login</code></pre>
               <!-- middle clients -->
               <rect class="box accent" x="70" y="130" width="200" height="62" rx="10" />
               <text class="lbl" x="170" y="158" text-anchor="middle">MCP server</text>
-              <text class="tag" x="170" y="178" text-anchor="middle">@syncro-now-ai/mcp-server</text>
+              <text class="tag" x="170" y="178" text-anchor="middle">@syncrona/mcp-server</text>
               <rect class="box accent" x="450" y="130" width="200" height="62" rx="10" />
               <text class="lbl" x="550" y="158" text-anchor="middle">core CLI · syncrona</text>
-              <text class="tag" x="550" y="178" text-anchor="middle">@syncro-now-ai/core</text>
+              <text class="tag" x="550" y="178" text-anchor="middle">syncrona</text>
 
               <!-- shared -->
               <rect class="box" x="190" y="240" width="340" height="56" rx="10" />
@@ -1168,11 +1178,11 @@ syncro-now-ai login</code></pre>
             indicate compatibility.
           </p>
 
-          <h3>Why the package name <code>@syncro-now-ai/*</code>?</h3>
+          <h3>Why the package name <code>@syncrona/*</code>?</h3>
           <p>
-            The project ships under the <code>@syncro-now-ai</code> npm scope (the
-            CLI is <code>@syncro-now-ai/core</code>, exposing the
-            <code>syncro-now-ai</code> command); the GitHub repository is
+            The project ships under the <code>@syncrona</code> npm scope (the
+            CLI is <code>syncrona</code>, exposing the
+            <code>syncrona</code> command); the GitHub repository is
             <a href="https://github.com/IvanBBaev/syncrona" target="_blank" rel="noopener"><code>IvanBBaev/syncrona</code></a>.
             It is the modern successor to Sincronia / <code>sinc</code>.
           </p>
@@ -1198,14 +1208,14 @@ syncro-now-ai login</code></pre>
           <h3>Does it run on Windows?</h3>
           <p>
             On Windows, <strong>WSL is currently required</strong> (Ubuntu, build
-            1903+) — run every <code>syncro-now-ai</code> command inside the WSL
+            1903+) — run every <code>syncrona</code> command inside the WSL
             shell. Native Windows support (PowerShell install, Windows Credential
             Manager) is on the roadmap; macOS and Linux are first-class.
           </p>
 
           <h3>Can I work with multiple instances or scopes?</h3>
           <p>
-            Yes. Use the encrypted global store (<code>syncro-now-ai login</code> /
+            Yes. Use the encrypted global store (<code>syncrona login</code> /
             <code>use</code> / <code>instances</code>) or instance-profile env
             vars with <code>--instance-profile</code> to route a single command
             at dev, test or prod. For several scoped apps in one repo, treat each
@@ -1220,6 +1230,31 @@ syncro-now-ai login</code></pre>
             review the security model for your own deployment, and keep your
             source in Git. Track progress in the
             <a href="https://github.com/IvanBBaev/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.
+          </p>
+
+          <h3>Does my source code still live in ServiceNow?</h3>
+          <p>
+            No — once code is in your project you take control of it and no
+            longer edit it directly in ServiceNow. Everything else (tables,
+            dictionary, metadata, config) is still tracked in the instance the
+            normal way. That shift is exactly why keeping your source in Git is
+            strongly recommended. See <a href="#what-is-it">What is it?</a>
+          </p>
+
+          <h3>How do I add new scripts?</h3>
+          <p>
+            Turn off <code>dev</code> mode, create the record in ServiceNow, then
+            run <code>syncrona refresh</code> — the manifest picks up the
+            new record and its files are created locally, ready to edit.
+          </p>
+
+          <h3>How do I delete something?</h3>
+          <p>
+            Turn off <code>dev</code> mode, delete the record in ServiceNow, run
+            <code>syncrona refresh</code>, then remove the files from your
+            project (or run <code>repair</code> to prune orphaned files). It is
+            deliberate rather than automatic — deleting files should never be
+            accidental.
           </p>
         </section>
 
