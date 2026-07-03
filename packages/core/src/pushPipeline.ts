@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
 import path from "path";
-import * as fUtils from "./FileUtils";
-import * as ConfigManager from "./config";
-import { PUSH_RETRY_LIMIT, PUSH_RETRY_WAIT } from "./constants";
-import PluginManager from "./PluginManager";
+import * as fUtils from "./FileUtils.js";
+import * as ConfigManager from "./config.js";
+import { PUSH_RETRY_LIMIT, PUSH_RETRY_WAIT } from "./constants.js";
+import PluginManager from "./PluginManager.js";
 import {
   defaultClient,
   getErrorResponseStatus,
@@ -12,10 +12,10 @@ import {
   processPushResponse,
   retryOnErr,
   SNClient,
-} from "./snClient";
-import { logger } from "./Logger";
-import { aggregateErrorMessages, allSettled } from "./genericUtils";
-import { getProgTick } from "./progress";
+} from "./snClient.js";
+import { logger } from "./Logger.js";
+import { aggregateErrorMessages, allSettled } from "./genericUtils.js";
+import { getProgTick } from "./progress.js";
 
 export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
   // #47: mutate the accumulator instead of spreading it on every iteration.

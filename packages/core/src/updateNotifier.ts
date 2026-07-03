@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
-import { getSyncronaDir } from "./auth";
+import { fileURLToPath } from "node:url";
+import { getSyncronaDir } from "./auth.js";
+
+// ESM has no CommonJS __dirname; derive it from this module's URL so the
+// package.json version lookup below resolves relative to the compiled file.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Best-effort "a newer version is available" notifier for the SyncroNow AI CLI.

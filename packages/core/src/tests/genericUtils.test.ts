@@ -5,7 +5,7 @@ import {
   aggregateErrorMessages,
   wait,
   formatDuration,
-} from "../genericUtils";
+} from "../genericUtils.js";
 import type { Sync } from "@syncro-now-ai/types";
 
 const fc = (name: string): Sync.FileContext =>

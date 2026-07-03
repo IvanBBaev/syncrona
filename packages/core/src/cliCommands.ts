@@ -7,23 +7,23 @@ import {
   buildCommand,
   deployCommand,
   docsCommand,
-} from "./commands";
-import { pushCommand } from "./pushCommand";
-import { repairCommand } from "./repairCommand";
-import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand, configCommand } from "./diagnosticsCommands";
-import { mcpCommand } from "./mcpCommand";
-import { devCommand, refreshCommand } from "./devCommands";
+} from "./commands.js";
+import { pushCommand } from "./pushCommand.js";
+import { repairCommand } from "./repairCommand.js";
+import { statusCommand, doctorCommand, pluginsCommand, checkEnvCommand, configCommand } from "./diagnosticsCommands.js";
+import { mcpCommand } from "./mcpCommand.js";
+import { devCommand, refreshCommand } from "./devCommands.js";
 import {
   loginCommand,
   logoutCommand,
   instancesCommand,
   useCommand,
-} from "./authCommands";
+} from "./authCommands.js";
 import {
   jiraCommand,
   jiraLoginCommand,
   jiraLogoutCommand,
-} from "./jiraCommands";
+} from "./jiraCommands.js";
 
 /**
  * Declarative contract for one CLI command module.

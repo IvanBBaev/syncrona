@@ -3,12 +3,17 @@ import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "child_process";
-import * as ConfigManager from "./config";
-import { logger } from "./Logger";
-import { getActiveInstance } from "./auth";
-import { resolveCredentials } from "./snClient";
-import { setLogLevel } from "./commandHelpers";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
+import { getActiveInstance } from "./auth.js";
+import { resolveCredentials } from "./snClient.js";
+import { setLogLevel } from "./commandHelpers.js";
+
+// ESM has no CommonJS __dirname; derive it from this module's URL so the
+// bundled-sibling MCP server path candidate resolves relative to this file.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 type McpServerProcessArgs = Sync.SharedCmdArgs & {
   autoConfigure?: boolean;

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 const mockPatch = jest.fn();
 const mockPost = jest.fn();
 const mockPut = jest.fn();
 const mockGet = jest.fn();
 
-jest.mock("axios", () => ({
+jest.unstable_mockModule("axios", () => ({
   __esModule: true,
   default: {
     isAxiosError: (value: unknown) => {
@@ -20,7 +21,7 @@ jest.mock("axios", () => ({
   },
 }));
 
-jest.mock("axios-rate-limit", () => ({
+jest.unstable_mockModule("axios-rate-limit", () => ({
   __esModule: true,
   default: (client: unknown) => client,
 }));
@@ -45,7 +46,7 @@ describe("snClient critical bugfixes", () => {
   it("checkConnection pings current scope endpoint with timeout", async () => {
     mockGet.mockResolvedValue({ status: 200, data: { result: { scope: "x_test" } } });
 
-    const { snClient, getScopedEndpointPrefix, resetClient } = await import("../snClient");
+    const { snClient, getScopedEndpointPrefix, resetClient } = await import("../snClient.js");
     resetClient();
     const client = snClient("https://example.service-now.com", "u", "p");
 
@@ -58,7 +59,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("checkConnection falls back to Table API ping on scoped endpoint 404", async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
 
     mockGet
@@ -83,7 +84,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("checkConnection falls back to Table API ping on scoped endpoint 400", async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
 
     mockGet
@@ -102,7 +103,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("updateRecord waits ATF upload before patch on sys_atf_step", async () => {
-    const { snClient, resetClient } = await import("../snClient");
+    const { snClient, resetClient } = await import("../snClient.js");
     resetClient();
 
     let resolvePost!: () => void;
@@ -138,7 +139,7 @@ describe("snClient critical bugfixes", () => {
   it("createCurrentUpdateSetUserPref uses POST", async () => {
     mockPost.mockResolvedValue({ status: 201 });
 
-    const { snClient } = await import("../snClient");
+    const { snClient } = await import("../snClient.js");
     const client = snClient("https://example.service-now.com", "u", "p");
 
     await client.createCurrentUpdateSetUserPref("us_1", "user_1");
@@ -153,7 +154,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("retryOnErr with allowedRetries=1 performs exactly one retry", async () => {
-    const { retryOnErr } = await import("../snClient");
+    const { retryOnErr } = await import("../snClient.js");
     const onRetry = jest.fn();
     let calls = 0;
 
@@ -175,7 +176,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("retryOnErr with allowedRetries=3 performs exactly three retries", async () => {
-    const { retryOnErr } = await import("../snClient");
+    const { retryOnErr } = await import("../snClient.js");
     const onRetry = jest.fn();
     let calls = 0;
 
@@ -199,7 +200,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("retryOnErr returns immediately when first attempt succeeds", async () => {
-    const { retryOnErr } = await import("../snClient");
+    const { retryOnErr } = await import("../snClient.js");
     const onRetry = jest.fn();
     let calls = 0;
 
@@ -219,7 +220,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("processPushResponse handles 404, 200, 500 and 201 statuses", async () => {
-    const { processPushResponse } = await import("../snClient");
+    const { processPushResponse } = await import("../snClient.js");
 
     const recSummary = "sys_script > rec_1";
 
@@ -241,7 +242,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("defaultClient refreshes when credentials change and resetClient clears cache", async () => {
-    const { defaultClient, resetClient } = await import("../snClient");
+    const { defaultClient, resetClient } = await import("../snClient.js");
 
     process.env.SN_INSTANCE = "instance-a.service-now.com";
     process.env.SN_USER = "user_a";
@@ -262,7 +263,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("resolveCredentials uses profile-specific env vars with fallback to base vars", async () => {
-    const { resolveCredentials } = await import("../snClient");
+    const { resolveCredentials } = await import("../snClient.js");
 
     process.env.SN_INSTANCE = "base.service-now.com";
     process.env.SN_USER = "base_user";
@@ -279,7 +280,7 @@ describe("snClient critical bugfixes", () => {
   });
 
   it("defaultClient keeps separate cache entries across different profiles", async () => {
-    const { defaultClient, resetClient } = await import("../snClient");
+    const { defaultClient, resetClient } = await import("../snClient.js");
 
     process.env.SN_INSTANCE = "base.service-now.com";
     process.env.SN_USER = "base_user";

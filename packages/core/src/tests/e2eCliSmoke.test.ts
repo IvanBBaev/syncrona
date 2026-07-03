@@ -4,9 +4,12 @@ import { existsSync } from "fs";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { CLI_COMMANDS } from "../cliCommands";
+import { fileURLToPath } from "url";
+import { CLI_COMMANDS } from "../cliCommands.js";
 
 export {};
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // #21: derive the expected command names from the SINGLE source of truth (the
 // CLI_COMMANDS registry) instead of a hand-maintained literal list. A literal

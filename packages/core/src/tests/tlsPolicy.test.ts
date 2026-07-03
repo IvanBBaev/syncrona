@@ -7,7 +7,7 @@ import {
   TLS_REJECT_UNAUTHORIZED_ENV,
   resolveTlsPolicy,
 } from "@syncro-now-ai/sn-transport";
-import { buildHttpsAgent } from "../snClient";
+import { buildHttpsAgent } from "../snClient.js";
 
 // G9: corporate proxy / TLS support. resolveTlsPolicy is the shared, pure
 // decision; buildHttpsAgent is the core-side glue that reads the env + CA file

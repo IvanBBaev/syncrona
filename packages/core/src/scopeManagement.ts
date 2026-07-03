@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncro-now-ai/types";
-import * as ConfigManager from "./config";
+import * as ConfigManager from "./config.js";
 import {
   defaultClient,
   unwrapSNResponse,
   unwrapTableAPIFirstItem,
   unwrapTableAPIFirstItemOrEmpty,
-} from "./snClient";
-import { isScopedEndpointUnavailableError } from "./manifestBuilder";
-import { logger } from "./Logger";
+} from "./snClient.js";
+import { isScopedEndpointUnavailableError } from "./manifestBuilder.js";
+import { logger } from "./Logger.js";
 
 export const swapScope = async (currentScope: string): Promise<SN.ScopeObj> => {
   const client = defaultClient();

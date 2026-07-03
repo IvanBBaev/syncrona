@@ -2,12 +2,12 @@
 import { SN, Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import inquirer from "inquirer";
-import * as ConfigManager from "./config";
-import * as AppUtils from "./appUtils";
-import * as FileUtils from "./FileUtils";
-import { logger } from "./Logger";
-import { formatTable } from "./genericUtils";
-import { setLogLevel, logErrorHint } from "./commandHelpers";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
+import * as FileUtils from "./FileUtils.js";
+import { logger } from "./Logger.js";
+import { formatTable } from "./genericUtils.js";
+import { setLogLevel, logErrorHint } from "./commandHelpers.js";
 
 export type RepairCmdArgs = Sync.SharedCmdArgs & {
   apply?: boolean;

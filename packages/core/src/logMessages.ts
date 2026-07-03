@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
-import { logger } from "./Logger";
+import { logger } from "./Logger.js";
 import chalk from "chalk";
 
 export const log = console.log;

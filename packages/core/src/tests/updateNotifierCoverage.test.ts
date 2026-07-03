@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -9,7 +10,7 @@ import {
   readUpdateCache,
   resolveCurrentVersion,
   runUpdateNotifier,
-} from "../updateNotifier";
+} from "../updateNotifier.js";
 
 // This suite closes the coverage gaps the base updateNotifier.test.ts leaves:
 //  - the prerelease-ordering branches inside comparePrerelease (reached only

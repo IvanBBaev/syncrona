@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -20,18 +21,31 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-logger-"));
 // mutable override lets a single test point it at an invalid location to force
 // the mkdir failure branch.
 let syncronaDirOverride: string | null = null;
-jest.mock("@syncro-now-ai/credential-store", () => ({
+jest.unstable_mockModule("@syncro-now-ai/credential-store", () => ({
   getSyncronaDir: () => syncronaDirOverride ?? tempRoot,
 }));
 
-import { logger } from "../Logger";
 import type winston from "winston";
+
+// The logger singleton is imported dynamically AFTER the credential-store mock
+// is registered: jest.unstable_mockModule does not hoist, so a static import of
+// Logger.js would bind the real getSyncronaDir (pointing at the real ~/.syncrona)
+// before the mock's temp-dir redirection can take effect.
+let logger: typeof import("../Logger.js").logger;
 
 const DIAG_KEY = "SYNCRONA_DIAGNOSTIC_LOG";
 
+beforeAll(async () => {
+  ({ logger } = await import("../Logger.js"));
+});
+
 describe("Logger diagnostic file transport (G7)", () => {
   const originalDiag = process.env[DIAG_KEY];
-  const originalLevel = logger.getLogLevel();
+  let originalLevel: ReturnType<typeof logger.getLogLevel>;
+
+  beforeAll(() => {
+    originalLevel = logger.getLogLevel();
+  });
 
   afterEach(() => {
     if (originalDiag === undefined) delete process.env[DIAG_KEY];

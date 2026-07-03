@@ -1,35 +1,68 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-jest.mock("../config");
-jest.mock("../appUtils");
-jest.mock("../FileUtils");
+import { jest } from "@jest/globals";
+
+// R5: the three bare automocks need factories under ESM. Each lists the named
+// exports the test drives directly; graph-complete fills in any other name the
+// repairCommand graph hard-links from these relative modules.
+jest.unstable_mockModule("../config.js", () => ({
+  getManifest: jest.fn(),
+  getSourcePath: jest.fn(),
+}));
+jest.unstable_mockModule("../appUtils.js", () => ({
+  findMissingFiles: jest.fn(),
+  processMissingFiles: jest.fn(),
+}));
+jest.unstable_mockModule("../FileUtils.js", () => ({
+  getPathsInPath: jest.fn(),
+  getFileContextFromPath: jest.fn(),
+}));
 
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
-import * as ConfigManager from "../config";
-import * as AppUtils from "../appUtils";
-import * as FileUtils from "../FileUtils";
-import { repairCommand } from "../repairCommand";
 import type { SN } from "@syncro-now-ai/types";
 
-const getManifest = ConfigManager.getManifest as jest.MockedFunction<
-  typeof ConfigManager.getManifest
->;
-const getSourcePath = ConfigManager.getSourcePath as jest.MockedFunction<
-  typeof ConfigManager.getSourcePath
->;
-const findMissingFiles = AppUtils.findMissingFiles as jest.MockedFunction<
-  typeof AppUtils.findMissingFiles
->;
-const processMissingFiles = AppUtils.processMissingFiles as jest.MockedFunction<
-  typeof AppUtils.processMissingFiles
->;
-const getPathsInPath = FileUtils.getPathsInPath as jest.MockedFunction<
-  typeof FileUtils.getPathsInPath
->;
-const getFileContextFromPath = FileUtils.getFileContextFromPath as jest.MockedFunction<
+// R1: the mocks do not hoist, so the mocked namespaces and the SUT are imported
+// dynamically after the mocks register.
+let ConfigManager: typeof import("../config.js");
+let AppUtils: typeof import("../appUtils.js");
+let FileUtils: typeof import("../FileUtils.js");
+let repairCommand: typeof import("../repairCommand.js").repairCommand;
+
+let getManifest: jest.MockedFunction<typeof ConfigManager.getManifest>;
+let getSourcePath: jest.MockedFunction<typeof ConfigManager.getSourcePath>;
+let findMissingFiles: jest.MockedFunction<typeof AppUtils.findMissingFiles>;
+let processMissingFiles: jest.MockedFunction<typeof AppUtils.processMissingFiles>;
+let getPathsInPath: jest.MockedFunction<typeof FileUtils.getPathsInPath>;
+let getFileContextFromPath: jest.MockedFunction<
   typeof FileUtils.getFileContextFromPath
 >;
+
+beforeAll(async () => {
+  ConfigManager = await import("../config.js");
+  AppUtils = await import("../appUtils.js");
+  FileUtils = await import("../FileUtils.js");
+  ({ repairCommand } = await import("../repairCommand.js"));
+
+  getManifest = ConfigManager.getManifest as jest.MockedFunction<
+    typeof ConfigManager.getManifest
+  >;
+  getSourcePath = ConfigManager.getSourcePath as jest.MockedFunction<
+    typeof ConfigManager.getSourcePath
+  >;
+  findMissingFiles = AppUtils.findMissingFiles as jest.MockedFunction<
+    typeof AppUtils.findMissingFiles
+  >;
+  processMissingFiles = AppUtils.processMissingFiles as jest.MockedFunction<
+    typeof AppUtils.processMissingFiles
+  >;
+  getPathsInPath = FileUtils.getPathsInPath as jest.MockedFunction<
+    typeof FileUtils.getPathsInPath
+  >;
+  getFileContextFromPath = FileUtils.getFileContextFromPath as jest.MockedFunction<
+    typeof FileUtils.getFileContextFromPath
+  >;
+});
 
 const MANIFEST = { scope: "x_app", tables: {} } as unknown as SN.AppManifest;
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { SN } from "@syncro-now-ai/types";
 
 const createDirRecursively = jest.fn(async () => undefined);
@@ -22,7 +23,7 @@ const processPushResponseApi = jest.fn(() => ({ success: true, message: "ok" }))
 const mockBuildManifestFromTableAPI = jest.fn();
 const mockBuildBulkDownloadFromTableAPI = jest.fn();
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   createDirRecursively,
   writeSNFileCurry,
   writeFileForce,
@@ -35,7 +36,7 @@ jest.mock("../FileUtils", () => ({
   summarizeFile: jest.fn(() => ""),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getSourcePath,
   getManifestPath,
   getConfig,
@@ -43,7 +44,11 @@ jest.mock("../config", () => ({
   getManifest,
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  getErrorResponseStatus: jest.fn(),
+  isRetryableRequestError: jest.fn(),
+  SNClient: jest.fn(),
+  unwrapTableAPIFirstItemOrEmpty: jest.fn(),
   defaultClient: () => ({
     getManifest: getManifestApi,
     getMissingFiles: getMissingFilesApi,
@@ -55,14 +60,14 @@ jest.mock("../snClient", () => ({
   unwrapTableAPIFirstItem: jest.fn(),
 }));
 
-jest.mock("../PluginManager", () => ({
+jest.unstable_mockModule("../PluginManager.js", () => ({
   __esModule: true,
   default: {
     getFinalFileContents: jest.fn(async () => "built-content"),
   },
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   buildManifestFromTableAPI: (...args: unknown[]) => mockBuildManifestFromTableAPI(...args),
   buildBulkDownloadFromTableAPI: (...args: unknown[]) => mockBuildBulkDownloadFromTableAPI(...args),
   isScopedEndpointUnavailableError: (e: unknown) => {
@@ -83,7 +88,7 @@ describe("appUtils critical bugfixes", () => {
   });
 
   it("processManifest uses overwrite mode when forceWrite=true", async () => {
-    const { processManifest } = await import("../appUtils");
+    const { processManifest } = await import("../appUtils.js");
 
     const manifest = {
       scope: "x_test",
@@ -106,7 +111,7 @@ describe("appUtils critical bugfixes", () => {
   });
 
   it("processManifest uses non-overwrite mode when forceWrite=false", async () => {
-    const { processManifest } = await import("../appUtils");
+    const { processManifest } = await import("../appUtils.js");
 
     const manifest = {
       scope: "x_test",
@@ -142,7 +147,7 @@ describe("appUtils critical bugfixes", () => {
       return { data: { result: { tables: {} } } };
     });
 
-    const { syncManifest } = await import("../appUtils");
+    const { syncManifest } = await import("../appUtils.js");
 
     await syncManifest();
 
@@ -156,7 +161,7 @@ describe("appUtils critical bugfixes", () => {
     getManifestApi.mockRejectedValue({ response: { status: 404 } });
     getMissingFilesApi.mockResolvedValue({ data: { result: {} } });
 
-    const { syncManifest } = await import("../appUtils");
+    const { syncManifest } = await import("../appUtils.js");
     await syncManifest();
 
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
@@ -173,7 +178,7 @@ describe("appUtils critical bugfixes", () => {
     getManifestApi.mockRejectedValue({ response: { status: 400 } });
     getMissingFilesApi.mockResolvedValue({ data: { result: {} } });
 
-    const { syncManifest } = await import("../appUtils");
+    const { syncManifest } = await import("../appUtils.js");
     await syncManifest();
 
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
@@ -189,7 +194,7 @@ describe("appUtils critical bugfixes", () => {
     getMissingFilesApi.mockRejectedValue({ response: { status: 404 } });
     mockBuildBulkDownloadFromTableAPI.mockResolvedValue({});
 
-    const { processMissingFiles } = await import("../appUtils");
+    const { processMissingFiles } = await import("../appUtils.js");
     await processMissingFiles({ scope: "x_test", tables: {} } as unknown as SN.AppManifest);
 
     expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledWith(
@@ -212,7 +217,7 @@ describe("appUtils critical bugfixes", () => {
       return { status: 200, data: { result: {} } };
     });
 
-    const { pushFiles } = await import("../appUtils");
+    const { pushFiles } = await import("../appUtils.js");
     const records = Array.from({ length: 6 }, (_, index) => ({
       table: "sys_script",
       sysId: `id_${index}`,

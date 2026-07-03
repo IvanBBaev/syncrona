@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -12,7 +13,7 @@ const KEY_A = "a".repeat(64); // 32 bytes of 0xaa
 const KEY_B = "b".repeat(64); // 32 bytes of 0xbb
 
 function mockHomeOs(tempHome: string) {
-  jest.doMock("os", () => {
+  jest.unstable_mockModule("os", () => {
     const actual = jest.requireActual("os");
     return {
       ...actual,
@@ -26,7 +27,7 @@ function mockHomeOs(tempHome: string) {
 async function loadAuthWithHome(tempHome: string) {
   jest.resetModules();
   mockHomeOs(tempHome);
-  return import("../auth");
+  return import("../auth.js");
 }
 
 // A fake @napi-rs/keyring backed by an in-memory map keyed on service+account,
@@ -37,7 +38,11 @@ type FakeKeyringControls = { store: Map<string, string>; throwOnAccess?: boolean
 async function loadAuthWithKeychain(tempHome: string, controls: FakeKeyringControls) {
   jest.resetModules();
   mockHomeOs(tempHome);
-  jest.doMock(
+  // The built @syncro-now-ai/credential-store loads the native keyring via a
+  // CommonJS `require("@napi-rs/keyring")`, which jest.unstable_mockModule (an
+  // ESM-only mock) does not intercept. jest.mock, being the CJS-registry mock,
+  // does intercept that require — so it is the correct seam for this dependency.
+  jest.mock(
     "@napi-rs/keyring",
     () => ({
       Entry: class {
@@ -57,7 +62,7 @@ async function loadAuthWithKeychain(tempHome: string, controls: FakeKeyringContr
     }),
     { virtual: true }
   );
-  return import("../auth");
+  return import("../auth.js");
 }
 
 describe("at-rest key resolution (AR2)", () => {

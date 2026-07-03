@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncro-now-ai/types";
-import * as ConfigManager from "./config";
-import { logger } from "./Logger";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
 import fs from "fs";
 import path from "path";
 const fsp = fs.promises;

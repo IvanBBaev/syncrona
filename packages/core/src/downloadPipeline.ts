@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN } from "@syncro-now-ai/types";
 import path from "path";
-import * as fUtils from "./FileUtils";
-import * as ConfigManager from "./config";
-import { defaultClient, unwrapSNResponse } from "./snClient";
+import * as fUtils from "./FileUtils.js";
+import * as ConfigManager from "./config.js";
+import { defaultClient, unwrapSNResponse } from "./snClient.js";
 import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
   isScopedEndpointUnavailableError,
-} from "./manifestBuilder";
-import { logger } from "./Logger";
+} from "./manifestBuilder.js";
+import { logger } from "./Logger.js";
 import {
   DownloadCheckpoint,
   readDownloadCheckpoint,
   writeDownloadCheckpoint,
   deleteDownloadCheckpoint,
-} from "./downloadCheckpoint";
+} from "./downloadCheckpoint.js";
 
 const processFilesInManRec = async (
   // In folder mode this is the per-record directory; in flat mode it is the

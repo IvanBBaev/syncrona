@@ -6,8 +6,8 @@ import {
   splitEncodedPaths,
   summarizeFile,
   appendToPath,
-} from "../FileUtils";
-import { PATH_DELIMITER } from "../constants";
+} from "../FileUtils.js";
+import { PATH_DELIMITER } from "../constants.js";
 import type { Sync } from "@syncro-now-ai/types";
 
 describe("isUnderPath", () => {

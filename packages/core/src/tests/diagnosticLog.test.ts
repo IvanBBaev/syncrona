@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { isDiagnosticLogEnabled } from "../Logger";
+import { isDiagnosticLogEnabled } from "../Logger.js";
 
 export {};
 

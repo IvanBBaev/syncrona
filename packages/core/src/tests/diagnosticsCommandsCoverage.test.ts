@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // Covers the diagnostics command branches the other suites miss: the
@@ -44,7 +45,7 @@ const mockIsScopedUnavailable = jest.fn();
 const mockExecFileSync = jest.fn();
 const mockReadFileSync = jest.fn();
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: (...a: unknown[]) => mockLoggerInfo(...a),
     warn: (...a: unknown[]) => mockLoggerWarn(...a),
@@ -54,7 +55,7 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...a: unknown[]) => mockGetConfig(...a),
   checkConfigPath: (...a: unknown[]) => mockCheckConfigPath(...a),
   getSourcePath: (...a: unknown[]) => mockGetSourcePath(...a),
@@ -65,7 +66,7 @@ jest.mock("../config", () => ({
   getDefaultConfig: (...a: unknown[]) => mockGetDefaultConfig(...a),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   defaultClient: () => ({
     checkConnection: (...a: unknown[]) => mockCheckConnection(...a),
     getCurrentScope: (...a: unknown[]) => mockGetCurrentScope(...a),
@@ -76,29 +77,29 @@ jest.mock("../snClient", () => ({
   unwrapSNResponse: (...a: unknown[]) => mockUnwrapSNResponse(...a),
 }));
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   listInstances: (...a: unknown[]) => mockListInstances(...a),
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   isScopedEndpointUnavailableError: (...a: unknown[]) => mockIsScopedUnavailable(...a),
 }));
 
-jest.mock("../commandHelpers", () => ({
+jest.unstable_mockModule("../commandHelpers.js", () => ({
   setLogLevel: (...a: unknown[]) => mockSetLogLevel(...a),
   logScopedEndpointCapability: (...a: unknown[]) => mockLogScopedEndpointCapability(...a),
   activeStoreHealth: (...a: unknown[]) => mockActiveStoreHealth(...a),
   getActiveStoreDecryptWarning: (...a: unknown[]) => mockGetActiveStoreDecryptWarning(...a),
 }));
 
-jest.mock("child_process", () => ({
+jest.unstable_mockModule("child_process", () => ({
   execFileSync: (...a: unknown[]) => mockExecFileSync(...a),
 }));
 
 // The command imports readFileSync + promises from "fs". Keep the real promises
 // API (used for node_modules stat probes against a real temp dir) but let
 // readFileSync be a spyable mock for the detectWsl branch.
-jest.mock("fs", () => {
+jest.unstable_mockModule("fs", () => {
   const actual = jest.requireActual("fs");
   return {
     ...actual,
@@ -135,7 +136,7 @@ beforeEach(() => {
 
 describe("statusCommand", () => {
   it("reports ok and the resolved scope on a healthy connection", async () => {
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.ok).toBe(true);
     expect(summary.connectivityOk).toBe(true);
@@ -150,7 +151,7 @@ describe("statusCommand", () => {
   it("handles a config with no includes/excludes and no discovered config path (lines 48-49, 76)", async () => {
     mockGetConfig.mockReturnValue({});
     mockCheckConfigPath.mockReturnValue("");
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.includeRules).toBe(0);
     expect(summary.excludeRules).toBe(0);
@@ -159,7 +160,7 @@ describe("statusCommand", () => {
 
   it("falls back to <unknown> when the resolved scope is empty (line 113)", async () => {
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "" });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.scope).toBe("<unknown>");
   });
@@ -168,7 +169,7 @@ describe("statusCommand", () => {
     mockUnwrapSNResponse.mockRejectedValueOnce(new Error("404 not found"));
     mockIsScopedUnavailable.mockReturnValue(true);
     mockGetManifest.mockReturnValue({ scope: "" });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.scope).toBe("<unknown>");
   });
@@ -177,7 +178,7 @@ describe("statusCommand", () => {
     mockGetConfig.mockImplementation(() => {
       throw new Error("config unreadable");
     });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.includeRules).toBe(0);
     expect(summary.excludeRules).toBe(0);
@@ -188,7 +189,7 @@ describe("statusCommand", () => {
     // stray unhandled rejection that could bleed into a later test.
     mockUnwrapSNResponse.mockRejectedValueOnce(new Error("404 not found"));
     mockIsScopedUnavailable.mockReturnValue(true);
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.scope).toBe("x_manifest_scope");
     expect(summary.errors[0]).toContain("Scoped SyncroNow AI API is unavailable");
@@ -200,7 +201,7 @@ describe("statusCommand", () => {
   it("rethrows a non-scoped scope error and records it as a connection failure (line 122)", async () => {
     mockUnwrapSNResponse.mockRejectedValueOnce(new Error("boom deep in scope"));
     mockIsScopedUnavailable.mockReturnValue(false);
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     // connectivityOk was already set true before the scope lookup ran, so the
     // rethrow into the outer catch only appends an error — it does not reset it.
@@ -210,7 +211,7 @@ describe("statusCommand", () => {
 
   it("reports a bare connection-failure message when the error has no text", async () => {
     mockCheckConnection.mockRejectedValue(new Error("   "));
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.connectivityOk).toBe(false);
     expect(summary.errors).toContain("Unable to connect to ServiceNow instance.");
@@ -221,7 +222,7 @@ describe("statusCommand", () => {
     mockGetActiveStoreDecryptWarning.mockResolvedValue(
       'Active stored instance "old.service-now.com" failed to decrypt.'
     );
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.envReady).toBe(false);
     expect(summary.errors[0]).toContain("Missing environment variables");
@@ -244,7 +245,7 @@ describe("statusCommand", () => {
       active: "dev.service-now.com",
       decrypts: true,
     });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     await statusCommand({ logLevel: "info", debugCredentials: true } as never);
     expect(mockDiagnoseCredentials).toHaveBeenCalled();
     expect(mockLoggerInfo).toHaveBeenCalledWith("--- credential diagnostics ---");
@@ -275,7 +276,7 @@ describe("statusCommand", () => {
       decrypts: false,
       error: "unable to authenticate data",
     });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     await statusCommand({ logLevel: "info", debugCredentials: true } as never);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.stringContaining('Active stored instance "broken.service-now.com" FAILED to decrypt')
@@ -292,7 +293,7 @@ describe("statusCommand", () => {
     mockGetSourcePath.mockImplementation(() => {
       throw new Error("no source path");
     });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.sourcePath).toBe("<unresolved>");
     // The other getters still resolve normally.
@@ -308,7 +309,7 @@ describe("statusCommand", () => {
     });
     mockListInstances.mockResolvedValue([]);
     mockActiveStoreHealth.mockResolvedValue({ active: null, decrypts: false });
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     await statusCommand({ logLevel: "info", debugCredentials: true } as never);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Credential store: 0 instance(s), no active instance")
@@ -323,7 +324,7 @@ describe("statusCommand", () => {
       resolvedUser: "admin",
     });
     mockListInstances.mockRejectedValue(new Error("store on fire"));
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     await statusCommand({ logLevel: "info", debugCredentials: true } as never);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Credential store: unreadable (store on fire)")
@@ -339,7 +340,7 @@ describe("statusCommand", () => {
     });
     // A non-Error rejection exercises the String(e) branch of the catch.
     mockListInstances.mockRejectedValue("store locked");
-    const { statusCommand } = await import("../diagnosticsCommands");
+    const { statusCommand } = await import("../diagnosticsCommands.js");
     await statusCommand({ logLevel: "info", debugCredentials: true } as never);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Credential store: unreadable (store locked)")
@@ -349,7 +350,7 @@ describe("statusCommand", () => {
 
 describe("doctorCommand", () => {
   it("passes every check when config, paths, env and connectivity are healthy", async () => {
-    const { doctorCommand } = await import("../diagnosticsCommands");
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
     const result = await doctorCommand({ logLevel: "info" } as never);
     expect(result.ok).toBe(true);
     expect(result.checks.map((c) => c.name)).toEqual([
@@ -369,7 +370,7 @@ describe("doctorCommand", () => {
     mockGetBuildPath.mockImplementation(() => {
       throw new Error("no build");
     });
-    const { doctorCommand } = await import("../diagnosticsCommands");
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
     const result = await doctorCommand({ logLevel: "info" } as never);
     const source = result.checks.find((c) => c.name === "sourcePath");
     const build = result.checks.find((c) => c.name === "buildPath");
@@ -382,7 +383,7 @@ describe("doctorCommand", () => {
 
   it("marks connectivity failed when the connection check throws (line 296)", async () => {
     mockCheckConnection.mockRejectedValue(new Error("offline"));
-    const { doctorCommand } = await import("../diagnosticsCommands");
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
     const result = await doctorCommand({ logLevel: "info" } as never);
     const conn = result.checks.find((c) => c.name === "connectivity");
     expect(conn?.ok).toBe(false);
@@ -393,7 +394,7 @@ describe("doctorCommand", () => {
 
   it("skips connectivity and reports missing env vars when credentials are absent", async () => {
     mockResolveCredentials.mockReturnValue({ instance: "", user: "", password: "" });
-    const { doctorCommand } = await import("../diagnosticsCommands");
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
     const result = await doctorCommand({ logLevel: "info" } as never);
     const env = result.checks.find((c) => c.name === "env");
     const conn = result.checks.find((c) => c.name === "connectivity");
@@ -405,7 +406,7 @@ describe("doctorCommand", () => {
 
   it("marks configPath failed when no config is discovered", async () => {
     mockCheckConfigPath.mockReturnValue("");
-    const { doctorCommand } = await import("../diagnosticsCommands");
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
     const result = await doctorCommand({ logLevel: "info" } as never);
     const cfg = result.checks.find((c) => c.name === "configPath");
     expect(cfg?.ok).toBe(false);
@@ -424,7 +425,7 @@ describe("pluginsCommand", () => {
 
   it("reports zero plugins with a hint when no rules are configured", async () => {
     mockGetConfig.mockReturnValue({ rules: [] });
-    const { pluginsCommand } = await import("../diagnosticsCommands");
+    const { pluginsCommand } = await import("../diagnosticsCommands.js");
     const summary = await pluginsCommand({ logLevel: "info" } as never);
     expect(summary.totalRules).toBe(0);
     expect(summary.totalPlugins).toBe(0);
@@ -435,7 +436,7 @@ describe("pluginsCommand", () => {
     mockGetConfig.mockImplementation(() => {
       throw new Error("config broken");
     });
-    const { pluginsCommand } = await import("../diagnosticsCommands");
+    const { pluginsCommand } = await import("../diagnosticsCommands.js");
     const summary = await pluginsCommand({ logLevel: "info" } as never);
     expect(summary.totalRules).toBe(0);
     expect(summary.totalPlugins).toBe(0);
@@ -453,7 +454,7 @@ describe("pluginsCommand", () => {
         { plugins: "not-an-array" },
       ],
     });
-    const { pluginsCommand } = await import("../diagnosticsCommands");
+    const { pluginsCommand } = await import("../diagnosticsCommands.js");
     const summary = await pluginsCommand({ logLevel: "info" } as never);
     expect(summary.totalRules).toBe(3);
     expect(summary.totalPlugins).toBe(2);
@@ -474,7 +475,7 @@ describe("pluginsCommand", () => {
     mockGetConfig.mockReturnValue({
       rules: [{ plugins: [{ name: "some-uninstalled-plugin-xyz" }] }],
     });
-    const { pluginsCommand } = await import("../diagnosticsCommands");
+    const { pluginsCommand } = await import("../diagnosticsCommands.js");
     const summary = await pluginsCommand({ logLevel: "info" } as never);
     // Resolving against cwd/node_modules for a nonexistent package => not installed.
     expect(summary.plugins[0]).toEqual({
@@ -495,7 +496,7 @@ describe("configCommand", () => {
       includes: { table_a: {}, table_b: {} },
       excludes: { table_c: {} },
     });
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({ logLevel: "info", action: "show-defaults" } as never);
     expect(mockGetDefaultConfig).toHaveBeenCalled();
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("sourceDirectory: src"));
@@ -516,7 +517,7 @@ describe("configCommand", () => {
       pushConcurrency: 4,
       refreshInterval: 30,
     });
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({ logLevel: "info", action: "show-defaults" } as never);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("default include table rules: 0")
@@ -528,7 +529,7 @@ describe("configCommand", () => {
 
   it("treats a missing action as an unknown action (line 413)", async () => {
     const oldExit = process.exitCode;
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     // No action field at all -> String(undefined || "") === "" -> unknown action.
     await configCommand({ logLevel: "info" } as never);
     expect(mockLoggerError).toHaveBeenCalledWith(
@@ -540,7 +541,7 @@ describe("configCommand", () => {
 
   it("errors and sets a failing exit code for an unknown action", async () => {
     const oldExit = process.exitCode;
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({ logLevel: "info", action: "bogus" } as never);
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining('Unknown config action "bogus"')
@@ -557,7 +558,7 @@ describe("configCommand", () => {
     });
     mockGetRootDir.mockReturnValue(tmpRoot);
     try {
-      const { configCommand } = await import("../diagnosticsCommands");
+      const { configCommand } = await import("../diagnosticsCommands.js");
       await configCommand({ logLevel: "info", action: "add-plugin" } as never);
       // The listing line for the installed plugin carries the [installed] marker.
       const installedLine = mockLoggerInfo.mock.calls
@@ -570,7 +571,7 @@ describe("configCommand", () => {
   });
 
   it("lists available plugins and their install state when add-plugin has no --plugin", async () => {
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({ logLevel: "info", action: "add-plugin" } as never);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Available SyncroNow AI build plugins")
@@ -587,7 +588,7 @@ describe("configCommand", () => {
     const tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "syncrona-addplugin-"));
     mockGetRootDir.mockReturnValue(tmpRoot);
     try {
-      const { configCommand } = await import("../diagnosticsCommands");
+      const { configCommand } = await import("../diagnosticsCommands.js");
       await configCommand({ logLevel: "info", action: "add-plugin", plugin: "typescript" } as never);
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("@syncro-now-ai/typescript-plugin")
@@ -607,7 +608,7 @@ describe("configCommand", () => {
     });
     mockGetRootDir.mockReturnValue(tmpRoot);
     try {
-      const { configCommand } = await import("../diagnosticsCommands");
+      const { configCommand } = await import("../diagnosticsCommands.js");
       await configCommand({ logLevel: "info", action: "add-plugin", plugin: "typescript" } as never);
       expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Status: installed"));
     } finally {
@@ -621,7 +622,7 @@ describe("configCommand", () => {
     mockGetRootDir.mockImplementation(() => {
       throw new Error("no root dir");
     });
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({ logLevel: "info", action: "add-plugin", plugin: "typescript" } as never);
     // The plugin is not present under the test cwd's node_modules => "not installed".
     expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -632,7 +633,7 @@ describe("configCommand", () => {
 
   it("errors for an unknown plugin name in add-plugin", async () => {
     const oldExit = process.exitCode;
-    const { configCommand } = await import("../diagnosticsCommands");
+    const { configCommand } = await import("../diagnosticsCommands.js");
     await configCommand({
       logLevel: "info",
       action: "add-plugin",
@@ -658,7 +659,7 @@ describe("checkEnvCommand", () => {
     const oldExit = process.exitCode;
     process.exitCode = 0;
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
-    const { checkEnvCommand } = await import("../diagnosticsCommands");
+    const { checkEnvCommand } = await import("../diagnosticsCommands.js");
     const result = checkEnvCommand({ logLevel: "info" } as never);
     const node = result.checks.find((c) => c.name === "node");
     const git = result.checks.find((c) => c.name === "git");
@@ -684,7 +685,7 @@ describe("checkEnvCommand", () => {
     });
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const node = result.checks.find((c) => c.name === "node");
       expect(node?.ok).toBe(false);
@@ -704,7 +705,7 @@ describe("checkEnvCommand", () => {
     mockExecFileSync.mockImplementation(() => {
       throw new Error("ENOENT");
     });
-    const { checkEnvCommand } = await import("../diagnosticsCommands");
+    const { checkEnvCommand } = await import("../diagnosticsCommands.js");
     const result = checkEnvCommand({ logLevel: "info" } as never);
     const git = result.checks.find((c) => c.name === "git");
     expect(git?.ok).toBe(false);
@@ -726,7 +727,7 @@ describe("checkEnvCommand", () => {
     process.env.WSL_DISTRO_NAME = "Ubuntu-22.04";
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const platform = result.checks.find((c) => c.name === "platform");
       expect(platform?.ok).toBe(true);
@@ -744,7 +745,7 @@ describe("checkEnvCommand", () => {
     mockReadFileSync.mockReturnValue("Linux version 6.1.0 (gcc)");
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const platform = result.checks.find((c) => c.name === "platform");
       expect(platform?.ok).toBe(true);
@@ -761,7 +762,7 @@ describe("checkEnvCommand", () => {
     mockReadFileSync.mockReturnValue("Linux version 5.15.0-microsoft-standard-WSL2");
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const platform = result.checks.find((c) => c.name === "platform");
       expect(platform?.ok).toBe(true);
@@ -780,7 +781,7 @@ describe("checkEnvCommand", () => {
     });
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const platform = result.checks.find((c) => c.name === "platform");
       expect(platform?.details).toBe("Linux");
@@ -796,7 +797,7 @@ describe("checkEnvCommand", () => {
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
     try {
-      const { checkEnvCommand } = await import("../diagnosticsCommands");
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
       const result = checkEnvCommand({ logLevel: "info" } as never);
       const platform = result.checks.find((c) => c.name === "platform");
       expect(platform?.ok).toBe(false);

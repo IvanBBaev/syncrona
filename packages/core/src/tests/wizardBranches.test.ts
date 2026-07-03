@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // Covers the startWizard branches wizard.test.ts does not reach: the getAppList
@@ -37,21 +38,26 @@ const mockGenerateScopeDocs = jest.fn();
 
 const mockFsAccess = jest.fn();
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: { prompt: (...a: unknown[]) => mockPrompt(...a) },
 }));
 
-jest.mock("fs", () => ({
-  constants: { F_OK: 0 },
-  promises: {
+// fs is a CJS core module; spread the real surface and override only the
+// promises members these branch tests drive, so callers doing `import fs from
+// "fs"` (default) or a named import still link while disk writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     writeFile: jest.fn(async () => undefined),
     access: (...a: unknown[]) => mockFsAccess(...a),
     mkdir: jest.fn(async () => undefined),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getEnvPath: (...a: unknown[]) => mockGetEnvPath(...a),
   getManifest: (...a: unknown[]) => mockGetManifest(...a),
   getConfig: (...a: unknown[]) => mockGetConfig(...a),
@@ -61,27 +67,27 @@ jest.mock("../config", () => ({
   loadConfigs: (...a: unknown[]) => mockLoadConfigs(...a),
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...a: unknown[]) => mockProcessManifest(...a),
 }));
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   saveCredentials: (...a: unknown[]) => mockSaveCredentials(...a),
   setActiveInstance: (...a: unknown[]) => mockSetActiveInstance(...a),
   getActiveInstance: (...a: unknown[]) => mockGetActiveInstance(...a),
   resolveCredentialsFromStore: (...a: unknown[]) => mockResolveCredentialsFromStore(...a),
 }));
 
-jest.mock("../envFile", () => ({
+jest.unstable_mockModule("../envFile.js", () => ({
   writeDotEnv: (...a: unknown[]) => mockWriteDotEnv(...a),
   ensureGitignored: (...a: unknown[]) => mockEnsureGitignored(...a),
 }));
 
-jest.mock("../scopeDocs", () => ({
+jest.unstable_mockModule("../scopeDocs.js", () => ({
   generateScopeDocs: (...a: unknown[]) => mockGenerateScopeDocs(...a),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: (...a: unknown[]) => mockLoggerInfo(...a),
     success: (...a: unknown[]) => mockLoggerSuccess(...a),
@@ -94,7 +100,7 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   // #48: the wizard must download the scope with the SAME store-backed client it
   // used to LIST the apps (built from the just-saved credentials), not a fresh
   // defaultClient() that prefers ambient SN_* env vars. So getManifest now lives
@@ -112,7 +118,7 @@ jest.mock("../snClient", () => ({
   preloadStoredCredentials: jest.fn(async () => undefined),
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   buildManifestFromTableAPI: (...a: unknown[]) => mockBuildManifestFromTableAPI(...a),
   listAppsFromTableAPI: (...a: unknown[]) => mockListAppsFromTableAPI(...a),
   isScopedEndpointUnavailableError: (e: unknown) => {
@@ -187,7 +193,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce(oneFileManifest("x_demo")) // downloadApp getManifest
       .mockResolvedValueOnce({ scope: "x_demo" }); // doctor getCurrentScope
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockListAppsFromTableAPI).toHaveBeenCalled();
@@ -201,7 +207,7 @@ describe("startWizard branches", () => {
     mockUnwrapSNResponse.mockResolvedValueOnce([]); // getAppList -> empty
     mockListAppsFromTableAPI.mockResolvedValue([]); // still empty
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockProcessManifest).not.toHaveBeenCalled();
@@ -220,7 +226,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce(oneFileManifest("x_manual_app")) // downloadApp
       .mockResolvedValueOnce({ scope: "x_manual_app" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -236,7 +242,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockResolvedValueOnce({ scope: "x_existing" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockProcessManifest).not.toHaveBeenCalled();
@@ -253,7 +259,7 @@ describe("startWizard branches", () => {
     mockBuildManifestFromTableAPI.mockResolvedValueOnce(oneFileManifest("x_demo"));
     mockUnwrapSNResponse.mockResolvedValueOnce({ scope: "x_demo" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -270,7 +276,7 @@ describe("startWizard branches", () => {
     mockUnwrapSNResponse.mockResolvedValueOnce(oneFileManifest("x_demo")); // downloadApp getManifest
     mockProcessManifest.mockRejectedValueOnce(new Error("write to disk failed"));
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerError).toHaveBeenCalledWith("write to disk failed");
@@ -286,7 +292,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockRejectedValueOnce({ response: { status: 500 } }); // doctor getCurrentScope
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerError).toHaveBeenCalledWith(
@@ -302,7 +308,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockResolvedValueOnce({ scope: "x_existing" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
@@ -319,7 +325,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockResolvedValueOnce({ scope: "x_existing" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith("Generating config...");
@@ -331,7 +337,7 @@ describe("startWizard branches", () => {
     mockPrompt.mockResolvedValueOnce({ sourceDirectory: "src" });
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 500 } }); // getAppList
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockListAppsFromTableAPI).not.toHaveBeenCalled();
@@ -348,7 +354,7 @@ describe("startWizard branches", () => {
       { scope: "x_demo", displayName: "Demo" },
     ]); // getAppList
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockProcessManifest).not.toHaveBeenCalled();
@@ -358,7 +364,7 @@ describe("startWizard branches", () => {
   it("fails when the active profile is missing required credential fields", async () => {
     mockResolveCredentialsFromStore.mockResolvedValue({ instance: "dev123.service-now.com" });
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockSaveCredentials).not.toHaveBeenCalled();
@@ -375,7 +381,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockResolvedValueOnce({ scope: "x_existing" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockLoggerInfo).toHaveBeenCalledWith("Generating config...");
@@ -391,7 +397,7 @@ describe("startWizard branches", () => {
       .mockResolvedValueOnce([{ scope: "x_existing", displayName: "Existing" }]) // getAppList
       .mockResolvedValueOnce({ scope: "x_existing" }); // doctor
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockWriteDotEnv).toHaveBeenCalled();
@@ -405,7 +411,7 @@ describe("startWizard branches", () => {
     mockUnwrapSNResponse.mockResolvedValueOnce([{ scope: "x_demo", displayName: "Demo" }]); // getAppList
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 500 } }); // downloadApp getManifest (non-scoped)
 
-    const { startWizard } = await import("../wizard");
+    const { startWizard } = await import("../wizard.js");
     await startWizard();
 
     expect(mockBuildManifestFromTableAPI).not.toHaveBeenCalled();

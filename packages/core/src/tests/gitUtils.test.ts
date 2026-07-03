@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import path from "path";
 
 export {};
@@ -13,36 +14,41 @@ const mockGetSourcePath = jest.fn();
 const mockGetDiffPath = jest.fn();
 const mockEncodedPathsToFilePaths = jest.fn();
 
-jest.mock("child_process", () => ({
+jest.unstable_mockModule("child_process", () => ({
   execFile: (...args: unknown[]) => mockExecFile(...args),
 }));
 
-jest.mock("fs", () => ({
+jest.unstable_mockModule("fs", () => ({
   __esModule: true,
   default: { promises: { writeFile: (...args: unknown[]) => mockWriteFile(...args) } },
   promises: { writeFile: (...args: unknown[]) => mockWriteFile(...args) },
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getSourcePath: (...args: unknown[]) => mockGetSourcePath(...args),
   getDiffPath: (...args: unknown[]) => mockGetDiffPath(...args),
 }));
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   encodedPathsToFilePaths: (...args: unknown[]) => mockEncodedPathsToFilePaths(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: { info: jest.fn(), silly: jest.fn() },
 }));
 
-import { gitDiffToEncodedPaths, writeDiff } from "../gitUtils";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real config/FileUtils before the mocks take effect.
+let gitDiffToEncodedPaths: typeof import("../gitUtils.js").gitDiffToEncodedPaths;
+let writeDiff: typeof import("../gitUtils.js").writeDiff;
 
 describe("gitUtils", () => {
   let cwdSpy: jest.SpyInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    ({ gitDiffToEncodedPaths, writeDiff } = await import("../gitUtils.js"));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.

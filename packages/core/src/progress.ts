@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { formatDuration } from "./genericUtils";
+import { formatDuration } from "./genericUtils.js";
 
 // Exported for tests (progressTick.test.ts renders this with a faked TTY to lock
 // DEV-3: the format token must not start with a built-in progress token).

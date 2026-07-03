@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // DX2: `syncro-now-ai status` reports where credentials were resolved from.
 // describeCredentialSource must mirror resolveCredentials' precedence exactly
 // (they share one internal resolver), so these cover the env-driven branches.
 
-jest.mock("axios", () => ({
+jest.unstable_mockModule("axios", () => ({
   __esModule: true,
   default: { isAxiosError: () => false, create: jest.fn(() => ({})) },
 }));
-jest.mock("axios-rate-limit", () => ({
+jest.unstable_mockModule("axios-rate-limit", () => ({
   __esModule: true,
   default: (client: unknown) => client,
 }));
@@ -42,7 +43,7 @@ describe("describeCredentialSource (DX2)", () => {
   });
 
   async function describe_(profile?: string): Promise<string> {
-    const { describeCredentialSource } = await import("../snClient");
+    const { describeCredentialSource } = await import("../snClient.js");
     return describeCredentialSource(profile);
   }
 
@@ -66,7 +67,7 @@ describe("describeCredentialSource (DX2)", () => {
 
   // DX20: diagnoseCredentials backs `status --debug-credentials`.
   async function diagnose_(profile?: string) {
-    const { diagnoseCredentials } = await import("../snClient");
+    const { diagnoseCredentials } = await import("../snClient.js");
     return diagnoseCredentials(profile);
   }
 

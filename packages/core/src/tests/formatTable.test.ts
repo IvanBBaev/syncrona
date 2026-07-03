@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { formatTable } from "../genericUtils";
+import { formatTable } from "../genericUtils.js";
 
 export {};
 
