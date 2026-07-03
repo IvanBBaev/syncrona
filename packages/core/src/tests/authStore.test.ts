@@ -1,38 +1,46 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import path from "path";
 import os from "os";
 
-async function loadAuthWithHome(tempHome: string) {
+// The credential store lives in the compiled `@syncro-now-ai/credential-store`
+// package, which is CommonJS and reaches `os` through `require("os")`. A
+// `jest.unstable_mockModule("os", …)` factory only rewires the ESM import graph
+// and never reaches that CJS `require`, so the store would still resolve the
+// real home directory. Instead we spy on the shared `os` singleton (the same
+// object the CJS dependency requires), pinning `homedir`/`hostname`/`userInfo`
+// to deterministic values for the duration of each test.
+async function loadAuthWithHome() {
   jest.resetModules();
-  jest.doMock("os", () => {
-    const actual = jest.requireActual("os");
-    return {
-      ...actual,
-      homedir: () => tempHome,
-      hostname: () => "syncrona-test-host",
-      userInfo: () => ({ username: "syncrona-test-user" }),
-    };
-  });
-
-  return import("../auth");
+  return import("../auth.js");
 }
 
 describe("auth credential store", () => {
   let tempHome: string;
+  let homedirSpy: ReturnType<typeof jest.spyOn>;
+  let hostnameSpy: ReturnType<typeof jest.spyOn>;
+  let userInfoSpy: ReturnType<typeof jest.spyOn>;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-auth-store-"));
+    homedirSpy = jest.spyOn(os, "homedir").mockReturnValue(tempHome);
+    hostnameSpy = jest.spyOn(os, "hostname").mockReturnValue("syncrona-test-host");
+    userInfoSpy = jest
+      .spyOn(os, "userInfo")
+      .mockReturnValue({ username: "syncrona-test-user" } as ReturnType<typeof os.userInfo>);
   });
 
   afterEach(async () => {
-    jest.dontMock("os");
+    homedirSpy.mockRestore();
+    hostnameSpy.mockRestore();
+    userInfoSpy.mockRestore();
     jest.resetModules();
     await fs.promises.rm(tempHome, { recursive: true, force: true });
   });
 
   it("saves and loads encrypted credentials", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
 
     await auth.saveCredentials("dev123.service-now.com", "admin", "secret");
 
@@ -49,7 +57,7 @@ describe("auth credential store", () => {
   });
 
   it("lists, removes, and bulk-removes stored instances", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
 
     await auth.saveCredentials("dev.service-now.com", "user", "p1");
     await auth.saveCredentials("prod.service-now.com", "user", "p2");
@@ -68,7 +76,7 @@ describe("auth credential store", () => {
   });
 
   it("tracks active instance and resolves credentials from store", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
 
     await auth.saveCredentials("dev.service-now.com", "dev_user", "dev_pass");
     await auth.saveCredentials("prod.service-now.com", "prod_user", "prod_pass");
@@ -93,14 +101,14 @@ describe("auth credential store", () => {
   });
 
   it("returns null when resolving credentials with no active instance", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
 
     const creds = await auth.resolveCredentialsFromStore();
     expect(creds).toBeNull();
   });
 
   it("throws a helpful message for missing credentials", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
 
     await expect(auth.loadCredentials("missing.service-now.com")).rejects.toThrow(
       'No credentials found for "missing.service-now.com". Run: syncro-now-ai login missing.service-now.com'
@@ -108,7 +116,7 @@ describe("auth credential store", () => {
   });
 
   it("exposes the expected global SyncroNow AI directory", async () => {
-    const auth = await loadAuthWithHome(tempHome);
+    const auth = await loadAuthWithHome();
     expect(auth.getSyncronaDir()).toBe(path.join(tempHome, ".syncrona"));
   });
 });

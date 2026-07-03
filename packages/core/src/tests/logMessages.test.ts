@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import {
   logFilePush,
   logDeploy,
@@ -6,8 +7,8 @@ import {
   logBuildResults,
   scopeCheckMessage,
   devModeLog,
-} from "../logMessages";
-import { logger } from "../Logger";
+} from "../logMessages.js";
+import { logger } from "../Logger.js";
 
 // logMessages.ts is pure presentation: every function fans out to logger.* /
 // the internal winston logger with chalk-formatted text. We spy on those sinks

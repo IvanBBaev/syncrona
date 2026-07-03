@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -7,7 +8,7 @@ export {};
 
 const mockLoggerWarn = jest.fn();
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     info: jest.fn(),
@@ -28,7 +29,7 @@ describe("sync.config.js shape validation (G2)", () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-shape-"));
     fs.writeFileSync(path.join(project, "sync.config.js"), configSource);
     process.chdir(project);
-    const cfg = await import("../config");
+    const cfg = await import("../config.js");
     const store = cfg.createConfigStore();
     await store.loadConfigs();
     return store;

@@ -6,7 +6,7 @@
 //   - downloadPipeline:  manifest sync + missing-file discovery + resumable pull
 //   - pushPipeline:      grouping, building and pushing local files
 //   - scopeManagement:   scope swap, update-set assignment and scope checks
-export * from "./progress";
-export * from "./downloadPipeline";
-export * from "./pushPipeline";
-export * from "./scopeManagement";
+export * from "./progress.js";
+export * from "./downloadPipeline.js";
+export * from "./pushPipeline.js";
+export * from "./scopeManagement.js";

@@ -3,8 +3,8 @@ import {
   KNOWN_PLUGINS,
   findKnownPlugin,
   renderPluginRule,
-} from "../pluginCatalog";
-import { configCommand } from "../diagnosticsCommands";
+} from "../pluginCatalog.js";
+import { configCommand } from "../diagnosticsCommands.js";
 
 // DX8: `config add-plugin` helper. The catalog + resolution + snippet rendering
 // are pure and tested directly; the command branch is exercised for coverage.

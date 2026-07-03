@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -15,7 +16,7 @@ const getSourcePath = jest.fn();
 const getBuildPath = jest.fn(() => "/tmp/build");
 const getManifestPath = jest.fn();
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getManifest,
   getConfig,
   getSourcePath,
@@ -23,7 +24,7 @@ jest.mock("../config", () => ({
   getManifestPath,
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: jest.fn(),
     debug: jest.fn(),
@@ -82,7 +83,7 @@ afterAll(() => {
 describe("getFileContextFromPath — flat layout", () => {
   it("parses table, record and field from a flat path", async () => {
     getManifest.mockReturnValue(manifestFixture());
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
     const filePath = path.join(
       "/proj/src/sys_script_include",
       "Include A~script.js"
@@ -98,7 +99,7 @@ describe("getFileContextFromPath — flat layout", () => {
 
   it("uses the LAST separator so dotted record names round-trip", async () => {
     getManifest.mockReturnValue(manifestFixture());
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
     const filePath = path.join(
       "/proj/src/sys_script_include",
       "v1.2 helper~script.js"
@@ -111,7 +112,7 @@ describe("getFileContextFromPath — flat layout", () => {
 
   it("forces inputs.script as the target field for sys_atf_step", async () => {
     getManifest.mockReturnValue(manifestFixture());
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
     const filePath = path.join(
       "/proj/src/sys_atf_step",
       "Step One~inputs.script.js"
@@ -125,7 +126,7 @@ describe("getFileContextFromPath — flat layout", () => {
 
   it("still parses a classic folder-layout path (no regression)", async () => {
     getManifest.mockReturnValue(manifestFixture());
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
     const filePath = path.join(
       "/proj/src/sys_script_include/Include A",
       "script.js"
@@ -138,7 +139,7 @@ describe("getFileContextFromPath — flat layout", () => {
 
   it("returns undefined for a flat path that no manifest record claims", async () => {
     getManifest.mockReturnValue(manifestFixture());
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
     const ctx = getFileContextFromPath(
       path.join("/proj/src/sys_script_include", "Ghost~script.js")
     );
@@ -148,7 +149,7 @@ describe("getFileContextFromPath — flat layout", () => {
 
 describe("writeFlatSNFileCurry", () => {
   it("writes a single <record>~<field>.<ext> file under the table dir", async () => {
-    const { writeFlatSNFileCurry } = await import("../FileUtils");
+    const { writeFlatSNFileCurry } = await import("../FileUtils.js");
     const tableDir = path.join(TMP_ROOT, "writecurry", "sys_script_include");
     fs.mkdirSync(tableDir, { recursive: true });
     await writeFlatSNFileCurry(false)(
@@ -171,8 +172,8 @@ describe("processManifest — flat pull round-trip", () => {
     getManifest.mockReturnValue(readManifest);
     const srcPath = getSourcePath();
 
-    const { processManifest } = await import("../appUtils");
-    const { getFileContextFromPath } = await import("../FileUtils");
+    const { processManifest } = await import("../appUtils.js");
+    const { getFileContextFromPath } = await import("../FileUtils.js");
 
     // processManifest mutates file.content, so feed it a deep clone.
     await processManifest(
@@ -231,7 +232,7 @@ describe("processManifest — flat pull round-trip", () => {
     getSourcePath.mockReturnValue(folderRoot);
     getManifestPath.mockReturnValue(path.join(TMP_ROOT, "folder-manifest.json"));
 
-    const { processManifest } = await import("../appUtils");
+    const { processManifest } = await import("../appUtils.js");
     await processManifest(manifestFixture(), true);
 
     const folderFile = path.join(

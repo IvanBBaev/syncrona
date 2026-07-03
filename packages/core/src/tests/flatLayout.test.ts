@@ -4,7 +4,7 @@ import {
   folderRelToFlat,
   flatRelToFolder,
   isFlatEncoded,
-} from "../flatLayout";
+} from "../flatLayout.js";
 
 const p = (...segs: string[]) => segs.join(path.sep);
 

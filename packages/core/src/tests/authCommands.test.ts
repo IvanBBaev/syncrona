@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockSaveCredentials = jest.fn();
@@ -20,15 +21,22 @@ const mockFsStat = jest.fn();
 const mockFsWriteFile = jest.fn();
 const mockFsMkdir = jest.fn();
 
-jest.mock("fs", () => ({
-  promises: {
+// fs is a CommonJS core module, so requireActual loads it synchronously (unlike
+// an ESM source module). Spread the real surface and override only promises so
+// callers doing `import fs from "fs"` (default) or `import { readFileSync }`
+// (named) still link, while filesystem writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     stat: (...args: unknown[]) => mockFsStat(...args),
     writeFile: (...args: unknown[]) => mockFsWriteFile(...args),
     mkdir: (...args: unknown[]) => mockFsMkdir(...args),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   saveCredentials: (...args: unknown[]) => mockSaveCredentials(...args),
   loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
   listInstances: (...args: unknown[]) => mockListInstances(...args),
@@ -38,7 +46,8 @@ jest.mock("../auth", () => ({
   getActiveInstance: (...args: unknown[]) => mockGetActiveInstance(...args),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  getScopedEndpointPrefix: jest.fn(),
   defaultClient: jest.fn(() => ({ checkConnection: mockCheckConnection })),
   resolveCredentials: jest.fn(() => ({ instance: "", user: "", password: "" })),
   setActiveInstanceProfile: jest.fn(),
@@ -48,7 +57,7 @@ jest.mock("../snClient", () => ({
   snClient: jest.fn(() => ({ checkConnection: mockCheckConnection })),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: jest.fn(),
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -61,7 +70,7 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   loadConfigs: jest.fn(),
   getConfig: jest.fn(() => ({})),
   getDefaultConfigFile: jest.fn(() => "module.exports = { sourceDirectory: 'src' };"),
@@ -76,36 +85,43 @@ jest.mock("../config", () => ({
   updateManifest: jest.fn(),
 }));
 
-jest.mock("../Watcher", () => ({ startWatching: jest.fn() }));
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../Watcher.js", () => ({ startWatching: jest.fn() }));
+jest.unstable_mockModule("../appUtils.js", () => ({
   checkScope: jest.fn(),
   getAppFileList: jest.fn(),
   pushFiles: jest.fn(),
   buildFiles: jest.fn(),
   syncManifest: jest.fn(),
 }));
-jest.mock("../gitUtils", () => ({ gitDiffToEncodedPaths: jest.fn() }));
-jest.mock("../FileUtils", () => ({ encodedPathsToFilePaths: jest.fn() }));
-jest.mock("../wizard", () => ({ startWizard: jest.fn() }));
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../gitUtils.js", () => ({ gitDiffToEncodedPaths: jest.fn() }));
+jest.unstable_mockModule("../FileUtils.js", () => ({ encodedPathsToFilePaths: jest.fn() }));
+jest.unstable_mockModule("../wizard.js", () => ({ startWizard: jest.fn() }));
+jest.unstable_mockModule("../logMessages.js", () => ({
   scopeCheckMessage: jest.fn(),
   devModeLog: jest.fn(),
   logPushResults: jest.fn(),
   logBuildResults: jest.fn(),
 }));
-jest.mock("inquirer", () => ({ prompt: (...args: unknown[]) => mockPrompt(...args) }));
+jest.unstable_mockModule("inquirer", () => ({
+  __esModule: true,
+  default: { prompt: (...args: unknown[]) => mockPrompt(...args) },
+}));
 
-import {
-  loginCommand,
-  logoutCommand,
-  instancesCommand,
-  useCommand,
-} from "../authCommands";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real dependencies before the mocks take effect.
+let loginCommand: typeof import("../authCommands.js").loginCommand;
+let logoutCommand: typeof import("../authCommands.js").logoutCommand;
+let instancesCommand: typeof import("../authCommands.js").instancesCommand;
+let useCommand: typeof import("../authCommands.js").useCommand;
 
 const BASE_ARGS = { logLevel: "info", dryRun: false };
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
+  ({ loginCommand, logoutCommand, instancesCommand, useCommand } = await import(
+    "../authCommands.js"
+  ));
   mockPreloadStoredCredentials.mockResolvedValue(undefined);
   mockSetActiveInstance.mockResolvedValue(undefined);
   mockGetActiveInstance.mockResolvedValue(null);

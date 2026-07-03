@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 const mockSetLogLevel = jest.fn();
@@ -13,11 +14,11 @@ const mockGetAppListApi = jest.fn();
 const mockGetManifestApi = jest.fn();
 const mockPrompt = jest.fn();
 
-jest.mock("../Watcher", () => ({
+jest.unstable_mockModule("../Watcher.js", () => ({
   startWatching: jest.fn(),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
     info: jest.fn(),
@@ -27,30 +28,32 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...args: unknown[]) => mockProcessManifest(...args),
   downloadAllFiles: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
   getDefaultConfigFile: (...args: unknown[]) => mockDefaultConfigFile(...args),
   resetConfigState: jest.fn(),
   loadConfigs: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../wizard", () => ({
+jest.unstable_mockModule("../wizard.js", () => ({
   startWizard: (...args: unknown[]) => mockStartWizard(...args),
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   isScopedEndpointUnavailableError: () => false,
   buildManifestFromTableAPI: jest.fn(),
   buildBulkDownloadFromTableAPI: jest.fn(),
   listAppsFromTableAPI: jest.fn(),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  describeCredentialSource: jest.fn(),
+  diagnoseCredentials: jest.fn(),
   defaultClient: () => ({
     getAppList: (...args: unknown[]) => mockGetAppListApi(...args),
     getManifest: (...args: unknown[]) => mockGetManifestApi(...args),
@@ -63,22 +66,28 @@ jest.mock("../snClient", () => ({
   unwrapSNResponse: async (p: Promise<{ data: { result: unknown } }>) => (await p).data.result,
 }));
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
     prompt: (...args: unknown[]) => mockPrompt(...args),
   },
 }));
 
-jest.mock("fs", () => ({
-  promises: {
+// fs is a CJS core module; spread the real surface and override only the
+// promises members the init flow drives, so callers doing `import fs from "fs"`
+// (default) or a named import still link while disk writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     stat: (...args: unknown[]) => mockStat(...args),
     mkdir: (...args: unknown[]) => mockMkdir(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     readFile: jest.fn(),
     unlink: jest.fn(),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
 describe("initCommand auto scope flow", () => {
   const oldCwd = process.cwd;
@@ -139,7 +148,7 @@ describe("initCommand auto scope flow", () => {
   });
 
   it("initializes all x_* scopes when .env exists", async () => {
-    const { initCommand } = await import("../commands");
+    const { initCommand } = await import("../commands.js");
 
     await initCommand({ logLevel: "info", ci: true });
 
@@ -161,7 +170,7 @@ describe("initCommand auto scope flow", () => {
 
   it("cancels auto-init when the confirmation prompt is declined (DX4)", async () => {
     mockPrompt.mockResolvedValueOnce({ confirmed: false });
-    const { initCommand } = await import("../commands");
+    const { initCommand } = await import("../commands.js");
 
     await initCommand({ logLevel: "info" }); // no --ci → prompts
 
@@ -172,7 +181,7 @@ describe("initCommand auto scope flow", () => {
   });
 
   it("dry-run reports the plan without creating or downloading (DX4)", async () => {
-    const { initCommand } = await import("../commands");
+    const { initCommand } = await import("../commands.js");
 
     await initCommand({ logLevel: "info", dryRun: true });
 

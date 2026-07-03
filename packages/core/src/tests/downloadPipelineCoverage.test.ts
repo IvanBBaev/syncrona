@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { SN } from "@syncro-now-ai/types";
 
 // Coverage for downloadPipeline paths the sibling suites leave untouched:
@@ -40,7 +41,7 @@ const loggerError = jest.fn();
 const loggerInfo = jest.fn();
 const loggerDebug = jest.fn();
 
-jest.mock("../FileUtils", () => ({
+jest.unstable_mockModule("../FileUtils.js", () => ({
   createDirRecursively,
   writeSNFileCurry,
   writeFlatSNFileCurry,
@@ -51,7 +52,7 @@ jest.mock("../FileUtils", () => ({
   appendToPath: (prefix: string) => (suffix: string) => `${prefix}/${suffix}`,
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getSourcePath,
   getManifestPath,
   getConfig,
@@ -59,7 +60,14 @@ jest.mock("../config", () => ({
   getManifest,
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
+  getErrorResponseStatus: jest.fn(),
+  isRetryableRequestError: jest.fn(),
+  processPushResponse: jest.fn(),
+  retryOnErr: jest.fn(),
+  SNClient: jest.fn(),
+  unwrapTableAPIFirstItem: jest.fn(),
+  unwrapTableAPIFirstItemOrEmpty: jest.fn(),
   defaultClient: () => ({
     getManifest: getManifestApi,
     getMissingFiles: getMissingFilesApi,
@@ -68,7 +76,7 @@ jest.mock("../snClient", () => ({
     (await p).data.result,
 }));
 
-jest.mock("../manifestBuilder", () => ({
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
   buildManifestFromTableAPI: (...args: unknown[]) =>
     mockBuildManifestFromTableAPI(...args),
   buildBulkDownloadFromTableAPI: (...args: unknown[]) =>
@@ -81,13 +89,14 @@ jest.mock("../manifestBuilder", () => ({
   },
 }));
 
-jest.mock("../downloadCheckpoint", () => ({
+jest.unstable_mockModule("../downloadCheckpoint.js", () => ({
+  DownloadCheckpoint: jest.fn(),
   readDownloadCheckpoint: jest.fn(async () => null),
   writeDownloadCheckpoint: jest.fn(async () => undefined),
   deleteDownloadCheckpoint: jest.fn(async () => undefined),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: (...a: unknown[]) => loggerInfo(...a),
     debug: (...a: unknown[]) => loggerDebug(...a),
@@ -146,7 +155,7 @@ describe("syncManifest error handling", () => {
     // catch turns that into a false return.
     getManifestApi.mockRejectedValue({ response: { status: 500 } });
 
-    const { syncManifest } = await import("../appUtils");
+    const { syncManifest } = await import("../appUtils.js");
     const result = await syncManifest();
 
     expect(result).toBe(false);
@@ -160,7 +169,7 @@ describe("syncManifest error handling", () => {
     // is not an instanceof Error.
     getManifest.mockRejectedValue("plain string failure");
 
-    const { syncManifest } = await import("../appUtils");
+    const { syncManifest } = await import("../appUtils.js");
     const result = await syncManifest();
 
     expect(result).toBe(false);
@@ -175,7 +184,7 @@ describe("findMissingFiles discovery chain", () => {
     // markFileMissing for all files (lines 189-190, 179-180, 161-169, 248-253).
     pathExists.mockImplementation(async () => false);
 
-    const { findMissingFiles } = await import("../appUtils");
+    const { findMissingFiles } = await import("../appUtils.js");
     const missing = await findMissingFiles(makeManifest());
 
     // Both tables, every record and every file are reported missing.
@@ -195,7 +204,7 @@ describe("findMissingFiles discovery chain", () => {
     // Inside recB every file is present, so nothing is marked there.
     SNFileExists.mockImplementation(() => async () => true);
 
-    const { findMissingFiles } = await import("../appUtils");
+    const { findMissingFiles } = await import("../appUtils.js");
     const missing = await findMissingFiles(makeManifest());
 
     // Only recA (folder gone) contributes; recB and page1 are fully present.
@@ -215,7 +224,7 @@ describe("findMissingFiles discovery chain", () => {
       () => async (file: SN.File) => file.name !== "doc"
     );
 
-    const { findMissingFiles } = await import("../appUtils");
+    const { findMissingFiles } = await import("../appUtils.js");
     const missing = await findMissingFiles(makeManifest());
 
     // Only recA's "doc" file is missing; its "script" sibling is present.
@@ -228,7 +237,7 @@ describe("findMissingFiles discovery chain", () => {
     pathExists.mockImplementation(async () => true);
     SNFileExists.mockImplementation(() => async () => true);
 
-    const { findMissingFiles } = await import("../appUtils");
+    const { findMissingFiles } = await import("../appUtils.js");
     const missing = await findMissingFiles(makeManifest());
 
     expect(missing).toEqual({});
@@ -245,7 +254,7 @@ describe("processMissingFiles", () => {
     // an empty map keeps the write step a no-op.
     getMissingFilesApi.mockResolvedValue({ data: { result: {} } });
 
-    const { processMissingFiles } = await import("../appUtils");
+    const { processMissingFiles } = await import("../appUtils.js");
     await processMissingFiles(makeManifest());
 
     expect(getMissingFilesApi).toHaveBeenCalledTimes(1);
@@ -262,7 +271,7 @@ describe("processMissingFiles", () => {
     // back to the Table API.
     getMissingFilesApi.mockRejectedValue({ response: { status: 500 } });
 
-    const { processMissingFiles } = await import("../appUtils");
+    const { processMissingFiles } = await import("../appUtils.js");
     await expect(processMissingFiles(makeManifest())).rejects.toEqual({
       response: { status: 500 },
     });
@@ -277,7 +286,7 @@ describe("downloadAllFiles fetchTable error handling", () => {
     // fetchTable re-throws (line 418) and the run rejects.
     getMissingFilesApi.mockRejectedValue({ response: { status: 500 } });
 
-    const { downloadAllFiles } = await import("../appUtils");
+    const { downloadAllFiles } = await import("../appUtils.js");
     await expect(downloadAllFiles(makeManifest())).rejects.toEqual({
       response: { status: 500 },
     });

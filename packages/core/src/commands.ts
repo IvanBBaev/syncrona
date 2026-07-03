@@ -2,42 +2,42 @@
 import { Sync } from "@syncro-now-ai/types";
 import { promises as fsp } from "fs";
 import path from "path";
-import * as ConfigManager from "./config";
-import * as AppUtils from "./appUtils";
-import { startWizard } from "./wizard";
-import { logger } from "./Logger";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
+import { startWizard } from "./wizard.js";
+import { logger } from "./Logger.js";
 import {
   logPushResults,
   logBuildResults,
-} from "./logMessages";
+} from "./logMessages.js";
 import {
   defaultClient,
   resolveCredentials,
   unwrapSNResponse,
-} from "./snClient";
+} from "./snClient.js";
 import inquirer from "inquirer";
-import { gitDiffToEncodedPaths } from "./gitUtils";
-import { encodedPathsToFilePaths } from "./FileUtils";
+import { gitDiffToEncodedPaths } from "./gitUtils.js";
+import { encodedPathsToFilePaths } from "./FileUtils.js";
 import {
   isScopedEndpointUnavailableError,
   buildManifestFromTableAPI,
   listAppsFromTableAPI,
-} from "./manifestBuilder";
-import { generateScopeDocs } from "./scopeDocs";
+} from "./manifestBuilder.js";
+import { generateScopeDocs } from "./scopeDocs.js";
 import {
   LOGIN_DEFAULT_SOURCE_DIRECTORY,
   setLogLevel,
   scopeCheck,
   logScopedEndpointCapability,
   logErrorHint,
-} from "./commandHelpers";
-import { mcpCommand } from "./mcpCommand";
+} from "./commandHelpers.js";
+import { mcpCommand } from "./mcpCommand.js";
 
 // Re-export extracted command modules so consumers can import the full command
 // surface from "./commands" (barrel) in addition to the dedicated modules.
-export { pushCommand } from "./pushCommand";
-export { statusCommand, doctorCommand, pluginsCommand } from "./diagnosticsCommands";
-export { mcpCommand } from "./mcpCommand";
+export { pushCommand } from "./pushCommand.js";
+export { statusCommand, doctorCommand, pluginsCommand } from "./diagnosticsCommands.js";
+export { mcpCommand } from "./mcpCommand.js";
 
 async function localPathExists(targetPath: string): Promise<boolean> {
   try {

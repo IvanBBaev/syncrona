@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { readdirSync, readFileSync, existsSync } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // QA guard for the GPL relicense (BA8): the MIT->GPL-3.0 relicense silently
 // drifted (Homebrew formula, docs site, package-lock all kept MIT) because

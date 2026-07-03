@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 export {};
 
 // Closes the pushCommand.ts branches the flow/lock suites leave uncovered:
@@ -40,18 +41,18 @@ const mockGetRootDir = jest.fn();
 const mockGetActiveInstance = jest.fn();
 const mockLoadCredentials = jest.fn();
 
-jest.mock("../appUtils", () => ({
+jest.unstable_mockModule("../appUtils.js", () => ({
   checkScope: (...args: unknown[]) => mockCheckScope(...args),
   getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
   createAndAssignUpdateSet: (...args: unknown[]) => mockCreateAndAssignUpdateSet(...args),
 }));
 
-jest.mock("../gitUtils", () => ({
+jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
 }));
 
-jest.mock("../Logger", () => ({
+jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: jest.fn(),
     info: (...args: unknown[]) => mockLoggerInfo(...args),
@@ -64,12 +65,12 @@ jest.mock("../Logger", () => ({
   },
 }));
 
-jest.mock("../logMessages", () => ({
+jest.unstable_mockModule("../logMessages.js", () => ({
   scopeCheckMessage: jest.fn(),
   logPushResults: (...args: unknown[]) => mockLogPushResults(...args),
 }));
 
-jest.mock("../snClient", () => ({
+jest.unstable_mockModule("../snClient.js", () => ({
   defaultClient: () => ({
     checkConnection: (...args: unknown[]) => mockCheckConnection(...args),
   }),
@@ -78,31 +79,47 @@ jest.mock("../snClient", () => ({
   setActiveInstanceProfile: (...args: unknown[]) => mockSetActiveInstanceProfile(...args),
 }));
 
-jest.mock("../auth", () => ({
+jest.unstable_mockModule("../auth.js", () => ({
   getActiveInstance: (...args: unknown[]) => mockGetActiveInstance(...args),
   loadCredentials: (...args: unknown[]) => mockLoadCredentials(...args),
 }));
 
-jest.mock("../config", () => ({
+jest.unstable_mockModule("../config.js", () => ({
   getRootDir: (...args: unknown[]) => mockGetRootDir(...args),
 }));
 
-jest.mock("fs", () => ({
-  promises: {
+// fs is a CommonJS core module, so requireActual loads it synchronously. Spread
+// the real surface (some graph modules do `import fs from "fs"` / named imports
+// like `readFileSync`) and override only the promises used by the SUT so every
+// ENOENT/EEXIST/EACCES branch is deterministic and no write leaves the process.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
     readFile: (...args: unknown[]) => mockReadFile(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
-  },
-}));
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
 
-jest.mock("inquirer", () => ({
+jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
     prompt: (...args: unknown[]) => mockPrompt(...args),
   },
 }));
 
-import { pushCommand, __lockInternals } from "../pushCommand";
+// The SUT is imported dynamically AFTER the module mocks are registered:
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// real appUtils/config (which run real code and throw "Error getting manifest")
+// before the mocks take effect.
+let pushCommand: typeof import("../pushCommand.js").pushCommand;
+let __lockInternals: typeof import("../pushCommand.js").__lockInternals;
+
+beforeAll(async () => {
+  ({ pushCommand, __lockInternals } = await import("../pushCommand.js"));
+});
 
 const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });
 const eexist = () => Object.assign(new Error("exists"), { code: "EEXIST" });

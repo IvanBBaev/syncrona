@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -16,7 +17,7 @@ import {
   UPDATE_CHECK_INTERVAL_MS,
   writeUpdateCache,
   type UpdateCache,
-} from "../updateNotifier";
+} from "../updateNotifier.js";
 
 describe("updateNotifier pure helpers", () => {
   describe("parseSemver", () => {

@@ -1,15 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import * as AppUtils from "../appUtils";
-import { scopeCheck, resolveInstanceProfile } from "../commandHelpers";
+import { jest } from "@jest/globals";
 
-jest.mock("../appUtils");
-jest.mock("../logMessages", () => ({
+// R5: the bare `jest.unstable_mockModule("../appUtils.js")` automock has no
+// factory under ESM. Provide one; graph-complete fills in the exact named
+// exports the commandHelpers graph hard-links from appUtils.
+jest.unstable_mockModule("../appUtils.js", () => ({
+  checkScope: jest.fn(),
+}));
+jest.unstable_mockModule("../logMessages.js", () => ({
   scopeCheckMessage: jest.fn(),
 }));
 
-const checkScopeMock = AppUtils.checkScope as jest.MockedFunction<
-  typeof AppUtils.checkScope
->;
+// R1: the mock does not hoist, so both the mocked appUtils namespace and the SUT
+// are imported dynamically after the mock registers.
+let AppUtils: typeof import("../appUtils.js");
+let scopeCheck: typeof import("../commandHelpers.js").scopeCheck;
+let resolveInstanceProfile: typeof import("../commandHelpers.js").resolveInstanceProfile;
+let checkScopeMock: jest.MockedFunction<typeof AppUtils.checkScope>;
+
+beforeAll(async () => {
+  AppUtils = await import("../appUtils.js");
+  ({ scopeCheck, resolveInstanceProfile } = await import("../commandHelpers.js"));
+  checkScopeMock = AppUtils.checkScope as jest.MockedFunction<
+    typeof AppUtils.checkScope
+  >;
+});
 
 describe("scopeCheck", () => {
   beforeEach(() => {

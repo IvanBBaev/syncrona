@@ -1,17 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { getPathsInPath } from "../FileUtils";
-import * as ConfigManager from "../config";
 
-jest.mock("../config", () => {
-  const actual = jest.requireActual("../config");
-  return {
-    ...actual,
-    getSourcePath: jest.fn(),
-    getBuildPath: jest.fn(),
-  };
+// R7: spreading the real ../config.js ESM module throws under this Node, so the
+// factory lists only the explicit path helpers the SUT hard-links. graph-complete
+// fills in any other config name the FileUtils graph links.
+jest.unstable_mockModule("../config.js", () => ({
+  getSourcePath: jest.fn(),
+  getBuildPath: jest.fn(),
+}));
+
+// R1: jest.unstable_mockModule does not hoist, so the SUT and the mocked config
+// namespace are imported dynamically in beforeAll, after the mock registers.
+let getPathsInPath: typeof import("../FileUtils.js").getPathsInPath;
+let ConfigManager: typeof import("../config.js");
+
+beforeAll(async () => {
+  ({ getPathsInPath } = await import("../FileUtils.js"));
+  ConfigManager = await import("../config.js");
 });
 
 describe("getPathsInPath depth guard", () => {
