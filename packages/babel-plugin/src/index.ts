@@ -4,7 +4,7 @@ import * as babel from "@babel/core";
 export async function run(
   context: Sync.FileContext,
   content: string,
-  options: babel.TransformOptions
+  options: babel.InputOptions
 ): Promise<Sync.PluginResults> {
   let output = "";
   options = Object.assign(options, {
