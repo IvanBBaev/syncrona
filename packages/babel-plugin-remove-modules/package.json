@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/babel-plugin-remove-modules",
   "version": "0.9.0",
-  "description": "Babel plugin that removes imports and exports from code",
+  "description": "Babel plugin for SyncroNow AI that strips ES import/export statements, letting ServiceNow source files reference each other without a module loader.",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"
@@ -29,5 +29,6 @@
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/babel-plugin-remove-modules"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

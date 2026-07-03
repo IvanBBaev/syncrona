@@ -1,7 +1,7 @@
 {
   "name": "syncrona",
   "version": "0.9.0",
-  "description": "Next-gen file syncer",
+  "description": "SyncroNow AI — next-gen CLI to sync ServiceNow scoped applications to local files.",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "main": "./dist/index.js",
@@ -54,5 +54,6 @@
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/core"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

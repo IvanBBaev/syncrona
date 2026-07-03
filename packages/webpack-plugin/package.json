@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/webpack-plugin",
   "version": "0.9.0",
-  "description": "Webpack plugin for SyncroNow AI",
+  "description": "SyncroNow AI build plugin that bundles files with Webpack in the ServiceNow sync pipeline (honors webpack.config.js and sync.config.js).",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"
@@ -30,5 +30,6 @@
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/webpack-plugin"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/sass-plugin",
   "version": "0.9.0",
-  "description": "SASS plugin for SyncroNow AI",
+  "description": "SyncroNow AI build plugin that compiles Sass/SCSS to CSS in the ServiceNow sync pipeline.",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"
@@ -29,5 +29,6 @@
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/sass-plugin"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }

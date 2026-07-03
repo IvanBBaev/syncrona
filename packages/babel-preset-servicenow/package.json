@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/babel-preset-servicenow",
   "version": "0.9.0",
-  "description": "ServiceNow Sanitizer Plugin",
+  "description": "Babel preset for ServiceNow scoped apps (SyncroNow AI).",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc"
@@ -30,5 +30,6 @@
     "url": "git+https://github.com/IvanBBaev/syncrona.git",
     "directory": "packages/babel-preset-servicenow"
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
 }
