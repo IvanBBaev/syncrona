@@ -199,6 +199,9 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
   - Wrapper tools for common SyncroNow workspace command flows
 - `run_node_code`
   - Executes local Node snippets with explicit safety controls for destructive operations
+- `run_workspace_command`
+  - Runs a local command (for example `node`, `npm`, `npx`) in the workspace for automation tasks, with a bounded `timeoutMs`
+  - Blocks unsafe shell-interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk; potentially destructive commands (deploy/download) require `confirmDestructive: true`
 - `sn_render_analysis_markdown`
   - Renders unified analysis report into deterministic markdown
 - `sync_unified_change_workflow`

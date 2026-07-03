@@ -1,6 +1,6 @@
 # SyncroNow AI — Product State
 
-> Last updated: 2026-06-21. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Last updated: 2026-07-03. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
 
 ## TL;DR
@@ -8,10 +8,10 @@
 | | |
 |---|---|
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
-| CLI | 16 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
-| MCP server | ~60 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | **381 green** — core: 33 suites / 206 tests (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: 175 tests (node:test vs dist) |
-| Coverage | core **70.3%** lines / mcp **82.7%** lines (≈75–77% combined) — see [Metrics snapshot](#metrics-snapshot-2026-06-12) |
+| CLI | 22 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
+| MCP server | 61 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
+| Tests | core: **72 suites / 668 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: node:test suite (vs dist); shared packages (jira / credential-store / sn-transport): jest, all gated |
+| Coverage | core **95.5%** lines (re-measured 2026-07-03) / mcp **82.7%** lines — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
 | Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**private**) |
 | Biggest gaps | distribution (Homebrew/Windows), live-instance compatibility matrix, DX backlog (DX1–DX24); **owner-gated** publish decisions (IP/provenance, brand, npm scope) |
@@ -56,7 +56,7 @@ timeline
 | C — Architecture | decomposition, typed CLI, config reload | ✅ closed (2026-06-10) |
 | D — Feature completion | ATF generation, instance diff, logging, **distribution** | 🟡 D1–D4 done; **D5 distribution open** |
 | AR — Architecture review 2026-06-11 | 12 findings | 🟡 10 closed; AR1/AR2/AR9/AR11 residuals |
-| CR — Deep review 2026-06-12 | 30 findings (senior/architect/QA) | 🟡 26 closed; CR1/CR2/CR22/CR26 residuals |
+| CR — Deep review 2026-06-12 | 30 findings (senior/architect/QA) | 🟡 27 closed; CR1/CR2/CR26 residuals |
 | Modularization 2026-06-12 | registry-driven CLI commands + MCP tool modules, module contract in ARCHITECTURE §5 | ✅ closed |
 | Best-practice hardening 2026-06-12 | 0 audit vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md | ✅ closed |
 | G — Triple gap analysis 2026-06-12 | 16 missing-capability findings (OAuth, E2E, CI matrix, release automation…) | 🟡 G2/G5 done; G15/G16 partial (Linux CI job + audit gate); rest open (order in TODO) |
@@ -159,8 +159,10 @@ mindmap
    2FA) and repo-public. macOS/Windows/libsecret keychain for the at-rest key
    shipped via AR2 (opt-in). Remaining: `homebrew-tap` repo + first publish to
    complete the "brew install syncro-now-ai" definition of done.
-2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2);
-   verify the `sys.scripts.do` fallback against a live instance (CR22).
+2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2).
+   CR22 is closed: the `sys.scripts.do` fallback was live-verified 2026-07-03
+   (fixed a 404-only trigger that missed the real `400` response; confirmed it
+   stays non-executing under Basic-only auth, as documented).
 3. **Engineering debt accepted knowingly** — mcp tests run against `dist/`
    (AR9, high-risk migration); module-level state pending a context object
    (AR11); coverage ratchet heading to 80 (CR26).

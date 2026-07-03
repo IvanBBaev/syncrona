@@ -109,9 +109,9 @@ These are **cosmetic / first-impression**, not legal blockers, but should be
 resolved before a public launch so the project does not present another tool's
 material as its own:
 
-- **README demo images** embed `docs/images/sincronia-development.png` and
-  `sincronia-deployment.png` — these depict Sincronia's (`sinc`) workflow, not
-  this tool. Replace with SyncroNow AI's own captures / demo asset.
+- **README demo images** — the inherited `docs/images/sincronia-*.png` captures
+  (which depicted Sincronia's `sinc` workflow) have been removed and replaced
+  with original SyncroNow AI Mermaid workflow diagrams inline in the README. ✅
 - **README "Examples"** historically linked the upstream Sincronia/Nuvolo video
   material as the primary call-to-action; the primary demo should be this tool.
 - **CHANGELOG footer** carries an upstream `@collinparker-nuvolo` contributor

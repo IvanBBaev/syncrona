@@ -10,6 +10,10 @@
 |:--:|:--:|:--:|:--:|:--:|
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
 
+_Built and maintained in my own time — if it helps, a
+[GitHub Sponsors](https://github.com/sponsors/IvanBBaev) tip keeps it going.
+Full [sponsor options](#sponsor--support) are near the end._
+
 ## Overview
 
 SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It allows you to:
@@ -54,6 +58,9 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
   setup, tools, guardrails, and safety notes.
+- [packages/credential-store/README.md](packages/credential-store/README.md) —
+  the global encrypted credential store (AES-256-GCM at rest, key derivation)
+  shared by the CLI and MCP server.
 - [CHANGELOG.md](CHANGELOG.md) — notable changes per release.
 
 **Table of Contents**
@@ -87,6 +94,7 @@ Because your scoped-app code is downloaded as plain, editable files in a project
     - [Getting unstuck](#getting-unstuck)
   - [Examples](#examples)
   - [Plugin List](#plugin-list)
+  - [Sponsor & support](#sponsor--support)
 
 ## Installation
 
@@ -197,7 +205,7 @@ SyncroNow AI has a few basic commands to help you get the job done
 
 | Command            | Aliases  | Description                                                                                                                                                 | Usage                           |
 | ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow synce the last refresh. Does not override existing file contents. | `npx syncro-now-ai refresh`              |
+| `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncro-now-ai refresh`              |
 | `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncro-now-ai dev`                  |
 | `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch.                               | `npx syncro-now-ai init`                 |
 | `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file                                                  | `npx syncro-now-ai push`                 |
@@ -294,6 +302,25 @@ Recommendations:
 
 Without `--diff`, `push` and `build` act on the entire source folder.
 
+#### Other push options
+
+`push` accepts a few more flags for scope handling, change tracking and
+automation:
+
+- `--scope-swap` (`--ss`) — auto-swap to the correct application scope for the
+  files being pushed instead of failing on a scope mismatch.
+- `--update-set <name>` (`--us <name>`) — create a new update set with the given
+  name and record all pushed changes into it.
+- `--push-concurrency <n>` (`--concurrency <n>`) — max records pushed in parallel
+  (1–50; overrides `pushConcurrency` in `sync.config.js`, default 10).
+- `--ci` — skip all confirmation prompts (for CI/automation). `download` accepts
+  `--ci` too, to skip its overwrite confirmation.
+
+```bash
+npx syncro-now-ai push --update-set "PRJ-123 changes" --scope-swap
+npx syncro-now-ai push --ci --concurrency 5
+```
+
 #### Using dry-run mode
 
 For commands that can change remote or local artifacts (`push`, `deploy`, `download`, and `build`), you can preview effects without applying writes by adding `--dry-run`.
@@ -362,9 +389,64 @@ precedence).
 
 ### Workflow
 
-![Development Workflow](docs/images/sincronia-development.png)
+**Development workflow** — you author code on your ServiceNow dev instance,
+SyncroNow AI pulls a local copy, and every save is built and pushed back to the
+matching record automatically.
 
-![Deployment Workflow](docs/images/sincronia-deployment.png)
+```mermaid
+flowchart TD
+    subgraph SN["ServiceNow Dev Instance"]
+        A["Create new code file<br/>(ex. script include)"]
+        B["Create tables,<br/>metadata, etc"]
+        C["Create update set,<br/>push to team dev, etc"]
+        OK["Results of build are placed into<br/>the corresponding record field"]:::ok
+        A --> B --> C
+    end
+
+    subgraph SY["SyncroNow AI Project"]
+        REF["npx syncro-now-ai refresh"]:::cmd
+        LC["Local copy gets created"]
+        CE["Change extension if desired"]
+        DEV["npx syncro-now-ai dev"]:::cmd
+        SV["Save changes"]
+        BP["Build process starts automatically"]
+        REF --> LC --> CE --> DEV --> SV --> BP
+    end
+
+    A -->|new record| REF
+    BP -->|Successful build| OK
+    BP -->|Errors| ERR["Errors printed to console"]:::err
+
+    classDef cmd fill:#3f3f46,color:#ffffff,stroke:#27272a;
+    classDef ok fill:#d3ecd3,color:#14532d,stroke:#4caf50;
+    classDef err fill:#f6c9c9,color:#7f1d1d,stroke:#e57373;
+```
+
+**Deployment** — point the same project at a higher instance (e.g. prod) and
+`push` the master version of the code up.
+
+```mermaid
+flowchart TD
+    subgraph SN["ServiceNow Prod Instance"]
+        L["Load changes from dev instance"]
+        U["Code files are updated<br/>in ServiceNow"]:::ok
+    end
+
+    subgraph SY["SyncroNow AI Project (prod)"]
+        LM["Load master version of code"]
+        PUSH["npx syncro-now-ai push"]:::cmd
+        AB["All files get built"]
+        LM --> PUSH --> AB
+    end
+
+    L --> LM
+    AB -->|Successful build| U
+    AB -->|Errors| ERR2["Errors printed to console"]:::err
+
+    classDef cmd fill:#3f3f46,color:#ffffff,stroke:#27272a;
+    classDef ok fill:#d3ecd3,color:#14532d,stroke:#4caf50;
+    classDef err fill:#f6c9c9,color:#7f1d1d,stroke:#e57373;
+```
 
 ### File Structure
 
@@ -737,6 +819,25 @@ a quick way to explore what a real SyncroNow AI project looks like.
 | [@syncro-now-ai/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
 | [@syncro-now-ai/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
 | [@syncro-now-ai/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
+
+## Sponsor & support
+
+SyncroNow AI is built and maintained in my own time. If it saves you or your team
+time, please consider supporting its continued development — sponsorship directly
+funds new features, bug fixes and keeping pace with ServiceNow's REST surface.
+
+- **[GitHub Sponsors](https://github.com/sponsors/IvanBBaev)** — one-off or
+  recurring, with no platform fee taken out (the preferred option).
+- **[Ko-fi](https://ko-fi.com/ivanbbaev)** — quick one-off support; it also
+  accepts **PayPal**, so it's the fallback for anyone without a GitHub account.
+- **[Donate (Donatree)](https://donatr.ee/ivanbbaev/)** — a no-account donation
+  page (card, PayPal and more) for a one-off tip.
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/IvanBBaev)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/ivanbbaev)
+[![Donate via Donatree](https://img.shields.io/badge/Donate-Donatree-22c55e?style=flat-square&logo=liberapay&logoColor=white)](https://donatr.ee/ivanbbaev/)
+
+For help, diagnostics and how to report bugs, see [SUPPORT.md](SUPPORT.md).
 
 ## Trademarks & license
 

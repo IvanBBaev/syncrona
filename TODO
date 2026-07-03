@@ -78,8 +78,17 @@ owner/business decisions (incl. npm publish, which is owner-gated).
 - [x] CR2 (residual): CONFIRMED 2026-06-12 — the values were test fixtures written
       by cred.test.ts (including the trailing spaces CR2 noticed — they come from
       the test). Details and fix under AR1.
-- [ ] CR22 (residual): verify the sys.scripts.do fallback against a real instance —
-      documented as best-effort (CSRF/session limitations) but not tested live.
+- [x] CR22 (residual): VERIFIED LIVE 2026-07-03 against a PDI (dev408269). Two
+      findings: (1) BUG FIXED — runBackgroundScript only fell back on HTTP 404,
+      but an instance without the scoped app answers the sinc/runBackgroundScript
+      route with 400 "Requested URI does not represent any resource", so the
+      fallback was unreachable in exactly its intended case. Now keyed on the
+      shared isEndpointNotFoundStatus (400/403/404), matching snScopedApiRequest;
+      2 regression tests in mcp-server/test/index.test.js. (2) CONFIRMED the
+      documented limit — once reached, sys.scripts.do under Basic-only auth
+      returns 200 with an empty body and does NOT execute the script (no UI
+      session / CSRF g_ck token). The fallback is now correctly reachable but
+      remains non-executing under Basic auth, as the code/docs already warn.
 - [~] CR26 (follow-up): coverage thresholds ratcheted again 2026-06-24 to
       st 76 / br 63 / fn 71 / ln 76 (measured 77.8/64.9/72.8/77.5 after the
       logMessages, bootstrap, gitUtils and devCommands suites landed; up from the
