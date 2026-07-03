@@ -49,6 +49,7 @@ jest.unstable_mockModule("../auth.js", () => ({
 jest.unstable_mockModule("../snClient.js", () => ({
   getScopedEndpointPrefix: jest.fn(),
   defaultClient: jest.fn(() => ({ checkConnection: mockCheckConnection })),
+  resetClient: jest.fn(),
   resolveCredentials: jest.fn(() => ({ instance: "", user: "", password: "" })),
   setActiveInstanceProfile: jest.fn(),
   unwrapSNResponse: jest.fn(),
@@ -117,8 +118,14 @@ let useCommand: typeof import("../authCommands.js").useCommand;
 
 const BASE_ARGS = { logLevel: "info", dryRun: false };
 
+// loginCommand mutates process.env (it applies the chosen method's SN_* material
+// so the verification client resolves it). Snapshot and restore so tests never
+// leak credentials into one another.
+let envSnapshot: NodeJS.ProcessEnv;
+
 beforeEach(async () => {
   jest.clearAllMocks();
+  envSnapshot = { ...process.env };
   ({ loginCommand, logoutCommand, instancesCommand, useCommand } = await import(
     "../authCommands.js"
   ));
@@ -135,13 +142,24 @@ beforeEach(async () => {
   mockFsMkdir.mockResolvedValue(undefined);
 });
 
-describe("loginCommand", () => {
-  it("saves credentials and sets active instance when no active exists", async () => {
-    mockPrompt
-      .mockResolvedValueOnce({ user: "admin" })
-      .mockResolvedValueOnce({ password: "secret" });
+afterEach(() => {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in envSnapshot)) delete process.env[key];
+  }
+  Object.assign(process.env, envSnapshot);
+});
 
-    await loginCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
+describe("loginCommand", () => {
+  it("saves basic credentials (3 args) and sets active instance when no active exists", async () => {
+    // Explicit --auth-method basic skips the method picker; one combined prompt
+    // collects username + password.
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "secret" });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+    });
 
     expect(mockSaveCredentials).toHaveBeenCalledWith(
       "dev123.service-now.com",
@@ -153,13 +171,29 @@ describe("loginCommand", () => {
     expect(mockFsMkdir).toHaveBeenCalled();
   });
 
-  it("creates default workspace config when sync.config.js is missing", async () => {
-    mockFsStat.mockRejectedValue({ code: "ENOENT" });
+  it("prompts for the method when --auth-method is absent, then saves basic", async () => {
     mockPrompt
-      .mockResolvedValueOnce({ user: "admin" })
-      .mockResolvedValueOnce({ password: "secret" });
+      .mockResolvedValueOnce({ method: "basic" })
+      .mockResolvedValueOnce({ user: "admin", password: "secret" });
 
     await loginCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
+
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "admin",
+      "secret"
+    );
+  });
+
+  it("creates default workspace config when sync.config.js is missing", async () => {
+    mockFsStat.mockRejectedValue({ code: "ENOENT" });
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "secret" });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+    });
 
     expect(mockFsStat).toHaveBeenCalledWith(expect.stringContaining("sync.config.js"));
     expect(mockFsWriteFile).toHaveBeenCalledWith(
@@ -172,11 +206,13 @@ describe("loginCommand", () => {
   });
 
   it("strips https:// prefix from instance URL", async () => {
-    mockPrompt
-      .mockResolvedValueOnce({ user: "admin" })
-      .mockResolvedValueOnce({ password: "pass" });
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "pass" });
 
-    await loginCommand({ ...BASE_ARGS, instance: "https://dev999.service-now.com/" });
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "https://dev999.service-now.com/",
+      authMethod: "basic",
+    });
 
     expect(mockSaveCredentials).toHaveBeenCalledWith(
       "dev999.service-now.com",
@@ -187,27 +223,171 @@ describe("loginCommand", () => {
 
   it("does not prompt for switch when already active instance matches", async () => {
     mockGetActiveInstance.mockResolvedValue("dev123.service-now.com");
-    mockPrompt
-      .mockResolvedValueOnce({ user: "admin" })
-      .mockResolvedValueOnce({ password: "secret" });
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "secret" });
 
-    await loginCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+    });
 
-    // No switch prompt — prompt only called twice (user + password)
-    expect(mockPrompt).toHaveBeenCalledTimes(2);
+    // No method prompt (flag given) and no switch prompt — only the fields prompt.
+    expect(mockPrompt).toHaveBeenCalledTimes(1);
     expect(mockSetActiveInstance).not.toHaveBeenCalled();
   });
 
   it("prompts to switch active instance when different instance is already active", async () => {
     mockGetActiveInstance.mockResolvedValue("prod.service-now.com");
     mockPrompt
-      .mockResolvedValueOnce({ user: "admin" })
-      .mockResolvedValueOnce({ password: "secret" })
+      .mockResolvedValueOnce({ user: "admin", password: "secret" })
       .mockResolvedValueOnce({ switchActive: true });
 
-    await loginCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+    });
 
     expect(mockSetActiveInstance).toHaveBeenCalledWith("dev123.service-now.com");
+  });
+
+  it("logs in non-interactively with an inbound REST API key (no prompts)", async () => {
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "api-key",
+      apiKey: "KEY-123",
+      apiKeyHeader: "x-custom-key",
+    });
+
+    // No prompts at all — every field came from flags.
+    expect(mockPrompt).not.toHaveBeenCalled();
+    // Richer record: empty user/password, method + key persisted (by value for
+    // the API key, header override included).
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "",
+      "",
+      expect.objectContaining({
+        authMethod: "api-key",
+        apiKey: "KEY-123",
+        apiKeyHeader: "x-custom-key",
+      })
+    );
+    // Verification client saw the API key in the process env.
+    expect(process.env.SN_API_KEY).toBe("KEY-123");
+    expect(process.env.SN_AUTH_METHOD).toBe("api-key");
+  });
+
+  it("logs in with the OAuth client-credentials grant from flags", async () => {
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "oauth-client-credentials",
+      clientId: "cid",
+      clientSecret: "csecret",
+    });
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "",
+      "",
+      expect.objectContaining({
+        authMethod: "oauth-client-credentials",
+        clientId: "cid",
+        clientSecret: "csecret",
+      })
+    );
+  });
+
+  it("stores the JWT signing key by path for the jwt-bearer grant", async () => {
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "oauth-jwt-bearer",
+      clientId: "cid",
+      clientSecret: "csecret",
+      jwtKey: "/keys/sn.pem",
+    });
+
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "",
+      "",
+      expect.objectContaining({
+        authMethod: "oauth-jwt-bearer",
+        clientId: "cid",
+        clientSecret: "csecret",
+        jwtKeyPath: "/keys/sn.pem",
+      })
+    );
+  });
+
+  it("stores mutual-TLS cert/key by path alongside basic auth", async () => {
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "secret" });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+      clientCert: "/certs/client.pem",
+      clientKey: "/certs/client.key",
+    });
+
+    // Orthogonal mTLS material forces the richer 4-arg save even for basic.
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "admin",
+      "secret",
+      expect.objectContaining({
+        authMethod: "basic",
+        clientCertPath: "/certs/client.pem",
+        clientKeyPath: "/certs/client.key",
+      })
+    );
+    expect(process.env.SN_CLIENT_CERT).toBe("/certs/client.pem");
+  });
+
+  it("rejects an unknown --auth-method", async () => {
+    const mockExit = jest.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+
+    await expect(
+      loginCommand({
+        ...BASE_ARGS,
+        instance: "dev123.service-now.com",
+        authMethod: "totally-bogus",
+      })
+    ).rejects.toThrow("process.exit");
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown auth method")
+    );
+
+    mockExit.mockRestore();
+  });
+
+  it("exits when the connection check fails and does not save", async () => {
+    mockCheckConnection.mockRejectedValue(new Error("401"));
+    const mockExit = jest.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+
+    await expect(
+      loginCommand({
+        ...BASE_ARGS,
+        instance: "dev123.service-now.com",
+        authMethod: "api-key",
+        apiKey: "KEY-123",
+      })
+    ).rejects.toThrow("process.exit");
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Cannot authenticate")
+    );
+    expect(mockSaveCredentials).not.toHaveBeenCalled();
+
+    mockExit.mockRestore();
   });
 });
 
