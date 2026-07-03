@@ -23,7 +23,7 @@
     "jest": "^30.4.2",
     "jest-junit": "^17.0.0",
     "ts-jest": "^29.1.1",
-    "typescript": "~5.2.2"
+    "typescript": "~5.9.3"
   },
   "dependencies": {
     "@syncro-now-ai/credential-store": "^0.4.2",
