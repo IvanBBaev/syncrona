@@ -262,10 +262,16 @@
                 <text x="460" y="56" text-anchor="middle" font-size="9.5" fill="#E5533C" font-weight="700">build + push ↑</text>
                 <text x="460" y="82" text-anchor="middle" font-size="8.5" fill="#6f6a58">ts→js output</text>
                 <text x="310" y="18" text-anchor="middle" font-size="9" fill="#6f6a58">commit · branch · PR</text>
-                <!-- traveling packet: a record riding the sync loop (refresh ↓ then build+push ↑) -->
+                <!-- traveling packet: a source file riding the sync loop (refresh ↓ then build+push ↑) -->
                 <g class="sync-packet" aria-hidden="true">
-                  <circle class="pk-halo" r="9" />
-                  <circle class="pk-core" r="4.5" />
+                  <g class="pk-sprite">
+                    <rect class="pk-halo" x="-9" y="-11.5" width="18" height="23" rx="3" />
+                    <path class="pk-sheet" d="M-7,-9.5 L4,-9.5 L7,-6.5 L7,9.5 L-7,9.5 Z" />
+                    <path class="pk-fold" d="M4,-9.5 L4,-6.5 L7,-6.5 Z" />
+                    <line class="pk-line" x1="-4" y1="-3" x2="4" y2="-3" />
+                    <line class="pk-line" x1="-4" y1="0.5" x2="4" y2="0.5" />
+                    <line class="pk-line" x1="-4" y1="4" x2="1.5" y2="4" />
+                  </g>
                 </g>
               </svg>
             </div>
