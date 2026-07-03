@@ -95,7 +95,8 @@ mostly by **owner decisions**, with a small amount of engineering left.
 - 🔒 **IP / provenance clearance** (BA8 / R1) — verify ownership of pre-existing
   code and the right to distribute it publicly. Code carried prior `nuvolo`
   references; the repo now lives on a personal account. **Hard gate on every
-  public step below.**
+  public step below.** Full analysis, current compliance state, and the exact
+  legal sign-off still required: [docs/PROVENANCE.md](docs/PROVENANCE.md).
 - ✅ **Brand unification** (BA6) — **decided & implemented**: product **SyncroNow
   AI**, npm scope `@syncro-now-ai/*`, CLI command `syncro-now-ai`, MCP server
   `syncro-now-ai-mcp-server`. On-disk conventions (`.syncrona*`) and the
