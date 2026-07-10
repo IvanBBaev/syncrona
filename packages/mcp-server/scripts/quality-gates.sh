@@ -16,6 +16,7 @@ if [ "${SKIP_TESTS:-}" != "1" ]; then
 fi
 node packages/mcp-server/scripts/check-tool-contract.js
 node packages/mcp-server/scripts/check-docs-drift.js
+node packages/mcp-server/scripts/generate-tool-reference.js --check
 node packages/mcp-server/scripts/check-claude-docs-drift.js
 node packages/mcp-server/scripts/check-claims-drift.js
 node packages/mcp-server/scripts/validate-release-checklist.js

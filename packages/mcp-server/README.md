@@ -86,11 +86,21 @@ The server reads the following environment variables (all optional):
 | `SYNCRONA_ENV`        | Selects the active guardrail environment by name, overriding `policy.activeEnvironment` in the guardrails config (drives per-environment policy such as `allowFullNodeAccess` and preflight enforcement). Defaults to `default`. |
 | `SYNCRONA_LOG_LEVEL`  | Log verbosity: `debug` \| `info` \| `warn` \| `error` \| `silent` (default `info`). See [Logging](#logging).                                |
 | `SYNCRONA_LOG_FORMAT` | Log output format: `text` \| `json` (default `text`); equivalent to `--log-format=json`. See [Logging](#logging).                          |
+| `SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES` | Set to `false` to disable the startup auto-pull of every `x_*` scoped app into `packages/<scope>/`. Enabled by default. See [Run](#run). |
+| `SYNCRONA_SECRETS_FILE` | Absolute path to the MCP secrets JSON file, overriding the default `.syncrona-mcp/secrets.json` lookup in the project directory.        |
+| `SYNCRONA_HEALTH_HTTP_PORT` | Port for the optional HTTP health endpoint. Setting it is what enables the endpoint; unset means no HTTP listener.                  |
+| `SYNCRONA_HEALTH_HTTP_HOST` | Bind address for the health endpoint (default `127.0.0.1`). Only read when the port is set.                                        |
+| `SYNCRONA_HEALTH_HTTP_PATH` | Request path for the health endpoint (default `/healthz`). Only read when the port is set.                                         |
 
-ServiceNow and Jira credentials are **not** read from bare environment variables
-here — they are resolved through the shared encrypted CredentialStore (and, for
-local development, a workspace secrets file). See the core package for the
-`SN_*` / `JIRA_*` resolution order.
+ServiceNow credentials (`SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`) and Jira
+credentials (`JIRA_BASE_URL`, `JIRA_TOKEN`, `JIRA_EMAIL`, `JIRA_DEPLOYMENT`)
+**are** read from bare environment variables, and those take precedence over
+every other source. For ServiceNow the full order is process environment → MCP
+secrets file → project `.env` → encrypted CredentialStore, merged per key (see
+[Requirements](#requirements)). For Jira, a complete set of `JIRA_*` env vars
+wins over the stored profile, except when a profile is named explicitly. Env
+vars are convenient for CI; prefer `syncrona login` / `syncrona jira-login`
+for developer machines so secrets stay encrypted at rest.
 
 ## Example MCP client config
 

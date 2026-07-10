@@ -64,7 +64,7 @@
             "description": "A CLI and MCP toolchain that tracks ServiceNow scoped-application source code in Git, with a local build pipeline (TypeScript / Babel / Webpack / Sass), bidirectional sync, multi-instance profiles and AI-assisted analysis.",
             "url": "https://ivanbbaev.github.io/syncrona/",
             "downloadUrl": "https://www.npmjs.com/package/syncrona",
-            "softwareVersion": "0.9.0",
+            "softwareVersion": "0.9.1",
             "license": "https://www.gnu.org/licenses/gpl-3.0.html",
             "author": { "@type": "Person", "name": "Ivan Baev" },
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -144,6 +144,14 @@
                   "@type": "Answer",
                   "text": "It is pre-1.0 and early. The engineering is solid — type-checked lint, enforced module boundaries, tests and a security model — but review the security model for your own deployment, and keep your source in Git."
                 }
+              },
+              {
+                "@type": "Question",
+                "name": "Why the package name @syncrona/*?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The project ships under the @syncrona npm scope (the CLI is syncrona, exposing the syncrona command); the GitHub repository is IvanBBaev/syncrona. It is the modern successor to Sincronia / sinc."
+                }
               }
             ]
           }
@@ -180,7 +188,7 @@
         </a>
         <span class="chip-manual">FIELD MANUAL</span>
         <div class="mast-right">
-          <span class="version">v0.9.0 · pre-release</span>
+          <span class="version">v0.9.1 · pre-release</span>
           <a class="btn-source" href="https://github.com/IvanBBaev/syncrona" target="_blank" rel="noopener">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" /></svg>
             Source
@@ -411,11 +419,47 @@ var Example = (function () {
           </p>
 
           <div class="tabs" role="tablist" aria-label="Install method">
-            <button class="tab is-active" id="tab-source" role="tab" aria-selected="true" aria-controls="steps-source" data-tab="source">Install from source</button>
-            <button class="tab" id="tab-npm" role="tab" aria-selected="false" aria-controls="steps-npm" data-tab="npm">Once on npm</button>
+            <button class="tab is-active" id="tab-npm" role="tab" aria-selected="true" aria-controls="steps-npm" data-tab="npm">Install from npm</button>
+            <button class="tab" id="tab-source" role="tab" aria-selected="false" aria-controls="steps-source" data-tab="source">Install from source</button>
           </div>
 
-          <div class="steps" id="steps-source" role="tabpanel" aria-labelledby="tab-source">
+          <div class="steps" id="steps-npm" role="tabpanel" aria-labelledby="tab-npm">
+            <div class="step">
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <div class="step-title">Install the CLI from npm</div>
+                <div class="code">
+                  <button class="copy-btn" type="button">COPY</button>
+                  <pre><code>npm i -g syncrona
+# or as a project dev dependency:
+npm i -D syncrona</code></pre>
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <div class="step-title">Log in and initialize your project</div>
+                <div class="code">
+                  <button class="copy-btn" type="button">COPY</button>
+                  <pre><code>syncrona login
+syncrona init</code></pre>
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <div class="step-title">Start dev mode — every save builds &amp; pushes</div>
+                <div class="code">
+                  <button class="copy-btn" type="button">COPY</button>
+                  <pre><code>npx syncrona dev</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="steps" id="steps-source" role="tabpanel" aria-labelledby="tab-source" hidden>
             <div class="step">
               <div class="step-num">1</div>
               <div class="step-body">
@@ -445,39 +489,6 @@ syncrona init</code></pre>
               <div class="step-num">3</div>
               <div class="step-body">
                 <div class="step-title">Start dev mode — every save builds &amp; pushes</div>
-                <div class="code">
-                  <button class="copy-btn" type="button">COPY</button>
-                  <pre><code>npx syncrona dev</code></pre>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="steps" id="steps-npm" role="tabpanel" aria-labelledby="tab-npm" hidden>
-            <div class="step">
-              <div class="step-num">1</div>
-              <div class="step-body">
-                <div class="step-title">Install the core package (once published)</div>
-                <div class="code">
-                  <button class="copy-btn" type="button">COPY</button>
-                  <pre><code>npm i -D syncrona</code></pre>
-                </div>
-              </div>
-            </div>
-            <div class="step">
-              <div class="step-num">2</div>
-              <div class="step-body">
-                <div class="step-title">Initialize your project</div>
-                <div class="code">
-                  <button class="copy-btn" type="button">COPY</button>
-                  <pre><code>npx syncrona init</code></pre>
-                </div>
-              </div>
-            </div>
-            <div class="step">
-              <div class="step-num">3</div>
-              <div class="step-body">
-                <div class="step-title">Start dev mode</div>
                 <div class="code">
                   <button class="copy-btn" type="button">COPY</button>
                   <pre><code>npx syncrona dev</code></pre>
@@ -777,7 +788,7 @@ includes: {
             The bundled <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
             server (<code class="inline">@syncrona/mcp-server</code>) turns any MCP-capable client — Claude Desktop,
             Claude Code, VS Code Chat — into a teammate that can read your scope, map dependencies, analyse scripts and
-            propose gated changes behind a dry-run guardrail.
+            propose gated changes behind a dry-run guardrail. It exposes 61 MCP tools in 8 families.
           </p>
 
           <p class="sec-note">
@@ -797,7 +808,7 @@ includes: {
           </div>
 
           <div class="tools-head">
-            <div class="tools-count"><span class="tools-n">61</span> tools · 7 families</div>
+            <div class="tools-count"><span class="tools-n">61</span> tools · 8 families</div>
             <div class="tools-controls">
               <button type="button" class="ghost-btn" id="toolsExpand">Expand all</button>
               <button type="button" class="ghost-btn" id="toolsCollapse">Collapse all</button>
@@ -806,12 +817,14 @@ includes: {
 
           <div class="tools">
             <details class="tool">
-              <summary><code class="tool-name">Session &amp; guardrails</code><span class="tool-sum">scope, update set and preflight control</span></summary>
+              <summary><code class="tool-name">Session &amp; guardrails</code><span class="tool-sum">scope, update set and preflight control · 8 tools</span></summary>
               <div class="tool-body">
                 <ul>
-                  <li><code>sync_get_session_context</code> — current scope and update set</li>
-                  <li><code>sync_set_scope</code> / <code>sync_list_scopes</code> — switch / list scopes</li>
-                  <li><code>sync_set_update_set</code> / <code>sync_list_update_sets</code> — switch / list update sets</li>
+                  <li><code>sync_get_session_context</code> — current scope and active update set</li>
+                  <li><code>sync_set_scope</code> — switch the active scope by scope code</li>
+                  <li><code>sync_list_scopes</code> — list available scopes from <code>sys_scope</code></li>
+                  <li><code>sync_set_update_set</code> — switch the active update set, optionally creating it</li>
+                  <li><code>sync_list_update_sets</code> — list update sets, optional encoded query</li>
                   <li><code>sync_prepare_session</code> — one-call scope + update-set setup</li>
                   <li><code>sync_preflight_check</code> — validate context against guardrails</li>
                   <li><code>sync_check_instance_capabilities</code> — verify scoped endpoints before automation</li>
@@ -819,12 +832,13 @@ includes: {
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Records &amp; metadata</code><span class="tool-sum">query, read and update instance records</span></summary>
+              <summary><code class="tool-name">Records &amp; metadata</code><span class="tool-sum">query, read and update instance records · 7 tools</span></summary>
               <div class="tool-body">
                 <ul>
                   <li><code>sn_query_records</code> — query a table, optional grouped analysis</li>
-                  <li><code>sn_create_record</code> — create records with validated payloads</li>
-                  <li><code>sn_list_metadata_records</code> / <code>sn_get_metadata_record</code> — inventory and read BR, Client Script, ACL, Dictionary, UI Policy, Scripted REST</li>
+                  <li><code>sn_create_record</code> — create a record in any table</li>
+                  <li><code>sn_list_metadata_records</code> — inventory BR, Client Script, ACL, Dictionary, UI Policy, Scripted REST</li>
+                  <li><code>sn_get_metadata_record</code> — read one metadata record, normalized</li>
                   <li><code>sn_update_metadata_record</code> — controlled update with confirm + dry-run gate</li>
                   <li><code>sn_search_scripts</code> — full-text search across script tables with excerpts</li>
                   <li><code>sn_get_record_history</code> — field-level change history from <code>sys_audit</code></li>
@@ -832,7 +846,7 @@ includes: {
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Dependency &amp; impact</code><span class="tool-sum">graphs, blast radius and relations</span></summary>
+              <summary><code class="tool-name">Dependency &amp; impact</code><span class="tool-sum">graphs, blast radius and relations · 5 tools</span></summary>
               <div class="tool-body">
                 <ul>
                   <li><code>sn_build_dependency_graph</code> — nodes/edges with cycle detection and hotspots</li>
@@ -844,51 +858,78 @@ includes: {
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Code analysis</code><span class="tool-sum">static analysis and semantic indexing</span></summary>
+              <summary><code class="tool-name">Code analysis</code><span class="tool-sum">static analysis and semantic indexing · 8 tools</span></summary>
               <div class="tool-body">
                 <ul>
-                  <li><code>sn_analyze_script_architecture</code> / <code>_security</code> / <code>_performance</code> — analysis packs with severity + remediation</li>
+                  <li><code>sn_analyze_script_architecture</code> — architecture anti-pattern analysis with remediation</li>
+                  <li><code>sn_analyze_script_security</code> — security-focused static analysis</li>
+                  <li><code>sn_analyze_script_performance</code> — performance-focused static analysis</li>
                   <li><code>sn_analyze_script_full</code> — unified weighted risk score, optional suppressions</li>
-                  <li><code>sync_build_semantic_index</code> / <code>sync_search_semantic_index</code> — symbol-level local indexing and lookup</li>
+                  <li><code>sync_build_semantic_index</code> — symbol-level index from local source files</li>
+                  <li><code>sync_search_semantic_index</code> — search the semantic symbol index</li>
                   <li><code>sync_symbol_cross_reference</code> — symbol occurrences by file and count</li>
                   <li><code>sn_render_analysis_markdown</code> — deterministic markdown report</li>
                 </ul>
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Change &amp; release</code><span class="tool-sum">drift, validation, diffs and release notes</span></summary>
+              <summary><code class="tool-name">Change &amp; release</code><span class="tool-sum">drift, validation, diffs and release notes · 9 tools</span></summary>
               <div class="tool-body">
                 <ul>
-                  <li><code>sync_detect_drift</code> / <code>sync_diff_instance_vs_local</code> — local vs instance comparison</li>
-                  <li><code>sync_validate_change_package</code> / <code>sync_validate_before_push</code> — pre-push dependency &amp; risk checks</li>
+                  <li><code>sync_detect_drift</code> — local vs instance drift summary with actions</li>
+                  <li><code>sync_diff_instance_vs_local</code> — changed, local-only and instance-only records</li>
+                  <li><code>sync_validate_change_package</code> — required-dependency checks for selected records</li>
+                  <li><code>sync_validate_before_push</code> — pre-push analysis + conflict check, ready or blocked per record</li>
                   <li><code>sync_compare_instances</code> — compare a scope across two stored profiles (dev vs prod)</li>
                   <li><code>sync_list_recent_changes</code> — recent scope changes from <code>sys_update_xml</code></li>
-                  <li><code>sync_generate_release_notes</code> / <code>sync_export_update_set</code> — release notes and Update Set export</li>
+                  <li><code>sync_generate_release_notes</code> — release notes from an Update Set, markdown or JSON</li>
+                  <li><code>sync_export_update_set</code> — export an Update Set as XML plus metadata</li>
                   <li><code>sync_unified_change_workflow</code> — preflight → analysis → approval → footprint/rollback</li>
                 </ul>
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Scope docs &amp; knowledge</code><span class="tool-sum">durable, reusable scope context</span></summary>
+              <summary><code class="tool-name">Scope docs &amp; knowledge</code><span class="tool-sum">durable, reusable scope context · 4 tools</span></summary>
               <div class="tool-body">
                 <ul>
-                  <li><code>sync_generate_scope_knowledge</code> / <code>sync_validate_scope_knowledge</code> — knowledge JSON + validation</li>
+                  <li><code>sync_generate_scope_knowledge</code> — scope knowledge artifacts (md + json)</li>
+                  <li><code>sync_validate_scope_knowledge</code> — validate knowledge JSON against the schema</li>
                   <li><code>sync_generate_scope_docs</code> — full docs bundle (overview, dependencies, relationships, per-object)</li>
                   <li><code>sync_scope_knowledge_auto_update</code> — trigger-based updates (init / refresh / change / drift)</li>
                 </ul>
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, ATF, health and AI planning</span></summary>
+              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, gated execution, ATF and AI planning · 15 tools</span></summary>
               <div class="tool-body">
                 <ul>
-                  <li><code>sync_status</code> / <code>sync_refresh</code> / <code>sync_build</code> / <code>sync_push</code> — workspace command wrappers</li>
-                  <li><code>sync_create_script_include</code> / <code>_and_sync</code> — create a Script Include and pull it local to edit</li>
-                  <li><code>sn_execute_background_script</code> / <code>run_node_code</code> — controlled execution with safety gates</li>
-                  <li><code>sync_run_atf_tests</code> / <code>sync_suggest_tests</code> — run ATF tests and scaffold test skeletons</li>
+                  <li><code>sync_status</code> — connected instance, scope and user</li>
+                  <li><code>sync_refresh</code> — refresh the local manifest from the instance</li>
+                  <li><code>sync_build</code> — build local files through the plugin pipeline</li>
+                  <li><code>sync_push</code> — push local files to the instance (destructive, gated)</li>
+                  <li><code>run_workspace_command</code> — run a local workspace command for automation</li>
+                  <li><code>sync_create_script_include</code> — create a Script Include, optionally pull it local</li>
+                  <li><code>sync_create_script_include_and_sync</code> — create, sync and return local file paths to edit</li>
+                  <li><code>sn_execute_background_script</code> — gated background-script execution with raw output</li>
+                  <li><code>run_node_code</code> — execute JavaScript with Node.js in the workspace</li>
+                  <li><code>sync_run_atf_tests</code> — run ATF tests (test, suite or whole scope) and poll results</li>
+                  <li><code>sync_suggest_tests</code> — scaffold an ATF server-side test skeleton from a Script Include</li>
                   <li><code>sn_autonomous_remediation_workflow</code> — detect → propose → dry-run/apply → validate, with approval</li>
-                  <li><code>sync_health_check</code> / <code>sync_metrics_trend</code> — reliability metrics and trend deltas</li>
-                  <li><code>sync_ai_next_actions</code> / <code>sync_plan_minimal_footprint</code> / <code>sync_onboarding_bootstrap</code> — AI-aware planning and onboarding</li>
+                  <li><code>sync_ai_next_actions</code> — prioritized next actions from a natural-language objective</li>
+                  <li><code>sync_plan_minimal_footprint</code> — rank where-to-modify targets with minimal-footprint scoring</li>
+                  <li><code>sync_onboarding_bootstrap</code> — onboarding wizard/checklist with quickstart defaults</li>
+                </ul>
+              </div>
+            </details>
+            <details class="tool">
+              <summary><code class="tool-name">Diagnostics &amp; context</code><span class="tool-sum">health, contracts, coverage and Jira · 5 tools</span></summary>
+              <div class="tool-body">
+                <ul>
+                  <li><code>sync_health_check</code> — MCP health, endpoint diagnostics and per-tool reliability metrics</li>
+                  <li><code>sync_metrics_trend</code> — trend deltas between diagnostics windows</li>
+                  <li><code>sync_tool_contract_info</code> — tool-contract version, declared tool list and contract hash</li>
+                  <li><code>sync_table_api_coverage_matrix</code> — metadata coverage matrix and supported Table API operations</li>
+                  <li><code>jira_get_issue</code> — rich Jira issue context (summary, status, links, comments)</li>
                 </ul>
               </div>
             </details>
@@ -912,7 +953,59 @@ includes: {
           </div>
           <p class="sec-intro sm">
             Authenticate with a <strong>dedicated least-privilege integration user</strong> over HTTPS — never your admin
-            account. HTTP Basic is the default; OAuth 2.0 is supported in the CLI.
+            account. Six authentication options: HTTP Basic, three OAuth 2.0 grants, an inbound REST API key, and
+            mutual TLS layered on top of any of them.
+          </p>
+
+          <h3 class="sub-h">Authentication methods</h3>
+          <p class="sec-note">
+            <code class="inline">syncrona login</code> shows a method picker, or pass <code>--auth-method</code>
+            non-interactively. Everything can also come from env vars — <code>SN_AUTH_METHOD</code> selects the
+            method; Basic needs none, so a legacy <code>.env</code> keeps working unchanged.
+          </p>
+          <div class="table-wrap">
+            <table class="grid-table">
+              <thead>
+                <tr><th>Method</th><th>Select with</th><th>Use when · key variables</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>HTTP Basic (default)</td>
+                  <td><code>--auth-method basic</code></td>
+                  <td>Simplest start — PDIs and dev instances. <code>SN_USER</code> / <code>SN_PASSWORD</code>.</td>
+                </tr>
+                <tr>
+                  <td>OAuth 2.0 — Password grant</td>
+                  <td><code>--auth-method oauth-password</code></td>
+                  <td>User-context Bearer tokens instead of raw Basic on every request. <code>SN_OAUTH_CLIENT_ID</code> / <code>SN_OAUTH_CLIENT_SECRET</code> plus <code>SN_USER</code> / <code>SN_PASSWORD</code>.</td>
+                </tr>
+                <tr>
+                  <td>OAuth 2.0 — Client Credentials</td>
+                  <td><code>--auth-method oauth-client-credentials</code></td>
+                  <td>Service-to-service — CI and automation with no user password. <code>SN_OAUTH_CLIENT_ID</code> / <code>SN_OAUTH_CLIENT_SECRET</code>.</td>
+                </tr>
+                <tr>
+                  <td>OAuth 2.0 — JWT Bearer grant</td>
+                  <td><code>--auth-method oauth-jwt-bearer</code></td>
+                  <td>Key-based trust — sign a JWT assertion instead of sending a password. <code>SN_JWT_KEY</code> (path to the signing PEM), <code>SN_JWT_KID</code> / <code>SN_JWT_ISS</code> / <code>SN_JWT_SUB</code> / <code>SN_JWT_AUD</code>, plus client id/secret.</td>
+                </tr>
+                <tr>
+                  <td>Inbound REST API key</td>
+                  <td><code>--auth-method api-key</code></td>
+                  <td>One revocable key, no password at all. <code>SN_API_KEY</code>; header name via <code>SN_API_KEY_HEADER</code> (default <code>x-sn-apikey</code>).</td>
+                </tr>
+                <tr>
+                  <td>Mutual TLS (mTLS)</td>
+                  <td><code>--client-cert</code> / <code>--client-key</code></td>
+                  <td>Certificate-pinned transport, layered onto <em>any</em> method above — not an <code>--auth-method</code> value. <code>SN_CLIENT_CERT</code> / <code>SN_CLIENT_KEY</code> (PEM paths), optional <code>SN_CLIENT_KEY_PASSPHRASE</code>.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="sec-note">
+            OAuth grants exchange credentials for a Bearer token at <code>oauth_token.do</code>, refreshing on
+            expiry or 401. The JWT signing key and mTLS cert/key are stored by <em>path</em> only — key material
+            never enters the encrypted store.
           </p>
 
           <h3 class="sub-h">Where credentials live</h3>
@@ -944,14 +1037,6 @@ includes: {
               </tbody>
             </table>
           </div>
-
-          <h3 class="sub-h">OAuth 2.0</h3>
-          <p class="sec-note">
-            Set <code>SN_OAUTH_CLIENT_ID</code> and <code>SN_OAUTH_CLIENT_SECRET</code> (alongside <code>SN_USER</code> /
-            <code>SN_PASSWORD</code>, optionally with per-profile <code>_&lt;PROFILE&gt;</code> suffixes) and the CLI
-            exchanges them for a Bearer token at <code>oauth_token.do</code>, refreshing on expiry or 401. Without those
-            vars it stays on Basic.
-          </p>
 
           <h3 class="sub-h">Safety model</h3>
           <ul class="check-list">
@@ -1009,7 +1094,7 @@ includes: {
 
                 <rect class="box" x="210" y="322" width="300" height="50" />
                 <text class="lbl" x="360" y="344" text-anchor="middle">ServiceNow instance</text>
-                <text class="sub" x="360" y="361" text-anchor="middle">REST / Table API · Basic / OAuth 2.0</text>
+                <text class="sub" x="360" y="361" text-anchor="middle">REST / Table API · 6 auth options</text>
 
                 <path class="edge" d="M170 78 L170 128" />
                 <polygon class="ah" points="165,122 175,122 170,130" />
@@ -1027,12 +1112,13 @@ includes: {
               </svg>
             </div>
             <div class="arch-pkgs" aria-label="Workspace packages">
-              <span class="apk-label">13 PACKAGES</span>
+              <span class="apk-label">14 PACKAGES</span>
               <span class="apk">core</span>
               <span class="apk">mcp-server</span>
               <span class="apk">types</span>
               <span class="apk">sn-transport</span>
               <span class="apk">credential-store</span>
+              <span class="apk">jira</span>
               <span class="apk">typescript</span>
               <span class="apk">babel</span>
               <span class="apk">webpack</span>

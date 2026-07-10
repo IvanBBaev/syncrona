@@ -45,6 +45,35 @@ const REQUIRED_TOOLS = [
   'sync_run_atf_tests',
   'run_node_code',
   'run_workspace_command',
+  // Full-surface floor: the entries above pinned only part of the manifest, so a
+  // deletion of any *unpinned* tool passed this gate silently. Every remaining
+  // declared tool is pinned here so the floor covers the complete contract. The
+  // gate also fails on declared-but-unpinned tools (see checkToolContract), so
+  // adding a new tool to toolSchemas.ts requires extending this list in the same
+  // change — the contract can neither shrink nor grow unnoticed.
+  'sn_analyze_script_architecture',
+  'sn_analyze_script_performance',
+  'sn_get_metadata_record',
+  'sn_get_record_history',
+  'sn_query_records',
+  'sn_search_scripts',
+  'sync_ai_next_actions',
+  'sync_build',
+  'sync_check_instance_capabilities',
+  'sync_compare_instances',
+  'sync_diff_instance_vs_local',
+  'sync_export_update_set',
+  'sync_generate_release_notes',
+  'sync_get_session_context',
+  'sync_list_recent_changes',
+  'sync_list_scopes',
+  'sync_list_update_sets',
+  'sync_refresh',
+  'sync_search_semantic_index',
+  'sync_status',
+  'sync_suggest_tests',
+  'sync_tool_contract_info',
+  'sync_validate_before_push',
 ];
 
 function hashToolContract(toolNames) {
@@ -76,10 +105,17 @@ function checkToolContract(sourceFilePath, requiredTools) {
   }
   const declaredSet = seen;
   const missing = requiredTools.filter((tool) => !declaredSet.has(tool));
+  // Two-way contract: the declared set is derived from the source itself, and
+  // any declared tool absent from the required floor fails the gate. Without
+  // this, a newly added tool would stay unpinned forever and its later removal
+  // would go unnoticed by the membership check above.
+  const requiredSet = new Set(requiredTools);
+  const unpinned = [...declaredSet].filter((tool) => !requiredSet.has(tool)).sort();
   return {
-    ok: missing.length === 0 && duplicates.length === 0,
+    ok: missing.length === 0 && duplicates.length === 0 && unpinned.length === 0,
     missing,
     duplicates,
+    unpinned,
     checked: requiredTools.length,
     contractHash: hashToolContract(requiredTools),
   };
@@ -92,13 +128,23 @@ function runCli(opts = {}) {
 
   const result = checkToolContract(sourceFilePath, requiredTools);
   if (!result.ok) {
-    out.error('Tool contract check failed. Missing tools:');
-    for (const tool of result.missing) {
-      out.error(`- ${tool}`);
+    if (result.missing.length > 0) {
+      out.error('Tool contract check failed. Missing tools:');
+      for (const tool of result.missing) {
+        out.error(`- ${tool}`);
+      }
+    } else {
+      out.error('Tool contract check failed.');
     }
     if (result.duplicates.length > 0) {
       out.error('Duplicate tool declarations:');
       for (const tool of result.duplicates) {
+        out.error(`- ${tool}`);
+      }
+    }
+    if (result.unpinned.length > 0) {
+      out.error('Declared tools not pinned in the contract floor (add to REQUIRED_TOOLS):');
+      for (const tool of result.unpinned) {
         out.error(`- ${tool}`);
       }
     }

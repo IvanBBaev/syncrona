@@ -5,7 +5,7 @@
 2. Completed work is tracked in DONE.
 
 ## Goal: real-world readiness 9.5/10
-Current: ~9/10 — as of 2026-06-21 the engineering-completable backlog is closed:
+Current: ~8.5/10 — as of 2026-07-06 the engineering-completable backlog is closed:
 D5 (keychain default + Homebrew/Windows scaffolding), AR11, G13, QA-2 and the DX
 items (DX17 core, DX18 repair, DX19, DX24) are done; `npm run check` is green and
 prod `npm audit` is clean. What remains is NOT engineering-completable offline:

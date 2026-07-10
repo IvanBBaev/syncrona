@@ -8,6 +8,10 @@ const DEFAULT_GOVERNANCE = path.join(root, 'docs', 'release-governance.md');
 const DEFAULT_CHANGELOG = path.join(root, '..', '..', 'CHANGELOG.md');
 const DEFAULT_REQUIRED_SECTIONS = [
   '## Versioning',
+  // Ordering matters at release time: the site badge must be bumped before the test
+  // suites run, because one of them executes the live claims gate. Requiring the
+  // section keeps that procedure from quietly disappearing from the checklist.
+  '## Version bump procedure',
   '## Changelog policy',
   '## Backward compatibility notes',
   '## Audit retention guidance',
@@ -47,7 +51,8 @@ function validateReleaseChecklist(opts = {}) {
     errors.push(`Missing governance section: ${section}`);
   }
 
-  const changelogHasReleaseEntries = /^##\s*\[[^\]]+\]/m.test(changelogText);
+  // Require a real semver heading: "## [Unreleased]" alone must not satisfy this.
+  const changelogHasReleaseEntries = /^##\s*\[v?\d+\.\d+\.\d+/m.test(changelogText);
   if (!changelogHasReleaseEntries) {
     errors.push('CHANGELOG.md must include at least one release heading like "## [x.y.z]".');
   }

@@ -12,13 +12,13 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `0.4.2` (public alpha)
-- **Engineering readiness:** ~9/10 — gate suite green, 0 production-dependency
+- **Current version:** `0.9.1` (pre-release; latest published on npm: `0.9.0`)
+- **Engineering readiness:** ~85% (8.5/10) — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
   a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
   error taxonomy (DX19), the `repair` command, flat layout (DX17), mutation
   testing (G13) and read-only **Jira issue context** now shipped.
-- **Last updated:** 2026-07-02
+- **Last updated:** 2026-07-06
 
 ## Status legend
 
@@ -31,7 +31,7 @@ human-facing summary of them.
 
 ---
 
-## Where SyncroNow AI is today (v0.4.x alpha)
+## Where SyncroNow AI is today (v0.9.x pre-release)
 
 The engineering foundation is in place and validated end-to-end against scoped
 applications. The following are **shipped**:

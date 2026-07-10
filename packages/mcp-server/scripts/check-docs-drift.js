@@ -13,14 +13,62 @@ const DEFAULT_CATALOG_SOURCE = path.resolve(
 const DEFAULT_README_SOURCE = path.resolve(__dirname, '..', 'README.md');
 
 const TOOL_NAME_REGEX = /name:\s*"([^"]+)"/g;
-const DOC_TOOL_REGEX = /\b(?:sync_[a-z0-9_]+|sn_[a-z0-9_]+|jira_[a-z0-9_]+|run_workspace_command|run_node_code)\b/g;
+
+// A doc declares a tool at the start of a bullet, a table cell, or a heading,
+// optionally wrapped in backticks. Prose is deliberately not a declaration site:
+// a ServiceNow table name such as `sn_hr_core_case` mentioned in a sentence must
+// not be mistaken for a tool that vanished from the schemas.
+const DECLARATION_PREFIX = String.raw`^[ \t]*(?:[-*+][ \t]+|\|[ \t]*|#{1,6}[ \t]+)`;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 function parseToolNamesFromSchemas(raw) {
   return [...new Set([...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1]))].sort();
 }
 
-function parseToolNamesFromDocs(raw) {
-  return [...new Set([...raw.matchAll(DOC_TOOL_REGEX)].map((m) => m[0]))].sort();
+// Family prefixes ("sync_", "sn_", ...) come from the schema names themselves, so
+// introducing a tool family never requires editing a hardcoded shape here — and
+// never turns this gate into a check the docs cannot satisfy.
+function deriveToolPrefixes(schemaTools) {
+  const prefixes = new Set();
+  for (const name of schemaTools) {
+    const separator = name.indexOf('_');
+    if (separator > 0) {
+      prefixes.add(name.slice(0, separator + 1));
+    }
+  }
+  return [...prefixes].sort();
+}
+
+function buildDeclarationRegex(prefixes) {
+  if (prefixes.length === 0) {
+    return null;
+  }
+  const families = prefixes.map(escapeRegExp).join('|');
+  return new RegExp(`${DECLARATION_PREFIX}\`?((?:${families})[a-z0-9_]+)\`?`, 'gm');
+}
+
+// Word-boundary match on `_`-bearing identifiers: `sn_query` must not match
+// inside `sn_query_table`.
+function mentionsToolName(raw, name) {
+  return new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(name)}(?![A-Za-z0-9_])`).test(raw);
+}
+
+// Names known to the schemas are searched for literally; anything else is picked
+// up only from a declaration site whose prefix matches a real tool family.
+function parseToolNamesFromDocs(raw, schemaTools = []) {
+  const found = new Set(schemaTools.filter((name) => mentionsToolName(raw, name)));
+
+  const declarationRegex = buildDeclarationRegex(deriveToolPrefixes(schemaTools));
+  if (declarationRegex) {
+    for (const match of raw.matchAll(declarationRegex)) {
+      found.add(match[1]);
+    }
+  }
+
+  return [...found].sort();
 }
 
 function compareToolSets(schemaTools, docTools) {
@@ -46,8 +94,8 @@ function checkDocsDrift(opts = {}) {
   const readmeRaw = fs.readFileSync(readmeSource, 'utf-8');
 
   const schemaTools = parseToolNamesFromSchemas(toolRaw);
-  const catalogTools = parseToolNamesFromDocs(catalogRaw);
-  const readmeTools = parseToolNamesFromDocs(readmeRaw);
+  const catalogTools = parseToolNamesFromDocs(catalogRaw, schemaTools);
+  const readmeTools = parseToolNamesFromDocs(readmeRaw, schemaTools);
 
   const catalogDrift = compareToolSets(schemaTools, catalogTools);
   const readmeDrift = compareToolSets(schemaTools, readmeTools);
@@ -83,13 +131,13 @@ function printDrift(out, label, drift) {
 
   out.error(`${label}: drift detected.`);
   if (drift.missingInDocs.length > 0) {
-    out.error('  Missing in docs:');
+    out.error('  Declared in toolSchemas.ts but not documented:');
     for (const name of drift.missingInDocs) {
       out.error(`  - ${name}`);
     }
   }
   if (drift.extraInDocs.length > 0) {
-    out.error('  Extra in docs (not in schema):');
+    out.error('  Documented but not declared in toolSchemas.ts:');
     for (const name of drift.extraInDocs) {
       out.error(`  - ${name}`);
     }
@@ -142,6 +190,7 @@ if (require.main === module) {
 module.exports = {
   checkDocsDrift,
   compareToolSets,
+  deriveToolPrefixes,
   parseToolNamesFromDocs,
   parseToolNamesFromSchemas,
   runCli,
