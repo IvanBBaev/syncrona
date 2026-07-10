@@ -39,6 +39,10 @@ function withToolLifecycleMetadata(tools: Array<Record<string, unknown>>): Array
   });
 }
 
+// Keep this a flat array of inline object literals. The governance scripts
+// (scripts/generate-tool-reference.js, scripts/check-docs-drift.js) read this
+// file textually rather than importing it, so spread elements, computed keys and
+// referenced constants cannot be resolved and will fail the docs gates.
 const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_status",
@@ -385,6 +389,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           type: "number",
           minimum: 1000,
           maximum: 900000,
+        },
+        confirmDestructive: {
+          type: "boolean",
+          description:
+            "Set true to acknowledge that executing Node.js code may modify workspace or environment state.",
+          default: false,
         },
       },
       required: ["code"],

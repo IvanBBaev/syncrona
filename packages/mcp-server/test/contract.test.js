@@ -13,6 +13,7 @@ const {
 } = require('../scripts/check-tool-contract.js');
 const {
   checkDocsDrift,
+  deriveToolPrefixes,
   parseToolNamesFromDocs,
   parseToolNamesFromSchemas,
   runCli: runDocsDriftCli,
@@ -20,16 +21,19 @@ const {
 const {
   validateReleaseChecklist,
   runCli: runReleaseChecklistCli,
+  DEFAULT_REQUIRED_SECTIONS: RELEASE_GOVERNANCE_SECTIONS,
 } = require('../scripts/validate-release-checklist.js');
 const {
   validateClaudeDocsDrift,
   parseCommandNamesFromReadme,
   parseCommandNamesFromClaude,
+  sliceCommandTableSection,
   runCli: runClaudeDocsDriftCli,
 } = require('../scripts/check-claude-docs-drift.js');
 const {
   validateClaimsDrift,
   runCli: runClaimsDriftCli,
+  parseRuntimeOverrides: parseClaimsRuntimeOverrides,
 } = require('../scripts/check-claims-drift.js');
 const { getToolLifecycleMetadata } = require('../dist/toolSchemas.js');
 
@@ -159,7 +163,8 @@ test('tool contract CLI entrypoint exits 1 when overrides fail contract', () => 
 });
 
 test('docs drift parser extracts tools from schemas and docs', () => {
-  const schemaRaw = 'name: "sync_a"\nname: "sn_b"\nname: "sync_a"\n';
+  const schemaRaw =
+    'name: "sync_a"\nname: "sn_b"\nname: "sync_a"\nname: "run_workspace_command"\nname: "run_node_code"\n';
   const docsRaw = [
     '- sync_a',
     '- sn_b',
@@ -169,10 +174,41 @@ test('docs drift parser extracts tools from schemas and docs', () => {
   ].join('\n');
 
   const schemaNames = parseToolNamesFromSchemas(schemaRaw);
-  const docNames = parseToolNamesFromDocs(docsRaw);
+  const docNames = parseToolNamesFromDocs(docsRaw, schemaNames);
 
-  assert.deepEqual(schemaNames, ['sn_b', 'sync_a']);
+  assert.deepEqual(schemaNames, ['run_node_code', 'run_workspace_command', 'sn_b', 'sync_a']);
   assert.deepEqual(docNames, ['run_node_code', 'run_workspace_command', 'sn_b', 'sync_a']);
+});
+
+test('docs drift parser derives tool families from the schemas instead of hardcoding them', () => {
+  const schemaNames = parseToolNamesFromSchemas('name: "sync_a"\nname: "gh_deploy"\n');
+
+  assert.deepEqual(deriveToolPrefixes(schemaNames), ['gh_', 'sync_']);
+  // A brand-new family is matched on both sides, so documenting it satisfies the
+  // gate and forgetting it still fails the gate.
+  assert.deepEqual(parseToolNamesFromDocs('- sync_a\n- gh_deploy\n', schemaNames), [
+    'gh_deploy',
+    'sync_a',
+  ]);
+  assert.deepEqual(parseToolNamesFromDocs('- sync_a\n', schemaNames), ['sync_a']);
+});
+
+test('docs drift parser ignores ServiceNow table names mentioned in prose', () => {
+  const schemaNames = parseToolNamesFromSchemas('name: "sn_query_records"\n');
+  const docsRaw = [
+    '- sn_query_records',
+    '',
+    'The handler reads from `sn_hr_core_case` and sn_customerservice_case tables.',
+  ].join('\n');
+
+  assert.deepEqual(parseToolNamesFromDocs(docsRaw, schemaNames), ['sn_query_records']);
+});
+
+test('docs drift parser does not match a tool name nested inside a longer identifier', () => {
+  const schemaNames = ['sn_query'];
+
+  assert.deepEqual(parseToolNamesFromDocs('Reads the sn_query_table view.', schemaNames), []);
+  assert.deepEqual(parseToolNamesFromDocs('Calls `sn_query` first.', schemaNames), ['sn_query']);
 });
 
 test('docs drift checker reports missing and extra tools', () => {
@@ -233,17 +269,9 @@ test('release checklist validator passes when artifacts and sections are present
   const changelogPath = path.join(tempDir, 'CHANGELOG.md');
 
   fs.writeFileSync(readmePath, '# README\n');
-  fs.writeFileSync(
-    governancePath,
-    [
-      '## Versioning',
-      '## Changelog policy',
-      '## Backward compatibility notes',
-      '## Audit retention guidance',
-      '## Incident response guidance',
-    ].join('\n'),
-    'utf-8'
-  );
+  // Mirror whatever the validator currently demands, so adding a required section
+  // fails only the docs that lack it -- never these fixtures.
+  fs.writeFileSync(governancePath, RELEASE_GOVERNANCE_SECTIONS.join('\n'), 'utf-8');
   fs.writeFileSync(changelogPath, '# Changelog\n\n## [1.0.0] - 2026-05-29\n', 'utf-8');
 
   const result = validateReleaseChecklist({
@@ -279,6 +307,55 @@ test('release checklist validator reports missing sections and invalid changelog
   assert.equal(result.errors.some((line) => line.includes('CHANGELOG.md')), true);
 });
 
+test('release checklist validator rejects a changelog holding only [Unreleased]', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-release-checklist-'));
+  const readmePath = path.join(tempDir, 'README.md');
+  const governancePath = path.join(tempDir, 'release-governance.md');
+  const changelogPath = path.join(tempDir, 'CHANGELOG.md');
+
+  fs.writeFileSync(readmePath, '# README\n');
+  // Mirror whatever the validator currently demands, so adding a required section
+  // fails only the docs that lack it -- never these fixtures.
+  fs.writeFileSync(governancePath, RELEASE_GOVERNANCE_SECTIONS.join('\n'), 'utf-8');
+  fs.writeFileSync(changelogPath, '# Changelog\n\n## [Unreleased]\n\n- pending\n', 'utf-8');
+
+  const result = validateReleaseChecklist({
+    readmePath,
+    governancePath,
+    changelogPath,
+  });
+
+  assert.equal(result.changelogHasReleaseEntries, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.some((line) => line.includes('CHANGELOG.md')), true);
+});
+
+test('release checklist validator accepts a semver heading alongside [Unreleased]', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-release-checklist-'));
+  const readmePath = path.join(tempDir, 'README.md');
+  const governancePath = path.join(tempDir, 'release-governance.md');
+  const changelogPath = path.join(tempDir, 'CHANGELOG.md');
+
+  fs.writeFileSync(readmePath, '# README\n');
+  // Mirror whatever the validator currently demands, so adding a required section
+  // fails only the docs that lack it -- never these fixtures.
+  fs.writeFileSync(governancePath, RELEASE_GOVERNANCE_SECTIONS.join('\n'), 'utf-8');
+  fs.writeFileSync(
+    changelogPath,
+    '# Changelog\n\n## [Unreleased]\n\n## [0.9.1] - 2026-07-04\n',
+    'utf-8'
+  );
+
+  const result = validateReleaseChecklist({
+    readmePath,
+    governancePath,
+    changelogPath,
+  });
+
+  assert.equal(result.changelogHasReleaseEntries, true);
+  assert.equal(result.ok, true);
+});
+
 test('release checklist CLI returns 1 and prints failures', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-release-checklist-'));
   const readmePath = path.join(tempDir, 'README.md');
@@ -307,92 +384,163 @@ test('release checklist CLI returns 1 and prints failures', () => {
   assert.equal(errors.some((line) => line.includes('Missing governance section:')), true);
 });
 
+const CLAUDE_REQUIRED_SECTIONS = [
+  '## Purpose',
+  '## Workspace Layout',
+  '## Quality Gates',
+  '## Command Reference',
+  '## Documentation Drift Policy',
+];
+
+// A README command table row only counts when it sits under `### Commands` and
+// documents an `npx syncrona ...` invocation.
+function readmeCommandTable(rows) {
+  return [
+    '### Commands',
+    '',
+    '| Command | Aliases | Description | Example |',
+    '| --- | --- | --- | --- |',
+    ...rows.map((name) => `| \`${name}\` | none | Does a thing. | \`npx syncrona ${name}\` |`),
+    '',
+  ].join('\n');
+}
+
+function claudeDoc(commands, sections = CLAUDE_REQUIRED_SECTIONS) {
+  return [...sections, ...commands.map((name) => `- \`npx syncrona ${name}\` does a thing.`)].join(
+    '\n'
+  );
+}
+
+// Shape mirrors the `command:` entries of packages/core/src/cliCommands.ts, whose
+// four-space indentation the registry parser keys on.
+function cliCommandsSource(entries) {
+  const body = entries
+    .map((entry) => {
+      const value = Array.isArray(entry)
+        ? `[${entry.map((alias) => `"${alias}"`).join(', ')}]`
+        : `"${entry}"`;
+      return `  {\n    command: ${value},\n    describe: "Does a thing.",\n  },`;
+    })
+    .join('\n');
+  return `export const cliCommands = [\n${body}\n];\n`;
+}
+
+function writeClaudeDriftFixture({ readmeRows, claudeCommands, registry, sections }) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claude-drift-'));
+  const readmeSource = path.join(tempDir, 'README.md');
+  const claudeSource = path.join(tempDir, 'CLAUDE.md');
+  const cliCommandsSourcePath = path.join(tempDir, 'cliCommands.ts');
+
+  fs.writeFileSync(readmeSource, readmeCommandTable(readmeRows), 'utf-8');
+  fs.writeFileSync(claudeSource, claudeDoc(claudeCommands, sections), 'utf-8');
+  fs.writeFileSync(cliCommandsSourcePath, cliCommandsSource(registry), 'utf-8');
+
+  return { readmeSource, claudeSource, cliCommandsSource: cliCommandsSourcePath };
+}
+
 test('CLAUDE docs drift parser extracts command names from README and CLAUDE docs', () => {
-  const readmeRaw = [
-    '| `refresh` | none |',
-    '| `download <scope>` | none |',
-    '| `status` | none |',
-  ].join('\n');
-  const claudeRaw = [
-    '- `npx syncrona refresh`',
-    '- `npx syncrona download`',
-    '- `npx syncrona status`',
-  ].join('\n');
+  const readmeRaw = readmeCommandTable(['refresh', 'download <scope>', 'status']);
+  const claudeRaw = claudeDoc(['refresh', 'download', 'status'], []);
 
   assert.deepEqual(parseCommandNamesFromReadme(readmeRaw), ['download', 'refresh', 'status']);
   assert.deepEqual(parseCommandNamesFromClaude(claudeRaw), ['download', 'refresh', 'status']);
 });
 
-test('CLAUDE docs drift parser ignores non-command tables (e.g. env-var references)', () => {
+test('CLAUDE docs drift parser ignores tables outside the command section', () => {
   // README also documents environment variables in backticked-first-cell tables.
-  // Those UPPERCASE names are not CLI commands and must not be parsed as such,
-  // otherwise the drift gate demands nonexistent `npx syncrona jira_base_url`
-  // entries in CLAUDE.md.
+  // Those rows are not CLI commands and must not be parsed as such, otherwise the
+  // drift gate demands a nonexistent `npx syncrona jira_base_url` entry in
+  // CLAUDE.md.
   const readmeRaw = [
-    '| `jira` | none |',
+    readmeCommandTable(['jira']),
+    '### Environment',
+    '',
     '| Variable | Purpose |',
+    '| --- | --- |',
     '| `JIRA_BASE_URL` | Jira base URL. |',
     '| `JIRA_TOKEN` | Cloud API token or PAT. |',
+    '| `logLevel` | Verbosity. |',
   ].join('\n');
 
   assert.deepEqual(parseCommandNamesFromReadme(readmeRaw), ['jira']);
 });
 
+test('CLAUDE docs drift parser yields nothing when the command table heading is missing', () => {
+  // An empty slice makes the command comparison fail loudly rather than silently
+  // agreeing that zero commands are documented.
+  const readmeRaw = '| `refresh` | none | Refresh. | `npx syncrona refresh` |\n';
+
+  assert.equal(sliceCommandTableSection(readmeRaw), '');
+  assert.deepEqual(parseCommandNamesFromReadme(readmeRaw), []);
+});
+
 test('CLAUDE docs drift validator reports missing sections and missing command docs', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claude-drift-'));
-  const readmePath = path.join(tempDir, 'README.md');
-  const claudePath = path.join(tempDir, 'CLAUDE.md');
-
-  fs.writeFileSync(
-    readmePath,
-    ['| `refresh` | none |', '| `status` | none |', '| `doctor` | none |'].join('\n'),
-    'utf-8'
-  );
-  fs.writeFileSync(
-    claudePath,
-    ['## Purpose', '## Command Reference', '- `npx syncrona refresh`'].join('\n'),
-    'utf-8'
-  );
-
-  const result = validateClaudeDocsDrift({
-    readmeSource: readmePath,
-    claudeSource: claudePath,
+  const fixture = writeClaudeDriftFixture({
+    readmeRows: ['refresh', 'status', 'doctor'],
+    claudeCommands: ['refresh'],
+    registry: ['refresh', 'status', 'doctor'],
+    sections: ['## Purpose', '## Command Reference'],
   });
+
+  const result = validateClaudeDocsDrift(fixture);
 
   assert.equal(result.ok, false);
   assert.equal(result.missingSections.length > 0, true);
   assert.deepEqual(result.missingCommandDocs, ['doctor', 'status']);
 });
 
-test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claude-drift-'));
-  const readmePath = path.join(tempDir, 'README.md');
-  const claudePath = path.join(tempDir, 'CLAUDE.md');
+test('CLAUDE docs drift validator flags a command dropped from the README table', () => {
+  // The exact regression the two-way check exists for: deleting the `doctor` row
+  // from the README used to pass every gate.
+  const fixture = writeClaudeDriftFixture({
+    readmeRows: ['refresh', 'status'],
+    claudeCommands: ['refresh', 'status', 'doctor'],
+    registry: ['refresh', 'status', 'doctor'],
+  });
 
-  fs.writeFileSync(
-    readmePath,
-    ['| `refresh` | none |', '| `status` | none |'].join('\n'),
-    'utf-8'
+  const result = validateClaudeDocsDrift(fixture);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missingReadmeDocs, ['doctor']);
+  assert.deepEqual(result.undocumentedInReadme, ['doctor']);
+  assert.equal(
+    result.errors.some((line) => line.includes('Missing command in README command table: doctor')),
+    true
   );
-  fs.writeFileSync(
-    claudePath,
-    [
-      '## Purpose',
-      '## Workspace Layout',
-      '## Quality Gates',
-      '## Command Reference',
-      '## Documentation Drift Policy',
-      '- `npx syncrona refresh`',
-      '- `npx syncrona status`',
-    ].join('\n'),
-    'utf-8'
+});
+
+test('CLAUDE docs drift validator flags a documented command missing from the registry', () => {
+  const fixture = writeClaudeDriftFixture({
+    readmeRows: ['refresh', 'legacy'],
+    claudeCommands: ['refresh', 'legacy'],
+    registry: ['refresh'],
+  });
+
+  const result = validateClaudeDocsDrift(fixture);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.unknownCommandDocs, ['legacy']);
+  assert.equal(
+    result.errors.some((line) =>
+      line.includes('Documented command not registered in cliCommands.ts: legacy')
+    ),
+    true
   );
+});
+
+test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
+  // `dev` is registered through an alias array, `download <scope>` through a
+  // positional-argument string; both reduce to their primary name.
+  const fixture = writeClaudeDriftFixture({
+    readmeRows: ['refresh', 'status', 'dev', 'download <scope>'],
+    claudeCommands: ['refresh', 'status', 'dev', 'download'],
+    registry: ['refresh', 'status', ['dev', 'd'], 'download <scope>'],
+  });
 
   const logs = [];
   const errors = [];
   const exitCode = runClaudeDocsDriftCli({
-    readmeSource: readmePath,
-    claudeSource: claudePath,
+    ...fixture,
     console: {
       log: (line) => logs.push(line),
       error: (line) => errors.push(line),
@@ -402,14 +550,22 @@ test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
   assert.equal(exitCode, 0);
   assert.equal(errors.length, 0);
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /CLAUDE docs drift check passed/);
+  assert.match(logs[0], /CLAUDE docs drift check passed \(4 commands aligned with cliCommands\.ts\)\./);
 });
+
+// This runs the live gate against the live repository, so it turns red during the
+// test phase of `npm run check` -- before the gate itself would have run. The hint
+// keeps that failure legible: the usual cause is a version bump that never reached
+// the site.
+const CLAIMS_DRIFT_HINT =
+  'See "Version bump procedure" in packages/mcp-server/docs/release-governance.md: ' +
+  'bump the docs/index.html badge and JSON-LD softwareVersion before running the tests.';
 
 test('claims drift checker passes against the real repo artifacts', () => {
   const logs = [];
   const errors = [];
   const exitCode = runClaimsDriftCli({ console: { log: (m) => logs.push(m), error: (m) => errors.push(m) } });
-  assert.equal(exitCode, 0, errors.join('\n'));
+  assert.equal(exitCode, 0, [...errors, '', CLAIMS_DRIFT_HINT].join('\n'));
   assert.match(logs[0], /Claims drift check passed/);
 });
 
@@ -427,6 +583,83 @@ test('claims drift checker flags a missing marker and a resurrected old bin name
   assert.ok(result.errors.some((e) => /Missing required claim "syncrona" in README\.md/.test(e)));
   assert.ok(result.errors.some((e) => /Forbidden claim npx syncro-now-ai .* in docs\/COMPARISON\.md/.test(e)));
   assert.ok(result.errors.some((e) => /Missing claims artifact: docs\/index\.html/.test(e)));
+});
+
+test('claims drift CLI parses index.html overrides from an argument, a flag, or the env', () => {
+  const node = ['node', 'check-claims-drift.js'];
+
+  assert.deepEqual(parseClaimsRuntimeOverrides({}, [...node, '/tmp/a.html']), {
+    indexHtmlPath: '/tmp/a.html',
+    unknownArgs: [],
+    help: false,
+  });
+  assert.deepEqual(parseClaimsRuntimeOverrides({}, [...node, '--index-html=/tmp/b.html']), {
+    indexHtmlPath: '/tmp/b.html',
+    unknownArgs: [],
+    help: false,
+  });
+  // An explicit argument beats the ambient env override.
+  assert.equal(
+    parseClaimsRuntimeOverrides({ SYNC_CLAIMS_INDEX_HTML: '/tmp/env.html' }, [...node, '/tmp/a.html'])
+      .indexHtmlPath,
+    '/tmp/a.html'
+  );
+  assert.equal(
+    parseClaimsRuntimeOverrides({ SYNC_CLAIMS_INDEX_HTML: '/tmp/env.html' }, node).indexHtmlPath,
+    '/tmp/env.html'
+  );
+  assert.equal(parseClaimsRuntimeOverrides({}, node).indexHtmlPath, undefined);
+});
+
+test('claims drift CLI rejects flag-looking arguments instead of reading them as a path', () => {
+  const argv = ['node', 'check-claims-drift.js', '--verbose'];
+  const overrides = parseClaimsRuntimeOverrides({}, argv);
+
+  // `--verbose` used to become the index.html path and fail downstream with a
+  // confusing "Missing claims source" error.
+  assert.equal(overrides.indexHtmlPath, undefined);
+  assert.deepEqual(overrides.unknownArgs, ['--verbose']);
+
+  const logs = [];
+  const errors = [];
+  const exitCode = runClaimsDriftCli({
+    ...overrides,
+    console: { log: (m) => logs.push(m), error: (m) => errors.push(m) },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(logs.length, 0);
+  assert.match(errors[0], /Unrecognized argument: --verbose/);
+  assert.match(errors.join('\n'), /Usage: node check-claims-drift\.js/);
+});
+
+test('claims drift CLI rejects an empty --index-html value and a stray second path', () => {
+  const node = ['node', 'check-claims-drift.js'];
+
+  assert.deepEqual(parseClaimsRuntimeOverrides({}, [...node, '--index-html=']).unknownArgs, [
+    '--index-html=',
+  ]);
+  assert.deepEqual(parseClaimsRuntimeOverrides({}, [...node, '/tmp/a.html', '/tmp/b.html']), {
+    indexHtmlPath: '/tmp/a.html',
+    unknownArgs: ['/tmp/b.html'],
+    help: false,
+  });
+});
+
+test('claims drift CLI prints usage and returns 0 for --help', () => {
+  const overrides = parseClaimsRuntimeOverrides({}, ['node', 'check-claims-drift.js', '--help']);
+  assert.equal(overrides.help, true);
+
+  const logs = [];
+  const errors = [];
+  const exitCode = runClaimsDriftCli({
+    ...overrides,
+    console: { log: (m) => logs.push(m), error: (m) => errors.push(m) },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(errors.length, 0);
+  assert.match(logs[0], /Usage: node check-claims-drift\.js/);
 });
 
 test('getToolLifecycleMetadata resolves version metadata with overrides and defaults', () => {
