@@ -229,6 +229,109 @@ tail of each defect family.
       same situation. Now sets a non-zero exit code on failure. Regression test
       asserts it.
 
+### Fourth adversarial pass (2026-07-16) — full-repo sweep, 13 findings, all fixed
+A fourth multi-agent adversarial audit swept the whole monorepo (core download/push/
+config/diagnostics, MCP handlers/runtime/governance, shared libs, and every build
+plugin). It surfaced thirteen real defects, each double-verified by two diverse
+skeptics (0 refuted). All fixed with regression tests proven to fail on the old code
+and pass on the fix; `npm run check` stays green (core tests 747, mcp 967,
+credential-store 60, typescript-plugin 8, babel-remove-modules 10). The findings
+cluster at the tail of prior families — resume/round-trip correctness (REV-13/21/23),
+config-vm realm handling (REV-26), gate soundness (REV-2/28/29/30) and exit-code gaps
+(REV-22/31) — plus a compiler-API contract bug the earlier typescript-plugin pass
+(REV-5) did not reach.
+- [x] **REV-32. push checkpoint resumed a grown diff, dropping new records** —
+      the checkpoint-match test only verified previously-*failed* keys were still in
+      the current diff (a subset check in one direction), so when the diff GREW between
+      runs the resume filter narrowed `fileList` down to the old failed keys and the
+      newly-changed records were silently never pushed. Now the checkpoint is reused
+      only when the current work is also a subset of what was already *attempted*
+      (`fileList.every(rec => attemptedSet.has(recToCheckpointKey(rec)))`); otherwise it
+      is discarded and the full diff is pushed. Test drives a grown diff and asserts the
+      new record is not dropped.
+- [x] **REV-33. push checkpoint ignored a switched target instance** — `PushCheckpoint`
+      stored no instance, so resuming after `syncrona use <other>` skipped records that
+      had succeeded on the original instance but were never sent to the new one. The
+      checkpoint now records the resolved instance and is discarded on mismatch. Test
+      resumes against a different instance and asserts a full re-push.
+- [x] **REV-34. PluginManager rejected cross-realm RegExp match rules** — `determinePlugins`
+      gated plugin rules with `reg instanceof RegExp`, but `sync.config.js` is evaluated
+      through `vm.runInNewContext`, so a regex literal in the config is created with the
+      vm realm's `RegExp` intrinsic and fails `instanceof` cross-realm — silently
+      disabling *every* regex-matched build transform. Now uses realm-agnostic
+      `util.types.isRegExp`. Test feeds a vm-produced regex and asserts the rule matches.
+- [x] **REV-35. .env writer corrupted secrets with backslashes or quotes** —
+      `formatEnvValue` wrapped non-simple values in double quotes and backslash-escaped
+      `\` and `"`, but dotenv v17 does not un-escape backslashes in double-quoted values
+      (it only expands `\n`/`\r`), so `Win\2026` was written `"Win\\2026"` and read back
+      corrupted; `a"b` and any backslash value likewise. Now wraps in single quotes with
+      no escaping (dotenv returns single-quoted values verbatim, matching first-to-last
+      quote), which round-trips every case including embedded `'`. The docstring's false
+      round-trip-safety claim was corrected. Test now round-trips through the real
+      `dotenv.parse` for seven adversarial values instead of only asserting the produced
+      string.
+- [x] **REV-36. isValidScope dropped every file when the workspace is the repo root** —
+      when the scope IS the git root, `path.relative(root, scope)` is `""`, so
+      `startsWith("" + "/")` was false for every path and `=== ""` never matched — so
+      `push --diff` / `build --diff` silently operated on zero files. Now an empty
+      relative path means "the scope contains the whole repo" and returns true. Test
+      asserts every changed file stays in scope at the repo root.
+- [x] **REV-37. manifest record query omitted the configured display/differentiator
+      fields** — `getRecordsForTable` never SELECTed the configured `displayField` or
+      `differentiatorField`, so the manifest it built diverged from what the download
+      path fetched; `findMissingFiles` then false-missed and `repair --prune` deleted
+      freshly-downloaded files. A shared `buildRecordFieldList()` now feeds both the
+      manifest query and the bulk-download path. Test asserts both option fields appear
+      in the record query.
+- [x] **REV-38. mcp command exited 0 on the no-credentials failure** — the
+      'no credentials' branch logged an error and returned without setting
+      `process.exitCode`, so `syncrona mcp` reported success on a real failure (the
+      REV-22/31 exit-code family). Now sets a non-zero exit code before returning. Test
+      asserts `exitCode === 1` on the no-login path.
+- [x] **REV-39. preflight-check emitted a false all-clear on empty overrides** —
+      `sync_preflight_check` forwarded empty-string `expected*` overrides to
+      `buildPreflightReport`, clobbering the guardrail/config expectations so the
+      comparison trivially matched and returned an unconditional `allOk:true`. Now only
+      actually-supplied (non-empty) override fields are forwarded via conditional spread.
+      Tests cover both the empty-override false-clear and that a real override is still
+      honored.
+- [x] **REV-40. docs-drift gate missed a stale entry for a removed last-of-family
+      tool** — the gate derived the allowed doc tool-name set only from the *surviving*
+      schema's family prefixes, so removing the last member of a family erased its prefix
+      and a now-stale doc entry for that tool was no longer flagged. Doc extraction now
+      matches a generic declaration-site tool-name shape instead of surviving-family
+      prefixes, so a removed-last-of-family tool left in the docs is detected as
+      `extraInDocs`. Tests cover the removed-last-of-family case end to end.
+- [x] **REV-41. recent-changes echoed a bound it never applied** — a non-empty but
+      unparseable `since` produced an empty ServiceNow datetime (the time-bound clause
+      was dropped) while the payload still echoed the raw `since`, so callers received
+      all-time results reported as bounded. Now an unparseable `since` falls back to
+      `defaultSinceIso()` and the payload echoes the bound actually applied. Test asserts
+      the query carries a real `sys_created_on>=` and never echoes the raw input.
+- [x] **REV-42. one undecodable credential filename hid all instances** —
+      `listInstances` decoded every `.enc` filename inside a single try/catch, so one
+      malformed name aborted the whole loop and returned `[]`, hiding all stored
+      instances and turning `removeAllCredentials` into a silent no-op. Moved the
+      try/catch inside the per-file loop (mirroring the already-correct
+      `listJiraProfiles`), so a bad name is skipped and the rest survive. Tests seed a
+      malformed name alongside valid ones and assert the valid instances still list and
+      remove.
+- [x] **REV-43. typescript-plugin fed raw JSON compilerOptions to createProgram** —
+      it passed tsconfig `compilerOptions` (string enums like `target:"ES2017"`,
+      `lib:["ES2017","DOM"]`) straight into `ts.createProgram`, which TS 5.5+ rejects
+      ("tsconfig JSON must be parsed ... before passing to createProgram"), breaking the
+      plugin on any real tsconfig. Now converts via `ts.convertCompilerOptionsFromJson`
+      (surfacing `.errors`), which also removed the buggy manual lib-name casing hack
+      (`lib.ES2017.d.ts` → correct `lib.es2017.d.ts`). Test runs a realistic string-enum
+      tsconfig and asserts a non-throwing transpile.
+- [x] **REV-44. babel-remove-modules never renamed aliased @expandModule imports** —
+      for `@expandModule` specifiers it collected `imported.name` (the original export)
+      instead of `local.name` (the binding actually in scope), so `path.scope.rename`
+      never matched an aliased import (`import { foo as bar }`) and left a dangling
+      `bar`. Now renames the local binding to `${moduleName}.${importedName}`, handles
+      default specifiers, and no longer ignores `import * as ns`. Test transforms an
+      aliased import and asserts `bar()` becomes `mod.foo()` with no dangling `bar`.
+
 Deliberately left ungated: internal snapshot docs (PRODUCT_STATE.md, VERSIONING.md)
 carry point-in-time numbers (readiness/coverage/test counts) by design. The
 user-facing claims (README, COMPARISON.md, index.html) are machine-gated by

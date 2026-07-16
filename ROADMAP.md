@@ -38,10 +38,21 @@ human-facing summary of them.
   credential filename, `^`-query and `.`/`..` path-injection gaps, a config-sandbox
   stdout leak that escaped onto the protocol channel, an uncaught health-server
   crash, and two exit-code and three governance-anchor gaps — each with a regression
-  test (core 740 tests, mcp 962 tests, mcp coverage 94.14% line / 87.05% branch). The
-  remaining distance to 10/10 is owner/live-gated (npm publish, live-instance
-  verification, Windows host, business decisions), not engineering-completable
-  offline.
+  test (core 740 tests, mcp 962 tests, mcp coverage 94.14% line / 87.05% branch). A
+  fourth full-repo adversarial sweep (2026-07-16) closed thirteen more real defects
+  (REV-32..REV-44, 0 refuted): a push checkpoint that resumed a grown diff (dropping
+  new records) or a switched instance, a cross-realm `RegExp` check that disabled every
+  regex-matched build transform, a `.env` writer that corrupted backslash/quote secrets
+  (dotenv v17 round-trip), an `isValidScope` that dropped every file at the repo root, a
+  manifest query that omitted the configured display/differentiator fields (prune-delete
+  risk), a `sync_preflight_check` false all-clear on empty overrides, a docs-drift gate
+  blind to a removed last-of-family tool, a recent-changes bound it never applied, one
+  undecodable credential filename hiding all instances, a typescript-plugin that fed raw
+  JSON `compilerOptions` into `createProgram`, and an unrenamed aliased `@expandModule`
+  import — each with a regression test (core 747 tests, mcp 967 tests, credential-store
+  60, typescript-plugin 8, babel-remove-modules 10). The remaining distance to 10/10 is
+  owner/live-gated (npm publish, live-instance verification, Windows host, business
+  decisions), not engineering-completable offline.
 - **Last updated:** 2026-07-16
 
 ## Status legend
