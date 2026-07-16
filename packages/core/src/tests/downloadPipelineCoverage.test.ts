@@ -102,6 +102,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
     debug: (...a: unknown[]) => loggerDebug(...a),
     error: (...a: unknown[]) => loggerError(...a),
     success: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -241,6 +242,56 @@ describe("findMissingFiles discovery chain", () => {
     const missing = await findMissingFiles(makeManifest());
 
     expect(missing).toEqual({});
+  });
+
+  it("flat layout reports a consistent workspace as complete and never probes per-record folders", async () => {
+    // DX17: flat mode has NO per-record folders. The old code probed one with
+    // pathExists and, finding it absent, marked the whole scope missing — making
+    // repair/refresh re-download everything every run. It must instead probe each
+    // field file directly under the table dir as `<record>~<field>`.
+    getConfig.mockReturnValue({ flat: true });
+    const probedNames: string[] = [];
+    const pathArgs: string[] = [];
+    pathExists.mockImplementation(async (p: string) => {
+      pathArgs.push(p);
+      return true;
+    });
+    SNFileExists.mockImplementation(
+      () => async (file: SN.File) => {
+        probedNames.push(file.name);
+        return true;
+      }
+    );
+
+    const { findMissingFiles } = await import("../appUtils.js");
+    const missing = await findMissingFiles(makeManifest());
+
+    // A fully-pulled flat workspace is consistent — nothing to re-download.
+    expect(missing).toEqual({});
+    // Field files are probed under the flat `<record>~<field>` name.
+    expect(probedNames.sort()).toEqual(
+      ["page1~html", "recA~doc", "recA~script", "recB~script"].sort()
+    );
+    // No per-record folder is ever pathExists-probed in flat mode.
+    expect(pathArgs.some((p) => /recA|recB|page1/.test(p))).toBe(false);
+  });
+
+  it("flat layout marks a genuinely missing field by its ORIGINAL field name", async () => {
+    getConfig.mockReturnValue({ flat: true });
+    pathExists.mockImplementation(async () => true);
+    // Only recA's flat `script` file is absent on disk.
+    SNFileExists.mockImplementation(
+      () => async (file: SN.File) => file.name !== "recA~script"
+    );
+
+    const { findMissingFiles } = await import("../appUtils.js");
+    const missing = await findMissingFiles(makeManifest());
+
+    // Reported under table -> sys_id -> the ORIGINAL field name, not `recA~script`,
+    // so the re-download targets the right field.
+    expect(missing.sys_script?.sysA).toEqual([{ name: "script", type: "js" }]);
+    expect(missing.sys_script?.sysB).toBeUndefined();
+    expect(missing.sys_ui_page).toBeUndefined();
   });
 });
 

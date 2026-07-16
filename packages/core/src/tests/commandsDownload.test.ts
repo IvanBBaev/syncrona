@@ -13,6 +13,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
     info: jest.fn(),
     success: jest.fn(),
+    warn: jest.fn(),
     error: jest.fn(),
   },
 }));
@@ -67,7 +68,7 @@ describe("downloadCommand flow", () => {
     mockPrompt.mockResolvedValue({ confirmed: true });
   });
 
-  it("downloads manifest and calls processManifest with forceWrite=true", async () => {
+  it("downloads manifest and skeletons non-destructively (processManifest forceWrite=false)", async () => {
     const manifest = { scope: "x_test", tables: {} };
     mockGetManifestApi.mockResolvedValue({ data: { result: manifest } });
 
@@ -81,7 +82,10 @@ describe("downloadCommand flow", () => {
       excludes: {},
       tableOptions: {},
     });
-    expect(mockProcessManifest).toHaveBeenCalledWith(manifest, true);
+    // forceWrite MUST be false: the skeleton phase preserves already-downloaded,
+    // non-empty files so a resumed download doesn't truncate the tables it then
+    // skips via the checkpoint. downloadAllFiles still force-writes pending tables.
+    expect(mockProcessManifest).toHaveBeenCalledWith(manifest, false);
   });
 
   it("skips confirmation prompt in ci mode", async () => {
@@ -93,6 +97,6 @@ describe("downloadCommand flow", () => {
     await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
 
     expect(mockPrompt).not.toHaveBeenCalled();
-    expect(mockProcessManifest).toHaveBeenCalledWith(manifest, true);
+    expect(mockProcessManifest).toHaveBeenCalledWith(manifest, false);
   });
 });

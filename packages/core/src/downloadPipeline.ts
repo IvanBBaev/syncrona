@@ -2,6 +2,7 @@
 import { SN } from "@syncrona/types";
 import path from "path";
 import * as fUtils from "./FileUtils.js";
+import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
 import * as ConfigManager from "./config.js";
 import { defaultClient, unwrapSNResponse } from "./snClient.js";
 import {
@@ -192,11 +193,25 @@ const markTableMissing = (
 };
 
 const checkFilesForMissing = async (
-  recPath: string,
+  // In folder mode this is the per-record directory; in flat mode it is the
+  // table directory and the field lives under the flat `<record>~<field>` name.
+  parentPath: string,
   files: SN.File[],
-  missingFunc: MarkFileMissingFunc
+  missingFunc: MarkFileMissingFunc,
+  flat: boolean,
+  recordName?: string
 ) => {
-  const checkPromises = files.map(fUtils.SNFileExists(recPath));
+  const checkPromises = files.map((file) => {
+    // DX17: flat layout writes every field directly under the table directory
+    // as `<record>~<field>.<ext>` (mirroring writeFlatSNFileCurry), so probe for
+    // that exact file rather than a per-record folder. Report the missing field
+    // with its ORIGINAL name so the re-download targets the right field.
+    const probe: SN.File =
+      flat && recordName !== undefined
+        ? { ...file, name: `${recordName}${FLAT_FIELD_SEPARATOR}${file.name}` }
+        : file;
+    return fUtils.SNFileExists(parentPath)(probe);
+  });
   const checks = await Promise.all(checkPromises);
   checks.forEach((check, index) => {
     if (!check) {
@@ -208,9 +223,31 @@ const checkFilesForMissing = async (
 const checkRecordsForMissing = async (
   tablePath: string,
   records: SN.TableConfigRecords,
-  missingFunc: MarkRecordMissingFunc
+  missingFunc: MarkRecordMissingFunc,
+  flat: boolean
 ) => {
   const recNames = Object.keys(records);
+
+  if (flat) {
+    // Flat layout has no per-record directory — probing pathExists on one would
+    // report every record as missing and make `repair`/`refresh` re-download the
+    // entire scope on every run. Check each field file directly under the table
+    // directory instead.
+    await Promise.all(
+      recNames.map((recName) => {
+        const record = records[recName];
+        return checkFilesForMissing(
+          tablePath,
+          record.files,
+          missingFunc(record.sys_id),
+          true,
+          record.name
+        );
+      })
+    );
+    return;
+  }
+
   const recPaths = recNames.map(fUtils.appendToPath(tablePath));
   const checkPromises = recNames.map((recName, index) =>
     fUtils.pathExists(recPaths[index])
@@ -226,7 +263,8 @@ const checkRecordsForMissing = async (
     await checkFilesForMissing(
       recPaths[index],
       record.files,
-      missingFunc(record.sys_id)
+      missingFunc(record.sys_id),
+      false
     );
   });
   await Promise.all(fileCheckPromises);
@@ -235,7 +273,8 @@ const checkRecordsForMissing = async (
 const checkTablesForMissing = async (
   topPath: string,
   tables: SN.TableMap,
-  missingFunc: MarkTableMissingFunc
+  missingFunc: MarkTableMissingFunc,
+  flat: boolean
 ) => {
   const tableNames = Object.keys(tables);
   const tablePaths = tableNames.map(fUtils.appendToPath(topPath));
@@ -253,7 +292,8 @@ const checkTablesForMissing = async (
     await checkRecordsForMissing(
       tablePaths[index],
       tables[tableName].records,
-      missingFunc(tableName)
+      missingFunc(tableName),
+      flat
     );
   });
   await Promise.all(recCheckPromises);
@@ -264,11 +304,15 @@ export const findMissingFiles = async (
 ): Promise<SN.MissingFileTableMap> => {
   const missing: SN.MissingFileTableMap = {};
   const { tables } = manifest;
+  // DX17: honor flat layout so a consistent flat workspace isn't misreported as
+  // entirely missing. Read straight off the loaded config, matching the write path.
+  const flat = ConfigManager.getConfig().flat === true;
   const missingTableFunc = markFileMissing(missing);
   await checkTablesForMissing(
     ConfigManager.getSourcePath(),
     tables,
-    missingTableFunc
+    missingTableFunc,
+    flat
   );
   // missing gets mutated along the way as things get processed
   return missing;
@@ -365,6 +409,8 @@ export const downloadTablesWithResume = async (
     );
   }
 
+  const failedTables: string[] = [];
+
   for (let i = 0; i < pending.length; i += 1) {
     const table = pending[i];
     const recordCount = Object.keys(missing[table]).length;
@@ -377,8 +423,35 @@ export const downloadTablesWithResume = async (
     } as SN.MissingFileTableMap);
     await deps.writeTable(files);
 
+    // A skippable 400/403/404 (e.g. Table-API ACL denial) leaves the table absent
+    // from the fetched map — buildBulkDownloadFromTableAPI swallows it — so its
+    // skeleton files stay empty. Marking it complete would checkpoint it as done,
+    // delete the checkpoint on loop exit, and report a clean "Download complete"
+    // over a partial pull. Instead record it as failed so the checkpoint survives
+    // and the next run retries it.
+    const fetchedRecordCount = Object.keys(files[table]?.records ?? {}).length;
+    if (recordCount > 0 && fetchedRecordCount === 0) {
+      failedTables.push(table);
+      logger.warn(
+        `  Table ${table} could not be downloaded (inaccessible or empty response) — its files are incomplete and it will be retried on the next run.`
+      );
+      continue;
+    }
+
     completed.add(table);
     await deps.writeCheckpoint({ scope, completedTables: [...completed] });
+  }
+
+  if (failedTables.length > 0) {
+    logger.error(
+      `Download incomplete: ${failedTables.length} table(s) could not be fetched: ${failedTables.join(
+        ", "
+      )}. Re-run to retry — the completed tables are checkpointed.`
+    );
+    // Signal partial failure to the shell and KEEP the checkpoint so a rerun
+    // resumes at the failed tables instead of redoing the whole scope.
+    process.exitCode = 1;
+    return;
   }
 
   await deps.deleteCheckpoint();

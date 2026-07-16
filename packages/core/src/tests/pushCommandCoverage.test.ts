@@ -37,6 +37,7 @@ const mockGitDiffToEncodedPaths = jest.fn();
 const mockReadFile = jest.fn();
 const mockWriteFile = jest.fn();
 const mockUnlink = jest.fn();
+const mockRename = jest.fn();
 const mockGetRootDir = jest.fn();
 const mockGetActiveInstance = jest.fn();
 const mockLoadCredentials = jest.fn();
@@ -99,6 +100,7 @@ jest.unstable_mockModule("fs", () => {
     readFile: (...args: unknown[]) => mockReadFile(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
+    rename: (...args: unknown[]) => mockRename(...args),
   };
   return { ...actual, promises, default: { ...actual, promises } };
 });
@@ -147,6 +149,7 @@ describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
     mockUnlink.mockResolvedValue(undefined);
     mockWriteFile.mockResolvedValue(undefined);
     mockReadFile.mockRejectedValue(enoent());
+    mockRename.mockResolvedValue(undefined);
   });
 
   it("getStateBaseDir falls back to cwd when no config root is loaded", () => {
@@ -178,7 +181,7 @@ describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
 
   it("gives up after both attempts lose to a repeatedly stale lock", async () => {
     // Every atomic create hits EEXIST; the existing lock is always stale (dead
-    // pid), so it is released and retried — but after two rounds acquire returns
+    // pid), so it is reclaimed and retried — but after two rounds acquire returns
     // the "could not acquire" fallback rather than looping forever.
     mockWriteFile.mockRejectedValue(eexist());
     mockReadFile.mockResolvedValue(
@@ -188,9 +191,15 @@ describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
     const result = await __lockInternals.acquireCollaborationLock("push");
     expect(result.acquired).toBe(false);
     expect(result.reason).toBe("Could not acquire collaboration lock.");
-    // Two atomic-create attempts, each followed by a stale-lock release.
+    // Two atomic-create attempts, each followed by an atomic stale-lock reclaim:
+    // rename the lock aside, confirm it is stale, then unlink the moved-aside file.
     expect(mockWriteFile).toHaveBeenCalledTimes(2);
+    expect(mockRename).toHaveBeenCalledTimes(2);
     expect(mockUnlink).toHaveBeenCalledTimes(2);
+    // Each unlink targets the reclaim sidecar, never the live lock path directly.
+    for (const call of mockUnlink.mock.calls) {
+      expect(String(call[0])).toContain(".reclaim");
+    }
   });
 
   it("releaseCollaborationLock re-throws a non-ENOENT unlink error", async () => {
@@ -232,6 +241,7 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     mockReadFile.mockRejectedValue(enoent());
     mockWriteFile.mockResolvedValue(undefined);
     mockUnlink.mockResolvedValue(undefined);
+    mockRename.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -280,6 +290,61 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     const unlinked = mockUnlink.mock.calls.map((c) => String(c[0]));
     expect(unlinked.some((p) => p.includes("sync.push.checkpoint.json"))).toBe(true);
     expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  it("under --ci, ignores a stale checkpoint whose failed records are not in the current diff and pushes the full diff (Finding 2)", async () => {
+    // Reused CI workspace: a leftover checkpoint from an earlier commit failed on
+    // sys_script:99, which is NOT part of the current diff (sys_script:1). The old
+    // code auto-resumed it, filtered the push down to the empty intersection,
+    // cleared the checkpoint and exited 0 — silently dropping the intended push.
+    mockGetAppFileList.mockResolvedValue([rec("1")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:99"],
+          succeeded: [],
+          failed: ["sys_script:99"],
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush(); // ci: true
+
+    // The unrelated checkpoint is discarded with a warning...
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Ignoring an unrelated push checkpoint")
+    );
+    // ...and the FULL current diff is pushed, not the empty intersection.
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["1"]);
+  });
+
+  it("under --ci, resumes only the failed records when the checkpoint matches the current diff (Finding 2)", async () => {
+    // The checkpoint's failed key (sys_script:2) is part of the current diff
+    // (sys_script:1 + sys_script:2), so auto-resume is legitimate: only the
+    // previously-failed record is retried.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:1", "sys_script:2"],
+          succeeded: ["sys_script:1"],
+          failed: ["sys_script:2"],
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush();
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["2"]);
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("Resuming from checkpoint with 1 records")
+    );
   });
 
   it("ignores a shape-invalid checkpoint file and pushes normally", async () => {

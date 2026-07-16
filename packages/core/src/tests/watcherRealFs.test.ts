@@ -33,7 +33,7 @@ jest.unstable_mockModule("../FileUtils.js", () => ({
 }));
 
 jest.unstable_mockModule("../Logger.js", () => ({
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 
 // Under ESM, jest.unstable_mockModule does not hoist: a static import of the SUT
@@ -109,6 +109,35 @@ describe("Watcher real filesystem integration (#5)", () => {
     // receives (index, array); assert only on the resolved file path.
     const contextPaths = mockGetFileContextFromPath.mock.calls.map((c) => c[0]);
     expect(contextPaths).toContain(target);
+  });
+
+  it("ignores pre-existing files on startup and pushes a newly added tracked file", async () => {
+    // Seed files BEFORE watching: with ignoreInitial the initial scan must
+    // not reach the push queue — without it chokidar fires "add" for every
+    // pre-existing file and a fresh dev session would flood the queue.
+    fs.writeFileSync(path.join(dir, "one.script.js"), "// one\n");
+    fs.writeFileSync(path.join(dir, "two.script.js"), "// two\n");
+
+    // Let the OS event stream settle before watching: fsevents/inotify can
+    // deliver just-completed writes AFTER chokidar's initial scan, where they
+    // would surface as post-startup "add" events and fake a flood.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    startWatching(dir);
+    // Long enough for the initial scan, the awaitWriteFinish settle window
+    // and the push debounce: if the startup scan had been enqueued, it would
+    // have drained into pushFiles by now.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    // A file created after startup fires "add"; the suite's manifest mock
+    // tracks every path, so it must sync exactly like a change.
+    const added = path.join(dir, "three.script.js");
+    fs.writeFileSync(added, "// three\n");
+
+    await waitFor(() => mockPushFiles.mock.calls.length > 0);
+    const contextPaths = mockGetFileContextFromPath.mock.calls.map((c) => c[0]);
+    expect(contextPaths).toContain(added);
   });
 
   it("stopWatching tears the watcher down and is safe to call twice", async () => {

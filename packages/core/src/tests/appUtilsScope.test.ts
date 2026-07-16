@@ -85,6 +85,8 @@ jest.unstable_mockModule("../manifestBuilder.js", () => ({
 jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: jest.fn(),
+    warn: jest.fn(),
+    success: jest.fn(),
     error: (...a: unknown[]) => loggerError(...a),
     debug: jest.fn(),
     // "error" log level keeps getProgTick a no-op (no ProgressBar on stderr).
@@ -321,9 +323,18 @@ describe("downloadAllFiles scoped-endpoint probe", () => {
     },
   } as unknown as SN.AppManifest;
 
+  // A fetched TableMap that actually carries records for both manifest tables, so
+  // the resume loop's empty-result accounting treats the pull as a real download
+  // (an empty map would be flagged as an inaccessible table and set a failing exit
+  // code). These probe tests only care which endpoint is hit, not the payload.
+  const fetchedBothTables = {
+    sys_script_include: { records: { a: { sys_id: "sa", name: "a", files: [] } } },
+    sys_script: { records: { b: { sys_id: "sb", name: "b", files: [] } } },
+  } as unknown as SN.TableMap;
+
   it("uses the scoped bulk endpoint when it is available", async () => {
     getConfig.mockReturnValue({ tableOptions: {} });
-    mockUnwrapSNResponse.mockResolvedValue({});
+    mockUnwrapSNResponse.mockResolvedValue(fetchedBothTables);
 
     const { downloadAllFiles } = await import("../appUtils.js");
     await downloadAllFiles(manifest);
@@ -337,6 +348,7 @@ describe("downloadAllFiles scoped-endpoint probe", () => {
     // First table's scoped call fails as unavailable; the probe latches so the
     // second table goes straight to the Table API without re-probing.
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
+    mockBuildBulk.mockResolvedValue(fetchedBothTables);
 
     const { downloadAllFiles } = await import("../appUtils.js");
     await downloadAllFiles(manifest);

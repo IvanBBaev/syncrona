@@ -321,6 +321,10 @@ export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boo
     logger.success("Doctor checks passed. ✅");
   } else {
     logger.warn("Doctor checks found issues. See messages above.");
+    // Signal failure to the shell: the CLI handler forwards the return value but
+    // never inspects `ok`, so without this a failing `syncrona doctor` still exits
+    // 0 and CI/`&&` chains treat a broken environment as healthy.
+    process.exitCode = 1;
   }
 
   return { ok, checks };

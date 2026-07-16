@@ -13,6 +13,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     info: jest.fn(),
     error: jest.fn(),
+    isRoutedToStderr: () => false,
   },
 }));
 

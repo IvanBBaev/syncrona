@@ -108,6 +108,62 @@ describe("config merge bugfixes", () => {
     expect(storeB.getConfig().includes?.alpha_only).toBeUndefined();
   });
 
+  it("getDefaultConfigFile escapes a hostile source dir into syntactically valid JS", async () => {
+    const vm = await import("vm");
+    const cfg = await import("../config.js");
+    // A source dir with a quote, backslash and newline used to emit broken JS
+    // (`sourceDirectory: "a"b"`) that threw at load and bricked every command.
+    const hostile = 'a"b\\c\nd';
+    const code = cfg.getDefaultConfigFile(hostile);
+    const sandbox: { module: { exports: { sourceDirectory?: string } } } = {
+      module: { exports: {} },
+    };
+    expect(() => vm.runInNewContext(code, sandbox)).not.toThrow();
+    // Round-trips the exact value — proof the escaping is lossless, not stripped.
+    expect(sandbox.module.exports.sourceDirectory).toBe(hostile);
+  });
+
+  it("routes sync.config.js console output to stderr when stdout is a protocol channel", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-console-"));
+    fs.writeFileSync(
+      path.join(project, "sync.config.js"),
+      'console.log("STDOUT_LEAK");\nmodule.exports = { includes: {} };\n'
+    );
+    process.chdir(project);
+
+    // Import config first so its Logger.js singleton is the one we drive here.
+    const cfg = await import("../config.js");
+    const { logger } = await import("../Logger.js");
+
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    const stdoutSpy = jest
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk: unknown) => {
+        stdoutChunks.push(String(chunk));
+        return true;
+      });
+    const stderrSpy = jest
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: unknown) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      });
+
+    try {
+      logger.routeAllToStderr(); // stdout is now a machine protocol channel
+      await cfg.loadConfigs();
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+
+    // The config's console.log must NOT reach stdout (would corrupt the channel)…
+    expect(stdoutChunks.join("")).not.toContain("STDOUT_LEAK");
+    // …it is redirected to stderr instead.
+    expect(stderrChunks.join("")).toContain("STDOUT_LEAK");
+  });
+
   it("treats packages scope directories as standalone workspace roots when only ancestor config exists", async () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-monorepo-"));
     const scopeDir = path.join(repoRoot, "packages", "cs");

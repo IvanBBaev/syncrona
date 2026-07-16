@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncrona/types";
-import { isEndpointNotFoundStatus } from "@syncrona/sn-transport";
+import { isEndpointNotFoundStatus, escapeQueryValue } from "@syncrona/sn-transport";
 import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
@@ -88,7 +88,9 @@ async function getScopeId(
   try {
     const res = await client.tableAPIGet(
       "sys_app",
-      `scope=${scopeName}`,
+      // Escape the config-supplied scope name — an unescaped `^`/`=` would inject
+      // extra encoded-query conditions (matches snClient.getScopeId).
+      `scope=${escapeQueryValue(scopeName)}`,
       "sys_id",
       1
     );
@@ -216,7 +218,7 @@ async function getTableNamesFromDictionary(
   try {
     const res = await client.tableAPIGet(
       "sys_dictionary",
-      `nameLIKE${scopeName}^nameISNOTEMPTY`,
+      `nameLIKE${escapeQueryValue(scopeName)}^nameISNOTEMPTY`,
       "name",
       10000
     );
@@ -431,7 +433,14 @@ function buildRecordName(
   }
 
   // Match server-side: replace path separators
-  return (name || record.sys_id).replace(/[/\\]/g, "〳");
+  const safe = (name || record.sys_id).replace(/[/\\]/g, "〳");
+  // Never let a record materialize as "." / ".." (or any all-dots name): those
+  // resolve to the current/parent directory, so the record's field files would
+  // land outside its own folder and then get deleted by `repair --apply --prune`.
+  if (safe.trim() === "" || /^\.+$/.test(safe.trim())) {
+    return record.sys_id;
+  }
+  return safe;
 }
 
 async function getRecordsForTable(

@@ -24,16 +24,30 @@ jest.unstable_mockModule("../Logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { __lockInternals } from "../pushCommand.js";
+// jest.unstable_mockModule does not hoist, so a static import would bind the
+// REAL ../config.js before the mock registers — pushCommand's getStateBaseDir
+// would then fall back to process.cwd() and the tests would pollute the repo
+// root with lock files. Import pushCommand lazily, after the mock is in place.
+type LockInternals = typeof import("../pushCommand.js").__lockInternals;
+let acquireCollaborationLock: LockInternals["acquireCollaborationLock"];
+let releaseCollaborationLock: LockInternals["releaseCollaborationLock"];
+let reclaimStaleLock: LockInternals["reclaimStaleLock"];
+let loadCollaborationLock: LockInternals["loadCollaborationLock"];
+let isCollaborationLockStale: LockInternals["isCollaborationLockStale"];
+let isProcessAlive: LockInternals["isProcessAlive"];
+let getCollaborationLockPath: LockInternals["getCollaborationLockPath"];
 
-const {
-  acquireCollaborationLock,
-  releaseCollaborationLock,
-  loadCollaborationLock,
-  isCollaborationLockStale,
-  isProcessAlive,
-  getCollaborationLockPath,
-} = __lockInternals;
+beforeAll(async () => {
+  ({
+    acquireCollaborationLock,
+    releaseCollaborationLock,
+    reclaimStaleLock,
+    loadCollaborationLock,
+    isCollaborationLockStale,
+    isProcessAlive,
+    getCollaborationLockPath,
+  } = (await import("../pushCommand.js")).__lockInternals);
+});
 
 // A pid that is essentially guaranteed not to be running. process.kill(pid, 0)
 // on it throws ESRCH, which the liveness check reads as "owner is gone".
@@ -133,5 +147,63 @@ describe("collaboration lock (#18) — real filesystem", () => {
 
   it("release is a no-op when no lock file exists (idempotent)", async () => {
     await expect(releaseCollaborationLock()).resolves.toBeUndefined();
+  });
+
+  // Finding 6: stale reclaim must never destroy a LIVE lock a racing push
+  // created in the window after we observed the stale one. The old blind unlink
+  // did exactly that, letting two pushes both acquire.
+  describe("atomic stale-lock reclaim (Finding 6)", () => {
+    it("discards a genuinely stale lock and leaves no reclaim temp behind", async () => {
+      const stalePayload = {
+        command: "push",
+        pid: DEAD_PID,
+        createdAt: new Date().toISOString(),
+      };
+      const lockPath = getCollaborationLockPath();
+      fs.writeFileSync(lockPath, JSON.stringify(stalePayload), "utf8");
+
+      await reclaimStaleLock();
+
+      // The stale lock is gone, and no `.reclaim` sidecar was orphaned.
+      expect(fs.existsSync(lockPath)).toBe(false);
+      const leftovers = fs.readdirSync(dir).filter((f) => f.includes(".reclaim"));
+      expect(leftovers).toEqual([]);
+    });
+
+    it("restores (never deletes) a LIVE lock found at the path instead of the stale one", async () => {
+      // Simulate the race: by the time reclaim runs, a racing push has replaced
+      // the observed stale lock with its own LIVE lock (this process, fresh).
+      const livePayload = {
+        command: "push",
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+      };
+      const lockPath = getCollaborationLockPath();
+      fs.writeFileSync(lockPath, JSON.stringify(livePayload), "utf8");
+
+      await reclaimStaleLock();
+
+      // The live lock must survive untouched — its owner keeps mutual exclusion.
+      expect(fs.existsSync(lockPath)).toBe(true);
+      const loaded = await loadCollaborationLock();
+      expect(loaded?.pid).toBe(process.pid);
+      const leftovers = fs.readdirSync(dir).filter((f) => f.includes(".reclaim"));
+      expect(leftovers).toEqual([]);
+    });
+
+    it("is a no-op when the lock has already been removed by another racer", async () => {
+      // Nothing at the path — the ENOENT branch returns without throwing.
+      await expect(reclaimStaleLock()).resolves.toBeUndefined();
+      expect(fs.existsSync(getCollaborationLockPath())).toBe(false);
+    });
+
+    it("discards an unparseable (corrupt) lock file", async () => {
+      const lockPath = getCollaborationLockPath();
+      fs.writeFileSync(lockPath, "{ this is not json", "utf8");
+
+      await reclaimStaleLock();
+
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
   });
 });

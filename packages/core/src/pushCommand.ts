@@ -169,7 +169,10 @@ async function acquireCollaborationLock(
           reason: `Detected active ${existing.command} lock (${owner}) created at ${existing.createdAt}.`,
         };
       }
-      await releaseCollaborationLock();
+      // The lock is stale (or corrupt). Reclaim it atomically — a blind unlink
+      // here would delete a *live* lock a racing push created after we observed
+      // the stale one, letting both pushes proceed (see reclaimStaleLock).
+      await reclaimStaleLock();
     }
   }
 
@@ -186,6 +189,50 @@ async function releaseCollaborationLock(): Promise<void> {
   }
 }
 
+// Atomically reclaim a lock we've judged stale, without ever removing a lock a
+// concurrent push may have legitimately created. The old code blindly unlinked
+// whatever file was at the lock path, so two pushes that both observed the same
+// stale lock would each unlink it and create their own — breaking mutual
+// exclusion. Instead we move the file aside with a single atomic rename: for a
+// given path only one racer's rename can win (the loser sees ENOENT), and we
+// then re-check what we actually moved. If it is stale we discard it, freeing
+// the path for the caller's 'wx' create; if a racer had already replaced it
+// with a live lock, we put that lock back and let the caller re-evaluate.
+async function reclaimStaleLock(): Promise<void> {
+  const lockPath = getCollaborationLockPath();
+  const asidePath = `${lockPath}.${process.pid}.reclaim`;
+  try {
+    await fsp.rename(lockPath, asidePath);
+  } catch (e) {
+    // ENOENT: another racer already moved/removed the stale lock. Nothing to
+    // reclaim — the retry loop re-reads whatever is at the path now.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    throw e;
+  }
+  const moved = await (async (): Promise<CollaborationLock | null> => {
+    try {
+      const parsed = JSON.parse(await fsp.readFile(asidePath, "utf8")) as CollaborationLock;
+      return parsed && typeof parsed === "object" && typeof parsed.createdAt === "string"
+        ? parsed
+        : null;
+    } catch {
+      // Unparseable/unreadable content is junk by definition — safe to discard.
+      return null;
+    }
+  })();
+
+  if (moved === null || isCollaborationLockStale(moved)) {
+    // Confirmed stale (or corrupt) — discard it; the path is now free.
+    await fsp.unlink(asidePath).catch(() => undefined);
+    return;
+  }
+  // We moved a live lock a racer created in the window before our rename.
+  // Restore it so its owner keeps the lock, and abort the reclaim.
+  await fsp.rename(asidePath, lockPath).catch(() => undefined);
+}
+
 // #18: the collaboration-lock primitives are otherwise reachable only through
 // the full pushCommand flow (network client, inquirer prompts, config). This
 // test-facing surface lets the lock lifecycle — atomic acquire, stale-pid
@@ -195,6 +242,7 @@ async function releaseCollaborationLock(): Promise<void> {
 export const __lockInternals = {
   acquireCollaborationLock,
   releaseCollaborationLock,
+  reclaimStaleLock,
   loadCollaborationLock,
   isCollaborationLockStale,
   isProcessAlive,
@@ -251,26 +299,43 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       const existingCheckpoint = await loadPushCheckpoint();
       if (existingCheckpoint && existingCheckpoint.failed.length > 0) {
-        const shouldResume = skipPrompt
-          ? true
-          : (
-              await inquirer.prompt<{ confirmed: boolean }>([
-                {
-                  type: "confirm",
-                  name: "confirmed",
-                  message:
-                    "Found unfinished push checkpoint. Resume only failed records from the previous run?",
-                  default: true,
-                },
-              ])
-            ).confirmed;
+        // A checkpoint only belongs to *this* push if every record it still needs
+        // to retry is part of the current diff. On a reused CI workspace a stale
+        // checkpoint from an earlier commit can be disjoint from the current work;
+        // resuming it would silently narrow (or empty) the push and still exit 0.
+        // When it doesn't match, discard it and push the full current diff.
+        const currentKeys = new Set(fileList.map(recToCheckpointKey));
+        const checkpointMatchesDiff = existingCheckpoint.failed.every((key) =>
+          currentKeys.has(key)
+        );
 
-        if (shouldResume) {
-          const failedKeys = new Set(existingCheckpoint.failed);
-          fileList = fileList.filter((rec) => failedKeys.has(recToCheckpointKey(rec)));
-          logger.info(`Resuming from checkpoint with ${fileList.length} records.`);
-        } else {
+        if (!checkpointMatchesDiff) {
+          logger.warn(
+            "Ignoring an unrelated push checkpoint from a previous run — its failed records are not part of the current changes. Pushing the full current diff."
+          );
           await clearPushCheckpoint();
+        } else {
+          const shouldResume = skipPrompt
+            ? true
+            : (
+                await inquirer.prompt<{ confirmed: boolean }>([
+                  {
+                    type: "confirm",
+                    name: "confirmed",
+                    message:
+                      "Found unfinished push checkpoint. Resume only failed records from the previous run?",
+                    default: true,
+                  },
+                ])
+              ).confirmed;
+
+          if (shouldResume) {
+            const failedKeys = new Set(existingCheckpoint.failed);
+            fileList = fileList.filter((rec) => failedKeys.has(recToCheckpointKey(rec)));
+            logger.info(`Resuming from checkpoint with ${fileList.length} records.`);
+          } else {
+            await clearPushCheckpoint();
+          }
         }
       }
 

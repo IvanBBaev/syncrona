@@ -206,7 +206,13 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   }
 
   logger.info("Creating local files from manifest...");
-  await AppUtils.processManifest(man, true);
+  // checkExists=true (forceWrite=false): the manifest file is still force-written
+  // (processManifest always does that), and downloadAllFiles below force-writes
+  // full content for every pending table — but the skeleton phase must NOT blank
+  // already-downloaded, non-empty files, or a resumed download would truncate the
+  // tables it then skips via the checkpoint. SNFileExists treats zero-byte as
+  // missing, so genuinely-empty skeletons are still (re)created.
+  await AppUtils.processManifest(man, false);
   logger.info("Fetching file contents...");
   await AppUtils.downloadAllFiles(man, args.instanceProfile);
   try {
@@ -216,7 +222,13 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
     const message = e instanceof Error ? e.message : String(e);
     logger.warn(`Could not generate scope documentation: ${message}`);
   }
-  logger.success("Download complete ✅");
+  // downloadAllFiles sets a non-zero process.exitCode when a table could not be
+  // fetched, so don't announce a clean completion over a partial pull.
+  if (process.exitCode) {
+    logger.warn("Download finished with errors — some tables are incomplete. See the warnings above.");
+  } else {
+    logger.success("Download complete ✅");
+  }
 }
 export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
   setLogLevel(args);
@@ -225,6 +237,8 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
     logger.error(
       "No manifest found. Run 'syncrona init' or 'syncrona download <scope>' first."
     );
+    // Signal failure so scripts/CI don't treat a missing manifest as success.
+    process.exitCode = 1;
     return;
   }
   try {
@@ -233,6 +247,7 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(`Failed to generate scope documentation: ${message}`);
+    process.exitCode = 1;
   }
 }
 export async function initCommand(args: Sync.SharedCmdArgs) {

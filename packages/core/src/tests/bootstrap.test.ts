@@ -13,10 +13,27 @@ export {};
 // other names the config graph hard-links).
 const mockLoadConfigs = jest.fn();
 const mockGetEnvPath = jest.fn();
+const mockDotenvConfig = jest.fn();
+const mockRouteAllToStderr = jest.fn();
 
 jest.unstable_mockModule("../config.js", () => ({
   loadConfigs: (...args: unknown[]) => mockLoadConfigs(...args),
   getEnvPath: (...args: unknown[]) => mockGetEnvPath(...args),
+}));
+
+// bootstrap calls logger.routeAllToStderr() up front for protocol-channel
+// commands (mcp/completion). Mock the logger so that decision is observable
+// without touching the real winston transports.
+jest.unstable_mockModule("../Logger.js", () => ({
+  logger: {
+    routeAllToStderr: (...args: unknown[]) => mockRouteAllToStderr(...args),
+  },
+}));
+
+// bootstrap imports the dotenv default export; the mock captures the exact
+// option object so the quiet flag (stdout purity) can be pinned below.
+jest.unstable_mockModule("dotenv", () => ({
+  default: { config: (...args: unknown[]) => mockDotenvConfig(...args) },
 }));
 
 jest.unstable_mockModule("../snClient.js", () => ({
@@ -97,5 +114,76 @@ describe("bootstrap init", () => {
     process.exitCode = 0;
     await expect(init()).resolves.toBeUndefined();
     expect(process.exitCode).toBe(0);
+  });
+
+  it("passes quiet:true to dotenv so the v17 tip line never reaches stdout", async () => {
+    // Pipeable commands (`syncrona completion bash >> ~/.bashrc`) require a
+    // clean stdout; dotenv v17 prints an injection tip there unless quieted.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadConfigs.mockResolvedValue(undefined as any);
+    mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
+
+    await init();
+
+    expect(mockDotenvConfig).toHaveBeenCalledTimes(1);
+    expect(mockDotenvConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/tmp/does-not-exist.env", quiet: true })
+    );
+  });
+});
+
+// The parent `syncrona mcp` process inherits its stdout to the spawned MCP
+// server as the JSON-RPC transport, and `syncrona completion` pipes a script
+// there — so for those commands every bootstrap-phase notice must go to stderr,
+// decided from process.argv before loadConfigs() can log.
+describe("bootstrap init — protocol-channel stdout routing", () => {
+  const realArgv = process.argv;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ init } = await import("../bootstrap.js"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockLoadConfigs.mockResolvedValue(undefined as any);
+    mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
+  });
+
+  afterEach(() => {
+    process.argv = realArgv;
+  });
+
+  it("routes all logger output to stderr for the `mcp` command", async () => {
+    process.argv = ["node", "syncrona", "mcp"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes to stderr for `completion` (the piped script must keep stdout clean)", async () => {
+    process.argv = ["node", "syncrona", "completion", "bash"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds the command past leading global options (`--log-level debug mcp`)", async () => {
+    process.argv = ["node", "syncrona", "--log-level", "debug", "mcp"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles the `--flag=value` global-option form before the command", async () => {
+    process.argv = ["node", "syncrona", "--log-level=debug", "mcp"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT route for a normal command whose stdout is human-readable text", async () => {
+    process.argv = ["node", "syncrona", "status"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake an option value of `mcp` for the command", async () => {
+    process.argv = ["node", "syncrona", "--instance-profile", "mcp", "status"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
   });
 });

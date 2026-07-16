@@ -214,6 +214,12 @@ async function startMcpServerProcess(serverPath: string, workspaceRoot: string):
 }
 
 export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
+  // stdout must stay byte-clean: when an MCP client launches `syncrona mcp`,
+  // the spawned server inherits stdout as the MCP JSON-RPC protocol channel.
+  // Route to stderr BEFORE setLogLevel(): resolving a `.syncrona-local`
+  // instance profile there emits a `debug` line, so routing must already be
+  // engaged. The flag is sticky, so setLogLevel()'s logger rebuild keeps it.
+  logger.routeAllToStderr();
   setLogLevel(args);
 
   const workspaceRoot = getWorkspaceRoot();

@@ -24,6 +24,7 @@ import {
   jiraLoginCommand,
   jiraLogoutCommand,
 } from "./jiraCommands.js";
+import { completionCommand } from "./completionCommand.js";
 
 /**
  * Declarative contract for one CLI command module.
@@ -286,6 +287,29 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 config add-plugin --plugin typescript", "Print the install command and a paste-ready rules snippet"],
     ],
     handler: typedHandler<Sync.SharedCmdArgs & { action: string; plugin?: string }>((args) => configCommand(args)),
+  },
+  {
+    command: "completion [shell]",
+    describe:
+      "Print a bash or zsh completion script (shell auto-detected from $SHELL when omitted)",
+    includeSharedOptions: false,
+    positionals: {
+      shell: {
+        type: "string",
+        describe: "Target shell for the completion script (default: derived from $SHELL)",
+        choices: ["bash", "zsh"],
+      },
+    },
+    examples: [
+      ["$0 completion", "Print a completion script for the shell in $SHELL"],
+      ["$0 completion bash >> ~/.bashrc", "Install bash tab completion for syncrona"],
+      ["$0 completion zsh >> ~/.zshrc", "Install zsh tab completion for syncrona"],
+    ],
+    // The live registry is passed in so the emitted script always completes
+    // exactly the commands registered here (see completionCommand.ts).
+    handler: typedHandler<Sync.SharedCmdArgs & { shell?: string }>((args) =>
+      completionCommand(args, CLI_COMMANDS)
+    ),
   },
   {
     command: "mcp",
