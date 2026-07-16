@@ -2,6 +2,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// A required section is present only when it appears as a genuine line-start
+// heading of the exact level, not as a floating substring. Without the anchor a
+// required `## Versioning` is satisfied by a demoted `### Versioning` (which
+// contains it) or by the text buried in prose or a code fence — so a top-level
+// governance section could silently vanish while the gate stays green.
+function hasHeadingLine(text, heading) {
+  return new RegExp(`^${escapeRegExp(heading)}(?:\\s|$)`, 'm').test(text);
+}
+
 const root = path.resolve(__dirname, '..');
 const DEFAULT_README = path.join(root, 'README.md');
 const DEFAULT_GOVERNANCE = path.join(root, 'docs', 'release-governance.md');
@@ -46,7 +59,7 @@ function validateReleaseChecklist(opts = {}) {
   const governanceText = fs.readFileSync(governancePath, 'utf-8');
   const changelogText = fs.readFileSync(changelogPath, 'utf-8');
 
-  const missingSections = requiredSections.filter((section) => !governanceText.includes(section));
+  const missingSections = requiredSections.filter((section) => !hasHeadingLine(governanceText, section));
   for (const section of missingSections) {
     errors.push(`Missing governance section: ${section}`);
   }

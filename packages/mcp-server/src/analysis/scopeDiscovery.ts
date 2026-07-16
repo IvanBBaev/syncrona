@@ -14,6 +14,7 @@ import {
   type MetadataType,
 } from "../analysis";
 import { tableGet } from "../sessionContext";
+import { getServiceNowConfig } from "../servicenowCore";
 import { escapeQueryValue } from "../runtimeUtils";
 
 export type ScopeKnowledgeGraph = {
@@ -690,6 +691,16 @@ export function discoverWorkspaceScopeKnowledge(projectDir: string = PROJECT_DIR
   };
 }
 
+// Non-throwing wrapper: instance provenance is best-effort metadata, so a
+// missing/invalid credential setup must never fail knowledge generation.
+function safeGetServiceNowInstance(projectDir: string): string {
+  try {
+    return getServiceNowConfig(projectDir).instance || "";
+  } catch (_) {
+    return "";
+  }
+}
+
 export async function hydrateScopeKnowledgeInputs(
   entities: Array<Record<string, unknown>>,
   graph: ScopeKnowledgeGraph,
@@ -741,6 +752,7 @@ export async function hydrateScopeKnowledgeInputs(
     autodiscovered,
     serviceNowDiscovered,
     sourceSummary: {
+      instance: safeGetServiceNowInstance(projectDir),
       inputEntityCount: entities.length,
       inputDependencyCount: graph.edges.length,
       serviceNowEntityCount: serviceNowEntities.length,

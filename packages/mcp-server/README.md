@@ -87,6 +87,7 @@ The server reads the following environment variables (all optional):
 | `SYNCRONA_LOG_LEVEL`  | Log verbosity: `debug` \| `info` \| `warn` \| `error` \| `silent` (default `info`). See [Logging](#logging).                                |
 | `SYNCRONA_LOG_FORMAT` | Log output format: `text` \| `json` (default `text`); equivalent to `--log-format=json`. See [Logging](#logging).                          |
 | `SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES` | Set to `false` to disable the startup auto-pull of every `x_*` scoped app into `packages/<scope>/`. Enabled by default. See [Run](#run). |
+| `SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST` | Comma-separated list of extra tables that `sn_create_record` may write to, on top of the default allowlist of scoped-app artifact tables. High-risk system tables (`sys_user`, `sys_user_has_role`, `sys_user_role`, `sys_user_group`, `sys_properties`, `cmdb_ci`) stay denied even if listed. |
 | `SYNCRONA_SECRETS_FILE` | Absolute path to the MCP secrets JSON file, overriding the default `.syncrona-mcp/secrets.json` lookup in the project directory.        |
 | `SYNCRONA_HEALTH_HTTP_PORT` | Port for the optional HTTP health endpoint. Setting it is what enables the endpoint; unset means no HTTP listener.                  |
 | `SYNCRONA_HEALTH_HTTP_HOST` | Bind address for the health endpoint (default `127.0.0.1`). Only read when the port is set.                                        |

@@ -124,6 +124,25 @@ function parseAuthMethods(raw) {
   return [...new Set([...parsed, ...AUTH_METHOD_FLOOR])].sort();
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Isolate the Security & credentials section (`<section ... id="security">`) so
+// the auth-method gate cannot be satisfied by a stray token elsewhere on the
+// page. Without this, a page-wide substring match passes on any unrelated word
+// that merely contains a method name — e.g. "basically" would satisfy "basic"
+// even after every real Basic-auth reference had been deleted. Returns null when
+// the section is absent so the caller reports that instead of silently passing.
+function extractAuthSection(html) {
+  const startIdx = html.indexOf('id="security"');
+  if (startIdx === -1) {
+    return null;
+  }
+  const endIdx = html.indexOf('</section>', startIdx);
+  return endIdx === -1 ? html.slice(startIdx) : html.slice(startIdx, endIdx);
+}
+
 // Occurrences of a numeric claim like "22 CLI commands" in the page. Claims
 // appear both in plain text/attribute form (meta descriptions, prose) and as
 // adjacent stat markup (<div>22</div><div>CLI commands</div>), so both the raw
@@ -310,14 +329,27 @@ function validateClaimsDrift(opts = {}) {
     if (authRaw === null) {
       errors.push(`Missing claims source: ${AUTH_COMMANDS_SOURCE}`);
     } else {
-      const lowerHtml = html.toLowerCase();
-      for (const method of parseAuthMethods(authRaw)) {
-        checked += 1;
-        if (!lowerHtml.includes(method.toLowerCase())) {
-          errors.push(
-            `Missing auth method "${method}" in ${INDEX_HTML_PATH} ` +
-              `(accepted by ${AUTH_COMMANDS_SOURCE})`
-          );
+      const authSection = extractAuthSection(html);
+      if (authSection === null) {
+        errors.push(
+          `Missing auth section (id="security") in ${INDEX_HTML_PATH} ` +
+            `(required to document methods accepted by ${AUTH_COMMANDS_SOURCE})`
+        );
+      } else {
+        const lowerAuthSection = authSection.toLowerCase();
+        for (const method of parseAuthMethods(authRaw)) {
+          checked += 1;
+          // Word-boundary match scoped to the auth section: the method name must
+          // be a whole token (so "basic" is not matched inside "basically") and
+          // must appear within the security markup, not anywhere on the page.
+          const token = escapeRegExp(method.toLowerCase());
+          const boundary = new RegExp(`(?<![a-z0-9-])${token}(?![a-z0-9-])`);
+          if (!boundary.test(lowerAuthSection)) {
+            errors.push(
+              `Missing auth method "${method}" in ${INDEX_HTML_PATH} ` +
+                `(accepted by ${AUTH_COMMANDS_SOURCE})`
+            );
+          }
         }
       }
     }
@@ -425,6 +457,7 @@ module.exports = {
   parseCliCommandNames,
   parseToolNamesFromSchemas,
   parseAuthMethods,
+  extractAuthSection,
   extractNumericClaims,
   CLI_USAGE,
   REQUIRED_MARKERS,

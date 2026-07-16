@@ -818,6 +818,56 @@ test('startHealthHttpServer serves health snapshot and updates status', async ()
   assert.equal(afterClose.enabled, false);
 });
 
+// REV: after a successful bind the http.Server must keep a persistent "error"
+// listener. A post-listen server-level error (e.g. an accept() errno libuv does
+// not special-case) is emitted as an "error" event; with zero listeners Node
+// re-throws it as an uncaught exception and the whole MCP process crashes. The
+// server must log it and stay alive. Emitting on a listener-less EventEmitter
+// throws synchronously, so if this regressed the emit below would crash the
+// test worker rather than being logged.
+test('startHealthHttpServer logs post-listen server errors instead of crashing', async () => {
+  const logged = [];
+  const server = await startHealthHttpServer(
+    {
+      enabled: true,
+      host: '127.0.0.1',
+      port: 0,
+      path: '/healthz',
+    },
+    () => ({ status: 'ok', source: 'test' }),
+    (message) => logged.push(message)
+  );
+
+  assert.equal(Boolean(server), true);
+  if (!server) {
+    return;
+  }
+
+  try {
+    // The underlying server has at least one "error" listener after listen().
+    assert.ok(server.server.listenerCount('error') >= 1);
+
+    // Simulate a server-level error surfacing after the bind succeeded.
+    server.server.emit('error', new Error('simulated accept EPERM'));
+
+    // It was logged (not thrown) and the process is still alive to serve.
+    assert.ok(
+      logged.some((line) => line.includes('simulated accept EPERM')),
+      `expected a logged health endpoint error, got: ${JSON.stringify(logged)}`
+    );
+    assert.ok(
+      logged.some((line) => line.includes('Health HTTP endpoint error')),
+      `expected the health endpoint error prefix, got: ${JSON.stringify(logged)}`
+    );
+
+    // The server still responds after the error.
+    const healthRes = await fetch(server.url);
+    assert.equal(healthRes.status, 200);
+  } finally {
+    await server.close();
+  }
+});
+
 test('getSessionContext resolves scope and update set details', async () => {
   const originalFetch = global.fetch;
   global.fetch = async (url, options) => {
@@ -1636,6 +1686,11 @@ test('integration helper runs scope knowledge generation and auto-update tools',
   );
   assert.equal(generate.isError, false);
   assert.equal(generate.payload.validation.valid, true);
+  assert.equal(typeof generate.payload.generatedAt, 'string');
+  assert.equal(generate.payload.generatedAt.length > 0, true);
+  assert.equal(generate.payload.staleness.stale, false);
+  assert.equal(generate.payload.staleness.ageDays, 0);
+  assert.equal(generate.payload.staleness.hint, '');
 
   const autoUpdate = await executeMcpToolIntegration(
     'sync_scope_knowledge_auto_update',
@@ -1656,6 +1711,55 @@ test('integration helper runs scope knowledge generation and auto-update tools',
   );
   assert.equal(autoUpdate.isError, false);
   assert.equal(autoUpdate.payload.validation.valid, true);
+  assert.equal(autoUpdate.payload.staleness.stale, false);
+});
+
+test('scope knowledge validation surfaces staleness and instance provenance', async () => {
+  const staleGeneratedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+  const staleIndex = {
+    schemaVersion: '1.0.0',
+    generatedAt: staleGeneratedAt,
+    instance: 'dev123.service-now.com',
+    scope: 'x_demo',
+    entities: [],
+    dependencies: [],
+    hotspots: [],
+    risks: [],
+    suppressions: [],
+    updateSetContext: {},
+    recommendedEditTargets: [],
+  };
+
+  const stale = await executeMcpToolIntegration(
+    'sync_validate_scope_knowledge',
+    { index: staleIndex },
+    { timeoutMs: 5000 }
+  );
+  assert.equal(stale.isError, false);
+  assert.equal(stale.payload.valid, true);
+  assert.equal(stale.payload.generatedAt, staleGeneratedAt);
+  assert.equal(stale.payload.instance, 'dev123.service-now.com');
+  assert.equal(stale.payload.staleness.stale, true);
+  assert.equal(stale.payload.staleness.ageDays >= 7, true);
+  assert.equal(stale.payload.staleness.hint.includes('sync_generate_scope_knowledge'), true);
+
+  const fresh = await executeMcpToolIntegration(
+    'sync_validate_scope_knowledge',
+    { index: { ...staleIndex, generatedAt: new Date().toISOString() } },
+    { timeoutMs: 5000 }
+  );
+  assert.equal(fresh.isError, false);
+  assert.equal(fresh.payload.staleness.stale, false);
+  assert.equal(fresh.payload.staleness.hint, '');
+
+  const legacy = await executeMcpToolIntegration(
+    'sync_validate_scope_knowledge',
+    { index: { ...staleIndex, instance: undefined } },
+    { timeoutMs: 5000 }
+  );
+  assert.equal(legacy.isError, false);
+  assert.equal(legacy.payload.valid, true);
+  assert.equal('instance' in legacy.payload, false);
 });
 
 test('scope knowledge writeFiles generates per-table field markdown docs', async () => {

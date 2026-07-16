@@ -711,6 +711,74 @@ test('sn_query_records: happy path hits the table API and returns rows + analysi
   });
 });
 
+test('sn_query_records: a valid offset is forwarded as sysparm_offset', async () => {
+  await withServiceNowEnv(async () => {
+    let capturedUrl = null;
+    global.fetch = async (url) => {
+      capturedUrl = url;
+      return mkFetchResponse(200, { result: [] });
+    };
+
+    const res = await handleServiceNowCrudTool(
+      'sn_query_records',
+      { table: 'incident', limit: 500, offset: 500 },
+      makeCrudContext()
+    );
+
+    assert.equal(res.isError, false);
+    assert.match(capturedUrl, /sysparm_offset=500/);
+  });
+});
+
+test('sn_query_records: no offset argument means no sysparm_offset in the request', async () => {
+  await withServiceNowEnv(async () => {
+    let capturedUrl = null;
+    global.fetch = async (url) => {
+      capturedUrl = url;
+      return mkFetchResponse(200, { result: [] });
+    };
+
+    const res = await handleServiceNowCrudTool(
+      'sn_query_records',
+      { table: 'incident' },
+      makeCrudContext()
+    );
+
+    assert.equal(res.isError, false);
+    assert.doesNotMatch(capturedUrl, /sysparm_offset/);
+  });
+});
+
+test('sn_query_records: invalid offsets are ignored and a fractional offset is floored', async () => {
+  await withServiceNowEnv(async () => {
+    let capturedUrl = null;
+    global.fetch = async (url) => {
+      capturedUrl = url;
+      return mkFetchResponse(200, { result: [] });
+    };
+    const ctx = makeCrudContext();
+
+    for (const offset of [-25, Number.NaN, Number.POSITIVE_INFINITY, '100', 0]) {
+      capturedUrl = null;
+      const res = await handleServiceNowCrudTool(
+        'sn_query_records',
+        { table: 'incident', offset },
+        ctx
+      );
+      assert.equal(res.isError, false);
+      assert.doesNotMatch(capturedUrl, /sysparm_offset/);
+    }
+
+    const res = await handleServiceNowCrudTool(
+      'sn_query_records',
+      { table: 'incident', offset: 120.9 },
+      ctx
+    );
+    assert.equal(res.isError, false);
+    assert.match(capturedUrl, /sysparm_offset=120(?![0-9])/);
+  });
+});
+
 test('sn_query_records: clamps out-of-range limit and reports a non-2xx status as an error', async () => {
   await withServiceNowEnv(async () => {
     global.fetch = async () => mkFetchResponse(403, { error: { message: 'Forbidden' } });
@@ -737,9 +805,11 @@ test('sn_create_record: real (non-dry-run) create posts to the table API and aud
     };
 
     const ctx = makeCrudContext();
+    // sys_script sits on the default create-table allowlist, so the request
+    // clears the table policy and exercises the real POST path.
     const res = await handleServiceNowCrudTool(
       'sn_create_record',
-      { table: 'incident', record: { short_description: 'test' }, confirmDestructive: true },
+      { table: 'sys_script', record: { name: 'test rule' }, confirmDestructive: true },
       ctx
     );
 

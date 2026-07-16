@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { createServer } from "http";
+import type { Server } from "http";
 import type { AddressInfo } from "net";
 
 export type HealthEndpointConfig = {
@@ -15,6 +16,9 @@ export type HealthEndpointServer = {
   host: string;
   port: number;
   path: string;
+  // The underlying http.Server. Exposed so callers (and tests) can observe or
+  // drive server-level events; production consumers only use close().
+  server: Server;
 };
 
 let HEALTH_HTTP_STATUS: Record<string, unknown> = {
@@ -100,9 +104,24 @@ export async function startHealthHttpServer(
   });
 
   await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
+    // Startup-only rejection: a bind failure (EADDRINUSE, EACCES) must fail the
+    // start promise. Detach it once listen() succeeds so it cannot reject a
+    // promise that has already resolved.
+    const onStartupError = (err: Error): void => reject(err);
+    httpServer.once("error", onStartupError);
     httpServer.listen(config.port, config.host, () => {
-      httpServer.off("error", reject);
+      httpServer.off("error", onStartupError);
+      // Persistent error listener: after a successful bind the http.Server must
+      // never be left without an "error" handler. Later server-level errors
+      // (e.g. an accept() errno libuv does not special-case — EPERM, ENOBUFS)
+      // are emitted as an "error" event; with zero listeners Node re-throws it
+      // as an uncaught exception and the whole stdio MCP process exits, killing
+      // every in-flight tool call. Log it and keep serving instead.
+      httpServer.on("error", (err) => {
+        logger(
+          `Health HTTP endpoint error: ${err instanceof Error ? err.message : String(err)}`
+        );
+      });
       resolve();
     });
   });
@@ -125,6 +144,7 @@ export async function startHealthHttpServer(
     port: resolvedPort,
     path: config.path,
     url,
+    server: httpServer,
     close: async () => {
       await new Promise<void>((resolve) => {
         httpServer.close(() => resolve());

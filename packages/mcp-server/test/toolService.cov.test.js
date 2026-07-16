@@ -125,6 +125,13 @@ test('makeDryRunResponse builds a well-formed dry-run envelope', () => {
   assert.deepEqual(parsed.planned, { file: 'a.js' });
 });
 
+test('makeDryRunResponse mirrors the text payload into structuredContent', () => {
+  // Dry-run responses are success results, so tools that declare an
+  // outputSchema must carry structuredContent identical to the text block.
+  const res = makeDryRunResponse('sync_set_scope', { scope: 'x_app' });
+  assert.deepEqual(res.structuredContent, JSON.parse(res.content[0].text));
+});
+
 // ---------------------------------------------------------------------------
 // buildHealthHttpSnapshot
 // ---------------------------------------------------------------------------
@@ -234,6 +241,21 @@ test('withCorrelationIdInResponse injects correlationId into a JSON object paylo
   const parsed = JSON.parse(out.content[0].text);
   assert.equal(parsed.correlationId, 'corr_abc');
   assert.equal(parsed.ok, true);
+  // The handler never opted into structuredContent, so injecting the
+  // correlation id must not conjure one.
+  assert.equal('structuredContent' in out, false);
+});
+
+test('withCorrelationIdInResponse keeps structuredContent identical to the rebuilt text payload', () => {
+  const res = {
+    isError: false,
+    content: [{ type: 'text', text: JSON.stringify({ ok: true }) }],
+    structuredContent: { ok: true },
+  };
+  const out = withCorrelationIdInResponse(res, 'corr_mirror');
+  const parsed = JSON.parse(out.content[0].text);
+  assert.equal(parsed.correlationId, 'corr_mirror');
+  assert.deepEqual(out.structuredContent, parsed);
 });
 
 test('withCorrelationIdInResponse leaves an existing non-blank correlationId untouched', () => {
