@@ -301,6 +301,13 @@ export class ConfigStore {
     try {
       const source = await fsp.readFile(configPath, "utf-8");
       const configRequire = createRequire(configPath);
+      // When stdout is a machine protocol channel (MCP stdio / completion), a
+      // stray console.log inside sync.config.js would corrupt it. Hand the loader
+      // a stderr-only console in that mode; otherwise the real console (the config
+      // is trusted build code and may legitimately log during a human command).
+      const configConsole = logger.isRoutedToStderr()
+        ? new console.Console(process.stderr, process.stderr)
+        : console;
       const sandbox = {
         module: { exports: {} as unknown },
         exports: {} as unknown,
@@ -308,7 +315,7 @@ export class ConfigStore {
         __filename: configPath,
         __dirname: path.dirname(configPath),
         process,
-        console,
+        console: configConsole,
       };
       vm.runInNewContext(source, sandbox, { filename: configPath });
       loaded = (sandbox.module as { exports: unknown }).exports || sandbox.exports;
@@ -512,9 +519,12 @@ export function getDefaultConfig(): Sync.Config {
 
 export function getDefaultConfigFile(sourceDirectory = "src"): string {
   const normalizedSourceDirectory = String(sourceDirectory || "src").trim() || "src";
+  // JSON.stringify produces a properly escaped, valid JS string literal — a raw
+  // `"${dir}"` would emit syntactically broken JS (and bricked every subsequent
+  // command) for any source dir containing a quote, backslash or newline.
   return `
     module.exports = {
-      sourceDirectory: "${normalizedSourceDirectory}",
+      sourceDirectory: ${JSON.stringify(normalizedSourceDirectory)},
       buildDirectory: "build",
       pushConcurrency: 10,
       rules: [],

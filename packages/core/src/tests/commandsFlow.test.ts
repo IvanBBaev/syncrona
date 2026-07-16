@@ -28,6 +28,9 @@ const mockGetScopedEndpointPrefix = jest.fn();
 const mockSetActiveInstanceProfile = jest.fn();
 const mockLoggerError = jest.fn();
 const mockLoggerWarn = jest.fn();
+const mockLoggerInfo = jest.fn();
+const mockLoggerSuccess = jest.fn();
+const mockRouteAllToStderr = jest.fn();
 const mockGitDiffToEncodedPaths = jest.fn();
 const mockReadFile = jest.fn();
 const mockWriteFile = jest.fn();
@@ -60,8 +63,9 @@ jest.unstable_mockModule("../gitUtils.js", () => ({
 jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
-    info: jest.fn(),
-    success: jest.fn(),
+    routeAllToStderr: (...args: unknown[]) => mockRouteAllToStderr(...args),
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    success: (...args: unknown[]) => mockLoggerSuccess(...args),
     error: (...args: unknown[]) => mockLoggerError(...args),
     warn: (...args: unknown[]) => mockLoggerWarn(...args),
     silly: jest.fn(),
@@ -788,6 +792,43 @@ describe("command flows", () => {
 
     expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("mcpCommand engages all-to-stderr routing before emitting any log line", async () => {
+    const { mcpCommand } = await import("../commands.js");
+    mockResolveCredentials.mockReturnValue({
+      instance: "dev.service-now.com",
+      user: "dev-user",
+      password: "dev-pass",
+      profile: undefined,
+    });
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath === "/tmp/mcp/dist/index.js") {
+        return { isFile: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    await mcpCommand({
+      logLevel: "info",
+      autoConfigure: true,
+      start: false,
+      mcpServerPath: "/tmp/mcp/dist/index.js",
+    });
+
+    // stdout must stay byte-clean for MCP stdio clients: routeAllToStderr has
+    // to run before the first info/success line, or that line corrupts the
+    // JSON-RPC channel the spawned server inherits. Pin the call ordering.
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+    const routeOrder = mockRouteAllToStderr.mock.invocationCallOrder[0];
+    const logOrders = [
+      ...mockLoggerInfo.mock.invocationCallOrder,
+      ...mockLoggerSuccess.mock.invocationCallOrder,
+    ];
+    expect(logOrders.length).toBeGreaterThan(0);
+    for (const order of logOrders) {
+      expect(order).toBeGreaterThan(routeOrder);
+    }
   });
 
   it("doctorCommand reports issues when env vars are missing and connectivity is skipped", async () => {

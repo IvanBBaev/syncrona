@@ -144,7 +144,9 @@ beforeEach(() => {
 });
 
 describe("docsCommand", () => {
-  it("errors when no manifest is available", async () => {
+  it("errors and sets a failing exit code when no manifest is available", async () => {
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
     mockGetManifest.mockReturnValue(undefined);
     const { docsCommand } = await import("../commands.js");
     await docsCommand({ logLevel: "info" });
@@ -152,6 +154,9 @@ describe("docsCommand", () => {
       expect.stringContaining("No manifest found")
     );
     expect(mockGenerateScopeDocs).not.toHaveBeenCalled();
+    // A "docs" run that produced nothing must not report success to the shell.
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
   });
 
   it("writes scope docs when a manifest exists", async () => {
@@ -164,7 +169,9 @@ describe("docsCommand", () => {
     );
   });
 
-  it("logs an error when doc generation fails", async () => {
+  it("logs an error and sets a failing exit code when doc generation fails", async () => {
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
     mockGetManifest.mockReturnValue({ scope: "x_test", tables: {} });
     mockGenerateScopeDocs.mockRejectedValueOnce(new Error("render failed"));
     const { docsCommand } = await import("../commands.js");
@@ -172,6 +179,8 @@ describe("docsCommand", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("render failed")
     );
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
   });
 });
 

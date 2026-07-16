@@ -39,6 +39,9 @@ function diagnosticFileTransport(): winston.transport | null {
 
 class SyncLogger {
   private logger: winston.Logger;
+  // Sticky: a command whose stdout may become an MCP stdio protocol channel
+  // (e.g. `syncrona mcp`) needs every console line on stderr, permanently.
+  private allToStderr = false;
   constructor() {
     this.logger = winston.createLogger(this.genLoggerOpts());
   }
@@ -50,8 +53,36 @@ class SyncLogger {
     return this.logger.level;
   }
 
+  // Route every console level to stderr from now on. The flag is sticky and
+  // genLoggerOpts() consults it, so later setLogLevel() rebuilds keep the routing.
+  routeAllToStderr() {
+    this.allToStderr = true;
+    this.setLogLevel(this.getLogLevel());
+  }
+
+  // True once routeAllToStderr() has engaged, i.e. stdout is a machine protocol
+  // channel (MCP stdio / shell-completion). Consumers that hand a raw `console`
+  // to evaluated user code (e.g. the sync.config.js loader) use this to route
+  // that console to stderr too, so config-side stdout writes can't corrupt it.
+  isRoutedToStderr(): boolean {
+    return this.allToStderr;
+  }
+
   private genLoggerOpts(level: string = "info"): winston.LoggerOptions {
-    const loggerTransports: winston.transport[] = [new transports.Console()];
+    // POSIX stream convention: warn/error are diagnostics and go to stderr, so
+    // stdout carries only real command output (pipeable commands like
+    // `syncrona completion` must not be polluted — winston's Console transport
+    // sends every level to stdout by default). Lives here so setLogLevel(),
+    // which rebuilds the logger from these options, keeps the routing.
+    // With allToStderr set, EVERY configured level goes to stderr; derive the
+    // list from the level set winston actually runs with (createLogger without
+    // a `levels` option uses winston.config.npm.levels) — never hand-maintain it.
+    const stderrLevels = this.allToStderr
+      ? Object.keys(winston.config.npm.levels)
+      : ["warn", "error"];
+    const loggerTransports: winston.transport[] = [
+      new transports.Console({ stderrLevels }),
+    ];
     const fileTransport = diagnosticFileTransport();
     if (fileTransport) {
       loggerTransports.push(fileTransport);

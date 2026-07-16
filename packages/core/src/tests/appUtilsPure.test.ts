@@ -51,8 +51,13 @@ function makeDeps(checkpointTables: string[] | null) {
   };
   const deps = {
     fetchTable: async (tableMissing: SN.MissingFileTableMap) => {
-      calls.fetched.push(Object.keys(tableMissing)[0]);
-      return {} as SN.TableMap;
+      const table = Object.keys(tableMissing)[0];
+      calls.fetched.push(table);
+      // Return a non-empty result for the requested table so the loop counts it
+      // as a real download (an empty map now signals a skipped/inaccessible table).
+      return {
+        [table]: { records: { r1: { sys_id: "s1", name: "r1", files: [] } } },
+      } as unknown as SN.TableMap;
     },
     writeTable: async () => {
       calls.written += 1;

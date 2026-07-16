@@ -72,6 +72,75 @@ describe("manifestBuilder", () => {
     ]);
   });
 
+  it("escapes a caret-injecting scope name in every scope query", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      // Everything else empty → no tables discovered → throws after the scope
+      // queries have already run, which is all this test inspects.
+      return { data: { result: [] } };
+    });
+    const client = createClient(tableAPIGet);
+
+    // A ^ in the scope name would otherwise inject a second encoded-query
+    // condition (`scope=x_demo^sys_id=INJECT`) and slip past the scope filter.
+    await expect(
+      buildManifestFromTableAPI("x_demo^sys_id=INJECT", client, {
+        includes: {},
+        excludes: {},
+        tableOptions: {},
+      })
+    ).rejects.toThrow();
+
+    const sysAppCall = tableAPIGet.mock.calls.find((c) => c[0] === "sys_app");
+    expect(sysAppCall?.[1]).toBe("scope=x_demo sys_id=INJECT");
+    expect(sysAppCall?.[1]).not.toContain("^");
+
+    const nameLikeCall = tableAPIGet.mock.calls.find(
+      (c) => c[0] === "sys_dictionary" && String(c[1]).startsWith("nameLIKE")
+    );
+    // The trailing structural ^nameISNOTEMPTY stays; only the injected ^ is gone.
+    expect(nameLikeCall?.[1]).toBe("nameLIKEx_demo sys_id=INJECT^nameISNOTEMPTY");
+  });
+
+  it("never names a record '.' or '..' (would escape its own directory)", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      if (table === "sys_metadata") {
+        return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
+      }
+      if (table === "sys_dictionary") {
+        return {
+          data: { result: [{ element: "script", internal_type: "script_plain" }] },
+        };
+      }
+      if (table === "sys_script_include") {
+        return {
+          data: { result: [{ sys_id: "rec-dots", name: "..", script: "gs.info('x');" }] },
+        };
+      }
+      return { data: { result: [] } };
+    });
+    const client = createClient(tableAPIGet);
+
+    const manifest = await buildManifestFromTableAPI("x_demo", client, {
+      includes: {},
+      excludes: {},
+      tableOptions: {},
+    });
+
+    const records = manifest.tables.sys_script_include.records;
+    // Falls back to the sys_id rather than the traversal-dangerous "..".
+    expect(records["rec-dots"]).toBeDefined();
+    expect(records[".."]).toBeUndefined();
+    expect(Object.keys(records)).toEqual(["rec-dots"]);
+  });
+
   it("buildManifestFromTableAPI throws clear error when scope is missing", async () => {
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockImplementation(async (table: string) => {

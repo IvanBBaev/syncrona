@@ -404,6 +404,26 @@ describe("doctorCommand", () => {
     expect(mockCheckConnection).not.toHaveBeenCalled();
   });
 
+  it("sets a failing process exit code when any check fails but leaves it clean when healthy", async () => {
+    const oldExit = process.exitCode;
+    const { doctorCommand } = await import("../diagnosticsCommands.js");
+
+    // Healthy run must not manufacture a failing exit code out of thin air.
+    process.exitCode = 0;
+    await doctorCommand({ logLevel: "info" } as never);
+    expect(process.exitCode).toBe(0);
+
+    // A failing check must propagate to the shell — the CLI handler forwards the
+    // return value but never inspects `ok`, so the command itself owns the exit code.
+    process.exitCode = 0;
+    mockCheckConnection.mockRejectedValueOnce(new Error("offline"));
+    const result = await doctorCommand({ logLevel: "info" } as never);
+    expect(result.ok).toBe(false);
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = oldExit;
+  });
+
   it("marks configPath failed when no config is discovered", async () => {
     mockCheckConfigPath.mockReturnValue("");
     const { doctorCommand } = await import("../diagnosticsCommands.js");

@@ -176,3 +176,80 @@ describe("Logger level pass-throughs", () => {
     expect(typeof logger.getLogLevel()).toBe("string");
   });
 });
+
+// Shared by the stream-routing suites below. winston stores stderrLevels as a
+// { level: true } map on the Console transport.
+const consoleStderrLevels = (): Record<string, boolean> => {
+  const internal = logger.getInternalLogger();
+  const consoleTransport = internal.transports.find(
+    (t) => (t as winston.transport & { filename?: string }).filename === undefined
+  ) as (winston.transport & { stderrLevels?: Record<string, boolean> }) | undefined;
+  expect(consoleTransport).toBeDefined();
+  return consoleTransport?.stderrLevels ?? {};
+};
+
+describe("Console transport stream routing (stdout purity)", () => {
+  // POSIX convention pinned by Logger.genLoggerOpts: warn/error are diagnostics
+  // and must land on stderr so pipeable commands (`syncrona completion`) keep a
+  // clean stdout.
+
+  afterAll(() => {
+    logger.setLogLevel("info");
+  });
+
+  it("routes warn and error to stderr while info stays on stdout", () => {
+    logger.setLogLevel("info");
+    const stderrLevels = consoleStderrLevels();
+    expect(stderrLevels.warn).toBe(true);
+    expect(stderrLevels.error).toBe(true);
+    expect(stderrLevels.info).toBeUndefined();
+  });
+
+  it("keeps the stderr routing after setLogLevel rebuilds the logger", () => {
+    // setLogLevel recreates the winston logger from genLoggerOpts; the stderr
+    // routing must survive that rebuild, not just the initial construction.
+    logger.setLogLevel("debug");
+    const stderrLevels = consoleStderrLevels();
+    expect(stderrLevels.warn).toBe(true);
+    expect(stderrLevels.error).toBe(true);
+    expect(stderrLevels.info).toBeUndefined();
+  });
+});
+
+describe("routeAllToStderr (MCP stdio protocol safety)", () => {
+  // A command whose stdout may become an MCP stdio protocol channel
+  // (`syncrona mcp`) opts in via routeAllToStderr(); every console line must
+  // then land on stderr. NOTE: keep this describe LAST in the file — the flag
+  // is sticky on the module singleton, so once flipped here the default
+  // warn/error-only routing pinned above can no longer be observed.
+  let configuredLevels: string[];
+
+  beforeAll(async () => {
+    // createLogger without an explicit `levels` option runs on winston's npm
+    // level set — the same source genLoggerOpts derives its stderrLevels from,
+    // so the expectation can never drift behind a winston level-set change.
+    const winstonRuntime = (await import("winston")).default;
+    configuredLevels = Object.keys(winstonRuntime.config.npm.levels);
+  });
+
+  it("routes every configured level to stderr once routeAllToStderr() is called", () => {
+    logger.setLogLevel("info");
+    logger.routeAllToStderr();
+    const stderrLevels = consoleStderrLevels();
+    expect(configuredLevels.length).toBeGreaterThan(0);
+    for (const level of configuredLevels) {
+      expect(stderrLevels[level]).toBe(true);
+    }
+  });
+
+  it("keeps all-levels stderr routing after a later setLogLevel rebuild", () => {
+    // setLogLevel rebuilds the winston logger from genLoggerOpts; the sticky
+    // flag must survive so a level change inside an MCP-hosted command can
+    // never route chatter back onto the protocol channel.
+    logger.setLogLevel("debug");
+    const stderrLevels = consoleStderrLevels();
+    for (const level of configuredLevels) {
+      expect(stderrLevels[level]).toBe(true);
+    }
+  });
+});
