@@ -419,11 +419,14 @@ describe("command flows", () => {
 
     mockGetAppFileList.mockResolvedValue(appFileList);
     mockPushFiles.mockResolvedValue(pushResults);
+    // The checkpoint must record the instance it was written against; a resume is
+    // only legitimate against that same instance (Finding 7).
     mockReadFile.mockResolvedValue(
       JSON.stringify({
         attempted: ["sys_script:1", "sys_script:2"],
         succeeded: ["sys_script:1"],
         failed: ["sys_script:2"],
+        instance: "instance.service-now.com",
       })
     );
 
@@ -769,6 +772,10 @@ describe("command flows", () => {
   });
 
   it("mcpCommand requires login before start when credentials are missing", async () => {
+    // #13: missing credentials is a failure the CLI must surface with a non-zero
+    // exit code, not a silent skip — otherwise scripts/CI treat it as success.
+    const oldExitCode = process.exitCode;
+    process.exitCode = 0;
     const { mcpCommand } = await import("../commands.js");
     mockResolveCredentials.mockReturnValue({
       instance: "",
@@ -792,6 +799,9 @@ describe("command flows", () => {
 
     expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
     expect(mockSpawn).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = oldExitCode;
   });
 
   it("mcpCommand engages all-to-stderr routing before emitting any log line", async () => {

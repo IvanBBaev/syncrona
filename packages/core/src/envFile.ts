@@ -5,16 +5,22 @@ import { promises as fsp } from "fs";
  * Formats a value for safe inclusion in a dotenv file.
  *
  * Values consisting only of "safe" characters are written verbatim. Anything
- * else (spaces, "#", quotes, etc.) is wrapped in double quotes with backslashes
- * and double quotes escaped so the file round-trips through dotenv.
+ * else (spaces, "#", quotes, backslashes, etc.) is wrapped in SINGLE quotes.
+ *
+ * Single quotes — not double — because dotenv (v17) treats a single-quoted
+ * value as a literal: it does NOT un-escape backslashes and matches from the
+ * first quote to the LAST quote on the line. Double-quoted values only expand
+ * `\n`/`\r` and leave every other backslash escape intact, so `Win\2026` written
+ * as `"Win\\2026"` reads back as `Win\\2026` (corrupted). A single-quoted value
+ * needs no escaping and round-trips verbatim, including values that themselves
+ * contain `'`, `"`, `\`, spaces, or `#`.
  */
 export function formatEnvValue(value: string): string {
   const raw = String(value ?? "").replace(/[\r\n]/g, "");
   if (raw.length > 0 && /^[A-Za-z0-9_.\-:@/]+$/.test(raw)) {
     return raw;
   }
-  const escaped = raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `"${escaped}"`;
+  return `'${raw}'`;
 }
 
 /**

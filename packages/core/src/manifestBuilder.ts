@@ -443,6 +443,36 @@ function buildRecordName(
   return safe;
 }
 
+// Builds the Table API `sysparm_fields` list for a record query. buildRecordName
+// derives the on-disk name from the default display field, an optional
+// tableOptions.displayField override, and an optional differentiator field — so
+// every one of those columns MUST be selected. If they are not, the API omits
+// them, buildRecordName silently falls back to sys_id (or a different column),
+// and the manifest name disagrees with the bulk-download name for the same
+// record; `repair --prune` then deletes the "orphan" file. Both the manifest
+// path (getRecordsForTable) and the download path (buildBulkDownloadFromTableAPI)
+// share this helper so they always request identical columns and stay in parity.
+function buildRecordFieldList(
+  defaultDisplayField: string,
+  fileFieldNames: string[],
+  tableOptions: Sync.ITableOptions | undefined
+): string {
+  const fields: string[] = ["sys_id", defaultDisplayField];
+  if (tableOptions?.displayField) {
+    fields.push(tableOptions.displayField);
+  }
+  if (tableOptions?.differentiatorField) {
+    const diffFields =
+      typeof tableOptions.differentiatorField === "string"
+        ? [tableOptions.differentiatorField]
+        : tableOptions.differentiatorField;
+    fields.push(...diffFields);
+  }
+  fields.push(...fileFieldNames);
+  // Dedupe while preserving first-seen order; drop empty names defensively.
+  return [...new Set(fields.filter((f) => f))].join(",");
+}
+
 async function getRecordsForTable(
   client: SNClient,
   tableName: string,
@@ -451,13 +481,16 @@ async function getRecordsForTable(
   tableOptions: Sync.ITableOptions | undefined
 ): Promise<SN.TableConfigRecords> {
   const displayField = getDisplayField(tableName);
-  const fileFields = files.map((f) => f.name).join(",");
   const baseQuery = `sys_scope=${scopeId}^sys_class_name=${tableName}`;
   const query = tableOptions?.query
     ? `${baseQuery}^${tableOptions.query}`
     : baseQuery;
 
-  const tableFields = `sys_id,${displayField},${fileFields}`;
+  const tableFields = buildRecordFieldList(
+    displayField,
+    files.map((f) => f.name),
+    tableOptions
+  );
 
   const toRecords = (rows: TableAPIRecord[]): SN.TableConfigRecords => {
     const records: SN.TableConfigRecords = {};
@@ -660,7 +693,8 @@ export async function buildBulkDownloadFromTableAPI(
       if (sysIds.length === 0) return;
 
       const tableOpts = tableOptions[tableName];
-      const displayField = tableOpts?.displayField || getDisplayField(tableName);
+      const defaultDisplayField = getDisplayField(tableName);
+      const displayField = tableOpts?.displayField || defaultDisplayField;
 
       // Collect all unique file fields across missing records
       const allFiles = new Map<string, SN.FileType>();
@@ -670,7 +704,12 @@ export async function buildBulkDownloadFromTableAPI(
         }
       }
 
-      const fileFieldNames = [...allFiles.keys()].join(",");
+      // Same field list as the manifest path so record names stay in parity.
+      const tableFields = buildRecordFieldList(
+        defaultDisplayField,
+        [...allFiles.keys()],
+        tableOpts
+      );
 
       try {
         // Chunk the sys_id list so large record sets cannot overflow the URL
@@ -680,7 +719,7 @@ export async function buildBulkDownloadFromTableAPI(
           const res = await client.tableAPIGet(
             tableName,
             `sys_idIN${chunk.join(",")}`,
-            `sys_id,${displayField},${fileFieldNames}`,
+            tableFields,
             500
           );
           rows.push(...extractResult(res.data));

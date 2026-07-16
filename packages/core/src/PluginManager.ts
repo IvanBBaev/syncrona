@@ -4,6 +4,7 @@ import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
 import fs from "fs";
 import path from "path";
+import { types } from "node:util";
 const fsp = fs.promises;
 
 class PluginManager {
@@ -26,7 +27,11 @@ class PluginManager {
       // sync.config.js is user-authored, so `match` may not actually be a
       // RegExp at runtime (e.g. a string slipped in). Skip malformed rules with
       // a clear warning instead of throwing `reg.test is not a function`.
-      if (!(reg instanceof RegExp)) {
+      // config.ts loads the config via vm.runInNewContext, so a regex literal in
+      // the config file is created with the vm realm's RegExp intrinsic and
+      // `instanceof RegExp` is false cross-realm — that would silently disable
+      // every build transform. util.types.isRegExp is realm-agnostic.
+      if (!types.isRegExp(reg)) {
         logger.warn(
           `Skipping plugin rule with a non-RegExp 'match' (got ${typeof reg}). Use a regular expression, e.g. match: /\\.ts$/.`
         );

@@ -242,6 +242,10 @@ export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
       logger.success(`MCP secrets config updated: ${secretsPath}`);
     } else {
       logger.error("Run syncrona login first.");
+      // Missing credentials is a failure, not a normal skip — signal it so the
+      // CLI exits non-zero (matches the other error paths and lets scripts/CI
+      // detect that auto-configure did not complete).
+      process.exitCode = 1;
       return;
     }
 

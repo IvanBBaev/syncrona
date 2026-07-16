@@ -3,6 +3,7 @@ import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import vm from "node:vm";
 import type { Sync } from "@syncrona/types";
 
 // Drives PluginManager.processFile / runPlugins / getFinalFileContents against
@@ -43,7 +44,7 @@ jest.unstable_mockModule("../config.js", () => ({
 }));
 
 jest.unstable_mockModule("../Logger.js", () => ({
-  logger: { debug: jest.fn(), info: jest.fn(), error: jest.fn() },
+  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
 const context = (filePath: string): Sync.FileContext =>
@@ -95,5 +96,23 @@ describe("PluginManager.getFinalFileContents", () => {
     await expect(
       PluginManager.getFinalFileContents(context(SOURCE_FILE))
     ).rejects.toThrow("Failed to build sys_script=>abc");
+  });
+
+  // #2: config.ts loads sync.config.js through vm.runInNewContext, so a regex
+  // literal in the config file is created with the vm realm's RegExp intrinsic.
+  // `instanceof RegExp` is false cross-realm, which used to silently skip the
+  // rule and disable every build transform. util.types.isRegExp is realm-safe,
+  // so a cross-realm regex still matches and the plugin chain still runs.
+  it("matches a cross-realm RegExp produced by vm-loaded config (#2)", async () => {
+    const crossRealmRegex = vm.runInNewContext("/\\.js$/") as RegExp;
+    // Sanity: this regex is a real RegExp but fails the old instanceof gate.
+    expect(crossRealmRegex instanceof RegExp).toBe(false);
+
+    getConfig.mockReturnValue({
+      rules: [{ match: crossRealmRegex, plugins: [{ name: "okplugin", options: {} }] }],
+    });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    const out = await PluginManager.getFinalFileContents(context(SOURCE_FILE));
+    expect(out).toContain("// transformed");
   });
 });
