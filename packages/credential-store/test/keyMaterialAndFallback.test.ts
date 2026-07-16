@@ -93,6 +93,37 @@ describe("filenameToInstance", () => {
   });
 });
 
+describe("instanceToFilename / filenameToInstance encoding", () => {
+  it("round-trips instances containing filesystem-unsafe characters", () => {
+    const names = [
+      "dev12345.service-now.com",
+      "https://dev12345.service-now.com", // full URL with ":" and "/"
+      "tenant a", // space
+      "a:b",
+      "weird/inst",
+    ];
+    for (const name of names) {
+      expect(filenameToInstance(instanceToFilename(name))).toBe(name);
+    }
+  });
+
+  it("does not collapse distinct instances onto the same credential file", () => {
+    // The old `replace(/[^a-zA-Z0-9.-]/g, "_")` mapped all three to "a_b.enc",
+    // silently overwriting two of the three logins.
+    const distinct = ["a:b", "a/b", "a b"];
+    const files = distinct.map(instanceToFilename);
+    expect(new Set(files).size).toBe(distinct.length);
+  });
+
+  it("keeps a plain host filename byte-identical to the legacy scheme (back-compat)", () => {
+    // Hostnames use only [A-Za-z0-9.-], which encodeURIComponent leaves intact,
+    // so credential files written under the old scheme still resolve unchanged.
+    expect(instanceToFilename("dev12345.service-now.com")).toBe(
+      "dev12345.service-now.com.enc"
+    );
+  });
+});
+
 describe("decryptWithFallback (legacy machine-key reads)", () => {
   it("opens a file written with the machine key after switching to an explicit key", async () => {
     const INSTANCE = "legacy.service-now.com";

@@ -71,11 +71,13 @@ describe("encrypt / decrypt", () => {
 });
 
 describe("instanceToFilename / filenameToInstance", () => {
-  it("appends .enc and sanitizes unsafe characters", () => {
+  it("appends .enc and reversibly encodes unsafe characters", () => {
     expect(instanceToFilename("dev12345.service-now.com")).toBe(
       "dev12345.service-now.com.enc"
     );
-    expect(instanceToFilename("weird/inst ance")).toBe("weird_inst_ance.enc");
+    // Reversible, collision-free (not the old lossy "weird_inst_ance.enc").
+    expect(instanceToFilename("weird/inst ance")).toBe("weird%2Finst%20ance.enc");
+    expect(filenameToInstance("weird%2Finst%20ance.enc")).toBe("weird/inst ance");
   });
 
   it("strips a trailing .enc to recover the instance", () => {

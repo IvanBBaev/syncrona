@@ -31,6 +31,14 @@ type AdfNode = {
  */
 const MAX_DEPTH = 100;
 
+/**
+ * Largest absolute epoch-millis value `new Date(ms).toISOString()` accepts before
+ * it throws `RangeError: Invalid time value` (the ECMAScript maximum date, ±100
+ * million days from the epoch). A crafted ADF `date` node can carry a finite but
+ * out-of-range `timestamp`, so we range-check before formatting.
+ */
+const MAX_TIMESTAMP_MS = 8.64e15;
+
 /** Read a string attr, returning "" when absent or not a string. */
 function attrString(node: AdfNode, key: string): string {
   const value = node.attrs?.[key];
@@ -62,7 +70,10 @@ function renderAttrsOnlyNode(node: AdfNode): string | null {
           : typeof ts === "string" && ts.trim()
             ? Number(ts)
             : NaN;
-      if (Number.isFinite(millis)) {
+      // A finite but out-of-range value would make `.toISOString()` throw
+      // RangeError and abort the whole issue fetch, so degrade to "" like every
+      // other bad input rather than break the module's never-throws contract.
+      if (Number.isFinite(millis) && Math.abs(millis) <= MAX_TIMESTAMP_MS) {
         return new Date(millis).toISOString().slice(0, 10);
       }
       return "";
