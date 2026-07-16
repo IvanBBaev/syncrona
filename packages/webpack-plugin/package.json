@@ -4,7 +4,9 @@
   "description": "SyncroNow AI build plugin that bundles files with Webpack in the ServiceNow sync pipeline (honors webpack.config.js and sync.config.js).",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "files": [
     "dist"

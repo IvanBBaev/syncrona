@@ -4,7 +4,9 @@
   "description": "SyncroNow AI build plugin that runs Babel on JavaScript/TypeScript files, enabling modern syntax in ServiceNow (Rhino) scoped-app code.",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",

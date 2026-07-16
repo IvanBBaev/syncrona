@@ -50,6 +50,15 @@ export default function() {
     }
   }
   return {
+    // Babel caches and reuses a single plugin instance across every file in a
+    // build, so the factory-closure `commentUsageTracker` would otherwise carry
+    // state between files. The tracker exists to dedupe a comment WITHIN one file
+    // (a leading comment can attach to several nodes); reset it before each file
+    // so one file's comment at a given line/column cannot suppress a
+    // same-positioned @keepModule/@expandModule tag in the next file.
+    pre() {
+      commentUsageTracker.clear();
+    },
     visitor: {
       //remove imports
       ImportDeclaration(path) {

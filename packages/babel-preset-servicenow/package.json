@@ -4,7 +4,9 @@
   "description": "Babel preset for ServiceNow scoped apps (SyncroNow AI).",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",

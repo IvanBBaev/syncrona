@@ -4,7 +4,9 @@
   "description": "SyncroNow AI build plugin that runs ESLint on synced files and blocks pushes on lint errors (uses sync.config.js options or an .eslintrc).",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
