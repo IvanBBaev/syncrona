@@ -30,6 +30,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona doctor` runs diagnostic checks.
 - `npx syncrona plugins` reports configured plugin rules and plugin package availability.
 - `npx syncrona config` inspects or extends configuration (e.g. `config show-defaults`, `config add-plugin`).
+- `npx syncrona completion` prints a bash or zsh tab-completion script (shell argument or auto-detect from `$SHELL`).
 - `npx syncrona mcp` starts standalone MCP server with optional local auto-configure.
 - `npx syncrona login` saves credentials in the global credential store; a method
   picker (or `--auth-method`) selects Basic, OAuth (password / client-credentials /

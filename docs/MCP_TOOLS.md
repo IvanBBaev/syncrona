@@ -89,6 +89,18 @@ Show connected ServiceNow instance, scope and user from current SyncroNow AI pro
 | `logLevel` | `string (one of: "error", "warn", "info", "debug", "silly")` | no | `"info"` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
+Output (`structuredContent` on success results):
+
+Captured result of the underlying `syncrona status` CLI run. Only success results (exit code 0) carry structuredContent.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `exitCode` | `integer` | yes | Process exit code of the CLI run (always 0 on success results). |
+| `timedOut` | `boolean` | yes | True when the CLI run was killed after exceeding timeoutMs. |
+| `stdout` | `string` | yes | Captured standard output of the CLI run. |
+| `stderr` | `string` | yes | Captured standard error of the CLI run. |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
+
 ### sync_get_session_context
 
 Get current ServiceNow session context: active scope and active update set for current user.
@@ -98,6 +110,17 @@ Get current ServiceNow session context: active scope and active update set for c
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+Output (`structuredContent` on success results):
+
+Current ServiceNow session context for the connected user.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `userSysId` | `string` | yes | sys_id of the connected sys_user record. |
+| `scope` | `object` | yes | Active application scope. |
+| `updateSet` | `object` | yes | Active update set from the sys_update_set user preference. |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
 
 ### sync_set_scope
 
@@ -110,6 +133,21 @@ Set current ServiceNow scope for the current user session using scope code (for 
 | `scope` | `string` | yes |  |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
+Output (`structuredContent` on success results):
+
+Scope-switch confirmation with the refreshed session context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `requestedScope` | `string` | no | Scope code that was requested. |
+| `scopeSysId` | `string` | no | sys_id of the resolved sys_scope record. |
+| `scopeName` | `string` | no | Display label of the resolved scope. |
+| `sessionContext` | `object` | no | Refreshed session context (same shape as the sync_get_session_context output). |
+| `dryRun` | `boolean` | no | Present and true only on dry-run results. |
+| `tool` | `string` | no | Tool that produced the plan (dry-run results only). |
+| `planned` | `object` | no | Arguments the tool would apply (dry-run results only). |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
+
 ### sync_list_scopes
 
 List available scopes from sys_scope. Use optional encoded query to filter.
@@ -121,6 +159,16 @@ List available scopes from sys_scope. Use optional encoded query to filter.
 | `query` | `string` | no | `""` |  |
 | `limit` | `number (min 1, max 500)` | no | `100` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+Output (`structuredContent` on success results):
+
+Page of sys_scope rows matching the query.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `count` | `integer` | yes | Number of rows returned in this page. |
+| `rows` | `array<object>` | yes | sys_scope rows limited to the sys_id, scope and name fields. |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
 
 ### sync_set_update_set
 
@@ -135,6 +183,19 @@ Set current ServiceNow update set for current user by name or sys_id. Optionally
 | `createIfMissing` | `boolean` | no | `true` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
+Output (`structuredContent` on success results):
+
+Update-set switch confirmation with the refreshed session context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `targetUpdateSet` | `object` | no | Update set that is now active for the current user. |
+| `sessionContext` | `object` | no | Refreshed session context (same shape as the sync_get_session_context output). |
+| `dryRun` | `boolean` | no | Present and true only on dry-run results. |
+| `tool` | `string` | no | Tool that produced the plan (dry-run results only). |
+| `planned` | `object` | no | Arguments the tool would apply (dry-run results only). |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
+
 ### sync_list_update_sets
 
 List update sets from sys_update_set. Use optional encoded query to filter.
@@ -146,6 +207,16 @@ List update sets from sys_update_set. Use optional encoded query to filter.
 | `query` | `string` | no | `""` |  |
 | `limit` | `number (min 1, max 500)` | no | `100` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+Output (`structuredContent` on success results):
+
+Page of sys_update_set rows matching the query.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `count` | `integer` | yes | Number of rows returned in this page. |
+| `rows` | `array<object>` | yes | sys_update_set rows limited to the sys_id, name, state, application and sys_created_on fields. |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
 
 ### sync_prepare_session
 
@@ -160,6 +231,21 @@ Ensure expected scope and update set are active. It reads current context, appli
 | `expectedUpdateSetSysId` | `string` | no | `""` |  |
 | `createUpdateSetIfMissing` | `boolean` | no | `true` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+Output (`structuredContent` on success results):
+
+Report of the session changes that were applied, with before and after context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `actions` | `array<string>` | no | Human-readable descriptions of the changes that were applied. |
+| `changed` | `boolean` | no | True when at least one change was applied. |
+| `initialContext` | `object` | no | Session context before changes (same shape as the sync_get_session_context output). |
+| `finalContext` | `object` | no | Session context after changes (same shape as the sync_get_session_context output). |
+| `dryRun` | `boolean` | no | Present and true only on dry-run results. |
+| `tool` | `string` | no | Tool that produced the plan (dry-run results only). |
+| `planned` | `object` | no | Arguments the tool would apply (dry-run results only). |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
 
 ### sync_preflight_check
 
@@ -195,6 +281,18 @@ Refresh local SyncroNow AI manifest from the target instance.
 | --- | --- | --- | --- | --- |
 | `logLevel` | `string (one of: "error", "warn", "info", "debug", "silly")` | no | `"info"` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+Output (`structuredContent` on success results):
+
+Captured result of the underlying `syncrona refresh` CLI run. Only success results (exit code 0) carry structuredContent.
+
+| Field | Type | Always present | Description |
+| --- | --- | --- | --- |
+| `exitCode` | `integer` | yes | Process exit code of the CLI run (always 0 on success results). |
+| `timedOut` | `boolean` | yes | True when the CLI run was killed after exceeding timeoutMs. |
+| `stdout` | `string` | yes | Captured standard output of the CLI run. |
+| `stderr` | `string` | yes | Captured standard error of the CLI run. |
+| `correlationId` | `string` | no | Request correlation id injected by the server. |
 
 ### sync_build
 
@@ -646,7 +744,7 @@ Execute JavaScript code with Node.js in the project workspace.
 
 ### sn_query_records
 
-Query records from a ServiceNow table using sysparm_query and optionally analyze grouped counts.
+Query records from a ServiceNow table using sysparm_query and optionally analyze grouped counts. Results beyond the limit cap are not lost: fetch further pages with the offset parameter.
 
 - Version: `1.0.0`
 
@@ -656,12 +754,13 @@ Query records from a ServiceNow table using sysparm_query and optionally analyze
 | `query` | `string` | no | `""` |  |
 | `fields` | `array<string>` | no | `[]` |  |
 | `limit` | `number (min 1, max 500)` | no | `50` |  |
+| `offset` | `integer (min 0)` | no | `0` | Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap. |
 | `analyzeField` | `string` | no | `""` | Optional field name for grouped count analysis |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
 ### sn_create_record
 
-Create a record in any ServiceNow table.
+Create a record in an allowlisted ServiceNow table. By default only scoped-app artifact tables (the metadata registry tables plus sys_script_include) are allowed; extra tables can be permitted via the SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST environment variable (comma-separated), while high-risk system tables such as sys_user, sys_user_has_role, sys_properties and cmdb_ci stay denied regardless.
 
 - Version: `1.0.0`
 - Safety: mutating - requires `confirmDestructive: true`; supports `dryRun`
