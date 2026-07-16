@@ -212,6 +212,43 @@ test('docs drift parser does not match a tool name nested inside a longer identi
   assert.deepEqual(parseToolNamesFromDocs('Calls `sn_query` first.', schemaNames), ['sn_query']);
 });
 
+test('docs drift parser flags a stale doc entry whose family left the schema', () => {
+  // Regression: when the LAST tool of a family is removed from the schema, that
+  // family's prefix vanishes. A stale doc entry for the removed tool must still be
+  // extracted so the gate reports it as drift instead of silently passing.
+  const schemaNames = parseToolNamesFromSchemas('name: "sync_a"\n');
+
+  // `gh_deploy` was the only member of the `gh_` family and has been removed from
+  // the schema, yet the docs still list it.
+  assert.deepEqual(parseToolNamesFromDocs('- sync_a\n- gh_deploy\n', schemaNames), [
+    'gh_deploy',
+    'sync_a',
+  ]);
+});
+
+test('docs drift checker detects a removed-last-of-family tool left in the docs', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-docs-drift-'));
+  const schemaFile = path.join(tempDir, 'toolSchemas.ts');
+  const catalogFile = path.join(tempDir, 'tools-catalog.md');
+  const readmeFile = path.join(tempDir, 'README.md');
+
+  // The schema no longer declares any `gh_` tool, but both docs still list
+  // `gh_deploy` (the removed last member of that family).
+  fs.writeFileSync(schemaFile, 'name: "sync_a"\n');
+  fs.writeFileSync(catalogFile, '- sync_a\n- gh_deploy\n');
+  fs.writeFileSync(readmeFile, '- `sync_a`\n- `gh_deploy`\n');
+
+  const result = checkDocsDrift({
+    toolSource: schemaFile,
+    catalogSource: catalogFile,
+    readmeSource: readmeFile,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.catalog.extraInDocs, ['gh_deploy']);
+  assert.deepEqual(result.readme.extraInDocs, ['gh_deploy']);
+});
+
 test('docs drift checker reports missing and extra tools', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-docs-drift-'));
   const schemaFile = path.join(tempDir, 'toolSchemas.ts');

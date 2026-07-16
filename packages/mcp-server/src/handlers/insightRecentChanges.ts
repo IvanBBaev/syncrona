@@ -20,8 +20,18 @@ export async function handleListRecentChanges(
     return errorResponse("Missing required field: scope");
   }
 
-  const sinceIso = typeof args.since === "string" && args.since.trim() ? args.since.trim() : defaultSinceIso();
-  const sinceDateTime = isoToServiceNowDateTime(sinceIso);
+  const requestedSince =
+    typeof args.since === "string" && args.since.trim() ? args.since.trim() : "";
+  let sinceIso = requestedSince || defaultSinceIso();
+  let sinceDateTime = isoToServiceNowDateTime(sinceIso);
+  // A non-empty but unparseable `since` yields an empty ServiceNow datetime, which
+  // silently drops the time-bound clause and returns all-time results. Fall back to
+  // the default window and echo the bound actually applied, so the payload never
+  // claims a `since` it did not enforce.
+  if (requestedSince && !sinceDateTime) {
+    sinceIso = defaultSinceIso();
+    sinceDateTime = isoToServiceNowDateTime(sinceIso);
+  }
   const limit = clampLimit(args.limit, 50, 200);
 
   const params = new URLSearchParams();

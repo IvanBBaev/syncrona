@@ -42,13 +42,19 @@ function deriveToolPrefixes(schemaTools) {
   return [...prefixes].sort();
 }
 
-function buildDeclarationRegex(prefixes) {
-  if (prefixes.length === 0) {
-    return null;
-  }
-  const families = prefixes.map(escapeRegExp).join('|');
-  return new RegExp(`${DECLARATION_PREFIX}\`?((?:${families})[a-z0-9_]+)\`?`, 'gm');
-}
+// A doc declaration site (bullet, table cell, or heading start) whose leading
+// token has the generic shape of a tool name (`family_member`) is treated as a
+// documented tool, regardless of whether that family still survives in the current
+// schema. Deriving the accepted shape from the surviving schema families alone hid
+// a class of drift: when the LAST tool of a family was removed, that family's
+// prefix vanished from the derived set, so a stale doc entry for the removed tool
+// was no longer extracted and the gate passed on real drift. Matching the generic
+// identifier shape keeps removed-last-of-family entries detectable, while the
+// leading declaration marker still excludes tool-shaped table names in prose.
+const DECLARATION_TOOL_REGEX = new RegExp(
+  `${DECLARATION_PREFIX}\`?([a-z][a-z0-9]*_[a-z0-9_]+)\`?`,
+  'gm'
+);
 
 // Word-boundary match on `_`-bearing identifiers: `sn_query` must not match
 // inside `sn_query_table`.
@@ -57,15 +63,13 @@ function mentionsToolName(raw, name) {
 }
 
 // Names known to the schemas are searched for literally; anything else is picked
-// up only from a declaration site whose prefix matches a real tool family.
+// up only from a declaration site whose leading token has a generic tool-name
+// shape, so a stale doc entry survives even after its family leaves the schema.
 function parseToolNamesFromDocs(raw, schemaTools = []) {
   const found = new Set(schemaTools.filter((name) => mentionsToolName(raw, name)));
 
-  const declarationRegex = buildDeclarationRegex(deriveToolPrefixes(schemaTools));
-  if (declarationRegex) {
-    for (const match of raw.matchAll(declarationRegex)) {
-      found.add(match[1]);
-    }
+  for (const match of raw.matchAll(DECLARATION_TOOL_REGEX)) {
+    found.add(match[1]);
   }
 
   return [...found].sort();
