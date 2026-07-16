@@ -22,8 +22,9 @@ npm i -D @syncrona/eslint-plugin
 
 ## Example Usage
 
-This example takes `.ts` files and runs eslint on them. The output with errors and warnings
-is printed on the console. If there are any errors the code is not pushed.
+This example takes `.ts` files and runs eslint on them. If there are any errors the code
+is not pushed and the lint report is included in the build error; nothing is printed to
+stdout, which keeps MCP stdio transports clean.
 
 ```javascript
 //sync.config.js

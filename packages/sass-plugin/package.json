@@ -4,7 +4,9 @@
   "description": "SyncroNow AI build plugin that compiles Sass/SCSS to CSS in the ServiceNow sync pipeline.",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "files": [
     "dist"

@@ -4,7 +4,9 @@
   "description": "Babel plugin for SyncroNow AI that strips ES import/export statements, letting ServiceNow source files reference each other without a module loader.",
   "main": "./dist/index.js",
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
   },
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
