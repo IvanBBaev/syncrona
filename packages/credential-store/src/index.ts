@@ -431,9 +431,20 @@ export async function listInstances(): Promise<string[]> {
   try {
     await ensureDirs();
     const files = await fsp.readdir(getCredentialsDir());
-    return files
-      .filter((f) => f.endsWith(".enc"))
-      .map((f) => filenameToInstance(f));
+    const instances: string[] = [];
+    for (const f of files) {
+      if (!f.endsWith(".enc")) {
+        continue;
+      }
+      try {
+        // Decode per file: one malformed name (e.g. a stray `%` that is not valid
+        // percent-encoding) must not throw out of the loop and hide EVERY instance.
+        instances.push(filenameToInstance(f));
+      } catch {
+        // Skip the unreadable name; the rest of the instances still list.
+      }
+    }
+    return instances;
   } catch {
     return [];
   }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mkdtempSync, readdirSync, rmSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -64,6 +64,32 @@ test("listInstances reflects saved and removed instances", async () => {
 test("removeAllCredentials clears the store and reports the count", async () => {
   await saveCredentials(INSTANCE, "a", "1");
   await saveCredentials("prod.service-now.com", "b", "2");
+  expect(await removeAllCredentials()).toBe(2);
+  expect(await listInstances()).toEqual([]);
+});
+
+test("listInstances skips an undecodable filename and still lists the valid instances", async () => {
+  await saveCredentials(INSTANCE, "admin", "x");
+  await saveCredentials("prod.service-now.com", "admin", "y");
+  // Seed a deliberately malformed filename: "%zz" is not valid percent-encoding,
+  // so filenameToInstance's decodeURIComponent throws on it. A single bad name
+  // must not abort the loop and hide the successfully-decoded instances.
+  const badFile = path.join(getSyncronaDir(), "credentials", "%zz.enc");
+  writeFileSync(badFile, "garbage", "utf8");
+
+  expect((await listInstances()).sort()).toEqual(
+    ["dev12345.service-now.com", "prod.service-now.com"].sort()
+  );
+});
+
+test("removeAllCredentials removes the valid instances despite an undecodable filename", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const badFile = path.join(getSyncronaDir(), "credentials", "%zz.enc");
+  writeFileSync(badFile, "garbage", "utf8");
+
+  // The bad file used to abort listInstances, making removeAllCredentials a silent
+  // no-op; the valid instances must now be removed and reported.
   expect(await removeAllCredentials()).toBe(2);
   expect(await listInstances()).toEqual([]);
 });
