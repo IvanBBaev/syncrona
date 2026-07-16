@@ -43,10 +43,17 @@ function toStringField(value: unknown): string {
 }
 
 function textResponse(payload: unknown, isError = false): ToolResponse {
-  return {
+  const text = toJsonText(payload);
+  const response: ToolResponse = {
     isError,
-    content: [{ type: "text", text: toJsonText(payload) }],
+    content: [{ type: "text", text }],
   };
+  // Mirror plain-object success payloads into MCP structuredContent, re-parsed
+  // from the serialized text so both views stay identical (see insightShared).
+  if (!isError && payload && typeof payload === "object" && !Array.isArray(payload)) {
+    response.structuredContent = JSON.parse(text) as Record<string, unknown>;
+  }
+  return response;
 }
 
 function errorResponse(message: string): ToolResponse {

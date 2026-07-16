@@ -34,6 +34,7 @@ const {
   validateClaimsDrift,
   runCli: runClaimsDriftCli,
   parseRuntimeOverrides: parseClaimsRuntimeOverrides,
+  extractAuthSection,
 } = require('../scripts/check-claims-drift.js');
 const { getToolLifecycleMetadata } = require('../dist/toolSchemas.js');
 
@@ -356,6 +357,29 @@ test('release checklist validator accepts a semver heading alongside [Unreleased
   assert.equal(result.ok, true);
 });
 
+test('release checklist validator rejects governance sections demoted to a deeper heading level', () => {
+  // Every required `## Section` is present only as `### Section`. A page-wide
+  // substring match would find "## Versioning" inside "### Versioning" and pass,
+  // letting a top-level governance section quietly vanish; the anchored
+  // line-start check must flag all of them.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-release-checklist-'));
+  const readmePath = path.join(tempDir, 'README.md');
+  const governancePath = path.join(tempDir, 'release-governance.md');
+  const changelogPath = path.join(tempDir, 'CHANGELOG.md');
+
+  fs.writeFileSync(readmePath, '# README\n');
+  const demoted = RELEASE_GOVERNANCE_SECTIONS.map((section) => `#${section}`).join('\n') + '\n';
+  fs.writeFileSync(governancePath, demoted, 'utf-8');
+  fs.writeFileSync(changelogPath, '# Changelog\n\n## [1.0.0] - 2026-05-29\n', 'utf-8');
+
+  const result = validateReleaseChecklist({ readmePath, governancePath, changelogPath });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missingSections, RELEASE_GOVERNANCE_SECTIONS);
+  // The changelog is valid, so the demoted sections are the only failures.
+  assert.equal(result.changelogHasReleaseEntries, true);
+});
+
 test('release checklist CLI returns 1 and prints failures', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-release-checklist-'));
   const readmePath = path.join(tempDir, 'README.md');
@@ -528,6 +552,35 @@ test('CLAUDE docs drift validator flags a documented command missing from the re
   );
 });
 
+test('CLAUDE docs drift validator rejects a required section demoted to a deeper heading level', () => {
+  // "## Documentation Drift Policy" is present only as "### Documentation Drift
+  // Policy". A substring match still finds the required heading nested inside the
+  // demoted one and passes; the anchored line-start check must flag it missing.
+  const fixture = writeClaudeDriftFixture({
+    readmeRows: ['refresh'],
+    claudeCommands: ['refresh'],
+    registry: ['refresh'],
+    sections: [
+      '## Purpose',
+      '## Workspace Layout',
+      '## Quality Gates',
+      '## Command Reference',
+      '### Documentation Drift Policy',
+    ],
+  });
+
+  const result = validateClaudeDocsDrift(fixture);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missingSections, ['## Documentation Drift Policy']);
+  assert.equal(
+    result.errors.some((line) =>
+      line.includes('Missing required CLAUDE.md section: ## Documentation Drift Policy')
+    ),
+    true
+  );
+});
+
 test('CLAUDE docs drift CLI runner returns 0 on aligned docs', () => {
   // `dev` is registered through an alias array, `download <scope>` through a
   // positional-argument string; both reduce to their primary name.
@@ -583,6 +636,82 @@ test('claims drift checker flags a missing marker and a resurrected old bin name
   assert.ok(result.errors.some((e) => /Missing required claim "syncrona" in README\.md/.test(e)));
   assert.ok(result.errors.some((e) => /Forbidden claim npx syncro-now-ai .* in docs\/COMPARISON\.md/.test(e)));
   assert.ok(result.errors.some((e) => /Missing claims artifact: docs\/index\.html/.test(e)));
+});
+
+test('extractAuthSection isolates the security section and returns null when absent', () => {
+  const html =
+    '<section id="intro">intro mentions basic auth prose</section>' +
+    '<section class="x" id="security">only here: --auth-method basic</section>' +
+    '<section id="faq">frequently asked</section>';
+
+  const section = extractAuthSection(html);
+  assert.ok(section.includes('--auth-method basic'));
+  assert.ok(!section.includes('intro mentions'));
+  assert.ok(!section.includes('frequently asked'));
+  assert.equal(extractAuthSection('<html>no security anchor</html>'), null);
+});
+
+test('claims drift auth gate flags a method whose only match is a substring like "basically"', () => {
+  // The security section documents every method EXCEPT basic, yet contains the
+  // word "basically". Under the old page-wide substring match that stray word
+  // satisfied "basic" even with every real Basic-auth reference removed. The
+  // section-scoped, word-boundary check must still flag basic while leaving the
+  // five genuinely-documented methods alone.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claims-auth-'));
+  const indexHtmlPath = path.join(tempDir, 'index.html');
+  const authSection = [
+    '<section class="section" id="security">',
+    '  <h2>Security &amp; credentials</h2>',
+    '  <p>Configuration is basically self-service.</p>',
+    '  <code>--auth-method oauth-password</code>',
+    '  <code>--auth-method oauth-client-credentials</code>',
+    '  <code>--auth-method oauth-jwt-bearer</code>',
+    '  <code>--auth-method api-key</code>',
+    '  <p>Mutual TLS (mTLS) may be layered on top.</p>',
+    '</section>',
+  ].join('\n');
+  fs.writeFileSync(indexHtmlPath, `<html><body>${authSection}</body></html>`, 'utf-8');
+
+  const result = validateClaimsDrift({ indexHtmlPath });
+
+  assert.ok(
+    result.errors.some((e) => /Missing auth method "basic"/.test(e)),
+    'basic must be flagged even though "basically" is present in the section'
+  );
+  for (const documented of [
+    'oauth-password',
+    'oauth-client-credentials',
+    'oauth-jwt-bearer',
+    'api-key',
+    'mtls',
+  ]) {
+    assert.ok(
+      !result.errors.some((e) => e.includes(`Missing auth method "${documented}"`)),
+      `${documented} is documented in the section and must not be flagged`
+    );
+  }
+});
+
+test('claims drift auth gate reports a missing security section instead of passing', () => {
+  // Deleting the whole `id="security"` section must be reported, rather than
+  // silently finding zero methods to check.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-claims-auth-'));
+  const indexHtmlPath = path.join(tempDir, 'index.html');
+  fs.writeFileSync(
+    indexHtmlPath,
+    '<html><body><section id="hero">no auth here</section></body></html>',
+    'utf-8'
+  );
+
+  const result = validateClaimsDrift({ indexHtmlPath });
+
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some((e) => /Missing auth section \(id="security"\) in docs\/index\.html/.test(e)),
+    'the absent security section must be reported'
+  );
+  // With no section there is nothing to check per-method, so no per-method errors.
+  assert.ok(!result.errors.some((e) => /Missing auth method/.test(e)));
 });
 
 test('claims drift CLI parses index.html overrides from an argument, a flag, or the env', () => {

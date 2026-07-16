@@ -3,6 +3,12 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// The two recognized flags and the option key each writes.
+const THRESHOLD_FLAGS = {
+  '--line-threshold': 'lineThreshold',
+  '--branch-threshold': 'branchThreshold',
+};
+
 function parseArgs(argv) {
   const out = {
     lineThreshold: 90,
@@ -12,22 +18,51 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
-    if (item === '--line-threshold') {
-      const next = argv[i + 1];
-      const parsed = Number(next);
-      if (Number.isFinite(parsed)) {
-        out.lineThreshold = parsed;
+
+    // Accept both `--flag value` and `--flag=value`. Splitting on `=` first means
+    // an inline form is recognized rather than treated as an unknown token.
+    let flag = item;
+    let inlineValue = null;
+    if (typeof item === 'string' && item.startsWith('--')) {
+      const eq = item.indexOf('=');
+      if (eq !== -1) {
+        flag = item.slice(0, eq);
+        inlineValue = item.slice(eq + 1);
       }
+    }
+
+    // A typo in a threshold flag used to be silently ignored, leaving the gate at
+    // its default — most dangerously `--branch-threshhold 80` left the branch gate
+    // OFF (default 0) with the run still reporting success. Reject every
+    // unrecognized token so a misspelled flag fails loudly instead of no-op'ing.
+    const optionKey = THRESHOLD_FLAGS[flag];
+    if (!optionKey) {
+      throw new Error(
+        `Unknown argument "${item}". Expected --line-threshold and/or --branch-threshold.`
+      );
+    }
+
+    let rawValue;
+    if (inlineValue !== null) {
+      rawValue = inlineValue;
+    } else {
+      rawValue = argv[i + 1];
       i += 1;
     }
-    if (item === '--branch-threshold') {
-      const next = argv[i + 1];
-      const parsed = Number(next);
-      if (Number.isFinite(parsed)) {
-        out.branchThreshold = parsed;
-      }
-      i += 1;
+
+    if (rawValue === undefined || String(rawValue).trim() === '') {
+      throw new Error(`Missing value for ${flag}.`);
     }
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Invalid numeric value for ${flag}: "${rawValue}".`);
+    }
+    // A threshold is a percentage; anything outside 0–100 (e.g. a dropped decimal
+    // point, `--line-threshold 900`) can never be met or is meaningless.
+    if (parsed < 0 || parsed > 100) {
+      throw new Error(`Threshold for ${flag} must be between 0 and 100, got ${parsed}.`);
+    }
+    out[optionKey] = parsed;
   }
 
   return out;
@@ -135,7 +170,14 @@ function runCoverage() {
 }
 
 function main() {
-  const args = parseArgs(process.argv.slice(2));
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(`Coverage gate: ${error.message}`);
+    process.exit(1);
+    return;
+  }
   const run = runCoverage();
 
   process.stdout.write(run.output);

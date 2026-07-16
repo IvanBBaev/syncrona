@@ -46,9 +46,11 @@ export {
 } from "./analysis/graph";
 export {
   SCOPE_KNOWLEDGE_SCHEMA_VERSION,
+  SCOPE_KNOWLEDGE_STALE_AFTER_DAYS,
   buildTableFieldMarkdownDocs,
   buildOnboardingPlan,
   buildScopeKnowledgeIndex,
+  computeKnowledgeStaleness,
   rankMinimalFootprintTargets,
   renderScopeKnowledgeMarkdown,
   summarizeTableImpactPaths,

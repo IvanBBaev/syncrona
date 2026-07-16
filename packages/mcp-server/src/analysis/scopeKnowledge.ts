@@ -20,6 +20,56 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 export const SCOPE_KNOWLEDGE_SCHEMA_VERSION = "1.0.0";
 
+export const SCOPE_KNOWLEDGE_STALE_AFTER_DAYS = 7;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function toInstanceBaseUrl(instance: string): string {
+  const trimmed = instance.trim().replace(/\/$/, "");
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return `${trimmed}/`;
+  }
+  return `https://${trimmed}/`;
+}
+
+export function computeKnowledgeStaleness(
+  generatedAt: string,
+  instance: string = "",
+  now: Date = new Date()
+): {
+  generatedAt: string;
+  instance: string;
+  ageDays: number | null;
+  stale: boolean;
+  hint: string;
+} {
+  const parsed = generatedAt.trim() ? Date.parse(generatedAt) : Number.NaN;
+  if (!Number.isFinite(parsed)) {
+    return {
+      generatedAt,
+      instance,
+      ageDays: null,
+      stale: true,
+      hint: "Scope knowledge has no valid generatedAt timestamp. Re-run sync_generate_scope_knowledge to refresh it.",
+    };
+  }
+
+  const ageDays = Math.max(0, Math.floor((now.getTime() - parsed) / MS_PER_DAY));
+  const stale = ageDays >= SCOPE_KNOWLEDGE_STALE_AFTER_DAYS;
+  return {
+    generatedAt,
+    instance,
+    ageDays,
+    stale,
+    hint: stale
+      ? `Scope knowledge is ${ageDays} day(s) old. Re-run sync_generate_scope_knowledge to refresh it.`
+      : "",
+  };
+}
+
 export function rankMinimalFootprintTargets(
   task: string,
   graph: { nodes: GraphNode[]; edges: GraphEdge[] },
@@ -93,6 +143,7 @@ export function buildScopeKnowledgeIndex(input: {
   recommendedEditTargets?: Array<Record<string, unknown>>;
   sourceSummary?: Record<string, unknown>;
   tableImpactPaths?: Array<Record<string, unknown>>;
+  instance?: string;
 }): Record<string, unknown> {
   const hotspots = input.hotspots || summarizeGraphHotspots(input.graph, 10);
   const tableImpactPaths = input.tableImpactPaths || summarizeTableImpactPaths(input.graph);
@@ -231,9 +282,19 @@ export function buildScopeKnowledgeIndex(input: {
       return a.targetTable.localeCompare(b.targetTable);
     });
 
+  // Instance provenance: prefer the explicit input, then fall back to what
+  // discovery recorded in sourceSummary. Both fields stay optional so indexes
+  // generated without credentials (or by older versions) remain valid.
+  const instance = (
+    input.instance || toStringField(asRecord(input.sourceSummary).instance)
+  ).trim();
+
   return {
     schemaVersion: SCOPE_KNOWLEDGE_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
+    ...(instance
+      ? { instance, instanceBaseUrl: toInstanceBaseUrl(instance) }
+      : {}),
     scope: input.scope,
     entities: input.entities,
       dependencyNodes: input.graph.nodes,
@@ -382,6 +443,9 @@ export function validateScopeKnowledgeIndex(index: Record<string, unknown>): {
   valid: boolean;
   missingFields: string[];
 } {
+  // Provenance fields (instance, instanceBaseUrl) are intentionally NOT
+  // required: indexes generated before they existed, or without ServiceNow
+  // credentials, must keep validating.
   const required = [
     "schemaVersion",
     "generatedAt",
@@ -634,6 +698,10 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
   lines.push(`- Scope: ${scope}`);
   lines.push(`- Schema version: ${toStringField(index.schemaVersion)}`);
   lines.push(`- Generated at: ${toStringField(index.generatedAt)}`);
+  const provenanceInstance = toStringField(index.instance);
+  if (provenanceInstance) {
+    lines.push(`- Instance: ${provenanceInstance}`);
+  }
   lines.push("");
   lines.push("## Object Inventory");
   lines.push(`- Entity count: ${entities.length}`);

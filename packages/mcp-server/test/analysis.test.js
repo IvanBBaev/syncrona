@@ -40,6 +40,7 @@ const {
   rankMinimalFootprintTargets,
   buildScopeKnowledgeIndex,
   buildTableFieldMarkdownDocs,
+  computeKnowledgeStaleness,
   validateScopeKnowledgeIndex,
   renderScopeKnowledgeMarkdown,
   buildOnboardingPlan,
@@ -753,6 +754,107 @@ test('scope knowledge index validates and markdown renders required sections', (
   assert.equal(md.includes('erDiagram'), true);
   assert.equal(md.includes('## Table-to-Table Impact Paths (with confidence)'), true);
   assert.equal(md.includes('## Where To Modify'), true);
+});
+
+test('computeKnowledgeStaleness reports fresh knowledge as not stale', () => {
+  const now = new Date('2026-07-11T12:00:00.000Z');
+  const fresh = computeKnowledgeStaleness('2026-07-10T12:00:00.000Z', 'dev123.service-now.com', now);
+  assert.equal(fresh.generatedAt, '2026-07-10T12:00:00.000Z');
+  assert.equal(fresh.instance, 'dev123.service-now.com');
+  assert.equal(fresh.ageDays, 1);
+  assert.equal(fresh.stale, false);
+  assert.equal(fresh.hint, '');
+});
+
+test('computeKnowledgeStaleness marks knowledge stale at seven days with refresh hint', () => {
+  const now = new Date('2026-07-11T12:00:00.000Z');
+
+  const old = computeKnowledgeStaleness('2026-07-01T12:00:00.000Z', 'dev123.service-now.com', now);
+  assert.equal(old.ageDays, 10);
+  assert.equal(old.stale, true);
+  assert.equal(old.hint.includes('sync_generate_scope_knowledge'), true);
+
+  const boundary = computeKnowledgeStaleness('2026-07-04T12:00:00.000Z', '', now);
+  assert.equal(boundary.ageDays, 7);
+  assert.equal(boundary.stale, true);
+
+  const justUnder = computeKnowledgeStaleness('2026-07-04T12:00:01.000Z', '', now);
+  assert.equal(justUnder.ageDays, 6);
+  assert.equal(justUnder.stale, false);
+});
+
+test('computeKnowledgeStaleness treats missing or invalid generatedAt as stale', () => {
+  const missing = computeKnowledgeStaleness('', 'dev123.service-now.com');
+  assert.equal(missing.ageDays, null);
+  assert.equal(missing.stale, true);
+  assert.equal(missing.hint.includes('sync_generate_scope_knowledge'), true);
+
+  const invalid = computeKnowledgeStaleness('not-a-date');
+  assert.equal(invalid.ageDays, null);
+  assert.equal(invalid.stale, true);
+  assert.equal(invalid.hint.includes('sync_generate_scope_knowledge'), true);
+});
+
+test('scope knowledge index stamps instance provenance from source summary', () => {
+  const graph = {
+    nodes: [{ id: 'script:A', kind: 'script', label: 'A' }],
+    edges: [],
+  };
+
+  const index = buildScopeKnowledgeIndex({
+    scope: 'x_nuvo_sync',
+    entities: [{ id: 'script:A', name: 'A' }],
+    graph,
+    sourceSummary: { instance: 'dev123.service-now.com' },
+  });
+
+  assert.equal(typeof index.generatedAt, 'string');
+  assert.equal(index.generatedAt.length > 0, true);
+  assert.equal(index.instance, 'dev123.service-now.com');
+  assert.equal(index.instanceBaseUrl, 'https://dev123.service-now.com/');
+  assert.equal(validateScopeKnowledgeIndex(index).valid, true);
+
+  const md = renderScopeKnowledgeMarkdown(index);
+  assert.equal(md.includes('- Instance: dev123.service-now.com'), true);
+});
+
+test('scope knowledge index without instance stays valid and omits provenance lines', () => {
+  const graph = {
+    nodes: [{ id: 'script:A', kind: 'script', label: 'A' }],
+    edges: [],
+  };
+
+  const index = buildScopeKnowledgeIndex({
+    scope: 'x_nuvo_sync',
+    entities: [{ id: 'script:A', name: 'A' }],
+    graph,
+  });
+
+  assert.equal('instance' in index, false);
+  assert.equal('instanceBaseUrl' in index, false);
+  assert.equal(validateScopeKnowledgeIndex(index).valid, true);
+
+  const md = renderScopeKnowledgeMarkdown(index);
+  assert.equal(md.includes('- Instance:'), false);
+});
+
+test('validateScopeKnowledgeIndex accepts a legacy index without provenance fields', () => {
+  const legacyIndex = {
+    schemaVersion: '1.0.0',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    scope: 'x_nuvo_sync',
+    entities: [],
+    dependencies: [],
+    hotspots: [],
+    risks: [],
+    suppressions: [],
+    updateSetContext: {},
+    recommendedEditTargets: [],
+  };
+
+  const result = validateScopeKnowledgeIndex(legacyIndex);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.missingFields, []);
 });
 
 test('scope knowledge markdown renders scheduled job per-object details', () => {

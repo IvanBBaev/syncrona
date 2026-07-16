@@ -31,10 +31,22 @@ export const SCRIPT_SEARCH_TABLES: Record<string, { scriptField: string; nameFie
 };
 
 export function textResponse(payload: unknown, isError = false): ToolResponse {
-  return {
+  const text = toJsonText(payload);
+  const response: ToolResponse = {
     isError,
-    content: [{ type: "text", text: toJsonText(payload) }],
+    content: [{ type: "text", text }],
   };
+  // Mirror plain-object success payloads into MCP structuredContent so text
+  // and structured consumers see identical data. The mirror is re-parsed from
+  // the serialized text (not the raw payload) so JSON.stringify normalization
+  // (dropped undefined values, Date -> string) cannot make the two diverge.
+  // Error results are exempt from output-schema conformance per the MCP spec,
+  // so they stay text-only. structuredContent without a declared outputSchema
+  // is spec-legal, so this is safe for every tool routed through this helper.
+  if (!isError && payload && typeof payload === "object" && !Array.isArray(payload)) {
+    response.structuredContent = JSON.parse(text) as Record<string, unknown>;
+  }
+  return response;
 }
 
 export function errorResponse(message: string): ToolResponse {

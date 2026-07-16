@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { GraphNode, GraphEdge } from "../analysis/graph";
-import { buildScopeKnowledgeIndex, buildTableFieldMarkdownDocs, rankMinimalFootprintTargets, renderScopeKnowledgeMarkdown, renderTableRelationshipMermaid, validateScopeKnowledgeIndex } from "../analysis";
+import { buildScopeKnowledgeIndex, buildTableFieldMarkdownDocs, computeKnowledgeStaleness, rankMinimalFootprintTargets, renderScopeKnowledgeMarkdown, renderTableRelationshipMermaid, validateScopeKnowledgeIndex } from "../analysis";
 import { getScopeDocsPaths, getScopeKnowledgePaths, getTableDependencyReportPaths, normalizeScopeCode } from "../scopePaths";
 import { toJsonText } from "../runtimeUtils";
 
@@ -47,6 +47,21 @@ function toStringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+// Shared provenance block for tool payloads: when the knowledge was generated,
+// which instance it came from (when known), and whether it is stale.
+function describeIndexProvenance(index: Record<string, unknown>): Record<string, unknown> {
+  const generatedAt = toStringField(index.generatedAt);
+  const instance = toStringField(index.instance);
+  const provenance: Record<string, unknown> = {
+    generatedAt,
+    staleness: computeKnowledgeStaleness(generatedAt, instance),
+  };
+  if (instance) {
+    provenance.instance = instance;
+  }
+  return provenance;
+}
+
 function normalizeGraphFromIndex(index: Record<string, unknown>): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const dependencyNodesRaw = Array.isArray(index.dependencyNodes) ? index.dependencyNodes : [];
   const dependencies = Array.isArray(index.dependencies) ? index.dependencies : [];
@@ -76,11 +91,19 @@ function renderScopeDocsReadme(index: Record<string, unknown>): string {
   const dependencies = Array.isArray(index.dependencies) ? index.dependencies : [];
   const risks = Array.isArray(index.risks) ? index.risks : [];
   const referencedTables = Array.isArray(index.referencedTables) ? index.referencedTables : [];
+  const generatedAt = toStringField(index.generatedAt);
+  const instance = toStringField(index.instance);
 
   const lines: string[] = [];
   lines.push(`# Scope Docs: ${scope}`);
   lines.push("");
   lines.push("## Summary");
+  if (generatedAt) {
+    lines.push(`- Generated at: ${generatedAt}`);
+  }
+  if (instance) {
+    lines.push(`- Instance: ${instance}`);
+  }
   lines.push(`- Entities: ${entities.length}`);
   lines.push(`- Dependencies: ${dependencies.length}`);
   lines.push(`- Risks: ${risks.length}`);
@@ -219,6 +242,7 @@ export async function handleScopeKnowledgeTool(
         dependencyCount: hydrated.graph.edges.length,
         trigger,
         scope: normalizeScopeCode(scope),
+        ...describeIndexProvenance(index),
         validation,
         paths,
         index,
@@ -257,7 +281,13 @@ export async function handleScopeKnowledgeTool(
       const validation = validateScopeKnowledgeIndex(index);
       return {
         isError: validation.valid !== true,
-        content: [{ type: "text", text: toJsonText(validation) }],
+        content: [{
+          type: "text",
+          text: toJsonText({
+            ...validation,
+            ...describeIndexProvenance(index),
+          }),
+        }],
       };
     }
 
@@ -353,6 +383,7 @@ export async function handleScopeKnowledgeTool(
 
       const payload: Record<string, unknown> = {
         scope: normalizedScope,
+        ...describeIndexProvenance(index),
         validation,
         includeFields,
         includeDiagrams,
@@ -441,6 +472,7 @@ export async function handleScopeKnowledgeTool(
               autodiscovered: hydrated.autodiscovered,
               serviceNowDiscovered: hydrated.serviceNowDiscovered,
               sourceSummary: hydrated.sourceSummary,
+              ...describeIndexProvenance(index),
               wroteFiles: !dryRun && delegatedArgs.writeFiles === true,
               paths,
               validation,

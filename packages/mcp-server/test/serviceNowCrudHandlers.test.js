@@ -54,7 +54,7 @@ test('sn_create_record: missing table is a validation error', async () => {
 test('sn_create_record: without confirmDestructive it refuses to mutate', async () => {
   const res = await handleServiceNowCrudTool(
     'sn_create_record',
-    { table: 'incident', record: { short_description: 'x' } },
+    { table: 'sys_script', record: { name: 'x' } },
     makeContext()
   );
   assert.equal(res.isError, true);
@@ -65,13 +65,113 @@ test('sn_create_record: dry-run routes through the audit-preview callback (no ne
   const ctx = makeContext({ dryRun: true });
   const res = await handleServiceNowCrudTool(
     'sn_create_record',
-    { table: 'incident', record: { short_description: 'x' }, confirmDestructive: true },
+    { table: 'sys_script', record: { name: 'x' }, confirmDestructive: true },
     ctx
   );
   assert.equal(res.isError, false);
   assert.equal(ctx._dryRuns.length, 1);
-  assert.equal(ctx._dryRuns[0].details.table, 'incident');
+  assert.equal(ctx._dryRuns[0].details.table, 'sys_script');
   assert.equal(ctx._audits.length, 0);
+});
+
+// --- sn_create_record table policy -----------------------------------------
+// The policy fires before the dryRun short-circuit and before the
+// confirmDestructive gate, so a refused table is an error even as a rehearsal.
+
+function withCreateAllowlistEnv(value, fn) {
+  const previous = process.env.SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST;
+  if (value === undefined) {
+    delete process.env.SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST;
+  } else {
+    process.env.SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST = value;
+  }
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (previous === undefined) {
+        delete process.env.SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST;
+      } else {
+        process.env.SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST = previous;
+      }
+    });
+}
+
+test('sn_create_record: allowlisted table passes the policy and reaches the confirm gate', async () => {
+  // sys_script is on the default allowlist, so the next stop is the
+  // confirmDestructive gate — proving the policy did not reject it.
+  const res = await handleServiceNowCrudTool(
+    'sn_create_record',
+    { table: 'sys_script', record: { name: 'x' } },
+    makeContext()
+  );
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /confirmDestructive=true/);
+  assert.doesNotMatch(res.content[0].text, /allowlist|denied/);
+});
+
+test('sn_create_record: non-allowlisted table is refused with a pointer to the env var', async () => {
+  const res = await handleServiceNowCrudTool(
+    'sn_create_record',
+    { table: 'incident', record: { short_description: 'x' }, confirmDestructive: true },
+    makeContext()
+  );
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /"incident"/);
+  assert.match(res.content[0].text, /not on the sn_create_record table allowlist/);
+  assert.match(res.content[0].text, /SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST/);
+});
+
+for (const table of ['sys_user', 'sys_user_has_role', 'sys_properties', 'cmdb_ci']) {
+  test(`sn_create_record: denied table ${table} is refused even with confirmDestructive=true`, async () => {
+    const ctx = makeContext();
+    const res = await handleServiceNowCrudTool(
+      'sn_create_record',
+      { table, record: { name: 'x' }, confirmDestructive: true },
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, new RegExp(`"${table}"`));
+    assert.match(res.content[0].text, /denied for sn_create_record/);
+    assert.match(res.content[0].text, /SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST/);
+    assert.equal(ctx._audits.length, 0);
+  });
+}
+
+test('sn_create_record: denied table is refused even as a dry run', async () => {
+  const ctx = makeContext({ dryRun: true });
+  const res = await handleServiceNowCrudTool(
+    'sn_create_record',
+    { table: 'sys_user', record: { user_name: 'x' }, confirmDestructive: true },
+    ctx
+  );
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /denied for sn_create_record/);
+  assert.equal(ctx._dryRuns.length, 0, 'policy violation must not reach the dry-run preview');
+});
+
+test('sn_create_record: env var extends the allowlist for extra tables', async () => {
+  await withCreateAllowlistEnv('incident, u_custom_table', async () => {
+    const res = await handleServiceNowCrudTool(
+      'sn_create_record',
+      { table: 'incident', record: { short_description: 'x' } },
+      makeContext()
+    );
+    // Policy passed; the confirmDestructive gate is the next refusal.
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /confirmDestructive=true/);
+  });
+});
+
+test('sn_create_record: denied tables stay denied even when listed in the env var', async () => {
+  await withCreateAllowlistEnv('sys_user,cmdb_ci', async () => {
+    const res = await handleServiceNowCrudTool(
+      'sn_create_record',
+      { table: 'sys_user', record: { user_name: 'x' }, confirmDestructive: true },
+      makeContext()
+    );
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /denied for sn_create_record/);
+  });
 });
 
 test('sn_execute_background_script: missing script is a validation error', async () => {

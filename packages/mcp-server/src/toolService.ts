@@ -27,6 +27,7 @@ import {
 } from "./servicenowCore";
 import { getSessionContext } from "./sessionContext";
 import { MCP_TOOLS } from "./toolSchemas";
+import type { ToolResponse } from "./toolResponse";
 import { getScopeDocsPaths, getScopeTableDocPath, resolveContainedPath } from "./scopePaths";
 import {
   classifyRelationVisibility,
@@ -118,19 +119,19 @@ export function loadGuardrailConfig(projectDir: string = PROJECT_DIR): Guardrail
   }
 }
 
-export function makeDryRunResponse(toolName: string, details: Record<string, unknown>) {
+export function makeDryRunResponse(toolName: string, details: Record<string, unknown>): ToolResponse {
+  const payload = {
+    dryRun: true,
+    tool: toolName,
+    planned: details,
+  };
+  const text = toJsonText(payload);
   return {
     isError: false,
-    content: [
-      {
-        type: "text",
-        text: toJsonText({
-          dryRun: true,
-          tool: toolName,
-          planned: details,
-        }),
-      },
-    ],
+    content: [{ type: "text", text }],
+    // Dry-run results are success results: tools that declare an outputSchema
+    // must still carry structuredContent here, so mirror the JSON text block.
+    structuredContent: JSON.parse(text) as Record<string, unknown>,
   };
 }
 
@@ -184,9 +185,9 @@ export function resolveCorrelationId(args: Record<string, unknown>, seedMs: numb
 }
 
 export function withCorrelationIdInResponse(
-  response: { isError: boolean; content: Array<{ type: string; text: string }> },
+  response: ToolResponse,
   correlationId: string
-): { isError: boolean; content: Array<{ type: string; text: string }> } {
+): ToolResponse {
   if (!Array.isArray(response.content) || response.content.length === 0) {
     return response;
   }
@@ -210,6 +211,11 @@ export function withCorrelationIdInResponse(
     return {
       ...response,
       content: [{ type: "text", text: toJsonText(payload) }, ...response.content.slice(1)],
+      // Keep structuredContent identical to the (rebuilt) JSON text payload.
+      // Only mirror when the handler opted into structuredContent — injecting
+      // it for every tool would silently change the wire shape of tools that
+      // never declared structured output.
+      ...(response.structuredContent !== undefined ? { structuredContent: payload } : {}),
     };
   } catch (_) {
     return convergePlainTextError(response, text, correlationId);
@@ -225,10 +231,10 @@ export function withCorrelationIdInResponse(
  * the `Tool execution failed [CODE]:` envelope is left as-is.
  */
 function convergePlainTextError(
-  response: { isError: boolean; content: Array<{ type: string; text: string }> },
+  response: ToolResponse,
   text: string,
   correlationId: string
-): { isError: boolean; content: Array<{ type: string; text: string }> } {
+): ToolResponse {
   if (response.isError !== true) {
     return response;
   }

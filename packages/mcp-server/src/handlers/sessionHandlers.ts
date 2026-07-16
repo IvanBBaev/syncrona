@@ -51,6 +51,22 @@ function toStringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/**
+ * Success response whose JSON text block is mirrored into MCP
+ * structuredContent. The mirror is re-parsed from the serialized text so both
+ * views are identical by construction (JSON.stringify normalization cannot
+ * make them diverge). The session tools declare an outputSchema, so every
+ * success result they return must carry conforming structuredContent.
+ */
+function structuredJsonResponse(payload: Record<string, unknown>): ToolResponse {
+  const text = toJsonText(payload);
+  return {
+    isError: false,
+    content: [{ type: "text", text }],
+    structuredContent: JSON.parse(text) as Record<string, unknown>,
+  };
+}
+
 export async function handleSessionTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -85,10 +101,7 @@ export async function handleSessionTool(
 
     case "sync_get_session_context": {
       const sessionContext = await getSessionContext(timeoutMs);
-      return {
-        isError: false,
-        content: [{ type: "text", text: toJsonText(sessionContext) }],
-      };
+      return structuredJsonResponse(sessionContext);
     }
 
     case "sync_set_scope": {
@@ -106,10 +119,7 @@ export async function handleSessionTool(
 
       const result = await setCurrentScope(scope, timeoutMs);
       context.auditMutatingTool(toolName, args, result, Date.now() - startedAt);
-      return {
-        isError: false,
-        content: [{ type: "text", text: toJsonText(result) }],
-      };
+      return structuredJsonResponse(result);
     }
 
     case "sync_list_scopes": {
@@ -119,10 +129,7 @@ export async function handleSessionTool(
           ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
           : 100;
       const result = await listScopes(timeoutMs, query, limit);
-      return {
-        isError: false,
-        content: [{ type: "text", text: toJsonText({ count: result.length, rows: result }) }],
-      };
+      return structuredJsonResponse({ count: result.length, rows: result });
     }
 
     case "sync_set_update_set": {
@@ -163,10 +170,7 @@ export async function handleSessionTool(
 
       context.auditMutatingTool(toolName, args, result, Date.now() - startedAt);
 
-      return {
-        isError: false,
-        content: [{ type: "text", text: toJsonText(result) }],
-      };
+      return structuredJsonResponse(result);
     }
 
     case "sync_list_update_sets": {
@@ -176,10 +180,7 @@ export async function handleSessionTool(
           ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
           : 100;
       const result = await listUpdateSets(timeoutMs, query, limit);
-      return {
-        isError: false,
-        content: [{ type: "text", text: toJsonText({ count: result.length, rows: result }) }],
-      };
+      return structuredJsonResponse({ count: result.length, rows: result });
     }
 
     case "sync_prepare_session": {
@@ -250,15 +251,7 @@ export async function handleSessionTool(
 
       context.auditMutatingTool(toolName, args, resultPayload, Date.now() - startedAt);
 
-      return {
-        isError: false,
-        content: [
-          {
-            type: "text",
-            text: toJsonText(resultPayload),
-          },
-        ],
-      };
+      return structuredJsonResponse(resultPayload);
     }
 
     case "sync_check_instance_capabilities": {

@@ -63,6 +63,35 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
       },
     },
+    outputSchema: {
+      type: "object",
+      description:
+        "Captured result of the underlying `syncrona status` CLI run. Only success results (exit code 0) carry structuredContent.",
+      properties: {
+        exitCode: {
+          type: "integer",
+          description: "Process exit code of the CLI run (always 0 on success results).",
+        },
+        timedOut: {
+          type: "boolean",
+          description: "True when the CLI run was killed after exceeding timeoutMs.",
+        },
+        stdout: {
+          type: "string",
+          description: "Captured standard output of the CLI run.",
+        },
+        stderr: {
+          type: "string",
+          description: "Captured standard error of the CLI run.",
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      required: ["exitCode", "timedOut", "stdout", "stderr"],
+      additionalProperties: false,
+    },
   },
   {
     name: "sync_get_session_context",
@@ -77,6 +106,61 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 900000,
         },
       },
+    },
+    outputSchema: {
+      type: "object",
+      description: "Current ServiceNow session context for the connected user.",
+      properties: {
+        userSysId: {
+          type: "string",
+          description: "sys_id of the connected sys_user record.",
+        },
+        scope: {
+          type: "object",
+          description: "Active application scope.",
+          properties: {
+            scope: {
+              type: "string",
+              description:
+                "Scope code (for example x_nuvo_sinc). Empty when no scope could be resolved.",
+            },
+            scopeSysId: {
+              type: "string",
+              description: "sys_id of the sys_scope record. Empty when unresolved.",
+            },
+            name: {
+              type: "string",
+              description: "Display label of the scope. Empty when unresolved.",
+            },
+          },
+          required: ["scope", "scopeSysId", "name"],
+        },
+        updateSet: {
+          type: "object",
+          description: "Active update set from the sys_update_set user preference.",
+          properties: {
+            sysId: {
+              type: "string",
+              description: "sys_id of the active update set. Empty when none is set.",
+            },
+            name: {
+              type: "string",
+              description: "Display label of the active update set.",
+            },
+            state: {
+              type: "string",
+              description: "Update set state (for example in progress).",
+            },
+          },
+          required: ["sysId", "name", "state"],
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      required: ["userSysId", "scope", "updateSet"],
+      additionalProperties: false,
     },
   },
   {
@@ -96,6 +180,47 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
       },
       required: ["scope"],
+    },
+    outputSchema: {
+      type: "object",
+      description:
+        "Scope-switch confirmation with the refreshed session context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.",
+      properties: {
+        requestedScope: {
+          type: "string",
+          description: "Scope code that was requested.",
+        },
+        scopeSysId: {
+          type: "string",
+          description: "sys_id of the resolved sys_scope record.",
+        },
+        scopeName: {
+          type: "string",
+          description: "Display label of the resolved scope.",
+        },
+        sessionContext: {
+          type: "object",
+          description:
+            "Refreshed session context (same shape as the sync_get_session_context output).",
+        },
+        dryRun: {
+          type: "boolean",
+          description: "Present and true only on dry-run results.",
+        },
+        tool: {
+          type: "string",
+          description: "Tool that produced the plan (dry-run results only).",
+        },
+        planned: {
+          type: "object",
+          description: "Arguments the tool would apply (dry-run results only).",
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      additionalProperties: false,
     },
   },
   {
@@ -121,6 +246,30 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 900000,
         },
       },
+    },
+    outputSchema: {
+      type: "object",
+      description: "Page of sys_scope rows matching the query.",
+      properties: {
+        count: {
+          type: "integer",
+          description: "Number of rows returned in this page.",
+        },
+        rows: {
+          type: "array",
+          description: "sys_scope rows limited to the sys_id, scope and name fields.",
+          items: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      required: ["count", "rows"],
+      additionalProperties: false,
     },
   },
   {
@@ -149,6 +298,54 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
       },
     },
+    outputSchema: {
+      type: "object",
+      description:
+        "Update-set switch confirmation with the refreshed session context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.",
+      properties: {
+        targetUpdateSet: {
+          type: "object",
+          description: "Update set that is now active for the current user.",
+          properties: {
+            sysId: {
+              type: "string",
+              description: "sys_id of the target update set.",
+            },
+            name: {
+              type: "string",
+              description: "Display label of the target update set.",
+            },
+            state: {
+              type: "string",
+              description: "Update set state (for example in progress).",
+            },
+          },
+          required: ["sysId", "name", "state"],
+        },
+        sessionContext: {
+          type: "object",
+          description:
+            "Refreshed session context (same shape as the sync_get_session_context output).",
+        },
+        dryRun: {
+          type: "boolean",
+          description: "Present and true only on dry-run results.",
+        },
+        tool: {
+          type: "string",
+          description: "Tool that produced the plan (dry-run results only).",
+        },
+        planned: {
+          type: "object",
+          description: "Arguments the tool would apply (dry-run results only).",
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: "sync_list_update_sets",
@@ -173,6 +370,31 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 900000,
         },
       },
+    },
+    outputSchema: {
+      type: "object",
+      description: "Page of sys_update_set rows matching the query.",
+      properties: {
+        count: {
+          type: "integer",
+          description: "Number of rows returned in this page.",
+        },
+        rows: {
+          type: "array",
+          description:
+            "sys_update_set rows limited to the sys_id, name, state, application and sys_created_on fields.",
+          items: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      required: ["count", "rows"],
+      additionalProperties: false,
     },
   },
   {
@@ -204,6 +426,51 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 900000,
         },
       },
+    },
+    outputSchema: {
+      type: "object",
+      description:
+        "Report of the session changes that were applied, with before and after context. When dryRun is requested, the payload is the dry-run plan (dryRun, tool, planned) instead.",
+      properties: {
+        actions: {
+          type: "array",
+          description: "Human-readable descriptions of the changes that were applied.",
+          items: {
+            type: "string",
+          },
+        },
+        changed: {
+          type: "boolean",
+          description: "True when at least one change was applied.",
+        },
+        initialContext: {
+          type: "object",
+          description:
+            "Session context before changes (same shape as the sync_get_session_context output).",
+        },
+        finalContext: {
+          type: "object",
+          description:
+            "Session context after changes (same shape as the sync_get_session_context output).",
+        },
+        dryRun: {
+          type: "boolean",
+          description: "Present and true only on dry-run results.",
+        },
+        tool: {
+          type: "string",
+          description: "Tool that produced the plan (dry-run results only).",
+        },
+        planned: {
+          type: "object",
+          description: "Arguments the tool would apply (dry-run results only).",
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      additionalProperties: false,
     },
   },
   {
@@ -271,6 +538,35 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 900000,
         },
       },
+    },
+    outputSchema: {
+      type: "object",
+      description:
+        "Captured result of the underlying `syncrona refresh` CLI run. Only success results (exit code 0) carry structuredContent.",
+      properties: {
+        exitCode: {
+          type: "integer",
+          description: "Process exit code of the CLI run (always 0 on success results).",
+        },
+        timedOut: {
+          type: "boolean",
+          description: "True when the CLI run was killed after exceeding timeoutMs.",
+        },
+        stdout: {
+          type: "string",
+          description: "Captured standard output of the CLI run.",
+        },
+        stderr: {
+          type: "string",
+          description: "Captured standard error of the CLI run.",
+        },
+        correlationId: {
+          type: "string",
+          description: "Request correlation id injected by the server.",
+        },
+      },
+      required: ["exitCode", "timedOut", "stdout", "stderr"],
+      additionalProperties: false,
     },
   },
   {
@@ -403,7 +699,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sn_query_records",
     description:
-      "Query records from a ServiceNow table using sysparm_query and optionally analyze grouped counts.",
+      "Query records from a ServiceNow table using sysparm_query and optionally analyze grouped counts. Results beyond the limit cap are not lost: fetch further pages with the offset parameter.",
     inputSchema: {
       type: "object",
       properties: {
@@ -425,6 +721,13 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           maximum: 500,
           default: 50,
         },
+        offset: {
+          type: "integer",
+          minimum: 0,
+          default: 0,
+          description:
+            "Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap.",
+        },
         analyzeField: {
           type: "string",
           description: "Optional field name for grouped count analysis",
@@ -441,7 +744,8 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   },
   {
     name: "sn_create_record",
-    description: "Create a record in any ServiceNow table.",
+    description:
+      "Create a record in an allowlisted ServiceNow table. By default only scoped-app artifact tables (the metadata registry tables plus sys_script_include) are allowed; extra tables can be permitted via the SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST environment variable (comma-separated), while high-risk system tables such as sys_user, sys_user_has_role, sys_properties and cmdb_ci stay denied regardless.",
     inputSchema: {
       type: "object",
       properties: {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { toJsonText, trimOutput } from "../runtimeUtils";
+import { evaluateCreateTablePolicy } from "../createTablePolicy";
 import { isSafeRemoteEndpoint } from "../endpointPolicy";
 import { runBackgroundScript, snRequest, summarizeRows, toTableResultRows } from "../servicenowCore";
 
@@ -66,12 +67,21 @@ export async function handleServiceNowCrudTool(
         typeof args.limit === "number" && Number.isFinite(args.limit)
           ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
           : 50;
+      // Offset is plumbed like limit: a non-negative integer forwarded as
+      // sysparm_offset; anything invalid is ignored rather than rejected.
+      const offset =
+        typeof args.offset === "number" && Number.isFinite(args.offset) && args.offset > 0
+          ? Math.floor(args.offset)
+          : 0;
       const analyzeField =
         typeof args.analyzeField === "string" ? args.analyzeField.trim() : "";
 
       const params = new URLSearchParams();
       params.set("sysparm_query", query);
       params.set("sysparm_limit", String(limit));
+      if (offset > 0) {
+        params.set("sysparm_offset", String(offset));
+      }
       if (fields.length > 0) {
         params.set("sysparm_fields", fields.join(","));
       }
@@ -113,6 +123,17 @@ export async function handleServiceNowCrudTool(
         return {
           isError: true,
           content: [{ type: "text", text: "Missing required field: table" }],
+        };
+      }
+
+      // The table policy fires before the dry-run short-circuit and before the
+      // confirmDestructive gate: a policy violation is an error even as a
+      // rehearsal, so a dry run can never make a refused table look creatable.
+      const tablePolicy = evaluateCreateTablePolicy(table);
+      if (!tablePolicy.allowed) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: tablePolicy.reason }],
         };
       }
 

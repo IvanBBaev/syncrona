@@ -7,4 +7,10 @@
 export type ToolResponse = {
   isError: boolean;
   content: Array<{ type: string; text: string }>;
+  // Optional machine-readable mirror of the JSON text payload (MCP
+  // structuredContent). When present it must be a plain JSON object equal to
+  // JSON.parse of the first text block, so text and structured consumers see
+  // the same data. Tools that declare an outputSchema must set this on every
+  // success result; error results (isError: true) are exempt per the MCP spec.
+  structuredContent?: Record<string, unknown>;
 };

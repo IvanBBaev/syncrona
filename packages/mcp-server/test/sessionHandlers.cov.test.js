@@ -523,6 +523,9 @@ test('sync_get_session_context: happy path delegates to getSessionContext', asyn
       assert.equal(res.isError, false);
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.userSysId, 'user-1');
+      // B2 contract: a tool that declares an outputSchema must mirror its text
+      // payload into structuredContent on every success result.
+      assert.deepEqual(res.structuredContent, parsed);
     }
   );
 });
@@ -547,6 +550,8 @@ test('sync_list_scopes: returns count + rows and clamps a huge limit', async () 
       assert.equal(parsed.count, 1);
       assert.equal(parsed.rows[0].scope, 'x_a');
       assert.match(seenUrls[0], /sysparm_limit=500/);
+      // B2 contract: declared outputSchema => structuredContent on success.
+      assert.deepEqual(res.structuredContent, parsed);
     }
   );
 });

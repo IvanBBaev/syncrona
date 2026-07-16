@@ -30,6 +30,19 @@ const README_COMMAND_REGEX = /^\|\s*`([a-z][a-z0-9-]*)[^`]*`\s*\|.*$/gm;
 const README_USAGE_MARKER = 'npx syncrona';
 const CLAUDE_COMMAND_REGEX = /`npx\s+syncrona\s+([a-z][a-z0-9-]*)\b/g;
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// A required section counts only as a genuine line-start heading of the exact
+// level, not as a floating substring. Without the anchor a required `## Section`
+// is satisfied by a demoted `### Section` (which contains it) or by the text
+// embedded in prose or a code fence, so a top-level section could disappear
+// while the drift gate stays green.
+function hasHeadingLine(text, heading) {
+  return new RegExp(`^${escapeRegExp(heading)}(?:\\s|$)`, 'm').test(text);
+}
+
 function normalizeCommandName(raw) {
   const normalized = String(raw || '').trim().toLowerCase();
   if (!normalized) {
@@ -108,7 +121,7 @@ function validateClaudeDocsDrift(opts = {}) {
   const readmeRaw = fs.readFileSync(readmeSource, 'utf-8');
   const cliCommandsRaw = fs.readFileSync(cliCommandsSource, 'utf-8');
 
-  const missingSections = requiredSections.filter((section) => !claudeRaw.includes(section));
+  const missingSections = requiredSections.filter((section) => !hasHeadingLine(claudeRaw, section));
   for (const section of missingSections) {
     errors.push(`Missing required CLAUDE.md section: ${section}`);
   }

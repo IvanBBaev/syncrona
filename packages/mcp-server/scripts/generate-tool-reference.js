@@ -425,6 +425,29 @@ function normalizeParameter(name, propSchema, requiredNames) {
   return row;
 }
 
+// Output-schema summary for the rendered "Output" section, or null when the
+// tool does not declare an outputSchema. Fields reuse normalizeParameter, so
+// `required` here means "always present on success results".
+function normalizeOutput(outputSchema) {
+  if (!outputSchema || typeof outputSchema !== 'object' || Array.isArray(outputSchema)) {
+    return null;
+  }
+  const properties =
+    outputSchema.properties && typeof outputSchema.properties === 'object'
+      ? outputSchema.properties
+      : {};
+  const requiredNames = Array.isArray(outputSchema.required)
+    ? outputSchema.required.filter((entry) => typeof entry === 'string')
+    : [];
+  return {
+    description:
+      typeof outputSchema.description === 'string' ? outputSchema.description : '',
+    fields: Object.keys(properties).map((key) =>
+      normalizeParameter(key, properties[key], requiredNames)
+    ),
+  };
+}
+
 function buildToolDoc(tool, metadata, parseFailed) {
   const name = typeof tool.name === 'string' ? tool.name : '(unnamed tool)';
   const description = typeof tool.description === 'string' ? tool.description : '';
@@ -442,6 +465,7 @@ function buildToolDoc(tool, metadata, parseFailed) {
     name,
     description,
     parameters,
+    output: normalizeOutput(tool.outputSchema),
     hasConfirmDestructive: hasOwn(properties, 'confirmDestructive'),
     confirmDestructiveRequired: requiredNames.includes('confirmDestructive'),
     hasDryRun: hasOwn(properties, 'dryRun'),
@@ -507,19 +531,52 @@ function renderToolSection(doc) {
   lines.push('');
   if (doc.parameters.length === 0) {
     lines.push('This tool has no input parameters.', '');
+  } else {
+    lines.push(
+      '| Parameter | Type | Required | Default | Description |',
+      '| --- | --- | --- | --- | --- |'
+    );
+    for (const param of doc.parameters) {
+      const cells = [
+        `\`${escapeTableCell(param.name)}\``,
+        `\`${escapeTableCell(param.type)}\``,
+        param.required ? 'yes' : 'no',
+        param.hasDefault ? `\`${escapeTableCell(param.default)}\`` : '',
+        escapeTableCell(param.description),
+      ];
+      lines.push(`| ${cells.join(' | ')} |`);
+    }
+    lines.push('');
+  }
+  lines.push(...renderOutputSection(doc));
+  return lines;
+}
+
+// "Output" section for a tool that declares an outputSchema: success results
+// carry `structuredContent` matching the schema, so the section documents the
+// top-level fields the same way the parameter table documents inputs.
+function renderOutputSection(doc) {
+  if (!doc.output) {
+    return [];
+  }
+  const lines = ['Output (`structuredContent` on success results):', ''];
+  if (doc.output.description) {
+    lines.push(doc.output.description, '');
+  }
+  if (doc.output.fields.length === 0) {
+    lines.push('The output is a JSON object without documented fields.', '');
     return lines;
   }
   lines.push(
-    '| Parameter | Type | Required | Default | Description |',
-    '| --- | --- | --- | --- | --- |'
+    '| Field | Type | Always present | Description |',
+    '| --- | --- | --- | --- |'
   );
-  for (const param of doc.parameters) {
+  for (const field of doc.output.fields) {
     const cells = [
-      `\`${escapeTableCell(param.name)}\``,
-      `\`${escapeTableCell(param.type)}\``,
-      param.required ? 'yes' : 'no',
-      param.hasDefault ? `\`${escapeTableCell(param.default)}\`` : '',
-      escapeTableCell(param.description),
+      `\`${escapeTableCell(field.name)}\``,
+      `\`${escapeTableCell(field.type)}\``,
+      field.required ? 'yes' : 'no',
+      escapeTableCell(field.description),
     ];
     lines.push(`| ${cells.join(' | ')} |`);
   }
@@ -622,9 +679,19 @@ function runCli(opts = {}) {
 
   const result = generateToolReference(opts);
   if (result.degradedTools.length > 0) {
+    // A degraded block means a tool schema could not be parsed, so its Output
+    // section and parameter types are silently dropped from the reference.
+    // Treat that as fatal in every mode — consistent with extractToolBlocks,
+    // which throws on array-level spreads — so neither a fresh generate nor a
+    // --check pass can quietly bless an incomplete doc.
     out.error(
-      `Warning: ${result.degradedTools.length} tool block(s) degraded to fallback parsing: ${result.degradedTools.join(', ')}.`
+      `Tool reference ${checkMode ? 'check' : 'generation'} failed: ` +
+        `${result.degradedTools.length} tool block(s) degraded to fallback parsing ` +
+        `(${result.degradedTools.join(', ')}). Their Output section and parameter ` +
+        'types are dropped. Every tool schema must be an inline object literal — ' +
+        'replace any shared or bare-identifier reference with the literal shape.'
     );
+    return 1;
   }
 
   if (!checkMode) {

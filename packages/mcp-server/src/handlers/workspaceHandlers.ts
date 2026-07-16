@@ -1,10 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { CmdResult } from "../processRunner";
-import { commandResultToText } from "../runtimeUtils";
+import { commandResultToText, toJsonText } from "../runtimeUtils";
 import vm from "node:vm";
 
 
 import type { ToolResponse } from "../toolResponse";
+
+/**
+ * JSON response for a CLI command result. The payload is serialized into the
+ * text block and, on success, mirrored into MCP structuredContent (re-parsed
+ * from the same text so both views are identical). sync_status/sync_refresh
+ * declare an outputSchema, so their success results must carry conforming
+ * structuredContent; failed runs (isError: true) are exempt per the MCP spec
+ * and stay text-only.
+ */
+function commandJsonResponse(result: CmdResult): ToolResponse {
+  const payload = {
+    exitCode: result.exitCode,
+    timedOut: result.timedOut,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+  const text = toJsonText(payload);
+  const isError = result.exitCode !== 0;
+  const response: ToolResponse = {
+    isError,
+    content: [{ type: "text", text }],
+  };
+  if (!isError) {
+    response.structuredContent = JSON.parse(text) as Record<string, unknown>;
+  }
+  return response;
+}
 
 type WorkspaceToolContext = {
   timeoutMs: number;
@@ -135,19 +162,13 @@ export async function handleWorkspaceTool(
     case "sync_status": {
       const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
       const result = await context.runSyncroCliCommand("status", ["--logLevel", logLevel], timeoutMs);
-      return {
-        isError: result.exitCode !== 0,
-        content: [{ type: "text", text: commandResultToText(result) }],
-      };
+      return commandJsonResponse(result);
     }
 
     case "sync_refresh": {
       const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
       const result = await context.runSyncroCliCommand("refresh", ["--logLevel", logLevel], timeoutMs);
-      return {
-        isError: result.exitCode !== 0,
-        content: [{ type: "text", text: commandResultToText(result) }],
-      };
+      return commandJsonResponse(result);
     }
 
     case "sync_build": {

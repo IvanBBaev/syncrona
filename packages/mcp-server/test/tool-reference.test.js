@@ -111,6 +111,91 @@ test('generator renders a tool section with required, default and safety details
   assert.doesNotMatch(result.markdown, /- Safety:/);
 });
 
+test('generator omits the Output section for a tool without an outputSchema', () => {
+  const { toolSource } = writeFixture(toolSchemasFixture(SIMPLE_TOOL));
+  const result = generateToolReference({ toolSource });
+
+  assert.doesNotMatch(result.markdown, /Output \(`structuredContent`/);
+});
+
+test('generator renders an Output section from a declared outputSchema', () => {
+  const tool = [
+    '  {',
+    '    name: "sync_list_scopes",',
+    '    description: "Lists scopes.",',
+    '    inputSchema: {',
+    '      type: "object",',
+    '      properties: {},',
+    '      required: [],',
+    '    },',
+    '    outputSchema: {',
+    '      type: "object",',
+    '      description: "Scope listing.",',
+    '      properties: {',
+    '        count: {',
+    '          type: "number",',
+    '          description: "Number of rows returned.",',
+    '        },',
+    '        rows: {',
+    '          type: "array",',
+    '          items: { type: "object" },',
+    '          description: "Scope records.",',
+    '        },',
+    '        correlationId: {',
+    '          type: "string",',
+    '          description: "Request correlation id.",',
+    '        },',
+    '      },',
+    '      required: ["count", "rows"],',
+    '      additionalProperties: false,',
+    '    },',
+    '  },',
+  ].join('\n');
+  const { toolSource } = writeFixture(toolSchemasFixture(tool));
+
+  const result = generateToolReference({ toolSource });
+
+  assert.match(result.markdown, /Output \(`structuredContent` on success results\):/);
+  assert.match(result.markdown, /Scope listing\./);
+  assert.match(result.markdown, /\| Field \| Type \| Always present \| Description \|/);
+  // required entries render "yes"; the optional correlationId renders "no".
+  assert.match(result.markdown, /\| `count` \| `number` \| yes \| Number of rows returned\. \|/);
+  assert.match(result.markdown, /\| `rows` \| `array<object>` \| yes \| Scope records\. \|/);
+  assert.match(
+    result.markdown,
+    /\| `correlationId` \| `string` \| no \| Request correlation id\. \|/
+  );
+});
+
+test('buildToolDoc summarizes an outputSchema without documented fields', () => {
+  const doc = buildToolDoc(
+    {
+      name: 'sync_status',
+      description: 'Reports project status.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      outputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    },
+    { version: '1.0.0', deprecated: false },
+    false
+  );
+
+  assert.deepEqual(doc.output, { description: '', fields: [] });
+});
+
+test('buildToolDoc leaves output null when no outputSchema is declared', () => {
+  const doc = buildToolDoc(
+    {
+      name: 'sync_status',
+      description: 'Reports project status.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+    },
+    { version: '1.0.0', deprecated: false },
+    false
+  );
+
+  assert.equal(doc.output, null);
+});
+
 test('normalizeParameter composes an enum with numeric bounds', () => {
   const row = normalizeParameter(
     'limit',
@@ -322,6 +407,55 @@ test('tool reference CLI --check returns 1 when the committed file is stale', ()
   assert.equal(logs.length, 0);
   assert.match(errors.join('\n'), /Tool reference check failed: .*MCP_TOOLS\.md is out of date\./);
   assert.match(errors.join('\n'), /Run `node packages\/mcp-server\/scripts\/generate-tool-reference\.js`/);
+});
+
+test('tool reference CLI refuses to generate or bless a degraded tool block', () => {
+  // A computed value the literal parser cannot evaluate degrades the block: its
+  // Output section and parameter types silently vanish from the doc. The CLI
+  // must refuse rather than emit — or, in --check, quietly accept — an
+  // incomplete reference, matching extractToolBlocks' fatal spread handling.
+  const tool = [
+    '  {',
+    '    name: "sync_status",',
+    '    description: "Reports project status.",',
+    '    inputSchema: {',
+    '      type: "object",',
+    '      properties: { scope: { type: SCOPE_TYPE_CONSTANT } },',
+    '      required: ["scope"],',
+    '    },',
+    '  },',
+  ].join('\n');
+  const { tempDir, toolSource } = writeFixture(toolSchemasFixture(tool));
+  const outputTarget = path.join(tempDir, 'MCP_TOOLS.md');
+
+  // generate mode: fails and never writes the degraded doc.
+  const genErrors = [];
+  assert.equal(
+    runToolReferenceCli({
+      toolSource,
+      outputTarget,
+      args: [],
+      console: { log: () => {}, error: (m) => genErrors.push(m) },
+    }),
+    1
+  );
+  assert.match(genErrors.join('\n'), /generation failed: .*degraded to fallback parsing \(sync_status\)/);
+  assert.equal(fs.existsSync(outputTarget), false);
+
+  // --check mode: even a committed doc that matches the degraded markdown fails,
+  // closing the "regenerate-and-commit the degraded copy" hole in the gate.
+  fs.writeFileSync(outputTarget, generateToolReference({ toolSource }).markdown, 'utf-8');
+  const checkErrors = [];
+  assert.equal(
+    runToolReferenceCli({
+      toolSource,
+      outputTarget,
+      args: ['--check'],
+      console: { log: () => {}, error: (m) => checkErrors.push(m) },
+    }),
+    1
+  );
+  assert.match(checkErrors.join('\n'), /check failed: .*degraded to fallback parsing/);
 });
 
 test('tool reference CLI --check returns 1 when the output file is absent', () => {
