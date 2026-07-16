@@ -279,7 +279,12 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     // stale checkpoint (unlink) instead of resuming it.
     mockReadFile.mockImplementation(async (p: string) => {
       if (String(p).includes("sync.push.checkpoint.json")) {
-        return JSON.stringify({ attempted: ["sys_script:1"], succeeded: [], failed: ["sys_script:1"] });
+        return JSON.stringify({
+          attempted: ["sys_script:1"],
+          succeeded: [],
+          failed: ["sys_script:1"],
+          instance: "instance.service-now.com",
+        });
       }
       throw enoent();
     });
@@ -304,6 +309,7 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
           attempted: ["sys_script:99"],
           succeeded: [],
           failed: ["sys_script:99"],
+          instance: "instance.service-now.com",
         });
       }
       throw enoent();
@@ -332,6 +338,7 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
           attempted: ["sys_script:1", "sys_script:2"],
           succeeded: ["sys_script:1"],
           failed: ["sys_script:2"],
+          instance: "instance.service-now.com",
         });
       }
       throw enoent();
@@ -345,6 +352,83 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Resuming from checkpoint with 1 records")
     );
+  });
+
+  it("under --ci, discards the checkpoint and pushes the full diff when the diff grew since the checkpoint (Finding 1)", async () => {
+    // The checkpoint attempted/failed only sys_script:1, but the current diff now
+    // ALSO contains a brand-new sys_script:2. Resuming "only failed" would filter
+    // the push down to sys_script:1 and silently never push the new sys_script:2
+    // (while still exiting 0). The checkpoint must be discarded and the full
+    // current diff pushed instead.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:1"],
+          succeeded: [],
+          failed: ["sys_script:1"],
+          instance: "instance.service-now.com",
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush(); // ci: true
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Ignoring an unrelated push checkpoint")
+    );
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["1", "2"]);
+  });
+
+  it("under --ci, discards a checkpoint written for a different instance and pushes the full diff (Finding 7)", async () => {
+    // The checkpoint's failed record IS part of the current diff, but it was
+    // written while pushing to a DIFFERENT instance. Resuming "only failed"
+    // against the current instance would push a wrong partial set. The checkpoint
+    // must be discarded and the full current diff pushed to this instance.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:1", "sys_script:2"],
+          succeeded: ["sys_script:1"],
+          failed: ["sys_script:2"],
+          instance: "other.service-now.com",
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush(); // ci: true, targets instance.service-now.com
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Ignoring an unrelated push checkpoint")
+    );
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["1", "2"]);
+  });
+
+  it("records the target instance in the checkpoint it writes (Finding 7)", async () => {
+    // The written checkpoint must carry the instance it was pushed against so a
+    // later run on a different instance can recognise and discard it.
+    mockGetAppFileList.mockResolvedValue([rec("1")]);
+    // Keep at least one failure so the checkpoint is written and NOT cleared,
+    // making the persisted payload observable.
+    mockPushFiles.mockResolvedValue([{ success: false, message: "boom" }]);
+
+    await runPush(); // ci: true
+
+    const checkpointWrites = mockWriteFile.mock.calls.filter((c) =>
+      String(c[0]).includes("sync.push.checkpoint.json")
+    );
+    expect(checkpointWrites.length).toBeGreaterThan(0);
+    for (const call of checkpointWrites) {
+      const payload = JSON.parse(String(call[1]));
+      expect(payload.instance).toBe("instance.service-now.com");
+    }
   });
 
   it("ignores a shape-invalid checkpoint file and pushes normally", async () => {
@@ -382,7 +466,12 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     // fail the shell via the outer catch.
     mockReadFile.mockImplementation(async (p: string) => {
       if (String(p).includes("sync.push.checkpoint.json")) {
-        return JSON.stringify({ attempted: ["sys_script:1"], succeeded: [], failed: ["sys_script:1"] });
+        return JSON.stringify({
+          attempted: ["sys_script:1"],
+          succeeded: [],
+          failed: ["sys_script:1"],
+          instance: "instance.service-now.com",
+        });
       }
       throw enoent();
     });

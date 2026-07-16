@@ -72,6 +72,69 @@ describe("manifestBuilder", () => {
     ]);
   });
 
+  // #6: buildRecordName derives the on-disk record name from tableOptions.displayField
+  // and differentiatorField, but the record query used to select only the DEFAULT
+  // display field. Those configured columns were never fetched, so the manifest name
+  // silently diverged from the bulk-download name and `repair --prune` deleted the
+  // file. The field list must include the configured displayField and differentiator.
+  it("selects the configured displayField and differentiatorField for the record query (#6)", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      if (table === "sys_metadata") {
+        return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
+      }
+      if (table === "sys_dictionary") {
+        return {
+          data: {
+            result: [{ element: "script", internal_type: "script_plain" }],
+          },
+        };
+      }
+      if (table === "sys_script_include") {
+        return {
+          data: {
+            result: [
+              { sys_id: "rec-1", u_title: "Custom Title", u_code: "ABC", script: "gs.info('a');" },
+            ],
+          },
+        };
+      }
+      return { data: { result: [] } };
+    });
+
+    const client = createClient(tableAPIGet);
+    const config: Pick<Sync.Config, "includes" | "excludes" | "tableOptions"> = {
+      includes: {},
+      excludes: {},
+      tableOptions: {
+        sys_script_include: {
+          displayField: "u_title",
+          differentiatorField: "u_code",
+          query: "",
+        },
+      },
+    };
+
+    const manifest = await buildManifestFromTableAPI("x_demo", client, config);
+
+    const recordCall = tableAPIGet.mock.calls.find(
+      (c) => c[0] === "sys_script_include"
+    );
+    // The 3rd arg is the sysparm_fields select list.
+    const selectedFields = recordCall?.[2] ?? "";
+    expect(selectedFields).toContain("u_title");
+    expect(selectedFields).toContain("u_code");
+
+    // And the record is named from the configured display + differentiator fields,
+    // proving the fetched columns actually feed buildRecordName.
+    expect(
+      manifest.tables.sys_script_include.records["Custom Title (ABC)"]?.sys_id
+    ).toBe("rec-1");
+  });
+
   it("escapes a caret-injecting scope name in every scope query", async () => {
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockImplementation(async (table: string) => {

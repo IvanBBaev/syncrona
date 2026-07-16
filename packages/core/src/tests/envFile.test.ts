@@ -2,6 +2,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import dotenv from "dotenv";
 import {
   formatEnvValue,
   upsertEnvVars,
@@ -28,17 +29,41 @@ describe("envFile", () => {
       expect(formatEnvValue("admin")).toBe("admin");
     });
 
-    it("quotes values with spaces or special characters", () => {
-      expect(formatEnvValue("p@ss word")).toBe('"p@ss word"');
-      expect(formatEnvValue("has#hash")).toBe('"has#hash"');
+    it("wraps values with spaces or special characters in single quotes", () => {
+      expect(formatEnvValue("p@ss word")).toBe("'p@ss word'");
+      expect(formatEnvValue("has#hash")).toBe("'has#hash'");
     });
 
-    it("escapes backslashes and double quotes", () => {
-      expect(formatEnvValue('a"b\\c')).toBe('"a\\"b\\\\c"');
+    // Single-quoted dotenv values are literal: dotenv does NOT un-escape
+    // backslashes inside them, so a backslash-bearing value must NOT be escaped.
+    it("wraps backslash- and quote-bearing values in single quotes without escaping", () => {
+      expect(formatEnvValue('a"b\\c')).toBe("'a\"b\\c'");
+      expect(formatEnvValue("Win\\2026")).toBe("'Win\\2026'");
     });
 
     it("strips newlines", () => {
       expect(formatEnvValue("line1\nline2")).toBe("line1line2");
+    });
+
+    // The whole point of the quoting scheme is that a value written to a .env
+    // parses back to the exact original. dotenv (v17) treats double-quoted
+    // values as escape-expanding (\n, \r) and only single-quoted values as
+    // fully literal, so we verify the real parser round-trips each tricky case.
+    it("round-trips every value type through dotenv.parse", () => {
+      const cases = [
+        "Win\\2026",
+        'a"b',
+        "a'b",
+        "p@ss word",
+        "has#hash",
+        "back\\slashes",
+        "plain-value",
+      ];
+      for (const original of cases) {
+        const line = `SN_VALUE=${formatEnvValue(original)}`;
+        const parsed = dotenv.parse(line);
+        expect(parsed.SN_VALUE).toBe(original);
+      }
     });
   });
 

@@ -22,6 +22,12 @@ type PushCheckpoint = {
   attempted: string[];
   succeeded: string[];
   failed: string[];
+  // The instance the checkpoint was written against. A checkpoint may only be
+  // resumed against the same target — resuming instance A's failures against
+  // instance B would push the wrong (partial) set of records. Optional so a
+  // legacy checkpoint (written before this field existed) is treated as
+  // "unknown instance" and safely discarded rather than misapplied.
+  instance?: string;
 };
 
 type CollaborationLock = {
@@ -299,19 +305,35 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       const existingCheckpoint = await loadPushCheckpoint();
       if (existingCheckpoint && existingCheckpoint.failed.length > 0) {
-        // A checkpoint only belongs to *this* push if every record it still needs
-        // to retry is part of the current diff. On a reused CI workspace a stale
-        // checkpoint from an earlier commit can be disjoint from the current work;
-        // resuming it would silently narrow (or empty) the push and still exit 0.
-        // When it doesn't match, discard it and push the full current diff.
+        // A checkpoint only belongs to *this* push when three things all hold.
+        // Otherwise it is discarded and the FULL current diff is pushed — never
+        // silently narrowed — because a partial push that still exits 0 hides a
+        // broken deployment.
         const currentKeys = new Set(fileList.map(recToCheckpointKey));
-        const checkpointMatchesDiff = existingCheckpoint.failed.every((key) =>
+        const attemptedSet = new Set(existingCheckpoint.attempted);
+
+        // #7: the checkpoint must belong to the instance we are pushing to now.
+        // A checkpoint written against another instance (or a legacy checkpoint
+        // with no recorded instance) must not be resumed here.
+        const sameInstance = (existingCheckpoint.instance ?? "") === targetServer;
+        // Every record the checkpoint still needs to retry is part of this diff.
+        // Guards against a stale checkpoint from an unrelated earlier commit.
+        const failedInCurrent = existingCheckpoint.failed.every((key) =>
           currentKeys.has(key)
         );
+        // #1: the current diff introduces no record the checkpoint never attempted.
+        // If the diff GREW since the checkpoint (a new record appeared), resuming
+        // "only failed" would silently drop the new record and still exit 0.
+        const currentIsSubsetOfAttempted = fileList.every((rec) =>
+          attemptedSet.has(recToCheckpointKey(rec))
+        );
+
+        const checkpointMatchesDiff =
+          sameInstance && failedInCurrent && currentIsSubsetOfAttempted;
 
         if (!checkpointMatchesDiff) {
           logger.warn(
-            "Ignoring an unrelated push checkpoint from a previous run — its failed records are not part of the current changes. Pushing the full current diff."
+            "Ignoring an unrelated push checkpoint from a previous run — it targets a different instance or does not match the current changes. Pushing the full current diff."
           );
           await clearPushCheckpoint();
         } else {
@@ -405,7 +427,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // Write the checkpoint only after every confirmation has passed, so a
       // declined prompt leaves no fake "unfinished push" state behind.
       const attempted = fileList.map(recToCheckpointKey);
-      await writePushCheckpoint({ attempted, succeeded: [], failed: attempted });
+      await writePushCheckpoint({
+        attempted,
+        succeeded: [],
+        failed: attempted,
+        instance: targetServer,
+      });
 
       const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);
 
@@ -419,7 +446,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         .filter((item) => !item.res.success)
         .map((item) => item.key);
 
-      await writePushCheckpoint({ attempted, succeeded, failed });
+      await writePushCheckpoint({ attempted, succeeded, failed, instance: targetServer });
       if (failed.length === 0) {
         await clearPushCheckpoint();
       } else {

@@ -131,6 +131,29 @@ describe("gitUtils", () => {
     expect(result).toContain("win.js");
   });
 
+  // #5: when the workspace (cwd) IS the repo root, path.relative(root, cwd) is
+  // "", so every diff path is in scope. Previously isValidScope compared each
+  // file against the empty string and rejected everything, making `push --diff`
+  // silently empty for a repo whose scope lives at the repository root.
+  it("keeps every changed file when the workspace is the repo root (#5)", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/src");
+    // cwd == repo root -> relative scope is "".
+    cwdSpy.mockReturnValue("/repo");
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        if (args.includes("rev-parse")) {
+          cb(null, "/repo\n");
+        } else {
+          cb(null, ["M\tsrc/keep.js", "M\tlib/other.js"].join("\n"));
+        }
+      }
+    );
+
+    const result = await gitDiffToEncodedPaths("HEAD~1");
+    expect(result).toContain(path.resolve("/repo", "src/keep.js"));
+    expect(result).toContain(path.resolve("/repo", "lib/other.js"));
+  });
+
   it("writeDiff resolves encoded paths and writes them to the diff file as JSON", async () => {
     mockEncodedPathsToFilePaths.mockResolvedValue(["/a/b.js", "/a/c.js"]);
     mockGetDiffPath.mockReturnValue("/repo/.syncrona/diff.json");

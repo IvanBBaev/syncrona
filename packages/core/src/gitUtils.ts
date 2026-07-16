@@ -110,6 +110,12 @@ const isValidScope = (
 ): boolean => {
   const relativePath = toPosixSeparators(path.relative(baseRepoPath, scope));
   const normalizedFile = toPosixSeparators(file);
+  // When the scope IS the repo root, path.relative() yields "" and every diff
+  // path (which is repo-relative, no leading "/") is in scope. Without this the
+  // checks below reject everything and `push --diff` at the repo root is empty.
+  if (relativePath === "") {
+    return true;
+  }
   // Require a full path-segment match. A bare startsWith also accepted sibling
   // directories that merely share the prefix (scope "src" leaking "src-other"),
   // so a file is in scope only when it equals the scope dir or sits beneath it.
