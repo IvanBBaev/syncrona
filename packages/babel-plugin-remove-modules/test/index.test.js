@@ -48,6 +48,23 @@ test('@expandModule rewrites references to <module>.<import>', async () => {
   );
 });
 
+test('@expandModule renames an aliased import to <module>.<original name>', async () => {
+  // `import { foo as bar }` binds `bar` in scope; expansion must rename the
+  // local binding `bar` (not the original export `foo`, which is not in scope)
+  // to the qualified `mod.foo`, otherwise `bar` is left dangling/undefined.
+  const source = [
+    '//@expandModule',
+    'import { foo as bar } from "mod";',
+    'function use() { return bar(); }',
+  ].join('\n');
+  const output = await transform(source);
+  assert.equal(
+    output,
+    '//@expandModule\n\nfunction use() {\n  return mod.foo();\n}'
+  );
+  assert.doesNotMatch(output, /\bbar\b/, 'aliased local binding must not dangle');
+});
+
 test('@moduleAlias overrides the expansion prefix', async () => {
   const source = [
     '//@expandModule @moduleAlias=Ali',

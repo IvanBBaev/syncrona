@@ -42,11 +42,16 @@ export default function() {
   }
   function renameAllImports(
     moduleName: string,
-    _imports: string[],
+    _imports: { local: string; imported: string | null }[],
     path: NodePath<t.ImportDeclaration>
   ) {
-    for (const _import of _imports) {
-      path.scope.rename(_import, [moduleName, _import].join("."));
+    for (const { local, imported } of _imports) {
+      // Rename the LOCAL binding (the name actually in scope) to the qualified
+      // form. A null `imported` marks a namespace import, which expands to the
+      // module object itself rather than a `<module>.<member>` reference.
+      const qualified =
+        imported === null ? moduleName : [moduleName, imported].join(".");
+      path.scope.rename(local, qualified);
     }
   }
   return {
@@ -73,16 +78,24 @@ export default function() {
         const _imports = path.node.specifiers.reduce(
           (acc, cur) => {
             if (cur.type === "ImportSpecifier") {
+              // Rename FROM the local binding, but build the qualified name from
+              // the ORIGINAL imported name so an aliased import
+              // (`import { foo as bar }`) still resolves to `<module>.foo`.
               if(cur.imported.type == "Identifier")
-              acc.push(cur.imported.name);
+              acc.push({ local: cur.local.name, imported: cur.imported.name });
               else throw new Error("Wrong identifier type in babel plugin. Check with a dev.")
             }
             if (cur.type === "ImportDefaultSpecifier") {
-              acc.push(cur.local.name);
+              acc.push({ local: cur.local.name, imported: cur.local.name });
+            }
+            if (cur.type === "ImportNamespaceSpecifier") {
+              // `import * as ns` binds the whole module object; expand `ns` to
+              // the module itself so `ns.foo()` becomes `<module>.foo()`.
+              acc.push({ local: cur.local.name, imported: null });
             }
             return acc;
           },
-          [] as string[]
+          [] as { local: string; imported: string | null }[]
         );
         //yes we should remove
         //should we expand?
