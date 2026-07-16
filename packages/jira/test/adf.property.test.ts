@@ -53,3 +53,29 @@ describe("adfToText (property, #20)", () => {
     );
   });
 });
+
+// The property generators above use fc.integer() (|value| < 2.1e9, always a
+// valid Date) and fc.string() (parses to NaN), so neither reaches a finite but
+// out-of-range timestamp. That is exactly the value that makes
+// `new Date(ms).toISOString()` throw RangeError, so it needs a targeted case.
+describe("adfToText date node (out-of-range timestamp)", () => {
+  const dateNode = (timestamp: unknown) => ({
+    type: "doc",
+    content: [{ type: "date", attrs: { timestamp } }],
+  });
+
+  it("renders an in-range timestamp as an ISO date", () => {
+    // 2021-01-01T00:00:00Z
+    expect(adfToText(dateNode(1609459200000))).toBe("2021-01-01");
+    expect(adfToText(dateNode("1609459200000"))).toBe("2021-01-01");
+  });
+
+  it("degrades to empty text for an out-of-range numeric-string timestamp", () => {
+    expect(adfToText(dateNode("99999999999999999"))).toBe("");
+  });
+
+  it("degrades to empty text for an out-of-range numeric timestamp", () => {
+    expect(adfToText(dateNode(1e18))).toBe("");
+    expect(adfToText(dateNode(-1e18))).toBe("");
+  });
+});

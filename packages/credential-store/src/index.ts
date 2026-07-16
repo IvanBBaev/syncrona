@@ -112,11 +112,18 @@ function getConfigFile(): string {
 }
 
 export function instanceToFilename(instance: string): string {
-  return instance.replace(/[^a-zA-Z0-9.-]/g, "_") + ".enc";
+  // Reversible, collision-free encoding — same rationale as jiraProfileToFilename.
+  // The old `replace(/[^a-zA-Z0-9.-]/g, "_")` was lossy: distinct instances that
+  // differ only in unsafe characters (e.g. "a:b" vs "a_b", or a full URL vs its
+  // host) collapsed to one file, silently overwriting one login, and could not be
+  // round-tripped by filenameToInstance/listInstances. Back-compatible: a normal
+  // ServiceNow host (letters, digits, ".", "-") is left untouched by both schemes,
+  // so credential files written under the old scheme still resolve unchanged.
+  return encodeURIComponent(instance) + ".enc";
 }
 
 export function filenameToInstance(filename: string): string {
-  return filename.replace(/\.enc$/, "");
+  return decodeURIComponent(filename.replace(/\.enc$/, ""));
 }
 
 function credentialFilePath(instance: string): string {
