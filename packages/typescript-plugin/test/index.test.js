@@ -86,6 +86,28 @@ test('rejects when the piped content has a type error even if the disk is clean'
   );
 });
 
+test('converts raw JSON string-enum compilerOptions from tsconfig.json', async (t) => {
+  const context = writeTs(t, 'sample.ts', VALID_SOURCE);
+  // A realistic tsconfig.json holds compilerOptions as raw JSON strings
+  // (`target: "ES2017"`, `module: "ESNext"`, lib names). Passing these straight
+  // into the compiler API makes TypeScript 5.5+ throw
+  // ("target is a string value; tsconfig JSON must be parsed …"); they must be
+  // converted to the numeric enum shape first.
+  fs.writeFileSync(
+    path.join(path.dirname(context.filePath), 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: { target: 'ES2017', module: 'ESNext', lib: ['ES2017', 'DOM'] },
+    })
+  );
+  const result = await run(context, VALID_SOURCE, {});
+  // target ES2017 keeps `const`; a successful, non-throwing transpile proves the
+  // string enums were converted rather than handed raw to createProgram.
+  assert.deepEqual(result, {
+    success: true,
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
+  });
+});
+
 test('does not crash on a tsconfig.json that has no compilerOptions key', async (t) => {
   const context = writeTs(t, 'sample.ts', VALID_SOURCE);
   // A tsconfig alongside the fixture with no compilerOptions key used to throw

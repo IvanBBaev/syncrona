@@ -20,33 +20,34 @@ const run: Sync.PluginFunc = async function(
     "tsconfig.json"
   );
 
-  let tsConfig: { compilerOptions?: ts.CompilerOptions };
+  // `ts.readConfigFile` yields the *raw JSON* compilerOptions exactly as written
+  // in tsconfig.json — string enums (`target: "ES2017"`, `module: "ESNext"`),
+  // lib names (`["ES2017", "DOM"]`), etc. The compiler API used below expects the
+  // numeric enum shape, and TypeScript 5.5+ throws when handed the raw strings
+  // ("target is a string value; tsconfig JSON must be parsed …"). Convert them
+  // through the official TypeScript conversion, which also lowercases and expands
+  // lib names to their `lib.<name>.d.ts` form for us.
+  let rawCompilerOptions: object = {};
+  let basePath = path.dirname(context.filePath);
   if (configPath) {
+    basePath = path.dirname(configPath);
     const results = ts.readConfigFile(configPath, ts.sys.readFile);
-    if (results.config) {
-      tsConfig = results.config;
-    } else {
-      tsConfig = {
-        compilerOptions: {}
-      };
+    if (results.config && results.config.compilerOptions) {
+      rawCompilerOptions = results.config.compilerOptions;
     }
-  } else {
-    tsConfig = {
-      compilerOptions: {}
-    };
   }
-  // A tsconfig.json that has no `compilerOptions` key parses to a config object
-  // that lacks it, so default it before we start writing fields into it —
-  // otherwise the first assignment below throws "Cannot set properties of
-  // undefined (setting 'rootDir')".
-  if (!tsConfig.compilerOptions) {
-    tsConfig.compilerOptions = {};
+  const converted = ts.convertCompilerOptionsFromJson(
+    rawCompilerOptions,
+    basePath
+  );
+  if (converted.errors.length > 0) {
+    throw new Error(processDiagnostics(converted.errors));
   }
+  const tsConfig: { compilerOptions: ts.CompilerOptions } = {
+    compilerOptions: converted.options
+  };
   tsConfig.compilerOptions.rootDir = undefined;
   tsConfig.compilerOptions.moduleResolution = ts.ModuleResolutionKind.NodeJs;
-  tsConfig.compilerOptions.lib = tsConfig.compilerOptions.lib
-    ? tsConfig.compilerOptions.lib.map(cur => `lib.${cur}.d.ts`)
-    : undefined;
   //check the types of the piped content, if we get errors, throw an error
   const diagnostics = typeCheck(
     context.filePath,
