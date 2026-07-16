@@ -54,12 +54,17 @@ Because your scoped-app code is downloaded as plain, editable files in a project
   roadmap and risk register.
 - [docs/COMPARISON.md](docs/COMPARISON.md) — SyncroNow AI vs ServiceNow native Git,
   Sincronia, and update sets (one-page comparison).
+- [docs/MIGRATING_FROM_SINCRONIA.md](docs/MIGRATING_FROM_SINCRONIA.md) — moving
+  an existing Sincronia (`sinc`) project over: command mapping, config
+  conversion, and the first-day path.
 - [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
   for a public 1.0 / enterprise release (done / scheduled / owner-gated).
 - [ROADMAP.md](ROADMAP.md) — shipped capabilities and the path to v0.5 beta and
   v1.0 (with owner-gated items called out).
 - [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
 - [SUPPORT.md](SUPPORT.md) — getting help, diagnostics, support scope.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — symptom → cause → fix
+  index for auth, connectivity, proxy/TLS, manifest, watch-mode and MCP issues.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards.
 - [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
@@ -70,6 +75,8 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 - [packages/credential-store/README.md](packages/credential-store/README.md) —
   the global encrypted credential store (AES-256-GCM at rest, key derivation)
   shared by the CLI and MCP server.
+- [docs/VERSIONING.md](docs/VERSIONING.md) — semver policy, lockstep releases,
+  the MCP tool-contract stability promise, and the Node.js support window.
 - [CHANGELOG.md](CHANGELOG.md) — notable changes per release.
 
 **Table of Contents**
@@ -251,6 +258,7 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncrona doctor`               |
 | `plugins`          | **none** | Shows configured plugin rules and reports plugin package availability (installed or missing) from the current workspace.                                  | `npx syncrona plugins`              |
 | `config <action>`  | **none** | Inspect or extend configuration. `config show-defaults` prints the built-in default includes/excludes; `config add-plugin [--plugin <name>]` lists the first-party build plugins (with install status) and prints a paste-ready `rules` snippet. | `npx syncrona config add-plugin --plugin typescript` |
+| `completion [shell]` | **none** | Prints a shell tab-completion script covering every `syncrona` command. Pass `bash` or `zsh`, or omit the argument to auto-detect the shell from `$SHELL`; append the output to your shell rc file to install it. | `npx syncrona completion`           |
 | `mcp`              | **none** | Starts standalone MCP server and can auto-configure local MCP client files (`.vscode/mcp.json`, `.syncrona-mcp/secrets.json`).                            | `npx syncrona mcp`                  |
 | `login [instance]` | **none** | Saves ServiceNow credentials in the encrypted global CredentialStore and optionally sets active instance.                                                  | `npx syncrona login dev123.service-now.com` |
 | `logout [instance]`| **none** | Removes stored credentials for one instance (or all with `--all`) from the global CredentialStore.                                                       | `npx syncrona logout dev123.service-now.com` |

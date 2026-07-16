@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
-| CLI | 22 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
+| CLI | 23 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
 | MCP server | 61 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
 | Tests | core: **72 suites / 668 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: node:test suite (vs dist); shared packages (jira / credential-store / sn-transport): jest, all gated |
 | Coverage | core **95.5%** lines (re-measured 2026-07-03) / mcp **82.7%** lines — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |

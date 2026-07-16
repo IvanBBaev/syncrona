@@ -13,12 +13,36 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 human-facing summary of them.
 
 - **Current version:** `0.9.1` (pre-release; latest published on npm: `0.9.0`)
-- **Engineering readiness:** ~85% (8.5/10) — gate suite green, 0 production-dependency
+- **Engineering readiness:** ~90% (9/10) — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
   a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
   error taxonomy (DX19), the `repair` command, flat layout (DX17), mutation
-  testing (G13) and read-only **Jira issue context** now shipped.
-- **Last updated:** 2026-07-06
+  testing (G13) and read-only **Jira issue context** shipped. The 2026-07-13
+  hardening wave added a `completion` command (23 CLI commands), a machine-checked
+  MCP output contract (`outputSchema` + `structuredContent` on the stable-shape
+  tools), MCP stdio stdout-purity guarantees, and raised the MCP coverage gate to
+  90/80 (measured ~94% line). A second adversarial pass over the build-plugin
+  pipeline, the shared Jira renderer, and the coverage-gate tooling closed seven
+  more real defects (REV-4..REV-10) — three build plugins that operated on the
+  disk file instead of the piped content, a tsconfig-without-`compilerOptions`
+  crash, a shared-options mutation and empty-output-as-failure bug, a
+  RangeError on an out-of-range Jira date node, and a coverage gate that silently
+  ignored a misspelled threshold flag — each with a regression test. A third
+  full-repo adversarial sweep (2026-07-16) closed twenty-one more real defects
+  (REV-11..REV-31, 0 refuted): the last build plugin that re-bundled the disk file
+  instead of the piped content plus a webpack compiler-resource leak and a swallowed
+  config-load error, a cross-file comment-state leak in the babel plugin, `push --ci`
+  and download-resume paths that silently truncated data, a non-atomic collaboration
+  -lock reclaim, Table-API 400/403/404 tables marked complete-but-empty, flat-layout
+  `repair`, a stalled push-retry queue, an invalid-config-file generator, a lossy
+  credential filename, `^`-query and `.`/`..` path-injection gaps, a config-sandbox
+  stdout leak that escaped onto the protocol channel, an uncaught health-server
+  crash, and two exit-code and three governance-anchor gaps — each with a regression
+  test (core 740 tests, mcp 962 tests, mcp coverage 94.14% line / 87.05% branch). The
+  remaining distance to 10/10 is owner/live-gated (npm publish, live-instance
+  verification, Windows host, business decisions), not engineering-completable
+  offline.
+- **Last updated:** 2026-07-16
 
 ## Status legend
 
@@ -38,9 +62,10 @@ applications. The following are **shipped**:
 
 ### CLI core & workflow ✅
 - Registry-driven CLI (`commander` interpreter, open/closed command registry),
-  22 commands: `init`, `refresh`, `dev`, `push`, `download`, `build`, `deploy`,
-  `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`, `repair`, `mcp`,
-  `login`, `logout`, `instances`, `use`, `jira`, `jira-login`, `jira-logout`.
+  23 commands: `init`, `refresh`, `dev`, `push`, `download`, `build`, `deploy`,
+  `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`, `repair`,
+  `completion`, `mcp`, `login`, `logout`, `instances`, `use`, `jira`,
+  `jira-login`, `jira-logout`.
 - Typed CLI args (`typedHandler<TArgs>`), `--dry-run` across mutating commands,
   `--log-level` profiling, column-aligned dry-run tables.
 - Push safety: connection preflight, partial-push checkpoint/resume,
@@ -68,11 +93,16 @@ applications. The following are **shipped**:
   (`jira_get_issue`).
 - Tool contract + lifecycle metadata, rate limiting, graceful shutdown,
   correlation IDs, structured logging, audit log rotation + integrity checks.
+- Declared **output contract**: the stable-shape tools advertise an
+  `outputSchema` and return matching `structuredContent` on every success
+  result. The schemas are rendered into the tool reference and the whole
+  surface (names, schemas, docs) is drift-checked in CI.
 
 ### Quality & CI ✅
 - Full gate suite green: core + MCP unit/integration tests, coverage ratchet
-  (core lines ~95%, MCP lines ~83%), tool-contract, docs-drift,
-  CLAUDE-docs-drift, and release-checklist gates.
+  (core lines ~95%, MCP lines ~94% — gate raised to 90/80), tool-contract,
+  docs-drift, tool-reference, CLAUDE-docs-drift, claims-drift, and
+  release-checklist gates.
 - GitHub Actions CI matrix (Ubuntu + macOS), least-privilege token, all actions
   SHA-pinned.
 - **Security automation:** `npm audit` gate (0 high/critical in prod deps),

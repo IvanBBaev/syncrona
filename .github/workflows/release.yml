@@ -8,9 +8,20 @@ name: Release
 #   2. Add the token as the NPM_TOKEN repository secret.
 #   3. Run via "Run workflow" (workflow_dispatch) or push a v* tag.
 # Provenance requires `id-token: write` and a public repo (npm attestations).
+#
+# gap-analysis D5: manual dispatch defaults to a DRY-RUN rehearsal — full
+# validation runs, then `npm publish --dry-run` for every publishable
+# workspace instead of a real publish; tag pushing and the Homebrew job are
+# skipped. Untick `dry_run` to publish for real from a dispatch. Tag-push
+# (v*) runs always publish for real, exactly as before.
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse only (npm publish --dry-run); no publish, no tags, no Homebrew"
+        type: boolean
+        default: true
   push:
     tags:
       - "v*"
@@ -43,25 +54,42 @@ jobs:
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=high
 
+      # Real publish path: tag pushes (the `inputs` context is empty there, so
+      # the event-name guard decides) and dispatches that explicitly untick
+      # dry_run. `inputs.dry_run` is a real boolean on workflow_dispatch, so
+      # `== false` is exact — no string-comparison pitfalls.
       - name: Publish to npm with provenance
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
         run: npx changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
 
+      # gap-analysis D5: dry-run rehearsal. Packs every publishable workspace
+      # exactly as a real publish would — each package's publishConfig is
+      # honoured and the would-be tarball contents are printed — but nothing
+      # is uploaded, so no npm token is required (setup-node's placeholder
+      # NODE_AUTH_TOKEN satisfies the .npmrc env reference).
+      - name: Rehearse publish (npm publish --dry-run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        run: npm publish --dry-run --workspaces
+
       # `changeset publish` tags each published package locally; push them so the
       # release history (and any tag-triggered automation) is not discarded.
+      # Skipped in a dry-run rehearsal (nothing was published, so no new tags).
       - name: Push package tags
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
         run: git push origin --tags
 
   # D5: auto-update the Homebrew formula from the freshly published npm tarball.
   # DORMANT until the tap repo (IvanBBaev/homebrew-tap) exists and the repo
   # variable HOMEBREW_TAP_READY=true + secret HOMEBREW_TAP_TOKEN are set. Until
-  # then it is skipped, exactly like the owner-gated publish above.
+  # then it is skipped, exactly like the owner-gated publish above. Also
+  # skipped in a dry-run rehearsal — there is no published tarball to fetch.
   update-homebrew:
     needs: release
     runs-on: ubuntu-latest
-    if: ${{ vars.HOMEBREW_TAP_READY == 'true' }}
+    if: ${{ vars.HOMEBREW_TAP_READY == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 

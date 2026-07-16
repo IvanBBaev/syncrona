@@ -62,6 +62,9 @@ jobs:
       - name: Test shared packages (@syncrona/jira + credential-store)
         run: npm run test:shared
 
+      - name: Test build plugin packages
+        run: npm run test:plugins
+
       - name: Coverage gates (core jest thresholds 92/79/89/92, mcp lines>=90% branches>=80%)
         run: npm run test:coverage:gates
 
@@ -72,6 +75,64 @@ jobs:
         run: npm run quality:all
         env:
           SKIP_TESTS: "1"
+
+      # gap-analysis D1: pack-install smoke. The #1 post-publish CLI failure
+      # mode is a broken `files:`/`bin:` entry in the published tarball —
+      # invisible to workspace-run tests, which execute straight from the
+      # source tree. Pack the core CLI plus every @syncrona/* workspace it
+      # depends on, install the syncrona tarball into a fresh temp project
+      # outside the checkout, and run the installed binary. npm `overrides`
+      # pin every @syncrona/* name to its local tarball, so the smoke never
+      # touches the registry for scoped deps (they may not be published yet).
+      - name: Pack-install smoke (gap-analysis D1)
+        run: |
+          set -euo pipefail
+          PACK_DIR="$(mktemp -d)"
+          SMOKE_DIR="$(mktemp -d)"
+          # 1. Pack the core CLI plus every @syncrona/* workspace it depends on.
+          npm pack --silent --json \
+            --workspace syncrona \
+            --workspace @syncrona/types \
+            --workspace @syncrona/credential-store \
+            --workspace @syncrona/jira \
+            --workspace @syncrona/sn-transport \
+            --pack-destination "$PACK_DIR" > "$PACK_DIR/pack.json"
+          # 2. Build a fresh consumer project OUTSIDE the checkout. npm `overrides`
+          #    map every @syncrona/* name to its local tarball, so the (possibly
+          #    unpublished) workspace deps never resolve from the npm registry.
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const [packDir, smokeDir] = process.argv.slice(1);
+            const packed = JSON.parse(fs.readFileSync(path.join(packDir, "pack.json"), "utf8"));
+            const overrides = {};
+            let coreTarball = "";
+            for (const p of packed) {
+              const tarball = path.join(packDir, p.filename);
+              if (p.name === "syncrona") coreTarball = tarball;
+              else overrides[p.name] = "file:" + tarball;
+            }
+            if (!coreTarball) throw new Error("core tarball missing from npm pack output");
+            fs.writeFileSync(path.join(smokeDir, "package.json"),
+              JSON.stringify({ name: "syncrona-pack-smoke", private: true, overrides }, null, 2));
+            fs.writeFileSync(path.join(smokeDir, "core-tarball.txt"), coreTarball);
+          ' "$PACK_DIR" "$SMOKE_DIR"
+          cd "$SMOKE_DIR"
+          npm install --no-audit --no-fund "$(cat core-tarball.txt)"
+          # 3. Guard: every @syncrona/* dep must have come from a local tarball.
+          node -e '
+            const lock = require(process.cwd() + "/package-lock.json");
+            const bad = Object.entries(lock.packages).filter(([name, meta]) =>
+              name.includes("@syncrona/") && !String(meta.resolved).startsWith("file:"));
+            if (bad.length) {
+              console.error("Resolved from registry instead of local tarballs:", bad.map(([name]) => name));
+              process.exit(1);
+            }
+          '
+          # 4. The installed bin must actually run: a broken files:/bin: entry in
+          #    the tarball fails here even though workspace-run tests pass.
+          ./node_modules/.bin/syncrona --version
+          ./node_modules/.bin/syncrona --help
 
       - name: Upload core coverage artifact
         if: always() && matrix.os == 'ubuntu-latest'

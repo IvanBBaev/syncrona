@@ -5,13 +5,235 @@
 2. Completed work is tracked in DONE.
 
 ## Goal: real-world readiness 9.5/10
-Current: ~8.5/10 — as of 2026-07-06 the engineering-completable backlog is closed:
-D5 (keychain default + Homebrew/Windows scaffolding), AR11, G13, QA-2 and the DX
-items (DX17 core, DX18 repair, DX19, DX24) are done; `npm run check` is green and
-prod `npm audit` is clean. What remains is NOT engineering-completable offline:
-AR9 (deferred by decision), CR22 + DX17 pipeline wiring + Homebrew/Windows real
-verification (need a live instance / first publish / Windows host), and the BA1–8
-owner/business decisions (incl. npm publish, which is owner-gated).
+Current: ~9/10 — as of 2026-07-13 the engineering-completable backlog is closed
+and then hardened. Earlier: D5 (keychain default + Homebrew/Windows scaffolding),
+AR11, G13, QA-2 and the DX items (DX17 core, DX18 repair, DX19, DX24). The
+2026-07-13 wave (see "HARDENING WAVE" below) added the `completion` command
+(23 CLI commands), a machine-checked MCP `outputSchema`/`structuredContent`
+contract, MCP stdio stdout-purity guarantees, and raised the MCP coverage gate to
+90/80. `npm run check` is green, all governance gates pass, and prod `npm audit`
+is clean. What remains is NOT engineering-completable offline: AR9 (deferred by
+decision), CR22 + DX17 pipeline wiring + Homebrew/Windows real verification (need
+a live instance / first publish / Windows host), and the BA1–8 owner/business
+decisions (incl. npm publish, which is owner-gated).
+
+---
+
+## HARDENING WAVE — 2026-07-13 (10/10 push: offline-completable hardening)
+Scope: close every engineering-completable gap toward a 10/10 real-world readiness
+that does not require a live instance, a Windows host, or an owner-gated npm
+publish. Verified end-to-end: `npm run check` green (14 packages, 725 core + 943
+mcp tests), all six governance gates pass, prod `npm audit` clean.
+
+- [x] **HW-1. `completion` command (23rd CLI command)** — new
+      `syncrona completion [bash|zsh]` prints a shell tab-completion script for the
+      live command registry. Handler is completionCommand.ts (writes the script via
+      `process.stdout.write`, kept byte-clean); registered in cliCommands.ts with
+      bash/zsh choices + examples. README, CLAUDE.md and the CLAUDE-docs-drift gate
+      updated (23 commands aligned with cliCommands.ts).
+- [x] **HW-2. MCP output contract (`outputSchema` + `structuredContent`)** — the
+      eight stable-shape tools (six session tools via `structuredJsonResponse`,
+      plus `sync_status`/`sync_refresh` via `commandJsonResponse` on exit 0) declare
+      an `outputSchema` and return conforming `structuredContent` on every success
+      result (isError results exempt — the SDK v1.29.0 low-level Server does no
+      runtime validation). Variable-shape CRUD tools intentionally excluded. The
+      tool-reference generator renders an Output section per schema; contract +
+      structuredContent assertions added to the mcp tests. Contract hash unchanged
+      (ea90f026 over sorted tool names — schema additions never move it).
+- [x] **HW-3. MCP stdio stdout purity** — for the protocol-channel commands
+      (`mcp` inherits stdout as the JSON-RPC transport; `completion` pipes a script
+      there), every bootstrap-phase notice is routed to stderr before loadConfigs()
+      can log. bootstrap.ts `stdoutIsProtocolChannel(argv)` engages
+      `logger.routeAllToStderr()` up front; mcpCommand.ts routes before setLogLevel;
+      dotenv runs with `quiet: true`. 6 argv-parsing tests (bootstrap.test.ts) incl.
+      `--log-level debug mcp` and the `--flag=value` form; the routing survives
+      later setLogLevel rebuilds via a sticky flag.
+- [x] **HW-4. MCP coverage gate raised to 90/80** — measured ~94.2% line / ~87.1%
+      branch after the new handler/session tests; ratchet lifted from the prior
+      floor. Core ratchet held at 92/79/89/92.
+
+### Adversarial review of the wave (2026-07-13) — 3 findings, all fixed
+A multi-dimension adversarial pass over the accumulated diff surfaced three real
+defects (a Watcher requeue-stall candidate and two create-table-policy candidates
+were verified and refuted). All three fixed with regression tests:
+- [x] **REV-1. eslint-plugin linted the on-disk file, not the piped content** —
+      packages/eslint-plugin/src/index.ts called `linter.lintFiles([filePath])`,
+      re-reading raw disk bytes and ignoring the `content` it was handed. In a
+      transform-then-lint plugin chain it validated the wrong (pre-transform)
+      source; the sibling prettier/typescript plugins correctly operate on
+      `content`. Fixed to `linter.lintText(content, { filePath })`; 2 tests that
+      make disk and content disagree in both directions (previously masked because
+      the tests wrote the same string they passed).
+- [x] **REV-2. tool-reference generator degraded silently** — a non-inline schema
+      value degraded the block to fallback parsing (dropping its Output section and
+      param types) but neither generate nor `--check` returned non-zero, so the
+      drift gate stayed green over an incomplete doc. Now fatal in both modes
+      (consistent with extractToolBlocks' fatal spread handling); a CLI test covers
+      generate-refuses and check-catches-a-committed-degraded-copy.
+- [x] **REV-3. docs/VERSIONING.md said "22 commands"** — stale after the
+      `completion` addition; the claims-drift gate only checks docs/index.html so
+      CI missed it. Corrected to 23.
+
+### Second adversarial pass (2026-07-13) — plugin-pipeline & offline-gate hardening
+A follow-up multi-dimension audit of the build-plugin pipeline, the shared Jira
+renderer, and the coverage-gate tooling surfaced seven more real defects (three
+further candidates — a Watcher requeue stall and two create-table-policy paths —
+were re-verified and refuted). All fixed with regression tests; `npm run check`
+stays green (mcp tests 943 → 956; mcp coverage 94.13% line / 86.84% branch).
+- [x] **REV-4. sass-plugin compiled the disk file, not the piped content** —
+      `src/index.ts` re-read the entrypoint from disk instead of the `content` it
+      was handed, so in a transform-then-compile chain it built the pre-transform
+      bytes (the REV-1 class again). Fixed to
+      `sass.compileString(content, { syntax, url: pathToFileURL(filePath) })` —
+      extension-driven indented/scss syntax, and the file URL keeps relative
+      `@use`/`@import` resolving against the entrypoint dir. 5 tests, incl. one
+      where disk and content disagree and one resolving a relative `@use`.
+- [x] **REV-5. typescript-plugin crashed on a tsconfig without compilerOptions** —
+      a `tsconfig.json` with no `compilerOptions` key threw "Cannot set properties
+      of undefined (setting 'rootDir')". Guarded by defaulting `compilerOptions` to
+      `{}` before use. Regression test writes such a tsconfig beside the fixture.
+- [x] **REV-6. typescript-plugin type-checked the disk bytes, not the content** —
+      same REV-1 class: it type-checked the on-disk file while the pipeline had
+      already produced corrected `content`. Fixed with an in-memory compiler-host
+      overlay (getSourceFile/readFile/fileExists serve the passed content for the
+      target file, delegating lib/node_modules to the base host). 2 tests make disk
+      and content disagree in both directions; existing diagnostic behavior held.
+- [x] **REV-7. babel-plugin mutated the caller's shared options** — it wrote
+      `filename` back into the `options` object handed to every file in a build,
+      leaking one file's identity into the next. Now builds a fresh options object;
+      a test asserts `filename` never leaks into the caller's object.
+- [x] **REV-8. babel-plugin treated empty output as a build failure** — the old
+      `if (res && res.code)` guard failed a comment-only/empty source (whose
+      transform is legitimately `""`). Now `typeof res.code === "string"` — empty
+      output is a success. Test covers a comment-only source with `comments:false`.
+- [x] **REV-9. jira adfToText threw RangeError on an out-of-range date** — a
+      crafted ADF `date` node with a finite but out-of-range `attrs.timestamp` made
+      `new Date(ms).toISOString()` throw, breaking the module's never-throws
+      contract and aborting the whole issue fetch. Range-guarded (`|ms| <= 8.64e15`)
+      to degrade to "" like every other bad input. Deterministic regression test.
+- [x] **REV-10. check-coverage-gate.js silently ignored malformed flags** — a typo
+      in a threshold flag (e.g. `--branch-threshhold 80`) left the gate at its
+      default, most dangerously leaving the branch gate OFF (0) while the run still
+      reported success. `parseArgs` now rejects unknown tokens and missing /
+      non-numeric / out-of-0..100 values (and accepts `--flag=value`); a new
+      `test/coverage-gate.test.js` (13 tests) covers both exported parsers.
+
+### Third adversarial pass (2026-07-16) — full-repo sweep, 21 findings, all fixed
+A third multi-dimension adversarial audit swept the whole monorepo (build plugins,
+core pipeline, credential store, MCP runtime and its governance scripts) and
+surfaced twenty-one real defects, every one adversarially re-verified (0 refuted).
+All fixed with regression tests; `npm run check` stays green (core tests 740, mcp
+tests 962). The recurring "operate on the disk file, not the piped `content`" class
+(REV-1/REV-4/REV-6) reappeared in the last remaining build plugin, and two exit-code
+and three governance-anchor bugs mirror earlier waves — evidence the sweep reached the
+tail of each defect family.
+- [x] **REV-11. webpack-plugin re-bundled the disk file, not the piped content** —
+      `src/index.ts` ignored the passed-in `content` and re-read `context.filePath`
+      from disk, discarding every prior transform in the chain (the REV-1/REV-4/REV-6
+      class, now closed in the last build plugin). Fixed with an in-memory input
+      overlay so webpack bundles the handed content. 2 tests make disk and content
+      disagree in both directions.
+- [x] **REV-12. babel-remove-modules leaked comment state across files** —
+      `commentUsageTracker` lived in the plugin-factory closure keyed only by
+      line+column (no filename), so one file's `@keepModule`/`@expandModule` usage
+      bled into later files and tags were silently dropped. Reset per file in
+      `pre()`; a test compiles two files whose tags share coordinates and asserts
+      neither is dropped.
+- [x] **REV-13. push --ci silently auto-resumed a stale checkpoint** — a leftover
+      checkpoint made `push --ci` narrow (or entirely drop) the intended push and
+      still exit 0. Now `--ci` validates the checkpoint and refuses a stale/mismatched
+      one instead of silently resuming. Regression test drives the stale-checkpoint
+      path.
+- [x] **REV-14. resumed download blanked already-completed tables** — the skeleton
+      force-write phase re-created completed tables as empty files, then the resume
+      checkpoint skipped re-fetching them, so a resumed pull truncated the very
+      tables it meant to preserve. Skeleton phase now leaves non-empty completed
+      files intact (zero-byte still treated as missing). Tests cover forceWrite=false
+      and ci mode.
+- [x] **REV-15. webpack-plugin leaked compiler resources** — `compiler.run(...)` was
+      never followed by `compiler.close()`, leaking webpack 5 caches, file handles
+      and worker threads per processed file. Now closes the compiler in a `finally`.
+      Test asserts close is invoked on both success and failure paths.
+- [x] **REV-16. webpack-plugin swallowed config-load errors** — `loadWebpackConfig`
+      caught every import error from `webpack.config.js` and returned `false`, so a
+      config that exists but fails to load was silently ignored and the bundle built
+      with default config. Now distinguishes "no config" from "config failed to load"
+      and surfaces the latter. Regression test points at a throwing config.
+- [x] **REV-17. non-atomic stale-lock reclaim let two pushes both acquire** —
+      `acquireCollaborationLock` reclaimed a stale lock via a blind unlink+write, so
+      two concurrent pushes could both win the collaboration lock. Reclaim is now
+      atomic (ownership-checked). Test simulates the interleaving.
+- [x] **REV-18. Table-API fallback marked 400/403/404 tables complete-but-empty** —
+      a table returning 400/403/404 during the download fallback was dropped from the
+      result yet marked complete and reported as "Download complete", leaving empty
+      files. Now such tables are accounted as failures and set a non-zero exit code.
+      Test drives each status.
+- [x] **REV-19. findMissingFiles ignored flat layout** — it only checked the
+      per-record folder layout, so `repair` reported every file missing (and
+      re-downloaded the whole scope) in a flat-layout workspace. Now honors the
+      configured layout. Test covers a flat-mode manifest.
+- [x] **REV-20. failed push batch stalled with no retry** — after a failed push the
+      in-flight batch was requeued into `pushQueue` but no drain was rescheduled, so
+      the changes stalled forever. Now schedules a bounded auto-retry drain. Test
+      asserts a requeued batch is drained again.
+- [x] **REV-21. wizard source-dir produced an invalid config file** —
+      `getDefaultConfigFile()` interpolated the free-text source directory into a
+      double-quoted JS string with no escaping, so a backslash/quote in the input
+      generated a syntactically invalid `sync.config.js` that bricked every later
+      command. Now `JSON.stringify`-quoted. Test feeds a path with a quote/backslash.
+- [x] **REV-22. docsCommand exited 0 on failure** — it logged failures via
+      `logger.error` but never set `process.exitCode`, so `syncrona docs` reported
+      success when generation failed or no manifest existed. Now sets a non-zero exit
+      code. Regression test asserts the exit code on both failure arms.
+- [x] **REV-23. instanceToFilename was lossy and non-reversible** — its `replace()`
+      let two distinct instance names collide onto one credential file (silently
+      overwriting) and could not be round-tripped by `filenameToInstance` — the class
+      the twin `jiraProfileToFilename` was already rewritten with `encodeURIComponent`
+      to avoid. Now reversible/collision-free. Test round-trips names that previously
+      collided.
+- [x] **REV-24. scope name unescaped in Table-API encoded query** — the config scope
+      name was interpolated into encoded queries without `escapeQueryValue` (unlike
+      `snClient.getScopeId`), allowing `^`-injection of extra conditions. Now escaped.
+      Test asserts an injected `^` is neutralized.
+- [x] **REV-25. buildRecordName didn't guard `.`/`..`** — it sanitized only `/` and
+      `\\`, so a record named `.` or `..` wrote its field files outside the record
+      directory (then `repair --apply --prune` deleted them). Now guards dot names.
+      Test covers `.` and `..`.
+- [x] **REV-26. config vm sandbox got the real stdout console** — the vm evaluating
+      `sync.config.js` was handed the real stdout-writing `console`; bootstrap's
+      stdout-purity routing only redirected the winston logger, so config-side
+      `console.log` escaped onto the MCP/completion protocol channel. Sandbox console
+      now routes to stderr. Test asserts nothing reaches stdout.
+- [x] **REV-27. healthServer dropped its error listener after listen()** — the only
+      `'error'` handler was removed once `listen()` succeeded, so any later
+      server-level error had no listener and Node re-threw it, crashing the whole MCP
+      process. A persistent logging handler now stays attached. Test emits a
+      post-listen `'error'` and asserts no crash.
+- [x] **REV-28. claims-drift auth gate matched a page-wide substring** — the
+      auth-method documentation gate used a bare page-wide substring match, so the
+      word "basic" (e.g. in "basically") satisfied the check even with Basic-auth
+      docs removed. Now scoped to the `id="security"` section with word-boundary
+      matching. Tests cover the "basically" false-positive and a missing section.
+- [x] **REV-29. release-checklist section check was substring-loose** — required
+      governance sections were checked with `includes(section)`, so a required
+      `## Section` demoted to `### Section` (or buried in prose/a code fence) still
+      passed. Now anchored to a line-start heading of the exact level. Test demotes
+      every required section and asserts all are flagged.
+- [x] **REV-30. claude-docs-drift section check was substring-loose** — same
+      looseness as REV-29 for required CLAUDE.md sections. Now anchored via
+      `hasHeadingLine`. Test demotes a required section to a deeper level and asserts
+      it is flagged.
+- [x] **REV-31. doctorCommand exited 0 on a broken workspace** — it computed
+      `ok=false` when checks failed but never set `process.exitCode`, so
+      `syncrona doctor` exited 0 while its sibling `checkEnvCommand` exited 1 in the
+      same situation. Now sets a non-zero exit code on failure. Regression test
+      asserts it.
+
+Deliberately left ungated: internal snapshot docs (PRODUCT_STATE.md, VERSIONING.md)
+carry point-in-time numbers (readiness/coverage/test counts) by design. The
+user-facing claims (README, COMPARISON.md, index.html) are machine-gated by
+claims-drift; PRODUCT_STATE.md's stale "22 commands" was corrected to 23 in place
+rather than adding a fragile gate over a dated snapshot.
 
 ---
 
