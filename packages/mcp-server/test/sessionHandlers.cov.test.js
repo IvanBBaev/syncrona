@@ -814,6 +814,55 @@ test('sync_check_instance_capabilities: a failing capability -> isError true', a
   assert.equal(res.isError, true);
 });
 
+test('sync_preflight_check: empty-string overrides do not clobber guardrail expectations', async () => {
+  // Faithfully model buildPreflightReport's contract: overrides layer on top of the
+  // guardrail config, and an override only takes effect when actually supplied. The
+  // guardrails expect scope "x_guardrail" but the live session is on "x_other", so a
+  // truthful report must be allOk:false. Forwarding empty-string overrides would blank
+  // the expectation and force a false all-clear.
+  const guardrail = { expectedScope: 'x_guardrail' };
+  const currentScope = 'x_other';
+  let seenOverride;
+
+  const ctx = makeContext({
+    buildPreflightReport: async (_timeoutMs, override) => {
+      seenOverride = override;
+      const cfg = { ...guardrail, ...(override || {}) };
+      const scopeOk = !cfg.expectedScope || cfg.expectedScope === currentScope;
+      return { checks: { scopeOk, allOk: scopeOk } };
+    },
+  });
+
+  const res = await handleSessionTool(
+    'sync_preflight_check',
+    { expectedScope: '', expectedUpdateSetName: '', expectedUpdateSetSysId: '' },
+    ctx
+  );
+
+  // Empty-string args must not be forwarded as overrides.
+  assert.equal(seenOverride.expectedScope, undefined);
+  assert.equal(seenOverride.expectedUpdateSetName, undefined);
+  assert.equal(seenOverride.expectedUpdateSetSysId, undefined);
+
+  const parsed = JSON.parse(res.content[0].text);
+  assert.equal(parsed.checks.allOk, false);
+  assert.equal(res.isError, true);
+});
+
+test('sync_preflight_check: a real non-empty override is still forwarded', async () => {
+  let seenOverride;
+  const ctx = makeContext({
+    buildPreflightReport: async (_timeoutMs, override) => {
+      seenOverride = override;
+      return { checks: { allOk: true } };
+    },
+  });
+
+  await handleSessionTool('sync_preflight_check', { expectedScope: '  x_app  ' }, ctx);
+  assert.equal(seenOverride.expectedScope, 'x_app');
+  assert.equal(seenOverride.expectedUpdateSetName, undefined);
+});
+
 test('unknown tool still returns null with a fully populated context', async () => {
   const res = await handleSessionTool('totally_unknown', { foo: 'bar' }, makeContext());
   assert.equal(res, null);

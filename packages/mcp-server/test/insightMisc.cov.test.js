@@ -210,6 +210,31 @@ test('handleListRecentChanges: respects explicit since and custom limit', async 
   );
 });
 
+test('handleListRecentChanges: unparseable since falls back and echoes the applied bound', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      const requestedUrls = [];
+      global.fetch = async (url) => {
+        requestedUrls.push(String(url));
+        return mkResponse(200, { result: [] });
+      };
+      const res = await handleListRecentChanges(
+        { scope: 'x_my_scope', since: 'not-a-real-date' },
+        1000
+      );
+      const parsed = JSON.parse(res.content[0].text);
+      // The payload must not echo the unparseable input as if it bounded the query.
+      assert.notEqual(parsed.since, 'not-a-real-date');
+      // The applied bound must be a valid ISO timestamp that is actually enforced in
+      // the query, so callers cannot mistake all-time results for a bounded window.
+      assert.ok(!Number.isNaN(new Date(parsed.since).getTime()));
+      const decodedUrl = decodeURIComponent(requestedUrls[0].replace(/\+/g, ' '));
+      assert.match(decodedUrl, /sys_created_on>=/);
+    }
+  );
+});
+
 test('handleListRecentChanges: non-2xx response marks isError true', async () => {
   await withEnv(
     { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },

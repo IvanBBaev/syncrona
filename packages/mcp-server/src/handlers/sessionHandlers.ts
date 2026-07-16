@@ -87,10 +87,14 @@ export async function handleSessionTool(
           ? args.expectedUpdateSetSysId.trim()
           : "";
 
+      // Forward only overrides that were actually supplied. Passing empty strings
+      // would clobber the guardrails/config expected values inside
+      // buildPreflightReport, blanking the expectation so the comparison trivially
+      // matches and the report returns a false allOk:true all-clear.
       const report = await context.buildPreflightReport(timeoutMs, {
-        expectedScope,
-        expectedUpdateSetName,
-        expectedUpdateSetSysId,
+        ...(expectedScope ? { expectedScope } : {}),
+        ...(expectedUpdateSetName ? { expectedUpdateSetName } : {}),
+        ...(expectedUpdateSetSysId ? { expectedUpdateSetSysId } : {}),
       });
       const checks = asRecord(report.checks);
       return {
