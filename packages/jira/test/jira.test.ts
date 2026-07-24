@@ -227,6 +227,118 @@ describe("adfToText", () => {
     expect(adfToText(doc)).toBe("https://example.com/board");
   });
 
+  it("renders an attrs-only embedCard at block level", () => {
+    // An embedded smart link (e.g. a pasted Confluence page or dashboard) is an
+    // `embedCard` with `attrs.url` and NO `content`, like its blockCard sibling.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "embedCard",
+          attrs: { url: "https://example.com/dash", layout: "center" },
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("https://example.com/dash");
+  });
+
+  it("keeps a task item's marked-up text runs on one line", () => {
+    // A taskItem holds *inline* content, and ADF starts a new `text` node at
+    // every mark boundary, so its runs must join into one line rather than one
+    // line per run (which would also erase the item boundary).
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "taskList",
+          attrs: { localId: "list-1" },
+          content: [
+            {
+              type: "taskItem",
+              attrs: { localId: "a", state: "DONE" },
+              content: [
+                { type: "text", text: "Deploy " },
+                { type: "text", text: "now", marks: [{ type: "strong" }] },
+                { type: "text", text: " to prod" },
+              ],
+            },
+            {
+              type: "taskItem",
+              attrs: { localId: "b", state: "TODO" },
+              content: [{ type: "text", text: "second item" }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("Deploy now to prod\nsecond item");
+  });
+
+  it("keeps a decision item's text runs on one line", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "decisionList",
+          attrs: { localId: "list-1" },
+          content: [
+            {
+              type: "decisionItem",
+              attrs: { localId: "x", state: "DECIDED" },
+              content: [
+                { type: "text", text: "Use " },
+                { type: "text", text: "Postgres", marks: [{ type: "code" }] },
+                { type: "text", text: " for storage" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("Use Postgres for storage");
+  });
+
+  it("keeps a media caption's text runs on one line", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "mediaSingle",
+          content: [
+            { type: "media", attrs: { type: "file", alt: "diagram.png" } },
+            {
+              type: "caption",
+              content: [
+                { type: "text", text: "Figure " },
+                { type: "text", text: "1", marks: [{ type: "strong" }] },
+                { type: "text", text: ": the flow" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("[attachment: diagram.png]\nFigure 1: the flow");
+  });
+
+  it("flattens an unhandled node holding only inline children onto one line", () => {
+    // The same rule must hold for node types this module does not know: inline
+    // children compose a line, so they must not be joined as blocks.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "unknownInlineHolder",
+          content: [
+            { type: "text", text: "one " },
+            { type: "text", text: "two" },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("one two");
+  });
+
   it("recurses into unknown node types instead of dropping text", () => {
     const doc = {
       type: "doc",

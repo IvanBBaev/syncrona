@@ -11,22 +11,26 @@ interface webpackPluginOpts {
 const run: Sync.PluginFunc = async function (
   context: Sync.FileContext,
   content: string,
-  options: webpackPluginOpts
+  options?: webpackPluginOpts
 ): Promise<Sync.PluginResults> {
+  // A plugin rule may be declared without an `options` key — that is exactly the
+  // snippet `syncrona config add-plugin webpack` prints — and sync.config.js is
+  // never typechecked, so the argument really is undefined at runtime.
+  const opts: webpackPluginOpts = options ?? {};
   const memFS = createFsFromVolume(new Volume());
   let wpOptions: webpack.Configuration = {};
   const configFile = await loadWebpackConfig();
   //First, try to load configuration file
   if (configFile) {
-    Object.assign(wpOptions, configFile);
+    Object.assign(wpOptions, await resolveWebpackConfig(configFile));
   }
   //Second, load from the options
-  if (options.webpackConfig) {
-    Object.assign(wpOptions, options.webpackConfig);
+  if (opts.webpackConfig) {
+    Object.assign(wpOptions, opts.webpackConfig);
   }
   //Third, load from configGenerator function
-  if (options.configGenerator) {
-    wpOptions = Object.assign(wpOptions, options.configGenerator(context));
+  if (opts.configGenerator) {
+    wpOptions = Object.assign(wpOptions, opts.configGenerator(context));
   }
   //override necessary parameters
   wpOptions.entry = context.filePath;
@@ -83,10 +87,12 @@ const run: Sync.PluginFunc = async function (
     pathChunks.push("webpack.config.js");
     return path.sep + path.join(...pathChunks);
   }
-  async function loadWebpackConfig() {
+  async function loadWebpackConfig(): Promise<unknown> {
     const configPath = getWebpackConfigPath();
     try {
-      const config: webpack.Configuration = (await import(configPath)).default;
+      // Deliberately untyped: webpack.config.js is authored by the user and may
+      // export any of the shapes webpack's CLI accepts, not just a plain object.
+      const config: unknown = (await import(configPath)).default;
       return config;
     } catch (e) {
       if (isConfigAbsent(e, configPath)) {
@@ -176,6 +182,35 @@ function overlayEntryContent(
       return boundReadFileSync(...args);
     };
   }
+}
+
+// webpack.config.js may export the configuration itself or a function producing
+// it (optionally async) — webpack's own CLI accepts both, so real-world configs
+// use the function form to branch on the environment. `Object.assign` copies no
+// own enumerable properties off a function, so an unresolved function export was
+// silently dropped and the bundle was built with the default configuration.
+async function resolveWebpackConfig(loaded: unknown): Promise<webpack.Configuration> {
+  const resolved =
+    typeof loaded === "function"
+      ? await (loaded as (env: unknown, argv: unknown) => unknown)(
+          process.env,
+          {}
+        )
+      : loaded;
+  if (Array.isArray(resolved)) {
+    // A multi-compiler config emits several bundles, but this plugin returns the
+    // single artifact of one file. Silently taking the first entry would build
+    // the wrong bundle, so ask the user to narrow it down instead.
+    throw new Error(
+      "webpack.config.js exports an array (multi-compiler configuration), which is not supported. Provide a single configuration."
+    );
+  }
+  if (!resolved || typeof resolved !== "object") {
+    throw new Error(
+      `webpack.config.js must export a configuration object or a function returning one, but resolved to ${typeof resolved}.`
+    );
+  }
+  return resolved as webpack.Configuration;
 }
 
 // True only when the config file itself is absent (the normal "no config"

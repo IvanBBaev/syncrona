@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, promises as fsp, readdirSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -92,6 +92,85 @@ test("removeAllCredentials removes the valid instances despite an undecodable fi
   // no-op; the valid instances must now be removed and reported.
   expect(await removeAllCredentials()).toBe(2);
   expect(await listInstances()).toEqual([]);
+});
+
+test("removeCredentials reports whether a file was actually deleted", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  expect(await removeCredentials(INSTANCE)).toBe(true);
+  // Already gone is not a failure — it just deleted nothing.
+  expect(await removeCredentials(INSTANCE)).toBe(false);
+});
+
+test("removeCredentials surfaces a non-ENOENT unlink failure instead of swallowing it", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+  // The secret is still on disk, so reporting a clean removal would be a lie.
+  await expect(removeCredentials(INSTANCE)).rejects.toThrow(/permission denied/);
+  unlinkSpy.mockRestore();
+});
+
+test("removeAllCredentials reports the files it could not delete instead of over-counting", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+  // It used to return instances.length (2) while both encrypted files remained,
+  // so `logout --all` announced a purge that never happened.
+  await expect(removeAllCredentials()).rejects.toThrow(
+    /Removed credentials for 0 instance\(s\), but 2 could not be removed/
+  );
+  unlinkSpy.mockRestore();
+  expect((await listInstances()).sort()).toEqual(
+    ["dev12345.service-now.com", "prod.service-now.com"].sort()
+  );
+});
+
+test("removeAllCredentials counts only real deletions when one file vanishes mid-run", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const realUnlink = fsp.unlink.bind(fsp);
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockImplementation(async (target) => {
+      if (String(target).includes("prod")) {
+        // Concurrently removed by another process: nothing left to delete.
+        throw Object.assign(new Error("no such file"), { code: "ENOENT" });
+      }
+      return realUnlink(target);
+    });
+
+  expect(await removeAllCredentials()).toBe(1);
+  unlinkSpy.mockRestore();
+});
+
+test("getActiveInstance survives a valid-JSON but non-object config.json", async () => {
+  // JSON.parse succeeds for each of these, so loadGlobalConfig's catch never
+  // fires and the bad value used to reach the callers' property access.
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  for (const body of ["null", '"hello"', "42", "[]", "true"]) {
+    writeFileSync(path.join(getSyncronaDir(), "config.json"), body, "utf8");
+    await expect(getActiveInstance()).resolves.toBeNull();
+    // The sync twin has always survived these — the async path must match.
+    expect(getActiveInstanceSync()).toBeNull();
+  }
+});
+
+test("setActiveInstance repairs a non-object config.json instead of throwing", async () => {
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  writeFileSync(path.join(getSyncronaDir(), "config.json"), "null", "utf8");
+  await expect(setActiveInstance(INSTANCE)).resolves.toBeUndefined();
+  // `[]` used to resolve but silently drop the property on JSON.stringify, so
+  // `syncrona use dev` reported success while nothing was persisted.
+  expect(await getActiveInstance()).toBe(INSTANCE);
+
+  writeFileSync(path.join(getSyncronaDir(), "config.json"), "[]", "utf8");
+  await setActiveInstance(INSTANCE);
+  expect(await getActiveInstance()).toBe(INSTANCE);
 });
 
 test("active instance can be set, read, and resolves credentials", async () => {

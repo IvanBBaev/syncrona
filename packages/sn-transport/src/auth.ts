@@ -85,6 +85,13 @@ export function normalizeAuthMethod(raw: string | undefined): AuthMethod | undef
   if (!value) {
     return undefined;
   }
+  // Own properties only: a bare `METHOD_ALIASES[value]` also resolves inherited
+  // Object.prototype members, so "constructor" (the one prototype key that
+  // survives the lowercasing above) returned the Object function — a truthy
+  // non-method that passed for a method and skipped credential validation.
+  if (!Object.prototype.hasOwnProperty.call(METHOD_ALIASES, value)) {
+    return undefined;
+  }
   return METHOD_ALIASES[value];
 }
 

@@ -21,7 +21,22 @@ const adfNode: fc.Arbitrary<unknown> = fc.letrec((tie) => ({
       ),
       text: fc.string(),
       attrs: fc.dictionary(fc.string(), fc.oneof(fc.string(), fc.integer(), fc.boolean())),
-      content: fc.oneof(fc.constant(undefined), fc.array(tie("node"), { maxLength: 4 })),
+      // Children are not always well-formed nodes: a malformed document can hold
+      // null/undefined or a bare scalar where a node belongs, so generate those
+      // too — a node-only generator cannot reach the unvalidated-child paths.
+      content: fc.oneof(
+        fc.constant(undefined),
+        fc.array(
+          fc.oneof(
+            tie("node"),
+            fc.constant(null),
+            fc.constant(undefined),
+            fc.string(),
+            fc.integer()
+          ),
+          { maxLength: 4 }
+        )
+      ),
     },
     { requiredKeys: [] }
   ),
@@ -51,6 +66,73 @@ describe("adfToText (property, #20)", () => {
         expect(typeof adfToText({ type: "doc", content: blocks })).toBe("string");
       })
     );
+  });
+});
+
+// List items, table rows and table cells are the paths that read a child's
+// `.content` without validating the child first, so a null/undefined item, row
+// or cell used to abort the whole issue fetch with a TypeError. These pin the
+// never-throws contract on each of those sinks directly.
+describe("adfToText malformed list/table children (never throws)", () => {
+  const cases: Array<[string, unknown]> = [
+    ["a null bullet-list item", { type: "bulletList", content: [null] }],
+    ["an undefined bullet-list item", { type: "bulletList", content: [undefined] }],
+    ["a null ordered-list item", { type: "orderedList", content: [null] }],
+    ["a null table row", { type: "table", content: [null] }],
+    [
+      "a null table cell",
+      { type: "table", content: [{ type: "tableRow", content: [null] }] },
+    ],
+    [
+      "a null nested-list item",
+      {
+        type: "bulletList",
+        content: [
+          {
+            type: "listItem",
+            content: [{ type: "bulletList", content: [null] }],
+          },
+        ],
+      },
+    ],
+  ];
+
+  it.each(cases)("returns a string for %s", (_label, block) => {
+    const doc = { type: "doc", content: [block] };
+    expect(() => adfToText(doc)).not.toThrow();
+    expect(typeof adfToText(doc)).toBe("string");
+  });
+
+  it("drops a malformed table row or cell rather than throwing", () => {
+    expect(adfToText({ type: "doc", content: [{ type: "table", content: [null] }] })).toBe("");
+    expect(
+      adfToText({
+        type: "doc",
+        content: [{ type: "table", content: [{ type: "tableRow", content: [null] }] }],
+      })
+    ).toBe("");
+  });
+
+  it("still renders the well-formed siblings of a malformed item", () => {
+    // The guard must skip only the broken child, not abandon the whole list.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          content: [
+            null,
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "kept" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toContain("kept");
   });
 });
 

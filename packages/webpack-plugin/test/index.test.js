@@ -78,6 +78,91 @@ test('applies webpack configuration from a webpack.config.js next to the entry',
   assert.equal(globalThis.__syncronaWebpackPluginAliasResult, 8);
 });
 
+test('applies a webpack.config.js that exports a function', async (t) => {
+  const entrySource =
+    'const { double } = require("syncronalib");\n' +
+    'globalThis.__syncronaWebpackPluginFnResult = double(5);\n';
+  const dir = makeProject(t, {
+    'lib.js': 'module.exports.double = function (n) { return n * 2; };\n',
+    'entry.js': entrySource,
+    // webpack's CLI accepts a function export so the config can branch on the
+    // environment. Object.assign copies nothing off a function, so an unresolved
+    // function export left the alias unapplied and the bundle silently built
+    // with defaults -- resolving "syncronalib" then fails the compile.
+    'webpack.config.js':
+      'const path = require("path");\n' +
+      'module.exports = function (env, argv) {\n' +
+      '  return {\n' +
+      '    mode: "none",\n' +
+      '    resolve: { alias: { syncronalib: path.join(__dirname, "lib.js") } },\n' +
+      '  };\n' +
+      '};\n',
+  });
+  const result = await run(makeContext(path.join(dir, 'entry.js')), entrySource, {});
+
+  assert.equal(result.success, true);
+  t.after(() => delete globalThis.__syncronaWebpackPluginFnResult);
+  new Function(result.output)();
+  assert.equal(globalThis.__syncronaWebpackPluginFnResult, 10);
+});
+
+test('awaits a webpack.config.js that exports an async function', async (t) => {
+  const entrySource =
+    'const { double } = require("syncronalib");\n' +
+    'globalThis.__syncronaWebpackPluginAsyncFnResult = double(6);\n';
+  const dir = makeProject(t, {
+    'lib.js': 'module.exports.double = function (n) { return n * 2; };\n',
+    'entry.js': entrySource,
+    // The function form is allowed to return a promise; merging the promise
+    // itself would apply no configuration at all.
+    'webpack.config.js':
+      'const path = require("path");\n' +
+      'module.exports = async function () {\n' +
+      '  return {\n' +
+      '    mode: "none",\n' +
+      '    resolve: { alias: { syncronalib: path.join(__dirname, "lib.js") } },\n' +
+      '  };\n' +
+      '};\n',
+  });
+  const result = await run(makeContext(path.join(dir, 'entry.js')), entrySource, {});
+
+  assert.equal(result.success, true);
+  t.after(() => delete globalThis.__syncronaWebpackPluginAsyncFnResult);
+  new Function(result.output)();
+  assert.equal(globalThis.__syncronaWebpackPluginAsyncFnResult, 12);
+});
+
+test('rejects a multi-compiler webpack.config.js instead of building the wrong bundle', async (t) => {
+  const entrySource = 'globalThis.__syncronaWebpackPluginArrayCfg = 1;\n';
+  const dir = makeProject(t, {
+    'entry.js': entrySource,
+    'webpack.config.js':
+      'module.exports = [{ mode: "none" }, { mode: "development" }];\n',
+  });
+  // This plugin returns the artifact of a single file, so an array config cannot
+  // be honored; merging it would produce a bundle from index keys instead.
+  await assert.rejects(
+    () => run(makeContext(path.join(dir, 'entry.js')), entrySource, {}),
+    /multi-compiler/
+  );
+});
+
+test('runs when the plugin rule declares no options at all', async (t) => {
+  const entrySource = 'globalThis.__syncronaWebpackPluginNoOpts = 6 * 7;\n';
+  const dir = makeProject(t, {
+    'entry.js': entrySource,
+  });
+  // `syncrona config add-plugin webpack` emits a rule with no `options` key, and
+  // sync.config.js is never typechecked, so PluginManager forwards undefined
+  // verbatim. Dereferencing options.webpackConfig then threw a TypeError.
+  const result = await run(makeContext(path.join(dir, 'entry.js')), entrySource);
+
+  assert.equal(result.success, true);
+  t.after(() => delete globalThis.__syncronaWebpackPluginNoOpts);
+  new Function(result.output)();
+  assert.equal(globalThis.__syncronaWebpackPluginNoOpts, 42);
+});
+
 test('throws when the bundle cannot be created', async (t) => {
   const brokenSource = 'require("./does-not-exist.js");\n';
   const dir = makeProject(t, {
