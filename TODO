@@ -500,9 +500,12 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       SYNCRONA_TLS_REJECT_UNAUTHORIZED=0 opt-out, applied through a shared
       https.Agent on every request incl. the OAuth token endpoint. Policy is a
       pure helper in sn-transport (resolveTlsPolicy); 17 tests (tlsPolicy.test.ts).
-      Documented in README. Residual: HTTPS_PROXY for the MCP native-fetch client
-      needs an undici dispatcher (dep) — CA already works there via
-      NODE_EXTRA_CA_CERTS.
+      Documented in README. Residual closed 2026-07-18: the MCP native-fetch
+      client now routes through an undici EnvHttpProxyAgent honoring
+      HTTP_PROXY/HTTPS_PROXY/NO_PROXY, composed with the existing
+      mutual-TLS/custom-CA dispatcher LRU cache in servicenowCore.getDispatcher;
+      node --test coverage in mcp-server/test/servicenowCore.proxy.test.js.
+      (CA already worked there via NODE_EXTRA_CA_CERTS.)
 - [x] **G10. Machine-enforced module boundaries** — DONE 2026-06-21:
       dependency-cruiser runs in `npm run lint` (lint:boundaries) — no runtime
       circular deps; foundation packages may not import core/mcp-server. See DONE.
@@ -545,15 +548,26 @@ vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md) are in DONE.
       stays inert until the repo is public, then activates automatically), and
       Dependabot (.github/dependabot.yml — weekly npm + github-actions updates).
       All actions SHA-pinned, least-privilege permissions.
-- [ ] **DEP1. Breaking-major dependency migration** (gap-analysis #32) — the
-      `.github/dependabot.yml` `ignore` list pins six CJS/ESM-locked majors out of
-      the auto-update stream so safe patch/minor bumps can land: chalk 4→5 (v5 is
-      ESM-only), inquirer 8→9+ (ESM/API rewrite), eslint 8→9+ (flat config),
-      @typescript-eslint 6→ (tracks the eslint/TS bump), typescript 5→6 (parser
-      support), zod 3→4 (API changes), chokidar 3→4 (dropped glob support). Each
-      needs a dedicated, tested migration (ESM conversion or a supported bridge)
-      before its `ignore` entry is removed — do NOT batch them. DEFERRED: the
-      current CommonJS build ships fine; this is forward-compat debt, not a gap.
+- [x] **DEP1. Breaking-major dependency migration** (gap-analysis #32) — DONE
+      2026-07-21: all six migrations landed as dedicated, tested migrations (not
+      batched). chalk 4→5 and inquirer 8→14 needed zero code changes — packages/core
+      has been ESM for a while, so the old "CJS-locked" rationale was stale;
+      inquirer 14 keeps the `inquirer.prompt` API and its Ctrl-C `ExitPromptError`
+      is now handled centrally in commander.ts as a quiet exit 130. chokidar 3→5
+      (named-import surface). zod 3→4 (union-level `{ error }` message shape).
+      eslint 8→10 + typescript-eslint 6→8 (flat config only — root
+      eslint.config.mjs, legacy .eslintrc deleted, eslint-plugin docs updated).
+      typescript ~5.9.3→6.0.3 (tsconfig modernization: NodeNext module/resolution,
+      explicit per-package rootDir, explicit `types`, removed deprecated
+      downlevelIteration/baseUrl; typescript-plugin pins explicit defaults —
+      target ES2021 (the level ServiceNow supports; ES5 is a TS6 deprecation
+      error), TS5's implied-module rule, emit-time suppression of the new
+      "use strict" prologue, and Bundler instead of the removed node10
+      resolution for Classic-implying configs — so plugin output stays
+      deterministic across compiler majors). typescript 7.0.2 remains blocked by
+      typescript-eslint's peer range `<6.1.0` and will be picked up when
+      typescript-eslint widens it — tracked by normal Dependabot majors now that
+      the `.github/dependabot.yml` ignore list has been removed.
 - [x] **G17. Tests must not dirty the tracked tree** — DONE 2026-06-13: the
       culprit was commandsDownload.test.ts — downloadCommand calls the REAL
       generateScopeDocs(man), which resolves its outDir from process.cwd() and

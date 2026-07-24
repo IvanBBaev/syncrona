@@ -16,13 +16,13 @@ It complements README and package-level docs with implementation and quality-gat
 - MCP governance checks run through `packages/mcp-server/scripts/quality-gates.sh`.
 
 ## Command Reference
-- `npx syncrona init` provisions a project.
+- `npx syncrona init` provisions a project (`--ci` provisions every scope the detected `.env` exposes without prompting).
 - `npx syncrona refresh` refreshes manifest and downloads new files.
 - `npx syncrona dev` starts watch mode.
 - `npx syncrona push` pushes local files to ServiceNow.
 - `npx syncrona download` downloads scoped application files.
 - `npx syncrona build` builds local artifacts.
-- `npx syncrona deploy` deploys built files.
+- `npx syncrona deploy` deploys built files (`--ci` skips the overwrite confirmation).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
 - `npx syncrona repair` reconciles the manifest with local files and re-downloads missing or prunes orphan files.
 - `npx syncrona status` prints extended diagnostics.
