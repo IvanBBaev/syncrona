@@ -9,6 +9,7 @@ export {
 } from "./analysis/metrics";
 export {
   buildSemanticIndexFromWorkspace,
+  buildSemanticIndexFromWorkspaceAsync,
   buildSymbolCrossReference,
   extractSymbolsFromCode,
   searchSemanticIndex,

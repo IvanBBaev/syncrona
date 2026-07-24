@@ -23,8 +23,10 @@ export type { LogFields, LogFormat, LogLevel } from "./logger";
 
 export {
   evaluateMinimalFootprint,
+  findSyncroCliSubcommand,
   getApprovalRequirements,
   isApprovalSatisfied,
+  isDestructiveWorkspaceCommand,
   isMutatingTool,
   isUnsafeWorkspaceCommand,
   parseRiskLevel,

@@ -72,7 +72,8 @@ const server = new Server(
 
 const shutdownController = createGracefulShutdownController({
   serverResource: server as CloseableResource,
-  drainTimeoutMs: 5000,
+  // CONC-7 (REV-111): drain timeout is resolved inside the controller from
+  // SYNCRONA_SHUTDOWN_DRAIN_MS (default 30s), so no explicit value is passed here.
   pollIntervalMs: 50,
   auditDir: AUDIT_DIR,
   auditFile: AUDIT_FILE,
@@ -258,6 +259,37 @@ function registerGracefulShutdownSignals(controller: GracefulShutdownController)
   process.on("SIGINT", () => onSignal("SIGINT"));
 }
 
+// CONC-4 (REV-108): re-entrancy guard so two bootstraps never run concurrently.
+let bootstrapInFlight = false;
+
+async function runScopeBootstrap(): Promise<void> {
+  // CONC-4 (REV-108): idempotency — a second invocation while one is in flight
+  // is a no-op (no duplicate concurrent downloads).
+  if (bootstrapInFlight) {
+    return;
+  }
+  // CONC-4 (REV-108): count the bootstrap as an active request so the shutdown
+  // drain WAITS for it (begin/end mirror the CallTool handler). If a shutdown is
+  // already in progress, beginRequest() returns false and the pull is skipped.
+  if (!shutdownController.beginRequest()) {
+    return;
+  }
+  bootstrapInFlight = true;
+  try {
+    await autoPullAllScopesAndData();
+    // CONC-2 (REV-93): the bootstrap may have downloaded new scope files that the
+    // tool-triggered invalidation allowlist never sees. Invalidate so the next
+    // semantic-index read rebuilds instead of serving a stale pre-bootstrap cache.
+    invalidateSemanticIndex("scope-bootstrap");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Auto scope pull failed: ${message}`);
+  } finally {
+    bootstrapInFlight = false;
+    shutdownController.endRequest();
+  }
+}
+
 async function main() {
   const persistedMetrics = loadMetricEvents(AUDIT_DIR, METRICS_FILE, 500);
   if (persistedMetrics.length > 0) {
@@ -289,11 +321,10 @@ async function main() {
 
   // The network-heavy scope bootstrap runs after the stdio handshake so a
   // slow instance cannot time out the MCP client connection. It logs to
-  // stderr only, so it is safe alongside the JSON-RPC stdout stream.
-  void autoPullAllScopesAndData().catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Auto scope pull failed: ${message}`);
-  });
+  // stderr only, so it is safe alongside the JSON-RPC stdout stream. It is now
+  // tracked by the shutdown drain and invalidates the semantic index on
+  // completion (see runScopeBootstrap).
+  void runScopeBootstrap();
 }
 
 if (require.main === module) {

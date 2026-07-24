@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createCipheriv, randomBytes, scryptSync } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
 const {
   parseDotEnv,
@@ -1399,6 +1400,76 @@ test('auditToolCall writes entries for non-mutating and mutating tools', () => {
   assert.equal(rows[1].correlationId, 'corr-test-1');
 });
 
+test('auditToolCall reports run_workspace_command mutating per invocation, not per tool name', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-mcp-audit-rwc-'));
+  const auditFile = path.join(tempDir, 'audit.log');
+
+  auditToolCall(
+    'run_workspace_command',
+    { command: 'npx', args: ['syncrona', 'push', '--ci'], confirmDestructive: true },
+    { isError: false },
+    9,
+    tempDir,
+    auditFile
+  );
+
+  auditToolCall(
+    'run_workspace_command',
+    { command: 'npm', args: ['test'] },
+    { isError: false },
+    9,
+    tempDir,
+    auditFile
+  );
+
+  const rows = fs
+    .readFileSync(auditFile, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].mutating, true, 'a syncrona push through run_workspace_command is mutating');
+  assert.equal(rows[1].mutating, false, 'a local npm test is not mutating');
+});
+
+// auditMutatingTool writes to AUDIT_DIR, which is derived from process.cwd() when
+// the module loads, so this runs in a child process rooted at a temp directory.
+test('auditMutatingTool persists an entry for a destructive run_workspace_command invocation', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-mcp-audit-mut-'));
+  const toolServicePath = path.join(__dirname, '..', 'dist', 'toolService.js');
+  const script = `
+    const { auditMutatingTool } = require(${JSON.stringify(toolServicePath)});
+    auditMutatingTool(
+      'run_workspace_command',
+      { command: 'syncrona', args: ['push'], confirmDestructive: true },
+      { exitCode: 0, timedOut: false },
+      42
+    );
+    auditMutatingTool(
+      'run_workspace_command',
+      { command: 'npm', args: ['test'] },
+      { exitCode: 0, timedOut: false },
+      42
+    );
+  `;
+  execFileSync(process.execPath, ['-e', script], { cwd: tempDir, encoding: 'utf8' });
+
+  const auditFile = path.join(tempDir, '.syncrona-mcp', 'audit.log');
+  const rows = fs
+    .readFileSync(auditFile, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+  assert.equal(rows.length, 1, 'only the destructive invocation is audited as a mutation');
+  assert.equal(rows[0].tool, 'run_workspace_command');
+  assert.deepEqual(rows[0].outcome, { exitCode: 0, timedOut: false });
+  assert.equal(rows[0].durationMs, 42);
+});
+
 test('metricsStore appends and reloads persisted tool metrics', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-mcp-metrics-'));
   const metricsFile = path.join(tempDir, 'metrics.jsonl');
@@ -2323,89 +2394,63 @@ test('integration helper runs unified workflow and onboarding behavior', async (
   assert.equal(String(remoteWithoutOptIn.payload.error).includes('allowRemoteApply=true'), true);
 });
 
-test('run_node_code enforces confirmDestructive and unsafe checks', async () => {
+// REV-82 (SEC-1): run_node_code no longer runs an in-process vm "sandbox" (a false
+// boundary that escaped to the host realm). Safe mode refuses honestly; full mode is
+// an explicit opt-in that delegates to a real child process. The exhaustive behavior
+// is pinned in workspaceHandlers.rev82-sandbox.test.js; this integration check keeps
+// the end-to-end contract asserted from index.test.js.
+test('run_node_code requires confirmDestructive, refuses in safe mode, and delegates in full mode', async () => {
   let runCommandCalls = 0;
-  const mkContext = (unsafe, timeoutMs = 5000, allowFullNodeAccess = false) => ({
+  let lastCall = null;
+  const mkContext = (allowFullNodeAccess = false, timeoutMs = 5000) => ({
     timeoutMs,
     dryRun: false,
     startedAt: Date.now(),
     allowFullNodeAccess,
     runSyncroCliCommand: async () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false }),
-    runCommand: async () => {
+    runCommand: async (command, cmdArgs) => {
       runCommandCalls += 1;
+      lastCall = { command, cmdArgs };
       return { exitCode: 0, stdout: 'ok', stderr: '', timedOut: false };
     },
-    isUnsafeWorkspaceCommand: () => unsafe,
+    isUnsafeWorkspaceCommand: () => false,
     makeDryRunAuditResponse: () => ({ isError: false, content: [{ type: 'text', text: '{}' }] }),
     auditMutatingTool: () => {},
   });
 
+  // confirmDestructive is still mandatory.
   const missingConfirm = await handleWorkspaceTool(
     'run_node_code',
     { code: 'console.log(1)' },
-    mkContext(false)
+    mkContext()
   );
   assert.equal(missingConfirm.isError, true);
   assert.equal(runCommandCalls, 0);
   assert.equal(String(missingConfirm.content[0].text).includes('confirmDestructive=true'), true);
 
-  const unsafeBlocked = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'a && b', confirmDestructive: true },
-    mkContext(true)
-  );
-  assert.equal(unsafeBlocked.isError, true);
-  assert.equal(runCommandCalls, 0);
-  assert.equal(String(unsafeBlocked.content[0].text).includes('Blocked unsafe command'), true);
-
-  const allowed = await handleWorkspaceTool(
+  // Safe mode (no allowFullNodeAccess) refuses instead of faking a sandbox and never
+  // reaches the child-process runner.
+  const safeMode = await handleWorkspaceTool(
     'run_node_code',
     { code: 'console.log(1)', confirmDestructive: true },
     mkContext(false)
   );
-  assert.equal(allowed.isError, false);
+  assert.equal(safeMode.isError, true);
   assert.equal(runCommandCalls, 0);
-  assert.equal(String(allowed.content[0].text).includes('1'), true);
+  assert.equal(String(safeMode.content[0].text).includes('disabled'), true);
+  assert.equal(String(safeMode.content[0].text).includes('allowFullNodeAccess'), true);
 
-  const processBlocked = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'process.exit(1)', confirmDestructive: true },
-    mkContext(false)
-  );
-  assert.equal(processBlocked.isError, true);
-  assert.equal(String(processBlocked.content[0].text).toLowerCase().includes('process is not defined'), true);
-
-  const requireBlocked = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'require("fs")', confirmDestructive: true },
-    mkContext(false)
-  );
-  assert.equal(requireBlocked.isError, true);
-  assert.equal(String(requireBlocked.content[0].text).toLowerCase().includes('require is not defined'), true);
-
-  const evalBlocked = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'eval("1+1")', confirmDestructive: true },
-    mkContext(false)
-  );
-  assert.equal(evalBlocked.isError, true);
-  assert.equal(String(evalBlocked.content[0].text).toLowerCase().includes('code generation from strings disallowed'), true);
-
-  const timedOut = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'while (true) {}', confirmDestructive: true },
-    mkContext(false, 100)
-  );
-  assert.equal(timedOut.isError, true);
-  assert.equal(String(timedOut.content[0].text).toLowerCase().includes('timed out'), true);
-
+  // Full mode delegates to the real child-process runner with
+  // --disallow-code-generation-from-strings as the first argument.
   const fullAccess = await handleWorkspaceTool(
     'run_node_code',
     { code: 'console.log(process.version)', confirmDestructive: true },
-    mkContext(false, 5000, true)
+    mkContext(true)
   );
   assert.equal(fullAccess.isError, false);
   assert.equal(runCommandCalls, 1);
+  assert.equal(lastCall.command, 'node');
+  assert.equal(lastCall.cmdArgs[0], '--disallow-code-generation-from-strings');
 });
 
 test('buildScriptExcerpt returns context window around a case-insensitive match', () => {

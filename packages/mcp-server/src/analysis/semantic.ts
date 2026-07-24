@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { readdirSync, readFileSync, statSync } from "fs";
+import { readdir, readFile, stat } from "fs/promises";
 import path from "path";
 
 export type SemanticSymbol = {
@@ -56,6 +57,59 @@ export function buildSemanticIndexFromWorkspace(rootDir: string): SemanticSymbol
   };
 
   walk(rootDir);
+  return symbols;
+}
+
+/**
+ * PERF-5 (REV-98): non-blocking twin of buildSemanticIndexFromWorkspace. The
+ * synchronous walker reads and parses every `.js`/`.ts` file with `readFileSync`
+ * in one tick, stalling the MCP event loop for the whole workspace scan while
+ * other requests wait. This variant uses `fs/promises` so each I/O yields; the
+ * traversal and symbol extraction are otherwise identical. Best-effort: an
+ * unreadable directory or file is skipped rather than thrown, matching the
+ * staleness walker in semanticIndexState.ts.
+ */
+export async function buildSemanticIndexFromWorkspaceAsync(
+  rootDir: string
+): Promise<SemanticSymbol[]> {
+  const symbols: SemanticSymbol[] = [];
+
+  const walk = async (dir: string): Promise<void> => {
+    let entries: string[];
+    try {
+      entries = await readdir(dir);
+    } catch (_) {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry === "node_modules" || entry === "dist" || entry.startsWith(".")) {
+        continue;
+      }
+      const fullPath = path.join(dir, entry);
+      let st;
+      try {
+        st = await stat(fullPath);
+      } catch (_) {
+        continue;
+      }
+      if (st.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!/\.(js|ts)$/.test(entry)) {
+        continue;
+      }
+      let content: string;
+      try {
+        content = await readFile(fullPath, "utf-8");
+      } catch (_) {
+        continue;
+      }
+      symbols.push(...extractSymbolsFromCode(content, fullPath));
+    }
+  };
+
+  await walk(rootDir);
   return symbols;
 }
 

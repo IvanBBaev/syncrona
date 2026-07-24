@@ -26,7 +26,7 @@ import {
   SERVER_VERSION,
   TOOL_CONTRACT_VERSION,
 } from "./runtimeConfig";
-import { getSemanticIndex, setSemanticIndex } from "./semanticIndexState";
+import { getSemanticIndexAsync, setSemanticIndex } from "./semanticIndexState";
 import { handleSessionTool } from "./handlers/sessionHandlers";
 import { handleWorkspaceTool } from "./handlers/workspaceHandlers";
 import { handleServiceNowCrudTool } from "./handlers/serviceNowCrudHandlers";
@@ -168,7 +168,7 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
         parseMetadataType,
         makeDryRunAuditResponse: ctx.makeDryRunAuditResponse,
         auditMutatingTool: ctx.auditMutatingTool,
-        getLastSemanticIndex: () => getSemanticIndex(PROJECT_DIR),
+        getLastSemanticIndex: () => getSemanticIndexAsync(PROJECT_DIR),
         setLastSemanticIndex: (rows) => {
           setSemanticIndex(rows);
         },

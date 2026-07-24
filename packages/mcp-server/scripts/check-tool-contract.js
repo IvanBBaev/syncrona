@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const fs = require('node:fs');
 const path = require('node:path');
+const { extractToolBlocks } = require('./generate-tool-reference.js');
 
 const DEFAULT_TOOL_SOURCE = path.resolve(__dirname, '..', 'src', 'toolSchemas.ts');
 const REQUIRED_TOOLS = [
@@ -87,6 +88,50 @@ function hashToolContract(toolNames) {
   return hash.toString(16).padStart(8, '0');
 }
 
+// Every quote style JavaScript accepts for a string literal. Keying only on
+// double quotes made a tool declared as `name: 'x'` invisible to this gate: it
+// never entered `declared`, so the two-way `unpinned` check could not force it
+// into REQUIRED_TOOLS and the contract floor was bypassed. Nothing in the repo
+// enforces a quote style (no eslint `quotes` rule, prettier is not part of
+// `npm run lint`), so the reader must accept what the compiler accepts.
+const TOOL_NAME_REGEX = /name:\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g;
+
+// Structural read: scope to the `BASE_MCP_TOOLS` array and take each tool object's
+// OWN first `name:` literal. A whole-file scan cannot tell a real declaration from
+// a `name: "..."` that lives in a code comment, a description string, or an object
+// literal outside the array — any of which would inflate the declared set and let a
+// bogus contract entry (or a masked deletion) slip through. `extractToolBlocks`
+// skips comments and string bodies while splitting the array, so only genuine tool
+// objects are read. Returns null when the array cannot be located (a bare
+// `name:`-only fixture, or a spread the textual reader refuses), so the caller
+// falls back to the whole-file scan those inputs still depend on.
+function declaredToolNamesFromBlocks(raw) {
+  let blocks;
+  try {
+    blocks = extractToolBlocks(raw);
+  } catch {
+    return null;
+  }
+  const names = [];
+  for (const block of blocks) {
+    // Non-global clone so exec() returns the block's FIRST name (the tool's own),
+    // not a later nested `inputSchema` property literally keyed "name".
+    const match = new RegExp(TOOL_NAME_REGEX.source).exec(block);
+    if (match) {
+      names.push(match[1] ?? match[2] ?? match[3]);
+    }
+  }
+  return names;
+}
+
+function parseDeclaredToolNames(raw) {
+  const structural = declaredToolNamesFromBlocks(raw);
+  if (structural !== null) {
+    return structural;
+  }
+  return [...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1] ?? m[2] ?? m[3]);
+}
+
 function checkToolContract(sourceFilePath, requiredTools) {
   const raw = fs.readFileSync(sourceFilePath, 'utf-8');
   // Parse the actual `name: "..."` tool declarations and match required tools
@@ -94,7 +139,7 @@ function checkToolContract(sourceFilePath, requiredTools) {
   // is brittle: it can be satisfied by an unrelated literal and does not model
   // "this tool is declared". Exact-set membership is precise and also feeds the
   // duplicate check below.
-  const declared = [...raw.matchAll(/name:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const declared = parseDeclaredToolNames(raw);
   const seen = new Set();
   const duplicates = [];
   for (const name of declared) {
@@ -187,6 +232,8 @@ if (require.main === module) {
 
 module.exports = {
   checkToolContract,
+  parseDeclaredToolNames,
+  declaredToolNamesFromBlocks,
   hashToolContract,
   runCli,
   parseRuntimeOverrides,

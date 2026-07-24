@@ -6,7 +6,11 @@ const { parseCliCommandNames, CLI_COMMANDS_SOURCE } = require('./check-claims-dr
 const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_CLAUDE_SOURCE = path.join(ROOT_DIR, 'CLAUDE.md');
 const DEFAULT_README_SOURCE = path.join(ROOT_DIR, 'README.md');
-const DEFAULT_CLI_COMMANDS_SOURCE = CLI_COMMANDS_SOURCE;
+// CLI_COMMANDS_SOURCE is repo-root-relative; anchor it to ROOT_DIR like the two
+// sources above. Left relative it resolved against the CALLER's cwd, so the gate
+// only found the registry when invoked from the repo root and reported the file
+// as missing from anywhere else.
+const DEFAULT_CLI_COMMANDS_SOURCE = path.join(ROOT_DIR, CLI_COMMANDS_SOURCE);
 const DEFAULT_REQUIRED_SECTIONS = [
   '## Purpose',
   '## Workspace Layout',

@@ -170,8 +170,8 @@ test('docs drift parser extracts tools from schemas and docs', () => {
     '- sync_a',
     '- sn_b',
     '- run_workspace_command',
-    '`sync_a`',
-    '`run_node_code`',
+    '- `sync_a`',
+    '- `run_node_code`',
   ].join('\n');
 
   const schemaNames = parseToolNamesFromSchemas(schemaRaw);
@@ -208,8 +208,11 @@ test('docs drift parser ignores ServiceNow table names mentioned in prose', () =
 test('docs drift parser does not match a tool name nested inside a longer identifier', () => {
   const schemaNames = ['sn_query'];
 
-  assert.deepEqual(parseToolNamesFromDocs('Reads the sn_query_table view.', schemaNames), []);
-  assert.deepEqual(parseToolNamesFromDocs('Calls `sn_query` first.', schemaNames), ['sn_query']);
+  // GATE-6 (REV-106): a tool name is only "documented" on a declaration line
+  // (bullet/table/heading), never in prose. The nested identifier must still be
+  // rejected there, while a standalone declaration mention is picked up.
+  assert.deepEqual(parseToolNamesFromDocs('- Reads the sn_query_table view.', schemaNames), []);
+  assert.deepEqual(parseToolNamesFromDocs('- Calls `sn_query` first.', schemaNames), ['sn_query']);
 });
 
 test('docs drift parser flags a stale doc entry whose family left the schema', () => {
@@ -472,8 +475,9 @@ function claudeDoc(commands, sections = CLAUDE_REQUIRED_SECTIONS) {
   );
 }
 
-// Shape mirrors the `command:` entries of packages/core/src/cliCommands.ts, whose
-// four-space indentation the registry parser keys on.
+// Shape mirrors the `command:` entries of packages/core/src/cliCommands.ts. The
+// indentation is incidental: the registry parser keys on the `command:` property
+// itself, not on the column it sits in.
 function cliCommandsSource(entries) {
   const body = entries
     .map((entry) => {

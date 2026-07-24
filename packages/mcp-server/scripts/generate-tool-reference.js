@@ -348,26 +348,45 @@ function parseToolBlock(block) {
   }
 }
 
+// Reads one metadata object literal. A block the mini-parser cannot resolve
+// (spread element, computed key, referenced constant) must be reported rather
+// than swallowed: silently falling back to `{}` drops real version/deprecation
+// metadata from the reference while every gate stays green.
+function parseMetadataBlock(raw, constName, errors) {
+  const block = extractAssignedBlock(raw, constName, '{');
+  if (!block) {
+    errors.push(
+      `${constName} object literal not found in tool schema source. The reference is ` +
+        'generated from that constant; a rename or removal silently drops all tool ' +
+        'lifecycle metadata.'
+    );
+    return null;
+  }
+  try {
+    const parsed = parseLiteral(block);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('block did not parse to an object literal');
+    }
+    return parsed;
+  } catch (error) {
+    errors.push(
+      `${constName} could not be parsed (${error.message}). This generator reads the ` +
+        'constant textually and cannot resolve spread elements, computed keys or ' +
+        'referenced constants; inline the metadata as a plain object literal.'
+    );
+    return null;
+  }
+}
+
 function parseMetadata(raw) {
+  const errors = [];
   const defaults = { version: '1.0.0', deprecated: false };
-  const defaultBlock = extractAssignedBlock(raw, 'DEFAULT_TOOL_METADATA', '{');
-  if (defaultBlock) {
-    try {
-      Object.assign(defaults, parseLiteral(defaultBlock));
-    } catch {
-      // Keep hardcoded defaults when the block cannot be parsed.
-    }
+  const parsedDefaults = parseMetadataBlock(raw, 'DEFAULT_TOOL_METADATA', errors);
+  if (parsedDefaults) {
+    Object.assign(defaults, parsedDefaults);
   }
-  let overrides = {};
-  const overridesBlock = extractAssignedBlock(raw, 'TOOL_METADATA_OVERRIDES', '{');
-  if (overridesBlock) {
-    try {
-      overrides = parseLiteral(overridesBlock) || {};
-    } catch {
-      overrides = {};
-    }
-  }
-  return { defaults, overrides };
+  const parsedOverrides = parseMetadataBlock(raw, 'TOOL_METADATA_OVERRIDES', errors);
+  return { defaults, overrides: parsedOverrides || {}, errors };
 }
 
 function hasOwn(obj, key) {
@@ -638,7 +657,7 @@ function renderMarkdown(toolDocs) {
 function generateToolReference(opts = {}) {
   const toolSource = opts.toolSource || DEFAULT_TOOL_SOURCE;
   const raw = fs.readFileSync(toolSource, 'utf-8');
-  const { defaults, overrides } = parseMetadata(raw);
+  const { defaults, overrides, errors: metadataErrors } = parseMetadata(raw);
   const blocks = extractToolBlocks(raw);
   const toolDocs = blocks.map((block) => {
     const { tool, parseFailed } = parseToolBlock(block);
@@ -650,6 +669,7 @@ function generateToolReference(opts = {}) {
     toolCount: toolDocs.length,
     toolNames: toolDocs.map((doc) => doc.name),
     degradedTools: toolDocs.filter((doc) => doc.parseFailed).map((doc) => doc.name),
+    metadataErrors,
   };
 }
 
@@ -678,6 +698,21 @@ function runCli(opts = {}) {
   const outputTarget = opts.outputTarget || DEFAULT_OUTPUT_TARGET;
 
   const result = generateToolReference(opts);
+  if (result.metadataErrors.length > 0) {
+    // The metadata blocks resolve every tool's version/deprecation lines. A block
+    // this reader cannot resolve used to degrade to `{}`, which renders a
+    // self-consistent but WRONG reference (deprecations vanish, overridden
+    // versions regress to the default) that `--check` then blesses. Fail in every
+    // mode, matching the degraded-tool and array-spread guards.
+    out.error(
+      `Tool reference ${checkMode ? 'check' : 'generation'} failed: tool lifecycle ` +
+        'metadata could not be read.'
+    );
+    for (const message of result.metadataErrors) {
+      out.error(`- ${message}`);
+    }
+    return 1;
+  }
   if (result.degradedTools.length > 0) {
     // A degraded block means a tool schema could not be parsed, so its Output
     // section and parameter types are silently dropped from the reference.

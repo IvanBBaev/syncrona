@@ -51,12 +51,19 @@ function extractScopeCodeFromIncludeName(include: string): string {
   return "";
 }
 
-function pushUniqueEdge(edges: GraphEdge[], edge: GraphEdge): void {
+// REV-90: back the edge dedup with a Set of edge keys so each insert is O(1)
+// (O(E) overall) instead of the previous `edges.some(...)` linear scan per push
+// (O(E^2) overall), which blocked the MCP event loop at thousands of records.
+// The key format is byte-for-byte the same tuple the old scan compared, so the
+// dedup result is identical. The Set is created per buildDependencyGraph call
+// and passed in, so dedup state never leaks across separate graph builds.
+function pushUniqueEdge(edges: GraphEdge[], edgeKeys: Set<string>, edge: GraphEdge): void {
   const key = `${edge.from}|${edge.to}|${edge.relation}|${edge.why}`;
-  const has = edges.some((e) => `${e.from}|${e.to}|${e.relation}|${e.why}` === key);
-  if (!has) {
-    edges.push(edge);
+  if (edgeKeys.has(key)) {
+    return;
   }
+  edgeKeys.add(key);
+  edges.push(edge);
 }
 
 function extractMetaRelationsFromRecord(rec: Record<string, unknown>): {
@@ -146,6 +153,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
 } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const edgeKeys = new Set<string>();
   const nodeIds = new Set<string>();
 
   const upsertNode = (node: GraphNode) => {
@@ -177,7 +185,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
       const tableWhy = metadataType === "ui_action"
         ? "UI Action targets table"
         : "Record targets table";
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: tableId,
         relation: tableRelation,
@@ -188,7 +196,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     if (updateSet) {
       const usId = `update_set:${updateSet}`;
       upsertNode({ id: usId, kind: "update_set", label: updateSet });
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: usId,
         relation: "contains",
@@ -200,7 +208,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     for (const t of refs.tables) {
       const tableId = `table:${t}`;
       upsertNode({ id: tableId, kind: "table", label: t });
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: tableId,
         relation: "reads",
@@ -211,7 +219,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
       if (tableScopeCode && ownScopeCode && tableScopeCode !== ownScopeCode) {
         const externalScopeId = `external_scope:${tableScopeCode}`;
         upsertNode({ id: externalScopeId, kind: "external_scope", label: tableScopeCode });
-        pushUniqueEdge(edges, {
+        pushUniqueEdge(edges, edgeKeys, {
           from: id,
           to: externalScopeId,
           relation: "cross_scope_dependency",
@@ -223,7 +231,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     for (const api of refs.apis) {
       const apiId = `api:${api}`;
       upsertNode({ id: apiId, kind: "api", label: api });
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: apiId,
         relation: "calls",
@@ -242,7 +250,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
         : metadataType === "ui_action"
           ? "UI Action script include invocation"
         : "Script include instantiation";
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: includeId,
         relation,
@@ -253,7 +261,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
       if (includeScopeCode && ownScopeCode && includeScopeCode !== ownScopeCode) {
         const externalScopeId = `external_scope:${includeScopeCode}`;
         upsertNode({ id: externalScopeId, kind: "external_scope", label: includeScopeCode });
-        pushUniqueEdge(edges, {
+        pushUniqueEdge(edges, edgeKeys, {
           from: id,
           to: externalScopeId,
           relation: "cross_scope_dependency",
@@ -265,7 +273,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
       if (isGlobalInclude) {
         const globalId = "external_scope:global";
         upsertNode({ id: globalId, kind: "external_scope", label: "global" });
-        pushUniqueEdge(edges, {
+        pushUniqueEdge(edges, edgeKeys, {
           from: id,
           to: globalId,
           relation: "global_dependency",
@@ -278,7 +286,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     for (const t of meta.tables) {
       const tableId = `table:${t}`;
       upsertNode({ id: tableId, kind: "table", label: t });
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: tableId,
         relation: "affects",
@@ -289,7 +297,7 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     for (const include of meta.includes) {
       const includeId = `script:${include}`;
       upsertNode({ id: includeId, kind: "script", label: include });
-      pushUniqueEdge(edges, {
+      pushUniqueEdge(edges, edgeKeys, {
         from: id,
         to: includeId,
         relation: "depends_on",

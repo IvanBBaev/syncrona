@@ -21,6 +21,36 @@ export function hashRecordContent(value: unknown): string {
   return createHash("sha1").update(String(value ?? "")).digest("hex");
 }
 
+function isSuccessStatus(status: number): boolean {
+  return status >= 200 && status <= 299;
+}
+
+// REV-101: a per-table fetch is capped at `limit` (default 200, max 500). When a
+// scope has more matching records than the cap, the ServiceNow table API returns
+// exactly `limit` rows and the rest are silently dropped, so a partial comparison
+// used to be reported as if it were the whole picture. A row count that reaches
+// the limit is the truncation signal; surface an explicit per-type notice so a
+// capped comparison is never mistaken for a complete one.
+export function buildTruncationNote(
+  table: string,
+  rowCountA: number,
+  rowCountB: number,
+  limit: number
+): string | null {
+  const truncatedA = rowCountA >= limit;
+  const truncatedB = rowCountB >= limit;
+  if (!truncatedA && !truncatedB) {
+    return null;
+  }
+  const sides = [truncatedA ? "profileA" : "", truncatedB ? "profileB" : ""]
+    .filter((side) => side.length > 0)
+    .join(" and ");
+  return (
+    `Result set for table '${table}' hit the ${limit}-row limit on ${sides}; ` +
+    `records beyond ${limit} were not fetched, so this comparison may be incomplete.`
+  );
+}
+
 export function diffInstanceRecords(
   rowsA: Record<string, unknown>[],
   rowsB: Record<string, unknown>[],
@@ -128,6 +158,8 @@ export async function handleCompareInstances(
   let onlyInACount = 0;
   let onlyInBCount = 0;
   let differentCount = 0;
+  let errorCount = 0;
+  const truncatedTables: string[] = [];
 
   for (const table of tables) {
     const config = SCRIPT_SEARCH_TABLES[table];
@@ -145,6 +177,7 @@ export async function handleCompareInstances(
     if (settledA.status === "rejected" || settledB.status === "rejected") {
       const reasonMessage = (reason: unknown): string =>
         reason instanceof Error ? reason.message : String(reason);
+      errorCount += 1;
       tableResults.push({
         table,
         statusA:
@@ -166,6 +199,25 @@ export async function handleCompareInstances(
     const resA = settledA.value;
     const resB = settledB.value;
 
+    // A fulfilled response carrying a non-2xx status has no `result` array, so
+    // toTableResultRows yields []. Diffing that would fabricate onlyInA/onlyInB
+    // entries for every record on the healthy side, so treat it exactly like a
+    // rejection instead of reporting a confident, wrong comparison.
+    if (!isSuccessStatus(resA.status) || !isSuccessStatus(resB.status)) {
+      errorCount += 1;
+      tableResults.push({
+        table,
+        statusA: resA.status,
+        statusB: resB.status,
+        onlyInA: [],
+        onlyInB: [],
+        different: [],
+        error:
+          "Comparison skipped for this table because an instance request returned a non-2xx status.",
+      });
+      continue;
+    }
+
     const diff = diffInstanceRecords(resA.rows, resB.rows, {
       nameField: config.nameField,
       contentField: config.scriptField,
@@ -175,26 +227,45 @@ export async function handleCompareInstances(
     onlyInBCount += diff.onlyInB.length;
     differentCount += diff.different.length;
 
-    tableResults.push({
+    // REV-101: flag (rather than silently swallow) a per-table cap so the caller
+    // knows this table's comparison may be based on a truncated result set.
+    const truncationNote = buildTruncationNote(table, resA.rows.length, resB.rows.length, limit);
+    const tableResult: Record<string, unknown> = {
       table,
       statusA: resA.status,
       statusB: resB.status,
       onlyInA: diff.onlyInA,
       onlyInB: diff.onlyInB,
       different: diff.different,
-    });
+      truncated: truncationNote !== null,
+    };
+    if (truncationNote) {
+      tableResult.truncationNote = truncationNote;
+      truncatedTables.push(table);
+    }
+    tableResults.push(tableResult);
   }
 
-  return textResponse({
-    profileA,
-    profileB,
-    scope,
-    tablesCompared: tables,
-    summary: {
-      onlyInA: onlyInACount,
-      onlyInB: onlyInBCount,
-      different: differentCount,
+  return textResponse(
+    {
+      profileA,
+      profileB,
+      scope,
+      tablesCompared: tables,
+      summary: {
+        onlyInA: onlyInACount,
+        onlyInB: onlyInBCount,
+        different: differentCount,
+        errors: errorCount,
+        // REV-101: complete only when there were no errors AND no table was capped
+        // by the row limit; truncated tables are listed so the gap is user-visible.
+        complete: errorCount === 0 && truncatedTables.length === 0,
+        truncated: truncatedTables.length > 0,
+        truncatedTables,
+        limit,
+      },
+      tables: tableResults,
     },
-    tables: tableResults,
-  });
+    errorCount > 0
+  );
 }

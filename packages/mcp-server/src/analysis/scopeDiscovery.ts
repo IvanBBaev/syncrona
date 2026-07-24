@@ -167,6 +167,19 @@ export function toGraphFromUnknown(value: unknown): {
   };
 }
 
+// REV-101: every scoped metadata query below caps at this row limit. A result
+// that reaches the cap has almost certainly been truncated by ServiceNow, so
+// treat "row count reached the limit" as the truncation signal and surface it
+// per table instead of silently discarding the overflow.
+export const SCOPE_DISCOVERY_ROW_LIMIT = 500;
+
+export function isTableResultTruncated(
+  rowCount: number,
+  limit: number = SCOPE_DISCOVERY_ROW_LIMIT
+): boolean {
+  return rowCount >= limit;
+}
+
 async function discoverServiceNowScopeKnowledge(
   scope: string,
   timeoutMs: number
@@ -178,6 +191,7 @@ async function discoverServiceNowScopeKnowledge(
     hidden: number;
     inferred: number;
   };
+  truncations: Array<{ table: string; limit: number }>;
 }> {
   const normalizedScope = scope.trim();
   if (!normalizedScope || normalizedScope === "unknown_scope") {
@@ -189,6 +203,7 @@ async function discoverServiceNowScopeKnowledge(
         hidden: 0,
         inferred: 0,
       },
+      truncations: [],
     };
   }
 
@@ -208,6 +223,9 @@ async function discoverServiceNowScopeKnowledge(
   const graphRecords: Array<Record<string, unknown>> = [];
   const directNodes = new Map<string, ScopeKnowledgeGraph["nodes"][number]>();
   const directEdges: ScopeKnowledgeGraph["edges"] = [];
+  // REV-101: records every table whose fetch reached the row cap so callers can
+  // report an explicit, per-type truncation notice instead of a silent partial.
+  const truncations: Array<{ table: string; limit: number }> = [];
 
   const safeTableGet = async (
     table: string,
@@ -215,15 +233,19 @@ async function discoverServiceNowScopeKnowledge(
     query: string
   ): Promise<Array<Record<string, unknown>>> => {
     try {
-      return await tableGet(
+      const rows = await tableGet(
         table,
         {
           query,
           fields,
-          limit: 500,
+          limit: SCOPE_DISCOVERY_ROW_LIMIT,
         },
         timeoutMs
       );
+      if (isTableResultTruncated(rows.length)) {
+        truncations.push({ table, limit: SCOPE_DISCOVERY_ROW_LIMIT });
+      }
+      return rows;
     } catch (_) {
       return [];
     }
@@ -442,6 +464,7 @@ async function discoverServiceNowScopeKnowledge(
     entities,
     graph: graphWithServiceNowRelations,
     relationEvidence,
+    truncations,
   };
 }
 
@@ -719,17 +742,20 @@ export async function hydrateScopeKnowledgeInputs(
   let serviceNowEntities: Array<Record<string, unknown>> = [];
   let serviceNowGraph: ScopeKnowledgeGraph = { nodes: [], edges: [] };
   let serviceNowRelationEvidence = { explicit: 0, hidden: 0, inferred: 0 };
+  let serviceNowTruncations: Array<{ table: string; limit: number }> = [];
 
   try {
     const serviceNow = await discoverServiceNowScopeKnowledge(scope, timeoutMs);
     serviceNowEntities = serviceNow.entities;
     serviceNowGraph = serviceNow.graph;
     serviceNowRelationEvidence = serviceNow.relationEvidence;
+    serviceNowTruncations = serviceNow.truncations;
     serviceNowDiscovered = serviceNow.entities.length > 0 || serviceNow.graph.edges.length > 0;
   } catch (_) {
     serviceNowEntities = [];
     serviceNowGraph = { nodes: [], edges: [] };
     serviceNowRelationEvidence = { explicit: 0, hidden: 0, inferred: 0 };
+    serviceNowTruncations = [];
   }
 
   const mergedEntities = new Map<string, Record<string, unknown>>();
@@ -758,6 +784,10 @@ export async function hydrateScopeKnowledgeInputs(
       serviceNowEntityCount: serviceNowEntities.length,
       serviceNowDependencyCount: serviceNowGraph.edges.length,
       serviceNowRelationEvidence,
+      // REV-101: surface any capped ServiceNow fetches so the generated knowledge
+      // is not silently treated as a complete view of the scope.
+      serviceNowTruncated: serviceNowTruncations.length > 0,
+      serviceNowTruncations,
       localEntityCount: discovered.entities.length,
       localDependencyCount: discovered.graph.edges.length,
     },

@@ -15,6 +15,7 @@
 // site can no longer drift from machine-verifiable facts.
 const fs = require('node:fs');
 const path = require('node:path');
+const { extractToolBlocks } = require('./generate-tool-reference.js');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');
 
@@ -55,12 +56,34 @@ const AUTH_METHOD_FLOOR = [
 ];
 
 const VERSION_BADGE_REGEX = /<span class="version">\s*v(\d+\.\d+\.\d+)/g;
-// Mirrors the tool-name parsing used by check-docs-drift.js.
-const TOOL_NAME_REGEX = /name:\s*"([^"]+)"/g;
-const AUTH_METHOD_VALUE_REGEX = /value:\s*"([a-z0-9-]+)"/g;
-// First quoted token of a `    command: ` registry line, whether the value is a
-// bare string or an array literal whose head is the primary name.
-const CLI_COMMAND_NAME_REGEX = /^ {4}command:\s*(?:\[\s*)?"([^"]+)"/gm;
+// Mirrors the tool-name parsing used by check-docs-drift.js. Every quote style
+// the compiler accepts for a string literal must be accepted here too: keying on
+// double quotes alone makes a `name: 'x'` declaration invisible to the gate, and
+// nothing in this repo enforces a quote style.
+const TOOL_NAME_REGEX = /name:\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g;
+const AUTH_METHOD_VALUE_REGEX = /value:\s*(?:"([a-z0-9-]+)"|'([a-z0-9-]+)'|`([a-z0-9-]+)`)/g;
+// First quoted token of a `command:` registry property, whether the value is a
+// bare string or an array literal whose head is the primary name. Indentation is
+// deliberately NOT part of the pattern — a registry entry nested one level deeper
+// (or reformatted) is still a command, and anchoring on a fixed column made such
+// an entry invisible to both the count and the name set. The leading boundary
+// keeps `subcommand:`-style properties out, and requiring a quote right after the
+// colon keeps the `command: string | string[]` type declaration out.
+const CLI_COMMAND_NAME_REGEX = /(?:^|[\s,{])command:\s*(?:\[\s*)?(?:"([^"]+)"|'([^']+)')/gm;
+// Counts `command:` registry PROPERTIES independently of whether the name parser
+// can read their value: it matches any command property whose value opens a
+// literal — an array (`[`), a string (`"`/`'`), or a template (`` ` ``) — while the
+// leading boundary and the required literal opener keep `subcommand:` and the
+// `command: string | string[]` type declaration out, exactly like the name regex.
+// It deliberately accepts the backtick form the name regex does NOT, so a template
+// command value (or a duplicate registration collapsed by the name set's dedup)
+// makes this entry count exceed the parsed-name count — the drift the cross-check
+// below surfaces instead of silently dropping the entry.
+const CLI_COMMAND_ENTRY_REGEX = /(?:^|[\s,{])command:\s*(?:\[|"|'|`)/gm;
+
+function firstCapture(match) {
+  return match[1] ?? match[2] ?? match[3];
+}
 
 // Each entry: a literal marker that MUST appear in every listed file (paths are
 // repo-root-relative).
@@ -86,14 +109,7 @@ function readFileOrNull(rootDir, relPath) {
   return fs.readFileSync(abs, 'utf-8');
 }
 
-// CLI command count = registry entries in cliCommands.ts. Each registered
-// command is declared exactly one per line as `    command: ...` (4-space
-// indent), so a plain line count is the command count.
-function countCliCommands(raw) {
-  return raw.split(/\r?\n/).filter((line) => line.startsWith('    command: ')).length;
-}
-
-// Primary command NAMES from the same registry lines countCliCommands counts.
+// Primary command NAMES from the `command:` registry entries of cliCommands.ts.
 // A `command` value is either a bare string ("download <scope>") or an array
 // whose first element is the primary name and the rest are aliases
 // (["dev", "d"]); either way the first quoted token holds the name, and any
@@ -102,14 +118,66 @@ function countCliCommands(raw) {
 // rather than only against each other.
 function parseCliCommandNames(raw) {
   const names = [...raw.matchAll(CLI_COMMAND_NAME_REGEX)]
-    .map((match) => match[1].trim().split(/\s+/)[0])
+    .map((match) => firstCapture(match).trim().split(/\s+/)[0])
     .filter((name) => name.length > 0);
   return [...new Set(names)].sort();
 }
 
+// CLI command count = distinct registry entries in cliCommands.ts. Derived from
+// the same parse as the name set so the two can never disagree: a line count
+// keyed on layout counted entries the name parser did not recognise (and vice
+// versa), which let a reformatted registry drift past this gate.
+function countCliCommands(raw) {
+  return parseCliCommandNames(raw).length;
+}
+
+// Structural count of `command:` registry properties, read independently of the
+// name parser (see CLI_COMMAND_ENTRY_REGEX).
+function countCliCommandEntries(raw) {
+  return [...raw.matchAll(CLI_COMMAND_ENTRY_REGEX)].length;
+}
+
+// Cross-check: the number of structural command entries must equal the number of
+// distinct parsed names. They agree for a well-formed registry; they diverge when
+// a duplicate command name is registered (the name set's dedup shrinks it) or a
+// command's value is a form the name parser cannot read (e.g. a template literal),
+// either of which would otherwise let a registry entry vanish from the "NN CLI
+// commands" claim unnoticed. Surfacing the divergence turns a silent drop into a
+// gate failure.
+function crossCheckCliCommands(raw) {
+  const entries = countCliCommandEntries(raw);
+  const names = parseCliCommandNames(raw).length;
+  return { ok: entries === names, entries, names };
+}
+
+// Structural read of the schema source: scope to the `BASE_MCP_TOOLS` array and
+// take each tool object's own first `name:` literal, so the "NN MCP tools" claim
+// can never be inflated by a `name: "..."` in a comment, a description string, or
+// an object literal outside the array. Returns null when the array is absent (a
+// bare `name:`-only fixture) so the caller falls back to the whole-file scan.
+function declaredToolNamesFromBlocks(raw) {
+  let blocks;
+  try {
+    blocks = extractToolBlocks(raw);
+  } catch {
+    return null;
+  }
+  const names = [];
+  for (const block of blocks) {
+    const match = new RegExp(TOOL_NAME_REGEX.source).exec(block);
+    if (match) {
+      names.push(firstCapture(match));
+    }
+  }
+  return names;
+}
+
 // Unique declared MCP tool names (same parsing approach as check-docs-drift.js).
 function parseToolNamesFromSchemas(raw) {
-  return [...new Set([...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1]))];
+  const structural = declaredToolNamesFromBlocks(raw);
+  const names =
+    structural !== null ? structural : [...raw.matchAll(TOOL_NAME_REGEX)].map(firstCapture);
+  return [...new Set(names)];
 }
 
 // Auth-method identifiers the CLI accepts, parsed from the
@@ -120,7 +188,7 @@ function parseAuthMethods(raw) {
   const start = raw.indexOf('LOGIN_METHOD_CHOICES');
   const end = start === -1 ? -1 : raw.indexOf('];', start);
   const block = start === -1 || end === -1 ? '' : raw.slice(start, end);
-  const parsed = [...block.matchAll(AUTH_METHOD_VALUE_REGEX)].map((m) => m[1]);
+  const parsed = [...block.matchAll(AUTH_METHOD_VALUE_REGEX)].map(firstCapture);
   return [...new Set([...parsed, ...AUTH_METHOD_FLOOR])].sort();
 }
 
@@ -270,6 +338,19 @@ function validateClaimsDrift(opts = {}) {
     if (cliRaw === null) {
       errors.push(`Missing claims source: ${CLI_COMMANDS_SOURCE}`);
     } else {
+      // Internal consistency of the registry BEFORE it backs a public claim: a
+      // structural entry count that outruns the distinct-name count means an entry
+      // was dropped (unreadable value) or duplicated, so the claimed number would
+      // be wrong at the source.
+      const crossCheck = crossCheckCliCommands(cliRaw);
+      if (!crossCheck.ok) {
+        errors.push(
+          `CLI command registry drift in ${CLI_COMMANDS_SOURCE}: ` +
+            `${crossCheck.entries} command entr${crossCheck.entries === 1 ? 'y' : 'ies'} declared ` +
+            `but ${crossCheck.names} distinct name${crossCheck.names === 1 ? '' : 's'} parsed ` +
+            `(a duplicate registration or a command value the name parser cannot read).`
+        );
+      }
       numericClaims.push({
         label: 'CLI commands',
         expected: countCliCommands(cliRaw),
@@ -454,8 +535,11 @@ module.exports = {
   runCli,
   parseRuntimeOverrides,
   countCliCommands,
+  countCliCommandEntries,
+  crossCheckCliCommands,
   parseCliCommandNames,
   parseToolNamesFromSchemas,
+  declaredToolNamesFromBlocks,
   parseAuthMethods,
   extractAuthSection,
   extractNumericClaims,

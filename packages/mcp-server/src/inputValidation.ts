@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Zod 4 migration (DEP1): looseObject replaces .passthrough(); the sys_id union carries its own error.
 import { z } from "zod";
 
 export const TABLE_NAME_REGEX = /^[a-z][a-z0-9_]*$/;
@@ -13,79 +14,84 @@ const sysIdSchema = z
   .string()
   .trim()
   .regex(SYS_ID_REGEX, "must be a 32-character hexadecimal sys_id");
+// The tool schemas advertise `default: ""` for the optional sys_id fields, so a
+// client that materializes its own declared defaults sends "". Treat that as
+// "not supplied" — matching validateTopLevelIdentifiers, which already skips
+// empty values — instead of rejecting a schema-conformant call with a bogus
+// sys_id format complaint. Handlers resolve an empty sys_id by name.
+// Zod 4 reports a failed union as a generic "Invalid input" instead of zod 3's
+// surfacing of the matching-type branch's check message, so the union carries
+// the sys_id message itself to keep the surfaced reason informative.
+const optionalSysIdSchema = z
+  .union([z.literal(""), sysIdSchema], {
+    error: "must be a 32-character hexadecimal sys_id",
+  })
+  .optional();
 
 const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   sn_query_records: z
-    .object({
+    .looseObject({
       table: tableSchema,
       query: z.string().optional(),
       fields: z.array(z.string()).optional(),
       limit: z.number().int().min(1).max(500).optional(),
       analyzeField: z.string().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sn_create_record: z
-    .object({
+    .looseObject({
       table: tableSchema,
       record: z.record(z.string(), z.unknown()).optional(),
       confirmDestructive: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sn_get_metadata_record: z
-    .object({
+    .looseObject({
       sysId: sysIdSchema,
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sn_update_metadata_record: z
-    .object({
+    .looseObject({
       sysId: sysIdSchema,
       updates: z.record(z.string(), z.unknown()).optional(),
       confirmDestructive: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_set_update_set: z
-    .object({
-      updateSetSysId: sysIdSchema.optional(),
+    .looseObject({
+      updateSetSysId: optionalSysIdSchema,
       updateSetName: z.string().optional(),
       createIfMissing: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_prepare_session: z
-    .object({
-      expectedUpdateSetSysId: sysIdSchema.optional(),
+    .looseObject({
+      expectedUpdateSetSysId: optionalSysIdSchema,
       expectedScope: z.string().optional(),
       expectedUpdateSetName: z.string().optional(),
       createUpdateSetIfMissing: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_preflight_check: z
-    .object({
-      expectedUpdateSetSysId: sysIdSchema.optional(),
+    .looseObject({
+      expectedUpdateSetSysId: optionalSysIdSchema,
       expectedScope: z.string().optional(),
       expectedUpdateSetName: z.string().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   // Every tool listed in safetyPolicy.MUTATING_TOOLS carries a schema so
   // malformed mutating calls are rejected before any side effect.
   sync_set_scope: z
-    .object({
+    .looseObject({
       scope: z.string().trim().min(1),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_push: z
-    .object({
+    .looseObject({
       target: z.string().optional(),
       diff: z.string().optional(),
       scopeSwap: z.boolean().optional(),
@@ -94,19 +100,17 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sn_execute_background_script: z
-    .object({
+    .looseObject({
       script: z.string().min(1),
       endpointPath: z.string().optional(),
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_create_script_include: z
-    .object({
+    .looseObject({
       name: z.string().trim().min(1),
       apiName: z.string().optional(),
       script: z.string().optional(),
@@ -116,10 +120,9 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_create_script_include_and_sync: z
-    .object({
+    .looseObject({
       name: z.string().trim().min(1),
       apiName: z.string().optional(),
       script: z.string().optional(),
@@ -128,10 +131,9 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_run_atf_tests: z
-    .object({
+    .looseObject({
       scope: z.string().trim().min(1),
       suiteId: z.string().optional(),
       testId: z.string().optional(),
@@ -139,19 +141,17 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sn_autonomous_remediation_workflow: z
-    .object({
+    .looseObject({
       script: z.string().min(1),
       apply: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       confirmDestructive: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
   sync_unified_change_workflow: z
-    .object({
+    .looseObject({
       task: z.string().optional(),
       script: z.string().optional(),
       taskType: z.enum(["script", "metadata", "hybrid"]).optional(),
@@ -168,8 +168,7 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       apply: z.boolean().optional(),
       confirmDestructive: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
-    })
-    .passthrough(),
+    }),
 };
 
 const topLevelIdentifierSchemas: Record<string, z.ZodType<string>> = {
