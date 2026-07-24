@@ -15,14 +15,19 @@
 //   - packages that declare `files: ["dist"]` actually ship compiled output,
 //   - no forbidden files leak in (src/, test dirs, *.test.*, .env*, tsconfig,
 //     jest.config).
-// Finally it packs `core` for real, unpacks the tarball against the already
-// resolved dependency tree, and smoke-runs the published CLI (`--version`).
+// Finally, for every publishable bin (see SMOKE_TARGETS) it packs the package
+// FOR REAL, unpacks it, supplies each `@syncrona/*` runtime dependency from ITS
+// OWN packed tarball (never the unpublished workspace symlink), and smoke-runs
+// the published entrypoint — the CLI with `--version`, the MCP server as a
+// require-load (its bin opens a stdio transport in main() and would hang if
+// executed). Resolving siblings from their tarballs proves a published package
+// can find its published dependencies, which a whole-node_modules symlink hides.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, mkdtempSync, mkdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packagesDir = path.join(repoRoot, "packages");
@@ -130,71 +135,175 @@ function checkPackage(entry) {
   return { name: entry.name, skipped: false, failures };
 }
 
-function smokeTestCore() {
-  const coreDir = dirByName.get("syncrona");
-  const pkg = JSON.parse(readFileSync(path.join(coreDir, "package.json"), "utf8"));
+// REV-107: every publishable bin is smoke-tested, not just the core CLI. Each
+// target names a workspace package and how to exercise its bin:
+//   - "exec":    run `node <bin> <args>` and (if expectVersion) assert stdout
+//                carries the package version.
+//   - "require": `node -e "require('<bin>')"` — load-only. The MCP server's bin
+//                calls main() which connects a StdioServerTransport and blocks
+//                forever, so it must never be executed; a clean require proves the
+//                published entrypoint resolves its packed siblings and initialises.
+export const SMOKE_TARGETS = [
+  {
+    name: "syncrona",
+    mode: "exec",
+    args: ["--version"],
+    expectVersion: true,
+    description: "syncrona CLI runs from its packed tarball and prints --version",
+  },
+  {
+    name: "@syncrona/mcp-server",
+    mode: "require",
+    args: [],
+    expectVersion: false,
+    description: "@syncrona/mcp-server bin require-loads from its packed tarball with packed siblings",
+  },
+];
+
+/** The `@syncrona/*` runtime dependencies of a package (its workspace siblings). */
+export function syncronaRuntimeDeps(pkg) {
+  return Object.keys(pkg.dependencies || {}).filter((dep) => dep.startsWith("@syncrona/"));
+}
+
+/** `npm pack` one workspace into `destDir`; return the absolute tarball path. */
+function packWorkspace(name, destDir) {
+  const out = execFileSync(
+    "npm",
+    ["pack", "--workspace", name, "--pack-destination", destDir, "--json"],
+    { cwd: repoRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] },
+  );
+  return path.join(destDir, JSON.parse(out)[0].filename);
+}
+
+/** Extract a tarball's `package/` dir into a fresh staging dir; return its path. */
+function extractPackage(tarball, tmp) {
+  const stage = mkdtempSync(path.join(tmp, "stage-"));
+  execFileSync("tar", ["-xzf", tarball, "-C", stage]);
+  return path.join(stage, "package");
+}
+
+/**
+ * Pack `target`, unpack it, give it a private node_modules that borrows every
+ * THIRD-PARTY dependency from the workspace but supplies each `@syncrona/*`
+ * sibling from ITS OWN packed tarball, then smoke-run the packed bin. Returns a
+ * failure string, or null on success.
+ */
+function smokeTestTarget(target) {
+  const dir = dirByName.get(target.name);
+  if (!dir) return `${target.name}: no workspace directory found`;
+  const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
   const tmp = mkdtempSync(path.join(tmpdir(), "syncrona-pack-"));
   try {
-    const out = execFileSync(
-      "npm",
-      ["pack", "--workspace", "syncrona", "--pack-destination", tmp, "--json"],
-      { cwd: repoRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"] }
-    );
-    const meta = JSON.parse(out);
-    const filename = meta[0].filename;
+    const pkgRoot = extractPackage(packWorkspace(target.name, tmp), tmp);
 
-    execFileSync("tar", ["-xzf", path.join(tmp, filename), "-C", tmp]);
-    const pkgRoot = path.join(tmp, "package");
+    // Private node_modules: symlink every workspace-resolved dependency EXCEPT
+    // the `@syncrona` scope — those unpublished workspace links are exactly what
+    // a published install would not have, so the packed siblings must stand in.
+    // npm nests a dependency under the workspace package instead of hoisting it
+    // when the root already holds a conflicting version (core's inquirer 14 and
+    // chalk 5 sit next to a chalk 4 hoisted for the tooling), so the package's
+    // own node_modules is linked first and wins, exactly as Node resolves it in
+    // the workspace. Scope directories are merged member-by-member so a scope
+    // split across both levels stays complete.
+    const nodeModules = path.join(pkgRoot, "node_modules");
+    mkdirSync(nodeModules, { recursive: true });
+    for (const source of [path.join(dir, "node_modules"), path.join(repoRoot, "node_modules")]) {
+      if (!existsSync(source)) continue;
+      for (const entry of readdirSync(source, { withFileTypes: true })) {
+        if (entry.name === "@syncrona") continue;
+        if (entry.name.startsWith("@") && entry.isDirectory()) {
+          const mergedScope = path.join(nodeModules, entry.name);
+          mkdirSync(mergedScope, { recursive: true });
+          for (const member of readdirSync(path.join(source, entry.name), { withFileTypes: true })) {
+            const dest = path.join(mergedScope, member.name);
+            if (existsSync(dest)) continue;
+            symlinkSync(
+              path.join(source, entry.name, member.name),
+              dest,
+              member.isDirectory() ? "dir" : "file",
+            );
+          }
+          continue;
+        }
+        const dest = path.join(nodeModules, entry.name);
+        if (existsSync(dest)) continue;
+        symlinkSync(
+          path.join(source, entry.name),
+          dest,
+          entry.isDirectory() ? "dir" : "file",
+        );
+      }
+    }
 
-    // Borrow the workspace's already-resolved dependency tree so the packed CLI
-    // can require its (unpublished) sibling packages without a registry.
-    symlinkSync(path.join(repoRoot, "node_modules"), path.join(pkgRoot, "node_modules"), "dir");
+    // Supply each runtime @syncrona/* sibling from its own freshly-packed tarball.
+    const scopeDir = path.join(nodeModules, "@syncrona");
+    mkdirSync(scopeDir, { recursive: true });
+    for (const sib of syncronaRuntimeDeps(pkg)) {
+      const sibRoot = extractPackage(packWorkspace(sib, tmp), tmp);
+      renameSync(sibRoot, path.join(scopeDir, sib.slice("@syncrona/".length)));
+    }
 
-    const binRel = norm(typeof pkg.bin === "string" ? pkg.bin : pkg.bin["syncrona"]);
-    const stdout = execFileSync("node", [path.join(pkgRoot, binRel), "--version"], {
-      cwd: pkgRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    if (!stdout.includes(pkg.version)) {
-      return `CLI --version did not print version ${pkg.version} (got: ${stdout.trim()})`;
+    const binRel = norm(typeof pkg.bin === "string" ? pkg.bin : Object.values(pkg.bin)[0]);
+    const binAbs = path.join(pkgRoot, binRel);
+    const runOpts = { cwd: pkgRoot, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] };
+
+    if (target.mode === "require") {
+      // Load-only: executing the bin would block on the stdio transport.
+      execFileSync("node", ["-e", `require(${JSON.stringify(binAbs)});process.exit(0);`], runOpts);
+      return null;
+    }
+
+    const stdout = execFileSync("node", [binAbs, ...target.args], runOpts);
+    if (target.expectVersion && !stdout.includes(pkg.version)) {
+      return `${target.name}: bin did not print version ${pkg.version} (got: ${stdout.trim()})`;
     }
     return null;
   } catch (err) {
-    return `CLI smoke failed: ${err instanceof Error ? err.message : String(err)}`;
+    return `${target.name}: smoke failed: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 }
 
-console.log("Verifying tarball contents (npm pack --dry-run --workspaces)...\n");
-const report = packDryRun();
-const results = report.map(checkPackage);
+function main() {
+  console.log("Verifying tarball contents (npm pack --dry-run --workspaces)...\n");
+  const report = packDryRun();
+  const results = report.map(checkPackage);
 
-let failed = false;
-for (const r of results) {
-  if (r.skipped) {
-    console.log(`  -  ${r.name} (private, skipped)`);
-  } else if (r.failures.length === 0) {
-    console.log(`  ✓  ${r.name}`);
-  } else {
-    failed = true;
-    console.log(`  ✗  ${r.name}`);
-    for (const f of r.failures) console.log(`       - ${f}`);
+  let failed = false;
+  for (const r of results) {
+    if (r.skipped) {
+      console.log(`  -  ${r.name} (private, skipped)`);
+    } else if (r.failures.length === 0) {
+      console.log(`  ✓  ${r.name}`);
+    } else {
+      failed = true;
+      console.log(`  ✗  ${r.name}`);
+      for (const f of r.failures) console.log(`       - ${f}`);
+    }
   }
+
+  console.log("\nBin smoke (pack each bin + its packed @syncrona siblings, then run)...");
+  for (const target of SMOKE_TARGETS) {
+    const smoke = smokeTestTarget(target);
+    if (smoke) {
+      failed = true;
+      console.log(`  ✗  ${smoke}`);
+    } else {
+      console.log(`  ✓  ${target.description}`);
+    }
+  }
+
+  if (failed) {
+    console.error("\nTarball-content gate FAILED.");
+    process.exit(1);
+  }
+  console.log("\nTarball-content gate passed.");
 }
 
-console.log("\nCLI smoke (pack core, unpack, run --version)...");
-const smoke = smokeTestCore();
-if (smoke) {
-  failed = true;
-  console.log(`  ✗  ${smoke}`);
-} else {
-  console.log("  ✓  syncrona CLI runs from packed tarball");
-}
+// Only run when invoked as a script; importing (e.g. from the regression test)
+// must not trigger `npm pack`, which runs each package's prepack build.
+const isMain = import.meta.url === pathToFileURL(process.argv[1] || "").href;
+if (isMain) main();
 
-if (failed) {
-  console.error("\nTarball-content gate FAILED.");
-  process.exit(1);
-}
-console.log("\nTarball-content gate passed.");
+export { norm, forbiddenReason, checkPackage, smokeTestTarget, main };
