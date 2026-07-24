@@ -30,20 +30,26 @@ const VALID_SOURCE = 'const greeting: string = "hello";\nconst n: number = greet
 test('type-checks and transpiles TypeScript content', async (t) => {
   const context = writeTs(t, 'valid.ts', VALID_SOURCE);
   const result = await run(context, VALID_SOURCE, {});
+  // The plugin pins target ES2021 (the ECMAScript level ServiceNow supports)
+  // and suppresses the "use strict" prologue TypeScript 6 started emitting by
+  // default, so `const` survives and the output starts with the code itself.
   assert.deepEqual(result, {
     success: true,
-    output: 'var greeting = "hello";\nvar n = greeting.length;\n',
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
   });
 });
 
 test('honors compilerOptions from sync.config.js options', async (t) => {
-  const context = writeTs(t, 'valid.ts', VALID_SOURCE);
-  const result = await run(context, VALID_SOURCE, {
-    compilerOptions: { target: 99 /* ts.ScriptTarget.ESNext */ },
+  const source = 'const x: number = 2 ** 3;\n';
+  const context = writeTs(t, 'valid.ts', source);
+  const result = await run(context, source, {
+    compilerOptions: { target: 2 /* ts.ScriptTarget.ES2015 */ },
   });
+  // The pinned ES2021 default would keep `**` as-is; only the ES2015 target
+  // handed in through the plugin options downlevels it to Math.pow.
   assert.deepEqual(result, {
     success: true,
-    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
+    output: 'const x = Math.pow(2, 3);\n',
   });
 });
 
@@ -51,6 +57,56 @@ test('returns the content untouched when transpile is disabled', async (t) => {
   const context = writeTs(t, 'valid.ts', VALID_SOURCE);
   const result = await run(context, VALID_SOURCE, { transpile: false });
   assert.deepEqual(result, { success: true, output: VALID_SOURCE });
+});
+
+test('runs when the plugin rule declares no options at all', async (t) => {
+  const context = writeTs(t, 'valid.ts', VALID_SOURCE);
+  // `syncrona config add-plugin` can emit a rule with no `options` key, and
+  // sync.config.js is never typechecked, so PluginManager forwards undefined
+  // verbatim. Probing `transpile` on it then threw a TypeError.
+  const result = await run(context, VALID_SOURCE);
+  assert.deepEqual(result, {
+    success: true,
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
+  });
+});
+
+test('does not contradict a tsconfig.json that sets module NodeNext', async (t) => {
+  const context = writeTs(t, 'sample.ts', VALID_SOURCE);
+  // `module: "NodeNext"` implies `moduleResolution: NodeNext`. Forcing NodeJs on
+  // top of it raises TS5109 -- an error about a combination this tsconfig never
+  // contained, making a perfectly valid project unbuildable.
+  fs.writeFileSync(
+    path.join(path.dirname(context.filePath), 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { module: 'NodeNext' } })
+  );
+  const result = await run(context, VALID_SOURCE);
+  assert.equal(result.success, true);
+  assert.match(result.output, /greeting = "hello"/);
+});
+
+test('still resolves node_modules when the tsconfig implies Classic resolution', async (t) => {
+  const source = 'import { greet } from "mylib";\nconst out: string = greet();\n';
+  const context = writeTs(t, 'sample.ts', source);
+  const dir = path.dirname(context.filePath);
+  // `module: "ESNext"` with no explicit moduleResolution defaults to Classic,
+  // which cannot see node_modules -- the reason the plugin overrides it at all.
+  // The override must stay in place for this case.
+  fs.writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { target: 'ES2017', module: 'ESNext' } })
+  );
+  fs.mkdirSync(path.join(dir, 'node_modules', 'mylib'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'node_modules', 'mylib', 'package.json'),
+    JSON.stringify({ name: 'mylib', version: '1.0.0', types: 'index.d.ts' })
+  );
+  fs.writeFileSync(
+    path.join(dir, 'node_modules', 'mylib', 'index.d.ts'),
+    'export declare function greet(): string;\n'
+  );
+  const result = await run(context, source, {});
+  assert.equal(result.success, true);
 });
 
 test('throws a diagnostic summary on type errors', async (t) => {
@@ -73,7 +129,7 @@ test('type-checks the piped content, not the stale bytes on disk', async (t) => 
   const result = await run(context, VALID_SOURCE, {});
   assert.deepEqual(result, {
     success: true,
-    output: 'var greeting = "hello";\nvar n = greeting.length;\n',
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
   });
 });
 
@@ -119,6 +175,6 @@ test('does not crash on a tsconfig.json that has no compilerOptions key', async 
   const result = await run(context, VALID_SOURCE, {});
   assert.deepEqual(result, {
     success: true,
-    output: 'var greeting = "hello";\nvar n = greeting.length;\n',
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
   });
 });

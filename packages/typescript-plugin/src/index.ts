@@ -11,7 +11,9 @@ const run: Sync.PluginFunc = async function(
     compilerOptions?: ts.CompilerOptions;
     transpile?: boolean;
   }
-  const pluginOpts = options as TSPluginOptions;
+  // A plugin rule may be declared without an `options` key and sync.config.js is
+  // never typechecked, so the argument really is undefined at runtime.
+  const pluginOpts: TSPluginOptions = (options as TSPluginOptions) ?? {};
   //try to load tsconifg.json
   let output = "";
   const configPath = ts.findConfigFile(
@@ -47,7 +49,46 @@ const run: Sync.PluginFunc = async function(
     compilerOptions: converted.options
   };
   tsConfig.compilerOptions.rootDir = undefined;
-  tsConfig.compilerOptions.moduleResolution = ts.ModuleResolutionKind.NodeJs;
+  // TypeScript 6 changed the default emit: the default target is now the
+  // newest ECMAScript level, target ES5 is a deprecation error (removed in
+  // TS 7), and `alwaysStrict` is on even without `strict`, prepending a
+  // "use strict" prologue to script output. Pin an explicit default target
+  // instead of riding those shifting defaults: ES2021 — the ECMAScript level
+  // current ServiceNow releases support — keeps the output deterministic
+  // across compiler majors. A tsconfig.json or plugin-options target still
+  // wins.
+  if (tsConfig.compilerOptions.target === undefined) {
+    tsConfig.compilerOptions.target = ts.ScriptTarget.ES2021;
+  }
+  // Whether the tsconfig left strictness to the defaults — decided before the
+  // plugin options merge below so the emit-time prologue pin can honor both.
+  const strictnessIsImplied =
+    tsConfig.compilerOptions.alwaysStrict === undefined &&
+    tsConfig.compilerOptions.strict === undefined;
+  const moduleIsImplied = tsConfig.compilerOptions.module === undefined;
+  if (moduleIsImplied) {
+    tsConfig.compilerOptions.module = impliedModuleKind(
+      tsConfig.compilerOptions
+    );
+  }
+  // Force a node-aware resolution only where TypeScript's own default would be
+  // Classic, which cannot see node_modules at all. Overriding unconditionally
+  // contradicted a valid tsconfig — `module: "NodeNext"` with `moduleResolution:
+  // NodeJs` is error TS5109, raised against a combination the user never wrote.
+  // Node10 resolution is an error under TypeScript 6, so the override now uses
+  // Bundler — the node_modules-aware kind that is valid for the ES2015+ module
+  // values which imply Classic. The remaining Classic-implying kinds (amd, umd,
+  // system) reject Bundler (TS5095) and are left on TypeScript's own default.
+  const moduleKind = tsConfig.compilerOptions.module;
+  if (
+    tsConfig.compilerOptions.moduleResolution === undefined &&
+    impliesClassicResolution(tsConfig.compilerOptions) &&
+    moduleKind !== undefined &&
+    moduleKind >= ts.ModuleKind.ES2015 &&
+    moduleKind <= ts.ModuleKind.ESNext
+  ) {
+    tsConfig.compilerOptions.moduleResolution = ts.ModuleResolutionKind.Bundler;
+  }
   //check the types of the piped content, if we get errors, throw an error
   const diagnostics = typeCheck(
     context.filePath,
@@ -61,13 +102,55 @@ const run: Sync.PluginFunc = async function(
   //no errors so we are good to transpile
   //Default to transpile. Can be disabled so we can transpile elsewhere...
   if (
-    !pluginOpts.hasOwnProperty("transpile") ||
+    !Object.prototype.hasOwnProperty.call(pluginOpts, "transpile") ||
     pluginOpts.transpile === true
   ) {
     tsConfig.compilerOptions = Object.assign(
       tsConfig.compilerOptions,
       pluginOpts.compilerOptions
     );
+    // TypeScript 6 turned `alwaysStrict` on even without `strict`, prepending
+    // a "use strict" prologue this plugin's output never carried — and sloppy
+    // ServiceNow code (implicit globals are endemic there) would change
+    // behavior at runtime under it. When the user set neither `strict` nor
+    // `alwaysStrict` anywhere, suppress the prologue. Scoped to emit only:
+    // createProgram rejects alwaysStrict=false as a TS 6 deprecation,
+    // transpileModule does not.
+    if (
+      strictnessIsImplied &&
+      !(
+        pluginOpts.compilerOptions &&
+        (Object.prototype.hasOwnProperty.call(
+          pluginOpts.compilerOptions,
+          "strict"
+        ) ||
+          Object.prototype.hasOwnProperty.call(
+            pluginOpts.compilerOptions,
+            "alwaysStrict"
+          ))
+      )
+    ) {
+      tsConfig.compilerOptions.alwaysStrict = false;
+    }
+    // The module kind pinned above was implied from the pre-merge target. When
+    // the plugin options changed the target and still left `module` unset,
+    // re-derive it so an ES2015+ target keeps its ESM emit (TypeScript 5's
+    // rule, which the plugin preserves).
+    if (
+      moduleIsImplied &&
+      !(
+        pluginOpts.compilerOptions &&
+        Object.prototype.hasOwnProperty.call(
+          pluginOpts.compilerOptions,
+          "module"
+        )
+      )
+    ) {
+      tsConfig.compilerOptions.module = impliedModuleKind({
+        ...tsConfig.compilerOptions,
+        module: undefined
+      });
+    }
     output = ts.transpileModule(content, {
       compilerOptions: tsConfig.compilerOptions
     }).outputText;
@@ -115,6 +198,41 @@ const run: Sync.PluginFunc = async function(
       .getPreEmitDiagnostics(program)
       .concat(emitResult.diagnostics);
     return allDiagnostics;
+  }
+
+  // Mirrors TypeScript 5's `module` default, which this plugin pins for stable
+  // output now that TypeScript 6 changed it: an explicit numeric setting wins,
+  // otherwise it follows the target (ES2015 for an ES2015+ target, CommonJS for
+  // anything older, ES3 counting as unset).
+  function impliedModuleKind(compilerOptions: ts.CompilerOptions): ts.ModuleKind {
+    if (typeof compilerOptions.module === "number") {
+      return compilerOptions.module;
+    }
+    const target =
+      compilerOptions.target === ts.ScriptTarget.ES3
+        ? undefined
+        : compilerOptions.target;
+    return (target ?? ts.ScriptTarget.ES5) >= ts.ScriptTarget.ES2015
+      ? ts.ModuleKind.ES2015
+      : ts.ModuleKind.CommonJS;
+  }
+
+  // True when TypeScript would default `moduleResolution` to Classic. CommonJS
+  // implies Node10, Preserve implies Bundler, and the Node16..NodeNext band each
+  // imply their own node-aware kind; every other `module` falls back to Classic.
+  // The band is compared as a range so a `module` added by a newer TypeScript
+  // (the peer range is >=5) is not mistaken for a Classic default.
+  function impliesClassicResolution(compilerOptions: ts.CompilerOptions) {
+    const moduleKind = impliedModuleKind(compilerOptions);
+    if (
+      moduleKind === ts.ModuleKind.CommonJS ||
+      moduleKind === ts.ModuleKind.Preserve
+    ) {
+      return false;
+    }
+    return !(
+      moduleKind >= ts.ModuleKind.Node16 && moduleKind <= ts.ModuleKind.NodeNext
+    );
   }
 
   function processDiagnostics(diagnostics: ts.Diagnostic[]) {

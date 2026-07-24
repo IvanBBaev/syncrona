@@ -30,11 +30,11 @@
     "@syncrona/jira": "^0.9.1",
     "@syncrona/sn-transport": "^0.9.1",
     "undici": "^6.21.0",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "typescript": "~5.9.3"
+    "typescript": "~6.0.3"
   },
   "files": [
     "dist"

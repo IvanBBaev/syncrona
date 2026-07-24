@@ -18,7 +18,7 @@ npm i -D @syncrona/eslint-plugin
 ### Order of Configurations
 
 1. Load from `sync.config.js` options.
-2. Check for `.eslintrc` file or generate one.
+2. Fall back to the project's flat ESLint config (`eslint.config.js` / `eslint.config.mjs`), which ESLint resolves from the linted file's directory upward.
 
 ## Example Usage
 
