@@ -289,7 +289,7 @@ test('run_workspace_command: non-string entries in args array are filtered out',
   assert.deepEqual(capturedArgs, ['a', 'b']);
 });
 
-test('run_workspace_command: seemingly destructive command without confirmDestructive is rejected', async () => {
+test('run_workspace_command: destructive command without confirmDestructive is rejected', async () => {
   let called = false;
   const ctx = makeContext({
     runCommand: async () => {
@@ -299,7 +299,7 @@ test('run_workspace_command: seemingly destructive command without confirmDestru
   });
   const res = await handleWorkspaceTool(
     'run_workspace_command',
-    { command: 'npx', args: ['syncrona', 'sync', 'push'] },
+    { command: 'npx', args: ['syncrona', 'push', '--ci'] },
     ctx
   );
   assert.equal(res.isError, true);
@@ -317,25 +317,175 @@ test('run_workspace_command: destructive command with confirmDestructive=true is
   });
   const res = await handleWorkspaceTool(
     'run_workspace_command',
-    { command: 'npx', args: ['syncrona', 'sync', 'deploy'], confirmDestructive: true },
+    { command: 'npx', args: ['syncrona', 'deploy'], confirmDestructive: true },
     ctx
   );
   assert.equal(res.isError, false);
-  assert.deepEqual(captured, { command: 'npx', cmdArgs: ['syncrona', 'sync', 'deploy'], timeoutMs: 1000 });
+  assert.deepEqual(captured, { command: 'npx', cmdArgs: ['syncrona', 'deploy'], timeoutMs: 1000 });
 });
 
-test('run_workspace_command: "sync download" phrase is treated as destructive', async () => {
+test('run_workspace_command: bare "syncrona download" is treated as destructive', async () => {
   const ctx = makeContext({
     runCommand: async () => makeCmdResult(),
   });
   const res = await handleWorkspaceTool(
     'run_workspace_command',
-    { command: 'sync', args: ['download'] },
+    { command: 'syncrona', args: ['download'] },
     ctx
   );
   assert.equal(res.isError, true);
   assert.match(res.content[0].text, /may modify instance state/);
 });
+
+// --- run_workspace_command: mutation audit ---
+// A confirmed destructive invocation reaches the instance exactly like sync_push
+// and must leave the same audit trail; the handler previously executed it with no
+// auditMutatingTool call at all.
+
+test('run_workspace_command: a confirmed destructive invocation is audited as a mutation', async () => {
+  const audited = [];
+  const ctx = makeContext({
+    startedAt: Date.now() - 25,
+    runCommand: async () => makeCmdResult({ exitCode: 0, stdout: 'pushed' }),
+    auditMutatingTool: (toolName, args, outcome, durationMs) => {
+      audited.push({ toolName, args, outcome, durationMs });
+    },
+  });
+  const args = { command: 'npx', args: ['syncrona', 'push', '--ci'], confirmDestructive: true };
+  const res = await handleWorkspaceTool('run_workspace_command', args, ctx);
+
+  assert.equal(res.isError, false);
+  assert.equal(audited.length, 1, 'destructive invocation must produce exactly one audit call');
+  assert.equal(audited[0].toolName, 'run_workspace_command');
+  assert.deepEqual(audited[0].args, args);
+  assert.deepEqual(audited[0].outcome, { exitCode: 0, timedOut: false });
+  assert.ok(audited[0].durationMs >= 25, 'duration is measured from startedAt');
+});
+
+test('run_workspace_command: a failed destructive invocation still reports its real outcome', async () => {
+  const audited = [];
+  const ctx = makeContext({
+    runCommand: async () => makeCmdResult({ exitCode: 1, timedOut: true, stderr: 'boom' }),
+    auditMutatingTool: (toolName, args, outcome, durationMs) => {
+      audited.push({ toolName, args, outcome, durationMs });
+    },
+  });
+  const res = await handleWorkspaceTool(
+    'run_workspace_command',
+    { command: 'syncrona', args: ['deploy'], confirmDestructive: true },
+    ctx
+  );
+
+  assert.equal(res.isError, true);
+  assert.equal(audited.length, 1);
+  assert.deepEqual(audited[0].outcome, { exitCode: 1, timedOut: true });
+});
+
+test('run_workspace_command: a destructive invocation blocked by the gate is not audited', async () => {
+  const audited = [];
+  const ctx = makeContext({
+    auditMutatingTool: (toolName) => audited.push(toolName),
+  });
+  const res = await handleWorkspaceTool(
+    'run_workspace_command',
+    { command: 'syncrona', args: ['push'] },
+    ctx
+  );
+
+  assert.equal(res.isError, true);
+  assert.deepEqual(audited, [], 'a command that never ran must not be audited as a mutation');
+});
+
+// --- run_workspace_command: destructive gate parses the invocation structurally ---
+// The gate previously substring-matched "sync push"/"sync deploy"/"sync download",
+// which never occurs in a real invocation of the `syncrona` binary, so every form
+// below executed ungated.
+
+const REAL_DESTRUCTIVE_INVOCATIONS = [
+  ['npx', ['syncrona', 'push', '--ci']],
+  ['npx', ['-y', 'syncrona', 'push']],
+  ['npx', ['--package', 'syncrona', 'syncrona', 'deploy']],
+  ['npx', ['syncrona@latest', 'download']],
+  ['syncrona', ['push']],
+  ['syncrona', ['deploy', '--scopeSwap']],
+  ['/usr/local/bin/syncrona', ['download']],
+  ['syncrona.cmd', ['push']],
+  ['pnpm', ['dlx', 'syncrona', 'push']],
+  ['yarn', ['dlx', 'syncrona', 'deploy']],
+  ['npm', ['exec', 'syncrona', '--', 'download']],
+];
+
+for (const [command, args] of REAL_DESTRUCTIVE_INVOCATIONS) {
+  test(`run_workspace_command: gates real invocation "${command} ${args.join(' ')}"`, async () => {
+    let called = false;
+    const ctx = makeContext({
+      runCommand: async () => {
+        called = true;
+        return makeCmdResult();
+      },
+    });
+    const res = await handleWorkspaceTool('run_workspace_command', { command, args }, ctx);
+    assert.equal(res.isError, true, 'destructive invocation must be gated');
+    assert.match(res.content[0].text, /may modify instance state/);
+    assert.equal(called, false, 'destructive invocation must not execute ungated');
+  });
+}
+
+// REV-83 (SEC-2): default-deny. Any base name not on the read-only allowlist
+// (npx/npm wrappers, node, an arbitrary CLI) requires confirmDestructive, as does
+// an allowlisted command running a mutating subcommand (git push). None of these
+// is a syncrona push/deploy/download, yet each is gated by the allowlist policy —
+// the old base-name denylist silently ran every one of them ungated.
+const DEFAULT_DENY_INVOCATIONS = [
+  ['npx', ['syncrona', 'status']],
+  ['npx', ['syncrona', 'build']],
+  ['npx', ['some-other-cli', 'push']],
+  ['git', ['push']],
+  ['npm', ['run', 'build']],
+  ['node', ['-e', 'console.log(1)']],
+];
+
+for (const [command, args] of DEFAULT_DENY_INVOCATIONS) {
+  test(`run_workspace_command: default-deny gates "${command} ${args.join(' ')}"`, async () => {
+    let called = false;
+    const ctx = makeContext({
+      runCommand: async () => {
+        called = true;
+        return makeCmdResult();
+      },
+    });
+    const res = await handleWorkspaceTool('run_workspace_command', { command, args }, ctx);
+    assert.equal(res.isError, true, 'non-allowlisted command must be gated');
+    assert.match(res.content[0].text, /may modify instance state/);
+    assert.equal(called, false, 'gated command must not execute without confirmDestructive');
+  });
+}
+
+// Genuinely read-only, allowlisted commands (and allowlisted commands running a
+// read-only subcommand) run without confirmDestructive.
+const NON_DESTRUCTIVE_INVOCATIONS = [
+  ['syncrona', ['doctor']],
+  ['echo', ['syncrona push']],
+  ['git', ['status']],
+  ['ls', ['-la']],
+  ['cat', ['README.md']],
+  ['pwd', []],
+];
+
+for (const [command, args] of NON_DESTRUCTIVE_INVOCATIONS) {
+  test(`run_workspace_command: does not gate "${command} ${args.join(' ')}"`, async () => {
+    let called = false;
+    const ctx = makeContext({
+      runCommand: async () => {
+        called = true;
+        return makeCmdResult();
+      },
+    });
+    const res = await handleWorkspaceTool('run_workspace_command', { command, args }, ctx);
+    assert.equal(res.isError, false);
+    assert.equal(called, true, 'non-destructive invocation must run without confirmDestructive');
+  });
+}
 
 test('run_workspace_command: safe command with real process execution succeeds', async () => {
   const { spawnSync } = require('node:child_process');
@@ -350,9 +500,15 @@ test('run_workspace_command: safe command with real process execution succeeds',
       };
     },
   });
+  // `node` is not on the read-only allowlist, so SEC-2 requires confirmDestructive;
+  // with it, the invocation reaches the real runCommand and executes.
   const res = await handleWorkspaceTool(
     'run_workspace_command',
-    { command: process.execPath, args: ['-e', 'console.log("hello-from-real-process")'] },
+    {
+      command: process.execPath,
+      args: ['-e', 'console.log("hello-from-real-process")'],
+      confirmDestructive: true,
+    },
     ctx
   );
   assert.equal(res.isError, false);
@@ -363,7 +519,13 @@ test('run_workspace_command: non-zero exit from runCommand is surfaced as error'
   const ctx = makeContext({
     runCommand: async () => makeCmdResult({ exitCode: 1, stderr: 'failure' }),
   });
-  const res = await handleWorkspaceTool('run_workspace_command', { command: 'false' }, ctx);
+  // `false` is not allowlisted; confirmDestructive lets it through the SEC-2 gate
+  // so the non-zero exit from runCommand is what surfaces (not the gate message).
+  const res = await handleWorkspaceTool(
+    'run_workspace_command',
+    { command: 'false', confirmDestructive: true },
+    ctx
+  );
   assert.equal(res.isError, true);
   assert.match(res.content[0].text, /failure/);
 });
@@ -388,96 +550,14 @@ test('run_node_code: without confirmDestructive is rejected', async () => {
   assert.match(res.content[0].text, /confirmDestructive=true/);
 });
 
-test('run_node_code: unsafe command guard blocks execution even when confirmed', async () => {
-  let capturedCall = null;
-  const ctx = makeContext({
-    isUnsafeWorkspaceCommand: (cmd, cmdArgs) => {
-      capturedCall = { cmd, cmdArgs };
-      return true;
-    },
-  });
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'console.log(1)', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /Blocked unsafe command/);
-  assert.deepEqual(capturedCall, { cmd: 'node', cmdArgs: ['-e', 'console.log(1)'] });
-});
-
-test('run_node_code: sandboxed execution (default, no allowFullNodeAccess) runs console.log output', async () => {
-  const ctx = makeContext();
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'console.log("sandboxed-hello")', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, false);
-  assert.match(res.content[0].text, /sandboxed-hello/);
-});
-
-test('run_node_code: sandboxed execution captures console.warn/error into stderr and non-zero handling', async () => {
-  const ctx = makeContext();
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'console.warn("careful"); console.error("bad"); throw new Error("kaboom");', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /kaboom/);
-});
-
-test('run_node_code: sandboxed execution rejects returning a promise (async result unsupported)', async () => {
-  const ctx = makeContext();
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'Promise.resolve(42)', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /Async results are not supported/);
-});
-
-test('run_node_code: sandboxed execution times out on an infinite loop', async () => {
-  const ctx = makeContext({ timeoutMs: 100 });
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'while (true) {}', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, true);
-  assert.match(res.content[0].text, /timedOut: true/);
-  assert.match(res.content[0].text, /Sandboxed code execution timed out/);
-});
-
-test('run_node_code: sandboxed execution cannot reach process/require (no host access)', async () => {
-  const ctx = makeContext();
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    { code: 'console.log(typeof process, typeof require)', confirmDestructive: true },
-    ctx
-  );
-  assert.equal(res.isError, false);
-  assert.match(res.content[0].text, /undefined undefined/);
-});
-
-test('run_node_code: sandboxed console.info stringifies non-string values, including circular-reference fallback', async () => {
-  const ctx = makeContext();
-  const res = await handleWorkspaceTool(
-    'run_node_code',
-    {
-      code:
-        'console.info(42, {a:1}); ' +
-        'const c = {}; c.self = c; console.info(c);',
-      confirmDestructive: true,
-    },
-    ctx
-  );
-  assert.equal(res.isError, false);
-  assert.match(res.content[0].text, /42 \{"a":1\}/);
-  assert.match(res.content[0].text, /\[object Object\]/);
-});
+// REV-82 (SEC-1): the former in-process "sandbox" tests (default-mode console
+// capture, promise rejection, infinite-loop timeout, process/require isolation,
+// circular-reference stringify, and the isUnsafeWorkspaceCommand("node", ...)
+// pre-check) asserted the behaviour of a vm.createContext boundary that has been
+// removed — it was never a real boundary (host RCE via console.log.constructor).
+// Safe mode now refuses honestly and full mode runs a real subprocess; that
+// contract is covered by the "REV-82:" suite in index.test.js. Only the full-mode
+// delegation test survives here, updated for the subprocess model.
 
 test('run_node_code: allowFullNodeAccess=true delegates to context.runCommand with real process', async () => {
   const { spawnSync } = require('node:child_process');
@@ -502,6 +582,10 @@ test('run_node_code: allowFullNodeAccess=true delegates to context.runCommand wi
   );
   assert.equal(res.isError, false);
   assert.equal(capturedCall.command, 'node');
-  assert.deepEqual(capturedCall.cmdArgs, ['-e', 'console.log("full-access-real-process")']);
+  assert.deepEqual(capturedCall.cmdArgs, [
+    '--disallow-code-generation-from-strings',
+    '-e',
+    'console.log("full-access-real-process")',
+  ]);
   assert.match(res.content[0].text, /full-access-real-process/);
 });
