@@ -261,6 +261,26 @@ describe("normalizeAuthMethod", () => {
     expect(normalizeAuthMethod("   ")).toBeUndefined();
     expect(normalizeAuthMethod("kerberos")).toBeUndefined();
   });
+
+  it("does not resolve inherited Object.prototype keys as methods", () => {
+    // The alias table is an object literal, so an unguarded lookup resolves
+    // Object.prototype's members. "constructor" is the reachable one — it is
+    // the only prototype key that is already lowercase, and the value is
+    // lowercased/trimmed before the lookup, so these all hit the same read.
+    expect(normalizeAuthMethod("constructor")).toBeUndefined();
+    expect(normalizeAuthMethod("CONSTRUCTOR")).toBeUndefined();
+    expect(normalizeAuthMethod("  Constructor  ")).toBeUndefined();
+  });
+
+  it("treats an inherited prototype key as an unrecognized explicit method", () => {
+    // Without the own-property guard this reported a complete config (no issues)
+    // with unknownExplicit:false, so the request went out with no credentials.
+    const resolved = resolveAuthMethod({ explicit: "constructor" });
+    expect(resolved.method).toBe("basic");
+    expect(resolved.explicit).toBe(false);
+    expect(resolved.unknownExplicit).toBe(true);
+    expect(resolved.issues).toEqual(["basic requires SN_PASSWORD."]);
+  });
 });
 
 describe("apiKeyHeaderName", () => {

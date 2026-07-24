@@ -36,6 +36,43 @@ test('keeps imports tagged with @keepModule', async () => {
   assert.equal(await transform(source), source);
 });
 
+test('keeps imports tagged with @keepModule followed by prose', async () => {
+  // A directive is normally written with an explanation after it. The prose must
+  // not become part of the tag name, otherwise the tag is not recognized and the
+  // import is stripped despite the directive, leaving `keep` dangling.
+  const source = [
+    '//@keepModule needed by the scoped API',
+    'import { keep } from "keep-me";',
+    'keep();',
+  ].join('\n');
+  assert.equal(await transform(source), source);
+});
+
+test('@expandModule followed by prose still expands references', async () => {
+  const source = [
+    '//@expandModule shared util',
+    'import { part1 } from "myModule";',
+    'part1.init();',
+  ].join('\n');
+  assert.equal(
+    await transform(source),
+    '//@expandModule shared util\n\nmyModule.part1.init();'
+  );
+});
+
+test('does not fuse a tag comment with the plain comment on the next line', async () => {
+  // Both comments attach to the import as leading comments. Their bodies carry
+  // no trailing newline, so joining them without a separator would read as the
+  // single tag "@keepModuleneeded" and the import would be wrongly stripped.
+  const source = [
+    '//@keepModule',
+    '//needed by the platform',
+    'import { helper } from "./util";',
+    'helper();',
+  ].join('\n');
+  assert.equal(await transform(source), source);
+});
+
 test('@expandModule rewrites references to <module>.<import>', async () => {
   const source = [
     '//@expandModule',

@@ -215,7 +215,7 @@ function openKeychainEntry(): KeyringEntry | null {
   try {
     // Optional native dependency — absent or unloadable on unsupported platforms.
     // Loaded lazily via require so an absent optional dep never breaks module load.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require("@napi-rs/keyring") as KeyringModule;
     return new mod.Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
   } catch {
@@ -450,27 +450,65 @@ export async function listInstances(): Promise<string[]> {
   }
 }
 
-export async function removeCredentials(instance: string): Promise<void> {
+/** Remove one instance's credentials. Returns true only if a file was deleted. */
+export async function removeCredentials(instance: string): Promise<boolean> {
   const filePath = credentialFilePath(instance);
   try {
     await fsp.unlink(filePath);
-  } catch {
-    // not found — silently ignore
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      // Already gone — nothing was deleted, but the secret is not on disk either.
+      return false;
+    }
+    // Any other errno (EACCES, EPERM, EROFS, …) means the encrypted file is STILL
+    // there. Swallowing it would let the caller report a purge that never happened.
+    throw e;
   }
 }
 
+/**
+ * Remove every stored instance; returns the count actually deleted.
+ *
+ * Best-effort across instances — one unremovable file must not stop the rest —
+ * but a file that could not be deleted is reported by throwing, so a caller can
+ * never announce that credentials were wiped while they remain on disk.
+ */
 export async function removeAllCredentials(): Promise<number> {
   const instances = await listInstances();
+  let removed = 0;
+  const failures: string[] = [];
   for (const inst of instances) {
-    await removeCredentials(inst);
+    try {
+      if (await removeCredentials(inst)) {
+        removed += 1;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      failures.push(`${inst} (${message})`);
+    }
   }
-  return instances.length;
+  if (failures.length > 0) {
+    throw new Error(
+      `Removed credentials for ${removed} instance(s), but ${failures.length} could not be removed and are still on disk: ${failures.join("; ")}`
+    );
+  }
+  return removed;
 }
 
 async function loadGlobalConfig(): Promise<GlobalConfig> {
   try {
     const raw = await fsp.readFile(getConfigFile(), "utf8");
-    return JSON.parse(raw) as GlobalConfig;
+    const parsed: unknown = JSON.parse(raw);
+    // A valid-JSON but non-object config.json (`null`, `"hello"`, `42`, `[]`)
+    // parses fine, so the catch below never fires and the bad value escapes to
+    // the callers, which read/write `activeInstance` on it and throw a raw
+    // TypeError. Treat anything that is not a plain object as an empty config —
+    // the resilience getActiveInstanceSync already has.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as GlobalConfig;
   } catch {
     return {};
   }

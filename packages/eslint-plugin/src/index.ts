@@ -5,9 +5,16 @@ import { ESLint } from "eslint";
 const run: Sync.PluginFunc = async function(
   context: Sync.FileContext,
   content: string,
+  options?: ESLint.Options
 ): Promise<Sync.PluginResults> {
   const output = content;
-  const linter = new ESLint({});
+  // Honor the lint configuration declared in sync.config.js. The README states
+  // the order explicitly — options first, then the eslint config discovered for
+  // the file — but the options were never accepted, so every rule tweak a project
+  // configured here was silently ignored. Spread into a fresh object: a rule may
+  // omit `options` entirely (undefined at runtime), and the caller's object must
+  // not be handed to the linter to hold on to or mutate.
+  const linter = new ESLint({ ...options });
   // Lint the in-memory `content` handed down the plugin pipeline, not the raw
   // bytes on disk. In a transform-then-lint chain an earlier plugin may have
   // rewritten the source, and re-reading context.filePath would validate the

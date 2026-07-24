@@ -17,26 +17,25 @@ export default function() {
         .filter(comment => {
           return !commentUsageTracker.has(genLocString(comment));
         })
-        .reduce((acc, comment) => {
+        .map(comment => {
           commentUsageTracker.add(genLocString(comment));
-          acc += comment.value;
-          return acc;
-        }, "");
+          return comment.value;
+        })
+        // Separate the comment bodies: a line comment's `value` carries no
+        // trailing newline, so concatenating them fuses the last token of one
+        // with the first of the next ("@keepModule" + "needed by the platform"
+        // reads as the tag "@keepModuleneeded"), silently losing the directive.
+        .join("\n");
     }
     const tags = new Map<string, string | boolean>();
-    const tagRegex = /@\w+\s*=?\s*\w+/g;
-    const matches = comments.match(tagRegex);
-    if (matches) {
-      for (const match of matches) {
-        if (match.includes("=")) {
-          const chunks = match.split("=");
-          const tag = chunks[0].trim().substring(1);
-          const value = chunks[1].trim();
-          tags.set(tag, value);
-        } else {
-          tags.set(match.substring(1), true);
-        }
-      }
+    // A tag is `@name`, optionally followed by `= value`. Capture the name and
+    // the value as separate groups: matching the value as a bare trailing word
+    // absorbed any prose written after a tag ("@keepModule needed by the API")
+    // into the tag name, so the directive stopped being recognized.
+    const tagRegex = /@(\w+)(?:\s*=\s*(\S+))?/g;
+    let match: RegExpExecArray | null;
+    while ((match = tagRegex.exec(comments)) !== null) {
+      tags.set(match[1], match[2] !== undefined ? match[2] : true);
     }
     return tags;
   }

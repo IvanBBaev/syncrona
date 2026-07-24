@@ -39,6 +39,24 @@ const MAX_DEPTH = 100;
  */
 const MAX_TIMESTAMP_MS = 8.64e15;
 
+/**
+ * ADF node types that live *inline*, composing a line of text rather than a
+ * block of their own. Used to tell an unhandled node's inline children (which
+ * join into one line) from block children (which join with newlines). Note that
+ * `blockCard` and `media` are deliberately absent: they are block-level even
+ * though `renderAttrsOnlyNode` renders them alongside their inline twins.
+ */
+const INLINE_CONTENT_TYPES = new Set([
+  "text",
+  "hardBreak",
+  "mention",
+  "emoji",
+  "inlineCard",
+  "status",
+  "date",
+  "mediaInline",
+]);
+
 /** Read a string attr, returning "" when absent or not a string. */
 function attrString(node: AdfNode, key: string): string {
   const value = node.attrs?.[key];
@@ -47,15 +65,17 @@ function attrString(node: AdfNode, key: string): string {
 
 /**
  * Render an ADF node whose payload lives entirely in `attrs` (no `content`) —
- * `inlineCard`/`blockCard` (pasted links), `status` (lozenge), `date`, and the
- * `media`/`mediaInline` attachment nodes. These would otherwise flatten to the
- * empty string and silently drop their text (finding #37). Returns null when the
- * node is not one of these attrs-only kinds so the caller can fall through.
+ * `inlineCard`/`blockCard`/`embedCard` (pasted links), `status` (lozenge),
+ * `date`, and the `media`/`mediaInline` attachment nodes. These would otherwise
+ * flatten to the empty string and silently drop their text (finding #37).
+ * Returns null when the node is not one of these attrs-only kinds so the caller
+ * can fall through.
  */
 function renderAttrsOnlyNode(node: AdfNode): string | null {
   switch (node.type) {
     case "inlineCard":
     case "blockCard":
+    case "embedCard":
       // A pasted URL: `attrs.url`, or a resolved smart-link `attrs.data.url`.
       return attrString(node, "url") || dataUrl(node) || "";
     case "status":
@@ -147,7 +167,13 @@ function renderInlineNode(node: AdfNode | undefined, depth = 0): string {
 }
 
 /** Render the block children of a node, joining them with single newlines. */
-function renderBlockChildren(node: AdfNode, depth: number): string {
+function renderBlockChildren(node: AdfNode | undefined, depth: number): string {
+  // Reached with an unvalidated node from renderListItem and renderTableCell, so
+  // guard here too: a malformed document can hold a null item or cell, and
+  // dereferencing it would break the module's never-throws contract.
+  if (!node || typeof node !== "object") {
+    return "";
+  }
   const children = Array.isArray(node.content) ? node.content : [];
   return children
     .map((child) => renderBlock(child, depth))
@@ -192,7 +218,10 @@ function renderTableCell(cell: AdfNode, depth: number): string {
   return renderBlockChildren(cell, depth).split("\n").join(" ").trim();
 }
 
-function renderTableRow(row: AdfNode, depth: number): string {
+function renderTableRow(row: AdfNode | undefined, depth: number): string {
+  if (!row || typeof row !== "object") {
+    return "";
+  }
   const cells = Array.isArray(row.content) ? row.content : [];
   return cells.map((cell) => renderTableCell(cell, depth)).join(" | ");
 }
@@ -203,6 +232,25 @@ function renderTable(node: AdfNode, depth: number): string {
     .map((row) => renderTableRow(row, depth))
     .filter((line) => line.length > 0)
     .join("\n");
+}
+
+/**
+ * True when a node holds inline content only, i.e. every child is an inline
+ * kind. Such children compose one line, so joining them as blocks (with
+ * newlines) would split a single sentence across lines.
+ */
+function hasInlineContent(node: AdfNode): boolean {
+  const children = Array.isArray(node.content) ? node.content : [];
+  if (children.length === 0) {
+    return false;
+  }
+  return children.every(
+    (child) =>
+      !!child &&
+      typeof child === "object" &&
+      typeof child.type === "string" &&
+      INLINE_CONTENT_TYPES.has(child.type)
+  );
 }
 
 /** Render a block-level node to (possibly multi-line) text. */
@@ -227,6 +275,13 @@ function renderBlock(node: AdfNode | undefined, depth: number): string {
     case "paragraph":
     case "heading":
       return renderInline(node.content);
+    case "taskItem":
+    case "decisionItem":
+    case "caption":
+      // Standard nodes whose children are *inline* runs, not blocks. ADF starts
+      // a new `text` node at every mark boundary, so rendering these as blocks
+      // would put each run on its own line and erase the item boundary.
+      return renderInline(node.content);
     case "bulletList":
       return renderList(node, false, next);
     case "orderedList":
@@ -249,6 +304,11 @@ function renderBlock(node: AdfNode | undefined, depth: number): string {
       const attrsText = renderAttrsOnlyNode(node);
       if (attrsText !== null && attrsText.length > 0) {
         return attrsText;
+      }
+      // An unhandled node carrying only inline children composes a single line,
+      // so flatten it inline rather than assuming its children are blocks.
+      if (hasInlineContent(node)) {
+        return renderInline(node.content);
       }
       // Unknown block/inline node — recurse over its block children so text is
       // not lost (e.g. panel, expand, mediaSingle/mediaGroup wrapping media).
