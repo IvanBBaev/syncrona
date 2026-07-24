@@ -7,6 +7,7 @@ import {
   getIssue,
   resolveJiraConfig,
   verifyAuth,
+  isJiraHttpError,
   NO_JIRA_CONFIG_MESSAGE,
   jiraUndecryptableMessage,
   type JiraComment,
@@ -51,9 +52,40 @@ function formatComment(comment: JiraComment): string {
  * ServiceNow error taxonomy (`logErrorHint`) gives ServiceNow-specific advice
  * (`syncrona login`, `SN_INSTANCE`) that would mislead here, so the `jira`
  * commands classify their own errors and point at the Jira equivalents.
+ *
+ * Classification follows the client's structured `kind` where the error carries
+ * one: 401 and 403 both read as "auth" in prose, but only 401 is fixable by
+ * logging in again — a 403 caller is authenticated and merely unauthorized, and
+ * sending them to `jira-login` contradicts the message the client itself prints.
+ * Failures raised before any response (timeouts, DNS) are plain Errors with no
+ * status, so the message-based branches remain as the fallback.
  */
-function logJiraErrorHint(message: string): void {
-  if (/HTTP 401|HTTP 403|authentication failed/i.test(message)) {
+function logJiraErrorHint(e: unknown): void {
+  if (isJiraHttpError(e)) {
+    switch (e.kind) {
+      case "unauthorized":
+        logger.info(
+          "Hint: re-check your Jira credentials with `syncrona jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
+        );
+        return;
+      case "forbidden":
+        logger.info(
+          "Hint: your token authenticates but is not permitted here — check the project's permission scheme and the token's scope. Re-login will not help."
+        );
+        return;
+      case "not-found":
+        logger.info("Hint: verify the issue key and that your account can view it.");
+        return;
+      case "rate-limited":
+        logger.info("Hint: Jira is throttling this token — wait for the rate limit to reset, then retry.");
+        return;
+      default:
+        break;
+    }
+  }
+
+  const message = e instanceof Error ? e.message : String(e);
+  if (/HTTP 401|authentication failed/i.test(message)) {
     logger.info(
       "Hint: re-check your Jira credentials with `syncrona jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
     );
@@ -176,7 +208,7 @@ export async function jiraCommand(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message);
-    logJiraErrorHint(message);
+    logJiraErrorHint(e);
     process.exitCode = 1;
     return;
   }
@@ -263,7 +295,7 @@ export async function jiraLoginCommand(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(`Could not authenticate to Jira: ${message}`);
-    logJiraErrorHint(message);
+    logJiraErrorHint(e);
     process.exitCode = 1;
     return;
   }

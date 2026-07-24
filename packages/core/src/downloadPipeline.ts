@@ -18,67 +18,81 @@ import {
   deleteDownloadCheckpoint,
 } from "./downloadCheckpoint.js";
 
-const processFilesInManRec = async (
-  // In folder mode this is the per-record directory; in flat mode it is the
-  // table directory and the record name is encoded into each file name (DX17).
-  dirPath: string,
-  rec: SN.MetaRecord,
-  forceWrite: boolean,
-  flat: boolean
-) => {
-  const fileWrite = flat
-    ? (file: SN.File) =>
-        fUtils.writeFlatSNFileCurry(!forceWrite)(file, dirPath, rec.name)
-    : (file: SN.File) => fUtils.writeSNFileCurry(!forceWrite)(file, dirPath);
-  const filePromises = rec.files.map(fileWrite);
-  await Promise.all(filePromises);
-  // Side effect, remove content from files so it doesn't get written to manifest
-  rec.files.forEach((file) => {
-    delete file.content;
-  });
-};
-
-const processRecsInManTable = async (
-  tablePath: string,
-  table: SN.TableConfig,
-  forceWrite: boolean,
-  flat: boolean
-) => {
-  const { records } = table;
-  const recKeys = Object.keys(records);
-
-  if (flat) {
-    // DX17: flat layout writes every field file directly under the table
-    // directory as `<record>~<field>.<ext>`, so there are no per-record folders.
-    await fUtils.createDirRecursively(tablePath);
-    return Promise.all(
-      recKeys.map((recKey) =>
-        processFilesInManRec(tablePath, records[recKey], forceWrite, true)
-      )
-    );
+// A bounded worker pool so the download/refresh writer and the missing-file
+// probe never open more filesystem handles than `resolveWriteConcurrency()` at
+// once. Kept local (copied from pushPipeline.ts, where the equivalent helper is
+// not exported) to avoid a cross-module import between the pull and push seams.
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> => {
+  if (items.length === 0) {
+    return [];
   }
 
-  const recKeyToPath = (key: string) => path.join(tablePath, records[key].name);
-  const recPathPromises = recKeys
-    .map(recKeyToPath)
-    .map(fUtils.createDirRecursively);
-  await Promise.all(recPathPromises);
+  const results: R[] = new Array(items.length);
+  const limit = Math.max(1, Math.floor(concurrency));
+  let nextIndex = 0;
 
-  const filePromises = recKeys.reduce(
-    (acc: Promise<void>[], recKey: string) => {
-      return [
-        ...acc,
-        processFilesInManRec(
-          recKeyToPath(recKey),
-          records[recKey],
-          forceWrite,
-          false
-        ),
-      ];
-    },
-    [] as Promise<void>[]
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const current = nextIndex;
+        nextIndex += 1;
+        results[current] = await worker(items[current], current);
+      }
+    }
   );
-  return Promise.all(filePromises);
+
+  await Promise.all(runners);
+  return results;
+};
+
+// Default cap for filesystem-handle fan-out (writes, mkdirs and existence
+// probes). Clamped to 1–50; an optional `writeConcurrency` config field can
+// override it. 20 keeps a large scope well under typical descriptor limits
+// (EMFILE) while staying parallel enough to be fast.
+export const DEFAULT_WRITE_CONCURRENCY = 20;
+
+export const resolveWriteConcurrency = (): number => {
+  const candidate = (ConfigManager.getConfig() as { writeConcurrency?: unknown })
+    .writeConcurrency;
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
+    return DEFAULT_WRITE_CONCURRENCY;
+  }
+  return Math.min(Math.max(Math.floor(candidate), 1), 50);
+};
+
+// INJ-1: table names (the keys of the server- or manifest-supplied table map)
+// and record names (including scoped-endpoint `name` values) both flow into
+// path.join under the workspace source root below. A tampered manifest or a
+// hostile scoped-download response could smuggle "..", ".", an empty string, or
+// an embedded path separator into a component and walk the write out of the
+// source tree — a manifest-driven arbitrary-file-write. This seam is the single
+// chokepoint every pull path (wizard, refresh, download) converges on, so
+// rejecting an unsafe component here — loudly, before it ever reaches path.join,
+// rather than silently rewriting it (which would mask a compromised source) —
+// guarantees no write escapes regardless of what upstream produced. Legitimate
+// names never trip this: buildRecordName already strips separators and falls
+// back to sys_id for empty/all-dot names, and ServiceNow table names are plain
+// identifiers.
+const assertSafePathComponent = (
+  component: string,
+  kind: "table name" | "record name"
+): void => {
+  if (
+    typeof component !== "string" ||
+    component.length === 0 ||
+    /^\.+$/.test(component) ||
+    /[/\\]/.test(component)
+  ) {
+    throw new Error(
+      `Refusing to download: unsafe ${kind} ${JSON.stringify(component)} ` +
+        `would escape the workspace source root.`
+    );
+  }
 };
 
 // Shared by processManifest, processMissingFiles and downloadAllFiles — the
@@ -90,16 +104,72 @@ export const processTablesInManifest = async (
   // DX17: read flat mode straight off the loaded config (not getFlatMode()) so
   // this single seam governs every pull path — wizard, refresh and download.
   const flat = ConfigManager.getConfig().flat === true;
+  const sourcePath = ConfigManager.getSourcePath();
+  const concurrency = resolveWriteConcurrency();
   const tableNames = Object.keys(tables);
-  const tablePromises = tableNames.map((tableName) => {
-    return processRecsInManTable(
-      path.join(ConfigManager.getSourcePath(), tableName),
-      tables[tableName],
-      forceWrite,
-      flat
-    );
-  });
-  await Promise.all(tablePromises);
+
+  // PERF-1 (REV-89): flatten the tables×records×files tree into two flat work
+  // lists — every directory to create, then every file to write — and drain each
+  // through a single bounded pool. The previous three nested Promise.all layers
+  // opened one handle per file across the whole scope at once, which could
+  // exhaust the process's file-descriptor limit (EMFILE) on a large scope.
+  const dirTasks: string[] = [];
+  const fileTasks: Array<() => Promise<void>> = [];
+
+  for (const tableName of tableNames) {
+    assertSafePathComponent(tableName, "table name");
+    const tablePath = path.join(sourcePath, tableName);
+    const { records } = tables[tableName];
+    const recKeys = Object.keys(records);
+
+    if (flat) {
+      // DX17: flat layout writes every field file directly under the table
+      // directory as `<record>~<field>.<ext>`, so there are no per-record folders.
+      dirTasks.push(tablePath);
+      for (const recKey of recKeys) {
+        const rec = records[recKey];
+        // rec.name still flows into the flat file stem (`<record>~<field>`), so
+        // an embedded separator would re-introduce a subpath — validate it here
+        // too, not only in the nested layout.
+        assertSafePathComponent(rec.name, "record name");
+        for (const file of rec.files) {
+          fileTasks.push(() =>
+            fUtils.writeFlatSNFileCurry(!forceWrite)(file, tablePath, rec.name)
+          );
+        }
+      }
+    } else {
+      for (const recKey of recKeys) {
+        const rec = records[recKey];
+        assertSafePathComponent(rec.name, "record name");
+        const recPath = path.join(tablePath, rec.name);
+        dirTasks.push(recPath);
+        for (const file of rec.files) {
+          fileTasks.push(() =>
+            fUtils.writeSNFileCurry(!forceWrite)(file, recPath)
+          );
+        }
+      }
+    }
+  }
+
+  // Every directory must exist before its files are written, so drain the dir
+  // pool to completion first, then the file pool.
+  await mapWithConcurrency(dirTasks, concurrency, (dir) =>
+    fUtils.createDirRecursively(dir)
+  );
+  await mapWithConcurrency(fileTasks, concurrency, (task) => task());
+
+  // Side effect (unchanged): strip content from every file so the follow-up
+  // manifest write doesn't persist file bodies. Done after all writes finish so
+  // the write closures above still observe the content.
+  for (const tableName of tableNames) {
+    for (const rec of Object.values(tables[tableName].records)) {
+      rec.files.forEach((file) => {
+        delete file.content;
+      });
+    }
+  }
 };
 
 export const processManifest = async (
@@ -161,7 +231,14 @@ const markFileMissing = (missingObj: SN.MissingFileTableMap) => (
   table: string
 ) => (recordId: string) => (file: SN.File) => {
   if (!missingObj[table]) {
-    missingObj[table] = {};
+    // INJ-2: null-prototype sub-map so a manifest whose table key or sys_id is
+    // "__proto__" cannot walk up to Object.prototype. With a plain {} the read
+    // `missingObj["__proto__"]` returns Object.prototype (truthy, so no own slot
+    // is created) and the subsequent `[recordId] = []` write lands on the shared
+    // prototype — global prototype pollution. A null-proto object turns every key,
+    // including "__proto__", into an ordinary own slot. (The parent `missingObj`
+    // is likewise created null-proto by its owners.)
+    missingObj[table] = Object.create(null);
   }
   if (!missingObj[table][recordId]) {
     missingObj[table][recordId] = [];
@@ -201,18 +278,23 @@ const checkFilesForMissing = async (
   flat: boolean,
   recordName?: string
 ) => {
-  const checkPromises = files.map((file) => {
-    // DX17: flat layout writes every field directly under the table directory
-    // as `<record>~<field>.<ext>` (mirroring writeFlatSNFileCurry), so probe for
-    // that exact file rather than a per-record folder. Report the missing field
-    // with its ORIGINAL name so the re-download targets the right field.
-    const probe: SN.File =
-      flat && recordName !== undefined
-        ? { ...file, name: `${recordName}${FLAT_FIELD_SEPARATOR}${file.name}` }
-        : file;
-    return fUtils.SNFileExists(parentPath)(probe);
-  });
-  const checks = await Promise.all(checkPromises);
+  // PERF-4 (REV-97): bound the existence-probe fan-out so a record with many
+  // field files can't open an unbounded number of stat handles at once.
+  const checks = await mapWithConcurrency(
+    files,
+    resolveWriteConcurrency(),
+    (file) => {
+      // DX17: flat layout writes every field directly under the table directory
+      // as `<record>~<field>.<ext>` (mirroring writeFlatSNFileCurry), so probe
+      // for that exact file rather than a per-record folder. Report the missing
+      // field with its ORIGINAL name so the re-download targets the right field.
+      const probe: SN.File =
+        flat && recordName !== undefined
+          ? { ...file, name: `${recordName}${FLAT_FIELD_SEPARATOR}${file.name}` }
+          : file;
+      return fUtils.SNFileExists(parentPath)(probe);
+    }
+  );
   checks.forEach((check, index) => {
     if (!check) {
       missingFunc(files[index]);
@@ -233,27 +315,29 @@ const checkRecordsForMissing = async (
     // report every record as missing and make `repair`/`refresh` re-download the
     // entire scope on every run. Check each field file directly under the table
     // directory instead.
-    await Promise.all(
-      recNames.map((recName) => {
-        const record = records[recName];
-        return checkFilesForMissing(
-          tablePath,
-          record.files,
-          missingFunc(record.sys_id),
-          true,
-          record.name
-        );
-      })
-    );
+    // PERF-4 (REV-97): bound the per-record fan-out under a flat table directory.
+    await mapWithConcurrency(recNames, resolveWriteConcurrency(), (recName) => {
+      const record = records[recName];
+      return checkFilesForMissing(
+        tablePath,
+        record.files,
+        missingFunc(record.sys_id),
+        true,
+        record.name
+      );
+    });
     return;
   }
 
   const recPaths = recNames.map(fUtils.appendToPath(tablePath));
-  const checkPromises = recNames.map((recName, index) =>
-    fUtils.pathExists(recPaths[index])
+  // PERF-4 (REV-97): bound the directory-existence probe fan-out across records.
+  const concurrency = resolveWriteConcurrency();
+  const checks = await mapWithConcurrency(
+    recNames,
+    concurrency,
+    (_recName, index) => fUtils.pathExists(recPaths[index])
   );
-  const checks = await Promise.all(checkPromises);
-  const fileCheckPromises = checks.map(async (check, index) => {
+  await mapWithConcurrency(checks, concurrency, async (check, index) => {
     const recName = recNames[index];
     const record = records[recName];
     if (!check) {
@@ -267,7 +351,6 @@ const checkRecordsForMissing = async (
       false
     );
   });
-  await Promise.all(fileCheckPromises);
 };
 
 const checkTablesForMissing = async (
@@ -278,12 +361,15 @@ const checkTablesForMissing = async (
 ) => {
   const tableNames = Object.keys(tables);
   const tablePaths = tableNames.map(fUtils.appendToPath(topPath));
-  const checkPromises = tableNames.map((tableName, index) =>
-    fUtils.pathExists(tablePaths[index])
+  // PERF-4 (REV-97): bound the table-directory existence probe fan-out.
+  const concurrency = resolveWriteConcurrency();
+  const checks = await mapWithConcurrency(
+    tableNames,
+    concurrency,
+    (_tableName, index) => fUtils.pathExists(tablePaths[index])
   );
-  const checks = await Promise.all(checkPromises);
 
-  const recCheckPromises = checks.map(async (check, index) => {
+  await mapWithConcurrency(checks, concurrency, async (check, index) => {
     const tableName = tableNames[index];
     if (!check) {
       markTableMissing(tables[tableName], tableName, missingFunc);
@@ -296,13 +382,13 @@ const checkTablesForMissing = async (
       flat
     );
   });
-  await Promise.all(recCheckPromises);
 };
 
 export const findMissingFiles = async (
   manifest: SN.AppManifest
 ): Promise<SN.MissingFileTableMap> => {
-  const missing: SN.MissingFileTableMap = {};
+  // INJ-2: null-proto root so a "__proto__" table key stays an own slot (see markFileMissing).
+  const missing: SN.MissingFileTableMap = Object.create(null);
   const { tables } = manifest;
   // DX17: honor flat layout so a consistent flat workspace isn't misreported as
   // entirely missing. Read straight off the loaded config, matching the write path.
@@ -333,21 +419,38 @@ export const processMissingFiles = async (
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient();
 
-  let filesToProcess: SN.TableMap;
-  try {
-    filesToProcess = await unwrapSNResponse(
-      client.getMissingFiles(missing, tableOptions)
-    );
-  } catch (e) {
-    if (isScopedEndpointUnavailableError(e)) {
-      logger.info("Custom scope not found — fetching missing files from Table API...");
-      filesToProcess = await buildBulkDownloadFromTableAPI(missing, client, tableOptions);
-    } else {
+  // PERF-3 (REV-91): stream the fetch/write one table at a time instead of
+  // materializing every missing file body for the whole scope in memory at once.
+  // Probe the scoped bulk endpoint once; after the first "unavailable" go
+  // straight to the Table API for the remaining tables — mirroring the fetchTable
+  // closure in downloadAllFiles so refresh keeps only one table's bodies live.
+  let scopedEndpointUnavailable = false;
+  const fetchTable = async (
+    tableMissing: SN.MissingFileTableMap
+  ): Promise<SN.TableMap> => {
+    if (scopedEndpointUnavailable) {
+      return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+    }
+    try {
+      return await unwrapSNResponse(
+        client.getMissingFiles(tableMissing, tableOptions)
+      );
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
+        logger.info("Custom scope not found — fetching missing files from Table API...");
+        scopedEndpointUnavailable = true;
+        return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+      }
       throw e;
     }
-  }
+  };
 
-  await processTablesInManifest(filesToProcess, false);
+  for (const table of Object.keys(missing)) {
+    const filesToProcess = await fetchTable({
+      [table]: missing[table],
+    } as SN.MissingFileTableMap);
+    await processTablesInManifest(filesToProcess, false);
+  }
 };
 
 // Build a missing-file map that covers every file in the manifest, used to
@@ -355,9 +458,11 @@ export const processMissingFiles = async (
 export const buildFullMissingMap = (
   manifest: SN.AppManifest
 ): SN.MissingFileTableMap => {
-  const missing: SN.MissingFileTableMap = {};
+  // INJ-2: null-proto at both levels so a "__proto__" table key or sys_id from a
+  // crafted manifest cannot pollute Object.prototype (see markFileMissing).
+  const missing: SN.MissingFileTableMap = Object.create(null);
   for (const [tableName, tableConfig] of Object.entries(manifest.tables)) {
-    missing[tableName] = {};
+    missing[tableName] = Object.create(null);
     for (const record of Object.values(tableConfig.records)) {
       missing[tableName][record.sys_id] = record.files.map((f) => ({
         name: f.name,

@@ -524,6 +524,49 @@ describe("command flows", () => {
     process.env.SN_INSTANCE = oldInstance;
   });
 
+  it("deployCommand with --ci deploys without asking for confirmation", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    // A noninteractive shell has no TTY, so the confirm prompt resolves to its
+    // `false` default: without the --ci gate the deploy declines itself, pushes
+    // nothing, and still exits 0.
+    mockPrompt.mockResolvedValue({ confirmed: false });
+
+    const { deployCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushResults = [{ success: true, message: "ok" }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue(pushResults);
+
+    await deployCommand({ logLevel: "info", ci: true });
+    await flushPromises();
+    await flushPromises();
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockPushFiles).toHaveBeenCalledWith(appFileList);
+    expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("deployCommand without --ci still aborts when the confirmation is declined", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    mockPrompt.mockResolvedValue({ confirmed: false });
+
+    const { deployCommand } = await import("../commands.js");
+    mockGetAppFileList.mockResolvedValue([]);
+
+    await deployCommand({ logLevel: "info" });
+    await flushPromises();
+
+    expect(mockPrompt).toHaveBeenCalled();
+    expect(mockGetAppFileList).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
   it("deployCommand dry-run resolves files but skips remote push", async () => {
     const oldInstance = process.env.SN_INSTANCE;
     process.env.SN_INSTANCE = "instance.service-now.com";

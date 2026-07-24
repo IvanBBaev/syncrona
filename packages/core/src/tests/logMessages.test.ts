@@ -28,7 +28,7 @@ describe("logMessages", () => {
     internalError = jest.fn();
     jest
       .spyOn(logger, "getInternalLogger")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       .mockReturnValue({ info: internalInfo, error: internalError } as any);
   });
 
@@ -60,9 +60,9 @@ describe("logMessages", () => {
 
   it("logFilePush logs a pushed status on success and no error line", () => {
     logFilePush(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { tableName: "sys_script", name: "rec", targetField: "script" } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { success: true, message: "" } as any
     );
     expect(errorSpy).not.toHaveBeenCalled();
@@ -74,9 +74,9 @@ describe("logMessages", () => {
 
   it("logFilePush logs a failure status and the error message on failure", () => {
     logFilePush(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { tableName: "t", name: "r", targetField: "f" } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { success: false, message: "boom" } as any
     );
     expect(infoText()).toContain("Failed to push");
@@ -115,7 +115,7 @@ describe("logMessages", () => {
   });
 
   it("logPushResults prints totals and returns early when all pushes succeed", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     logPushResults([{ success: true, message: "" }] as any);
     expect(internalInfo).toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
@@ -124,9 +124,9 @@ describe("logMessages", () => {
 
   it("logPushResults prints an error summary when a push fails", () => {
     logPushResults([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { success: true, message: "" },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       { success: false, message: "nope" },
     ] as never);
     expect(errorSpy).toHaveBeenCalled();
@@ -135,7 +135,7 @@ describe("logMessages", () => {
   });
 
   it("logBuildResults prints totals for the Builds operation", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     logBuildResults([{ success: false, message: "bad" }] as any);
     expect(internalInfo).toHaveBeenCalled();
     expect(errorText()).toContain("Error Summary");

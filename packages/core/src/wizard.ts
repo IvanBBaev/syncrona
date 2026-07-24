@@ -26,6 +26,7 @@ import {
   resolveCredentialsFromStore,
 } from "./auth.js";
 import { writeDotEnv, ensureGitignored } from "./envFile.js";
+import { isPromptAbort } from "./errorTaxonomy.js";
 import { generateScopeDocs } from "./scopeDocs.js";
 
 function normalizeInstance(instance: string): string {
@@ -33,16 +34,6 @@ function normalizeInstance(instance: string): string {
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
-}
-
-// inquirer throws an ExitPromptError when the user aborts a prompt (Ctrl-C).
-// That is a cancellation, not a setup failure — we should exit quietly without
-// the diagnostics banner or a non-zero exit code.
-function isPromptAbort(e: unknown): boolean {
-  if (!(e instanceof Error)) {
-    return false;
-  }
-  return e.name === "ExitPromptError" || /force closed the prompt/i.test(e.message);
 }
 
 function countManifestFiles(manifest: SN.AppManifest): number {
@@ -209,7 +200,7 @@ async function checkConfig(): Promise<boolean> {
     }
     await fsp.access(checkConfig, fs.constants.F_OK);
     return true;
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 }

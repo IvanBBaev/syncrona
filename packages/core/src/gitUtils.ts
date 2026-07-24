@@ -28,6 +28,12 @@ const execGit = (args: string[]): Promise<string> => {
 
 const gitDiff = async (target: string, sourcePath: string): Promise<string> => {
   const stdout = await execGit([
+    // Emit literal UTF-8 paths. Under the default core.quotePath=true git
+    // C-quotes any byte >0x80 (e.g. a Cyrillic record name becomes
+    // "src/…/\320\242…/script.js"), which never matches a real file and is
+    // silently dropped by the tab-split parser below — an empty `push --diff`.
+    "-c",
+    "core.quotePath=false",
     "diff",
     "--name-status",
     `${target}...`,

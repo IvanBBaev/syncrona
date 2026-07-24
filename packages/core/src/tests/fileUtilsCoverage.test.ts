@@ -129,8 +129,14 @@ describe("writeSNFileCurry content coercion", () => {
     expect(raw).toBe("[object Object]");
   });
 
-  it("refuses to write a name that escapes the target directory", async () => {
+  it("refuses to write a name that escapes the source root", async () => {
     const root = makeTmpDir();
+    // mockReturnValueOnce (not mockReturnValue): the guard reads getSourcePath
+    // exactly once per write, and a persistent stub would leak into the later
+    // writer tests that rely on the unloaded-project fallback (getSourcePath
+    // undefined -> anchor to parentPath), since clearAllMocks does not reset
+    // implementations.
+    asMock(ConfigManager.getSourcePath).mockReturnValueOnce(root);
     const escaping: any = {
       name: path.join("..", "escape"),
       type: "js",
@@ -138,10 +144,29 @@ describe("writeSNFileCurry content coercion", () => {
     };
     await expect(
       writeSNFileCurry(false)(escaping, root)
-    ).rejects.toThrow(/Refusing to write .* outside its table directory/);
-    // Nothing must have been written above the target directory.
+    ).rejects.toThrow(/Refusing to write .* outside the workspace source root/);
+    // Nothing must have been written above the source root.
     const parent = path.dirname(root);
     expect(fs.existsSync(path.join(parent, "escape.js"))).toBe(false);
+  });
+
+  it("refuses to write when the parent directory itself escaped the source root", async () => {
+    // INJ-1: even a benign file name must be rejected when parentPath was built
+    // from an unsanitized "../evil" component and already points outside the
+    // loaded source root. A guard anchored only to parentPath would wave this
+    // through; re-anchoring to the source root catches it.
+    const root = makeTmpDir();
+    asMock(ConfigManager.getSourcePath).mockReturnValueOnce(root);
+    const escapedParent = path.join(root, "..", "evil-table");
+    await expect(
+      writeSNFileCurry(false)(
+        { name: "innocent", type: "js", content: "x" } as any,
+        escapedParent
+      )
+    ).rejects.toThrow(/Refusing to write .* outside the workspace source root/);
+    expect(
+      fs.existsSync(path.join(path.dirname(root), "evil-table", "innocent.js"))
+    ).toBe(false);
   });
 
   it("skips the write when checkExists=true and the file already exists", async () => {

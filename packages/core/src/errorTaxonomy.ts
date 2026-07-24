@@ -4,6 +4,18 @@
 // Pure (no I/O, no axios import): it inspects the error shape generically, so it
 // works for axios errors, Node system errors and plain Errors alike.
 
+// inquirer throws an ExitPromptError when the user aborts a prompt (Ctrl-C).
+// That is a cancellation, not a command failure — callers should exit quietly
+// without an error banner. (DEP1: under inquirer 8 Ctrl-C killed the process
+// outright, so only the wizard needed this; inquirer 14 rejects instead, which
+// routes every prompt abort through the async error sinks.)
+export function isPromptAbort(e: unknown): boolean {
+  if (!(e instanceof Error)) {
+    return false;
+  }
+  return e.name === "ExitPromptError" || /force closed the prompt/i.test(e.message);
+}
+
 export type ErrorCategory = "network" | "auth" | "config" | "data" | "unknown";
 
 export interface ClassifiedError {

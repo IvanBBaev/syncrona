@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import winston from "winston";
 export {};
 
 // #17: runHandler in commander.ts is the SINGLE sink that turns an async command
@@ -18,6 +19,9 @@ jest.unstable_mockModule("../Logger.js", () => ({
     error: (...a: unknown[]) => mockLoggerError(...a),
     info: (...a: unknown[]) => mockLoggerInfo(...a),
   },
+  // The registry's shared --log-level option takes its `choices` from here, so
+  // the mock has to carry the real level set for cliCommands.js to link.
+  LOG_LEVELS: Object.keys(winston.config.npm.levels),
 }));
 
 import { type CliCommandModule } from "../cliCommands.js";
@@ -111,5 +115,21 @@ describe("commander runHandler failure sink (#17)", () => {
       "Command failed with an unknown error."
     );
     expect(process.exitCode).toBe(1);
+  });
+
+  // DEP1: inquirer 14 rejects with ExitPromptError on Ctrl-C instead of killing
+  // the process — the sink must treat that as a quiet cancellation (exit 130,
+  // no error banner, no hint), not as a command failure.
+  it("treats a prompt abort (ExitPromptError) as a quiet cancellation with exit code 130", async () => {
+    const abort = new Error("User force closed the prompt with SIGINT");
+    abort.name = "ExitPromptError";
+    registerFailing("cancelled", abort);
+
+    await runArgv(["cancelled"]);
+    await flush();
+
+    expect(mockLoggerError).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(130);
   });
 });

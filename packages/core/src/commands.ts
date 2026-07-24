@@ -320,7 +320,7 @@ async function getDeployPaths(): Promise<string[]> {
   let changedPaths: string[] = [];
   try {
     changedPaths = ConfigManager.getDiffFile().changed || [];
-  } catch (e) {
+  } catch (_e) {
     // Only "no diff file present" reaches here (the corrupt case threw above);
     // fall back to a full-scope deploy.
   }
@@ -370,17 +370,21 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
       return;
     }
 
-    const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
-      {
-        type: "confirm",
-        name: "confirmed",
-        message:
-          "Deploying will overwrite code in your instance. Are you sure?",
-        default: false,
-      },
-    ]);
-    if (!confirmed) {
-      return;
+    // Skipped with --ci: without a TTY the prompt resolves to its `false`
+    // default, so an automated deploy would decline itself and still exit 0.
+    if (args.ci !== true) {
+      const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+        {
+          type: "confirm",
+          name: "confirmed",
+          message:
+            "Deploying will overwrite code in your instance. Are you sure?",
+          default: false,
+        },
+      ]);
+      if (!confirmed) {
+        return;
+      }
     }
     const paths = await getDeployPaths();
     logger.silly(`${paths.length} paths found...`);

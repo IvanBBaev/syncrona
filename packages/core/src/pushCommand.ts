@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncrona/types";
+import { createHash, randomUUID } from "crypto";
 import { promises as fsp } from "fs";
 import path from "path";
 import * as AppUtils from "./appUtils.js";
@@ -28,6 +29,12 @@ type PushCheckpoint = {
   // legacy checkpoint (written before this field existed) is treated as
   // "unknown instance" and safely discarded rather than misapplied.
   instance?: string;
+  // Content fingerprint of every attempted record, keyed like `attempted`.
+  // Record identity (table:sysId) alone cannot tell "already pushed" from
+  // "pushed, then edited": resume would skip the edited record and still exit 0,
+  // so the edit would never reach the instance. Optional so a legacy checkpoint
+  // (written before this field existed) still resumes on identity alone.
+  fingerprints?: Record<string, string>;
 };
 
 type CollaborationLock = {
@@ -56,6 +63,36 @@ const getCollaborationLockPath = () => path.join(getStateBaseDir(), COLLABORATIO
 
 const recToCheckpointKey = (rec: Sync.BuildableRecord): string =>
   `${rec.table}:${rec.sysId}`;
+
+// Fingerprints the sources a record pushes, so a later resume can tell whether
+// the record still holds the content that was pushed. Field order is normalized
+// so the fingerprint depends on content only. A source that cannot be read
+// hashes to a unique value on purpose: content we cannot read is content we
+// cannot prove unchanged, so the record is always re-pushed rather than skipped.
+async function fingerprintRecord(rec: Sync.BuildableRecord): Promise<string> {
+  const hash = createHash("sha256");
+  for (const field of Object.keys(rec.fields).sort()) {
+    hash.update(`${field}\0`);
+    try {
+      hash.update(await fsp.readFile(rec.fields[field].filePath));
+    } catch (_) {
+      hash.update(randomUUID());
+    }
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+async function fingerprintRecords(
+  recs: Sync.BuildableRecord[]
+): Promise<Record<string, string>> {
+  const entries = await Promise.all(
+    recs.map(
+      async (rec) => [recToCheckpointKey(rec), await fingerprintRecord(rec)] as const
+    )
+  );
+  return Object.fromEntries(entries);
+}
 
 async function loadPushCheckpoint(): Promise<PushCheckpoint | null> {
   try {
@@ -303,6 +340,44 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       let fileList = await AppUtils.getAppFileList(encodedPaths);
 
+      // A dry run is a read-only preview, so it returns before any checkpoint
+      // state is read, resumed or cleared: previewing must never consume or
+      // destroy the resume state a later real push depends on. It also previews
+      // the FULL current diff, since narrowing it to a checkpoint's failures
+      // would describe a push this run is not the one to perform.
+      if (dryRun) {
+        logger.info(`${fileList.length} files to push.`);
+        if (fileList.length > 0) {
+          const rows = fileList.map((rec) => {
+            const fieldNames = Object.keys(rec.fields);
+            const recordName = rec.fields[fieldNames[0]]?.name || rec.sysId;
+            return [rec.table, recordName, String(fieldNames.length), rec.sysId];
+          });
+          logger.info(
+            "Dry run — records that would be pushed:\n" +
+              formatTable(["Table", "Record", "Fields", "sys_id"], rows)
+          );
+        }
+        logger.info("Dry run enabled: skipping push checkpoint writes and remote push operation.");
+        return;
+      }
+
+      // The resume decision below and the checkpoint written further down must
+      // describe the same content, so the sources are fingerprinted once and the
+      // result reused. It is computed on demand: a run that aborts before it
+      // pushes anything (a declined prompt, a lock conflict) must not read every
+      // source to reach that abort.
+      let fingerprintsPromise: Promise<Record<string, string>> | undefined;
+      const getCurrentFingerprints = () => {
+        // Memoized against the record set current at first call. Later lookups
+        // are by checkpoint key and only ever ask about records still in
+        // fileList, which resume can shrink but never extend.
+        if (!fingerprintsPromise) {
+          fingerprintsPromise = fingerprintRecords(fileList);
+        }
+        return fingerprintsPromise;
+      };
+
       const existingCheckpoint = await loadPushCheckpoint();
       if (existingCheckpoint && existingCheckpoint.failed.length > 0) {
         // A checkpoint only belongs to *this* push when three things all hold.
@@ -353,7 +428,27 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
           if (shouldResume) {
             const failedKeys = new Set(existingCheckpoint.failed);
-            fileList = fileList.filter((rec) => failedKeys.has(recToCheckpointKey(rec)));
+            // A record is skipped only when it already succeeded AND still holds
+            // the content that succeeded. A record edited after the checkpoint
+            // was written is pushed again — skipping it on identity alone would
+            // drop the edit while the run still exits 0. A checkpoint with no
+            // fingerprints predates the field and can only resume on identity.
+            const recordedFingerprints = existingCheckpoint.fingerprints;
+            // Nothing to compare a legacy checkpoint against, so the sources are
+            // not read at all in that case.
+            const currentFingerprints = recordedFingerprints
+              ? await getCurrentFingerprints()
+              : undefined;
+            fileList = fileList.filter((rec) => {
+              const key = recToCheckpointKey(rec);
+              if (failedKeys.has(key)) {
+                return true;
+              }
+              if (!recordedFingerprints || !currentFingerprints) {
+                return false;
+              }
+              return recordedFingerprints[key] !== currentFingerprints[key];
+            });
             logger.info(`Resuming from checkpoint with ${fileList.length} records.`);
           } else {
             await clearPushCheckpoint();
@@ -363,28 +458,15 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       logger.info(`${fileList.length} files to push.`);
 
-      if (dryRun) {
-        if (fileList.length > 0) {
-          const rows = fileList.map((rec) => {
-            const fieldNames = Object.keys(rec.fields);
-            const recordName = rec.fields[fieldNames[0]]?.name || rec.sysId;
-            return [rec.table, recordName, String(fieldNames.length), rec.sysId];
-          });
-          logger.info(
-            "Dry run — records that would be pushed:\n" +
-              formatTable(["Table", "Record", "Fields", "sys_id"], rows)
-          );
-        }
-        logger.info("Dry run enabled: skipping push checkpoint writes and remote push operation.");
-        return;
-      }
-
       const lock = await acquireCollaborationLock("push", args.instanceProfile);
       if (!lock.acquired) {
         logger.warn(`Push aborted due to collaboration lock conflict. ${lock.reason || ""}`.trim());
         logger.warn(
           "If this lock is stale, delete sync.collaboration.lock.json or wait for the active push to complete."
         );
+        // A lock conflict pushed nothing, so it must fail the shell like every
+        // other non-success abort; exiting 0 reports a no-op deploy as green.
+        process.exitCode = 1;
         return;
       }
       lockAcquired = true;
@@ -427,11 +509,16 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // Write the checkpoint only after every confirmation has passed, so a
       // declined prompt leaves no fake "unfinished push" state behind.
       const attempted = fileList.map(recToCheckpointKey);
+      const currentFingerprints = await getCurrentFingerprints();
+      const fingerprints = Object.fromEntries(
+        attempted.map((key) => [key, currentFingerprints[key]])
+      );
       await writePushCheckpoint({
         attempted,
         succeeded: [],
         failed: attempted,
         instance: targetServer,
+        fingerprints,
       });
 
       const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);
@@ -446,7 +533,13 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         .filter((item) => !item.res.success)
         .map((item) => item.key);
 
-      await writePushCheckpoint({ attempted, succeeded, failed, instance: targetServer });
+      await writePushCheckpoint({
+        attempted,
+        succeeded,
+        failed,
+        instance: targetServer,
+        fingerprints,
+      });
       if (failed.length === 0) {
         await clearPushCheckpoint();
       } else {

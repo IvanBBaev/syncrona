@@ -6,12 +6,14 @@ import os from "os";
 import path from "path";
 import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
+import { resolveAuthMethod } from "@syncrona/sn-transport";
 import {
   defaultClient,
   resolveCredentials,
   describeCredentialSource,
   diagnoseCredentials,
   unwrapSNResponse,
+  type SNCredentials,
 } from "./snClient.js";
 import { listInstances } from "./auth.js";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder.js";
@@ -84,6 +86,46 @@ function safeConfigGet(getter: () => string): string {
   }
 }
 
+// resolveAuthMethod() reports a gap as prose ("api-key requires SN_API_KEY."),
+// while status and doctor list bare variable names. Presentation only: the
+// verdict stays the resolver's, and an unrecognized shape falls back to the
+// whole issue so a gap can never be dropped from the report.
+function envVarFromIssue(issue: string): string {
+  const match = /requires ([A-Z][A-Z0-9_]*)\.?$/.exec(issue.trim());
+  return match ? match[1] : issue;
+}
+
+// Which environment variables the configuration still needs, for the auth method
+// it actually selects. Demanding SN_USER + SN_PASSWORD unconditionally would
+// report every method that identifies the caller by client id or API key — not
+// as a user — as unconfigured, and skip its connectivity check. Asking the
+// transport's own resolver (the one that decides how the client authenticates)
+// keeps the two from ever drifting apart.
+function missingCredentialEnvVars(credentials: SNCredentials): string[] {
+  const missing: string[] = [];
+  if (!credentials.instance) {
+    missing.push("SN_INSTANCE");
+  }
+  const resolved = resolveAuthMethod({
+    explicit: credentials.authMethod,
+    hasPassword: !!credentials.password,
+    hasClientId: !!credentials.clientId,
+    hasClientSecret: !!credentials.clientSecret,
+    hasApiKey: !!credentials.apiKey,
+    hasJwtKey: !!credentials.jwtKey,
+  });
+  // Basic and the OAuth password grant authenticate AS a user, so they still
+  // need SN_USER; the resolver only validates the secret side of each method.
+  if (
+    (resolved.method === "basic" || resolved.method === "oauth-password") &&
+    !credentials.user
+  ) {
+    missing.push("SN_USER");
+  }
+  missing.push(...resolved.issues.map(envVarFromIssue));
+  return missing;
+}
+
 export async function statusCommand(
   args: Sync.SharedCmdArgs & { debugCredentials?: boolean }
 ): Promise<StatusSummary> {
@@ -91,11 +133,7 @@ export async function statusCommand(
   const credentials = resolveCredentials(args.instanceProfile);
   const instance = credentials.instance;
   const user = credentials.user;
-  const missingEnvVars = [
-    credentials.instance ? "" : "SN_INSTANCE",
-    credentials.user ? "" : "SN_USER",
-    credentials.password ? "" : "SN_PASSWORD",
-  ].filter((name) => name.length > 0);
+  const missingEnvVars = missingCredentialEnvVars(credentials);
   const envReady = missingEnvVars.length === 0;
 
   let scope = "<unknown>";
@@ -268,11 +306,7 @@ export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boo
   }
 
   const credentials = resolveCredentials(args.instanceProfile);
-  const missingEnvVars = [
-    credentials.instance ? "" : "SN_INSTANCE",
-    credentials.user ? "" : "SN_USER",
-    credentials.password ? "" : "SN_PASSWORD",
-  ].filter((name) => name.length > 0);
+  const missingEnvVars = missingCredentialEnvVars(credentials);
   checks.push({
     name: "env",
     ok: missingEnvVars.length === 0,
