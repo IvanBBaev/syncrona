@@ -43,11 +43,11 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
-    "dependency-cruiser": "^18.0.0",
+    "@changesets/cli": "^2.31.1",
+    "dependency-cruiser": "^18.1.0",
     "eslint": "^10.7.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.64.0"
+    "typescript-eslint": "^8.65.0"
   },
   "workspaces": [
     "packages/*"
