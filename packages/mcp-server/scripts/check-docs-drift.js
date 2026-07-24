@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const fs = require('node:fs');
 const path = require('node:path');
+const { extractToolBlocks } = require('./generate-tool-reference.js');
 
 const DEFAULT_TOOL_SOURCE = path.resolve(__dirname, '..', 'src', 'toolSchemas.ts');
 const DEFAULT_CATALOG_SOURCE = path.resolve(
@@ -12,7 +13,10 @@ const DEFAULT_CATALOG_SOURCE = path.resolve(
 );
 const DEFAULT_README_SOURCE = path.resolve(__dirname, '..', 'README.md');
 
-const TOOL_NAME_REGEX = /name:\s*"([^"]+)"/g;
+// Every quote style the compiler accepts for a string literal. Keying on double
+// quotes alone made a tool declared as `name: 'x'` invisible to this gate, so it
+// could be dropped from (or never added to) the docs without any complaint.
+const TOOL_NAME_REGEX = /name:\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g;
 
 // A doc declares a tool at the start of a bullet, a table cell, or a heading,
 // optionally wrapped in backticks. Prose is deliberately not a declaration site:
@@ -24,8 +28,36 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Structural read of the schema source: scope to the `BASE_MCP_TOOLS` array and
+// take each tool object's own first `name:` literal, so a `name: "..."` inside a
+// comment, a description string, or an object outside the array cannot be counted
+// as a declared tool (which would manufacture false drift against the docs).
+// Returns null when the array is absent (e.g. a bare `name:`-only test fixture) so
+// the caller falls back to the whole-file scan.
+function declaredToolNamesFromBlocks(raw) {
+  let blocks;
+  try {
+    blocks = extractToolBlocks(raw);
+  } catch {
+    return null;
+  }
+  const names = [];
+  for (const block of blocks) {
+    const match = new RegExp(TOOL_NAME_REGEX.source).exec(block);
+    if (match) {
+      names.push(match[1] ?? match[2] ?? match[3]);
+    }
+  }
+  return names;
+}
+
 function parseToolNamesFromSchemas(raw) {
-  return [...new Set([...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1]))].sort();
+  const structural = declaredToolNamesFromBlocks(raw);
+  const names =
+    structural !== null
+      ? structural
+      : [...raw.matchAll(TOOL_NAME_REGEX)].map((m) => m[1] ?? m[2] ?? m[3]);
+  return [...new Set(names)].sort();
 }
 
 // Family prefixes ("sync_", "sn_", ...) come from the schema names themselves, so
@@ -56,10 +88,22 @@ const DECLARATION_TOOL_REGEX = new RegExp(
   'gm'
 );
 
-// Word-boundary match on `_`-bearing identifiers: `sn_query` must not match
-// inside `sn_query_table`.
+// A line is a DECLARATION line when it opens a command/tool table entry: a bullet,
+// a Markdown table row, or a heading (the same leading shapes DECLARATION_PREFIX
+// encodes). Prose/paragraph lines are not declaration lines.
+const DECLARATION_LINE_REGEX = new RegExp(DECLARATION_PREFIX);
+
+// A schema tool counts as documented only when its name appears on a DECLARATION
+// line — the command/tool table itself — not merely somewhere in the file. A
+// whole-file scan let a tool that had been dropped from the table still read as
+// "documented" because its name lingered in a sentence or a changelog paragraph,
+// which is exactly the missing-from-docs drift this gate exists to catch. Word
+// boundaries still keep `sn_query` from matching inside `sn_query_table`.
 function mentionsToolName(raw, name) {
-  return new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(name)}(?![A-Za-z0-9_])`).test(raw);
+  const boundary = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(name)}(?![A-Za-z0-9_])`);
+  return raw
+    .split(/\r?\n/)
+    .some((line) => DECLARATION_LINE_REGEX.test(line) && boundary.test(line));
 }
 
 // Names known to the schemas are searched for literally; anything else is picked
@@ -195,8 +239,10 @@ module.exports = {
   checkDocsDrift,
   compareToolSets,
   deriveToolPrefixes,
+  mentionsToolName,
   parseToolNamesFromDocs,
   parseToolNamesFromSchemas,
+  declaredToolNamesFromBlocks,
   runCli,
   parseRuntimeOverrides,
   DEFAULT_TOOL_SOURCE,

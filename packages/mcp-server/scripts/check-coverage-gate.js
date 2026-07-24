@@ -98,6 +98,9 @@ function parseAllFilesLineCoverage(output) {
 // sibling packages resolve to `../<pkg>/dist/...` and are excluded.
 const COVERAGE_INCLUDE = 'dist/**';
 
+// The directory COVERAGE_INCLUDE scopes to, resolved against the gate's cwd.
+const COVERAGE_ROOT = 'dist';
+
 // `toolSchemas` is ~1500 lines of a single top-level declarative object literal
 // (the MCP tool schema catalogue). V8's line coverage cannot mark the body of a
 // static data literal as executed — even a test that requires the module and
@@ -112,6 +115,220 @@ const COVERAGE_INCLUDE = 'dist/**';
 // the raw dist figure is the honest measure of what actually ran. (`.ts` glob
 // kept in the exclude list as a harmless guard if source maps are reintroduced.)
 const COVERAGE_EXCLUDES = ['**/toolSchemas.ts', '**/toolSchemas.js'];
+
+// Per-file line-coverage floor. The `all files` ratchet is an AGGREGATE: a single
+// new file at 0% that IS present in the report (some test imported the module but
+// exercised nothing in it) barely moves the aggregate and ships green, which is
+// the exact opposite of what a coverage gate is for. This floor scores every
+// reported source file on its own, so a present-but-untested file fails even while
+// the aggregate stays above its threshold. It is deliberately far below the
+// `--line-threshold 90` global ratchet — it exists to catch ~0% files, not to
+// second-guess legitimately-thin ones — so the aggregate remains the ceiling
+// raiser and this is only the floor.
+const PER_FILE_LINE_FLOOR = 10;
+
+// `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
+// reports coverage for scripts it saw execute. A dist module that no test ever
+// imports is therefore absent from the report entirely — it cannot lower the
+// "all files" ratio and cannot fail this gate. Left alone, a module with zero
+// tests is invisible rather than scored 0%, which is the exact opposite of what
+// a coverage gate is for (verified: a 2-function module no test imports leaves
+// "all files" reading 100.00%).
+//
+// So the reported set is diffed against what is actually on disk, and any owned
+// module missing from the report fails the gate. The report is a TREE (one space
+// of indent per level, directory rows carry empty percentage cells), not a list
+// of paths, so the paths are reconstructed with an indent stack.
+const REPORT_START_REGEX = /^\s*#?\s*start of coverage report\s*$/i;
+const REPORT_END_REGEX = /^\s*#?\s*end of coverage report\s*$/i;
+
+function parseReportedFiles(output) {
+  const files = new Set();
+  const stack = [];
+  let inside = false;
+  for (const line of output.split(/\r?\n/)) {
+    if (REPORT_START_REGEX.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (!inside) {
+      continue;
+    }
+    if (REPORT_END_REGEX.test(line)) {
+      break;
+    }
+    // Drop the TAP comment marker only; the spaces after it encode the depth.
+    const body = line.replace(/^\s*#/, '');
+    if (!body.includes('|')) {
+      continue;
+    }
+    const cells = body.split('|');
+    const label = cells[0];
+    const name = label.trim();
+    if (name === '' || /^-+$/.test(name) || /^all files$/i.test(name)) {
+      continue;
+    }
+    if (name === 'file' && /line\s*%/i.test(cells[1] || '')) {
+      continue;
+    }
+    const depth = label.length - label.trimStart().length - 1;
+    if (depth < 0) {
+      continue;
+    }
+    stack.length = depth;
+    stack.push(name);
+    // A directory row leaves the line% cell blank; only file rows carry numbers.
+    // `Number('')` is 0 and finite, so the emptiness must be tested first.
+    const linePct = (cells[1] || '').trim();
+    if (linePct !== '' && Number.isFinite(Number(linePct))) {
+      files.add(stack.join('/'));
+    }
+  }
+  return files;
+}
+
+// Per-file line coverage as an array of { file, linePct }, reconstructed from the
+// SAME indented TAP tree parseReportedFiles walks: one space of indent per depth
+// level, directory rows carry a blank line% cell (skipped), only file rows carry a
+// finite number. Kept separate from parseReportedFiles because that returns a Set
+// of paths for the unreported-module diff, whereas this must retain the percentage.
+function parsePerFileLineCoverage(output) {
+  const files = [];
+  const stack = [];
+  let inside = false;
+  for (const line of output.split(/\r?\n/)) {
+    if (REPORT_START_REGEX.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (!inside) {
+      continue;
+    }
+    if (REPORT_END_REGEX.test(line)) {
+      break;
+    }
+    const body = line.replace(/^\s*#/, '');
+    if (!body.includes('|')) {
+      continue;
+    }
+    const cells = body.split('|');
+    const label = cells[0];
+    const name = label.trim();
+    if (name === '' || /^-+$/.test(name) || /^all files$/i.test(name)) {
+      continue;
+    }
+    if (name === 'file' && /line\s*%/i.test(cells[1] || '')) {
+      continue;
+    }
+    const depth = label.length - label.trimStart().length - 1;
+    if (depth < 0) {
+      continue;
+    }
+    stack.length = depth;
+    stack.push(name);
+    // A directory row leaves the line% cell blank; `Number('')` is a finite 0, so
+    // the emptiness must be tested first or every directory would score 0%.
+    const linePct = (cells[1] || '').trim();
+    if (linePct !== '' && Number.isFinite(Number(linePct))) {
+      files.push({ file: stack.join('/'), linePct: Number(linePct) });
+    }
+  }
+  return files;
+}
+
+// Reported source files scoring below the per-file floor. The same excludes that
+// keep the pure-data schema literal out of the aggregate are honored here, so the
+// floor can never fail on a file the aggregate itself does not count.
+function findFilesBelowFloor(output, floor = PER_FILE_LINE_FLOOR) {
+  const excludes = COVERAGE_EXCLUDES.map(globToRegExp);
+  return parsePerFileLineCoverage(output).filter(
+    ({ file, linePct }) => !excludes.some((re) => re.test(file)) && linePct < floor
+  );
+}
+
+function globToRegExp(glob) {
+  let source = '';
+  for (let i = 0; i < glob.length; i += 1) {
+    const ch = glob[i];
+    if (ch === '*') {
+      if (glob[i + 1] === '*') {
+        i += 1;
+        if (glob[i + 1] === '/') {
+          i += 1;
+          source += '(?:.*/)?';
+        } else {
+          source += '.*';
+        }
+      } else {
+        source += '[^/]*';
+      }
+    } else if (ch === '?') {
+      source += '[^/]';
+    } else {
+      source += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+// A `.ts` file that exports only types compiles to a stub with no executable
+// body — no statement, so nothing for V8 to report and no importer to load it.
+// Its absence from the report proves nothing, so it is not a coverage hole. A
+// module with real code always has a body left after this strip and is reported
+// as missing, which is the failure mode this check exists to produce.
+function isTypeOnlyEmit(source) {
+  const stripped = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/["']use strict["'];?/g, '')
+    .replace(/Object\.defineProperty\(\s*exports\s*,\s*["']__esModule["']\s*,\s*\{[^}]*\}\s*\)\s*;?/g, '')
+    .replace(/exports\.__esModule\s*=\s*(?:true|!0)\s*;?/g, '')
+    .trim();
+  return stripped === '';
+}
+
+// Every `.js` under dist/ that the include glob covers and no exclude removes.
+function listCoverageCandidates(rootDir) {
+  const base = path.join(rootDir, COVERAGE_ROOT);
+  if (!fs.existsSync(base)) {
+    return [];
+  }
+  const excludes = COVERAGE_EXCLUDES.map(globToRegExp);
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        const rel = path.relative(rootDir, abs).split(path.sep).join('/');
+        if (!excludes.some((re) => re.test(rel))) {
+          found.push(rel);
+        }
+      }
+    }
+  };
+  walk(base);
+  return found;
+}
+
+// Owned modules the report never mentioned, i.e. modules no test loaded.
+function findUnreportedModules(output, rootDir) {
+  const reported = parseReportedFiles(output);
+  const candidates = listCoverageCandidates(rootDir);
+  return candidates.filter((rel) => {
+    if (reported.has(rel)) {
+      return false;
+    }
+    let source;
+    try {
+      source = fs.readFileSync(path.join(rootDir, rel), 'utf-8');
+    } catch {
+      return true;
+    }
+    return !isTypeOnlyEmit(source);
+  });
+}
 
 // Enumerate the test files in JS rather than leaning on a shell to expand
 // `test/*.test.js`. The child is spawned with `shell: false`, so the coverage
@@ -187,6 +404,45 @@ function main() {
     process.exit(run.exitCode);
   }
 
+  // Run this BEFORE the ratio checks: an untested module is absent from the
+  // report rather than scored, so "all files" can read 100% while real code has
+  // no test at all. The ratio cannot speak for modules it never saw.
+  const unreported = findUnreportedModules(run.output, process.cwd());
+  if (unreported.length > 0) {
+    console.error(
+      `Coverage gate failed: ${unreported.length} module(s) under ${COVERAGE_ROOT}/ were never ` +
+        'loaded by any test, so they carry no coverage at all:'
+    );
+    for (const rel of unreported) {
+      console.error(`- ${rel}`);
+    }
+    console.error(
+      'Add a test that exercises each module, or exclude it deliberately via COVERAGE_EXCLUDES ' +
+        'with a stated reason.'
+    );
+    process.exit(1);
+  }
+
+  // Per-file floor, checked BEFORE the aggregate: a file present in the report but
+  // effectively untested (~0%) is invisible to the `all files` ratio, so the
+  // aggregate can read 90%+ while a specific module has no real test at all.
+  const belowFloor = findFilesBelowFloor(run.output);
+  if (belowFloor.length > 0) {
+    console.error(
+      `Coverage gate failed: ${belowFloor.length} file(s) under ${COVERAGE_ROOT}/ are below the ` +
+        `per-file line floor of ${PER_FILE_LINE_FLOOR.toFixed(2)}% (present in the report but ` +
+        'effectively untested):'
+    );
+    for (const { file, linePct } of belowFloor) {
+      console.error(`- ${file} (${linePct.toFixed(2)}%)`);
+    }
+    console.error(
+      'Add a test that exercises each file, or exclude it deliberately via COVERAGE_EXCLUDES ' +
+        'with a stated reason.'
+    );
+    process.exit(1);
+  }
+
   const coverage = parseAllFilesLineCoverage(run.output);
   if (coverage === null) {
     console.error('Could not parse all files line coverage from report.');
@@ -229,4 +485,12 @@ if (require.main === module) {
 module.exports = {
   parseArgs,
   parseAllFilesLineCoverage,
+  parseReportedFiles,
+  parsePerFileLineCoverage,
+  findFilesBelowFloor,
+  listCoverageCandidates,
+  findUnreportedModules,
+  isTypeOnlyEmit,
+  globToRegExp,
+  PER_FILE_LINE_FLOOR,
 };

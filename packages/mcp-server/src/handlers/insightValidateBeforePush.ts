@@ -129,7 +129,18 @@ export async function handleValidateBeforePush(
     undefined,
     timeoutMs
   );
-  const conflictRows = toTableResultRows(conflictResponse.data);
+  // A failed conflict query must not degrade into an empty `recentChanges` list:
+  // "nobody else touched the scope" and "the conflict check never ran" are
+  // opposite verdicts, and silently reporting the former invites a push over a
+  // colleague's concurrent update-set changes.
+  const conflictCheckPerformed =
+    conflictResponse.status >= 200 && conflictResponse.status <= 299;
+  if (!conflictCheckPerformed) {
+    errors.push({ table: "sys_update_xml", status: conflictResponse.status });
+  }
+  const conflictRows = conflictCheckPerformed
+    ? toTableResultRows(conflictResponse.data)
+    : [];
   const recentChanges = conflictRows.map((row) => ({
     name: String(row.target_name ?? ""),
     type: String(row.type ?? ""),
@@ -138,17 +149,22 @@ export async function handleValidateBeforePush(
     changedAt: String(row.sys_created_on ?? ""),
   }));
 
-  const ready = blockedCount === 0;
+  // A table query that failed analysed zero scripts, so its verdict is unknown —
+  // not clean. Only a run where every query succeeded can report a green gate.
+  const validated = errors.length === 0;
+  const ready = blockedCount === 0 && validated;
 
   return textResponse(
     {
       scope,
       ready,
+      validated,
       blockedCount,
       warningCount,
       fileCount: files.length,
       files,
       recentChanges,
+      conflictCheckPerformed,
       conflictWindowHours,
       errors,
     },

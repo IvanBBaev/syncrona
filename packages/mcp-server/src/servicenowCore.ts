@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { createHash } from "crypto";
 import path from "path";
 import {
@@ -41,14 +41,20 @@ import {
   type TokenPoster,
   type OAuthTokenResponse,
 } from "@syncrona/sn-transport";
-import { Agent } from "undici";
+import {
+  Agent,
+  EnvHttpProxyAgent,
+  type Dispatcher,
+  type buildConnector,
+} from "undici";
 import { logger } from "./logger";
 
 // Node's global fetch honours a non-standard `dispatcher` option (it is undici
 // under the hood) but the DOM `RequestInit` type omits it. Widen it locally so
-// mutual-TLS / custom-CA requests can attach an undici Agent as the dispatcher
-// without resorting to an `any` cast.
-type FetchInit = NonNullable<Parameters<typeof fetch>[1]> & { dispatcher?: Agent };
+// mutual-TLS / custom-CA / proxied requests can attach an undici dispatcher
+// (an Agent, or an EnvHttpProxyAgent when HTTP(S)_PROXY is set) without
+// resorting to an `any` cast.
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]> & { dispatcher?: Dispatcher };
 
 type SNConfig = {
   instance: string;
@@ -86,10 +92,75 @@ type SNConfig = {
 // so token caching/refresh actually persists between tool calls.
 const tokenManagers = new Map<string, TokenManager>();
 
+// Bound the token-manager cache so a long-running server that authenticates to
+// many distinct instances/identities cannot grow it without limit. LRU: the
+// least-recently-used identity is dropped once the cap is reached. (REV-109)
+const MAX_CACHED_TOKEN_MANAGERS = 32;
+
+// Absolute deadlines (ms epoch) of the requests currently waiting on a token,
+// keyed like tokenManagers. The token endpoint must observe the caller's timeout
+// too: an unsignalled fetch hangs until undici's default 300s headers timeout,
+// so a tool call that declared a 1s budget would stall for minutes. TokenPoster's
+// shape is fixed by @syncrona/sn-transport, so the budget travels through here.
+const tokenBudgets = new Map<string, Set<number>>();
+
+// Floor for the token leg so a nearly-exhausted budget still gets a usable
+// attempt rather than aborting before the request leaves.
+const MIN_TOKEN_TIMEOUT_MS = 1000;
+// Applied when no caller registered a budget (e.g. a token acquired outside the
+// request loop), keeping a hung token endpoint far below undici's 300s default.
+const DEFAULT_TOKEN_TIMEOUT_MS = 30000;
+
 // Test seam: token managers are module state and otherwise leak cached tokens
 // between unit tests that reuse the same instance/client identity.
 export function clearTokenManagerCache(): void {
   tokenManagers.clear();
+  tokenBudgets.clear();
+}
+
+// Evict the least-recently-used token managers until there is room for one more.
+// Insertion order is the LRU order because getTokenManager re-inserts an entry
+// on every cache hit. (REV-109)
+function evictTokenManagersToCap(): void {
+  while (tokenManagers.size >= MAX_CACHED_TOKEN_MANAGERS) {
+    const oldest = tokenManagers.keys().next().value as string | undefined;
+    if (oldest === undefined) {
+      return;
+    }
+    tokenManagers.delete(oldest);
+  }
+}
+
+// A token fetch is de-duplicated across concurrent callers, so bound it by the
+// most generous pending deadline: aborting on the shortest would cancel a fetch
+// that a more patient caller still needs. Each caller's own budget is enforced
+// separately by the abort signal on its main request.
+function tokenTimeoutFor(key: string): number {
+  const deadlines = tokenBudgets.get(key);
+  const budget =
+    deadlines && deadlines.size > 0
+      ? Math.max(...deadlines) - Date.now()
+      : DEFAULT_TOKEN_TIMEOUT_MS;
+  return Math.max(budget, MIN_TOKEN_TIMEOUT_MS);
+}
+
+// Registers `deadline` for the duration of `work`, so a token fetch triggered by
+// it is bounded by this caller's remaining budget.
+async function withTokenBudget<T>(key: string, deadline: number, work: () => Promise<T>): Promise<T> {
+  let deadlines = tokenBudgets.get(key);
+  if (!deadlines) {
+    deadlines = new Set();
+    tokenBudgets.set(key, deadlines);
+  }
+  deadlines.add(deadline);
+  try {
+    return await work();
+  } finally {
+    deadlines.delete(deadline);
+    if (deadlines.size === 0) {
+      tokenBudgets.delete(key);
+    }
+  }
 }
 
 function credentialFingerprint(config: SNConfig): string {
@@ -190,63 +261,209 @@ function staticAuthHeaders(config: SNConfig): Record<string, string> {
   return {};
 }
 
-// Cache one undici dispatcher per distinct TLS material so mutual-TLS / custom-CA
-// connections reuse a single Agent across the long-running server instead of
-// rebuilding (and re-reading the cert/key files) on every request.
-const dispatchers = new Map<string, Agent>();
+// Cache one undici dispatcher per distinct TLS material + proxy environment so
+// mutual-TLS / custom-CA / proxied connections reuse a single dispatcher across
+// the long-running server instead of rebuilding (and re-reading the cert/key
+// files) on every request.
+const dispatchers = new Map<string, Dispatcher>();
+
+// Bound the dispatcher cache the same way as the token managers so an unbounded
+// set of distinct TLS materials cannot leak Agents (and their socket pools) for
+// the life of the process. (REV-109)
+const MAX_CACHED_DISPATCHERS = 32;
 
 // Test seam: dispatcher cache is module state.
 export function clearDispatcherCache(): void {
   dispatchers.clear();
 }
 
-// Build (or reuse) the undici Agent that carries the client certificate / custom
-// CA for a config. Returns undefined when default TLS applies, so callers omit
-// the dispatcher and let global fetch use its built-in agent. Exported as a test
-// seam so the dispatcher-building path can be exercised without a live handshake.
-export function getDispatcher(config: SNConfig): Agent | undefined {
-  if (!config.tlsCustom) {
+// Evict the least-recently-used dispatchers until there is room for one more,
+// closing each victim so its socket pools are released. Insertion order is LRU
+// because getDispatcher re-inserts an entry on every cache hit. (REV-109)
+function evictDispatchersToCap(): void {
+  while (dispatchers.size >= MAX_CACHED_DISPATCHERS) {
+    const oldest = dispatchers.keys().next().value as string | undefined;
+    if (oldest === undefined) {
+      return;
+    }
+    const victim = dispatchers.get(oldest);
+    dispatchers.delete(oldest);
+    void victim?.close().catch(() => {});
+  }
+}
+
+// Test seam: expose cache occupancy and caps so LRU eviction is observable in
+// unit tests without reaching into these module-private Maps.
+export function getCacheStatsForTest(): {
+  tokenManagers: number;
+  dispatchers: number;
+  maxTokenManagers: number;
+  maxDispatchers: number;
+} {
+  return {
+    tokenManagers: tokenManagers.size,
+    dispatchers: dispatchers.size,
+    maxTokenManagers: MAX_CACHED_TOKEN_MANAGERS,
+    maxDispatchers: MAX_CACHED_DISPATCHERS,
+  };
+}
+
+// A cert/key/CA renewed in place keeps its path but changes its bytes (and mtime).
+// Folding each file's mtimeMs into the cache key means an in-place rotation drops
+// the stale Agent and rebuilds one with the fresh material, instead of pinning the
+// expired cert until the process restarts (a total mTLS outage at cert expiry).
+// (REV-92)
+function certFileStamp(certPath?: string): string {
+  if (!certPath) {
+    return "";
+  }
+  try {
+    return String(statSync(certPath).mtimeMs);
+  } catch {
+    // A missing file is surfaced loudly by the readFileSync below; keep the key
+    // stable here so that clear error path stays unchanged.
+    return "missing";
+  }
+}
+
+// Sample the proxy configuration from an env object, mirroring undici's own
+// EnvHttpProxyAgent precedence exactly: the lowercase variable wins over the
+// uppercase one (`http_proxy ?? HTTP_PROXY`, etc.), and because `??` only skips
+// nullish values an empty lowercase variable masks a populated uppercase one.
+// Empty strings then count as unset, so `HTTPS_PROXY=` disables proxying. (G9)
+function proxyEnv(env: NodeJS.ProcessEnv): {
+  httpProxy?: string;
+  httpsProxy?: string;
+  noProxy?: string;
+} {
+  const pick = (lower?: string, upper?: string): string | undefined => {
+    const value = lower ?? upper;
+    return value ? value : undefined;
+  };
+  return {
+    httpProxy: pick(env.http_proxy, env.HTTP_PROXY),
+    httpsProxy: pick(env.https_proxy, env.HTTPS_PROXY),
+    noProxy: pick(env.no_proxy, env.NO_PROXY),
+  };
+}
+
+// EnvHttpProxyAgent's TS Options type omits `requestTls` (it belongs to the
+// inner ProxyAgent), but the constructor forwards every non-proxy option to its
+// inner ProxyAgent(s) verbatim, so it is honoured at runtime. Widen the type
+// narrowly here instead of casting through `any`. (G9)
+type EnvProxyOptions = EnvHttpProxyAgent.Options & {
+  requestTls?: buildConnector.BuildOptions;
+};
+
+// Build (or reuse) the undici dispatcher for a config: an Agent that carries
+// the client certificate / custom CA, an EnvHttpProxyAgent when a proxy is set,
+// or the two combined. Returns undefined when default TLS applies and no proxy
+// is configured, so callers omit the dispatcher and let global fetch use its
+// built-in agent. Exported as a test seam so the dispatcher-building path can
+// be exercised without a live handshake.
+//
+// (G9) Corporate proxies: native fetch ignores HTTP_PROXY/HTTPS_PROXY/NO_PROXY,
+// so behind a proxy the MCP client could not reach the instance at all.
+// EnvHttpProxyAgent implements the standard semantics of those variables —
+// including NO_PROXY host/port/wildcard matching — so we do not hand-roll them.
+// The sampled env is folded into the cache key so a changed proxy setting
+// rebuilds the dispatcher instead of reusing a stale one.
+export function getDispatcher(
+  config: SNConfig,
+  env: NodeJS.ProcessEnv = process.env
+): Dispatcher | undefined {
+  const { httpProxy, httpsProxy, noProxy } = proxyEnv(env);
+  // NO_PROXY alone is a no-op: with no proxy URL there is nothing to bypass.
+  const hasProxy = Boolean(httpProxy || httpsProxy);
+  if (!hasProxy && !config.tlsCustom) {
     return undefined;
   }
   const key = [
     config.caBundlePath ?? "",
+    certFileStamp(config.caBundlePath),
     config.clientCertPath ?? "",
+    certFileStamp(config.clientCertPath),
     config.clientKeyPath ?? "",
+    certFileStamp(config.clientKeyPath),
     config.clientKeyPassphrase ?? "",
     config.rejectUnauthorized === false ? "0" : "1",
+    httpProxy ?? "",
+    httpsProxy ?? "",
+    noProxy ?? "",
   ].join("|");
   const existing = dispatchers.get(key);
   if (existing) {
+    // LRU touch: re-insert so this material moves to the most-recently-used end.
+    dispatchers.delete(key);
+    dispatchers.set(key, existing);
     return existing;
   }
-  const connect: Record<string, unknown> = {
-    rejectUnauthorized: config.rejectUnauthorized !== false,
-  };
-  if (config.caBundlePath) {
-    connect.ca = readFileSync(config.caBundlePath);
+  // TLS overrides only for tlsCustom configs. With default TLS and a proxy, no
+  // connect options are passed at all, so the default trust store applies and
+  // NODE_EXTRA_CA_CERTS keeps working. (G9)
+  let connect: Record<string, unknown> | undefined;
+  if (config.tlsCustom) {
+    connect = {
+      rejectUnauthorized: config.rejectUnauthorized !== false,
+    };
+    if (config.caBundlePath) {
+      connect.ca = readFileSync(config.caBundlePath);
+    }
+    // A client cert/key misconfiguration must be loud, not silently downgraded to
+    // no-mTLS — readFileSync throws here and surfaces the bad path immediately.
+    if (config.clientCertPath) {
+      connect.cert = readFileSync(config.clientCertPath);
+    }
+    if (config.clientKeyPath) {
+      connect.key = readFileSync(config.clientKeyPath);
+    }
+    if (config.clientKeyPassphrase) {
+      connect.passphrase = config.clientKeyPassphrase;
+    }
   }
-  // A client cert/key misconfiguration must be loud, not silently downgraded to
-  // no-mTLS — readFileSync throws here and surfaces the bad path immediately.
-  if (config.clientCertPath) {
-    connect.cert = readFileSync(config.clientCertPath);
+  let dispatcher: Dispatcher;
+  if (hasProxy) {
+    // EnvHttpProxyAgent forwards all non-proxy options to BOTH its inner direct
+    // Agent (used for NO_PROXY-bypassed hosts, which honours `connect`) and its
+    // inner ProxyAgent(s) (which build the origin TLS through the CONNECT
+    // tunnel from `requestTls` and override a generic `connect` with their own
+    // tunnel connector), so custom TLS material must travel under both names.
+    // The proxy fields are passed explicitly — empty string for unset — to pin
+    // the dispatcher to the env sampled for the cache key above, instead of
+    // letting undici re-read process.env behind our back. (G9)
+    const options: EnvProxyOptions = {
+      httpProxy: httpProxy ?? "",
+      httpsProxy: httpsProxy ?? "",
+      noProxy: noProxy ?? "",
+    };
+    if (connect) {
+      options.connect = connect;
+      options.requestTls = connect;
+    }
+    dispatcher = new EnvHttpProxyAgent(options);
+  } else {
+    // No proxy: today's direct-Agent path, reached only for tlsCustom configs
+    // (the default-TLS, no-proxy case returned undefined above).
+    dispatcher = new Agent({ connect });
   }
-  if (config.clientKeyPath) {
-    connect.key = readFileSync(config.clientKeyPath);
-  }
-  if (config.clientKeyPassphrase) {
-    connect.passphrase = config.clientKeyPassphrase;
-  }
-  const agent = new Agent({ connect });
-  dispatchers.set(key, agent);
-  return agent;
+  evictDispatchersToCap();
+  dispatchers.set(key, dispatcher);
+  return dispatcher;
+}
+
+function tokenManagerKey(config: SNConfig): string {
+  return `${config.instance}|${config.user}|${config.clientId ?? ""}|${credentialFingerprint(
+    config
+  )}`;
 }
 
 function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
-  const key = `${config.instance}|${config.user}|${config.clientId ?? ""}|${credentialFingerprint(
-    config
-  )}`;
+  const key = tokenManagerKey(config);
   const existing = tokenManagers.get(key);
   if (existing) {
+    // LRU touch: re-insert so this identity moves to the most-recently-used end.
+    tokenManagers.delete(key);
+    tokenManagers.set(key, existing);
     return existing;
   }
   const dispatcher = getDispatcher(config);
@@ -258,6 +475,7 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
         Accept: "application/json",
       },
       body,
+      signal: AbortSignal.timeout(tokenTimeoutFor(key)),
     };
     if (dispatcher) {
       init.dispatcher = dispatcher;
@@ -285,6 +503,7 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
     buildOAuthConfig(config, baseUrl),
     poster
   );
+  evictTokenManagersToCap();
   tokenManagers.set(key, manager);
   return manager;
 }
@@ -302,6 +521,21 @@ const BASE_RETRY_DELAY_MS = 120;
 // retry pointless. Guarantee each attempt at least this much (capped by the
 // caller's own timeout so a tiny timeout is still honoured).
 const MIN_ATTEMPT_TIMEOUT_MS = 1000;
+
+// ERR-1: only idempotent methods may be re-sent freely. A non-idempotent write
+// (POST/PATCH) that already reached the instance must never be replayed — a
+// re-sent POST can start a background script twice or create a duplicate record.
+const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+// Syscall codes that prove the request never left the client, so re-sending a
+// non-idempotent write is safe. undici wraps network failures in a TypeError
+// whose `.cause` carries the underlying syscall `code`; a client-side timeout
+// abort is NOT here (the server may still be executing the aborted request).
+const PRE_SEND_ERROR_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+const preSendErrorCode = (err: unknown): string | undefined => {
+  const e = err as { code?: string; cause?: { code?: string } } | null;
+  return e?.code ?? e?.cause?.code;
+};
 
 let cachedScopedApiPrefix: string | null = null;
 
@@ -701,6 +935,9 @@ export async function snRequestWithConfig(
   const { instance } = config;
   const baseUrl = instanceToBaseUrl(instance);
   const startedAt = Date.now();
+  // ERR-1: a POST/PATCH is only re-sent when we can prove it never reached the
+  // instance (a pre-send network error). Idempotent methods retry as before.
+  const isIdempotent = IDEMPOTENT_METHODS.has(method.toUpperCase());
   // Authorization: OAuth Bearer for the OAuth grants, the inbound API-key header
   // for api-key, else Basic. One token manager per instance+client (cached) so
   // refresh persists across tool calls. An mTLS-only config sends none of these
@@ -708,27 +945,54 @@ export async function snRequestWithConfig(
   // dispatcher attached below.
   const useOAuth = usesOAuth(config);
   const tokens = useOAuth ? getTokenManager(config, baseUrl) : null;
+  const tokenKey = tokenManagerKey(config);
   const dispatcher = getDispatcher(config);
   let oauthRetried = false;
 
+  const remainingBudget = (): number => {
+    const elapsed = Date.now() - startedAt;
+    return Math.max(timeoutMs - elapsed, Math.min(timeoutMs, MIN_ATTEMPT_TIMEOUT_MS));
+  };
+
   const buildAuthHeaders = async (): Promise<Record<string, string>> =>
     tokens
-      ? { Authorization: `Bearer ${await tokens.getToken()}` }
+      ? {
+          Authorization: `Bearer ${await withTokenBudget(
+            tokenKey,
+            Date.now() + remainingBudget(),
+            () => tokens.getToken()
+          )}`,
+        }
       : staticAuthHeaders(config);
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
     await acquireRequestSlot();
-    const elapsed = Date.now() - startedAt;
-    const remaining = Math.max(timeoutMs - elapsed, Math.min(timeoutMs, MIN_ATTEMPT_TIMEOUT_MS));
+
+    // Resolve auth BEFORE arming the timer: token acquisition has its own budget
+    // (this controller cannot cancel it), and arming first would let a slow token
+    // fetch abort the signal so the request below rejects instantly without ever
+    // being sent — burning a retry attempt.
+    let authHeaders: Record<string, string>;
+    try {
+      authHeaders = await buildAuthHeaders();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= MAX_REQUEST_ATTEMPTS) {
+        throw error;
+      }
+      await sleep(Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 800));
+      continue;
+    }
+
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), remaining);
+    const timer = setTimeout(() => controller.abort(), remainingBudget());
 
     try {
       const requestInit: FetchInit = {
         method,
         headers: {
-          ...(await buildAuthHeaders()),
+          ...authHeaders,
           "Content-Type": "application/json",
           Accept: "application/json, text/plain, text/html",
         },
@@ -744,15 +1008,20 @@ export async function snRequestWithConfig(
       );
 
       // OAuth: a 401 usually means the token expired — refresh once and retry.
-      if (
-        tokens &&
-        response.status === 401 &&
-        !oauthRetried &&
-        attempt < MAX_REQUEST_ATTEMPTS
-      ) {
-        oauthRetried = true;
-        await tokens.forceRefresh();
-        continue;
+      if (tokens && response.status === 401 && attempt < MAX_REQUEST_ATTEMPTS) {
+        if (!oauthRetried) {
+          oauthRetried = true;
+          await tokens.forceRefresh();
+          continue;
+        }
+        // A 401 that SURVIVED the forced refresh means the cached credentials
+        // themselves are stale — e.g. rotated on the instance while the 30s
+        // secrets cache still holds the old secret. Drop this token manager and
+        // bust the secrets cache so the NEXT request re-resolves fresh
+        // credentials instead of serving the stale token for the rest of the
+        // SECRETS_CACHE_TTL_MS window. (REV-109)
+        tokenManagers.delete(tokenKey);
+        clearServiceNowSecretsCache();
       }
 
       const text = await response.text();
@@ -761,7 +1030,15 @@ export async function snRequestWithConfig(
         data = JSON.parse(text);
       } catch (_) {}
 
-      if (attempt < MAX_REQUEST_ATTEMPTS && shouldRetryStatus(response.status)) {
+      // Only idempotent methods may be re-sent on a retryable status: a 5xx can
+      // arrive AFTER a POST already committed on the instance, so replaying it
+      // would double-apply the write. A non-idempotent method returns its
+      // response to the caller unretried. (ERR-1)
+      if (
+        attempt < MAX_REQUEST_ATTEMPTS &&
+        shouldRetryStatus(response.status) &&
+        isIdempotent
+      ) {
         const delay = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 800);
         await sleep(delay);
         continue;
@@ -774,7 +1051,16 @@ export async function snRequestWithConfig(
       };
     } catch (error) {
       lastError = error;
-      if (attempt >= MAX_REQUEST_ATTEMPTS) {
+      // ERR-1: a non-idempotent method is retried ONLY on a pre-send network
+      // error (connection refused / DNS failure) that proves the request never
+      // reached the instance. A client-side timeout abort is not re-sent — the
+      // server may still be executing the aborted write. Idempotent methods
+      // retry on any transient failure as before.
+      const neverReachedServer = PRE_SEND_ERROR_CODES.has(
+        preSendErrorCode(error) ?? ""
+      );
+      const mayRetry = isIdempotent || neverReachedServer;
+      if (attempt >= MAX_REQUEST_ATTEMPTS || !mayRetry) {
         throw error;
       }
       const delay = Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 800);

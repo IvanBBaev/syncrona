@@ -3,7 +3,7 @@ import {
   buildDependencyGraph,
   buildDriftReport,
   buildMetadataUpdatePayload,
-  buildSemanticIndexFromWorkspace,
+  buildSemanticIndexFromWorkspaceAsync,
   buildSymbolCrossReference,
   detectGraphCycles,
   diffDependencyGraphs,
@@ -41,7 +41,7 @@ type MetadataAnalysisContext = {
     outcome: Record<string, unknown>,
     durationMs?: number
   ) => void;
-  getLastSemanticIndex: () => SemanticSymbol[];
+  getLastSemanticIndex: () => Promise<SemanticSymbol[]>;
   setLastSemanticIndex: (rows: SemanticSymbol[]) => void;
 };
 
@@ -311,7 +311,7 @@ export async function handleMetadataAnalysisTool(
     }
 
     case "sync_build_semantic_index": {
-      const nextIndex = buildSemanticIndexFromWorkspace(context.projectDir);
+      const nextIndex = await buildSemanticIndexFromWorkspaceAsync(context.projectDir);
       context.setLastSemanticIndex(nextIndex);
       return {
         isError: false,
@@ -321,7 +321,7 @@ export async function handleMetadataAnalysisTool(
 
     case "sync_search_semantic_index": {
       const query = typeof args.query === "string" ? args.query : "";
-      const matches = searchSemanticIndex(context.getLastSemanticIndex(), query);
+      const matches = searchSemanticIndex(await context.getLastSemanticIndex(), query);
       return {
         isError: false,
         content: [{ type: "text", text: toJsonText({ query, count: matches.length, matches }) }],
@@ -329,7 +329,7 @@ export async function handleMetadataAnalysisTool(
     }
 
     case "sync_symbol_cross_reference": {
-      const rows = buildSymbolCrossReference(context.getLastSemanticIndex());
+      const rows = buildSymbolCrossReference(await context.getLastSemanticIndex());
       return {
         isError: false,
         content: [{ type: "text", text: toJsonText({ count: rows.length, rows }) }],
