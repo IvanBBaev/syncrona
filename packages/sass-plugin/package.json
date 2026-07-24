@@ -18,7 +18,7 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "@syncrona/types": "^0.9.1",
-    "sass": "^1.101.0"
+    "sass": "^1.101.7"
   },
   "devDependencies": {
     "@types/node": "^26.1.0"
