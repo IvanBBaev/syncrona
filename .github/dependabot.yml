@@ -11,8 +11,10 @@ updates:
   # patch/minor. We now:
   #   * land patch + minor bumps as small, mergeable weekly groups (prod and dev
   #     kept separate), and
-  #   * raise majors as isolated per-dependency PRs, while `ignore`-ing the
-  #     CJS/ESM-locked majors that cannot be adopted until a tracked migration.
+  #   * raise majors as isolated per-dependency PRs.
+  # The former `ignore` list of breaking majors (chalk, inquirer, eslint,
+  # typescript-eslint, typescript, zod, chokidar) was removed in July 2026 after
+  # each migration landed (TODO item DEP1).
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -32,26 +34,6 @@ updates:
         update-types:
           - minor
           - patch
-    ignore:
-      # Breaking majors blocked by the CommonJS build / current toolchain.
-      # Each must land via a dedicated, tracked migration (ESM conversion,
-      # eslint flat-config, TS 6 parser support) rather than an auto-PR.
-      - dependency-name: chalk
-        update-types: ["version-update:semver-major"] # v5 is ESM-only
-      - dependency-name: inquirer
-        update-types: ["version-update:semver-major"] # v9+ ESM/API rewrite
-      - dependency-name: eslint
-        update-types: ["version-update:semver-major"] # v9+ flat config migration
-      - dependency-name: "@typescript-eslint/eslint-plugin"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@typescript-eslint/parser"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"] # v6 parser support first
-      - dependency-name: zod
-        update-types: ["version-update:semver-major"] # v4 API changes
-      - dependency-name: chokidar
-        update-types: ["version-update:semver-major"] # v4 dropped globs
 
   # Keep the SHA-pinned GitHub Actions current (Dependabot bumps the pin and
   # the version comment together).

@@ -1,7 +1,7 @@
 {
   "name": "@syncrona/eslint-plugin",
   "version": "0.9.1",
-  "description": "SyncroNow AI build plugin that runs ESLint on synced files and blocks pushes on lint errors (uses sync.config.js options or an .eslintrc).",
+  "description": "SyncroNow AI build plugin that runs ESLint on synced files and blocks pushes on lint errors (uses sync.config.js options or the project's flat ESLint config, eslint.config.js).",
   "main": "./dist/index.js",
   "scripts": {
     "prepack": "tsc",
@@ -14,9 +14,8 @@
     "eslint": ">=8 <11"
   },
   "devDependencies": {
-    "@types/eslint": "^8.44.4",
-    "eslint": "^8.51.0",
-    "typescript": "~5.9.3"
+    "eslint": "^10.7.0",
+    "typescript": "~6.0.3"
   },
   "files": [
     "dist"

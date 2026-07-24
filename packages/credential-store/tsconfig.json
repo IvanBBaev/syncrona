@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "./dist",
-    "module": "commonjs",
+    "rootDir": "./src",
     "lib": ["ES2022"],
     "types": ["node"],
     "declaration": true,
