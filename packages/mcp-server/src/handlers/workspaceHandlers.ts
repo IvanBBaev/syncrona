@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { CmdResult } from "../processRunner";
 import { commandResultToText, toJsonText } from "../runtimeUtils";
-import vm from "node:vm";
+import { requiresConfirmation } from "../safetyPolicy";
 
 
 import type { ToolResponse } from "../toolResponse";
@@ -46,7 +46,10 @@ type WorkspaceToolContext = {
   runCommand: (
     command: string,
     args: string[],
-    timeoutMs: number
+    timeoutMs: number,
+    cwd?: string,
+    extraEnv?: Record<string, string>,
+    envBase?: NodeJS.ProcessEnv
   ) => Promise<CmdResult>;
   isUnsafeWorkspaceCommand: (command: string, args: string[]) => boolean;
   makeDryRunAuditResponse: (
@@ -62,93 +65,100 @@ type WorkspaceToolContext = {
   ) => void;
 };
 
-function stringifySandboxValue(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  try {
-    return JSON.stringify(value);
-  } catch (_) {
-    return String(value);
-  }
+// REV-82 (SEC-1): env-scrubbing helper (defense-in-depth).
+//
+// Strips every environment key that could carry a ServiceNow/OAuth secret or the
+// credential-store key before it is handed to a child process, so a compromised
+// or hostile snippet cannot read `SN_PASSWORD`, `SYNCRONA_STORE_KEY`, an OAuth
+// `*_TOKEN`, etc. Matching is case-insensitive: `SN_*`, `SYNCRONA_*` (which
+// covers `SYNCRONA_STORE_KEY`), suffixes like `_TOKEN`/`_SECRET`/`_PASSWORD`/
+// `_PASSWD`/`_PASSPHRASE`/`_KEY`, and — broadened for REV-116 — substrings such
+// as PASSWORD/PASSWD/PASSPHRASE/SECRET/TOKEN/APIKEY/API_KEY/CREDENTIAL plus the
+// well-known AWS credential keys. Broadening only ever removes MORE keys from a
+// child's env, which is fail-safe; the helper is shared by run_node_code full
+// mode and the run_workspace_command scrub.
+function isSecretEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return (
+    upper.startsWith("SN_") ||
+    upper.startsWith("SYNCRONA_") ||
+    upper.endsWith("_TOKEN") ||
+    upper.endsWith("_SECRET") ||
+    upper.endsWith("_PASSWORD") ||
+    upper.endsWith("_PASSWD") ||
+    upper.endsWith("_PASSPHRASE") ||
+    upper.endsWith("_KEY") ||
+    upper.includes("PASSWORD") ||
+    upper.includes("PASSWD") ||
+    upper.includes("PASSPHRASE") ||
+    upper.includes("SECRET") ||
+    upper.includes("TOKEN") ||
+    upper.includes("APIKEY") ||
+    upper.includes("API_KEY") ||
+    upper.includes("CREDENTIAL") ||
+    upper === "AWS_ACCESS_KEY_ID" ||
+    upper === "AWS_SESSION_TOKEN"
+  );
 }
 
-function executeSandboxedNodeCode(code: string, timeoutMs: number): CmdResult {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-  let timedOut = false;
-
-  const sandboxConsole = {
-    log: (...args: unknown[]) => {
-      stdout.push(args.map(stringifySandboxValue).join(" "));
-    },
-    info: (...args: unknown[]) => {
-      stdout.push(args.map(stringifySandboxValue).join(" "));
-    },
-    warn: (...args: unknown[]) => {
-      stderr.push(args.map(stringifySandboxValue).join(" "));
-    },
-    error: (...args: unknown[]) => {
-      stderr.push(args.map(stringifySandboxValue).join(" "));
-    },
-  };
-
-  try {
-    const script = new vm.Script(code, {
-      filename: "mcp-run_node_code.vm.js",
-    });
-    const context = vm.createContext(
-      {
-        console: sandboxConsole,
-      },
-      {
-        name: "syncrona-run-node-code",
-        codeGeneration: {
-          strings: false,
-          wasm: false,
-        },
-      }
-    );
-
-    const result = script.runInContext(context, {
-      timeout: Math.min(Math.max(timeoutMs, 100), 30000),
-      displayErrors: true,
-      breakOnSigint: true,
-    });
-
-    if (result && typeof (result as Promise<unknown>).then === "function") {
-      stderr.push("Async results are not supported in sandboxed run_node_code.");
-      return {
-        exitCode: 1,
-        stdout: stdout.join("\n"),
-        stderr: stderr.join("\n"),
-        timedOut,
-      };
+/**
+ * Returns a shallow copy of `env` with secret-bearing keys removed. Exported so
+ * a child-process runner (or a test) can obtain a reduced environment that can
+ * no longer leak credentials even if in-process isolation is bypassed.
+ */
+export function scrubSecretsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  const scrubbed: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (isSecretEnvKey(key)) {
+      continue;
     }
-
-    return {
-      exitCode: 0,
-      stdout: stdout.join("\n"),
-      stderr: stderr.join("\n"),
-      timedOut,
-    };
-  } catch (error) {
-    const err = error as { code?: string; message?: string };
-    if (err && err.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
-      timedOut = true;
-      stderr.push("Sandboxed code execution timed out.");
-    } else {
-      stderr.push(err?.message || String(error));
-    }
-
-    return {
-      exitCode: 1,
-      stdout: stdout.join("\n"),
-      stderr: stderr.join("\n"),
-      timedOut,
-    };
+    scrubbed[key] = value;
   }
+  return scrubbed;
+}
+
+/**
+ * REV-82 (SEC-1): full-access Node execution via a real child process.
+ *
+ * There is deliberately no in-process "safe" sandbox any more. `vm.createContext`
+ * is not a security boundary: the host-realm `Function` reached through
+ * `console.log.constructor` escapes the context back to the real `process`, which
+ * gave a reproduced host RCE, secret exfiltration, and host prototype pollution
+ * (see docs/ai/repro/sec1-vm-escape.cjs). A subprocess is the only mechanism that
+ * can actually contain the code.
+ *
+ * Full mode is an explicit opt-in to host access (allowFullNodeAccess), so it runs
+ * actual Node through the shell:false runner. Two defenses apply, but (REV-129,
+ * honest-limits) NEITHER is an isolation boundary — run_node_code (full mode) and
+ * run_workspace_command are host-privilege primitives by design, and code that
+ * reaches them already has the host's privileges:
+ *   - `--disallow-code-generation-from-strings` disables eval / new Function INSIDE
+ *     the child. It does not stop the child from requiring modules or spawning
+ *     further processes.
+ *   - The child is spawned with scrubSecretsFromEnv(process.env), which removes
+ *     secret-bearing keys from the child's OWN environment. This is defense-in-depth
+ *     — it blocks naive `process.env.SN_PASSWORD` reads and stops the secrets being
+ *     INHERITED by anything the child itself spawns — NOT isolation. On Linux a child
+ *     can still read the PARENT's exec-time environment via /proc/<ppid>/environ, and
+ *     with host access it can read credential files, the OS keychain, or memory. Do
+ *     not rely on the scrub to contain a hostile script; rely on the confirmation gate
+ *     and the allowFullNodeAccess opt-in that guard REACHING this primitive.
+ */
+function runFullNodeAccessCode(
+  runCommand: WorkspaceToolContext["runCommand"],
+  code: string,
+  timeoutMs: number
+): Promise<CmdResult> {
+  return runCommand(
+    "node",
+    ["--disallow-code-generation-from-strings", "-e", code],
+    timeoutMs,
+    undefined,
+    undefined,
+    scrubSecretsFromEnv(process.env)
+  );
 }
 
 export async function handleWorkspaceTool(
@@ -263,13 +273,12 @@ export async function handleWorkspaceTool(
         };
       }
 
-      const joined = `${command} ${cmdArgs.join(" ")}`.toLowerCase();
-      const seemsDestructive =
-        joined.includes("sync push") ||
-        joined.includes("sync deploy") ||
-        joined.includes("sync download");
-
-      if (seemsDestructive && !confirmDestructive) {
+      // REV-83 (SEC-2): default-deny allowlist. requiresConfirmation returns true
+      // for anything not on the read-only allowlist (every interpreter/wrapper —
+      // node, python3, perl, ruby, php, env, find, xargs, … — plus mutating git
+      // subcommands and destructive syncrona subcommands). The old
+      // isDestructiveWorkspaceCommand denylist silently allowed all of those.
+      if (requiresConfirmation(command, cmdArgs) && !confirmDestructive) {
         return {
           isError: true,
           content: [
@@ -282,7 +291,21 @@ export async function handleWorkspaceTool(
         };
       }
 
-      const result = await context.runCommand(command, cmdArgs, timeoutMs);
+      // SEC-1 follow-up (REV-116): run_workspace_command can also run `node -e ...`,
+      // so it must spawn with the same credential-scrubbed base env as run_node_code's
+      // full mode — otherwise the scrub is trivially bypassed via this sibling tool.
+      const result = await context.runCommand(
+        command,
+        cmdArgs,
+        timeoutMs,
+        undefined,
+        undefined,
+        scrubSecretsFromEnv(process.env)
+      );
+      // A destructive invocation reaches the instance exactly like sync_push, so
+      // it owes the same mutation audit entry; auditMutatingTool decides from the
+      // args whether this particular invocation was one.
+      context.auditMutatingTool(toolName, args, { exitCode: result.exitCode, timedOut: result.timedOut }, Date.now() - startedAt);
       return {
         isError: result.exitCode !== 0,
         content: [{ type: "text", text: commandResultToText(result) }],
@@ -312,22 +335,34 @@ export async function handleWorkspaceTool(
         };
       }
 
-      if (context.isUnsafeWorkspaceCommand("node", ["-e", code])) {
+      // REV-82 (SEC-1): there is no in-process "safe" execution any more. The old
+      // vm.createContext path was a false boundary — the host-realm Function reached
+      // through console.log.constructor escaped it back to the real process (host
+      // RCE + secret exfiltration + host prototype pollution; see
+      // docs/ai/repro/sec1-vm-escape.cjs). Rather than pretend to sandbox, safe mode
+      // (the default) refuses honestly: run_node_code is disabled unless the operator
+      // has explicitly opted in to real host access via allowFullNodeAccess. The
+      // former isUnsafeWorkspaceCommand("node", ["-e", code]) pre-check is deleted —
+      // it gated only shell -c/--command wrappers and was never the real boundary.
+      if (!context.allowFullNodeAccess) {
         return {
           isError: true,
           content: [
             {
               type: "text",
               text:
-                "Blocked unsafe command. Shell interpreter execution with -c/--command is not allowed.",
+                "run_node_code is disabled. In-process sandboxing of arbitrary Node.js code " +
+                "is not a real security boundary, so this tool refuses to fake one. To run " +
+                "real Node.js code with full host access, enable allowFullNodeAccess in the " +
+                "MCP server guardrail configuration.",
             },
           ],
         };
       }
 
-      const result = context.allowFullNodeAccess
-        ? await context.runCommand("node", ["-e", code], timeoutMs)
-        : executeSandboxedNodeCode(code, timeoutMs);
+      // Full mode: an explicit opt-in to host access. Runs actual Node in a child
+      // process (shell:false) with --disallow-code-generation-from-strings.
+      const result = await runFullNodeAccessCode(context.runCommand, code, timeoutMs);
       return {
         isError: result.exitCode !== 0,
         content: [{ type: "text", text: commandResultToText(result) }],

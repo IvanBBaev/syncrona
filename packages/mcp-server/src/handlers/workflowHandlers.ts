@@ -15,10 +15,12 @@ import {
   evaluateMinimalFootprint,
   getApprovalRequirements,
   isApprovalSatisfied,
+  maxRiskLevel,
   parseRiskLevel,
   riskLevelFromScore,
   validateRollbackEvidence,
 } from "../safetyPolicy";
+import type { RiskLevel } from "../safetyPolicy";
 import { getScopeKnowledgePaths, getWorkflowSimulationReportPaths } from "../scopePaths";
 import { toJsonText } from "../runtimeUtils";
 import { isSafeRemoteEndpoint } from "../endpointPolicy";
@@ -56,6 +58,60 @@ function toRecordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     : [];
+}
+
+/** REV-88 (SEC-7): outcome of verifying an approval against the instance. */
+export type ApprovalVerificationStatus = "not-required" | "verified" | "unverifiable";
+
+export type ApprovalVerification = {
+  status: ApprovalVerificationStatus;
+  reason: string;
+};
+
+/**
+ * REV-88 (SEC-7): approval verification seam.
+ *
+ * The workflow's approval gate (`approvalOk`, from `isApprovalSatisfied`) is
+ * computed purely from the caller-supplied `approval` object — a self-attestation.
+ * A caller can fabricate `{ approvalId, approvers: [...] }` and satisfy the gate
+ * without any real approval record existing on the instance. This function is the
+ * seam where a genuine approval would be confirmed against ServiceNow (e.g.
+ * sysapproval_approver / a change_request in an approved state) before a mutation
+ * is applied.
+ *
+ * Only the OFFLINE half is implemented here. With no transport wired in, an
+ * approval that is *required* for the risk level cannot be confirmed, so it is
+ * reported as "unverifiable" and the apply path refuses rather than trusting the
+ * self-attestation. When approval is not required (low risk), the status is
+ * "not-required" and apply may proceed. The live lookup that would return
+ * "verified" is intentionally out of scope here (it is live-gated) and left as the
+ * seam for the transport implementation.
+ */
+export function verifyApprovalAgainstInstance(
+  approval: Record<string, unknown>,
+  riskLevel: RiskLevel
+): ApprovalVerification {
+  const requirements = getApprovalRequirements(riskLevel);
+  const required = (requirements as { required?: unknown }).required === true;
+  if (!required) {
+    return {
+      status: "not-required",
+      reason: `Risk level "${riskLevel}" does not require approval.`,
+    };
+  }
+
+  // Approval is required for this risk level. The provided approval is
+  // self-attested; offline there is no transport to confirm it corresponds to a
+  // real, approved record on the instance, so it is unverifiable.
+  const approvalId = typeof approval.approvalId === "string" ? approval.approvalId.trim() : "";
+  return {
+    status: "unverifiable",
+    reason:
+      `Approval is required for risk level "${riskLevel}" but could not be verified ` +
+      `against the instance offline. The provided approval` +
+      (approvalId ? ` "${approvalId}"` : "") +
+      ` is self-attested; a live approval lookup is required before applying this change.`,
+  };
 }
 
 function slugifyText(value: string, fallback: string): string {
@@ -149,6 +205,11 @@ export async function handleWorkflowTool(
       const executionMode = args.executionMode === "remote" ? "remote" : "mocked";
       const allowRemoteApply = args.allowRemoteApply === true;
       const remoteScript = typeof args.remoteScript === "string" ? args.remoteScript : script;
+      // SEC-7 (REV-122): in remote mode the executed script is remoteScript, not script.
+      // Analyze whatever will actually run, so a malicious remoteScript cannot pass
+      // analysis by hiding behind a benign `script`.
+      const effectiveScript =
+        executionMode === "remote" ? remoteScript : script;
       const remoteEndpoint = typeof args.remoteEndpoint === "string" ? args.remoteEndpoint.trim() : "";
       const apply = args.apply === true;
       const confirmDestructive = args.confirmDestructive === true;
@@ -181,8 +242,8 @@ export async function handleWorkflowTool(
 
       const workflowGraph = context.toGraphFromUnknown(args.graph);
 
-      const analysis = script.trim()
-        ? buildFullScriptAnalysisReport(script, {
+      const analysis = effectiveScript.trim()
+        ? buildFullScriptAnalysisReport(effectiveScript, {
             policy: args.policy,
             nowIso: nowIso || undefined,
           })
@@ -197,19 +258,49 @@ export async function handleWorkflowTool(
 
       const activeRisk = context.asRecord(context.asRecord(analysis).risk).active;
       const activeRiskObj = context.asRecord(activeRisk);
-      const riskScore =
+      const callerPolicyRiskScore =
         typeof activeRiskObj.score === "number" && Number.isFinite(activeRiskObj.score)
           ? activeRiskObj.score
           : 0;
 
+      // SEC-7 follow-up (REV-125): the `analysis` above honors the caller-supplied
+      // `args.policy` (custom weights / suppressions) for presentation, but the score
+      // that GATES approval must not be caller-tunable. A payload of
+      // `policy.weights = { high: 0, medium: 0, low: 0 }` (or blanket suppressions)
+      // zeros the score, drops the risk to "low", and disables both the approval gate
+      // and the REV-88 self-attestation refusal. Recompute a TRUSTED analysis of the
+      // same effective script with NO caller policy — default weights (5/3/1), no
+      // suppressions — and gate on the higher of the two scores. A caller may still
+      // RAISE the risk (weights above default), never lower it below the trusted floor.
+      const trustedAnalysis = effectiveScript.trim()
+        ? buildFullScriptAnalysisReport(effectiveScript, {
+            nowIso: nowIso || undefined,
+          })
+        : null;
+      const trustedActiveRisk = context.asRecord(
+        context.asRecord(context.asRecord(trustedAnalysis).risk).active
+      );
+      const trustedRiskScore =
+        typeof trustedActiveRisk.score === "number" &&
+        Number.isFinite(trustedActiveRisk.score)
+          ? trustedActiveRisk.score
+          : 0;
+      const riskScore = Math.max(callerPolicyRiskScore, trustedRiskScore);
+
       const explicitRiskLevel = parseRiskLevel(args.riskLevel);
-      const riskLevel = explicitRiskLevel || riskLevelFromScore(riskScore);
+      // SEC-7 (REV-122/125): a caller may RAISE the risk but must never LOWER it below
+      // the analyzer-computed score — otherwise `riskLevel:"low"` (or a zeroed policy)
+      // disables the approval gate.
+      const riskLevel = maxRiskLevel(
+        explicitRiskLevel,
+        riskLevelFromScore(riskScore)
+      );
       const approval = context.asRecord(args.approval);
       const approvalRequirements = getApprovalRequirements(riskLevel);
       const approvalOk = isApprovalSatisfied(approval, riskLevel);
 
       const proposedChanges = toRecordArray(args.proposedChanges);
-      const hasScript = script.trim().length > 0;
+      const hasScript = effectiveScript.trim().length > 0;
       const hasMetadata =
         proposedChanges.length > 0 ||
         workflowGraph.nodes.length > 0 ||
@@ -329,6 +420,34 @@ export async function handleWorkflowTool(
         return {
           isError: true,
           content: [{ type: "text", text: toJsonText(payload) }],
+        };
+      }
+
+      // REV-88 (SEC-7): the approval gate above (`approvalOk`) is satisfied purely
+      // from the caller-supplied `approval` object — a self-attestation a caller can
+      // fabricate. Before any mutation is applied, confirm the approval against the
+      // instance. Offline this cannot be confirmed for a risk level that requires
+      // approval, so refuse rather than trust the self-attestation. Low-risk changes
+      // (no approval required) return "not-required" and proceed unchanged.
+      const approvalVerification = verifyApprovalAgainstInstance(approval, riskLevel);
+      payload.approvalVerification = approvalVerification;
+      if (approvalVerification.status === "unverifiable") {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: toJsonText({
+                ...payload,
+                error:
+                  "Refusing to apply: approval is self-attested and could not be verified " +
+                  "against the instance. Workflow approval gates are not a substitute for a " +
+                  "real approval record.",
+                nextAction:
+                  "verify the approval against the instance (live approval lookup) before applying",
+              }),
+            },
+          ],
         };
       }
 

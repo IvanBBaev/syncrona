@@ -14,6 +14,7 @@ const {
 
 const {
   isMutatingTool,
+  isDestructiveWorkspaceCommand,
   isUnsafeWorkspaceCommand,
   riskLevelFromScore,
   parseRiskLevel,
@@ -438,6 +439,65 @@ test('isMutatingTool: true for known mutating tools, false for read-only/unknown
   assert.equal(isMutatingTool('sync_run_atf_tests'), true);
   assert.equal(isMutatingTool('sync_status'), false);
   assert.equal(isMutatingTool('unknown_tool'), false);
+});
+
+// run_workspace_command is not a mutating tool by name: the same tool runs
+// `syncrona push` (reaches the instance) and `npm test` (does not), so the
+// answer has to come from the invocation.
+
+test('isMutatingTool: run_workspace_command is mutating when its args run a destructive CLI subcommand', () => {
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'npx', args: ['syncrona', 'push', '--ci'] }),
+    true
+  );
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'syncrona', args: ['deploy'] }),
+    true
+  );
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'pnpm', args: ['dlx', 'syncrona', 'download'] }),
+    true
+  );
+});
+
+test('isMutatingTool: run_workspace_command is not mutating for a local, non-destructive invocation', () => {
+  assert.equal(isMutatingTool('run_workspace_command', { command: 'npm', args: ['test'] }), false);
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'npx', args: ['syncrona', 'status'] }),
+    false
+  );
+  assert.equal(isMutatingTool('run_workspace_command', { command: 'git', args: ['push'] }), false);
+});
+
+test('isMutatingTool: omitting args keeps the name-only answer so the preflight gate stays name-keyed', () => {
+  // enforcePreflightForTool passes no args on purpose: a name-only "true" here
+  // would force a live ServiceNow preflight before a purely local `npm test`.
+  assert.equal(isMutatingTool('run_workspace_command'), false);
+  assert.equal(isMutatingTool('sync_push'), true);
+});
+
+test('isMutatingTool: args never downgrade a tool that is mutating by name', () => {
+  assert.equal(isMutatingTool('sync_push', { command: 'npm', args: ['test'] }), true);
+});
+
+test('isMutatingTool: tolerates malformed run_workspace_command args', () => {
+  assert.equal(isMutatingTool('run_workspace_command', {}), false);
+  assert.equal(isMutatingTool('run_workspace_command', { command: '   ' }), false);
+  assert.equal(isMutatingTool('run_workspace_command', { command: 'syncrona' }), false);
+  assert.equal(isMutatingTool('run_workspace_command', { command: 42, args: ['push'] }), false);
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'syncrona', args: 'push' }),
+    false
+  );
+  assert.equal(
+    isMutatingTool('run_workspace_command', { command: 'syncrona', args: [null, 'push'] }),
+    true
+  );
+});
+
+test('isDestructiveWorkspaceCommand: is reachable from the policy module', () => {
+  assert.equal(isDestructiveWorkspaceCommand('syncrona', ['push']), true);
+  assert.equal(isDestructiveWorkspaceCommand('npm', ['test']), false);
 });
 
 test('isUnsafeWorkspaceCommand: blocks exact blocked command basenames', () => {

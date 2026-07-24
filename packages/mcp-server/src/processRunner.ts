@@ -22,13 +22,18 @@ export function runCommand(
   args: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   cwd: string = PROJECT_DIR,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  // REV-82 (SEC-1): base environment for the child, defaulting to the server's
+  // own `process.env`. A caller can pass a reduced copy (e.g.
+  // scrubSecretsFromEnv(process.env)) so a spawned child never inherits
+  // credential-bearing variables; `extraEnv` is still layered on top.
+  envBase: NodeJS.ProcessEnv = process.env
 ): Promise<CmdResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       env: {
-        ...process.env,
+        ...envBase,
         ...(extraEnv || {}),
       },
       shell: false,

@@ -12,6 +12,7 @@ import {
   type ToolMetricEvent,
 } from "./analysis";
 import { isMutatingTool } from "./safetyPolicy";
+import { logger } from "./logger";
 import { sanitizeForAudit, writeAuditEvent } from "./audit";
 import { appendMetricEvent } from "./metricsStore";
 import {
@@ -35,7 +36,8 @@ import {
   hydrateScopeKnowledgeInputs,
 } from "./analysis/scopeDiscovery";
 import {
-  DEFAULT_GUARDRAIL_CONFIG,
+  cloneDefaultGuardrailConfig,
+  createInvalidGuardrailConfig,
   parseGuardrailConfig,
   shouldEnforcePreflight,
   type GuardrailConfig,
@@ -108,14 +110,26 @@ export function normalizeTimeout(timeoutMs: unknown): number {
 export function loadGuardrailConfig(projectDir: string = PROJECT_DIR): GuardrailConfig {
   const cfgPath = path.join(projectDir, "sync.mcp.guardrails.json");
   if (!existsSync(cfgPath)) {
-    return { ...DEFAULT_GUARDRAIL_CONFIG };
+    // An ABSENT config is a legitimate "no guardrails configured" state, so the
+    // permissive default applies. Hand out a deep clone (never the shared frozen
+    // instance) so a caller can never mutate the default's nested policy.
+    return cloneDefaultGuardrailConfig();
   }
 
   try {
     const raw = readFileSync(cfgPath, "utf-8");
     return parseGuardrailConfig(JSON.parse(raw));
-  } catch (_) {
-    return { ...DEFAULT_GUARDRAIL_CONFIG };
+  } catch (error) {
+    // SEC-3 (REV-84): a PRESENT-but-unreadable guardrail file must FAIL CLOSED.
+    // Previously this returned the fully-permissive default, so one appended byte
+    // silently disabled every guardrail. Return a deny-all config and surface the
+    // failure on stderr; the next tool call is then refused by evaluateToolPolicy.
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("guardrail config unreadable — failing closed (denying all tools)", {
+      path: cfgPath,
+      error: message,
+    });
+    return createInvalidGuardrailConfig(`unreadable guardrail config at ${cfgPath}: ${message}`);
   }
 }
 
@@ -316,7 +330,7 @@ export function auditMutatingTool(
   durationMs?: number,
   correlationId?: string
 ): void {
-  if (!isMutatingTool(toolName)) {
+  if (!isMutatingTool(toolName, args)) {
     return;
   }
 
@@ -350,7 +364,7 @@ export function auditToolCall(
     timestamp: new Date().toISOString(),
     event: "tool.call",
     tool: toolName,
-    mutating: isMutatingTool(toolName),
+    mutating: isMutatingTool(toolName, args),
     dryRun: args.dryRun === true,
     args: sanitizeForAudit(args),
     ok: !outcome.isError,
@@ -618,7 +632,8 @@ export function getSourceDirectory(projectDir: string = PROJECT_DIR): string {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // sync.config.js is user-authored CJS; require is the only loader for it here.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded = require(configPath);
     const cfg = loaded?.default || loaded;
     if (
