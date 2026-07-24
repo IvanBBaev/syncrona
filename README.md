@@ -246,11 +246,11 @@ SyncroNow AI has a few basic commands to help you get the job done
 | ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncrona refresh`              |
 | `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncrona dev`                  |
-| `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch.                               | `npx syncrona init`                 |
+| `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch. Use `--ci` to provision every scope the detected `.env` exposes without prompting. | `npx syncrona init`                 |
 | `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file                                                  | `npx syncrona push`                 |
 | `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncrona download my_test_app` |
 | `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncrona build`                |
-| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance.                                                                                           | `npx syncrona deploy`               |
+| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance. Use `--ci` to skip the overwrite confirmation in noninteractive runs.                     | `npx syncrona deploy`               |
 | `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncrona docs`                 |
 | `repair`           | **none** | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files no record claims. Use `--apply` to re-download missing files, `--prune` (with `--apply`) to delete orphans, and `--ci` for non-interactive runs. | `npx syncrona repair`               |
 | `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncrona status`               |
@@ -353,8 +353,8 @@ automation:
   name and record all pushed changes into it.
 - `--push-concurrency <n>` (`--concurrency <n>`) — max records pushed in parallel
   (1–50; overrides `pushConcurrency` in `sync.config.js`, default 10).
-- `--ci` — skip all confirmation prompts (for CI/automation). `download` accepts
-  `--ci` too, to skip its overwrite confirmation.
+- `--ci` — skip all confirmation prompts (for CI/automation). `init`, `download`,
+  `deploy` and `repair` accept `--ci` too, to skip their own confirmations.
 
 ```bash
 npx syncrona push --update-set "PRJ-123 changes" --scope-swap

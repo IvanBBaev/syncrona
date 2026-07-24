@@ -50,10 +50,62 @@ human-facing summary of them.
   undecodable credential filename hiding all instances, a typescript-plugin that fed raw
   JSON `compilerOptions` into `createProgram`, and an unrenamed aliased `@expandModule`
   import — each with a regression test (core 747 tests, mcp 967 tests, credential-store
-  60, typescript-plugin 8, babel-remove-modules 10). The remaining distance to 10/10 is
-  owner/live-gated (npm publish, live-instance verification, Windows host, business
-  decisions), not engineering-completable offline.
-- **Last updated:** 2026-07-16
+  60, typescript-plugin 8, babel-remove-modules 10). A fifth full-repo adversarial sweep
+  (2026-07-17) closed thirty-seven more real defects (REV-45..REV-81, 0 refuted): a
+  `push --dry-run` that cleared the resume checkpoint it only meant to preview, a
+  `push --ci` that exited 0 after a collaboration-lock abort (a no-op deploy reading as
+  success), a checkpoint resume keyed on `table:sysId` that skipped a record edited after
+  it succeeded, a `--log-level` typo that winston turned into silence for every line
+  including errors, a documented `init --ci` that yargs `.strict()` rejected and a
+  `deploy` that never registered `--ci` at all, `status` and `doctor` diagnosing every
+  non-Basic auth method as unconfigured, a `logout` that announced purges it had not
+  performed, a Jira `HTTP 403` routed to the re-login hint, a manifest query passing its
+  already-resolved display field as its own fallback, a global/sticky `lastIndex` leak
+  across `determinePlugins` calls, a `sync_validate_before_push` that reported `ready`
+  while holding errors and degraded a failed conflict query into a silent all-clear, a
+  `sync_compare_instances` that read a fulfilled non-2xx as a diff, a
+  `run_workspace_command` whose destructive gate matched a substring and which never
+  wrote a mutation audit entry, a brand display name used as an npm identifier, zod
+  schemas rejecting the empty string their own tool defaults emit, an OAuth token fetch
+  that silently ignored `timeoutMs` for lack of an abort signal, an `SN_AUTH_METHOD`
+  resolved against `Object.prototype`, three ADF holes (block/inline confusion, a
+  never-throws contract that threw, a missing `embedCard`), a `removeAllCredentials`
+  counting what it listed rather than what it deleted plus a config cast that accepted
+  valid-JSON non-objects, six build-plugin defects (a comment-tag regex swallowing the
+  next prose word, fused adjacent comments, an unguarded options deref, a forced
+  `moduleResolution`, eslint options never forwarded, and a function-form webpack config
+  flattened by `Object.assign`), and five holes in the governance gates themselves —
+  unparseable metadata swallowed into `{}`, zero-test `dist` modules invisible to the
+  coverage verdict, quote-style-only tool extraction, an indentation-anchored claims
+  parse, and a docs-drift gate that failed from any cwd but the root — each with a
+  regression test (core 788 tests / 76 suites, mcp 1040 tests, jira 97, credential-store
+  66, sn-transport 52, mcp coverage 94.94% line / 87.07% branch). A sixth,
+  security-focused adversarial wave (2026-07-17..18) closed forty-eight more findings
+  (REV-82..REV-129), each re-attacked by an independent adversarial pass before closing:
+  the in-process `vm` "safe sandbox" was removed after a reproduced host RCE
+  (`console.log.constructor` escape) in favor of a real child process with string code
+  generation disabled and a credential-scrubbed environment; `run_workspace_command`
+  moved to a default-deny read-only allowlist whose git gate resolves the real
+  subcommand through global-option values, confirms any verb not on a read-only
+  allowlist (closing a git-alias RCE and every unlisted mutating verb), and always
+  confirms inline `-c`/`--config-env` config injection; guardrail policy loading fails
+  closed on unreadable, non-object, or prototype-poisoning configs; the audit log became
+  a keyed tamper-evident HMAC chain (store-derived key without SYNCRONA_STORE_KEY,
+  symlinked-path refusal, quarantine retention cap, fail-closed mutating writes) with
+  value-based secret redaction broadened to vendor-prefixed API tokens and raw 256-bit
+  hex; the unified change workflow analyzes the actually-executed script and floors its
+  risk on a trusted no-caller-policy analysis, so neither `riskLevel:"low"` nor zeroed
+  `policy.weights` bypasses the approval and self-attestation gates; core's pull path
+  gained path-traversal containment re-anchored to the workspace source root and
+  null-prototype missing-file maps (manifest-driven arbitrary-write and
+  prototype-pollution primitives closed); and three honest-limits notes now document
+  what the machine-derived chain key, the final-component symlink checks, and the
+  child-environment scrub deliberately do NOT guarantee — each behavioral fix with a
+  regression test (core 807 tests / 81 suites, mcp 1271 tests, mcp coverage 94.84%
+  line / 87.92% branch). The remaining distance
+  to 10/10 is owner/live-gated (npm publish, live-instance verification, Windows host,
+  business decisions), not engineering-completable offline.
+- **Last updated:** 2026-07-18
 
 ## Status legend
 
@@ -94,7 +146,9 @@ applications. The following are **shipped**:
   aware), credential-source visibility in `status`, decrypt-failure warnings.
 - Encrypted credential store (`@syncrona/credential-store`, AES-256-GCM),
   policy-as-code + secrets-provider chain, Zod input validation, audited tool
-  calls, VM-sandboxed script execution.
+  calls, child-process script execution (the in-process VM sandbox was removed
+  2026-07-17 after a reproduced escape; string code generation disabled,
+  credential-scrubbed environment).
 
 ### MCP & AI ✅
 - 61 MCP tools across the handler modules: metadata/impact/dependency analysis,
@@ -185,7 +239,10 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 - ✅ **Proxy / TLS configuration** (G9) — CLI honors `HTTPS_PROXY` / `NO_PROXY`
   automatically; custom CA bundle via `SYNCRONA_CA_BUNDLE` / `NODE_EXTRA_CA_CERTS`,
   plus a warned `SYNCRONA_TLS_REJECT_UNAUTHORIZED=0` opt-out for test instances.
-  (MCP fetch-client proxy via an undici dispatcher remains a small follow-up.)
+  The MCP fetch-client follow-up shipped 2026-07-18: the native-fetch client now
+  routes through an undici `EnvHttpProxyAgent` dispatcher honoring
+  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, composed with the existing
+  mutual-TLS/custom-CA dispatcher cache.
 - 🔒 **SSO / authorization-code grant** — beyond password grant; needs a product
   decision and per-instance OAuth app configuration.
 
@@ -193,11 +250,17 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 - ✅ **Machine-enforced module boundaries** (G10) — dependency-cruiser runs in
   `npm run lint` (`lint:boundaries`): no circular dependencies, and the shared
   foundation packages may not import the core/mcp-server consumers.
-- 📋 **Mutation testing** (G13) — Stryker on `credential-store` + `sn-transport`.
+- ✅ **Mutation testing** (G13) — done 2026-06-21: Stryker (jest runner,
+  `npm run test:mutation`, non-blocking gate) wired on `credential-store` +
+  `sn-transport`; the credential-store mutation score was later lifted to 81.6%
+  (2026-06-24).
 - ✅ **Performance baseline** (G14) — `npm run bench` measures the manifest →
   doc pipeline over a deterministic synthetic dataset (median/p95/runs-sec) and
   can fail on a `--max-ms` threshold for a non-blocking CI job.
-- 📋 **Thin handler coverage** (QA-2) + coverage ratchet toward 80%.
+- ✅ **Thin handler coverage** (QA-2) — done 2026-06-21: five per-handler test
+  suites (against `dist`, per the AR9 decision) cover the weakest handlers'
+  validation/guard/dry-run paths. The old "ratchet toward 80%" target is long
+  passed — MCP coverage stands at 94.84% line / 87.92% branch against 90/80 gates.
 
 ### Product & support
 - 🔒 **ServiceNow compatibility matrix** — test against named ServiceNow releases
@@ -208,9 +271,12 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   and confirmed the documented limit: `sys.scripts.do` under Basic-only auth
   returns 200 but does **not** execute the script without a UI session/CSRF
   token. Now correctly reachable; still Basic-auth-limited as documented.
-- 🚧/📋 **Telemetry + KPIs** (G7 / BA7) — opt-in local diagnostic log shipped;
-  structured metrics + KPI instrumentation (downloads, activation, retention)
-  to follow.
+- ✅ **Diagnostic telemetry** (G7, engineering part) — shipped 2026-06-13:
+  opt-in local diagnostic log (`SYNCRONA_DIAGNOSTIC_LOG=1` appends CLI output to
+  `~/.syncrona/logs/cli.log`; rotated, off by default, documented in SECURITY.md).
+- 🔒 **KPI metrics** (G7 remainder / BA7) — the opt-in structured-events schema
+  (downloads, activation, retention) instruments the KPI set defined in BA7,
+  which is gated on the publish/owner decisions above.
 
 ---
 
@@ -221,16 +287,32 @@ Engineering-completable, not release-blocking; sequenced by demand.
 - ✅ **Download progress/resume** (G3) — per-table progress + a
   `sync.download.checkpoint.json` so an interrupted download resumes instead of
   starting over (parity with push).
-- 📋 **`--flat` mode** (DX17) — flat local layout, converted before push/pull.
-- 📋 **`syncrona repair`** — compare manifest vs actual files and repair drift.
-- 📋 **Error taxonomy** (DX19) — Network / Config / Data categories with
-  actionable next steps for every error.
-- 📋 **`config add-plugin`** (DX8) — interactive plugin chooser.
-- 📋 **Push progress bar** — `Pushing [███░] 30/100`.
-- 📋 **ts-jest migration of MCP tests** (AR9) — run against source, not `dist`
-  (high-risk; 172 tests currently green against `dist`).
-- 📋 **Module-state context object** (AR11) — encapsulate `TOOL_METRICS`/caches.
-- 📋 **Live E2E record-replay** (G11 follow-up).
+- ✅ **`--flat` mode** (DX17) — core shipped 2026-06-21: lossless, reversible
+  flat↔folder conversion, `flat` config flag, README docs. (The automatic
+  pull/push pipeline wiring stays an opt-in preview until a live-instance
+  round-trip validates it.)
+- ✅ **`syncrona repair`** (DX18) — shipped 2026-06-21: reconciles the manifest
+  against local files; `--apply` re-downloads missing files, `--apply --prune`
+  deletes orphans (confirmed unless `--ci`).
+- ✅ **Error taxonomy** (DX19) — shipped 2026-06-21: `classifyError` sorts any
+  failure into network / auth / config / data / unknown, and every CLI error
+  sink prints an actionable `→ <hint>` next-step line.
+- ✅ **`config add-plugin`** (DX8) — shipped 2026-06-21: resolves a plugin by
+  alias or package name, reports installed-vs-missing, and prints the install
+  command plus a paste-ready `rules` snippet.
+- ✅ **Push progress bar** (DX24) — shipped 2026-06-21: TTY-only
+  `[====   ] 30/100 (30%) ~2m 10s left` bar with a throughput-derived ETA,
+  wired into both push phases (the ETA-rendering bug was fixed the same day,
+  with a regression test).
+- **ts-jest migration of MCP tests** (AR9) — deferred by decision (2026-06-21,
+  re-confirmed 2026-06-24): TODO marks it high-risk for zero behavior change
+  and not engineering-completable offline; testing the compiled `dist` is a
+  deliberate choice, and the 1271 MCP tests stay green against `dist`.
+- ✅ **Module-state context object** (AR11) — done 2026-06-21: `TOOL_METRICS` is
+  no longer an exported, externally-spliced array; it is encapsulated behind
+  accessors mutated in one place and reset/rehydrated explicitly.
+- 🔒 **Live E2E record-replay** (G11 follow-up) — recording requires a live
+  ServiceNow instance with credentials; the local E2E slices shipped 2026-06-12.
 
 ---
 

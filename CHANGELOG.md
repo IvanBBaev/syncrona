@@ -4,6 +4,106 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `deploy --ci` skips the overwrite confirmation, so a deploy can run in a
+  noninteractive pipeline.
+- `init --ci` is now accepted. The flag was documented and read by the command,
+  but `init` registered no options, so yargs' `.strict()` rejected it before the
+  command ran.
+- MCP fetch client now honors `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` via an
+  undici `EnvHttpProxyAgent` dispatcher, composed with the existing
+  mutual-TLS/custom-CA dispatcher cache (G9 follow-up).
+
+### Changed
+
+- Migrated breaking dependency majors, each landed and tested on its own:
+  chalk 4→5 and inquirer 8→14 (no code changes — the core package is ESM),
+  chokidar 3→5 (named-import surface), zod 3→4 (custom messages preserved
+  via union-level `{ error }`), eslint 8→10 with typescript-eslint 6→8, and
+  typescript ~5.9.3→6.0.3.
+- Pressing Ctrl-C during any interactive prompt now cancels quietly with
+  exit code 130 instead of printing an error stack. inquirer 14 rejects with
+  `ExitPromptError`, which the CLI command runner handles centrally.
+- Linting is flat-config only: the repo root uses `eslint.config.mjs`, the
+  legacy root `.eslintrc` was deleted, and the eslint build plugin now falls
+  back to the project's flat ESLint config (`eslint.config.js` /
+  `eslint.config.mjs`) instead of generating an `.eslintrc`.
+- `@syncrona/typescript-plugin`: with no `target` configured, transpiled
+  output is now ES2021 (keeping `const` etc.) instead of the ES5 `var`
+  downlevel. TypeScript 6 makes `target: ES5` a deprecation error and
+  TypeScript 7 removes it, so users who still need ES5 must set it
+  explicitly together with `ignoreDeprecations`. The plugin still emits no
+  `"use strict"` prologue unless `strict`/`alwaysStrict` is configured
+  (TypeScript 6 turned the prologue on by default), and configs whose
+  `module` implies Classic resolution now get `Bundler` resolution instead
+  of the removed `node10`.
+- Modernized the tsconfigs for TypeScript 6: `NodeNext`
+  module/moduleResolution across packages, an explicit per-package
+  `rootDir`, explicit `types`, and removed the deprecated
+  `downlevelIteration`/`baseUrl`.
+
+### Removed
+
+- The `.github/dependabot.yml` `ignore` list for breaking majors: with every
+  migration landed, majors now arrive as normal isolated Dependabot PRs.
+  (typescript 7.x is currently blocked by typescript-eslint's peer range,
+  `<6.1.0`.)
+
+### Security
+
+- The MCP server's `run_node_code` full mode runs in a real child process with
+  string code generation disabled and a credential-scrubbed environment. The
+  in-process `vm` "safe sandbox" was removed after a reproduced escape to the
+  host realm; its documentation now states plainly that the environment scrub is
+  defense-in-depth, not isolation.
+- `run_workspace_command` confirmation is default-deny. Only a small read-only
+  binary allowlist runs unconfirmed, and the git gate resolves the real
+  subcommand through space-separated global-option values, requires confirmation
+  for any verb not on a read-only allowlist (which closes a git-alias remote
+  code execution and every previously unlisted mutating verb such as `switch`,
+  `pull`, `branch -D`, `worktree`, `update-ref`, `config`), and always requires
+  confirmation for inline `-c`/`--config-env` configuration injection.
+- The MCP audit log is a keyed, tamper-evident hash chain. It is keyed from the
+  credential store's per-install secret when `SYNCRONA_STORE_KEY` is absent,
+  refuses to write through a symlinked audit directory or file, fails closed on
+  a mutating tool's failed write, caps quarantine-file retention, and redacts
+  secret-shaped VALUES — connection strings, JWTs, PEM keys, inline
+  Authorization, and vendor-prefixed API tokens (Stripe, OpenAI, GitHub, Slack,
+  GitLab, Google, AWS) plus raw 256-bit hex — not just secret-named keys.
+- The unified change workflow gates approval on the script that actually
+  executes (remote mode analyzes `remoteScript`) and floors its risk score with
+  a trusted analysis that ignores caller-supplied policy weights, so
+  `riskLevel:"low"` or a zeroed `policy.weights` cannot bypass the approval and
+  self-attestation gates.
+- The download/pull write path refuses path components that would escape the
+  workspace source root (`..`, pure dots, embedded separators in manifest table
+  keys or record names), and the manifest-driven missing-file maps use
+  null-prototype objects so a hostile `__proto__` table key cannot pollute
+  `Object.prototype`.
+- MCP guardrail policy loading fails closed: a present-but-unreadable,
+  non-object, or prototype-poisoning guardrail configuration refuses instead of
+  silently loading defaults.
+
+### Fixed
+
+- `logout` no longer claims success it did not achieve. Removing a single
+  instance now reports whether a credential file was actually deleted, a
+  failed removal exits non-zero instead of printing "Logged out", and
+  `logout --all` only clears the active-instance marker when every credential
+  file is really gone.
+- `--log-level` rejects an unrecognized value instead of passing it to winston,
+  which silently suppressed *all* output — including errors — for a typo.
+- `status` and `doctor` report non-Basic authentication correctly. Both gated on
+  `SN_USER`+`SN_PASSWORD` alone, so a healthy api-key, client-credentials or
+  jwt-bearer setup was diagnosed as unconfigured.
+- `push --dry-run` is side-effect-free again; it cleared the on-disk push
+  checkpoint before the dry-run guard, destroying resume state for a real push.
+- `push --ci` exits non-zero when a collaboration-lock conflict aborts the run,
+  instead of masking a no-op deployment as success.
+- The Jira error hint no longer tells a user hitting `HTTP 403` to check their
+  credentials; a forbidden response now gets its own permissions hint.
+
 ## [0.9.1] - 2026-07-04
 
 ### Fixed
