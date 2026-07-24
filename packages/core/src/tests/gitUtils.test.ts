@@ -154,6 +154,40 @@ describe("gitUtils", () => {
     expect(result).toContain(path.resolve("/repo", "lib/other.js"));
   });
 
+  // RT-1: git diff is invoked with core.quotePath=false so non-ASCII paths are
+  // emitted as literal UTF-8. Under the default (quotePath=true) git C-quotes any
+  // byte >0x80 ("src/…/\320\242…/script.js"), which never matches a real file and
+  // is silently dropped by the tab-split parser -> an empty `push --diff`.
+  it("invokes git diff with core.quotePath=false so non-ASCII paths are not C-quoted (RT-1)", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    await gitDiffToEncodedPaths("HEAD~1");
+
+    const diffCall = mockExecFile.mock.calls.find((c) => c[1].includes("diff"));
+    const args = diffCall?.[1] as string[];
+    expect(args).toContain("-c");
+    expect(args).toContain("core.quotePath=false");
+    // The flag must precede the "diff" subcommand (git config args come first).
+    expect(args.indexOf("core.quotePath=false")).toBeLessThan(args.indexOf("diff"));
+  });
+
+  it("keeps an in-scope file whose path contains Cyrillic characters (RT-1)", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    const cyrillicPath = "packages/scope/src/sys_script_include/Тест/script.js";
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        if (args.includes("rev-parse")) {
+          cb(null, "/repo\n");
+        } else {
+          // With quotePath=false git emits the literal UTF-8 path.
+          cb(null, `M\t${cyrillicPath}`);
+        }
+      }
+    );
+
+    const result = await gitDiffToEncodedPaths("HEAD~1");
+    expect(result).toContain(path.resolve("/repo", cyrillicPath));
+  });
+
   it("writeDiff resolves encoded paths and writes them to the diff file as JSON", async () => {
     mockEncodedPathsToFilePaths.mockResolvedValue(["/a/b.js", "/a/c.js"]);
     mockGetDiffPath.mockReturnValue("/repo/.syncrona/diff.json");

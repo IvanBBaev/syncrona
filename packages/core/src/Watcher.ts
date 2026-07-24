@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import chokidar from "chokidar";
+// chokidar 5 is ESM-only with named exports — no default export (DEP1).
+import { watch } from "chokidar";
+import type { FSWatcher } from "chokidar";
 import { logFilePush } from "./logMessages.js";
 // lodash is CommonJS; under ESM its named exports are not statically detectable
 // by Node, so import the default and destructure the method we need.
@@ -7,6 +9,7 @@ import lodash from "lodash";
 import { getFileContextFromPath } from "./FileUtils.js";
 import { Sync } from "@syncrona/types";
 import { groupAppFiles, pushFiles } from "./appUtils.js";
+import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
 const { debounce } = lodash;
 const DEBOUNCE_MS = 300;
@@ -17,7 +20,7 @@ const DEBOUNCE_MS = 300;
 const RETRY_BASE_MS = 500;
 const MAX_RETRY_MS = 30_000;
 let pushQueue: string[] = [];
-let watcher: chokidar.FSWatcher | undefined = undefined;
+let watcher: FSWatcher | undefined = undefined;
 // Serializes queue processing: changes arriving while a push is in flight are
 // queued and handled in one follow-up run instead of a concurrent push.
 let processing = false;
@@ -48,6 +51,14 @@ const drainQueue = async (): Promise<void> => {
       if (toProcess.length > 1) {
         logger.info(`Pushing ${toProcess.length} queued file changes.`);
       }
+      // REV-110 (CONC-6): the dev session loaded the manifest once at startup
+      // and holds it in memory. A concurrent `refresh`/`repair` may have
+      // rewritten sync.manifest.json (e.g. a record's sys_id changed) since
+      // then; resolving paths against the stale in-memory copy would push to
+      // the wrong sys_id. Re-read the manifest from disk before resolving so
+      // each drain routes to the current record. A transient read failure
+      // preserves the existing manifest (see ConfigManager.reloadManifest).
+      await ConfigManager.reloadManifest();
       const fileContexts = toProcess
         .map(getFileContextFromPath)
         .filter((ctx): ctx is Sync.FileContext => !!ctx);
@@ -120,7 +131,7 @@ const processQueue = debounce(() => {
 }, DEBOUNCE_MS);
 
 export function startWatching(directory: string) {
-  watcher = chokidar.watch(directory, {
+  watcher = watch(directory, {
     // Chokidar fires "add" for every pre-existing file during its initial
     // scan; without this flag a fresh watch session would flood the push
     // queue with the entire source tree on startup.

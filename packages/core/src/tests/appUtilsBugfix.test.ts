@@ -140,8 +140,27 @@ describe("appUtils critical bugfixes", () => {
       return undefined;
     });
 
+    // The fresh manifest carries one record whose file is absent on disk
+    // (SNFileExists -> false), so processMissingFiles actually fetches it and the
+    // ordering assertion inside getMissingFilesApi runs. With an empty manifest
+    // the per-table fetch loop would never execute and the guard would be vacuous.
+    const freshManifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js" }],
+            },
+          },
+        },
+      },
+    };
     getManifest.mockResolvedValue({ scope: "x_test", tables: {} });
-    getManifestApi.mockResolvedValue({ data: { result: { scope: "x_test", tables: {} } } });
+    getManifestApi.mockResolvedValue({ data: { result: freshManifest } });
+    SNFileExists.mockReturnValue(async () => false);
     getMissingFilesApi.mockImplementation(async () => {
       expect(manifestWritten).toBe(true);
       return { data: { result: { tables: {} } } };
@@ -152,6 +171,7 @@ describe("appUtils critical bugfixes", () => {
     await syncManifest();
 
     expect(writeManifestFile).toHaveBeenCalledTimes(1);
+    // One missing table -> one scoped fetch (PERF-3, REV-91: one fetch per table).
     expect(getMissingFilesApi).toHaveBeenCalledTimes(1);
   });
 
@@ -191,14 +211,34 @@ describe("appUtils critical bugfixes", () => {
 
   it("processMissingFiles uses Table API fallback when getMissingFiles returns 404", async () => {
     getConfig.mockReturnValue({ tableOptions: {} });
+    // Force one record's file to be reported missing so the per-table fetch loop
+    // runs; an empty manifest would skip the fetch and never reach the fallback.
+    SNFileExists.mockReturnValue(async () => false);
     getMissingFilesApi.mockRejectedValue({ response: { status: 404 } });
     mockBuildBulkDownloadFromTableAPI.mockResolvedValue({});
 
-    const { processMissingFiles } = await import("../appUtils.js");
-    await processMissingFiles({ scope: "x_test", tables: {} } as unknown as SN.AppManifest);
+    const manifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js" }],
+            },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
 
+    const { processMissingFiles } = await import("../appUtils.js");
+    await processMissingFiles(manifest);
+
+    // PERF-3 (REV-91): the fallback receives the single-table missing map for the
+    // table currently being streamed, not the whole scope's missing map.
     expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledWith(
-      {},
+      expect.objectContaining({ sys_script: expect.anything() }),
       expect.anything(),
       {}
     );

@@ -285,6 +285,26 @@ export class ConfigStore {
     this.state.manifest = man;
   }
 
+  // REV-110 (CONC-6): re-read the manifest from disk into the in-memory state.
+  // `dev` loads the manifest once at startup and keeps it in memory; a
+  // concurrent `refresh`/`repair` that rewrites sync.manifest.json (e.g. a
+  // record's sys_id changed) would otherwise be invisible, so the next watch
+  // push would resolve a file to a STALE sys_id and overwrite the wrong record.
+  // Unlike the private loadManifest(), a transient read/parse failure must NOT
+  // clobber a good in-memory manifest: dropping it would make every subsequent
+  // push silently no-op. Preserve the current manifest on any error, and treat
+  // an unconfigured manifest path as a no-op rather than throwing.
+  async reloadManifest(): Promise<void> {
+    if (!this.state.manifest_path) return;
+    try {
+      const manifestString = await fsp.readFile(this.state.manifest_path, "utf-8");
+      this.state.manifest = JSON.parse(manifestString);
+    } catch (_) {
+      // Keep the existing in-memory manifest; a transient unreadable/partial
+      // write on disk should not blow away a known-good manifest mid-session.
+    }
+  }
+
   private async loadConfig(skipConfigPath = false): Promise<Sync.Config> {
     if (skipConfigPath) {
       logger.warn("Couldn't find config file. Loading default...");
@@ -538,4 +558,10 @@ export function getDefaultConfigFile(sourceDirectory = "src"): string {
 
 export function updateManifest(man: SN.AppManifest) {
   defaultConfigStore.updateManifest(man);
+}
+
+// REV-110 (CONC-6): module-level delegate so callers (the dev Watcher) can
+// refresh the in-memory manifest from disk before resolving file paths.
+export function reloadManifest() {
+  return defaultConfigStore.reloadManifest();
 }

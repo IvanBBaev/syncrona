@@ -77,17 +77,33 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
   }
   const write = async () => {
       const fullPath = path.join(parentPath, `${name}.${type}`);
-      // Containment guard: a record/field name that slips a path separator or
-      // ".." past upstream sanitization must not let the write escape the
-      // target directory.
-      const resolvedParent = path.resolve(parentPath);
       const resolvedFull = path.resolve(fullPath);
+      // INJ-1 containment guard. Anchor to the workspace source ROOT whenever one
+      // is loaded, not merely to the caller-supplied parentPath. If parentPath
+      // were itself already escaped (e.g. built from an unsanitized "../evil"
+      // table name or a scoped "../../.zshrc" record name), a guard anchored to
+      // parentPath would pass every write that stayed under that escaped parent.
+      // The download/refresh path — the only one that consumes server- or
+      // manifest-supplied names — always has a source root loaded, so the
+      // stronger anchor applies exactly when a tampered manifest is a risk. When
+      // no project is loaded (isolated writes with no source root) fall back to
+      // containing the write to its parentPath.
+      let anchor: string;
+      try {
+        const sourceRoot = ConfigManager.getSourcePath();
+        anchor =
+          typeof sourceRoot === "string" && sourceRoot.length > 0
+            ? path.resolve(sourceRoot)
+            : path.resolve(parentPath);
+      } catch {
+        anchor = path.resolve(parentPath);
+      }
       if (
-        resolvedFull !== resolvedParent &&
-        !resolvedFull.startsWith(resolvedParent + path.sep)
+        resolvedFull !== anchor &&
+        !resolvedFull.startsWith(anchor + path.sep)
       ) {
         throw new Error(
-          `Refusing to write "${name}.${type}" outside its table directory.`
+          `Refusing to write "${name}.${type}" outside the workspace source root.`
         );
       }
       return await withRetry(() => fsp.writeFile(fullPath, content));
@@ -127,7 +143,7 @@ export const pathExists = async (path: string): Promise<boolean> => {
   try {
     await fsp.access(path, fs.constants.F_OK);
     return true;
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 };
@@ -159,7 +175,7 @@ export const isUnderPath = (
 const getFileExtension = (filePath: string): string => {
   try {
     return path.extname(filePath);
-  } catch (e) {
+  } catch (_e) {
     return "";
   }
 };
@@ -250,7 +266,7 @@ export const getFileContextFromPath = (
       tableName,
       targetField,
     };
-  } catch (e) {
+  } catch (_e) {
     return undefined;
   }
 };
@@ -366,7 +382,7 @@ export const writeBuildFile = async (
 ) => {
   try {
     await fsp.access(folderPath, fs.constants.F_OK);
-  } catch (e) {
+  } catch (_e) {
     await fsp.mkdir(folderPath, { recursive: true });
   }
   await writeFileForce(newPath, fileContents);

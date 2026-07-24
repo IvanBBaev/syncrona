@@ -129,7 +129,7 @@ describe("devCommands", () => {
       let sigint: (() => void) | undefined;
       jest
         .spyOn(process, "once")
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         .mockImplementation(((evt: string, h: () => void) => {
           if (evt === "SIGINT") sigint = h;
           return process;

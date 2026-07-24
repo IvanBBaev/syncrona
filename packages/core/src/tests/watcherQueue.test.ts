@@ -40,11 +40,10 @@ jest.unstable_mockModule("./../Logger.js", () => ({
   },
 }));
 
+// chokidar 5 has named exports only — mock the { watch } shape, no default (DEP1).
 jest.unstable_mockModule("chokidar", () => ({
   __esModule: true,
-  default: {
-    watch: (...args: unknown[]) => mockWatch(...args),
-  },
+  watch: (...args: unknown[]) => mockWatch(...args),
 }));
 
 const ctx = (

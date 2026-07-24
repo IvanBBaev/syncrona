@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "path";
 import { SN } from "@syncrona/types";
 
 // Coverage for downloadPipeline paths the sibling suites leave untouched:
@@ -296,9 +297,9 @@ describe("findMissingFiles discovery chain", () => {
 });
 
 describe("processMissingFiles", () => {
-  it("counts missing records for the debug log and fetches them", async () => {
-    // Whole tables absent -> a non-empty missing map so the reduce on line 283
-    // computes a real count (>0) and getMissingFiles is called with it.
+  it("counts missing records for the debug log and fetches them per table", async () => {
+    // Whole tables absent -> a non-empty missing map so the reduce computes a
+    // real count (>0) and getMissingFiles is called with it.
     pathExists.mockImplementation(async () => false);
     getConfig.mockReturnValue({ tableOptions: {} });
     // The unwrapped result is a TableMap consumed by processTablesInManifest;
@@ -308,7 +309,19 @@ describe("processMissingFiles", () => {
     const { processMissingFiles } = await import("../appUtils.js");
     await processMissingFiles(makeManifest());
 
-    expect(getMissingFilesApi).toHaveBeenCalledTimes(1);
+    // PERF-3 (REV-91): processMissingFiles streams one table at a time, so the
+    // scoped bulk endpoint is probed once per missing table. makeManifest() has
+    // two tables (sys_script, sys_ui_page), both fully absent -> two fetches,
+    // each scoped to a single-table missing map.
+    expect(getMissingFilesApi).toHaveBeenCalledTimes(2);
+    expect(getMissingFilesApi).toHaveBeenCalledWith(
+      { sys_script: expect.anything() },
+      {}
+    );
+    expect(getMissingFilesApi).toHaveBeenCalledWith(
+      { sys_ui_page: expect.anything() },
+      {}
+    );
     // Debug line reports 3 missing records across 2 tables.
     const debugMsg = loggerDebug.mock.calls.map((c) => String(c[0])).join("\n");
     expect(debugMsg).toContain("3 missing record(s)");
@@ -342,5 +355,108 @@ describe("downloadAllFiles fetchTable error handling", () => {
       response: { status: 500 },
     });
     expect(mockBuildBulkDownloadFromTableAPI).not.toHaveBeenCalled();
+  });
+});
+
+describe("processTablesInManifest path-traversal guard (INJ-1)", () => {
+  // A single-record table map with the given table key and record name, driven
+  // straight through the pull seam. FileUtils is mocked in this suite, so the
+  // guard must reject BEFORE any dir/file task is queued — proven by the write
+  // mocks staying untouched.
+  const oneRecordTables = (tableName: string, recordName: string) =>
+    ({
+      [tableName]: {
+        records: {
+          r1: {
+            name: recordName,
+            sys_id: "s1",
+            files: [{ name: "script", type: "js", content: "x" }],
+          },
+        },
+      },
+    }) as unknown as SN.TableMap;
+
+  it("rejects a table name that walks out of the source root and writes nothing", async () => {
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    await expect(
+      processTablesInManifest(oneRecordTables("../evil", "r1"), true)
+    ).rejects.toThrow(/unsafe table name .* escape the workspace source root/);
+    // The traversal is refused before any filesystem task is even scheduled.
+    expect(createDirRecursively).not.toHaveBeenCalled();
+    expect(writeSNFileCurry).not.toHaveBeenCalled();
+    expect(writeFlatSNFileCurry).not.toHaveBeenCalled();
+  });
+
+  it("rejects a scoped record name that walks out of the source root (nested layout)", async () => {
+    getConfig.mockReturnValue({});
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    await expect(
+      processTablesInManifest(
+        oneRecordTables("sys_script", "../../../../.zshrc"),
+        true
+      )
+    ).rejects.toThrow(/unsafe record name .* escape the workspace source root/);
+    expect(createDirRecursively).not.toHaveBeenCalled();
+    expect(writeSNFileCurry).not.toHaveBeenCalled();
+  });
+
+  it("rejects a hostile record name in flat layout too", async () => {
+    getConfig.mockReturnValue({ flat: true });
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    await expect(
+      processTablesInManifest(
+        oneRecordTables("sys_script", path.join("..", "escape")),
+        true
+      )
+    ).rejects.toThrow(/unsafe record name/);
+    expect(writeFlatSNFileCurry).not.toHaveBeenCalled();
+  });
+
+  it("rejects pure-dot and empty components", async () => {
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    for (const bad of ["..", ".", "...", ""]) {
+      await expect(
+        processTablesInManifest(oneRecordTables(bad, "r1"), true)
+      ).rejects.toThrow(/unsafe table name/);
+    }
+    expect(createDirRecursively).not.toHaveBeenCalled();
+  });
+
+  it("lets a benign manifest through unharmed", async () => {
+    getConfig.mockReturnValue({});
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    // makeManifest() carries only plain identifiers, so the guard is transparent.
+    await expect(
+      processTablesInManifest(makeManifest().tables, true)
+    ).resolves.toBeUndefined();
+    expect(createDirRecursively).toHaveBeenCalled();
+  });
+});
+
+describe("findMissingFiles prototype-pollution guard (INJ-2)", () => {
+  it("does not pollute Object.prototype from a __proto__ table key", async () => {
+    // A manifest downloaded as JSON can carry an OWN "__proto__" table key; an
+    // object literal cannot (it hits the prototype setter), so parse the JSON.
+    const hostile = JSON.parse(
+      '{"scope":"x_test","tables":{"__proto__":' +
+        '{"records":{"r":{"name":"r","sys_id":"polluted",' +
+        '"files":[{"name":"script","type":"js"}]}}}}}'
+    );
+    // Every folder is absent -> markTableMissing -> markFileMissing("__proto__"),
+    // which on the old plain-object map wrote onto Object.prototype.
+    pathExists.mockImplementation(async () => false);
+
+    const { findMissingFiles } = await import("../appUtils.js");
+    try {
+      const missing = await findMissingFiles(hostile);
+
+      // The crafted sys_id must NOT have leaked onto every object's prototype.
+      expect((({}) as Record<string, unknown>).polluted).toBeUndefined();
+      // The "__proto__" table is still captured as an ordinary own entry.
+      expect(Object.keys(missing)).toContain("__proto__");
+    } finally {
+      // Defensive: if the guard ever regresses, don't poison the rest of the run.
+      delete (Object.prototype as Record<string, unknown>).polluted;
+    }
   });
 });

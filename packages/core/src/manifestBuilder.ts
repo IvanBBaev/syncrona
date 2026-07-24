@@ -11,6 +11,59 @@ type TableAPIResponse = { result: TableAPIRecord[] };
 const MAX_TABLE_HIERARCHY_DEPTH = 10;
 const SYS_ID_CHUNK_SIZE = 200;
 
+// PERF-7 (REV-100): default cap for how many tables buildManifestFromTableAPI
+// enumerates in parallel. Without a cap a wide scope fired one concurrent
+// Table-API request chain per table at once, hammering the instance and risking
+// EMFILE/socket exhaustion. Clamped to 1–50; an optional `tableConcurrency`
+// field on the passed config overrides it.
+const DEFAULT_MANIFEST_TABLE_CONCURRENCY = 20;
+
+const resolveManifestTableConcurrency = (config: unknown): number => {
+  // `tableConcurrency` is an internal override that the public config param type
+  // intentionally does not name, so read it via a loose structural check rather
+  // than a strongly-typed field (which would trip TS's weak-type test at the
+  // callsite, where a Pick<Config, ...> carries no such property).
+  const candidate =
+    config && typeof config === "object"
+      ? (config as { tableConcurrency?: unknown }).tableConcurrency
+      : undefined;
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
+    return DEFAULT_MANIFEST_TABLE_CONCURRENCY;
+  }
+  return Math.min(Math.max(Math.floor(candidate), 1), 50);
+};
+
+// Bounded worker pool (copied from the pull/push seams, where the equivalent
+// helper is not exported) so the table enumeration above can run in parallel
+// without an unbounded fan-out.
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> => {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results: R[] = new Array(items.length);
+  const limit = Math.max(1, Math.floor(concurrency));
+  let nextIndex = 0;
+
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const current = nextIndex;
+        nextIndex += 1;
+        results[current] = await worker(items[current], current);
+      }
+    }
+  );
+
+  await Promise.all(runners);
+  return results;
+};
+
 // 400/403/404 mean the table is not queryable for this user/instance (ACL,
 // missing table) — a legitimate "skip this table" case. Anything else
 // (network, 5xx, auth) is a real failure that must NOT be treated as
@@ -642,29 +695,30 @@ export async function buildManifestFromTableAPI(
   const manifest: SN.AppManifest = { scope: scopeName, tables: {} };
   const failedTables: string[] = [];
 
-  await Promise.all(
-    tableNames.map(async (tableName) => {
-      try {
-        const files = await getFileFieldsForTable(client, tableName, includes, excludes);
-        if (files.length === 0) return;
+  // PERF-7 (REV-100): enumerate tables through a bounded pool instead of a single
+  // Promise.all that opened one request chain per table at once.
+  const tableConcurrency = resolveManifestTableConcurrency(config);
+  await mapWithConcurrency(tableNames, tableConcurrency, async (tableName) => {
+    try {
+      const files = await getFileFieldsForTable(client, tableName, includes, excludes);
+      if (files.length === 0) return;
 
-        const records = await getRecordsForTable(
-          client,
-          tableName,
-          scopeId,
-          files,
-          tableOptions[tableName]
-        );
-        if (Object.keys(records).length === 0) return;
+      const records = await getRecordsForTable(
+        client,
+        tableName,
+        scopeId,
+        files,
+        tableOptions[tableName]
+      );
+      if (Object.keys(records).length === 0) return;
 
-        manifest.tables[tableName] = { records };
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
-        failedTables.push(tableName);
-      }
-    })
-  );
+      manifest.tables[tableName] = { records };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
+      failedTables.push(tableName);
+    }
+  });
 
   if (failedTables.length > 0) {
     // Better to fail the whole build than to persist a partial manifest in
@@ -694,7 +748,6 @@ export async function buildBulkDownloadFromTableAPI(
 
       const tableOpts = tableOptions[tableName];
       const defaultDisplayField = getDisplayField(tableName);
-      const displayField = tableOpts?.displayField || defaultDisplayField;
 
       // Collect all unique file fields across missing records
       const allFiles = new Map<string, SN.FileType>();
@@ -727,7 +780,12 @@ export async function buildBulkDownloadFromTableAPI(
         const records: SN.TableConfigRecords = {};
 
         for (const row of rows) {
-          const name = buildRecordName(row, displayField, tableOpts);
+          // buildRecordName applies the tableOptions.displayField override itself
+          // (override -> default -> sys_id), so it must receive the DEFAULT field
+          // here — exactly as getRecordsForTable does. Passing the already
+          // resolved override collapses that chain and names a record with an
+          // empty override value differently from the manifest.
+          const name = buildRecordName(row, defaultDisplayField, tableOpts);
           const files: SN.File[] = [];
 
           for (const [fieldName, fieldType] of allFiles.entries()) {

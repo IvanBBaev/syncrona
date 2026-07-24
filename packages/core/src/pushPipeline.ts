@@ -241,7 +241,13 @@ export const buildFiles = async (
 ): Promise<Sync.BuildResult[]> => {
   const tick =
     getProgTick(logger.getLogLevel(), fileList.length * 2) || (() => {});
-  const buildPromises = fileList.map(async (rec) => {
+  // REV-99 (PERF-6): route the build fan-out through the bounded
+  // mapWithConcurrency helper (exactly like pushFiles) instead of an unbounded
+  // Promise.all. Building every record at once opened one plugin build +
+  // file-write chain per record simultaneously, so a large scope could exhaust
+  // file descriptors and thrash the event loop. Cap the in-flight fan-out at
+  // the same resolved push-concurrency limit; results stay in fileList order.
+  return mapWithConcurrency(fileList, resolvePushConcurrency(), async (rec) => {
     const { fields, table } = rec;
     const fieldNames = Object.keys(fields);
     const recSummary = summarizeRecord(table, fields[fieldNames[0]].name);
@@ -256,5 +262,4 @@ export const buildFiles = async (
     tick();
     return writeRes;
   });
-  return Promise.all(buildPromises);
 };

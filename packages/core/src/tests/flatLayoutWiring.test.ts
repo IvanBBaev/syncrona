@@ -150,7 +150,16 @@ describe("getFileContextFromPath — flat layout", () => {
 describe("writeFlatSNFileCurry", () => {
   it("writes a single <record>~<field>.<ext> file under the table dir", async () => {
     const { writeFlatSNFileCurry } = await import("../FileUtils.js");
-    const tableDir = path.join(TMP_ROOT, "writecurry", "sys_script_include");
+    // Rooted under the mocked source path (getSourcePath -> TMP_ROOT/src) so the
+    // INJ-1 containment guard, which anchors writes to the workspace source root,
+    // sees this as an in-tree write. The extra `writecurry` segment keeps it
+    // isolated from the round-trip test's own sys_script_include directory.
+    const tableDir = path.join(
+      TMP_ROOT,
+      "src",
+      "writecurry",
+      "sys_script_include"
+    );
     fs.mkdirSync(tableDir, { recursive: true });
     await writeFlatSNFileCurry(false)(
       { name: "script", type: "js", content: "var x = 1;\n" },

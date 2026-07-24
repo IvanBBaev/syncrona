@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+// The real error taxonomy, imported from the package's own module rather than
+// re-implemented: `isJiraHttpError` is an instanceof check, so a hand-rolled
+// stub here would let a broken `kind` branch pass. This deep specifier is not
+// the one mocked below, so it stays the genuine implementation.
+import { jiraHttpError, isJiraHttpError } from "@syncrona/jira/dist/errors.js";
 export {};
 
 const mockDetectDeployment = jest.fn();
@@ -24,6 +29,7 @@ jest.unstable_mockModule("@syncrona/jira", () => ({
   getIssue: (...args: unknown[]) => mockGetIssue(...args),
   resolveJiraConfig: (...args: unknown[]) => mockResolveJiraConfig(...args),
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
+  isJiraHttpError,
   NO_JIRA_CONFIG_MESSAGE:
     "No Jira credentials configured. Run `syncrona jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.",
   jiraUndecryptableMessage: (profile: string) =>
@@ -251,6 +257,62 @@ describe("jiraCommand", () => {
 
     expect(mockLoggerError).toHaveBeenCalledWith("HTTP 404");
     expect(process.exitCode).toBe(1);
+  });
+});
+
+// 401 and 403 both read as "auth" in prose, but only 401 is fixable by logging
+// in again. Classifying on the client's structured `kind` keeps the hint from
+// contradicting the message the client itself printed one line earlier.
+describe("jiraCommand error hints", () => {
+  const RELOGIN_HINT = expect.stringContaining("jira-login");
+
+  const failWith = async (e: unknown) => {
+    mockGetIssue.mockRejectedValue(e);
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1" });
+    return mockLoggerInfo.mock.calls.map((c) => c[0] as string);
+  };
+
+  const httpError = (status: number) =>
+    jiraHttpError({
+      status,
+      url: "https://acme.atlassian.net/rest/api/3/issue/ABC-1",
+      context: "ABC-1",
+    });
+
+  it("tells a forbidden caller that re-login will not help", async () => {
+    const hints = await failWith(httpError(403));
+
+    expect(hints).not.toContainEqual(RELOGIN_HINT);
+    expect(hints).toContainEqual(expect.stringContaining("not permitted"));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("still points an unauthorized caller at re-login", async () => {
+    const hints = await failWith(httpError(401));
+
+    expect(hints).toContainEqual(RELOGIN_HINT);
+  });
+
+  it("points a not-found caller at the issue key", async () => {
+    const hints = await failWith(httpError(404));
+
+    expect(hints).toContainEqual(expect.stringContaining("verify the issue key"));
+    expect(hints).not.toContainEqual(RELOGIN_HINT);
+  });
+
+  it("tells a throttled caller to wait rather than re-authenticate", async () => {
+    const hints = await failWith(httpError(429));
+
+    expect(hints).toContainEqual(expect.stringContaining("throttling"));
+    expect(hints).not.toContainEqual(RELOGIN_HINT);
+  });
+
+  it("falls back to message matching for failures raised before a response", async () => {
+    // A timeout/DNS failure never reaches a status, so it arrives as a plain
+    // Error — the prose branches must still classify it.
+    const hints = await failWith(new Error("request timed out after 30000ms"));
+
+    expect(hints).toContainEqual(expect.stringContaining("timed out"));
   });
 });
 

@@ -122,10 +122,12 @@ const BASE_ARGS = { logLevel: "info", dryRun: false };
 // so the verification client resolves it). Snapshot and restore so tests never
 // leak credentials into one another.
 let envSnapshot: NodeJS.ProcessEnv;
+let exitCodeSnapshot: typeof process.exitCode;
 
 beforeEach(async () => {
   jest.clearAllMocks();
   envSnapshot = { ...process.env };
+  exitCodeSnapshot = process.exitCode;
   ({ loginCommand, logoutCommand, instancesCommand, useCommand } = await import(
     "../authCommands.js"
   ));
@@ -133,7 +135,8 @@ beforeEach(async () => {
   mockSetActiveInstance.mockResolvedValue(undefined);
   mockGetActiveInstance.mockResolvedValue(null);
   mockSaveCredentials.mockResolvedValue(undefined);
-  mockRemoveCredentials.mockResolvedValue(undefined);
+  // Mirrors the real contract: true only when a credential file was deleted.
+  mockRemoveCredentials.mockResolvedValue(true);
   mockRemoveAllCredentials.mockResolvedValue(2);
   mockListInstances.mockResolvedValue([]);
   mockCheckConnection.mockResolvedValue(undefined);
@@ -147,6 +150,9 @@ afterEach(() => {
     if (!(key in envSnapshot)) delete process.env[key];
   }
   Object.assign(process.env, envSnapshot);
+  // A command under test may set process.exitCode; left set, it would leak out
+  // and fail the whole Jest run.
+  process.exitCode = exitCodeSnapshot;
 });
 
 describe("loginCommand", () => {
@@ -426,6 +432,46 @@ describe("logoutCommand", () => {
     await logoutCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
 
     expect(mockSetActiveInstance).toHaveBeenCalledWith("staging.service-now.com");
+  });
+
+  it("reports nothing was removed when the instance had no stored credentials", async () => {
+    mockRemoveCredentials.mockResolvedValue(false);
+
+    await logoutCommand({ ...BASE_ARGS, instance: "ghost.service-now.com" });
+
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("No stored credentials for ghost.service-now.com")
+    );
+  });
+
+  it("fails loudly when an instance's credential file cannot be removed", async () => {
+    mockRemoveCredentials.mockRejectedValue(
+      Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" })
+    );
+
+    await logoutCommand({ ...BASE_ARGS, instance: "dev123.service-now.com" });
+
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("EACCES"));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("does not announce a purge or clear the active marker when --all could not delete a file", async () => {
+    mockRemoveAllCredentials.mockRejectedValue(
+      new Error("Removed credentials for 1 instance(s), but 1 could not be removed")
+    );
+
+    await logoutCommand({ ...BASE_ARGS, all: true });
+
+    // The secrets are still on disk, so the marker must keep pointing at them
+    // rather than advertising a logout that never happened.
+    expect(mockSetActiveInstance).not.toHaveBeenCalled();
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("could not be removed")
+    );
+    expect(process.exitCode).toBe(1);
   });
 });
 

@@ -7,6 +7,20 @@ import path from "path";
 import { types } from "node:util";
 const fsp = fs.promises;
 
+// A `/g` or `/y` match in sync.config.js makes .test() stateful: it resumes from
+// the RegExp's own lastIndex and rewinds it on a miss, so the same rule would
+// match every other file and silently skip the build transform on the rest.
+// Rule matching is a stateless "does this path belong to this rule?" question,
+// so test a clone without those flags. Cloning also keeps the user's object
+// unmutated, and works cross-realm (source/flags read fine on a vm-realm RegExp).
+function matchesFilePath(reg: RegExp, filePath: string): boolean {
+  const stateless =
+    reg.global || reg.sticky
+      ? new RegExp(reg.source, reg.flags.replace(/[gy]/g, ""))
+      : reg;
+  return stateless.test(filePath);
+}
+
 class PluginManager {
   pluginRules: Sync.PluginRule[];
   constructor() {
@@ -37,7 +51,7 @@ class PluginManager {
         );
         continue;
       }
-      if (reg.test(context.filePath)) {
+      if (matchesFilePath(reg, context.filePath)) {
         plugins = rule.plugins;
         //only match first rule
         break;

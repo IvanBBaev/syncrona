@@ -4,6 +4,7 @@ import { hideBin } from "yargs/helpers";
 import type { Argv, Arguments } from "yargs";
 import { logger } from "./Logger.js";
 import { logErrorHint } from "./commandHelpers.js";
+import { isPromptAbort } from "./errorTaxonomy.js";
 import {
   CLI_COMMANDS,
   SHARED_CLI_OPTIONS,
@@ -20,6 +21,13 @@ const runHandler =
     Promise.resolve()
       .then(() => handler(args))
       .catch((e) => {
+        // Ctrl-C during a prompt (inquirer 14 rejects with ExitPromptError
+        // instead of killing the process): a user cancellation, not a command
+        // failure — no error banner, conventional SIGINT exit code (130).
+        if (isPromptAbort(e)) {
+          process.exitCode = 130;
+          return;
+        }
         const message = e instanceof Error ? e.message : String(e);
         logger.error(message || "Command failed with an unknown error.");
         logErrorHint(e); // DX19: actionable next step based on error category
@@ -80,5 +88,5 @@ export async function initCommands(argv?: string[]) {
   if (version) {
     parser = parser.version(version);
   }
-  parser.help().argv;
+  parser.help().parse();
 }

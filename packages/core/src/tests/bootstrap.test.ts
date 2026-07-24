@@ -93,7 +93,7 @@ describe("bootstrap init", () => {
   });
 
   it("stringifies a non-Error config failure before logging it", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     mockLoadConfigs.mockRejectedValue("plain string failure" as any);
     const errSpy = jest
       .spyOn(console, "error")
@@ -107,7 +107,7 @@ describe("bootstrap init", () => {
   });
 
   it("loads config + dotenv and returns early under jest", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     mockLoadConfigs.mockResolvedValue(undefined as any);
     mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
 
@@ -119,7 +119,7 @@ describe("bootstrap init", () => {
   it("passes quiet:true to dotenv so the v17 tip line never reaches stdout", async () => {
     // Pipeable commands (`syncrona completion bash >> ~/.bashrc`) require a
     // clean stdout; dotenv v17 prints an injection tip there unless quieted.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     mockLoadConfigs.mockResolvedValue(undefined as any);
     mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
 
@@ -142,7 +142,7 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     ({ init } = await import("../bootstrap.js"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     mockLoadConfigs.mockResolvedValue(undefined as any);
     mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
   });

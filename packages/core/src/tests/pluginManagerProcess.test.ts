@@ -116,3 +116,65 @@ describe("PluginManager.getFinalFileContents", () => {
     expect(out).toContain("// transformed");
   });
 });
+
+// Rule matching answers a stateless question — "does this path belong to this
+// rule?" — but `match` is user-authored, and RegExp.test() is stateful for /g
+// and /y: it resumes from the regex's own lastIndex. A stray flag in
+// sync.config.js therefore used to make the same rule match every other file,
+// silently shipping untransformed source for the rest.
+describe("PluginManager.determinePlugins with stateful user regexes", () => {
+  const plugins = [{ name: "okplugin", options: {} }];
+
+  // determinePlugins reads the rules loadPluginConfig() cached on the singleton,
+  // not getConfig() directly — mock the config, then load it, or the assertion
+  // silently runs against whatever rules a previous test left behind.
+  const withRules = async (rules: unknown[]) => {
+    getConfig.mockReturnValue({ rules });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    await PluginManager.loadPluginConfig();
+    return PluginManager;
+  };
+
+  it("matches a /g rule on every file instead of every other one", async () => {
+    const match = /\.js$/g;
+    const PluginManager = await withRules([{ match, plugins }]);
+
+    for (let i = 0; i < 4; i++) {
+      expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual(plugins);
+    }
+  });
+
+  it("leaves the user's regex object untouched while matching", async () => {
+    const match = /\.js$/g;
+    const PluginManager = await withRules([{ match, plugins }]);
+
+    PluginManager.determinePlugins(context(SOURCE_FILE));
+
+    expect(match.lastIndex).toBe(0);
+  });
+
+  it("matches a sticky rule against the whole path, not only from position 0", async () => {
+    // A sticky regex anchors at lastIndex, so /\.js$/y would never match a path
+    // that does not START with ".js" — the rule would be dead for every file.
+    const PluginManager = await withRules([{ match: /\.js$/y, plugins }]);
+
+    expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual(plugins);
+  });
+
+  it("still transforms the file on a repeated build with a /g rule", async () => {
+    const PluginManager = await withRules([{ match: /\.js$/g, plugins }]);
+
+    expect(await PluginManager.getFinalFileContents(context(SOURCE_FILE))).toContain(
+      "// transformed"
+    );
+    expect(await PluginManager.getFinalFileContents(context(SOURCE_FILE))).toContain(
+      "// transformed"
+    );
+  });
+
+  it("keeps a non-matching /g rule non-matching", async () => {
+    const PluginManager = await withRules([{ match: /\.ts$/g, plugins }]);
+
+    expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual([]);
+  });
+});

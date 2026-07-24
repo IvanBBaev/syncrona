@@ -127,11 +127,11 @@ const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });
 const eexist = () => Object.assign(new Error("exists"), { code: "EEXIST" });
 const eacces = () => Object.assign(new Error("denied"), { code: "EACCES" });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 const rec = (sysId: string) => ({ table: "sys_script", sysId, fields: { script: { filePath: `/tmp/${sysId}.js` } } }) as any;
 
 const runPush = (overrides: Record<string, unknown> = {}) =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   pushCommand({
     logLevel: "info",
     ci: true,
@@ -429,6 +429,159 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
       const payload = JSON.parse(String(call[1]));
       expect(payload.instance).toBe("instance.service-now.com");
     }
+  });
+
+  it("re-pushes a succeeded record whose content changed after the checkpoint was written", async () => {
+    // sys_script:1 succeeded and sys_script:2 failed, so the checkpoint matches
+    // the current diff and auto-resume is legitimate. But sys_script:1's source
+    // has been edited since: its recorded fingerprint no longer describes the
+    // file on disk. Skipping it on table:sysId identity alone (the old rule)
+    // meant the edit never reached the instance while the run still exited 0.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockPushFiles.mockResolvedValue([
+      { success: true, message: "ok" },
+      { success: true, message: "ok" },
+    ]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:1", "sys_script:2"],
+          succeeded: ["sys_script:1"],
+          failed: ["sys_script:2"],
+          instance: "instance.service-now.com",
+          fingerprints: {
+            "sys_script:1": "fingerprint-of-the-superseded-content",
+            "sys_script:2": "fingerprint-of-the-superseded-content",
+          },
+        });
+      }
+      return "// the current, edited source";
+    });
+
+    await runPush();
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["1", "2"]);
+  });
+
+  it("still skips a succeeded record whose content is unchanged since the checkpoint", async () => {
+    // Round-trip: the checkpoint fed back to the second run is exactly the one
+    // the first run wrote, so the fingerprints are real rather than hand-made.
+    // With the sources untouched, resume must still narrow to the failed record.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        throw enoent();
+      }
+      return "// unchanged source";
+    });
+    mockPushFiles.mockResolvedValue([
+      { success: true, message: "ok" },
+      { success: false, message: "boom" },
+    ]);
+
+    await runPush();
+
+    const checkpoint = mockWriteFile.mock.calls
+      .filter((c) => String(c[0]).includes("sync.push.checkpoint.json"))
+      .map((c) => String(c[1]))
+      .pop() as string;
+    expect(JSON.parse(checkpoint).succeeded).toEqual(["sys_script:1"]);
+
+    mockPushFiles.mockClear();
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return checkpoint;
+      }
+      return "// unchanged source";
+    });
+
+    await runPush();
+
+    const pushed = mockPushFiles.mock.calls[0][0] as Array<{ sysId: string }>;
+    expect(pushed.map((r) => r.sysId)).toEqual(["2"]);
+  });
+
+  it("fails the shell when --ci aborts on a collaboration lock conflict (Finding 9)", async () => {
+    // The atomic create loses to an existing lock that is fresh and whose owning
+    // process is alive, so it is not stale and cannot be reclaimed. The push is
+    // aborted having pushed nothing — which must fail the shell rather than
+    // report a green, no-op deployment to CI.
+    mockWriteFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.collaboration.lock.json")) {
+        throw eexist();
+      }
+      return undefined;
+    });
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.collaboration.lock.json")) {
+        return JSON.stringify({
+          command: "push",
+          pid: process.pid,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush();
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("collaboration lock conflict")
+    );
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("dry run never deletes another run's checkpoint (Finding 10)", async () => {
+    // A checkpoint left by a partially-failed push against ANOTHER instance is
+    // not resumable here, but a read-only preview is not the run that gets to
+    // discard it: unlinking it during a dry run destroys resume state a later
+    // real push against that instance would have used.
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:99"],
+          succeeded: [],
+          failed: ["sys_script:99"],
+          instance: "other.service-now.com",
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush({ dryRun: true });
+
+    const unlinked = mockUnlink.mock.calls.map((c) => String(c[0]));
+    expect(unlinked.some((p) => p.includes("sync.push.checkpoint.json"))).toBe(false);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("dry run with a matching checkpoint neither prompts nor narrows the preview (Finding 10)", async () => {
+    // An interactive dry run must not block on the resume prompt, and its
+    // preview must describe the full current diff rather than the subset some
+    // future resume might choose.
+    mockGetAppFileList.mockResolvedValue([rec("1"), rec("2")]);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (String(p).includes("sync.push.checkpoint.json")) {
+        return JSON.stringify({
+          attempted: ["sys_script:1", "sys_script:2"],
+          succeeded: ["sys_script:1"],
+          failed: ["sys_script:2"],
+          instance: "instance.service-now.com",
+        });
+      }
+      throw enoent();
+    });
+
+    await runPush({ ci: false, dryRun: true });
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith("2 files to push.");
+    expect(mockUnlink).not.toHaveBeenCalled();
   });
 
   it("ignores a shape-invalid checkpoint file and pushes normally", async () => {

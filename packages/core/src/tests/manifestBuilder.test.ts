@@ -459,6 +459,63 @@ describe("manifestBuilder", () => {
     ]);
   });
 
+  // buildRecordName applies the tableOptions.displayField override internally
+  // (override -> default -> sys_id). The bulk-download path used to hand it the
+  // already-resolved override as the fallback argument, collapsing that chain to
+  // override -> override -> sys_id. A record whose override value is EMPTY was
+  // therefore named "<sys_id>" by the download while the manifest named it from
+  // the default display field: the content landed in an untracked folder, the
+  // manifest-referenced file stayed a 0-byte skeleton, and `repair --prune`
+  // deleted the real content as an orphan. Both paths must name it identically.
+  it("names a record with an empty displayField override exactly like the manifest path", async () => {
+    const row = {
+      sys_id: "rec-9",
+      name: "MyInclude",
+      u_title: "",
+      script: "gs.info('a');",
+    };
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) => {
+      if (table === "sys_app") {
+        return { data: { result: [{ sys_id: "scope-1" }] } };
+      }
+      if (table === "sys_metadata") {
+        return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
+      }
+      if (table === "sys_dictionary") {
+        return {
+          data: { result: [{ element: "script", internal_type: "script_plain" }] },
+        };
+      }
+      if (table === "sys_script_include") {
+        return { data: { result: [row] } };
+      }
+      return { data: { result: [] } };
+    });
+
+    const tableOptions: Sync.ITableOptionsMap = {
+      sys_script_include: { displayField: "u_title", query: "" },
+    };
+
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(tableAPIGet),
+      { includes: {}, excludes: {}, tableOptions }
+    );
+    const manifestName = Object.keys(manifest.tables.sys_script_include.records)[0];
+
+    const tableMap = await buildBulkDownloadFromTableAPI(
+      { sys_script_include: { "rec-9": [{ name: "script", type: "js" }] } },
+      createClient(tableAPIGet),
+      tableOptions
+    );
+    const downloadName = Object.keys(tableMap.sys_script_include.records)[0];
+
+    // The empty override falls back to the default display field, not to sys_id.
+    expect(manifestName).toBe("MyInclude");
+    expect(downloadName).toBe(manifestName);
+  });
+
   it("listAppsFromTableAPI returns SN.App[] shape", async () => {
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockResolvedValue({

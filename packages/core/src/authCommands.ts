@@ -390,7 +390,7 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
   resetClient();
   try {
     await defaultClient().checkConnection(8000);
-  } catch (e) {
+  } catch (_e) {
     logger.error(
       `Cannot authenticate to ${normalizedInstance} using ${method}. Check the instance URL and credentials.`
     );
@@ -475,7 +475,17 @@ export async function logoutCommand(
   setLogLevel(args);
 
   if (args.all) {
-    const count = await removeAllCredentials();
+    let count: number;
+    try {
+      count = await removeAllCredentials();
+    } catch (e) {
+      // At least one encrypted file is still on disk. The active marker is left
+      // alone on purpose: it must not advertise a logout that did not happen.
+      clearStoredCredentialsCache();
+      logger.error(e instanceof Error ? e.message : String(e));
+      process.exitCode = 1;
+      return;
+    }
     // Removing every credential must also clear the active-instance marker;
     // otherwise it points at an instance that no longer has stored credentials.
     await setActiveInstance("");
@@ -496,7 +506,18 @@ export async function logoutCommand(
     .replace(/^https?:\/\//, "")
     .replace(/\/$/, "");
 
-  await removeCredentials(normalizedInstance);
+  let removed: boolean;
+  try {
+    removed = await removeCredentials(normalizedInstance);
+  } catch (e) {
+    logger.error(
+      `Could not remove credentials for ${normalizedInstance}: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+    process.exitCode = 1;
+    return;
+  }
   clearStoredCredentialsCache();
 
   const active = await getActiveInstance();
@@ -512,7 +533,11 @@ export async function logoutCommand(
     }
   }
 
-  logger.success(`Logged out from ${normalizedInstance}.`);
+  if (removed) {
+    logger.success(`Logged out from ${normalizedInstance}.`);
+  } else {
+    logger.info(`No stored credentials for ${normalizedInstance}.`);
+  }
 }
 
 export async function instancesCommand(args: Sync.SharedCmdArgs): Promise<void> {

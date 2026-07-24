@@ -14,6 +14,21 @@ export function isDiagnosticLogEnabled(): boolean {
   return raw !== "" && raw !== "0" && raw !== "false" && raw !== "no";
 }
 
+// The level set winston actually runs with: createLogger without an explicit
+// `levels` option uses winston.config.npm.levels. Derived, never hand-listed, so
+// the CLI's accepted values cannot drift behind a winston level-set change.
+export const LOG_LEVELS: string[] = Object.keys(winston.config.npm.levels);
+
+// winston drops EVERY line — errors included — when handed a level it does not
+// know: its write guard compares `levels[configured] >= levels[message]`, and an
+// unknown level resolves to `undefined`, which loses every comparison. A typo
+// like `--log-level warning` would therefore mute the whole command instead of
+// making it louder. The CLI rejects bad values up front via yargs `choices`, but
+// Logger is also driven programmatically, so clamp defensively here as well.
+function normalizeLogLevel(level: string): string {
+  return LOG_LEVELS.includes(level) ? level : "info";
+}
+
 function diagnosticFileTransport(): winston.transport | null {
   if (!isDiagnosticLogEnabled()) {
     return null;
@@ -46,7 +61,13 @@ class SyncLogger {
     this.logger = winston.createLogger(this.genLoggerOpts());
   }
   setLogLevel(level: string) {
-    this.logger = winston.createLogger(this.genLoggerOpts(level));
+    const normalized = normalizeLogLevel(level);
+    this.logger = winston.createLogger(this.genLoggerOpts(normalized));
+    if (normalized !== level) {
+      this.warn(
+        `Unknown log level "${level}" — falling back to "${normalized}". Valid levels: ${LOG_LEVELS.join(", ")}.`
+      );
+    }
   }
 
   getLogLevel() {

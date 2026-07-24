@@ -25,6 +25,7 @@ import {
   jiraLogoutCommand,
 } from "./jiraCommands.js";
 import { completionCommand } from "./completionCommand.js";
+import { LOG_LEVELS } from "./Logger.js";
 
 /**
  * Declarative contract for one CLI command module.
@@ -62,6 +63,10 @@ export const SHARED_CLI_OPTIONS: Record<string, Options> = {
   logLevel: {
     type: "string",
     default: "info",
+    // An unknown level is not a louder or quieter run — winston silences the
+    // whole command. Reject it at parse time and show the real level set.
+    choices: LOG_LEVELS,
+    describe: "Console verbosity",
   },
   dryRun: {
     alias: "dry-run",
@@ -169,6 +174,17 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "init",
     describe: "Provisions an initial project for you",
+    options: {
+      ci: {
+        type: "boolean",
+        default: false,
+        describe: "Skip the all-scope init confirmation prompt for noninteractive automation",
+      },
+    },
+    examples: [
+      ["$0 init", "Provision a project, confirming before any folders are created"],
+      ["$0 init --ci", "Initialize every scope a detected .env exposes without prompting"],
+    ],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => initCommand(args)),
   },
   {
@@ -193,6 +209,17 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "deploy",
     describe: "Deploy local build files to the scoped application",
+    options: {
+      ci: {
+        type: "boolean",
+        default: false,
+        describe: "Skip the deploy confirmation prompt for noninteractive automation",
+      },
+    },
+    examples: [
+      ["$0 deploy", "Deploy the local build directory, confirming before overwriting"],
+      ["$0 deploy --ci", "Deploy without the confirmation prompt (CI/automation)"],
+    ],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => deployCommand(args)),
   },
   {
