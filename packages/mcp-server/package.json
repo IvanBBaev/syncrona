@@ -25,7 +25,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.3",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@syncrona/credential-store": "^0.9.1",
     "@syncrona/jira": "^0.9.1",
     "@syncrona/sn-transport": "^0.9.1",

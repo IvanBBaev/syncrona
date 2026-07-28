@@ -37,7 +37,7 @@
     "inquirer": "^14.0.2",
     "lodash": "^4.17.21",
     "winston": "^3.19.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.1.0"
   },
   "bin": {
     "syncrona": "./dist/index.js"
