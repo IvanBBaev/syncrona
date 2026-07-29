@@ -38,6 +38,28 @@ import { logger } from "./Logger.js";
 import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth.js";
 import { resolveCredentialsFromStore, type StoredCredentials } from "./auth.js";
 
+// REV-170: default socket/response timeout for every request this client makes.
+// axios defaults to NO timeout, so a request to a hung or silently dropped instance
+// connection never settles: `push`, `download` and `dev` waited forever holding
+// the collaboration lock, with no output and no way to distinguish a slow
+// instance from a dead one. Two minutes is well above the slowest legitimate
+// bulk Table-API page and still bounded. `SN_REQUEST_TIMEOUT` (milliseconds)
+// overrides it; 0 restores the unbounded behaviour for the rare very large pull.
+export const REQUEST_TIMEOUT_ENV = "SN_REQUEST_TIMEOUT";
+export const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
+
+export function resolveRequestTimeout(): number {
+  const raw = String(process.env[REQUEST_TIMEOUT_ENV] ?? "").trim();
+  if (raw === "") {
+    return DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+  return Math.floor(parsed);
+}
+
 let cachedScopedEndpointPrefix: string | undefined;
 
 export function getScopedEndpointPrefix(): string | undefined {
@@ -203,6 +225,7 @@ export const snClient = (
   const httpsAgent = buildHttpsAgent();
   const useApiKey = !oauth && !!apiKey;
   const useBasic = !oauth && !useApiKey && !!username && !!password;
+  const requestTimeout = resolveRequestTimeout();
   const base = axios.create({
     withCredentials: true,
     headers: {
@@ -210,6 +233,11 @@ export const snClient = (
       ...(useApiKey && apiKey ? { [apiKey.header]: apiKey.value } : {}),
     },
     baseURL,
+    // REV-170: without an explicit timeout axios waits forever, so a blackholed
+    // socket parked a download/push pool slot for good; see
+    // resolveRequestTimeout. Individual calls that pass their own timeout
+    // (checkConnection) still override this.
+    timeout: requestTimeout,
     ...(httpsAgent ? { httpsAgent } : {}),
     ...(useBasic ? { auth: { username, password } } : {}),
   });
@@ -218,6 +246,12 @@ export const snClient = (
     const tokenHttp = axios.create({
       baseURL,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // REV-171: the token client had no timeout either, and it is worse than
+      // the data client: every request waits on getToken() in the request
+      // interceptor, so one hung /oauth_token.do stalled the whole command with
+      // no request ever reaching the instance — and the per-call timeouts
+      // (checkConnection) apply to `base`, never to this leg.
+      timeout: requestTimeout,
       ...(httpsAgent ? { httpsAgent } : {}),
     });
     const poster: TokenPoster = async (path, body) => (await tokenHttp.post(path, body)).data;
@@ -557,6 +591,52 @@ export type CredentialSource =
   | "environment (.env / shell SN_* vars)"
   | "none (credentials missing)";
 
+// REV-201: the resolver's `issues` list was computed here and thrown away — only
+// `.method` was read. `syncrona doctor` reports those issues and the MCP server
+// refuses to start on them, so every command that actually transmits the
+// credential was the one place a typo'd SN_AUTH_METHOD stayed silent: it fell
+// through to inference and, when leftover credentials happened to complete the
+// inferred method, nothing surfaced at all.
+//
+// Warn rather than throw. `doctor` itself resolves credentials to run its checks
+// (diagnosticsCommands.ts calls resolveCredentials), so hard-failing here would
+// remove the very diagnostic that explains the problem — and `status` would stop
+// being able to describe a broken configuration.
+//
+// Only the unrecognized-selector issue is reported. A missing field announces
+// itself the moment a request is attempted, and `init` / `login` / `check-env`
+// legitimately resolve credentials before any exist, so warning about every issue
+// would print "basic requires SN_PASSWORD." during normal setup. An unrecognized
+// selector is the opposite: it *succeeds* under an inferred method, so nothing
+// else ever surfaces it. The message names the rejected selector and the accepted
+// values only — never a credential.
+const warnedAuthIssues = new Set<string>();
+
+/**
+ * Surface an auth-selector issue once per distinct message. Credential resolution
+ * runs several times per command (eight call sites, no memoization), so an
+ * unconditional warn would repeat the same line within a single invocation.
+ */
+function warnAboutAuthIssues(
+  resolved: { unknownExplicitIssue?: string; method: string },
+  origin: string
+): void {
+  if (!resolved.unknownExplicitIssue) {
+    return;
+  }
+  const line = `ServiceNow auth configuration (${origin}): ${resolved.unknownExplicitIssue} Falling back to ${resolved.method}.`;
+  if (warnedAuthIssues.has(line)) {
+    return;
+  }
+  warnedAuthIssues.add(line);
+  logger.warn(line);
+}
+
+/** Test seam: the dedupe cache would otherwise leak between cases. */
+export function resetAuthIssueWarnings(): void {
+  warnedAuthIssues.clear();
+}
+
 // Single source of truth for both the credentials and where they came from, so
 // the precedence logic is never duplicated between resolution and reporting.
 function resolveCredentialsInternal(profile?: string): {
@@ -604,6 +684,10 @@ function resolveCredentialsInternal(profile?: string): {
       hasApiKey: !!stored.apiKey,
       hasJwtKey: !!stored.jwtKeyPath,
     });
+    // A store record normally comes from `syncrona login`'s method picker, but it
+    // can also be hand-edited or written by a newer version that knows a method
+    // this one does not — in which case the same silent fallback applies.
+    warnAboutAuthIssues(storedMethod, "credential store");
     return {
       creds: {
         user: stored.user,
@@ -633,6 +717,10 @@ function resolveCredentialsInternal(profile?: string): {
     hasApiKey: !!apiKey,
     hasJwtKey: !!jwtKey,
   });
+  warnAboutAuthIssues(
+    resolved,
+    normalizedProfile ? `profile ${normalizedProfile}` : "environment"
+  );
 
   const creds: SNCredentials = {
     user: userFromProfile || SN_USER,
@@ -809,7 +897,48 @@ export function buildClientAuth(credentials: SNCredentials): {
       oauth: { clientId, clientSecret, grantType: "password" },
     };
   }
+
+  // REV-172: every branch above requires its own credential material. When a branch was
+  // selected but its material is incomplete, this function used to fall through
+  // to `return {}` — which the snClient factory reads as "no OAuth, no API key",
+  // i.e. plain Basic auth with whatever user/password happens to be around. A
+  // half-configured api-key or JWT setup therefore silently sent the user's
+  // password to the instance under a weaker scheme instead of failing, and the
+  // only symptom was a confusing 401 (or, worse, success with the wrong
+  // identity). Fail loudly with the exact missing piece instead.
+  const missing = missingAuthMaterial(method, credentials);
+  if (missing.length > 0) {
+    throw new Error(
+      `Authentication method "${method}" is selected but incomplete: missing ${missing.join(", ")}. ` +
+        `Set the missing value(s) or choose a different method (SN_AUTH_METHOD / 'syncrona login --auth-method').`
+    );
+  }
   return {};
+}
+
+// Which credential pieces a non-basic method needs but does not have. Empty for
+// "basic" (and for any future method that needs nothing extra).
+function missingAuthMaterial(method: AuthMethod, credentials: SNCredentials): string[] {
+  const missing: string[] = [];
+  const needsOAuthClient = (): void => {
+    if (!credentials.clientId) missing.push("client id (SN_OAUTH_CLIENT_ID)");
+    if (!credentials.clientSecret) missing.push("client secret (SN_OAUTH_CLIENT_SECRET)");
+  };
+
+  if (method === "api-key") {
+    if (!credentials.apiKey) missing.push("API key (SN_API_KEY)");
+    return missing;
+  }
+  if (method === "oauth-client-credentials" || method === "oauth-password") {
+    needsOAuthClient();
+    return missing;
+  }
+  if (method === "oauth-jwt-bearer") {
+    needsOAuthClient();
+    if (!credentials.jwtKey) missing.push("JWT signing key (SN_JWT_KEY)");
+    return missing;
+  }
+  return missing;
 }
 
 export const defaultClient = (profile?: string) => {

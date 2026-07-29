@@ -59,11 +59,12 @@ understand what it touches:
 - **Opt-in diagnostic log.** The CLI does not write logs to disk by default.
   Setting `SYNCRONA_DIAGNOSTIC_LOG=1` appends CLI output to
   `~/.syncrona/logs/cli.log` (size-bounded with rotation) for support — it
-  contains the same messages shown on the console. The logger applies
-  best-effort redaction of known credential fields, but it is **not a
-  guarantee**: log lines may still contain instance data, error payloads, or
-  values the redactor does not recognise. Treat the log as sensitive and leave
-  it off unless you are diagnosing an issue.
+  contains the same messages shown on the console. **No redactor runs over that
+  file**: the transport writes each console line verbatim (colour codes stripped,
+  timestamp added), so what stays out of the log is only what the call sites keep
+  out of the message — secrets are masked where the code logs them, but an error
+  payload, instance data, or a value logged by a dependency is written as-is.
+  Treat the log as sensitive and leave it off unless you are diagnosing an issue.
 
 ## AI / MCP data flow
 
@@ -91,9 +92,20 @@ credential/transport story above:
     comfortable sending to an LLM (dev/test instances first).
   - Use an AI client backed by a model/provider with an acceptable data policy
     (e.g. a no-training/zero-retention enterprise tier, or a self-hosted/local model).
-  - Mutating tools require `confirmDestructive=true` and are recorded in the
-    append-only audit log under `.syncrona-mcp/` (secret-redacted) — review it to
-    see exactly what the assistant did.
+  - Tools that write records or execute code on the instance — `sync_push`,
+    `sn_create_record`, `sn_execute_background_script`,
+    `sync_create_script_include`, `sync_create_script_include_and_sync`,
+    `sn_update_metadata_record`, `sync_run_atf_tests` — require
+    `confirmDestructive=true` in their schema. **Not every mutating tool does.**
+    `sync_set_scope`, `sync_set_update_set` (which can also create a missing
+    update set) and `sync_prepare_session` change the integration user's current
+    scope/update set on the instance with no confirmation flag, so an assistant
+    can re-point the session unprompted; `sn_autonomous_remediation_workflow`
+    and `sync_unified_change_workflow` take the flag as optional and enforce it
+    only when they switch from planning to `apply=true`. Every mutating call,
+    confirmed or not, is recorded in the append-only audit log under
+    `.syncrona-mcp/` (secret-redacted) — review it to see exactly what the
+    assistant did.
   - Prefer least-privilege integration credentials so the assistant can only
     read/write what the role allows.
 - **What SyncroNow AI does not do.** It does not itself send your data to any AI
@@ -118,9 +130,12 @@ analysed*, never a command to obey.
 - **Jira-authored text.** `jira_get_issue` returns the issue summary,
   description, and comment bodies. Unlike your own instance, Jira comments can be
   written by **arbitrary org members or external portal users**, so this is a
-  higher-exposure injection surface. These free-text fields are fenced in the
-  same untrusted envelope; structural metadata (key, status, assignee, labels,
-  links) is not.
+  higher-exposure injection surface. Every third-party-authored free-text field
+  is fenced in the same untrusted envelope: summary, description, comment bodies,
+  comment author names, and the summaries of the parent issue, subtasks and linked
+  issues. Structural metadata (key, status, labels, link types) is not fenced —
+  and neither are the issue-level `assignee` / `reporter` display names, which are
+  returned verbatim.
 - **How to limit exposure.** Prefer least-privilege integration credentials so a
   successful injection cannot exceed the role's grants; keep mutating tools
   behind `confirmDestructive` (they already require it and are audited); and

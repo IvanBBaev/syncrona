@@ -2,6 +2,13 @@
 import * as path from "node:path";
 import { Sync } from "@syncrona/types";
 import * as ts from "typescript";
+
+// TypeScript's "No inputs were found in config file …" diagnostic. It only
+// describes the *file set* a tsconfig selects; this plugin compiles the single
+// in-memory file it was handed and never reads `ParsedCommandLine.fileNames`,
+// so an empty selection must not fail the build.
+const NO_INPUTS_FOUND_DIAGNOSTIC_CODE = 18003;
+
 const run: Sync.PluginFunc = async function(
   context: Sync.FileContext,
   content: string,
@@ -22,33 +29,58 @@ const run: Sync.PluginFunc = async function(
     "tsconfig.json"
   );
 
-  // `ts.readConfigFile` yields the *raw JSON* compilerOptions exactly as written
-  // in tsconfig.json — string enums (`target: "ES2017"`, `module: "ESNext"`),
-  // lib names (`["ES2017", "DOM"]`), etc. The compiler API used below expects the
-  // numeric enum shape, and TypeScript 5.5+ throws when handed the raw strings
-  // ("target is a string value; tsconfig JSON must be parsed …"). Convert them
-  // through the official TypeScript conversion, which also lowercases and expands
-  // lib names to their `lib.<name>.d.ts` form for us.
-  let rawCompilerOptions: object = {};
+  // `ts.readConfigFile` yields the *raw JSON* of the leaf tsconfig.json alone:
+  // string enums (`target: "ES2017"`, `module: "ESNext"`), lib names
+  // (`["ES2017", "DOM"]`) — which the compiler API below rejects outright
+  // (TypeScript 5.5+ throws "target is a string value; tsconfig JSON must be
+  // parsed …") — and, worse, it does not follow `extends`. A project whose
+  // tsconfig.json is `{ "extends": "./tsconfig.base.json" }` — the standard
+  // monorepo layout — therefore compiled and type-checked as if it had no
+  // options at all, so `strict` never gated the push and `module` never reached
+  // the emit. `results.error` was dropped too, letting an unparsable tsconfig
+  // fall back to empty options instead of failing. `ts.parseJsonConfigFileContent`
+  // resolves the `extends` chain, converts the JSON to the numeric enum shape
+  // (expanding lib names to their `lib.<name>.d.ts` form) and reports real
+  // diagnostics, which are now fatal.
   let basePath = path.dirname(context.filePath);
+  let baseCompilerOptions: ts.CompilerOptions = {};
   if (configPath) {
     basePath = path.dirname(configPath);
     const results = ts.readConfigFile(configPath, ts.sys.readFile);
-    if (results.config && results.config.compilerOptions) {
-      rawCompilerOptions = results.config.compilerOptions;
+    if (results.error) {
+      throw new Error(processDiagnostics([results.error]));
     }
-  }
-  const converted = ts.convertCompilerOptionsFromJson(
-    rawCompilerOptions,
-    basePath
-  );
-  if (converted.errors.length > 0) {
-    throw new Error(processDiagnostics(converted.errors));
+    const parsed = ts.parseJsonConfigFileContent(
+      results.config ?? {},
+      ts.sys,
+      basePath,
+      undefined,
+      configPath
+    );
+    const configErrors = parsed.errors.filter(
+      diagnostic => diagnostic.code !== NO_INPUTS_FOUND_DIAGNOSTIC_CODE
+    );
+    if (configErrors.length > 0) {
+      throw new Error(processDiagnostics(configErrors));
+    }
+    baseCompilerOptions = parsed.options;
   }
   const tsConfig: { compilerOptions: ts.CompilerOptions } = {
-    compilerOptions: converted.options
+    compilerOptions: { ...baseCompilerOptions }
   };
   tsConfig.compilerOptions.rootDir = undefined;
+  // The plugin's own compilerOptions used to be merged in *after* the type check
+  // below, so they only ever reached the emit: every documented knob whose
+  // purpose is to configure or relax checking (`strict`, `noImplicitAny`,
+  // `skipLibCheck`, `lib`, `paths`) was silently inert, and because a plugin
+  // throw fails the push there was no way to unblock one with the documented
+  // escape hatch. Merge once, here, so a single effective option set drives both
+  // the check and the emit — and so the target/module defaults pinned below are
+  // derived from the options the user actually asked for.
+  Object.assign(
+    tsConfig.compilerOptions,
+    convertPluginCompilerOptions(pluginOpts.compilerOptions, basePath)
+  );
   // TypeScript 6 changed the default emit: the default target is now the
   // newest ECMAScript level, target ES5 is a deprecation error (removed in
   // TS 7), and `alwaysStrict` is on even without `strict`, prepending a
@@ -60,13 +92,12 @@ const run: Sync.PluginFunc = async function(
   if (tsConfig.compilerOptions.target === undefined) {
     tsConfig.compilerOptions.target = ts.ScriptTarget.ES2021;
   }
-  // Whether the tsconfig left strictness to the defaults — decided before the
-  // plugin options merge below so the emit-time prologue pin can honor both.
+  // Whether strictness was left to the defaults — by the tsconfig and by the
+  // plugin options alike, both of which are already merged in above.
   const strictnessIsImplied =
     tsConfig.compilerOptions.alwaysStrict === undefined &&
     tsConfig.compilerOptions.strict === undefined;
-  const moduleIsImplied = tsConfig.compilerOptions.module === undefined;
-  if (moduleIsImplied) {
+  if (tsConfig.compilerOptions.module === undefined) {
     tsConfig.compilerOptions.module = impliedModuleKind(
       tsConfig.compilerOptions
     );
@@ -105,10 +136,6 @@ const run: Sync.PluginFunc = async function(
     !Object.prototype.hasOwnProperty.call(pluginOpts, "transpile") ||
     pluginOpts.transpile === true
   ) {
-    tsConfig.compilerOptions = Object.assign(
-      tsConfig.compilerOptions,
-      pluginOpts.compilerOptions
-    );
     // TypeScript 6 turned `alwaysStrict` on even without `strict`, prepending
     // a "use strict" prologue this plugin's output never carried — and sloppy
     // ServiceNow code (implicit globals are endemic there) would change
@@ -116,40 +143,8 @@ const run: Sync.PluginFunc = async function(
     // `alwaysStrict` anywhere, suppress the prologue. Scoped to emit only:
     // createProgram rejects alwaysStrict=false as a TS 6 deprecation,
     // transpileModule does not.
-    if (
-      strictnessIsImplied &&
-      !(
-        pluginOpts.compilerOptions &&
-        (Object.prototype.hasOwnProperty.call(
-          pluginOpts.compilerOptions,
-          "strict"
-        ) ||
-          Object.prototype.hasOwnProperty.call(
-            pluginOpts.compilerOptions,
-            "alwaysStrict"
-          ))
-      )
-    ) {
+    if (strictnessIsImplied) {
       tsConfig.compilerOptions.alwaysStrict = false;
-    }
-    // The module kind pinned above was implied from the pre-merge target. When
-    // the plugin options changed the target and still left `module` unset,
-    // re-derive it so an ES2015+ target keeps its ESM emit (TypeScript 5's
-    // rule, which the plugin preserves).
-    if (
-      moduleIsImplied &&
-      !(
-        pluginOpts.compilerOptions &&
-        Object.prototype.hasOwnProperty.call(
-          pluginOpts.compilerOptions,
-          "module"
-        )
-      )
-    ) {
-      tsConfig.compilerOptions.module = impliedModuleKind({
-        ...tsConfig.compilerOptions,
-        module: undefined
-      });
     }
     output = ts.transpileModule(content, {
       compilerOptions: tsConfig.compilerOptions
@@ -200,6 +195,40 @@ const run: Sync.PluginFunc = async function(
     return allDiagnostics;
   }
 
+  // Plugin `compilerOptions` from sync.config.js are raw JSON as well — the
+  // README documents them as "Same as `compilerOptions` in a `tsconfig.json`
+  // file", where the string spelling (`target: "ES2021"`) is the normal one —
+  // yet they used to be `Object.assign`-ed in unconverted. A string never
+  // compares meaningfully against the numeric ScriptTarget enum
+  // (`"ES2021" >= ts.ScriptTarget.ES2015` is false), so the implied module kind
+  // silently dropped to CommonJS and the emit gained `exports.` references that
+  // cannot run in ServiceNow's Rhino engine — while the build reported success.
+  // Conversion runs per key because an already-numeric enum
+  // (`target: ts.ScriptTarget.ES2021`) is also a supported spelling here, and
+  // the JSON converter rejects that shape by design.
+  function convertPluginCompilerOptions(
+    raw: ts.CompilerOptions | undefined,
+    optionsBasePath: string
+  ): ts.CompilerOptions {
+    const result: ts.CompilerOptions = {};
+    for (const [key, value] of Object.entries(raw ?? {})) {
+      const converted = ts.convertCompilerOptionsFromJson(
+        { [key]: value },
+        optionsBasePath
+      );
+      if (converted.errors.length === 0) {
+        Object.assign(result, converted.options);
+      } else if (typeof value === "number") {
+        //already a parsed enum value, pass it through untouched
+        result[key] = value;
+      } else {
+        //a genuine misconfiguration, surface it instead of emitting bad output
+        throw new Error(processDiagnostics(converted.errors));
+      }
+    }
+    return result;
+  }
+
   // Mirrors TypeScript 5's `module` default, which this plugin pins for stable
   // output now that TypeScript 6 changed it: an explicit numeric setting wins,
   // otherwise it follows the target (ES2015 for an ES2015+ target, CommonJS for
@@ -207,6 +236,20 @@ const run: Sync.PluginFunc = async function(
   function impliedModuleKind(compilerOptions: ts.CompilerOptions): ts.ModuleKind {
     if (typeof compilerOptions.module === "number") {
       return compilerOptions.module;
+    }
+    // A non-numeric target reaching this point would compare false against every
+    // ScriptTarget below and quietly yield CommonJS. Both option sources are
+    // converted before they get here, so this can only be a bug — say so instead
+    // of emitting a module kind nobody asked for.
+    if (
+      compilerOptions.target !== undefined &&
+      typeof compilerOptions.target !== "number"
+    ) {
+      throw new Error(
+        `Invalid TypeScript compilerOptions: "target" must be a ts.ScriptTarget value, got ${JSON.stringify(
+          compilerOptions.target
+        )}.`
+      );
     }
     const target =
       compilerOptions.target === ts.ScriptTarget.ES3

@@ -22,6 +22,13 @@ the rest) to the same version in one step. You never need to reason about
 cross-package version compatibility — matching versions are compatible by
 construction.
 
+The group is spelled `["syncrona", "@syncrona/*"]`, and the first entry is not
+redundant (REV-138): the flagship CLI publishes **unscoped**, so the glob alone
+matched every package except the one users install. Changesets expands each
+pattern with micromatch and reports only patterns that match *nothing*, so the
+gap was silent — a release would have bumped the whole family in lockstep and
+left `syncrona` on its previous version, contradicting this page.
+
 Two version numbers are intentionally *not* part of the lockstep:
 
 - The **root `package.json`** is a private workspace container; its version

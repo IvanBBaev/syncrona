@@ -44,7 +44,13 @@ function countManifestFiles(manifest: SN.AppManifest): number {
   }, 0);
 }
 
-export async function startWizard() {
+/**
+ * Runs the interactive setup. Resolves `true` only when the workspace was fully
+ * set up; `false` when the user cancelled or setup failed. The caller used to
+ * get no signal at all and unconditionally continued with the post-init steps
+ * (MCP auto-configure) over a half-configured workspace.
+ */
+export async function startWizard(): Promise<boolean> {
   try {
     const loginAnswers = await getWizardCredentials();
     const { username, password, instance } = loginAnswers;
@@ -89,7 +95,7 @@ export async function startWizard() {
         },
       ]);
       if (!tryManual) {
-        return;
+        return false;
       }
       const { manualScope } = await inquirer.prompt<{ manualScope: string }>([
         {
@@ -115,7 +121,7 @@ export async function startWizard() {
     if (!man) {
       const selectedApp = await showAppList(apps);
       if (!selectedApp) {
-        return;
+        return false;
       }
       const downloadedManifest = await downloadApp(selectedApp, client);
       filesReady = countManifestFiles(downloadedManifest);
@@ -144,10 +150,15 @@ export async function startWizard() {
       "You are all set up 👍 Try running 'npx syncrona dev' to begin development mode."
     );
     await ConfigManager.loadConfigs();
+    return true;
   } catch (e) {
     if (isPromptAbort(e)) {
-      // User cancelled — exit quietly, leaving the exit code untouched.
-      return;
+      // REV-161: user cancelled — no error banner, but the run did NOT succeed.
+      // Leaving the exit code untouched reported success (0) for an aborted setup,
+      // so a scripted `syncrona init && ...` continued as if the workspace was
+      // ready. 130 is the conventional SIGINT exit code, matching commander.ts.
+      process.exitCode = 130;
+      return false;
     }
     if (e instanceof Error && e.message.trim().length > 0) {
       logger.error(e.message);
@@ -158,7 +169,7 @@ export async function startWizard() {
     // Signal failure so CI and scripted runs can detect the wizard did not
     // complete; previously this returned with a success (0) exit code.
     process.exitCode = 1;
-    return;
+    return false;
   }
 }
 

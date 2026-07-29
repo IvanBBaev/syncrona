@@ -835,7 +835,8 @@ test('claims drift CLI prints usage and returns 0 for --help', () => {
 test('getToolLifecycleMetadata resolves version metadata with overrides and defaults', () => {
   const overridden = getToolLifecycleMetadata('run_workspace_command');
   assert.ok(overridden);
-  assert.equal(overridden.version, '1.1.0');
+  // 1.2.0 since the input schema gained the `dryRun` property (REV-149).
+  assert.equal(overridden.version, '1.2.0');
   assert.equal(overridden.deprecated, false);
 
   const defaulted = getToolLifecycleMetadata('sync_status');

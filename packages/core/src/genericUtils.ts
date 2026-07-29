@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncrona/types";
 
+// INJ-1: the single rule for "is this string safe to use as ONE path segment?".
+// It lives in this leaf module (nothing but @syncrona/types is imported here) so
+// every consumer that joins an instance-supplied name onto a local path — the
+// download pipeline, `init --ci`'s packages/<scope> directories, the scope doc
+// generator — shares the exact same rule without dragging a module graph along.
+export const isSafePathComponent = (component: string): boolean =>
+  typeof component === "string" &&
+  component.length > 0 &&
+  !/^\.+$/.test(component) &&
+  !/[/\\]/.test(component);
+
 export function wait(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);

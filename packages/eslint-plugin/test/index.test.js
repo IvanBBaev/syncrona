@@ -131,6 +131,43 @@ test('lints normally when the plugin rule declares no options', async (t) => {
   assert.deepEqual(result, { success: true, output: content });
 });
 
+test('returns the autofixed source when the rule is configured with fix', async (t) => {
+  const dir = makeLintDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'fixable.js');
+  const content = 'let value = 1;\nmodule.exports = value;\n';
+  fs.writeFileSync(filePath, content);
+
+  // The plugin used to compute the fixes and then return the untouched input,
+  // so the unfixed source was what got pushed and the violation came back on
+  // the next run. The fixed text must be what travels down the pipeline.
+  const result = await run(makeContext(filePath), content, {
+    fix: true,
+    overrideConfig: { rules: { 'prefer-const': 'error' } },
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.output, 'const value = 1;\nmodule.exports = value;\n');
+  assert.notEqual(result.output, content);
+});
+
+test('returns the content unchanged when fix mode finds nothing to fix', async (t) => {
+  const dir = makeLintDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'clean.js');
+  const content = 'module.exports = function add(a, b) { return a + b; };\n';
+  fs.writeFileSync(filePath, content);
+
+  // ESLint leaves `output` undefined when no fix changed the text; the plugin
+  // must fall back to the handed-in content rather than emit `undefined`.
+  const result = await run(makeContext(filePath), content, {
+    fix: true,
+    overrideConfig: { rules: { 'prefer-const': 'error' } },
+  });
+
+  assert.deepEqual(result, { success: true, output: content });
+});
+
 test('throws with the lint report in the error instead of printing to stdout', async (t) => {
   const dir = makeLintDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

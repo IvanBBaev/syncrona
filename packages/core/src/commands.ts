@@ -24,6 +24,7 @@ import {
   listAppsFromTableAPI,
 } from "./manifestBuilder.js";
 import { generateScopeDocs } from "./scopeDocs.js";
+import { isSafePathComponent } from "./genericUtils.js";
 import {
   LOGIN_DEFAULT_SOURCE_DIRECTORY,
   setLogLevel,
@@ -81,6 +82,22 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
 
   const scopedApps = apps
     .filter((app) => app.scope && app.scope.startsWith("x_"))
+    // INJ-1: `app.scope` is instance-supplied and is joined onto packages/
+    // below to create — and download into — a directory. It never passed
+    // through the download pipeline's path-component check, so a scope
+    // containing a separator or made only of dots (a tampered sys_app row)
+    // could place the generated workspace outside packages/. Reject such a
+    // scope loudly instead of sanitizing it, so a compromised source is
+    // visible rather than masked.
+    .filter((app) => {
+      if (isSafePathComponent(app.scope)) {
+        return true;
+      }
+      logger.warn(
+        `Skipping app with unsafe scope name ${JSON.stringify(app.scope)}: it cannot be used as a directory name.`
+      );
+      return false;
+    })
     .sort((a, b) => a.scope.localeCompare(b.scope));
 
   if (scopedApps.length === 0) {
@@ -96,7 +113,14 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
   const usedDirNames = new Set<string>();
   const plan = scopedApps.map((app) => {
     let dirName = app.scope.replace(/^x_[^_]+_/, "");
-    if (dirName.length === 0 || usedDirNames.has(dirName)) {
+    // Stripping the vendor prefix can turn a safe scope into an unsafe
+    // component (e.g. "x_a_.." -> ".."), so re-check the derived name and fall
+    // back to the full — already validated — scope.
+    if (
+      dirName.length === 0 ||
+      usedDirNames.has(dirName) ||
+      !isSafePathComponent(dirName)
+    ) {
       dirName = app.scope;
     }
     usedDirNames.add(dirName);
@@ -139,6 +163,17 @@ async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
   try {
     for (const { scope, dirName } of plan) {
       const scopeDir = path.join(packagesRoot, dirName);
+      // Defence in depth: the component check above already rejects separators
+      // and dot-only names, so a resolved path outside packages/ can only mean
+      // the guard was bypassed.
+      if (
+        path.relative(packagesRoot, scopeDir).startsWith("..") ||
+        path.isAbsolute(path.relative(packagesRoot, scopeDir))
+      ) {
+        throw new Error(
+          `Refusing to initialize scope "${scope}": ${scopeDir} is outside ${packagesRoot}.`
+        );
+      }
       await ensureScopeWorkspace(scopeDir);
 
       try {
@@ -267,7 +302,14 @@ export async function initCommand(args: Sync.SharedCmdArgs) {
     return;
   }
 
-  await startWizard();
+  // REV-161: only wire up the MCP server once the workspace actually exists. The
+  // wizard used to return the same way whether it finished, failed or was
+  // cancelled with Ctrl-C, so init went on to write an MCP configuration pointing
+  // at a project that had no config, no manifest and no credentials.
+  const wizardCompleted = await startWizard();
+  if (!wizardCompleted) {
+    return;
+  }
   await mcpCommand({ ...args, autoConfigure: true, start: false });
 }
 
@@ -302,6 +344,14 @@ export async function buildCommand(args: Sync.BuildCmdArgs) {
     }
     const results = await AppUtils.buildFiles(fileList);
     logBuildResults(results);
+    // REV-160: buildFiles never throws — pushPipeline folds per-record failures
+    // into `{ success: false }` results and logBuildResults only prints them, so
+    // the catch below could not fire and a failed build still exited 0. A CI step
+    // (`syncrona build && syncrona deploy`) therefore deployed stale artifacts.
+    // Mirror deployCommand, which already fails the process on a failed result.
+    if (results.some((res) => !res.success)) {
+      process.exitCode = 1;
+    }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(`Build failed: ${message}`);

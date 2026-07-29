@@ -102,10 +102,36 @@ human-facing summary of them.
   what the machine-derived chain key, the final-component symlink checks, and the
   child-environment scrub deliberately do NOT guarantee — each behavioral fix with a
   regression test (core 807 tests / 81 suites, mcp 1271 tests, mcp coverage 94.84%
-  line / 87.92% branch). The remaining distance
+  line / 87.92% branch). A seventh full-repo adversarial sweep (2026-07-24..25)
+  triaged 108 raw findings down to 85 and confirmed **59** through a three-lens
+  panel that defaults to refuting under uncertainty (REV-130..REV-192; 20 high,
+  39 medium, 26 refuted): every build plugin failed to load at runtime
+  (`await import()` of a directory throws `ERR_UNSUPPORTED_DIR_IMPORT`), `build`
+  exited 0 when records failed to build, `push <relative-path>` silently pushed
+  nothing because containment ran on the unresolved path, a 403 on one table
+  silently dropped it from the rebuilt manifest so `repair --prune` then deleted
+  its local source, `repair --prune` also deleted live manifest-tracked files
+  whose bytes had drifted, and `init` derived package directory names from the
+  server-supplied scope with no path-component validation; the audit chain kept
+  its high-water marker in world-shared `/tmp`, rewrote a symlinked log in place,
+  returned early on a fully-legacy log so the truncation tripwire never ran, and
+  emitted duplicate seq numbers under concurrent writers; the git allowlist
+  validated the subcommand verb but never its own options (unconfirmed RCE and
+  arbitrary file clobber) and matched binaries on basename alone; `dryRun` was
+  ignored by `run_workspace_command`/`run_node_code` and never handed to
+  `sync_unified_change_workflow`, so a simulation performed the real apply and
+  was audited as a dry run; the typescript-plugin ignored `extends` chains and
+  silently downgraded a string-valued `target` to CommonJS (unrunnable in Rhino);
+  and the repo's own gates leaked — the boundary self-test ignored rule severity
+  (every rule could be downgraded to `warn` with both gates green), CI omitted
+  `verify:pack`, and the packed-bin smoke symlinked the whole workspace
+  `node_modules` into the staged package so it could not detect an undeclared
+  runtime dependency — each with a regression test (core 868 tests / 89 suites,
+  mcp 1408 tests, jira 102, credential-store 66, sn-transport 55, mcp coverage
+  95.41% line / 88.57% branch). The remaining distance
   to 10/10 is owner/live-gated (npm publish, live-instance verification, Windows host,
   business decisions), not engineering-completable offline.
-- **Last updated:** 2026-07-18
+- **Last updated:** 2026-07-25
 
 ## Status legend
 
@@ -260,7 +286,21 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 - ✅ **Thin handler coverage** (QA-2) — done 2026-06-21: five per-handler test
   suites (against `dist`, per the AR9 decision) cover the weakest handlers'
   validation/guard/dry-run paths. The old "ratchet toward 80%" target is long
-  passed — MCP coverage stands at 94.84% line / 87.92% branch against 90/80 gates.
+  passed — MCP coverage stands at 95.41% line / 88.57% branch against 90/80 gates.
+- 📋 **Re-examine the six refuted high-severity findings** (seventh wave,
+  2026-07-25). The verification panel is deliberately biased to refute under
+  uncertainty, so "refuted" means *not proven*, not *proven safe*. Worth a second
+  look with a reproduction harness rather than by argument:
+  `Watcher.ts:87` (watch-mode retry ladder never engaging for the common failure
+  mode), `credential-store/src/index.ts:236` (a lost `keyFromKeychain()` write
+  race making stored credentials permanently undecryptable),
+  `jira/src/client.ts:244` (an empty dedicated comment response wiping the
+  embedded comment page), `servicenowCore.ts:1130` (the abort timer armed before
+  the OAuth token await, so the `sys.scripts.do` fallback could abort before it
+  is sent), `webpack-plugin/src/index.ts:88` (a user `webpack.config.js` ignored
+  on Windows — needs the Windows host already gated below), and the
+  README/SECURITY claim that the MCP server honors every auth method when the
+  credential-store path it reads is user/password.
 
 ### Product & support
 - 🔒 **ServiceNow compatibility matrix** — test against named ServiceNow releases

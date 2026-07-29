@@ -24,4 +24,6 @@ export {
   NO_JIRA_CONFIG_MESSAGE,
   CLOUD_MISSING_EMAIL_MESSAGE,
   jiraUndecryptableMessage,
+  noJiraConfigMessage,
+  jiraAuthRecheckHint,
 } from "./messages";

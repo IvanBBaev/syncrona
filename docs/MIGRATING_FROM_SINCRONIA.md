@@ -79,7 +79,7 @@ migrating:
 | Command | What it does |
 | --- | --- |
 | `syncrona login` / `logout` / `instances` / `use` | Global encrypted credential store and multi-instance switching ([MULTI_INSTANCE.md](MULTI_INSTANCE.md)). |
-| `syncrona repair` | Reconciles the manifest with local files — re-downloads missing files, prunes orphans. |
+| `syncrona repair` | Reconciles the manifest with local files — reports by default; `--apply` re-downloads missing files, `--apply --prune` deletes orphans. |
 | `syncrona doctor` / `check-env` | Connectivity and environment diagnostics (Node, WSL, Git). |
 | `syncrona docs` | Generates Markdown docs and Mermaid diagrams for the scope. |
 | `syncrona plugins` / `config <action>` | Inspects plugin rules and configuration (e.g. `config show-defaults`, `config add-plugin`). |

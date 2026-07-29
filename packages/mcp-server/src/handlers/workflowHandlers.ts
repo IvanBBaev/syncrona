@@ -33,6 +33,7 @@ import type { ToolResponse } from "../toolResponse";
 type WorkflowContext = {
   timeoutMs: number;
   startedAt: number;
+  dryRun: boolean;
   parseUnifiedTaskType: (value: unknown) => UnifiedTaskType;
   isDeepAnalysisSatisfied: (taskType: UnifiedTaskType, hasScript: boolean, hasMetadata: boolean) => boolean;
   buildPreflightReport: (timeoutMs: number) => Promise<Record<string, unknown>>;
@@ -46,6 +47,11 @@ type WorkflowContext = {
     timeoutMs: number,
     endpointPath?: string
   ) => Promise<{ status: number; data: unknown; text: string; usedEndpoint: string }>;
+  makeDryRunAuditResponse: (
+    toolName: string,
+    args: Record<string, unknown>,
+    details: Record<string, unknown>
+  ) => ToolResponse;
   auditMutatingTool: (
     toolName: string,
     args: Record<string, unknown>,
@@ -421,6 +427,22 @@ export async function handleWorkflowTool(
           isError: true,
           content: [{ type: "text", text: toJsonText(payload) }],
         };
+      }
+
+      // SEC-3 follow-up (REV-150): this is the ONE mutating tool that never saw the
+      // request's dryRun flag — toolModules did not forward it, so the handler could not
+      // honor it. The result was worse than merely ignoring it: index.ts SKIPS the
+      // preflight gate for dry runs, so `dryRun: true` on sync_unified_change_workflow
+      // performed the real apply with one of its safety gates disabled. Stop before any
+      // mutation and report what would have happened.
+      if (context.dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          apply: true,
+          taskType,
+          executionMode,
+          riskLevel,
+          allowRemoteApply,
+        });
       }
 
       // REV-88 (SEC-7): the approval gate above (`approvalOk`) is satisfied purely

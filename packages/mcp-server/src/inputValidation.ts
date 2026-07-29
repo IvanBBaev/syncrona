@@ -88,6 +88,10 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   sync_set_scope: z
     .looseObject({
       scope: z.string().trim().min(1),
+      // REV-195: the handler branches on `dryRun` but the schema never typed it, so a
+      // `dryRun: "true"` string passed validation and then failed the `=== true` test —
+      // a caller asking for a simulation silently got the real scope switch.
+      dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
     }),
   sync_push: z
@@ -167,6 +171,9 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       policy: z.record(z.string(), z.unknown()).optional(),
       apply: z.boolean().optional(),
       confirmDestructive: z.boolean().optional(),
+      // SEC-3 follow-up (REV-150): declared like every other mutating tool now that the
+      // handler actually honors it.
+      dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
     }),
 };

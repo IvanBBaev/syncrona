@@ -6,7 +6,7 @@ import * as ConfigManager from "./config.js";
 import * as AppUtils from "./appUtils.js";
 import { logger } from "./Logger.js";
 import { scopeCheckMessage } from "./logMessages.js";
-import { classifyError } from "./errorTaxonomy.js";
+import { classifyError, isPromptAbort } from "./errorTaxonomy.js";
 import { setActiveInstanceProfile, getScopedEndpointPrefix } from "./snClient.js";
 import { getActiveInstance, loadCredentials } from "./auth.js";
 
@@ -136,6 +136,15 @@ export async function scopeCheck(
   try {
     await successFunc();
   } catch (e) {
+    // Ctrl-C during a prompt inside the command body (inquirer 14 rejects with
+    // ExitPromptError instead of killing the process) is a user cancellation,
+    // not a command failure. This sink caught it BEFORE commander.ts could, so
+    // every scope-checked command printed a bogus "force closed the prompt"
+    // error banner with an unhelpful hint and exited 1 instead of 130.
+    if (isPromptAbort(e)) {
+      process.exitCode = 130;
+      return;
+    }
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message || "Command failed with an unknown error.");
     logErrorHint(e); // DX19: actionable next step

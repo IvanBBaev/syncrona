@@ -347,6 +347,47 @@ describe("getPathsInPath", () => {
     expect(await getPathsInPath(outside)).toEqual([]);
   });
 
+  // The containment check compared the RAW argument token by token while the
+  // walk seeded path.resolve(p), so "<source>/sub/../../outside" matched the
+  // source tokens, resolved to a sibling of the workspace, and was happily
+  // walked. Resolve first, compare second.
+  it("refuses a traversal path that only looks like it is under the source root", async () => {
+    const parent = makeTmpDir();
+    const root = path.join(parent, "source");
+    fs.mkdirSync(root);
+    asMock(ConfigManager.getSourcePath).mockReturnValue(root);
+    asMock(ConfigManager.getBuildPath).mockReturnValue(path.join(parent, "build"));
+
+    const outside = path.join(parent, "outside");
+    fs.mkdirSync(outside);
+    const secret = path.join(outside, "secret.txt");
+    fs.writeFileSync(secret, "nope");
+
+    const traversal = path.join(root, "sub", "..", "..", "outside");
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => {});
+
+    const found = await getPathsInPath(traversal);
+
+    expect(found).toEqual([]);
+    expect(found).not.toContain(path.resolve(secret));
+    // Silently returning [] reads as "no files here", which callers such as
+    // `repair --prune` treat as a meaningful result; the rejection must be said
+    // out loud.
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Refusing to scan"));
+    warnSpy.mockRestore();
+  });
+
+  it("accepts a relative path that really is inside the source root", async () => {
+    const root = makeTmpDir();
+    asMock(ConfigManager.getSourcePath).mockReturnValue(root);
+    asMock(ConfigManager.getBuildPath).mockReturnValue(root);
+    const file = path.join(root, "inside.txt");
+    fs.writeFileSync(file, "yes");
+
+    const found = await getPathsInPath(path.join(root, "sub", ".."));
+    expect(found).toContain(path.resolve(file));
+  });
+
   it("collects files recursively while skipping symlinks", async () => {
     const root = makeTmpDir();
     asMock(ConfigManager.getSourcePath).mockReturnValue(root);

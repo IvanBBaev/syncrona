@@ -24,7 +24,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona build` builds local artifacts.
 - `npx syncrona deploy` deploys built files (`--ci` skips the overwrite confirmation).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
-- `npx syncrona repair` reconciles the manifest with local files and re-downloads missing or prunes orphan files.
+- `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files, and `--apply --prune` deletes orphan files no record claims.
 - `npx syncrona status` prints extended diagnostics.
 - `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncrona doctor` runs diagnostic checks.

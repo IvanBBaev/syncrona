@@ -73,6 +73,60 @@ test('does not fuse a tag comment with the plain comment on the next line', asyn
   assert.equal(await transform(source), source);
 });
 
+test('applies a trailing same-line @keepModule to the import it follows', async () => {
+  // Babel attaches a comment written after an import on the same line as that
+  // import's trailing comment AND as the next statement's leading comment.
+  // Reading only leading comments tagged the WRONG import: `modA` lost its
+  // directive and was stripped, while the untagged `modB` import survived as a
+  // literal `import` statement, which is a runtime SyntaxError on the instance.
+  const source = [
+    'import { a } from "modA"; //@keepModule',
+    'import { b } from "modB";',
+    'a();',
+    'b();',
+  ].join('\n');
+  const output = await transform(source);
+  assert.equal(output, 'import { a } from "modA"; //@keepModule\n\na();\nb();');
+  assert.doesNotMatch(output, /modB/, 'the untagged import must still be stripped');
+});
+
+test('applies a trailing same-line @keepModule to the last import in the file', async () => {
+  // With no following statement the directive had nowhere else to attach, so the
+  // tag was dropped and the tagged import removed without any warning.
+  const source = ['import { a } from "modA"; //@keepModule', 'a();'].join('\n');
+  assert.equal(await transform(source), source);
+});
+
+test('applies a trailing same-line @expandModule to the import it follows', async () => {
+  const source = [
+    'import { part1 } from "myModule"; //@expandModule',
+    'import { b } from "modB";',
+    'part1.init();',
+    'b();',
+  ].join('\n');
+  assert.equal(
+    await transform(source),
+    '//@expandModule\n\nmyModule.part1.init();\nb();'
+  );
+});
+
+test('a tag on its own line still applies to the import below it, not the one above', async () => {
+  // The same-line restriction matters: a comment on its own line between two
+  // imports is a trailing comment of the first one as well, and consuming it
+  // there would move the directive to the previous import.
+  const source = [
+    'import { a } from "modA";',
+    '//@keepModule',
+    'import { b } from "modB";',
+    'a();',
+    'b();',
+  ].join('\n');
+  assert.equal(
+    await transform(source),
+    '//@keepModule\nimport { b } from "modB";\na();\nb();'
+  );
+});
+
 test('@expandModule rewrites references to <module>.<import>', async () => {
   const source = [
     '//@expandModule',

@@ -38,4 +38,26 @@ describe("groupAppFiles", () => {
     expect(rec2?.table).toBe("sys_script");
     expect(Object.keys(rec2?.fields || {})).toEqual(["script"]);
   });
+
+  // A workspace can legitimately end up holding both layouts of one field (a
+  // DX17 flat `<record>~<field>.js` next to a leftover folder-mode
+  // `<record>/<field>.js`). The plain assignment kept whichever came last, so
+  // the loser's edits were silently dropped and the winner depended on
+  // directory iteration order — the same push uploaded different bytes on
+  // different machines. Fail loudly instead of guessing.
+  it("throws when two local files claim the same record field", () => {
+    expect(() =>
+      groupAppFiles([
+        ctx("/tmp/src/sys_script/rec_1/script.js", "sys_script", "rec_1", "script"),
+        ctx("/tmp/src/sys_script/rec_1~script.js", "sys_script", "rec_1", "script"),
+      ])
+    ).toThrow(/Ambiguous push/);
+  });
+
+  it("does not treat the same file listed twice as ambiguous", () => {
+    const duplicate = ctx("/tmp/src/sys_script/rec_1/script.js", "sys_script", "rec_1", "script");
+    const grouped = groupAppFiles([duplicate, { ...duplicate }]);
+    expect(grouped).toHaveLength(1);
+    expect(Object.keys(grouped[0].fields)).toEqual(["script"]);
+  });
 });

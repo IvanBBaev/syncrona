@@ -237,10 +237,14 @@ describe("appUtils critical bugfixes", () => {
 
     // PERF-3 (REV-91): the fallback receives the single-table missing map for the
     // table currently being streamed, not the whole scope's missing map.
+    // The 4th argument is the manifest's own record names (table -> sys_id -> name):
+    // the fallback must write each record at the path the manifest already claims,
+    // not at a name re-derived from the row it just fetched.
     expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledWith(
       expect.objectContaining({ sys_script: expect.anything() }),
       expect.anything(),
-      {}
+      {},
+      expect.objectContaining({ sys_script: { abc: "rec1" } })
     );
   });
 

@@ -14,6 +14,13 @@ export const DOWNLOAD_CHECKPOINT_FILE = "sync.download.checkpoint.json";
 export interface DownloadCheckpoint {
   /** Scope the checkpoint belongs to — a mismatch means it is stale. */
   scope: string;
+  /**
+   * Digest of the manifest slice this checkpoint was recorded against. The
+   * scope alone does not identify the work: after a `refresh` adds records or
+   * changes a record's file list, the completed tables no longer cover the same
+   * files, so a mismatch means stale.
+   */
+  fingerprint?: string;
   /** Tables fully fetched and written so far. */
   completedTables: string[];
 }
@@ -37,7 +44,8 @@ export function getDownloadCheckpointPath(): string {
  * from a different scope (in which case it is treated as stale).
  */
 export async function readDownloadCheckpoint(
-  scope: string
+  scope: string,
+  fingerprint?: string
 ): Promise<DownloadCheckpoint | null> {
   try {
     const raw = await fsp.readFile(getDownloadCheckpointPath(), "utf8");
@@ -47,6 +55,15 @@ export async function readDownloadCheckpoint(
       !Array.isArray(parsed.completedTables) ||
       parsed.scope !== scope
     ) {
+      return null;
+    }
+    // The scope check alone accepted a checkpoint written against a DIFFERENT
+    // manifest: after `refresh` added records to an already-completed table (or
+    // changed a record's fields), the resume skipped that table and the new
+    // files were never downloaded, yet the run reported "Download complete".
+    // A digest mismatch — or a checkpoint written before fingerprints existed —
+    // now invalidates the checkpoint and the scope is re-downloaded.
+    if (fingerprint !== undefined && parsed.fingerprint !== fingerprint) {
       return null;
     }
     return parsed;

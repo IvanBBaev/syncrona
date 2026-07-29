@@ -126,11 +126,13 @@ Current ServiceNow session context for the connected user.
 
 Set current ServiceNow scope for the current user session using scope code (for example x_nuvo_sinc).
 
-- Version: `1.0.0`
+- Version: `1.2.0`
+- Safety: supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `scope` | `string` | yes |  |  |
+| `dryRun` | `boolean` | no | `false` | Plan the scope switch and record an audit entry without changing the session. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
 Output (`structuredContent` on success results):
@@ -174,13 +176,15 @@ Page of sys_scope rows matching the query.
 
 Set current ServiceNow update set for current user by name or sys_id. Optionally create missing set by name.
 
-- Version: `1.0.0`
+- Version: `1.2.0`
+- Safety: supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `updateSetName` | `string` | no | `""` |  |
 | `updateSetSysId` | `string` | no | `""` |  |
 | `createIfMissing` | `boolean` | no | `true` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the update-set switch and record an audit entry without changing the session. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
 Output (`structuredContent` on success results):
@@ -222,7 +226,8 @@ Page of sys_update_set rows matching the query.
 
 Ensure expected scope and update set are active. It reads current context, applies changes when needed, and returns final context.
 
-- Version: `1.0.0`
+- Version: `1.2.0`
+- Safety: supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -230,6 +235,7 @@ Ensure expected scope and update set are active. It reads current context, appli
 | `expectedUpdateSetName` | `string` | no | `""` |  |
 | `expectedUpdateSetSysId` | `string` | no | `""` |  |
 | `createUpdateSetIfMissing` | `boolean` | no | `true` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the session alignment and record an audit entry without changing the session. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
 Output (`structuredContent` on success results):
@@ -487,7 +493,7 @@ Generate scope knowledge artifacts (md + json) and optionally write them under .
 | `task` | `string` | no | `""` |  |
 | `writeFiles` | `boolean` | no | `false` |  |
 | `trigger` | `string (one of: "manual", "init", "refresh", "successful_change", "drift")` | no | `"manual"` |  |
-| `dryRun` | `boolean` | no | `false` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without writing any file to the workspace. |
 
 ### sync_generate_scope_docs
 
@@ -507,7 +513,7 @@ Generate full scope documentation bundle under .syncrona-mcp/docs/{scope}/ with 
 | `includeScheduledJobs` | `boolean` | no | `true` |  |
 | `includeCrossScope` | `boolean` | no | `true` |  |
 | `writeFiles` | `boolean` | no | `false` |  |
-| `dryRun` | `boolean` | no | `false` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without writing any file to the workspace. |
 
 ### sync_validate_scope_knowledge
 
@@ -534,7 +540,7 @@ Run trigger-based scope knowledge update contract for init/refresh/successful_ch
 | `graph` | `object` | no | `{}` |  |
 | `task` | `string` | no | `""` |  |
 | `writeFiles` | `boolean` | no | `false` |  |
-| `dryRun` | `boolean` | no | `false` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without writing any file to the workspace. |
 
 ### sync_generate_table_dependency_report
 
@@ -548,7 +554,7 @@ One-command table dependency report generation with deterministic output paths u
 | `scope` | `string` | no | `""` |  |
 | `task` | `string` | no | `"table dependencies report"` |  |
 | `writeFiles` | `boolean` | no | `false` |  |
-| `dryRun` | `boolean` | no | `false` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without writing any file to the workspace. |
 
 ### sync_analyze_scope_relations
 
@@ -575,8 +581,8 @@ This tool has no input parameters.
 
 Run one-command workflow shell: preflight, deep analysis, minimal-footprint check, approval gate, and optional apply.
 
-- Version: `1.0.0`
-- Safety: mutating - gated by `confirmDestructive`
+- Version: `1.2.0`
+- Safety: mutating - gated by `confirmDestructive`; supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -597,6 +603,7 @@ Run one-command workflow shell: preflight, deep analysis, minimal-footprint chec
 | `confirmDestructive` | `boolean` | no | `false` |  |
 | `writeSimulationReport` | `boolean` | no | `false` |  |
 | `simulationId` | `string` | no | `""` |  |
+| `dryRun` | `boolean` | no | `false` | Plan the workflow and record an audit entry without applying anything. Takes precedence over `apply`: a dry run never mutates the instance. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 
 ### sync_list_recent_changes
@@ -717,8 +724,8 @@ Compare local scoped files against the records on the instance. Fetches records 
 
 Run a local command in the SyncroNow AI workspace for automation tasks.
 
-- Version: `1.1.0`
-- Safety: mutating - gated by `confirmDestructive`
+- Version: `1.2.0`
+- Safety: mutating - gated by `confirmDestructive`; supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -726,19 +733,21 @@ Run a local command in the SyncroNow AI workspace for automation tasks.
 | `args` | `array<string>` | no | `[]` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 | `confirmDestructive` | `boolean` | no | `false` | Set true if running potentially destructive commands such as deploy/download. |
+| `dryRun` | `boolean` | no | `false` | Plan the invocation and record an audit entry without running it. |
 
 ### run_node_code
 
 Execute JavaScript code with Node.js in the project workspace.
 
-- Version: `1.1.0`
-- Safety: mutating - gated by `confirmDestructive`
+- Version: `1.2.0`
+- Safety: mutating - gated by `confirmDestructive`; supports `dryRun`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `code` | `string` | yes |  |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 | `confirmDestructive` | `boolean` | no | `false` | Set true to acknowledge that executing Node.js code may modify workspace or environment state. |
+| `dryRun` | `boolean` | no | `false` | Plan the invocation and record an audit entry without running it. |
 
 ## sn_ tools
 
@@ -930,15 +939,15 @@ Render unified full analysis report as deterministic markdown output.
 
 ### sn_search_scripts
 
-Full-text search across ServiceNow script tables (script includes, business rules, client scripts, UI scripts, scripted REST, transform scripts) and return matches with excerpts.
+Full-text search across ServiceNow script tables (script includes, business rules, client scripts, UI scripts, scripted REST, transform scripts) and return matches with excerpts. The result carries `searchComplete`; if any table query fails the call returns an error result, so `matchCount: 0` only means "no matches" when `searchComplete` is true.
 
-- Version: `1.0.0`
+- Version: `1.1.0`
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `query` | `string` | yes |  | Text to search for inside script fields. |
 | `scope` | `string` | no |  | Optional scope code to restrict the search. |
-| `tables` | `array<string>` | no |  | Optional subset of script tables to search. |
+| `tables` | `array<string>` | no |  | Optional subset of script tables to search. Defaults to all of them. Any name outside the supported set is reported back in `unknownTables` and forces `searchComplete: false` — it is never silently ignored. |
 | `limit` | `number (min 1, max 100)` | no | `20` |  |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 

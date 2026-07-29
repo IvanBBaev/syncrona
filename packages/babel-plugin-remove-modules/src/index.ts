@@ -11,9 +11,25 @@ export default function() {
   }
   function getCommentTags(path: NodePath<t.ImportDeclaration>) {
     const node = path.node;
+    // Babel attaches a comment written after an import on the SAME line both as
+    // that import's trailing comment AND as the leading comment of the next
+    // statement. Reading only `leadingComments` therefore applied the directive
+    // to the wrong node: the tagged import lost its `@keepModule`/`@expandModule`
+    // and was removed, while the untagged import that followed was kept verbatim
+    // (a literal `import` statement is a runtime SyntaxError on the instance).
+    // Take same-line trailing comments as well; `commentUsageTracker` then keeps
+    // the next node from re-reading a comment already consumed here.
+    const sameLineTrailingComments = (node.trailingComments || []).filter(
+      comment =>
+        !!comment.loc && !!node.loc && comment.loc.start.line === node.loc.end.line
+    );
+    const relevantComments = [
+      ...(node.leadingComments || []),
+      ...sameLineTrailingComments
+    ];
     let comments = "";
-    if (node.leadingComments && node.leadingComments.length > 0) {
-      comments = node.leadingComments
+    if (relevantComments.length > 0) {
+      comments = relevantComments
         .filter(comment => {
           return !commentUsageTracker.has(genLocString(comment));
         })

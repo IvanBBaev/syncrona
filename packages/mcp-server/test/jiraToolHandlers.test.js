@@ -119,6 +119,34 @@ test('jira_get_issue: missing credentials is a clear error', async () => {
   assert.match(res.content[0].text, /No Jira credentials configured/);
 });
 
+// REV-203: `resolveJiraConfigSync` makes an explicit profile the EXCLUSIVE source —
+// JIRA_BASE_URL / JIRA_TOKEN are never consulted for it — so the generic "set
+// JIRA_BASE_URL and JIRA_TOKEN" remediation provably cannot fix this call. It matters
+// more here than on the CLI: an agent reads this text and acts on it literally, so it
+// will set the variables, retry, get the identical error, and have no way to discover
+// that the profile path ignores them by design. The env is set below precisely to
+// prove the point — with a --profile in play it changes nothing.
+test('jira_get_issue: an explicit profile with nothing stored names the profile, not the environment', async () => {
+  const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'syncrona-jira-home-'));
+  const realHomedir = os.homedir;
+  try {
+    // Isolated HOME so a real ~/.syncrona/jira/prod on the developer's machine
+    // cannot make this pass (or fail) for the wrong reason.
+    os.homedir = () => tmpHome;
+    setCloudEnv();
+
+    const res = await handleJiraTool('jira_get_issue', { key: 'ABC-1', profile: 'prod' }, NO_GIT_CTX);
+
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /profile "prod"/);
+    assert.match(res.content[0].text, /jira-login --profile prod/);
+    assert.doesNotMatch(res.content[0].text, /set JIRA_BASE_URL/);
+  } finally {
+    os.homedir = realHomedir;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
 test('jira_get_issue: an undecryptable stored profile points at re-login, not at missing config', async () => {
   // A stored profile that exists but cannot be decrypted (credentials copied from
   // another machine/user) must produce re-login guidance — the generic "No Jira
@@ -162,7 +190,10 @@ test('jira_get_issue: fetches and returns normalized JSON for an explicit key', 
   assert.equal(issue.assignee, 'Alice');
   assert.deepEqual(issue.labels, ['backend']);
   assert.equal(issue.links[0].relationship, 'blocks');
-  assert.equal(issue.comments[0].author, 'Carol');
+  // REV-158: a comment author is a display name the commenter controls, so it has the
+  // same provenance as the comment body and is fenced too. The link relationship is a
+  // Jira-defined enum and stays verbatim.
+  assert.equal(issue.comments[0].author, wrapUntrustedData('Carol', 'jira'));
 
   // Cloud uses the v3 REST base, the uppercased key, and HTTP Basic auth.
   assert.equal(calls.length, 1);

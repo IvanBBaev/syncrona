@@ -205,17 +205,89 @@ function renderList(node: AdfNode, ordered: boolean, depth: number): string {
     .join("\n");
 }
 
-/** Fence a code block, preserving its (already newline-bearing) text content. */
+/**
+ * Info strings we are willing to emit after the opening fence. Deliberately
+ * conservative: letters, digits, and the punctuation real language identifiers
+ * actually use (`c++`, `c#`, `f#`, `objective-c`, `asp.net`, `shell_session`).
+ * Anything else — a space, a backtick, a newline, a bracket — is dropped rather
+ * than escaped, because a mangled language tag is worthless while a dropped one
+ * costs nothing but syntax highlighting.
+ */
+const SAFE_CODE_LANGUAGE = /^[A-Za-z0-9+#._-]{1,32}$/;
+
+/** Longest run of consecutive backticks anywhere in `text` (0 if none). */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  let run = 0;
+  for (const ch of text) {
+    if (ch === "`") {
+      run += 1;
+      if (run > longest) {
+        longest = run;
+      }
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/**
+ * Fence a code block, preserving its (already newline-bearing) text content.
+ *
+ * REV-202: both halves of this were interpolated raw into a fixed three-backtick
+ * fence, and both come from whoever wrote the Jira issue or a comment on it. Content
+ * containing its own ``` line therefore closed the fence early and the remainder
+ * escaped into the surrounding document; a `language` carrying a backtick or a
+ * newline did the same through the info string. That is not a cosmetic rendering
+ * bug here — this text is fed to an AI agent (the `jira_get_issue` MCP tool and
+ * `syncrona jira`), and the same MCP server exposes code-execution tools, so
+ * breaking out of the fence turns attacker-controlled data into what reads as
+ * document structure. It is an indirect-prompt-injection primitive.
+ *
+ * The fix is the CommonMark rule the original ignored: a fence may be any run of
+ * three or more backticks, and only a run *at least as long as the opener* closes
+ * it. So open with one backtick more than the longest run the content contains and
+ * nothing inside can terminate it. Every run is counted, not just whole-line ones —
+ * strictly only a line consisting solely of backticks can close a fence, but runs of
+ * three or more mid-line are rare enough that the stricter rule costs nothing and
+ * removes any dependence on how lenient the consumer's parser is.
+ *
+ * Note the fence is the ONLY construct in this module that can be broken out of:
+ * it is a plain-text renderer, so inline marks are dropped (no backtick spans),
+ * headings and blockquotes emit their text with no `#`/`>` prefix, and links emit a
+ * bare URL rather than `[text](url)`. Table cells are joined with ` | ` and can be
+ * made ambiguous by a cell containing that sequence, but there is no wrapper to
+ * escape from and no separator row, so the output was never a Markdown table —
+ * escaping pipes there would mangle legitimate prose for no security gain.
+ */
 function renderCodeBlock(node: AdfNode): string {
   const code = renderInline(node.content);
-  const language =
+  const rawLanguage =
     typeof node.attrs?.language === "string" ? node.attrs.language : "";
-  return `\`\`\`${language}\n${code}\n\`\`\``;
+  const language = SAFE_CODE_LANGUAGE.test(rawLanguage) ? rawLanguage : "";
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(code) + 1));
+  return `${fence}${language}\n${code}\n${fence}`;
 }
 
 /** Collapse a table cell's block content to a single ` `-joined line. */
 function renderTableCell(cell: AdfNode, depth: number): string {
   return renderBlockChildren(cell, depth).split("\n").join(" ").trim();
+}
+
+/**
+ * Render an `expand`/`nestedExpand` — the collapsible section teams fold
+ * acceptance criteria, rollback plans and test notes into. Its heading lives in
+ * `attrs.title` and its body in `content`, so emit the title as its own line
+ * above the rendered children instead of letting it vanish.
+ */
+function renderExpand(node: AdfNode, depth: number): string {
+  const title = attrString(node, "title").trim();
+  const body = renderBlockChildren(node, depth);
+  if (!title) {
+    return body;
+  }
+  return body ? `${title}\n${body}` : title;
 }
 
 function renderTableRow(row: AdfNode | undefined, depth: number): string {
@@ -293,6 +365,16 @@ function renderBlock(node: AdfNode | undefined, depth: number): string {
       return renderCodeBlock(node);
     case "blockquote":
       return renderBlockChildren(node, next);
+    case "expand":
+    case "nestedExpand":
+      // These used to fall through to the default branch, which renders only a
+      // node's block *children* — so the section heading in `attrs.title`
+      // ("Acceptance criteria", "Rollback plan") was silently dropped and its
+      // body was presented as an unlabelled fragment. That is precisely the
+      // "attrs-only text flattens to nothing" bug class renderAttrsOnlyNode
+      // exists to prevent; expand just carries both attrs *and* content, so it
+      // needs its own case rather than an entry there (REV-131).
+      return renderExpand(node, next);
     case "table":
       return renderTable(node, next);
     case "rule":
@@ -311,7 +393,7 @@ function renderBlock(node: AdfNode | undefined, depth: number): string {
         return renderInline(node.content);
       }
       // Unknown block/inline node — recurse over its block children so text is
-      // not lost (e.g. panel, expand, mediaSingle/mediaGroup wrapping media).
+      // not lost (e.g. panel, mediaSingle/mediaGroup wrapping media).
       return renderBlockChildren(node, next);
     }
   }

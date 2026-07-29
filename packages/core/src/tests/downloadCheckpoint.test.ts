@@ -73,4 +73,25 @@ describe("download checkpoint", () => {
   it("delete is a no-op when no checkpoint exists", async () => {
     await expect(deleteDownloadCheckpoint()).resolves.toBeUndefined();
   });
+
+  // The scope alone does not identify the work: after a `refresh` added records
+  // to an already-completed table, the resume still skipped that table as "done"
+  // and the new files were never downloaded, while the run reported success.
+  it("treats a checkpoint recorded against different work as stale", async () => {
+    await writeDownloadCheckpoint({
+      scope: "x_app",
+      fingerprint: "aaa",
+      completedTables: ["a"],
+    });
+    expect(await readDownloadCheckpoint("x_app", "bbb")).toBeNull();
+    expect(await readDownloadCheckpoint("x_app", "aaa")).not.toBeNull();
+  });
+
+  it("treats a checkpoint written before fingerprints existed as stale", async () => {
+    await writeDownloadCheckpoint({ scope: "x_app", completedTables: ["a"] });
+    expect(await readDownloadCheckpoint("x_app", "aaa")).toBeNull();
+    // Callers that pass no fingerprint (none remain in the CLI) keep the old
+    // scope-only behaviour, so the file format stays backward compatible.
+    expect(await readDownloadCheckpoint("x_app")).not.toBeNull();
+  });
 });

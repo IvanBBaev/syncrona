@@ -59,7 +59,7 @@ as network problems.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Local files and `sync.manifest.json` disagree (missing files, orphans) | Files were moved/deleted outside the tool, or a download was interrupted long ago. | `syncrona repair` reports the drift; `repair --apply` re-downloads missing files; `repair --prune` removes orphans; `--ci` skips prompts. |
+| Local files and `sync.manifest.json` disagree (missing files, orphans) | Files were moved/deleted outside the tool, or a download was interrupted long ago. | `syncrona repair` reports the drift; `repair --apply` re-downloads missing files; `repair --apply --prune` deletes orphans (`--prune` on its own still only reports); `--ci` skips prompts. |
 | A record created on the instance never appears locally | The manifest predates the record. | `syncrona refresh` re-downloads the manifest and creates newly tracked files (watch mode does this on its polling interval too). |
 | Deleting a local file did not delete the record | Delete propagation is intentionally not supported — a local delete never deletes on the instance. | Delete the record on the instance, then run `syncrona repair` to reconcile the local tree. |
 | `syncrona download` overwrote local edits | `download` is destructive by design (it confirms first; `--ci` skips the prompt). | Keep the project in git so a bad download is a `git checkout` away; diff before continuing. |

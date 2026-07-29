@@ -9,6 +9,9 @@ import {
   getIssue,
   verifyAuth,
   jiraUndecryptableMessage,
+  noJiraConfigMessage,
+  jiraAuthRecheckHint,
+  NO_JIRA_CONFIG_MESSAGE,
   JiraHttpError,
   isJiraHttpError,
   jiraHttpError,
@@ -382,6 +385,62 @@ describe("adfToText", () => {
       ],
     };
     expect(adfToText(doc)).toBe("quoted one\nquoted two");
+  });
+
+  it("keeps an expand's title above its body", () => {
+    // REV-131: an `expand` carries its heading in `attrs.title` and its body in
+    // `content`. It used to fall through to the generic block path, which
+    // rendered only the children — so the label saying *what* the following text
+    // is ("Acceptance criteria", "Rollback plan") was silently dropped.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "expand",
+          attrs: { title: "Acceptance criteria" },
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "must work" }] },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("Acceptance criteria\nmust work");
+  });
+
+  it("keeps a nestedExpand's title and renders an expand with no title", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "expand",
+          attrs: { title: "Outer" },
+          content: [
+            {
+              type: "nestedExpand",
+              attrs: { title: "Rollback plan" },
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "revert" }] },
+              ],
+            },
+          ],
+        },
+        {
+          type: "expand",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "untitled body" }] },
+          ],
+        },
+      ],
+    };
+    expect(adfToText(doc)).toBe("Outer\nRollback plan\nrevert\n\nuntitled body");
+  });
+
+  it("renders a titled expand with no readable body as just its title", () => {
+    const doc = {
+      type: "doc",
+      content: [{ type: "expand", attrs: { title: "Test notes" }, content: [] }],
+    };
+    expect(adfToText(doc)).toBe("Test notes");
   });
 
   it("drops a horizontal rule between blocks", () => {
@@ -1139,10 +1198,14 @@ describe("resolveJiraConfig (env precedence)", () => {
     jest.dontMock("@syncrona/credential-store");
   });
 
-  it("falls back to the environment when the explicit profile has no stored creds", async () => {
-    process.env.JIRA_BASE_URL = "https://env.atlassian.net";
-    process.env.JIRA_EMAIL = "env@acme.com";
-    process.env.JIRA_TOKEN = "env-tok";
+  it("returns null (never the ambient env) when the explicit profile has no stored creds", async () => {
+    // REV-130: a typo'd/deleted/undecryptable --profile used to fall through to
+    // whatever JIRA_* the shell exported, so the CLI silently authenticated
+    // against a *different* tenant with that tenant's token. An explicitly named
+    // profile must resolve to that profile or to nothing.
+    process.env.JIRA_BASE_URL = "https://vendor.atlassian.net";
+    process.env.JIRA_EMAIL = "env@vendor.com";
+    process.env.JIRA_TOKEN = "vendor-tok";
     delete process.env.JIRA_DEPLOYMENT;
     jest.resetModules();
     jest.doMock("@syncrona/credential-store", () => ({
@@ -1150,12 +1213,28 @@ describe("resolveJiraConfig (env precedence)", () => {
       loadJiraCredentialsSync: jest.fn(),
     }));
     const { resolveJiraConfig } = await import("../src/resolveConfig");
-    expect(await resolveJiraConfig({ profile: "work" })).toEqual({
-      baseUrl: "https://env.atlassian.net",
-      deployment: "cloud",
-      email: "env@acme.com",
-      token: "env-tok",
-    });
+    expect(await resolveJiraConfig({ profile: "intrenal" })).toBeNull();
+    jest.dontMock("@syncrona/credential-store");
+  });
+
+  it("returns null for an explicit profile whose stored record is unusable", async () => {
+    // REV-130, the undecryptable/partially-written case: `loadJiraCredentials`
+    // cannot distinguish "no such profile" from "would not decrypt", so neither
+    // may borrow the environment's credentials.
+    process.env.JIRA_BASE_URL = "https://vendor.atlassian.net";
+    process.env.JIRA_TOKEN = "vendor-tok";
+    jest.resetModules();
+    jest.doMock("@syncrona/credential-store", () => ({
+      loadJiraCredentials: jest.fn().mockResolvedValue({
+        profile: "work",
+        baseUrl: "https://stored.atlassian.net",
+        deployment: "cloud",
+        token: "",
+      }),
+      loadJiraCredentialsSync: jest.fn(),
+    }));
+    const { resolveJiraConfig } = await import("../src/resolveConfig");
+    expect(await resolveJiraConfig({ profile: "work" })).toBeNull();
     jest.dontMock("@syncrona/credential-store");
   });
 
@@ -1259,6 +1338,23 @@ describe("resolveJiraConfigSync (MCP runtime path)", () => {
     expect(resolveJiraConfigSync({ profile: "nope" })).toBeNull();
   });
 
+  it("returns null (never the ambient env) when the explicit profile has no stored creds", async () => {
+    // REV-130, MCP runtime twin: the fall-through to env also made the
+    // `jiraCredentialHealth(profile) === "undecryptable"` branch in
+    // jiraToolHandlers unreachable whenever any JIRA_* var was exported, because
+    // a (wrong-tenant) config had already been resolved.
+    process.env.JIRA_BASE_URL = "https://vendor.atlassian.net";
+    process.env.JIRA_TOKEN = "vendor-tok";
+    delete process.env.JIRA_DEPLOYMENT;
+    jest.resetModules();
+    jest.doMock("@syncrona/credential-store", () => ({
+      loadJiraCredentials: jest.fn(),
+      loadJiraCredentialsSync: jest.fn().mockReturnValue(null),
+    }));
+    const { resolveJiraConfigSync } = await import("../src/resolveConfig");
+    expect(resolveJiraConfigSync({ profile: "intrenal" })).toBeNull();
+  });
+
   it('falls back to the stored "default" profile when no profile and no env are set', async () => {
     // Mirrors the async variant: the MCP runtime must find a plain `jira-login`
     // (no --profile) without any JIRA_* env being exported.
@@ -1318,5 +1414,83 @@ describe("jiraUndecryptableMessage", () => {
     expect(msg).toMatch(/could not be decrypted/);
     expect(msg).toContain('profile "work"');
     expect(msg).toContain("syncrona jira-login --profile work");
+  });
+});
+
+// REV-203: remediation text has to name the credential source the caller actually
+// used. `resolveJiraConfig` makes an explicit `--profile` the EXCLUSIVE source —
+// `configFromEnv` is never consulted for it (see the "explicit profile ignores the
+// environment" cases in the resolveJiraConfig describe above) — so the generic
+// "set JIRA_BASE_URL and JIRA_TOKEN" advice is not merely vague on that path, it is
+// provably impossible to act on: the user exports the variables, re-runs, and gets
+// the identical error. The un-suffixed `jira-login` half fails the same way, because
+// it writes the `default` profile rather than the one they asked for. Both halves of
+// the only offered fix were dead ends, which reads as a broken tool.
+describe("noJiraConfigMessage", () => {
+  it("keeps the generic message when no profile was given", () => {
+    // On the default path either source really can supply the config, so naming
+    // both is correct — this is the case the generic string was written for.
+    expect(noJiraConfigMessage()).toBe(NO_JIRA_CONFIG_MESSAGE);
+    expect(noJiraConfigMessage("")).toBe(NO_JIRA_CONFIG_MESSAGE);
+    expect(noJiraConfigMessage("   ")).toBe(NO_JIRA_CONFIG_MESSAGE);
+  });
+
+  it("names the profile and its own login command for an explicit profile", () => {
+    const msg = noJiraConfigMessage("prod");
+
+    expect(msg).toContain('profile "prod"');
+    // Must be the --profile form: plain `jira-login` writes `default` and would
+    // leave the exact same failure in place.
+    expect(msg).toContain("syncrona jira-login --profile prod");
+    expect(msg).not.toBe(NO_JIRA_CONFIG_MESSAGE);
+  });
+
+  it("says the environment is ignored rather than offering it as a fix", () => {
+    const msg = noJiraConfigMessage("prod");
+
+    // The env variables may still be MENTIONED — the point is that they are
+    // described as deliberately ignored on this path, and the way back to them
+    // (dropping --profile) is spelled out. What must not survive is the old
+    // imperative "set JIRA_BASE_URL and JIRA_TOKEN" reading.
+    expect(msg).toMatch(/ignored/);
+    expect(msg).toMatch(/--profile/);
+    expect(msg).not.toMatch(/set JIRA_BASE_URL/);
+  });
+
+  it("trims a padded profile so the command it prints is runnable", () => {
+    expect(noJiraConfigMessage("  prod  ")).toContain(
+      "syncrona jira-login --profile prod"
+    );
+  });
+});
+
+// REV-203, one step later: by the time a request 401s a config WAS resolved, so the
+// question is no longer "is anything configured" but "which source did these
+// credentials come from". Sending an explicit-profile caller to inspect JIRA_EMAIL /
+// JIRA_TOKEN points them at variables that had no bearing on the failed request.
+describe("jiraAuthRecheckHint", () => {
+  it("names both sources on the default path", () => {
+    const hint = jiraAuthRecheckHint();
+
+    expect(hint).toContain("syncrona jira-login");
+    expect(hint).toMatch(/JIRA_EMAIL/);
+    expect(hint).toMatch(/JIRA_TOKEN/);
+  });
+
+  it("points an explicit-profile caller at the stored profile only", () => {
+    const hint = jiraAuthRecheckHint("prod");
+
+    expect(hint).toContain('profile "prod"');
+    expect(hint).toContain("syncrona jira-login --profile prod");
+    expect(hint).not.toMatch(/JIRA_EMAIL/);
+    expect(hint).not.toMatch(/JIRA_TOKEN/);
+  });
+
+  it("still matches the shared re-login hint contract", () => {
+    // jiraCommands.test.ts classifies 401 vs 403 by looking for "jira-login" in
+    // the hint. Both variants must keep satisfying that, or the taxonomy test
+    // starts passing for the wrong reason.
+    expect(jiraAuthRecheckHint()).toMatch(/jira-login/);
+    expect(jiraAuthRecheckHint("prod")).toMatch(/jira-login/);
   });
 });

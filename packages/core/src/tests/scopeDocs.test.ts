@@ -149,4 +149,25 @@ describe("scopeDocs", () => {
     expect(updated).toContain("2026-02-02T03:04:05.000Z");
     expect(updated).not.toContain("2026-01-02T03:04:05.000Z");
   });
+
+  // INJ-1: the scope comes from the manifest, i.e. ultimately from the
+  // instance, and used to be interpolated straight into the filename. A scope
+  // holding a separator or ".." wrote a Markdown file anywhere the process can
+  // reach — outside outDir, over an existing file.
+  it("refuses to write a doc for a scope that is not a safe filename", async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-docs-out-"));
+    const victim = path.join(outsideDir, "escaped.md");
+    try {
+      for (const scope of ["../escaped", "..\\escaped", "..", "sub/escaped"]) {
+        const manifest = { ...sampleManifest(), scope } as SN.AppManifest;
+        await expect(generateScopeDocs(manifest, { outDir: tempDir })).rejects.toThrow(
+          /unsafe scope name/
+        );
+      }
+      expect(fs.existsSync(victim)).toBe(false);
+      expect(fs.readdirSync(tempDir)).toEqual([]);
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });

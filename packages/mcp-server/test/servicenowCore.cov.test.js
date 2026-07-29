@@ -235,6 +235,50 @@ test('resolveServiceNowSecrets: mTLS-only config skips the Authorization-materia
   }
 });
 
+test('resolveServiceNowSecrets: mTLS does not excuse an unrecognized SN_AUTH_METHOD', () => {
+  // REV-201: the mTLS exemption was written as `issues.length > 0 && !hasMtls`, so a
+  // client certificate suppressed EVERY issue -- including the unknown-selector one
+  // added to close exactly this hole. A client cert supplies transport identity, so
+  // it can legitimately stand in for missing Authorization material; it says nothing
+  // about a typo'd selector, which silently reroutes which grant runs. Here
+  // `oauth-jwt` (the real alias is oauth-jwt-bearer) plus leftover client
+  // id/secret/password would have resolved to oauth-password and posted the user's
+  // password to /oauth_token.do, with the server starting clean -- while README
+  // promises it "refuses to start".
+  const snap = snapshotEnv();
+  clearAllRelevantEnv();
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-core-mtls-bogus-'));
+  const certPath = path.join(tempDir, 'client.crt');
+  const keyPath = path.join(tempDir, 'client.key');
+  fs.writeFileSync(certPath, '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n', 'utf-8');
+  fs.writeFileSync(keyPath, '-----BEGIN PRIVATE KEY-----\nBBB\n-----END PRIVATE KEY-----\n', 'utf-8');
+
+  process.env.SN_INSTANCE = 'dev1.service-now.com';
+  process.env.SN_AUTH_METHOD = 'oauth-jwt';
+  process.env.SN_USER = 'admin';
+  process.env.SN_PASSWORD = 'p4ssw0rd-must-not-appear';
+  process.env.SN_OAUTH_CLIENT_ID = 'cid';
+  process.env.SN_OAUTH_CLIENT_SECRET = 'cs3cret-must-not-appear';
+  process.env.SN_CLIENT_CERT = certPath;
+  process.env.SN_CLIENT_KEY = keyPath;
+  process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-core-mtls-bogus-home-'));
+  clearServiceNowSecretsCache();
+
+  try {
+    assert.throws(() => resolveServiceNowSecrets(tempDir), (err) => {
+      assert.match(err.message, /Refusing to start on an unusable ServiceNow auth configuration \(fell back to oauth-password\)/);
+      assert.match(err.message, /Unknown SN_AUTH_METHOD "oauth-jwt"/);
+      // The rejected selector is named; the credentials that completed the
+      // inferred method must not be echoed into the message.
+      assert.ok(!err.message.includes('must-not-appear'), 'the error must not leak credential values');
+      return true;
+    });
+  } finally {
+    restoreEnv(snap);
+  }
+});
+
 test('resolveServiceNowSecrets: explicit SN_AUTH_METHOD=api-key resolves with the api key material', () => {
   const snap = snapshotEnv();
   clearAllRelevantEnv();
@@ -299,7 +343,7 @@ test('resolveServiceNowSecrets: oauth-client-credentials method resolves without
   }
 });
 
-test('resolveServiceNowSecrets: unrecognized SN_AUTH_METHOD falls back to inference', () => {
+test('resolveServiceNowSecrets: unrecognized SN_AUTH_METHOD is rejected, not silently inferred', () => {
   const snap = snapshotEnv();
   clearAllRelevantEnv();
 
@@ -312,9 +356,14 @@ test('resolveServiceNowSecrets: unrecognized SN_AUTH_METHOD falls back to infere
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-core-bogus-'));
   try {
-    const cfg = resolveServiceNowSecrets(tempDir);
-    // Unknown explicit method -> falls back to inference -> basic (no client id/secret).
-    assert.equal(cfg.authMethod, 'basic');
+    // A typo'd selector used to fall through to inference silently: with leftover
+    // credentials completing the inferred method, the config looked healthy while
+    // authenticating by a method the user did not ask for. resolveAuthMethod now
+    // reports it as an issue, so the resolver refuses the config instead.
+    assert.throws(
+      () => resolveServiceNowSecrets(tempDir),
+      /Unknown SN_AUTH_METHOD "totally-bogus-method"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key\./
+    );
   } finally {
     restoreEnv(snap);
   }

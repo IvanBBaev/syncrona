@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN } from "@syncrona/types";
-import { downloadTablesWithResume, DownloadTableDeps } from "../appUtils.js";
+import {
+  computeMissingFingerprint,
+  downloadTablesWithResume,
+  DownloadTableDeps,
+} from "../appUtils.js";
 import { DownloadCheckpoint } from "../downloadCheckpoint.js";
 
 // G3: the resumable download loop — progress, per-table checkpointing, resume
@@ -144,5 +148,75 @@ describe("downloadTablesWithResume", () => {
     expect(process.exitCode).toBe(1);
 
     process.exitCode = oldExit;
+  });
+
+  // Keyed on the scope alone, a checkpoint survived a `refresh` that added
+  // records to an already-completed table: the resume skipped that table as
+  // "done", its new files were never fetched, and the run still reported
+  // success. The checkpoint must be bound to the work it was recorded against.
+  it("keys the checkpoint on the work it was recorded against", async () => {
+    const seen: Array<string | undefined> = [];
+    const written: Array<string | undefined> = [];
+    const missing = missingMap(["a", "b"]);
+    const { deps } = makeDeps({
+      readCheckpoint: async (_scope: string, fingerprint?: string) => {
+        seen.push(fingerprint);
+        return null;
+      },
+      writeCheckpoint: async (cp) => {
+        written.push(cp.fingerprint);
+      },
+    });
+
+    await downloadTablesWithResume(missing, "x_app", deps);
+
+    const expected = computeMissingFingerprint(missing);
+    expect(seen).toEqual([expected]);
+    expect(written).toEqual([expected, expected]);
+  });
+});
+
+describe("computeMissingFingerprint", () => {
+  it("does not depend on key iteration order", () => {
+    const one = {
+      sys_script: { a: [{ name: "script", type: "js" }], b: [{ name: "script", type: "js" }] },
+      sp_widget: { c: [{ name: "css", type: "css" }] },
+    } as unknown as SN.MissingFileTableMap;
+    const other = {
+      sp_widget: { c: [{ name: "css", type: "css" }] },
+      sys_script: { b: [{ name: "script", type: "js" }], a: [{ name: "script", type: "js" }] },
+    } as unknown as SN.MissingFileTableMap;
+
+    expect(computeMissingFingerprint(one)).toBe(computeMissingFingerprint(other));
+  });
+
+  it("changes when a record is added to an already-completed table", () => {
+    const before = {
+      sys_script: { a: [{ name: "script", type: "js" }] },
+    } as unknown as SN.MissingFileTableMap;
+    const after = {
+      sys_script: {
+        a: [{ name: "script", type: "js" }],
+        b: [{ name: "script", type: "js" }],
+      },
+    } as unknown as SN.MissingFileTableMap;
+
+    expect(computeMissingFingerprint(before)).not.toBe(computeMissingFingerprint(after));
+  });
+
+  it("changes when a record gains a field", () => {
+    const before = {
+      sp_widget: { a: [{ name: "script", type: "js" }] },
+    } as unknown as SN.MissingFileTableMap;
+    const after = {
+      sp_widget: {
+        a: [
+          { name: "script", type: "js" },
+          { name: "css", type: "css" },
+        ],
+      },
+    } as unknown as SN.MissingFileTableMap;
+
+    expect(computeMissingFingerprint(before)).not.toBe(computeMissingFingerprint(after));
   });
 });

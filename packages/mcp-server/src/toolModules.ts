@@ -261,6 +261,9 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
     invoke: (ctx) =>
       handleWorkflowTool(ctx.toolName, ctx.args, {
         timeoutMs: ctx.timeoutMs,
+        // SEC-3 follow-up (REV-150): every other module forwards ctx.dryRun; this one did
+        // not, which is why the workflow tool's apply path could never honor a dry run.
+        dryRun: ctx.dryRun,
         startedAt: ctx.startedAt,
         parseUnifiedTaskType,
         isDeepAnalysisSatisfied,
@@ -272,6 +275,7 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
         writeJsonAndMarkdown,
         runRemoteScript: (script, resolvedTimeoutMs, endpointPath) =>
           runBackgroundScript(script, resolvedTimeoutMs, endpointPath, PROJECT_DIR),
+        makeDryRunAuditResponse: ctx.makeDryRunAuditResponse,
         auditMutatingTool: ctx.auditMutatingTool,
       }),
   },

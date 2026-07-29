@@ -37,13 +37,13 @@ module.exports = {
     {
       name: "foundation-no-consumers",
       comment:
-        "Shared foundation packages (types, credential-store, jira, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only. (Reaches: packages/credential-store/src, packages/jira/src, packages/sn-transport/src, packages/types/index.d.ts.)",
+        "Shared foundation packages (types, credential-store, jira, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only. REV-139: the specifier alternative used to read `@syncrona/(core|mcp-server)`, but `@syncrona/core` is a package name that exists nowhere in the workspace — the core CLI publishes as the unscoped `syncrona` (packages/core/package.json). (Reaches: packages/credential-store/src, packages/jira/src, packages/sn-transport/src, packages/types/index.d.ts.)",
       severity: "error",
       from: {
         path: "^packages/(credential-store|jira|sn-transport)/src|^packages/types/",
       },
       to: {
-        path: "(@syncrona/(core|mcp-server)(/|$)|^packages/(core|mcp-server)/)",
+        path: "(@syncrona/mcp-server(/|$)|^syncrona(/|$)|^packages/(core|mcp-server)/)",
       },
     },
     {
@@ -59,32 +59,36 @@ module.exports = {
     {
       name: "consumers-are-siblings",
       comment:
-        "The `core` and `mcp-server` consumers are siblings and must never import each other directly — shared logic belongs in a foundation package (types/sn-transport/credential-store/jira). A cross-consumer import ALWAYS uses the bare `syncrona` / `@syncrona/mcp-server` specifier, so the `to` matches that specifier form only. Matching the specifier (rather than the resolved path) is deliberate and required: dependency-cruiser has no back-reference from `to` to `from`, so a resolved-path `to: ^packages/(core|mcp-server)/` would flag every intra-package relative edge (core->core) as a violation — an empirically-confirmed false positive. ENFORCEMENT CAVEAT: at runtime the specifier resolves through `node_modules/@syncrona/<pkg>` into that package's compiled `dist`, which `options.doNotFollow` drops, so this rule fires on the source-resolvable specifier edge rather than a followed dist edge. It is an executable statement of intent guarded by the self-test. (Reaches: packages/core/src, packages/mcp-server/src.)",
+        "The `core` and `mcp-server` consumers are siblings and must never import each other directly — shared logic belongs in a foundation package (types/sn-transport/credential-store/jira). REV-139: this rule USED TO match the bare specifier only (`@syncrona/(core|mcp-server)`) on the theory that a resolved-path `to` would false-positive on intra-package edges. Both halves of that theory were wrong. dependency-cruiser matches `to.path` against the dependency's RESOLVED path, and in the real workspace every package is symlinked under node_modules, so `import '@syncrona/mcp-server'` resolves to `packages/mcp-server/dist/index.js` — which the specifier regex never matched, so the rule could only ever fire in a node_modules-less fixture (empirically confirmed: a cross-consumer import in the real layout produced zero violations). And `@syncrona/core` names no package at all — the core CLI publishes as the unscoped `syncrona`. The intra-package false positive is instead ruled out with group matching: `from.path` captures the package directory and `to.pathNot: ^packages/$1/` exempts every edge that stays inside the importing package. Both the resolved-path and the specifier form are matched so the rule holds before and after `npm install` links the workspace. (Reaches: packages/core/src, packages/mcp-server/src.)",
       severity: "error",
       from: { path: "^packages/(core|mcp-server)/src" },
       to: {
-        path: "@syncrona/(core|mcp-server)(/|$)",
+        path: "(@syncrona/mcp-server(/|$)|^syncrona(/|$)|^packages/(core|mcp-server)/)",
+        pathNot: "^packages/$1/",
       },
     },
     {
       name: "plugins-are-leaves",
       comment:
-        "The 8 build-plugin packages (babel-plugin, babel-plugin-remove-modules, babel-preset-servicenow, eslint-plugin, prettier-plugin, sass-plugin, typescript-plugin, webpack-plugin) are leaves of the graph: they may import `@syncrona/types` for shared types (a source-resolvable `.d.ts` edge that IS enforced), but must never import another `@syncrona` package (another plugin, a foundation runtime package, or a consumer). Cross-package imports always use the `@syncrona/<pkg>` specifier, so the `to` matches every `@syncrona/*` specifier EXCEPT `types`; intra-package relative imports carry no such specifier and are never flagged. (A resolved-path `to` would false-positive on intra-package edges, same as `consumers-are-siblings`.) (Reaches: each plugin's src/index.ts.)",
+        "The 8 build-plugin packages (babel-plugin, babel-plugin-remove-modules, babel-preset-servicenow, eslint-plugin, prettier-plugin, sass-plugin, typescript-plugin, webpack-plugin) are leaves of the graph: they may import `@syncrona/types` for shared types, but must never import another `@syncrona` package (another plugin, a foundation runtime package, or a consumer). REV-139: like `consumers-are-siblings`, the `to` matched the bare `@syncrona/<pkg>` specifier only, so in the real (symlinked) workspace — where such an import resolves to `packages/<pkg>/dist/index.js` — the rule could never fire. The resolved-path alternative is added here, with `types` exempted in both forms and intra-package relative edges exempted through the `from` capture group (`to.pathNot: ^packages/$1/`). (Reaches: each plugin's src/index.ts.)",
       severity: "error",
       from: {
         path: "^packages/(babel-plugin|babel-plugin-remove-modules|babel-preset-servicenow|eslint-plugin|prettier-plugin|sass-plugin|typescript-plugin|webpack-plugin)/src",
       },
       to: {
-        path: "@syncrona/(?!types(/|$))[a-z-]+",
+        path: "(@syncrona/(?!types(/|$))[a-z-]+|^syncrona(/|$)|^packages/(?!types/)[a-z-]+/)",
+        pathNot: "^packages/$1/",
       },
     },
   ],
   options: {
     // Record cross-package edges (which resolve to a sibling's compiled `dist`)
-    // but never descend into node_modules or compiled output. NOTE: because
-    // `/dist/` is not followed, RUNTIME cross-package edges are dropped and only
-    // source-resolvable edges (notably `@syncrona/types` -> index.d.ts) are
-    // graph-visible; see the enforcement caveat on the sibling/leaf rules.
+    // but never descend into node_modules or compiled output. REV-139: the note
+    // that used to sit here claimed `doNotFollow` DROPS runtime cross-package
+    // edges so only specifier-form matching could work. It does not — the edge is
+    // still recorded, with `resolved` pointing at `packages/<pkg>/dist/...` (the
+    // symlink's real path); only the traversal INTO that file is skipped. The
+    // boundary rules therefore match the resolved path as well as the specifier.
     doNotFollow: { path: "(node_modules|/dist/)" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },

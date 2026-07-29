@@ -5,6 +5,17 @@ import { jest } from "@jest/globals";
 // stub here would let a broken `kind` branch pass. This deep specifier is not
 // the one mocked below, so it stays the genuine implementation.
 import { jiraHttpError, isJiraHttpError } from "@syncrona/jira/dist/errors.js";
+// Same reasoning for the user-facing strings: REV-203 made two of them functions of
+// which credential source the caller used, so a hand-rolled stub would happily return
+// profile-correct text no matter what the SUT passed in — the whole defect was a
+// message that ignored the path taken. Importing the real module means these tests
+// fail if the SUT stops threading the profile through.
+import {
+  NO_JIRA_CONFIG_MESSAGE,
+  jiraUndecryptableMessage,
+  noJiraConfigMessage,
+  jiraAuthRecheckHint,
+} from "@syncrona/jira/dist/messages.js";
 export {};
 
 const mockDetectDeployment = jest.fn();
@@ -30,10 +41,10 @@ jest.unstable_mockModule("@syncrona/jira", () => ({
   resolveJiraConfig: (...args: unknown[]) => mockResolveJiraConfig(...args),
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
   isJiraHttpError,
-  NO_JIRA_CONFIG_MESSAGE:
-    "No Jira credentials configured. Run `syncrona jira-login`, or set JIRA_BASE_URL and JIRA_TOKEN.",
-  jiraUndecryptableMessage: (profile: string) =>
-    `Stored Jira credentials for profile "${profile}" could not be decrypted — re-run jira-login.`,
+  NO_JIRA_CONFIG_MESSAGE,
+  jiraUndecryptableMessage,
+  noJiraConfigMessage,
+  jiraAuthRecheckHint,
 }));
 
 jest.unstable_mockModule("@syncrona/credential-store", () => ({
@@ -233,6 +244,38 @@ describe("jiraCommand", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  // REV-203: an explicit `--profile` is the exclusive source — resolveJiraConfig
+  // never consults the environment for it — so the generic "set JIRA_BASE_URL and
+  // JIRA_TOKEN" advice cannot work on this path. Before the fix both halves of the
+  // only remediation offered were dead ends: export the variables and you get the
+  // identical error, run plain `jira-login` and you write the `default` profile
+  // instead of the one that failed.
+  it("names the profile, not the environment, when an explicit profile has nothing stored", async () => {
+    mockResolveJiraConfig.mockResolvedValue(null);
+    mockJiraCredentialHealth.mockReturnValue("missing");
+
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1", profile: "prod" });
+
+    const errors = mockLoggerError.mock.calls.map((c) => c[0] as string);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('profile "prod"');
+    expect(errors[0]).toContain("syncrona jira-login --profile prod");
+    expect(errors[0]).not.toMatch(/set JIRA_BASE_URL/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("keeps the generic remediation when no profile was given", async () => {
+    // The un-suffixed message is still right here: with no --profile, the
+    // environment genuinely is one of the two sources that could have supplied
+    // the config, so naming it is accurate rather than misleading.
+    mockResolveJiraConfig.mockResolvedValue(null);
+    mockJiraCredentialHealth.mockReturnValue("missing");
+
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1" });
+
+    expect(mockLoggerError).toHaveBeenCalledWith(NO_JIRA_CONFIG_MESSAGE);
+  });
+
   it("points at re-login when a stored profile exists but won't decrypt", async () => {
     mockResolveJiraConfig.mockResolvedValue(null);
     mockJiraCredentialHealth.mockReturnValue("undecryptable");
@@ -314,6 +357,40 @@ describe("jiraCommand error hints", () => {
 
     expect(hints).toContainEqual(expect.stringContaining("timed out"));
   });
+
+  // REV-203, the 401 case: a config WAS resolved here, so the hint has to name the
+  // source it came from. On an explicit profile that is the credential store, and
+  // "verify JIRA_EMAIL / JIRA_TOKEN" sends the user to inspect variables that had no
+  // bearing on the request that failed — worse, if they happen to be set and correct
+  // the tool looks like it is lying.
+  it("points an explicit-profile 401 at the stored profile, not the environment", async () => {
+    mockGetIssue.mockRejectedValue(httpError(401));
+
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1", profile: "prod" });
+    const hints = mockLoggerInfo.mock.calls.map((c) => c[0] as string);
+
+    expect(hints).toContainEqual(expect.stringContaining("syncrona jira-login --profile prod"));
+    expect(hints).not.toContainEqual(expect.stringContaining("JIRA_EMAIL"));
+  });
+
+  it("keeps naming the environment for a 401 with no profile", async () => {
+    const hints = await failWith(httpError(401));
+
+    expect(hints).toContainEqual(expect.stringContaining("JIRA_EMAIL"));
+  });
+
+  it("threads the profile through the pre-response fallback branch too", async () => {
+    // The message-matching branch is the one a timeout/DNS-style failure takes.
+    // It shares the 401 wording, so it must share the profile-aware version —
+    // otherwise the fix holds only for errors that carry a status.
+    mockGetIssue.mockRejectedValue(new Error("HTTP 401 authentication failed"));
+
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1", profile: "prod" });
+    const hints = mockLoggerInfo.mock.calls.map((c) => c[0] as string);
+
+    expect(hints).toContainEqual(expect.stringContaining('profile "prod"'));
+    expect(hints).not.toContainEqual(expect.stringContaining("JIRA_EMAIL"));
+  });
 });
 
 describe("jiraLoginCommand", () => {
@@ -376,6 +453,33 @@ describe("jiraLoginCommand", () => {
     expect(mockSaveJiraCredentials).not.toHaveBeenCalled();
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Could not authenticate"));
     expect(process.exitCode).toBe(1);
+  });
+
+  // REV-203, the third credential source: inside `jira-login` the credentials came
+  // from the prompt seconds ago. Telling that user to "re-check them with
+  // jira-login" is circular, and JIRA_EMAIL / JIRA_TOKEN were never consulted at
+  // all — so the generic hint named two things, neither of which is the problem.
+  it("does not tell a failing login to re-run login or check the environment", async () => {
+    mockDetectDeployment.mockReturnValue("cloud");
+    mockPrompt
+      .mockResolvedValueOnce({ baseUrlRaw: "https://acme.atlassian.net" })
+      .mockResolvedValueOnce({ deployment: "cloud" })
+      .mockResolvedValueOnce({ email: "me@acme.com" })
+      .mockResolvedValueOnce({ token: "bad" });
+    mockVerifyAuth.mockRejectedValue(
+      jiraHttpError({
+        status: 401,
+        url: "https://acme.atlassian.net/rest/api/3/myself",
+        context: "verifyAuth",
+      })
+    );
+
+    await jiraLoginCommand({ ...BASE_ARGS });
+    const hints = mockLoggerInfo.mock.calls.map((c) => c[0] as string);
+
+    expect(hints).toContainEqual(expect.stringContaining("you just entered"));
+    expect(hints).not.toContainEqual(expect.stringContaining("syncrona jira-login"));
+    expect(hints).not.toContainEqual(expect.stringContaining("JIRA_EMAIL"));
   });
 });
 

@@ -338,6 +338,566 @@ user-facing claims (README, COMPARISON.md, index.html) are machine-gated by
 claims-drift; PRODUCT_STATE.md's stale "22 commands" was corrected to 23 in place
 rather than adding a fragile gate over a dated snapshot.
 
+### Fifth and sixth adversarial passes (2026-07-17 … 2026-07-21) — REV-82 … REV-129
+Those two waves are recorded in `WORKLOG.md` and `CHANGELOG.md` rather than here;
+their tags survive in the code and in the regression tests that pin them.
+
+### Seventh adversarial pass (2026-07-25) — full-repo sweep, 59 findings, all fixed
+A seventh multi-agent adversarial audit swept all 14 packages plus `scripts/`, the
+CI workflow and the user-facing docs. Triage: 108 raw findings → 103 unique → 18
+low-severity set aside → 85 sent to verification → **59 confirmed** (20 high, 39
+medium), 26 refuted. Every finding was judged by a three-lens panel (`reproduce` /
+`already-handled` / `consequence`), each lens instructed to default to *refuted*
+under uncertainty, and survived only on a 2-of-3 majority — so "refuted" here means
+*not proven*, not *proven safe* (the six refuted **high** findings are carried in
+ROADMAP.md for a second look). The 59 confirmed findings were closed under 37 REV
+tags: some tags cover several sites of one defect class, and three tags (REV-140,
+REV-141, REV-191) were reused for unrelated defects and are split into lettered
+entries below, plus REV-193, which the regression tests for one of the fixes turned
+up. Every fix ships a regression test proven to fail on the old code.
+- [x] **REV-130. an explicit `--profile` fell back to ambient Jira env credentials** —
+      both `resolveJiraConfig` and its sync twin computed
+      `configFromStored(await loadJiraCredentials(profile)) ?? configFromEnv(env)`.
+      `loadJiraCredentials` returns `null` for three indistinguishable situations (no
+      such profile, deleted profile, undecryptable record), so `syncrona jira --profile
+      prod` — or a typo — authenticated against whatever tenant `JIRA_BASE_URL`/`_EMAIL`/
+      `_TOKEN` happened to point at and reported success. It also made the MCP runtime's
+      `undecryptable` health branch unreachable. Now an explicit profile returns
+      `configFromStored(...)` directly so `null` propagates and the real cause is
+      reported; the ambient-env fallback survives only on the default (no-profile) path.
+- [x] **REV-131. an ADF `expand` block dropped its title** — `expand`/`nestedExpand`
+      keep their heading in `attrs.title` and had no case in `renderBlock`, so they fell
+      through to the generic block path that renders only children. Every rendered issue
+      silently lost the label above the prose ("Acceptance criteria", "Rollback plan").
+      New `renderExpand` emits `title\nbody`.
+- [x] **REV-132. the boundary self-test counted non-`error` rules as enforced** —
+      `findUnfiredRules` treated any entry in `summary.violations` as proof a rule fires,
+      but dependency-cruiser exits on `summary.error`: a boundary rule demoted to `warn`
+      produced violations, exited 0, and looked fully enforced while enforcing nothing.
+      The fixture was also cruised with a hand-written option object instead of the real
+      `.dependency-cruiser.cjs`. Now `loadCruiseOptions()` reads the real config, the
+      fired-rule filter is `severity === 'error'`, and `findNonErrorRules` surfaces every
+      rule that cannot fail the build.
+- [x] **REV-133. the CI `check` job never ran `verify:pack`** — the workflow
+      hand-replicates the root `check` chain step by step for per-step annotations, and
+      that duplication drifted: `verify:pack`, the only gate that inspects tarball
+      *contents* (secret files, stray sources, missing `bin`/`dist`, undeclared runtime
+      deps), was never added. A `files:`/`bin:` regression could reach the release branch
+      with CI green. The step was added, and a test now re-derives the chain from the root
+      `package.json` and asserts every link is executed by the workflow.
+- [x] **REV-134. the pack bin smoke symlinked the whole hoisted `node_modules`** — it
+      linked every entry of the workspace and repo-root `node_modules` into the staged
+      tarball, so an import of a merely hoisted package (a devDependency, or a transitive
+      dep of an unrelated package) resolved in the smoke and then crashed with
+      `MODULE_NOT_FOUND` for the first real user — the exact failure the gate exists to
+      catch. Only the transitive closure of the **declared** runtime dependencies is now
+      staged.
+- [x] **REV-135. SECURITY.md claimed every mutating tool requires
+      `confirmDestructive=true`** — `sync_set_scope`, `sync_set_update_set` and
+      `sync_prepare_session` are in `MUTATING_TOOLS`, change the integration user's
+      session on the instance, and have no confirmation flag at all. A reader hardening an
+      MCP deployment was told a control existed that does not. The document now names
+      which tools are gated and which are not; a test re-derives the list from
+      `MCP_TOOLS`/`isMutatingTool` so it cannot drift again.
+- [x] **REV-136. SECURITY.md promised redaction of the diagnostic log** — it claimed
+      "best-effort redaction of known credential fields", but the file transport applies
+      uncolorize + timestamp + printf and nothing else: there is no redactor. Corrected to
+      state plainly that no redactor runs over that file, and pinned by a test.
+- [x] **REV-137. README documented a `pull` command and a `flat` conversion that do not
+      exist** — `pull` was never a command, and switching `flat` does not re-lay an
+      existing workspace on the next `refresh` (nothing converts an existing tree). Both
+      claims corrected and re-derived from the code by the same test file.
+- [x] **REV-138. `.changeset/config.json` left the flagship package out of the release
+      family** — the fixed group was pinned with the single pattern `@syncrona/*`, which
+      does not match the CLI: it publishes **unscoped** as `syncrona`. Changesets expands
+      patterns with micromatch and only warns about a pattern matching *nothing*, so the
+      gap was silent: `changeset version` would have moved every scoped package in
+      lockstep and left `syncrona` behind, contradicting docs/VERSIONING.md and shipping a
+      CLI whose pinned `@syncrona/*` ranges match nothing published.
+- [x] **REV-139. the depcruise fixture had no `node_modules`, so resolved-path rules
+      could never fire** — sibling of REV-132 in the same script. The synthetic fixture
+      omitted `node_modules`, so every `@syncrona/*` import stayed an unresolved specifier
+      and any rule keyed on a dependency's *resolved* path could not match — the self-test
+      could not tell "this rule is dead" from "this fixture cannot reach it".
+      `writeViolatingFixtures` now materialises real package names, `dist` entry points, a
+      tsconfig and workspace symlinks, so the fixture resolves the way the workspace does.
+- [x] **REV-140a. plugins were imported by directory, which Node ESM refuses** — plugins
+      were imported by bare package name, and Node's ESM loader cannot import a directory
+      (`ERR_UNSUPPORTED_DIR_IMPORT`). The generic handler surfaced that as the "plugin not
+      installed" hint, so a correctly installed plugin reported itself missing and was
+      silently skipped; a second bug unwrapped the namespace as `loaded?.default ?? loaded`
+      unconditionally, picking the wrong object for a plugin exporting `run` at top level.
+      `resolvePluginSpecifier` now resolves the package to its entry **file** through
+      `createRequire(<rootDir>/package.json)` + `pathToFileURL`, and `runPlugins` prefers
+      the namespace when `typeof loaded?.run === "function"`.
+- [x] **REV-140b. `repair --apply --prune` deleted live files whose on-disk name is
+      encoded differently** — prune compared the manifest key to the filename byte-for-byte.
+      macOS stores names in NFD while the manifest key is NFC, and Windows strips trailing
+      dots and spaces at creation, so a tracked, live file looked like an orphan and was
+      **deleted**. Unlink failures were swallowed (`.catch(() => undefined)`), so a
+      partially failed prune still exited 0, and nothing stopped prune when the source path
+      resolved to the repository root. Names are now canonicalised
+      (`normalize("NFC").replace(/[.\s]+$/u, "")`), any file claimed under *any* encoding is
+      kept, prune refuses when source path === repo root, and failed unlinks set exit 1.
+- [x] **REV-140c. a table whose fields were withheld was checkpointed as a success** —
+      the completeness guard only detected a table that returned *nothing*. A column-level
+      read ACL still returns the rows, just without the restricted field; the pipeline
+      wrote the resume checkpoint and moved on, so the missing field looked like an
+      intentionally empty value and a later resume never re-tried the table. New
+      `collectUnfetchedFields(requested, fetched)` diffs asked-for against returned fields
+      and pushes a field-level gap to `failedTables` without checkpointing.
+- [x] **REV-140d. a read-only `git` verb's own options were never inspected** — the
+      confirmation gate allowlists read-only `git` subcommands and **returned** as soon as
+      it recognised one, so every token after the subcommand went unexamined. Several
+      read-only verbs accept options that name a program to run or a file to overwrite, so
+      an allowlisted verb was a general execution primitive — verified against real git
+      2.50.1: `git grep -nOtouch\ /tmp/PWN hello` executes `touch` with no confirmation,
+      and `git help -w`/`-m`/`-i` hand the topic to an external viewer. The walk now
+      continues past the verb and checks each token with `isSafeGitSubcommandOption` against
+      a default-deny allowlist; anything unrecognised requires confirmation.
+- [x] **REV-140e. (test soundness) the sandbox mock hid the arguments it asserted** — the
+      `runCommand` mock bound only `(command, cmdArgs, timeoutMs)`, so the scrubbed base env
+      the sandbox test exists to verify was never captured and the assertion could not
+      observe the value it claimed to check. The mock now binds all six parameters and the
+      env is asserted at the call site. Extends the pre-existing SEC-1/REV-116 work rather
+      than covering a new defect.
+- [x] **REV-141a. the core coverage floors ignored every file in a `src/` subdirectory** —
+      the per-file threshold groups were the non-recursive globs `'./src/*.ts'` and
+      `'./src/!(index).ts'`. Jest puts a file matching no per-file group into the **global**
+      bucket, where it is averaged away, so every source file under a `src/` subdirectory
+      (handlers, helpers, plugins) had no per-file floor and could drop to near-zero without
+      failing the ratchet. Both globs are now recursive.
+- [x] **REV-141b. an allowlisted binary *name* at a caller-chosen *path* bypassed the
+      gate** — the safe-command allowlist matched `normalizeBinaryName(command)`, i.e. the
+      basename only, so `./git status`, `/tmp/evil/git status` or `..\git status` inherited
+      the allowlist entry for `git` and ran without destructive confirmation — although the
+      program executed is whatever the caller planted there. `requiresConfirmation` now
+      requires confirmation for any command containing `/` or `\` before the allowlist is
+      consulted.
+- [x] **REV-142. wholesale erasure of the audit log read as healthy or merely "missing"** —
+      the tamper-evident chain was anchored only in the file itself, leaving three erasure
+      paths: `seq` was derived from the file alone (delete the log and the chain restarts at
+      1); `validateAuditChain` returned early when the log was `!started`, **before** reading
+      the out-of-band high-water marker, so a log replaced with unchained "legacy"-shaped
+      JSON validated clean; and the missing-file branch reported `status: "ok"` without ever
+      consulting the marker. Now the marker is read first, `seq` is
+      `max(prev.seq, hw.seq) + 1`, a missing log below the high-water is `tampered`, and a
+      chain starting below the marker reports "chain erased below high-water seq" — while
+      rotation and quarantine stay legitimate fresh starts.
+- [x] **REV-143. the audit high-water marker lived in world-writable `/tmp`** — the
+      out-of-band marker REV-142 depends on was written under `os.tmpdir()`, so on Linux any
+      local user could pre-plant or rewrite it and neutralise the whole scheme; and
+      `writeFileSync` **follows symlinks**, so a planted link redirected the write to an
+      arbitrary file owned by the running user, with an empty error handler hiding the
+      failure. The marker now lives in `SYNCRONA_AUDIT_STATE_DIR` / `$XDG_STATE_HOME` /
+      `~/.syncrona/audit-integrity` created `mode: 0o700`, non-regular targets are refused,
+      and a failed write warns.
+- [x] **REV-144. the integrity check itself followed a symlinked audit path** — the write
+      path already refused a symlinked audit directory or file, but
+      `checkAuditLogIntegrity` — which reads, rewrites and renames the audit file — had no
+      such guard, so a planted symlink turned a routine check into an arbitrary-file
+      rewrite/rename with the server's privileges. It now returns
+      `status: "error"`, `reason: "audit path is a symlink"` without touching the target.
+- [x] **REV-145. the secret scanner failed *open* above its 8 KB budget** —
+      `looksLikeSecretValue` returned `false` ("not a secret") for any value over
+      `SECRET_SCAN_BUDGET`, and that check gates redaction, so any credential embedded in a
+      value larger than 8 KB (a PEM bundle, a long request body, a base64 blob) was written
+      to the audit log in the clear: the cheap way to defeat redaction was to make the value
+      big. The budget now fails **closed** — an unscannable value is redacted.
+- [x] **REV-146. concurrent audit writers could emit the same `seq`** — appending to the
+      chain is a read-modify-write (read tail → derive `seq`/`prevHash` → append → update
+      high-water) and nothing serialised it, so two writers could both emit the same `seq`
+      with the same `prevHash`. That state is unrecoverable: the log then permanently
+      validates as `tampered` ("sequence gap"), destroying the forensic value of every later
+      record; the rotation branch raced the same way. An `O_EXCL` lockfile
+      (`openSync(lockPath, "wx")`, which also never follows a symlink) now serialises the
+      critical section across processes, with a 10 s stale reclaim. *Disclosed residual:*
+      after `AUDIT_LOCK_MAX_WAIT_MS = 500` the append deliberately proceeds **unlocked** so
+      that losing the lock never loses a record — under sustained contention beyond 500 ms
+      the original race is still reachable.
+- [x] **REV-147. ordinary prose was redacted as an inline `Authorization` header** — the
+      detector was "the scheme keyword plus anything after it", so a sentence like *"Basic
+      authentication failed for user jdoe"* matched and the **whole** entry text was
+      replaced by a placeholder — the audit trail lost the diagnostic information an
+      operator reads it for, on the most common class of message. Detection is now split
+      into a real header-value pattern plus a credential-shaped token after the scheme
+      keyword.
+- [x] **REV-148. a malformed guardrail node parsed as "no policy", the permissive
+      default** — every nested guardrail node went through `asRecord()`, which coerces a
+      string, number or array to `{}`. `policy: "strict"`, `policy.tools: [...]` or
+      `policy.environments: 'prod'` therefore parsed as **no policy configured**, with the
+      fail-closed `invalid` marker left unset: `evaluateToolPolicy()` allowed every tool
+      including `sync_push`, and `getEffectiveAllowFullNodeAccess()` fell back to the
+      top-level flag. The sibling checks already failed closed, so this was an inconsistency
+      as well as a hole. `isMalformedConfigNode` now marks `policy`, `policy.tools` and
+      `policy.environments` invalid with a specific reason; `undefined`/`null` keep their
+      "absent" meaning.
+- [x] **REV-149. `run_workspace_command` and `run_node_code` ignored `dryRun`** — both
+      accepted the flag and ignored it entirely. Because the guardrail layer *does* honour
+      it, `dryRun: true` was strictly worse than omitting it: the tool ran for real **and**
+      the preflight/policy path treated the call as a simulation, disabling a safety gate on
+      a live execution. Both handlers now return `makeDryRunAuditResponse(...)` before doing
+      any work — `run_node_code` after the `allowFullNodeAccess` gate, so a dry run cannot
+      probe whether full node access is enabled.
+- [x] **REV-150. `sync_unified_change_workflow` applied for real under `dryRun`** — the
+      workflow module was the one mutating module never handed `ctx.dryRun`, and `index.ts`
+      **skips the preflight gate** for dry runs, so `dryRun: true` performed the real apply
+      with a safety gate disabled — for a remote apply, dispatching the background script.
+      `dryRun`/`makeDryRunAuditResponse` were added to `WorkflowContext` and plumbed through
+      `TOOL_HANDLER_MODULES` and `executeMcpToolIntegration`, and the flag is declared in the
+      zod and JSON schemas like every other mutating tool.
+- [x] **REV-151. the audit record trusted the *requested* dry run, not the effective one** —
+      both audit writers and the semantic-index invalidation read `args.dryRun === true`, so
+      for a tool that ignores the flag (the REV-149/REV-150 class) the run was real while the
+      record claimed a simulation, and the index was left un-invalidated after a workspace
+      change. `DRY_RUN_AWARE_TOOLS` now enumerates the 14 tools whose handler actually
+      branches on `dryRun`, and both paths use `isEffectiveDryRun(toolName, args)`.
+- [x] **REV-152. `search_scripts` reported failed table queries as a clean zero-match
+      result** — the handler collected per-table `errors` but always returned success. A
+      failed table query searched **nothing**, so "0 matches" is *unknown*, not *negative*,
+      yet the response was indistinguishable from a genuinely empty search — a caller could
+      conclude "this pattern exists nowhere" from a run where every query failed on ACLs.
+      The payload now carries `searchComplete` and the response is flagged as an error when
+      it is false, even if matches were found.
+- [x] **REV-153. the OAuth token poster pinned one undici dispatcher and ignored TLS
+      material in its cache key** — `getDispatcher(config)` was called once at token-manager
+      creation and the Agent was captured by the poster closure forever, so an in-place
+      client-certificate rotation was never picked up and, once the LRU evicted and
+      **closed** that Agent, the poster kept using a closed one. Separately,
+      `tokenManagerKey` carried no TLS material, so two configs differing only in
+      `tlsCustom`/`caBundlePath`/`clientCertPath`/`clientKeyPath`/`rejectUnauthorized` shared
+      one token manager — one client certificate and one token. The dispatcher is now
+      resolved per POST and the key includes all five TLS fields.
+- [x] **REV-154. an invalidation raised while the index was building was swallowed** — the
+      async build cleared the dirty flag when it finished, so a workspace change landing
+      *during* the walk set the flag and the completing build cleared it, publishing an index
+      that never saw the change and marking it clean — served indefinitely, because nothing
+      would set the flag again. `builtAt` also recorded when the walk finished, making the
+      index look newer than the tree state it captured. `INVALIDATION_EPOCH` is now bumped by
+      every invalidation and the flag is cleared only when the build's epoch still matches;
+      `builtAt` records the walk start.
+- [x] **REV-155. deleting source files never marked the semantic index stale** — staleness
+      was decided by the newest mtime in the source tree, and deletion raises no surviving
+      file's mtime, so removing sources out of band left the index reported fresh — in the
+      extreme, wiping every source pinned the pre-deletion index and the tools kept answering
+      from files that no longer exist. The walk now also counts files and `isSampleStale`
+      compares both signals.
+- [x] **REV-156. the async staleness poll ran the synchronous filesystem walk** —
+      `isSemanticIndexStaleAsync`, reached on the **cache-hit** path (the common case),
+      called the synchronous `sampleSourceTree`, so every cached tool call performed a full
+      synchronous workspace walk on the event loop and a burst of calls repeated it once per
+      call. An `fs/promises` twin now serves the async path and the poll result is memoized
+      for 500 ms.
+- [x] **REV-157. a stored ServiceNow password was mangled by env-value cleaning** —
+      `cleanEnvValue` trims whitespace and strips one leading/trailing quote pair, which is
+      right for a value scraped from `.env` and wrong for a secret handed over by the
+      credential store. Store-origin passwords were run through it (and the merge loop re-ran
+      it per provider), so a password with a trailing space or a quote character was silently
+      altered before being sent, and the only symptom was an unexplainable authentication
+      failure. Store-origin secrets are now used verbatim, with presence semantics preserved
+      so a whitespace-only password still counts as absent.
+- [x] **REV-158. four attacker-controlled Jira fields reached the model unfenced** — the
+      indirect-prompt-injection fence covered only `summary`, `description` and comment
+      bodies, leaving four channels of identical provenance open: `comments[].author` (a
+      display name the commenter sets), `parent.summary`, `subtasks[].summary` and
+      `links[].issue.summary` — prose from **other** issues, pulled in automatically, so an
+      attacker who cannot touch the target issue only has to link one of their own. The same
+      server exposes code-execution tools, and a partial fence is worse than none because it
+      advertises which fields are safe to trust. All four now go through
+      `wrapUntrustedData(..., "jira")`; structural fields stay untouched. *Disclosed gap:*
+      the issue-level `assignee`/`reporter` display names are still passed through verbatim,
+      documented in the code as an honest limit and a deliberate follow-up.
+- [x] **REV-160. `syncrona build` exited 0 after per-record build failures** —
+      `AppUtils.buildFiles` never throws: `pushPipeline` folds per-record failures into
+      `{ success: false }` results and `logBuildResults` only prints them, so the surrounding
+      `catch` could not fire and a build with failed records still exited 0 — a CI step like
+      `syncrona build && syncrona deploy` went on to deploy stale artifacts. Now sets exit 1
+      when any result failed, mirroring `deployCommand`; `--dry-run` returns before the check.
+- [x] **REV-161. `init` configured the MCP server after a cancelled or failed wizard** —
+      `startWizard()` returned identically whether it completed, failed or was cancelled with
+      Ctrl-C, and `initCommand` ignored the outcome, so `syncrona init` wrote an MCP
+      configuration pointing at a project with no config, no manifest and no credentials.
+      `startWizard` is now `Promise<boolean>` (and sets exit 130 on a prompt abort) and
+      `initCommand` skips auto-configuration unless it returns true.
+- [x] **REV-170. data-path requests had no timeout and hung forever** — the axios client
+      used for every ServiceNow data request was created without a `timeout`, and axios waits
+      indefinitely by default, so an instance behind a blackholing firewall, a dropped VPN or
+      an accepted-but-unanswered connection left `download`/`refresh`/`push` hanging with no
+      output and no way to tell it from slow progress. `resolveRequestTimeout()` now bounds
+      every request at 120 s, overridable with `SN_REQUEST_TIMEOUT` (junk or negative falls
+      back to the default; `0` deliberately restores unbounded behaviour).
+- [x] **REV-171. the OAuth token client had no timeout** — the same defect on a different
+      client and worse in effect: every authenticated request waits on token acquisition, so
+      one hung token endpoint stalled the entire CLI rather than a single call. `tokenHttp`
+      now uses the same resolved timeout.
+- [x] **REV-172. an incompletely configured auth method silently downgraded to Basic** —
+      every branch of `buildClientAuth` requires both a selected method *and* its credential
+      material (`api-key` + `apiKey`; the OAuth grants + `clientId`/`clientSecret`;
+      `oauth-jwt-bearer` also + `jwtKey`); with the method selected but the material
+      incomplete, all branches fell through to `return {}`, which the snClient factory reads
+      as "no OAuth, no API key" — i.e. plain **Basic** with whatever user/password is around.
+      A half-configured api-key or JWT setup therefore sent the user's password under a
+      weaker scheme, and the only symptom was a confusing 401 — or success with the wrong
+      identity. `missingAuthMaterial` now names every missing value and `buildClientAuth`
+      throws, pointing at `SN_AUTH_METHOD` / `syncrona login --auth-method`.
+- [x] **REV-190. a bare `user:pass@host` pattern matched package specs** — same
+      over-redaction class as REV-147 in the sibling pattern: the detector accepted any token
+      after the `@`, so package specifiers and record references matched and were redacted
+      **whole**, losing the identifiers an operator needs to reconstruct what a tool call did.
+      The host part must now be an FQDN, `localhost` or an IPv4 literal.
+- [x] **REV-191a. the tolerated "legacy prefix" of the audit chain was unbounded** — for
+      backward compatibility the chain walk skips unchained lines preceding the first chained
+      record, and that tolerance was unbounded and unpinned: any number of unchained records
+      could be prepended to an intact chain and would simply be skipped, and a legacy line
+      could be deleted undetected — so records could be forged into the log, or pre-chain
+      history removed, while the chain validated clean. The legacy-prefix **count** is now
+      part of the high-water marker and a change is reported as tampering.
+- [x] **REV-191b. the git option scan bailed out at the first letter of a short-flag
+      cluster** — direct follow-up to REV-140d: the new post-subcommand scan handled combined
+      short flags (`-abc`) but stopped at the first letter that is value-taking for *some*
+      verb, treating the rest of the cluster as that flag's value, so a dangerous flag hidden
+      behind such a letter was never inspected — reopening exactly the hole REV-140d closed.
+      Every letter of the cluster is now checked; verified against real git 2.50.1.
+- [x] **REV-192. a malformed guardrail *entry* still parsed as "no policy"** — REV-148
+      stopped the fail-open `asRecord()` coercion at the container level, but the entry values
+      one level deeper still went through it: `policy.tools: { sync_push: 'deny' }`,
+      `{ sync_push: ['deny'] }` or `policy.environments: { prod: 'strict' }` coerced to `{}`
+      and parsed as no policy at all — the most dangerous shape being a config that *intends*
+      to deny a tool and denies nothing. Each entry is now checked with the same
+      `isMalformedConfigNode` predicate and sets a specific reason; `null` still means
+      "absent".
+- [x] **REV-193. a partially refused table read was still committed as authoritative** —
+      found while writing the regression tests for REV-133's `onSkip` contract. The three
+      deeper skip reports (text-field fallback, `sys_metadata` lookup, per-chunk `sys_idIN`
+      fallback) all reached the builder, but the caller only acted on the skip when the
+      table came back with **zero** records. A refused `sys_idIN` chunk leaves the other
+      chunks intact, so the table returns a partial record set — which overwrote the good
+      manifest as if it were complete: the records in the refused chunk stopped mapping to
+      their local files, so `push` ignored edits to them and `repair --prune` deleted them.
+      That is the exact data loss REV-133 closed, one step later. A partial read is now
+      reported as skipped too, and the carry-forward **merges** (fresh records win) instead
+      of replacing, so only what the refused part would have dropped is restored. Covered by
+      four tests in `manifestBuilderResilience.test.ts`, each verified to fail without the
+      fix.
+
+Notes on this pass: REV-170/REV-171 (missing axios timeout on two clients),
+REV-148/REV-192 (fail-open guardrail coercion at two nesting levels), REV-147/REV-190
+(whole-value over-redaction in two patterns) and REV-132/REV-139 (two blind spots in one
+self-test script) are each one underlying defect fixed at two sites. REV-149 → REV-150 →
+REV-151 form a single `dryRun`-integrity programme. Two tags carry a headline claim
+broader than the code and disclose the gap in the same comment block (REV-146's unlocked
+fallthrough, REV-158's unfenced `assignee`/`reporter`) — both are carried as follow-ups.
+Cosmetic: every test name in `mcp-policyRev192.test.js` is prefixed `REV-192:` although
+seven of its ten malformed-config cases belong to REV-148.
+
+### Eighth adversarial pass (2026-07-28 … 2026-07-29) — REV-194 … REV-204
+An eighth pass, run because the seventh closed two clusters (`dryRun` integrity,
+git-argument parsing) whose *neighbours* had never been re-examined under the new
+model, and because the seventh's own regression tests had not been checked for
+whether they can actually fail. Same three-lens verification panel as the seventh
+(`reproduce` / `already-handled` / `consequence`, each lens told to default to
+*refuted* under uncertainty, survival on a 2-of-3 majority), so "refuted" again
+means *not proven*, not *proven safe*. Every fix below ships a regression test that
+was **proven to fail on the pre-fix code** — where the proof needed the fix removed,
+the file was restored afterwards and checked byte-identical.
+- [x] **REV-194. git's main-option region ran on allow-anything-not-known-dangerous** —
+      the region before the subcommand was the last one still on the model REV-124 and
+      REV-140 had already replaced everywhere else. REV-117's `GIT_VALUE_OPTIONS` merely
+      *skipped* a redirect flag's value so the real subcommand could be found, then let
+      the invocation through when that subcommand was read-only. The redirect **is** the
+      vector, and read-only verbs are exactly where it lands:
+      `git --exec-path=/tmp/evil ls-remote https://host/r` makes git resolve its helper
+      binaries from the caller's directory and executes `/tmp/evil/git-remote-https`,
+      while `ls-remote` kept the invocation off the confirmation path entirely. `-C`,
+      `--git-dir`, `--work-tree`, `--namespace` and `--super-prefix` likewise point git
+      at a repository the caller chose. Replaced with a `GIT_SAFE_MAIN_OPTIONS`
+      allowlist of flags that provably name no program, no repository and no file —
+      everything else confirms. The attached and detached spellings collapse into one
+      rule (`--exec-path=/x` and `--exec-path /x` are both simply "not on the
+      allowlist"), so no option needs its value skipped any more: the walk returns
+      first. Verified against real git 2.50.1. Three previously-allowed cases moved to
+      MUST_CONFIRM in the policy fixtures, including `git -C /repo status`.
+- [x] **REV-195. four tools honoured `dryRun` and the runtime did not believe them** —
+      one defect class at three sites. (a) `sync_generate_scope_knowledge`,
+      `sync_generate_scope_docs`, `sync_scope_knowledge_auto_update` and
+      `sync_generate_table_dependency_report` declare `dryRun` in their public input
+      schema *and* branch on it (`scopeKnowledgeHandlers.ts:252,:407,:458,:507`), but
+      were never added to `DRY_RUN_AWARE_TOOLS` — so `isEffectiveDryRun` said false and
+      `auditToolCall` stamped `dryRun: false` on a run that wrote nothing. A forensic
+      reader saw a real write where a simulation had happened. (b) `sync_set_scope`'s
+      validator never typed `dryRun`, so `dryRun: "true"` (the string) passed validation
+      and then failed the handler's `=== true` test: a caller asking for a simulation
+      silently got the real scope switch. (c) `sync_set_scope`, `sync_set_update_set`
+      and `sync_prepare_session` described `dryRun` in their **output** schema ("when
+      dryRun is requested, the payload is the dry-run plan") but never declared it as an
+      **input**, so a client reading the contract could not discover the only way to
+      obtain that payload. `dryRunAwareTools.contract.test.js` now derives the expected
+      membership from the tool schemas in **both** directions — declared-but-unregistered
+      and registered-but-undeclared — so the hand-maintained list cannot drift again.
+- [x] **REV-196. a tool input inverted its meaning without a version bump** —
+      `sync_unified_change_workflow`'s `dryRun` property was always declared, but REV-150
+      changed what it *means*: the flag never reached the handler, so
+      `{apply: true, dryRun: true}` used to perform the real apply, with the preflight
+      gate skipped precisely because `index.ts` saw a dry run. `metadata.version` exists
+      so clients can cache tool definitions, which means a client would never learn that
+      the semantics of an input it already knew about had inverted. Bumped to `1.2.0` and
+      the description now states the precedence outright ("takes precedence over
+      `apply`: a dry run never mutates the instance"). Recorded because the first draft
+      of this entry claimed the *property* was new — `git log -S` disproved that, and the
+      rationale was rewritten before the bump was applied.
+- [x] **REV-197. two `dryRun` enforcement points trusted the request instead of the
+      tool** — (a) `index.ts` skipped the preflight gate whenever the caller merely
+      *asked* for a dry run. That is safe only while `MUTATING_TOOLS` stays a subset of
+      `DRY_RUN_AWARE_TOOLS`, so the first mutating tool added without a dry-run-aware
+      handler would silently lose its preflight — the exact mechanism by which REV-150
+      turned `sync_unified_change_workflow`'s dry run into an ungated apply. Now keyed on
+      `isEffectiveDryRun`, i.e. a dry run the tool actually honours. (b) `policyConfig`'s
+      `requireDryRun` guardrail — an operator lock meaning "this tool may only be
+      PLANNED here" — checked the caller's requested flag, so on a tool whose handler
+      ignores `dryRun` the lock inverted into its opposite: `dryRun: true` became the
+      ONLY accepted shape and it still performed the real mutation, with the audit record
+      and the preflight skip both agreeing it was a simulation. An unenforceable lock now
+      fails closed: a `requireDryRun` entry naming a tool that does not implement
+      `dryRun` is refused outright rather than silently passing.
+- [x] **REV-198. `sn_search_scripts` dropped unrecognized table names in silence** —
+      `tables` was a free-form string array (no enum) and this tool has no input
+      validator, so `tables: ["sys_ui_action"]` — a real script-bearing table that is
+      simply not one of the six it covers — searched **nothing** and still returned
+      `searchComplete: true, matchCount: 0`. That is the same false clean-search verdict
+      REV-152 removed for *failed* queries, arrived at from the other direction, and it
+      is the answer that gets acted on ("this identifier is unused, safe to delete").
+      Unknown names are now reported in `unknownTables`, `searchComplete` requires
+      `errors.length === 0 && unknownTables.length === 0 && tables.length > 0`, and the
+      schema enumerates the searchable set so a client can avoid the mistake in the first
+      place (spelled out as literals, not imported — `toolSchemas.ts` is deliberately
+      dependency-free because the contract gate loads it for its literals alone).
+      Metadata `1.1.0`.
+- [x] **REV-202. an ADF code block could break out of its own fence** — `renderCodeBlock`
+      interpolated **both** the block's content and `attrs.language` raw into a fixed
+      three-backtick fence. Both are authored by whoever wrote the Jira issue or a comment
+      on it, so content carrying its own ``` line closed the fence early and everything
+      after it escaped into the surrounding document; a newline in the info string ended
+      the opening-fence line and did the same thing one line higher. This output is read
+      by an AI agent (`jira_get_issue`, `syncrona jira`) on a server that also exposes
+      code-execution tools, so an escape converts untrusted data into apparent structure —
+      an indirect-prompt-injection primitive, not a formatting nit. The fence is now sized
+      to `max(3, longestBacktickRun(code) + 1)` per CommonMark, counting **every** run
+      rather than only whole-line ones, and the info string must match a conservative
+      allow-list (`/^[A-Za-z0-9+#._-]{1,32}$/`, which keeps `c++`, `c#`, `objective-c`,
+      `asp.net`, `shell_session`) or is dropped — a mangled language tag is worthless
+      while a dropped one costs nothing but highlighting. Scope was narrowed by auditing
+      every sibling renderer rather than reflexively escaping: the fence is the only
+      construct that can be broken out of, because this is a plain-text renderer — inline
+      marks are dropped, headings and blockquotes emit text with no `#`/`>` prefix, links
+      emit a bare URL, and table cells joined with ` | ` have no wrapper and no separator
+      row, so the output was never a Markdown table and escaping pipes would mangle prose
+      for no security gain. That conclusion is recorded in the code so a future reader
+      does not redo the audit. `packages/jira/test/adfFence.test.ts` — 11 tests written
+      against the *containment property* rather than a fixed fence length, so a future
+      change of fencing strategy stays covered; reverting the fix gives 7 failures.
+- [x] **REV-203. the remediation text named a credential source the caller had not
+      used** — REV-130 made an explicit `--profile` the **exclusive** source
+      (`configFromEnv` is never consulted for it), which turned the generic "set
+      JIRA_BASE_URL and JIRA_TOKEN" advice into instructions that provably cannot fix the
+      call: the user sets the variables, retries, gets the identical error, and has no way
+      to discover that the profile path ignores them by design. Three surfaces, three
+      shapes of the same defect: `syncrona jira --profile prod` with nothing stored; the
+      401 hint, which fires *after* a config was resolved and so must name whichever
+      source produced it; and `jira-login`'s own failure hint, which told the user to
+      re-run `jira-login` and check environment variables for credentials they had typed
+      at the prompt seconds earlier. The messages moved into `packages/jira/src/messages.ts`
+      as functions of the credential source (`noJiraConfigMessage(explicitProfile?)`,
+      `jiraAuthRecheckHint(explicitProfile?)`) and the MCP handler was fixed alongside the
+      CLI, where it matters more: an agent reads the text and acts on it literally. The
+      core suite's module mock now imports the **real** helpers — a hand-rolled stub would
+      return profile-correct text no matter what the SUT passed in, which is vacuous for a
+      defect whose essence is a message that ignored the path taken.
+- [x] **REV-204. the guard that pins the CI chain matched comment prose** — REV-133 added
+      `ciCheckChain.test.js` to re-derive the root `check` chain and assert every link is
+      executed by the workflow, but `runsDirectly()` regexed the whole file **as text**.
+      `ci.yml` documents its hand-replicated chain in prose, so `npm run build` and
+      `npm run check` appear in comments a few lines above the steps that run them —
+      commenting out `run: npm run verify:pack` left the suite fully green, and
+      `runsDirectly('check')` returned true for a script that is not a CI step at all.
+      The guard stopped guarding at exactly the moment it was needed. It now collects the
+      value of every `run:` key — inline scalars plus `run: |` block bodies, skipping any
+      line whose first non-blank character is `#` (a YAML comment at step level, a shell
+      comment inside a block: not executed either way) — and matches only against that.
+      Honestly documented as a line scanner, not a YAML lexer, with a tripwire test that
+      fails loudly if `ci.yml` is ever rewritten into a shape the scanner cannot read,
+      rather than letting every assertion pass vacuously. Two fixture tests pin the
+      commented-out-step and block-scalar cases directly; the real workflow was
+      temporarily broken to prove the guard fails (2 failures), then restored and verified
+      byte-identical by SHA-256.
+- [x] **REV-199. REFUTED — the typescript-plugin's documented TS6 behaviour is the
+      behaviour it has.** Raised by the docs-drift lens as "the CHANGELOG describes an
+      ES2021 default, a `Bundler` resolution and a suppressed `"use strict"` prologue
+      that the code does not implement". Reading `packages/typescript-plugin/src/index.ts`
+      in full disproved every clause: the ES2021 default is at `:92-94`, the
+      `Bundler`-only-where-TypeScript-would-pick-`Classic` narrowing at `:113-122`, and
+      the prologue suppression — scoped to a configuration that set neither `strict` nor
+      `alwaysStrict` — at `:97-99` and `:146-148`. Commit `9b41d38` ("chore(deps): migrate
+      breaking majors and modernize the toolchain") is the closer, and the behaviour was
+      already pinned by two tests (`test/index.test.js:36-39` asserts the exact emit with
+      no prologue; `:42-54` asserts `**` survives by default and downlevels only under an
+      explicit ES2015). The finding was stale — inherited from a pass that predated the
+      migration. No code change. What it *did* surface is REV-200, immediately below.
+- [x] **REV-200. the typescript-plugin README documented its configuration precedence
+      backwards** — the "Order of Configurations" section listed `sync.config.js` options
+      first and then said `tsconfig.json` "override[s] any overlapping values". The merge
+      runs the other way round (`src/index.ts:68-83`): the parsed tsconfig is the base and
+      plugin `compilerOptions` are `Object.assign`-ed on top, so the plugin option wins.
+      A user following the README would set `target` in plugin options *expecting the
+      project tsconfig to win*, get the opposite emit, and have nothing tell them. Neither
+      the behaviour nor the prose was pinned by anything, so the two could disagree
+      indefinitely — no quality gate reads this file (verified before editing: only the
+      package's own test parses it, for the ```javascript example block). Confirmed
+      empirically in both directions against the built `dist/` before writing a word: a
+      tsconfig at ES2015 plus a plugin option at ES2021 keeps `2 ** 3`, while the mirror
+      image emits `Math.pow(2, 3)`. Rewrote the section as the real three-level order
+      (tsconfig → plugin options → plugin defaults) and documented each default with the
+      reason it exists. Four tests added: the two precedence directions (the mirror case
+      is what stops the first from passing merely because ES2021 is also the default), a
+      docs test that asserts the README lists the base before the override, and one
+      pinning that a *configured* `strict` still emits the prologue — without it,
+      "suppress the prologue" could regress into "never emit one" unnoticed. All four
+      proven to fail on reverted code (README reverted → 1 failure; the merge order
+      inverted → 2 failures; `strictnessIsImplied` forced true → 1 failure), with
+      `src/index.ts` and `README.md` each restored and verified byte-identical by SHA-256.
+      Suite: 23 pass / 0 fail.
+- [x] **REV-201. the one place a typo'd `SN_AUTH_METHOD` still resolved silently was the
+      code that transmits the credential** — the seventh pass made `resolveAuthMethod`
+      report an unrecognized selector as an issue, which fixed `syncrona doctor` and the
+      MCP server's startup gate. Two holes survived, both found by asking which callers
+      actually *read* the issues list. (a) `servicenowCore.ts` excused the whole list
+      under mutual TLS (`issues.length > 0 && !hasMtls`), which re-opened the exact hole
+      the selector check was added to close: `SN_AUTH_METHOD=oauth-jwt` (the real alias is
+      `jwt-bearer`) plus a client certificate plus leftover client id/secret/password
+      resolved to `oauth-password` and posted the user's password to `/oauth_token.do`,
+      with the server starting clean — while README:183-190 promises it "refuses to
+      start". A client certificate supplies transport identity, so it can legitimately
+      stand in for missing Authorization *material*; it says nothing about which grant
+      runs. The gate now fails closed on the selector regardless of mTLS
+      (`!hasMtls || resolved.unknownExplicit`) and says so, naming the method it fell back
+      to. (b) `snClient.ts` computed the issues at both resolve paths and dropped them, so
+      every CLI command that authenticates stayed silent while `doctor` complained.
+      Deliberately a **warning, not a throw**: `doctor` and `status` resolve credentials to
+      run their own checks, so hard-failing there would delete the diagnostic that explains
+      the problem. Deliberately scoped to the **selector only**: `init`, `login` and
+      `check-env` all resolve credentials before any exist, so warning on every issue would
+      print "basic requires SN_PASSWORD." during ordinary first-run setup — a missing field
+      announces itself at the first request, an unrecognized selector never does. That
+      needed the message as a first-class field rather than `issues[0]`, so
+      `ResolvedAuthMethod` gained `unknownExplicitIssue`. Deduped through a module-level
+      `Set` (eight call sites, no memoization) with an exported `resetAuthIssueWarnings()`
+      test seam. Three tests, each proven to fail on the pre-fix code: mTLS + a typo'd
+      selector must throw and must not echo a credential value (gate narrowed back to
+      `!hasMtls` → 1 failure); the typo must warn exactly once naming the rejected
+      selector (warn removed → 2 failures); and an incomplete-but-untypo'd config must
+      warn **not at all** — that last one is what pins the noise decision, and it is the
+      assertion that fires when the warn is widened to the full issues list (proven: 1
+      failure). Both source files restored byte-identical by SHA-256 after each proof.
+
 ---
 
 ## PHASE D — Distribution polish (remainder)

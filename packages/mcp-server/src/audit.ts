@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "fs";
 import { createHash, createHmac } from "crypto";
-import { tmpdir } from "os";
+import { homedir } from "os";
 import path from "path";
 import { getStoreKey } from "@syncrona/credential-store";
 import { logger } from "./logger";
@@ -149,23 +152,67 @@ function hashAuditLine(line: string): string {
 }
 
 // The high-water marker is the truncation tripwire. It is persisted OUTSIDE the audit
-// directory (in a per-user temp state dir keyed by the audit file's absolute path) so it
+// directory (in a per-user state dir keyed by the audit file's absolute path) so it
 // never appears as an entry when the audit dir is enumerated, and so rotation/prune of the
-// log cannot disturb it. It survives process restarts within a boot session; if it is
-// absent (first run, or the temp dir was cleared) tail-truncation across that gap is not
-// detectable, but reordering / interior deletion / forgery still are via the in-file
-// seq+hash chain. This is the documented reduced guarantee.
-type HighWater = { seq: number; hash?: string };
+// log cannot disturb it. It survives process restarts; if it is absent (first run, or the
+// state dir was cleared) tail-truncation across that gap is not detectable, but reordering
+// / interior deletion / forgery still are via the in-file seq+hash chain. This is the
+// documented reduced guarantee.
+// `prefix` (REV-191) is the number of UNCHAINED ("legacy") lines that precede the first
+// chained record. It is fixed at the moment the chain starts and can never legitimately
+// change afterwards, so a later increase is proof that lines were spliced in ahead of the
+// chain. Optional so markers written by an earlier version stay readable.
+type HighWater = { seq: number; hash?: string; prefix?: number };
+
+/**
+ * SEC-5 follow-up (REV-143): the marker used to live under `os.tmpdir()`. On Linux that
+ * is the WORLD-WRITABLE /tmp, at a path any local user can compute (it is just a hash of
+ * the audit file's absolute path), so an attacker could (a) pre-plant a symlink there and
+ * have us clobber a file of their choosing with our JSON, and (b) pre-plant a bogus marker
+ * — or simply keep re-creating one with seq 0 — to disable the truncation tripwire, which
+ * is the one control that survives a whole-log deletion. Both defeats are silent because
+ * every failure was swallowed. The marker now lives in a per-user state directory
+ * (0700), matching the credential store's `~/.syncrona` convention.
+ */
+function auditStateDir(): string {
+  const override = process.env.SYNCRONA_AUDIT_STATE_DIR;
+  if (override && override.trim()) {
+    return path.resolve(override.trim());
+  }
+  const xdgState = process.env.XDG_STATE_HOME;
+  if (xdgState && xdgState.trim()) {
+    return path.join(path.resolve(xdgState.trim()), "syncrona", "audit-integrity");
+  }
+  return path.join(homedir(), ".syncrona", "audit-integrity");
+}
 
 function highWaterPath(auditFile: string): string {
   const id = createHash("sha256").update(path.resolve(auditFile)).digest("hex").slice(0, 40);
-  return path.join(tmpdir(), "syncrona-audit-integrity", `${id}.json`);
+  return path.join(auditStateDir(), `${id}.json`);
+}
+
+/** True when `target` exists and is anything other than a regular file (symlink, dir, …). */
+function isNonRegularFile(target: string): boolean {
+  try {
+    return !lstatSync(target).isFile();
+  } catch (_) {
+    return false; // absent: nothing to refuse
+  }
+}
+
+/** True when `target` itself is a symbolic link (never follows it). */
+function isSymlinkPath(target: string): boolean {
+  try {
+    return lstatSync(target).isSymbolicLink();
+  } catch (_) {
+    return false; // absent: nothing to refuse
+  }
 }
 
 function readHighWater(auditFile: string): HighWater | null {
   try {
     const p = highWaterPath(auditFile);
-    if (!existsSync(p)) {
+    if (!existsSync(p) || isNonRegularFile(p)) {
       return null;
     }
     const parsed = JSON.parse(readFileSync(p, "utf-8")) as Record<string, unknown>;
@@ -173,6 +220,7 @@ function readHighWater(auditFile: string): HighWater | null {
       return {
         seq: parsed.seq,
         hash: typeof parsed.hash === "string" ? parsed.hash : undefined,
+        prefix: typeof parsed.prefix === "number" ? parsed.prefix : undefined,
       };
     }
     return null;
@@ -184,10 +232,23 @@ function readHighWater(auditFile: string): HighWater | null {
 function writeHighWater(auditFile: string, hw: HighWater): void {
   try {
     const p = highWaterPath(auditFile);
-    mkdirSync(path.dirname(p), { recursive: true });
+    mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+    // SEC-5 follow-up (REV-143): writeFileSync FOLLOWS symlinks, so a pre-planted link at
+    // the marker path redirected our write onto the target. Refuse anything that is not a
+    // plain regular file.
+    if (isNonRegularFile(p)) {
+      throw new Error(`refusing to write audit high-water through a non-regular file: ${p}`);
+    }
     writeFileSync(p, JSON.stringify(hw), "utf-8");
-  } catch (_) {
-    // Best-effort: a missing high-water only reduces truncation detection, never blocks a write.
+  } catch (error) {
+    // SEC-5 follow-up (REV-143): the old handler was empty, so a marker that could not be
+    // written — including one refused as a planted symlink — disabled the truncation
+    // tripwire with no trace anywhere. Still non-fatal (a missing marker must never block
+    // an audit write), but no longer invisible.
+    logger.warn("audit.high_water_write_failed", {
+      auditFile,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -202,31 +263,124 @@ function resetHighWater(auditFile: string): void {
   }
 }
 
+// CONC-8 (REV-146): the chain append is a read-modify-write — read the tail (readChainTail),
+// derive seq/prevHash from it, append, then update the high-water. Nothing serialised it, so
+// two writers (two MCP server processes on the same workspace, or the health server and the
+// tool dispatcher) could interleave between the read and the append and BOTH emit the same
+// seq with the same prevHash. That is unrecoverable: the log then permanently reads as
+// `tampered` ("sequence gap"), which destroys the forensic value of every later record. The
+// rotation branch had the same race — two writers could both rename, and the second rename
+// would drop the first's freshly created file. An O_EXCL lockfile next to the audit file
+// serialises the whole critical section across processes.
+const AUDIT_LOCK_STALE_MS = 10_000;
+const AUDIT_LOCK_RETRY_MS = 2;
+const AUDIT_LOCK_MAX_WAIT_MS = 500;
+
+function sleepSyncMs(ms: number): void {
+  // writeAuditEvent is synchronous end to end, so the wait has to be too.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireAuditLock(auditFile: string): string | null {
+  const lockPath = `${auditFile}.lock`;
+  const deadline = Date.now() + AUDIT_LOCK_MAX_WAIT_MS;
+  for (;;) {
+    try {
+      // "wx" is O_CREAT|O_EXCL: it fails if anything already exists at the path, and it
+      // never follows a symlink, so the lock doubles as a plant-resistant handshake.
+      const fd = openSync(lockPath, "wx");
+      try {
+        writeSync(fd, String(process.pid));
+      } finally {
+        closeSync(fd);
+      }
+      return lockPath;
+    } catch (_) {
+      // A writer that crashed mid-section would otherwise wedge every later write, so an
+      // old lock is reclaimed rather than waited on.
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > AUDIT_LOCK_STALE_MS) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch (_) {
+        // The lock vanished between the two calls; retry immediately.
+      }
+      if (Date.now() >= deadline) {
+        // Losing the lock must never lose the record: fall through unlocked (the pre-fix
+        // behavior) rather than dropping an audit entry.
+        return null;
+      }
+      sleepSyncMs(AUDIT_LOCK_RETRY_MS);
+    }
+  }
+}
+
+function releaseAuditLock(lockPath: string | null): void {
+  if (!lockPath) {
+    return;
+  }
+  try {
+    unlinkSync(lockPath);
+  } catch (_) {
+    // best-effort
+  }
+}
+
+/** True for a line that carries the chain fields (`seq` + `prevHash`). */
+function isChainedLine(line: string): boolean {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    return (
+      !!parsed && typeof parsed.seq === "number" && typeof parsed.prevHash === "string"
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Number of leading UNCHAINED lines — the legacy prefix the chain walk tolerates. */
+function countLegacyPrefix(lines: string[]): number {
+  let count = 0;
+  for (const line of lines) {
+    if (isChainedLine(line)) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
 // Read the last CHAINED line of the active log so a new record can extend the chain.
-// Returns null when the file is absent/empty or its last line is legacy (no seq/prevHash)
+// `link` is null when the file is absent/empty or its last line is legacy (no seq/prevHash)
 // or unparseable — in which case a fresh chain is started (seq 1, genesis prevHash). This
 // reads the authoritative file rather than the volatile high-water marker so a cleared
-// marker can never cause a duplicate-seq false positive.
-function lastChainLink(auditFile: string): { seq: number; hashOfLine: string } | null {
+// marker can never cause a duplicate-seq false positive. `prefix` is reported from the same
+// read so the caller never has to walk the file twice (REV-191).
+function readChainTail(auditFile: string): {
+  link: { seq: number; hashOfLine: string } | null;
+  prefix: number;
+} {
   try {
     if (!existsSync(auditFile)) {
-      return null;
+      return { link: null, prefix: 0 };
     }
     const lines = readFileSync(auditFile, "utf-8")
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
     if (lines.length === 0) {
-      return null;
+      return { link: null, prefix: 0 };
     }
+    const prefix = countLegacyPrefix(lines);
     const last = lines[lines.length - 1];
     const parsed = JSON.parse(last) as Record<string, unknown>;
     if (parsed && typeof parsed.seq === "number" && typeof parsed.prevHash === "string") {
-      return { seq: parsed.seq, hashOfLine: hashAuditLine(last) };
+      return { link: { seq: parsed.seq, hashOfLine: hashAuditLine(last) }, prefix };
     }
-    return null;
+    return { link: null, prefix };
   } catch (_) {
-    return null;
+    return { link: null, prefix: 0 };
   }
 }
 
@@ -287,16 +441,67 @@ function isSensitiveAuditKey(key: string): boolean {
 // pattern is anchored on a vendor-assigned prefix (or a full 256-bit hex blob), which
 // keeps precision high — ordinary forensic values (URLs, table paths, prose, 32-char
 // sys_ids, 40-char git SHAs) do not match — while closing the gap.
+// SEC-8 follow-up (REV-147): the inline-Authorization pattern was the scheme keyword plus
+// 8 characters of a charset that contains every letter, so ordinary PROSE matched — "Basic
+// authentication failed for user admin" was classified as a secret and, because a match
+// redacts the WHOLE value, the entire message became "<redacted>". That silently destroys
+// the forensic detail of exactly the auth-failure records an operator needs. The keyword
+// alone is not evidence: either the value carries the header/assignment context, or the
+// token itself has to look like credential material (base64/hex carries digits or base64
+// symbols; an English word following "Basic" carries neither).
+//
+// Honest limit: a digit-free, symbol-free base64 token in bare prose is not caught by the
+// second form. The header-context form, the sensitive-key allow-list and the JWT pattern
+// cover the realistic carriers, and widening this one back out costs more (whole-value
+// redaction of benign prose) than it buys.
+const AUTH_HEADER_SECRET =
+  /\bauthorization["']?\s*[:=]\s*["']?\s*(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/i;
+const AUTH_SCHEME_TOKEN = /\b(?:bearer|basic)\s+([A-Za-z0-9._~+/=-]{12,})/i;
+
+// SEC-8 follow-up (REV-190): the same whole-value over-redaction hit the bare
+// `user:pass@host` form, which accepted ANY `[\w.-]+` as the host. Ordinary forensic values
+// shaped `name:value@thing` therefore matched — a package spec ("npm:lodash@4.17.21
+// installed") or a record reference ("incident:INC0010001@dev12345 failed") was classified
+// as a credential and the whole message was replaced with "<redacted>", losing exactly the
+// detail an operator needs. Require the host to actually look like a host: an FQDN with an
+// alphabetic TLD, `localhost`, or a dotted-quad IPv4.
+//
+// Honest limit: credentials against a single-label internal hostname (`admin:pw@snprod`)
+// are no longer caught by THIS form. The `scheme://user:pass@host` pattern below, the
+// sensitive-key allow-list and the vendor-token patterns cover the realistic carriers, and
+// widening it back out costs whole-value redaction of benign prose.
+const BARE_USERPASS_HOST =
+  /(^|\s)[\w.-]+:[^\s:@/]+@(?:(?:[\w-]+\.)+[A-Za-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})\b/i;
+
+function looksLikeInlineAuthorization(value: string): boolean {
+  if (AUTH_HEADER_SECRET.test(value)) {
+    return true;
+  }
+  const match = AUTH_SCHEME_TOKEN.exec(value);
+  return match ? /[0-9]/.test(match[1]) || /[+/=]/.test(match[1]) : false;
+}
+
+// SEC-8 follow-up (REV-145): the length guard used to `return false` for anything over the
+// budget — a plain fail-OPEN. Padding a secret past 8 KB (trivial for a model-supplied
+// argument, a pasted PEM bundle or a verbose remote error body) was all it took to get it
+// written to the audit log in cleartext. The budget exists to bound regex work, not to
+// whitelist large strings, so a value that cannot be scanned in full is now redacted
+// instead of trusted.
+const SECRET_SCAN_BUDGET = 8192;
+
 function looksLikeSecretValue(value: string): boolean {
-  if (value.length === 0 || value.length > 8192) {
+  if (value.length === 0) {
     return false;
+  }
+  if (value.length > SECRET_SCAN_BUDGET) {
+    return true;
   }
   return (
     /\/\/[^/\s:@]+:[^/\s:@]+@/.test(value) || // scheme://user:pass@host
-    /(^|\s)[\w.-]+:[^\s:@/]+@[\w.-]+/.test(value) || // user:pass@host
+    BARE_USERPASS_HOST.test(value) || // user:pass@host (REV-190)
     /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+/.test(value) || // JWT (embedded)
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || // PEM private key
-    /\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/i.test(value) || // inline Authorization
+    looksLikeInlineAuthorization(value) || // inline Authorization
     /\bAKIA[0-9A-Z]{16}\b/.test(value) || // AWS access key id
     // REV-126: vendor-prefixed API keys / tokens (Stripe, OpenAI, GitHub, Slack,
     // GitLab, Google). Each prefix is a high-signal marker, so a broad trailing
@@ -381,51 +586,77 @@ export function writeAuditEvent(
       throw new Error(`refusing to write audit through a symlinked directory: ${auditDir}`);
     }
 
-    // SEC-6 (REV-87): never follow a symlink. An attacker who pre-plants `audit.log` as a
-    // symlink (e.g. -> /dev/null) must not silently redirect the audit stream. lstat the
-    // final component and refuse if it is a link. (There is a small TOCTOU window between
-    // lstat and append; O_NOFOLLOW would close it but is not portable, so we refuse here.)
-    let stat: ReturnType<typeof lstatSync> | null = null;
+    // CONC-8 (REV-146): everything below is the critical section — the rotation decision,
+    // the chain-tail read, the append and the high-water update must be one indivisible
+    // step, or two concurrent writers duplicate a seq (permanently `tampered`) or drop one
+    // another's rotated file.
+    const lockPath = acquireAuditLock(auditFile);
     try {
-      stat = lstatSync(auditFile);
-    } catch (_) {
-      stat = null;
-    }
-    if (stat && stat.isSymbolicLink()) {
-      throw new Error(`refusing to write audit through a symlink: ${auditFile}`);
-    }
-
-    let rotated = false;
-    if (stat && stat.isFile() && stat.size >= maxBytes) {
-      const dir = path.dirname(auditFile);
-      const ext = path.extname(auditFile);
-      const base = path.basename(auditFile, ext);
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      let rotatedPath = path.join(dir, `${base}.${stamp}${ext}`);
-      let suffix = 0;
-      while (existsSync(rotatedPath)) {
-        suffix += 1;
-        rotatedPath = path.join(dir, `${base}.${stamp}.${suffix}${ext}`);
+      // SEC-6 (REV-87): never follow a symlink. An attacker who pre-plants `audit.log` as a
+      // symlink (e.g. -> /dev/null) must not silently redirect the audit stream. lstat the
+      // final component and refuse if it is a link. (There is a small TOCTOU window between
+      // lstat and append; O_NOFOLLOW would close it but is not portable, so we refuse here.)
+      let stat: ReturnType<typeof lstatSync> | null = null;
+      try {
+        stat = lstatSync(auditFile);
+      } catch (_) {
+        stat = null;
       }
-      renameSync(auditFile, rotatedPath);
-      pruneRotatedAuditFiles(dir, base, ext, maxBackups);
-      // Fresh active file: reset the high-water so a failed append below cannot leave a
-      // stale marker that would later be misread as truncation.
-      resetHighWater(auditFile);
-      rotated = true;
+      if (stat && stat.isSymbolicLink()) {
+        throw new Error(`refusing to write audit through a symlink: ${auditFile}`);
+      }
+
+      let rotated = false;
+      if (stat && stat.isFile() && stat.size >= maxBytes) {
+        const dir = path.dirname(auditFile);
+        const ext = path.extname(auditFile);
+        const base = path.basename(auditFile, ext);
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        let rotatedPath = path.join(dir, `${base}.${stamp}${ext}`);
+        let suffix = 0;
+        while (existsSync(rotatedPath)) {
+          suffix += 1;
+          rotatedPath = path.join(dir, `${base}.${stamp}.${suffix}${ext}`);
+        }
+        renameSync(auditFile, rotatedPath);
+        pruneRotatedAuditFiles(dir, base, ext, maxBackups);
+        // Fresh active file: reset the high-water so a failed append below cannot leave a
+        // stale marker that would later be misread as truncation.
+        resetHighWater(auditFile);
+        rotated = true;
+      }
+
+      // SEC-5 (REV-86): extend the tamper-evident chain. `seq` is monotonic within the
+      // active file; `prevHash` links to the previous line's keyed hash (or genesis when a
+      // new chain begins on an empty/rotated/legacy-tailed file).
+      const tail = rotated ? { link: null, prefix: 0 } : readChainTail(auditFile);
+      const prev = tail.link;
+      // SEC-5 follow-up (REV-142): the seq used to be derived from the FILE alone, so an
+      // attacker who deleted (or truncated) the log got a chain restarting at seq 1 and a
+      // high-water marker overwritten with that 1 — the erasure erased its own evidence
+      // too, and the next integrity check reported a clean log. The out-of-band marker is
+      // authoritative for "how far this chain has already got": never move backwards from
+      // it. Continuing at hw.seq + 1 over an emptied file leaves a chain that does not
+      // start at genesis, which is precisely the durable evidence the tripwire owes us.
+      // Legitimate fresh starts (rotation, quarantine) reset the marker explicitly.
+      const hw = rotated ? null : readHighWater(auditFile);
+      const seq = Math.max(prev ? prev.seq : 0, hw ? hw.seq : 0) + 1;
+      const prevHash = prev ? prev.hashOfLine : GENESIS_PREV_HASH;
+      const record = { ...entry, seq, prevHash };
+      const line = JSON.stringify(record);
+
+      appendFileSync(auditFile, `${line}\n`, "utf-8");
+      // SEC-5 follow-up (REV-191): the chain walk tolerates a legacy prefix for backward
+      // compatibility, so an attacker could PREPEND forged unchained records ("approved by
+      // admin") to an intact chain and the integrity check still reported `valid` — nothing
+      // pinned how long that prefix is allowed to be. Pin it in the marker at the moment the
+      // chain starts and never move it afterwards, so a later splice is detectable even
+      // though the forged lines carry no chain fields of their own.
+      const prefix = hw && typeof hw.prefix === "number" ? hw.prefix : tail.prefix;
+      writeHighWater(auditFile, { seq, hash: hashAuditLine(line), prefix });
+    } finally {
+      releaseAuditLock(lockPath);
     }
-
-    // SEC-5 (REV-86): extend the tamper-evident chain. `seq` is monotonic within the
-    // active file; `prevHash` links to the previous line's keyed hash (or genesis when a
-    // new chain begins on an empty/rotated/legacy-tailed file).
-    const prev = rotated ? null : lastChainLink(auditFile);
-    const seq = prev ? prev.seq + 1 : 1;
-    const prevHash = prev ? prev.hashOfLine : GENESIS_PREV_HASH;
-    const record = { ...entry, seq, prevHash };
-    const line = JSON.stringify(record);
-
-    appendFileSync(auditFile, `${line}\n`, "utf-8");
-    writeHighWater(auditFile, { seq, hash: hashAuditLine(line) });
     return { ok: true, mutating };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -506,6 +737,7 @@ function validateAuditChain(lines: string[], auditFile: string): string | null {
   let started = false;
   let expectedSeq = 0;
   let prevLineHash = GENESIS_PREV_HASH;
+  let legacyPrefix = 0;
 
   for (const line of lines) {
     let parsed: Record<string, unknown>;
@@ -520,7 +752,8 @@ function validateAuditChain(lines: string[], auditFile: string): string | null {
 
     if (!started) {
       if (!hasChain) {
-        continue; // tolerate a legacy prefix
+        legacyPrefix += 1;
+        continue; // tolerate a legacy prefix (bounded by the marker — REV-191)
       }
       started = true;
       if (parsed.prevHash !== GENESIS_PREV_HASH || parsed.seq !== 1) {
@@ -543,22 +776,39 @@ function validateAuditChain(lines: string[], auditFile: string): string | null {
     }
   }
 
-  if (!started) {
-    return null; // fully-legacy log: nothing to verify
-  }
-
   // Truncation tripwire: the high-water records the seq (and hash) of the last line written
   // in a previous session. A last chained seq BELOW the high-water means complete lines were
   // removed after the fact; an in-place edit of the last line is caught by the hash compare
   // at equal seq. More lines than the high-water is a legitimate append (the marker is
   // best-effort) and is not flagged.
   const hw = readHighWater(auditFile);
+
+  if (!started) {
+    // SEC-5 follow-up (REV-142): this used to `return null` BEFORE the marker was read, so
+    // the two cheapest attacks on the chain — empty the log, or overwrite it with
+    // legacy-shaped JSON that carries no seq/prevHash — both reported `valid`. The whole
+    // point of an OUT-OF-BAND marker is that it survives destruction of the file, so it has
+    // to be consulted exactly when the file has nothing left to say. A genuinely legacy log
+    // (pre-REV-86 install, no marker ever written) still validates.
+    if (hw && hw.seq >= 1) {
+      return "chain erased below high-water seq";
+    }
+    return null; // fully-legacy log: nothing to verify
+  }
+
   if (hw) {
     if (expectedSeq < hw.seq) {
       return "truncated below high-water seq";
     }
     if (expectedSeq === hw.seq && hw.hash && prevLineHash !== hw.hash) {
       return "last line altered in place";
+    }
+    // SEC-5 follow-up (REV-191): the tolerated legacy prefix was unbounded, so unchained
+    // lines spliced in AHEAD of the chain (which the walk skips by design) left no trace at
+    // all. The prefix is pinned when the chain starts and nothing legitimate ever changes
+    // it, so any difference is an insertion or a deletion in that region.
+    if (typeof hw.prefix === "number" && legacyPrefix !== hw.prefix) {
+      return "legacy prefix line count changed";
     }
   }
   return null;
@@ -574,7 +824,41 @@ export function checkAuditLogIntegrity(
       mkdirSync(auditDir, { recursive: true });
     }
 
+    // SEC-6 follow-up (REV-144): the WRITE path refuses a symlinked audit dir/file, but this
+    // path had no guard at all — and it does far more than read: the torn-tail branch
+    // `writeFileSync`s the audit file and the quarantine branch `renameSync`s it. Both
+    // follow symlinks, so a pre-planted `audit.log -> /victim/file` had this check
+    // truncate-and-rewrite (or rename away) an arbitrary file the process can reach, at
+    // server startup, before any tool ran. Refuse instead of operating on the link.
+    if (isSymlinkPath(auditDir) || isSymlinkPath(auditFile)) {
+      logger.warn("audit.integrity_symlink_refused", { auditDir, auditFile });
+      return {
+        ok: false,
+        status: "error",
+        totalLines: 0,
+        malformedLines: 0,
+        quarantinedFile: "",
+        reason: "audit path is a symlink",
+      };
+    }
+
     if (!existsSync(auditFile)) {
+      // SEC-5 follow-up (REV-142): "missing" was reported as ok WITHOUT ever consulting the
+      // high-water marker. Deleting the entire log is the most obvious tamper there is, and
+      // it was the single case this check waved through — while the next writeAuditEvent
+      // quietly restarted the chain at seq 1 and overwrote the marker, destroying the last
+      // evidence. index.ts surfaces this status at startup, so it has to be honest.
+      const hw = readHighWater(auditFile);
+      if (hw && hw.seq >= 1) {
+        return {
+          ok: false,
+          status: "tampered",
+          totalLines: 0,
+          malformedLines: 0,
+          quarantinedFile: "",
+          reason: "audit log deleted below high-water seq",
+        };
+      }
       return {
         ok: true,
         status: "missing",
@@ -639,6 +923,12 @@ export function checkAuditLogIntegrity(
         const quarantinedFile = toCorruptAuditPath(auditFile);
         renameSync(auditFile, quarantinedFile);
         pruneCorruptAuditFiles(dir, base, ext, maxCorrupt);
+        // SEC-5 follow-up (REV-142): quarantine is a LEGITIMATE fresh start, exactly like
+        // rotation — the old chain moved to the `.corrupt.` file. Now that writeAuditEvent
+        // refuses to move backwards from the marker, the marker has to be cleared here too,
+        // otherwise the replacement log would open at hw.seq + 1 and read as tampered
+        // forever.
+        resetHighWater(auditFile);
         writeAuditEvent(auditDir, auditFile, {
           timestamp: new Date().toISOString(),
           event: "audit.integrity.recovered",

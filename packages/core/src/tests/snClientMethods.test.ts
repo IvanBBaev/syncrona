@@ -767,6 +767,66 @@ describe("resolveCredentials multi-method auth resolution", () => {
       jwtAud: "https://aud/",
     });
   });
+
+  // REV-201: `resolveAuthMethod`'s issues list was computed here and dropped — only
+  // `.method` was read. `doctor` reports those issues and the MCP server refuses to
+  // start on them, so the commands that actually transmit the credential were the
+  // one place a typo'd SN_AUTH_METHOD stayed completely silent: it fell through to
+  // inference, and when leftover credentials happened to complete the inferred
+  // method nothing surfaced at all.
+  it("warns that a typo'd SN_AUTH_METHOD fell back to an inferred method", async () => {
+    process.env.SN_AUTH_METHOD = "oauth-jwt"; // the real alias is jwt-bearer
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw-must-not-appear";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "cs-must-not-appear";
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    // Silently resolving to oauth-password is exactly the danger: the user asked for
+    // a JWT assertion and would instead post their password to /oauth_token.do.
+    expect(resolveCredentials().authMethod).toBe("oauth-password");
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+    const line = String(mockLoggerWarn.mock.calls[0]?.[0]);
+    expect(line).toContain('Unknown SN_AUTH_METHOD "oauth-jwt"');
+    expect(line).toContain("Falling back to oauth-password.");
+    expect(line).not.toContain("must-not-appear");
+  });
+
+  it("warns only once even though credentials resolve on every command", async () => {
+    // Credential resolution has eight call sites and no memoization, so an
+    // unconditional warn would repeat the same line several times per invocation.
+    process.env.SN_AUTH_METHOD = "bogus";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    resolveCredentials();
+    resolveCredentials();
+    resolveCredentials();
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent for a merely incomplete configuration", async () => {
+    // This pins the scope of the warning. `init`, `login` and `check-env` all resolve
+    // credentials before any exist, so warning about every issue would print
+    // "basic requires SN_PASSWORD." during ordinary first-run setup. A missing field
+    // announces itself the moment a request is attempted; an unrecognized selector
+    // never does, which is why only the latter warns.
+    process.env.SN_USER = "admin"; // no SN_PASSWORD -> basic is incomplete
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    expect(resolveCredentials().authMethod).toBe("basic");
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
 });
 
 describe("buildClientAuth per-method descriptor", () => {
