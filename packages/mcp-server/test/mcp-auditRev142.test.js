@@ -28,7 +28,9 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
 // Keep the chain key deterministic and off the OS keychain for the whole file.
-process.env.SYNCRONA_STORE_KEY = 'rev142-regression-key';
+// Not key material: the resolver expects 64 hex chars or base64, so this string
+// only forces the env branch and pins the chain to a fixed value across runs.
+process.env.SYNCRONA_STORE_KEY = 'rev142-regression-key'; // gitleaks:allow
 
 const AUDIT_MODULE = require.resolve('../dist/audit.js');
 const {
@@ -387,7 +389,7 @@ test('REV-146 concurrent writers keep the chain intact', async () => {
     const env = {
       ...process.env,
       SYNCRONA_AUDIT_STATE_DIR: stateDir,
-      SYNCRONA_STORE_KEY: 'rev142-regression-key',
+      SYNCRONA_STORE_KEY: 'rev142-regression-key', // gitleaks:allow — see the note at the top
     };
     const runs = [];
     for (let c = 0; c < children; c += 1) {
