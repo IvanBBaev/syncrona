@@ -13,6 +13,7 @@ const mockWriteFile = jest.fn();
 const mockGetAppListApi = jest.fn();
 const mockGetManifestApi = jest.fn();
 const mockPrompt = jest.fn();
+const mockLoggerWarn = jest.fn();
 
 jest.unstable_mockModule("../Watcher.js", () => ({
   startWatching: jest.fn(),
@@ -23,7 +24,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
     setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
     info: jest.fn(),
     success: jest.fn(),
-    warn: jest.fn(),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
     error: jest.fn(),
   },
 }));
@@ -187,5 +188,48 @@ describe("initCommand auto scope flow", () => {
 
     expect(mockPrompt).not.toHaveBeenCalled();
     expect(mockGetManifestApi).not.toHaveBeenCalled();
+  });
+
+  // INJ-1: `scope` comes from the instance's sys_app rows and is joined onto
+  // packages/ to create — and download into — a directory. Only the download
+  // pipeline validated instance-supplied path components, so a tampered scope
+  // with a separator placed the generated workspace outside packages/.
+  it("skips an app whose scope cannot be used as a directory name", async () => {
+    mockGetAppListApi.mockResolvedValue({
+      data: {
+        result: [
+          { sys_id: "1", scope: "x_evil/../../etc", displayName: "Evil" },
+          { sys_id: "2", scope: "x_win\\..\\..\\etc", displayName: "Evil Win" },
+          { sys_id: "3", scope: "x_alpha", displayName: "Alpha" },
+        ],
+      },
+    });
+    const { initCommand } = await import("../commands.js");
+
+    await initCommand({ logLevel: "info", ci: true });
+
+    expect(mockGetManifestApi).toHaveBeenCalledTimes(1);
+    expect(mockGetManifestApi).toHaveBeenCalledWith("x_alpha", expect.anything());
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Skipping app with unsafe scope name "x_evil/../../etc"')
+    );
+    for (const call of mockMkdir.mock.calls) {
+      expect(String(call[0])).not.toContain("etc");
+    }
+  });
+
+  // Stripping the "x_<vendor>_" prefix can turn a safe scope into an unsafe
+  // component, so the DERIVED directory name needs the same check.
+  it("falls back to the full scope when the stripped alias is not a usable directory name", async () => {
+    mockGetAppListApi.mockResolvedValue({
+      data: { result: [{ sys_id: "1", scope: "x_a_..", displayName: "Dots" }] },
+    });
+    const { initCommand } = await import("../commands.js");
+
+    await initCommand({ logLevel: "info", ci: true });
+
+    const created = mockMkdir.mock.calls.map((call) => String(call[0]));
+    expect(created).toContain("/tmp/project/packages/x_a_../src");
+    expect(created).not.toContain("/tmp/project/packages/../src");
   });
 });

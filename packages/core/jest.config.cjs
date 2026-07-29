@@ -54,10 +54,18 @@ module.exports = {
     //
     // Both globs together still preserve the global ratchet. Jest computes the
     // "global" bucket from files that match NO other threshold group; because
-    // './src/*.ts' matches every collected source file, that bucket is empty
+    // './src/**/*.ts' matches every collected source file, that bucket is empty
     // and Jest falls back to measuring `global` across ALL covered files (see
     // @jest/reporters coverage_reporter). So global and per-file gates both
     // stay live.
+    //
+    // REV-141: the globs MUST stay recursive to keep that invariant. They used to be
+    // single-level ('./src/*.ts'), while collectCoverageFrom is recursive
+    // ('src/**/*.ts'): the first source file added under a subdirectory would
+    // therefore match no threshold group, land in the "global" bucket alone,
+    // and Jest would then evaluate the global thresholds against THAT ONE FILE
+    // instead of the whole tree — silently turning the repo-wide ratchet into a
+    // single-file check (and skipping the per-file floor for it as well).
     //
     // The floors are deliberately conservative — far below the weakest
     // legitimately-thin file so cross-OS coverage noise never fails green, yet
@@ -70,10 +78,10 @@ module.exports = {
     // matched only by the branches glob below (which it passes) and excluded
     // from the lines glob via the '!(index)' extglob, so its legitimate 0%
     // lines does not fail the floor.
-    './src/*.ts': {
+    './src/**/*.ts': {
       branches: 20,
     },
-    './src/!(index).ts': {
+    './src/**/!(index).ts': {
       lines: 20,
     },
   },

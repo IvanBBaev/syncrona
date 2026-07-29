@@ -70,6 +70,28 @@ describe("scopeCheck", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  // Ctrl-C at a prompt inside the command body reaches this sink before
+  // commander.ts can classify it, so every scope-checked command used to print
+  // a bogus "force closed the prompt" error banner and exit 1. A cancellation
+  // is not a failure: 130 (SIGINT), no error banner.
+  it("treats a prompt abort in the body as a cancellation, not a failure", async () => {
+    checkScopeMock.mockResolvedValue({ match: true } as Awaited<
+      ReturnType<typeof AppUtils.checkScope>
+    >);
+    const { logger } = await import("../Logger.js");
+    const errorSpy = jest.spyOn(logger, "error").mockImplementation(() => {});
+
+    await scopeCheck(() => {
+      const abort = new Error("User force closed the prompt with 0 null");
+      abort.name = "ExitPromptError";
+      throw abort;
+    });
+
+    expect(process.exitCode).toBe(130);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
   it("passes the swapScopes flag through to checkScope", async () => {
     checkScopeMock.mockResolvedValue({ match: true } as Awaited<
       ReturnType<typeof AppUtils.checkScope>

@@ -31,6 +31,19 @@ export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
       entry = { table: tableName, sysId: sys_id, fields: {} };
       combinedFiles[key] = entry;
     }
+    // Two distinct files resolving to the SAME record+field is ambiguous, and
+    // the plain assignment silently kept whichever came last. That happens for
+    // real when a workspace holds both layouts of one field (DX17 flat
+    // `<record>~<field>.js` next to a leftover folder `<record>/<field>.js`):
+    // the loser's edits were dropped and the winner depended on directory
+    // iteration order, so the same push could upload different bytes on
+    // different machines. Fail loudly instead of guessing.
+    const existing = entry.fields[targetField];
+    if (existing && existing.filePath !== cur.filePath) {
+      throw new Error(
+        `Ambiguous push: "${tableName}" record ${sys_id} field "${targetField}" is claimed by two local files:\n  ${existing.filePath}\n  ${cur.filePath}\nDelete the stale copy (they are the same field in different layouts) and retry.`
+      );
+    }
     entry.fields[targetField] = cur;
   }
   return Object.values(combinedFiles);
@@ -146,16 +159,34 @@ const mapWithConcurrency = async <T, R>(
   const results: R[] = new Array(items.length);
   const limit = Math.max(1, Math.floor(concurrency));
   let nextIndex = 0;
+  // Abort on the first failure. Previously a rejecting worker only rejected the
+  // Promise.all, while every other runner kept pulling items off the queue: the
+  // caller had already unwound (releasing the collaboration lock, exiting)
+  // while those workers were still pushing records to the instance, and all but
+  // the first error were discarded. Collect the errors, stop scheduling new
+  // work, and rethrow.
+  const errors: unknown[] = [];
 
   const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
+    while (nextIndex < items.length && errors.length === 0) {
       const current = nextIndex;
       nextIndex += 1;
-      results[current] = await worker(items[current], current);
+      try {
+        results[current] = await worker(items[current], current);
+      } catch (e) {
+        errors.push(e);
+      }
     }
   });
 
   await Promise.all(runners);
+  if (errors.length > 0) {
+    // Rethrow a lone error unchanged so callers can still classify it
+    // (retry predicates, status codes).
+    throw errors.length === 1
+      ? errors[0]
+      : new AggregateError(errors, `${errors.length} concurrent operations failed.`);
+  }
   return results;
 };
 

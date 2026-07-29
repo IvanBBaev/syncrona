@@ -66,7 +66,9 @@ The last check is cached in `~/.syncrona/update-check.json`.
 `SN_AUTH_METHOD` selects the ServiceNow inbound REST auth method: `basic`
 (default), `oauth-password`, `oauth-client-credentials`, `oauth-jwt-bearer`, or
 `api-key`. When unset it is inferred for backward compatibility (OAuth password
-when a client id/secret pair **and** a password are present, otherwise Basic).
+when a client id/secret pair **and** a password are present, otherwise Basic). An
+unrecognized value is reported as a configuration issue (`syncrona doctor`, MCP
+server startup) instead of falling back to inference.
 Every variable below also accepts a per-profile `_<NAME>` suffix.
 
 | Variable | Method | Purpose |

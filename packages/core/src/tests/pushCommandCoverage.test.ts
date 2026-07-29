@@ -677,4 +677,34 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     expect(mockCreateAndAssignUpdateSet).toHaveBeenCalledWith("MySet");
     expect(mockPushFiles).toHaveBeenCalled();
   });
+
+  // Ctrl-C at the overwrite prompt rejects (inquirer 14 raises ExitPromptError
+  // instead of killing the process). The catch treated it as a push failure:
+  // an error banner plus exit 1, which reads as "the push broke" in CI. A
+  // cancellation is 130 (SIGINT), with nothing logged as an error.
+  it("exits 130 without an error banner when a prompt is cancelled", async () => {
+    mockPrompt.mockImplementation(async () => {
+      const abort = new Error("User force closed the prompt with 0 null");
+      abort.name = "ExitPromptError";
+      throw abort;
+    });
+
+    await runPush({ ci: false });
+
+    expect(process.exitCode).toBe(130);
+    expect(mockInternalError).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  // The catch used to hand the raw Error object to the internal logger, which
+  // renders it as "{}"/"[object Object]" depending on the transport — so the
+  // reason a push failed was invisible. Log the message instead.
+  it("logs the failure message, not the raw Error object", async () => {
+    mockGetAppFileList.mockRejectedValue(new Error("boom: table not found"));
+
+    await runPush();
+
+    expect(process.exitCode).toBe(1);
+    expect(mockInternalError).toHaveBeenCalledWith("boom: table not found");
+  });
 });

@@ -34,8 +34,29 @@ test('REV-117: requiresConfirmation allows read-only "git status"', () => {
   assert.equal(requiresConfirmation('git', ['status']), false);
 });
 
-test('REV-117: requiresConfirmation allows read-only "git -C /repo status"', () => {
-  assert.equal(requiresConfirmation('git', ['-C', '/repo', 'status']), false);
+// REV-194 inverted this case. REV-117's point was that a mutating verb must not hide
+// behind a global option; it asserted `-C … status` stays open as the read-only
+// counterpart. The redirect itself turned out to be the vector: run_workspace_command
+// has no cwd input, so `-C <dir>` is the only way to make git read an untrusted
+// .git/config — whose core.fsmonitor `git status` executes. The pre-subcommand region
+// is default-deny now, so the read-only verb behind it no longer decides.
+test('REV-194: requiresConfirmation gates "git -C /repo status" (the redirect is the vector)', () => {
+  assert.equal(requiresConfirmation('git', ['-C', '/repo', 'status']), true);
+});
+
+test('REV-194: an inert main option keeps a read-only verb open', () => {
+  assert.equal(requiresConfirmation('git', ['--no-pager', 'log', '--oneline']), false);
+});
+
+test('REV-194: --exec-path before a read-only verb now confirms', () => {
+  assert.equal(
+    requiresConfirmation('git', ['--exec-path=/tmp/evil', 'ls-remote', 'https://host/r']),
+    true
+  );
+  assert.equal(
+    requiresConfirmation('git', ['--exec-path', '/tmp/evil', 'ls-remote', 'https://host/r']),
+    true
+  );
 });
 
 // --- maxRiskLevel: always composes to the HIGHER level (REV-122) ---

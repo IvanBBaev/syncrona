@@ -164,6 +164,198 @@ test('converts raw JSON string-enum compilerOptions from tsconfig.json', async (
   });
 });
 
+test('accepts a string target in plugin options without downgrading the emit', async (t) => {
+  const source = 'export const x: number = 2 ** 3;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  // The README documents plugin compilerOptions as "Same as compilerOptions in a
+  // tsconfig.json file", where `target: "ES2021"` is the normal spelling. Merged
+  // in unconverted, that string compares false against the numeric ScriptTarget
+  // enum, so the implied module kind fell back to CommonJS and the emit gained
+  // `exports.` references -- undefined in ServiceNow's Rhino engine.
+  const result = await run(context, source, {
+    compilerOptions: { target: 'ES2021' },
+  });
+  assert.deepEqual(result, {
+    success: true,
+    output: 'export const x = 2 ** 3;\n',
+  });
+});
+
+test('rejects a plugin compilerOptions value TypeScript cannot parse', async (t) => {
+  const source = 'const x: number = 1;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  // A misspelled enum value must surface instead of silently sliding through as
+  // an unusable raw string.
+  await assert.rejects(
+    () => run(context, source, { compilerOptions: { target: 'ES2099' } }),
+    /--target/
+  );
+});
+
+test('honors plugin compilerOptions in the type check, not only in the emit', async (t) => {
+  const source = 'export function f(a) { return a; }\n';
+  const context = writeTs(t, 'sample.ts', source);
+  // The merge used to happen after the type check, so every documented knob that
+  // configures or relaxes checking was inert and no push could be unblocked with
+  // it.
+  const result = await run(context, source, {
+    compilerOptions: { noImplicitAny: false },
+  });
+  assert.equal(result.success, true);
+  assert.match(result.output, /function f\(a\)/);
+});
+
+test('resolves the compilerOptions a tsconfig.json inherits through extends', async (t) => {
+  const source = 'export const n: number = 1;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  const dir = path.dirname(context.filePath);
+  // `ts.readConfigFile` returns the raw JSON of the leaf config only -- a
+  // `{ extends: ... }` tsconfig therefore contributed nothing and the file was
+  // built with none of the project's options.
+  fs.writeFileSync(
+    path.join(dir, 'tsconfig.base.json'),
+    JSON.stringify({ compilerOptions: { target: 'ES2021', module: 'CommonJS' } })
+  );
+  fs.writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({ extends: './tsconfig.base.json' })
+  );
+  const result = await run(context, source, {});
+  assert.equal(result.success, true);
+  // The inherited `module: "CommonJS"` must reach the emit; without extends
+  // resolution the plugin fell back to its ESM default.
+  assert.match(result.output, /exports\.n/);
+});
+
+test('type-checks with the options a tsconfig.json inherits through extends', async (t) => {
+  const source = 'export function f(a) { return a; }\n';
+  const context = writeTs(t, 'sample.ts', source);
+  const dir = path.dirname(context.filePath);
+  // The same drop kept the inherited options out of the type check that hard-fails
+  // the build: a project that switched `noImplicitAny` off in its shared base
+  // config was still blocked by TS7006, which is on by default under TypeScript 6.
+  fs.writeFileSync(
+    path.join(dir, 'tsconfig.base.json'),
+    JSON.stringify({ compilerOptions: { noImplicitAny: false } })
+  );
+  fs.writeFileSync(
+    path.join(dir, 'tsconfig.json'),
+    JSON.stringify({ extends: './tsconfig.base.json' })
+  );
+  const result = await run(context, source, {});
+  assert.equal(result.success, true);
+  assert.match(result.output, /function f\(a\)/);
+});
+
+test('fails loudly on a tsconfig.json it cannot parse', async (t) => {
+  const source = 'const x: number = 1;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  // The read error used to be dropped, so a broken tsconfig silently built on
+  // defaults instead of stopping the push.
+  fs.writeFileSync(path.join(path.dirname(context.filePath), 'tsconfig.json'), '[]\n');
+  await assert.rejects(
+    () => run(context, source, {}),
+    /tsconfig\.json/
+  );
+});
+
+test('does not crash on a tsconfig.json whose include matches no files', async (t) => {
+  const context = writeTs(t, 'sample.ts', VALID_SOURCE);
+  // TS18003 only describes the file *set* the config selects; the plugin compiles
+  // the single in-memory file it was handed, so an empty selection is not fatal.
+  fs.writeFileSync(
+    path.join(path.dirname(context.filePath), 'tsconfig.json'),
+    JSON.stringify({ include: ['nowhere/**/*.ts'] })
+  );
+  const result = await run(context, VALID_SOURCE, {});
+  assert.deepEqual(result, {
+    success: true,
+    output: 'const greeting = "hello";\nconst n = greeting.length;\n',
+  });
+});
+
+test('the README sync.config.js example loads and matches the real config schema', (t) => {
+  // The documented example used to be a JavaScript SyntaxError (a bare
+  // `name:"..."` inside the `plugins` array literal) wrapped in a `rules` object,
+  // while packages/core requires `rules` to be an array -- so copying it into
+  // sync.config.js produced a config that never loaded.
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  const block = readme.match(/```javascript\n([\s\S]*?)```/);
+  assert.ok(block, 'README must document a sync.config.js example');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'syncrona-typescript-plugin-readme-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const configPath = path.join(dir, 'sync.config.js');
+  fs.writeFileSync(configPath, block[1]);
+  const config = require(configPath);
+  assert.ok(Array.isArray(config.rules), '"rules" must be an array');
+  for (const rule of config.rules) {
+    assert.ok(rule.match instanceof RegExp, '"match" must be a regular expression');
+    assert.ok(Array.isArray(rule.plugins), '"plugins" must be an array');
+    for (const plugin of rule.plugins) {
+      assert.equal(typeof plugin, 'object');
+      assert.equal(typeof plugin.name, 'string');
+    }
+  }
+});
+
+// REV-200: the README's "Order of Configurations" documented the precedence
+// backwards -- it listed `sync.config.js` options first and said `tsconfig.json`
+// then "override[s] any overlapping values". The implementation is the other way
+// round: the tsconfig is the base and plugin options are merged on top. Nothing
+// pinned either the behaviour or the prose, so the two could disagree forever.
+// A user following the README would set `target` in plugin options expecting the
+// project tsconfig to win, and get the opposite emit with no warning.
+test('plugin compilerOptions override an overlapping tsconfig.json key', async (t) => {
+  const source = 'const x: number = 2 ** 3;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  // `**` is the probe: an ES2015 target downlevels it to Math.pow, ES2021 keeps it.
+  fs.writeFileSync(
+    path.join(path.dirname(context.filePath), 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { target: 'ES2015' } })
+  );
+  const result = await run(context, source, { compilerOptions: { target: 'ES2021' } });
+  assert.deepEqual(result, { success: true, output: 'const x = 2 ** 3;\n' });
+});
+
+test('plugin compilerOptions win even when they are the more conservative setting', async (t) => {
+  // The mirror image, so the test cannot pass merely because ES2021 happens to be
+  // the plugin's default: here the tsconfig asks for the newer target and loses.
+  const source = 'const x: number = 2 ** 3;\n';
+  const context = writeTs(t, 'sample.ts', source);
+  fs.writeFileSync(
+    path.join(path.dirname(context.filePath), 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { target: 'ES2021' } })
+  );
+  const result = await run(context, source, { compilerOptions: { target: 'ES2015' } });
+  assert.deepEqual(result, { success: true, output: 'const x = Math.pow(2, 3);\n' });
+});
+
+test('the README documents the precedence the implementation actually applies', (t) => {
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  const section = readme.match(/### Order of Configurations\n([\s\S]*?)(?=\n## )/);
+  assert.ok(section, 'README must document the order of configurations');
+  const body = section[1];
+  const tsconfigAt = body.indexOf('tsconfig.json');
+  const pluginAt = body.indexOf('sync.config.js');
+  assert.ok(tsconfigAt >= 0 && pluginAt >= 0, 'both configuration sources must be named');
+  // The base is listed first and the winner last -- the order the merge really has.
+  assert.ok(
+    tsconfigAt < pluginAt,
+    'the README must list tsconfig.json as the base and sync.config.js options as the override',
+  );
+});
+
+test('a configured strict mode still emits the "use strict" prologue', async (t) => {
+  // The other half of the prologue suppression: it is scoped to the case where the
+  // user configured no strictness at all. Asking for `strict` must not be silently
+  // dropped from the emit -- without this, "suppress the prologue" could regress
+  // into "never emit a prologue" and every test above would still pass.
+  const context = writeTs(t, 'sample.ts', VALID_SOURCE);
+  const result = await run(context, VALID_SOURCE, { compilerOptions: { strict: true } });
+  assert.equal(result.success, true);
+  assert.match(result.output, /^"use strict";/);
+});
+
 test('does not crash on a tsconfig.json that has no compilerOptions key', async (t) => {
   const context = writeTs(t, 'sample.ts', VALID_SOURCE);
   // A tsconfig alongside the fixture with no compilerOptions key used to throw

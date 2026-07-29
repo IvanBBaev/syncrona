@@ -16,12 +16,13 @@
 //   - no forbidden files leak in (src/, test dirs, *.test.*, .env*, tsconfig,
 //     jest.config).
 // Finally, for every publishable bin (see SMOKE_TARGETS) it packs the package
-// FOR REAL, unpacks it, supplies each `@syncrona/*` runtime dependency from ITS
-// OWN packed tarball (never the unpublished workspace symlink), and smoke-runs
-// the published entrypoint — the CLI with `--version`, the MCP server as a
-// require-load (its bin opens a stdio transport in main() and would hang if
-// executed). Resolving siblings from their tarballs proves a published package
-// can find its published dependencies, which a whole-node_modules symlink hides.
+// FOR REAL, unpacks it, stages only the transitive closure of its DECLARED
+// runtime dependencies (REV-134), supplies each `@syncrona/*` runtime dependency
+// from ITS OWN packed tarball (never the unpublished workspace symlink), and
+// smoke-runs the published entrypoint — the CLI with `--version`, the MCP server
+// as a require-load (its bin opens a stdio transport in main() and would hang if
+// executed). Both restrictions reproduce what a published install actually
+// resolves, which a whole-node_modules symlink hides.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, mkdtempSync, mkdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
@@ -165,6 +166,101 @@ export function syncronaRuntimeDeps(pkg) {
   return Object.keys(pkg.dependencies || {}).filter((dep) => dep.startsWith("@syncrona/"));
 }
 
+/** Read a package.json from a package directory; null when absent/unparsable. */
+function readPackageJson(dir) {
+  try {
+    return JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve `name` the way Node resolves it from `fromDir`: walk up the directory
+ * chain (bounded by `root`) looking for `node_modules/<name>`. Returns the
+ * absolute directory, or null when the package is not installed anywhere on the
+ * lookup path.
+ */
+export function resolveDependencyDir(name, fromDir, root = repoRoot) {
+  const stop = path.resolve(root);
+  let current = path.resolve(fromDir);
+  for (;;) {
+    const candidate = path.join(current, "node_modules", name);
+    if (existsSync(candidate)) return candidate;
+    if (current === stop) return null;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+/**
+ * The transitive closure of a package's DECLARED runtime `dependencies`, mapped
+ * to the workspace directory each one resolves to.
+ *
+ * REV-134: the smoke used to symlink EVERY entry of the package's and the repo
+ * root's node_modules into the staged tarball. A published install only ever
+ * gets what the manifest declares, so an import of a package that is merely
+ * hoisted into the workspace (a devDependency, or a transitive dep of some other
+ * package) resolved happily here and then crashed with MODULE_NOT_FOUND for the
+ * first real user — the single failure mode this gate exists to catch. Staging
+ * the declared closure instead makes an undeclared runtime import fail the smoke
+ * exactly as it would fail after `npm i -g syncrona`.
+ *
+ * `@syncrona/*` names are NOT staged (each sibling is supplied from its own
+ * packed tarball) but their manifests are still followed, so the third-party
+ * packages a sibling needs are present — that is what a real install resolves
+ * from the top level too.
+ */
+export function collectDependencyClosure(startDir, { root = repoRoot, workspaceDirs = dirByName } = {}) {
+  const staged = new Map();
+  const missing = [];
+  const visited = new Set();
+  const queue = [];
+  const enqueue = (fromDir, pkg) => {
+    if (!pkg) return;
+    for (const dep of Object.keys(pkg.dependencies || {})) queue.push({ name: dep, fromDir });
+  };
+
+  enqueue(startDir, readPackageJson(startDir));
+  while (queue.length > 0) {
+    const { name, fromDir } = queue.shift();
+    const key = `${name} ${fromDir}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    if (name.startsWith("@syncrona/")) {
+      const sibDir = workspaceDirs.get(name);
+      enqueue(sibDir, sibDir ? readPackageJson(sibDir) : null);
+      continue;
+    }
+
+    const resolved = resolveDependencyDir(name, fromDir, root);
+    if (!resolved) {
+      // Optional/platform-specific deps may legitimately be absent; a genuinely
+      // needed one still fails the smoke run below.
+      missing.push(name);
+      continue;
+    }
+    if (!staged.has(name)) staged.set(name, resolved);
+    enqueue(resolved, readPackageJson(resolved));
+  }
+
+  return { staged, missing };
+}
+
+/** Symlink a name -> directory map into `nodeModules`, creating scope dirs. */
+export function stagePrivateNodeModules(nodeModules, staged) {
+  mkdirSync(nodeModules, { recursive: true });
+  for (const [name, source] of staged) {
+    const dest = path.join(nodeModules, name);
+    if (existsSync(dest)) continue;
+    if (name.startsWith("@")) mkdirSync(path.dirname(dest), { recursive: true });
+    symlinkSync(source, dest, "dir");
+  }
+  return nodeModules;
+}
+
 /** `npm pack` one workspace into `destDir`; return the absolute tarball path. */
 function packWorkspace(name, destDir) {
   const out = execFileSync(
@@ -196,44 +292,19 @@ function smokeTestTarget(target) {
   try {
     const pkgRoot = extractPackage(packWorkspace(target.name, tmp), tmp);
 
-    // Private node_modules: symlink every workspace-resolved dependency EXCEPT
-    // the `@syncrona` scope — those unpublished workspace links are exactly what
-    // a published install would not have, so the packed siblings must stand in.
-    // npm nests a dependency under the workspace package instead of hoisting it
-    // when the root already holds a conflicting version (core's inquirer 14 and
-    // chalk 5 sit next to a chalk 4 hoisted for the tooling), so the package's
-    // own node_modules is linked first and wins, exactly as Node resolves it in
-    // the workspace. Scope directories are merged member-by-member so a scope
-    // split across both levels stays complete.
+    // Private node_modules: stage ONLY the transitive closure of the declared
+    // runtime dependencies, resolved the way Node resolves them from the
+    // workspace package (npm nests a dependency under the workspace package
+    // instead of hoisting it when the root holds a conflicting version — core's
+    // inquirer 14 and chalk 5 sit next to a chalk 4 hoisted for the tooling —
+    // and the walk-up in `resolveDependencyDir` picks the nested copy first,
+    // exactly as the runtime does). The `@syncrona` scope is excluded: those
+    // unpublished workspace links are what a published install would not have,
+    // so the packed siblings stand in below. See REV-134 on
+    // `collectDependencyClosure` for why linking the whole tree was unsound.
     const nodeModules = path.join(pkgRoot, "node_modules");
-    mkdirSync(nodeModules, { recursive: true });
-    for (const source of [path.join(dir, "node_modules"), path.join(repoRoot, "node_modules")]) {
-      if (!existsSync(source)) continue;
-      for (const entry of readdirSync(source, { withFileTypes: true })) {
-        if (entry.name === "@syncrona") continue;
-        if (entry.name.startsWith("@") && entry.isDirectory()) {
-          const mergedScope = path.join(nodeModules, entry.name);
-          mkdirSync(mergedScope, { recursive: true });
-          for (const member of readdirSync(path.join(source, entry.name), { withFileTypes: true })) {
-            const dest = path.join(mergedScope, member.name);
-            if (existsSync(dest)) continue;
-            symlinkSync(
-              path.join(source, entry.name, member.name),
-              dest,
-              member.isDirectory() ? "dir" : "file",
-            );
-          }
-          continue;
-        }
-        const dest = path.join(nodeModules, entry.name);
-        if (existsSync(dest)) continue;
-        symlinkSync(
-          path.join(source, entry.name),
-          dest,
-          entry.isDirectory() ? "dir" : "file",
-        );
-      }
-    }
+    const { staged } = collectDependencyClosure(dir);
+    stagePrivateNodeModules(nodeModules, staged);
 
     // Supply each runtime @syncrona/* sibling from its own freshly-packed tarball.
     const scopeDir = path.join(nodeModules, "@syncrona");

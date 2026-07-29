@@ -11,7 +11,8 @@
 //     --disallow-code-generation-from-strings as the FIRST argument;
 //   - the removed isUnsafeWorkspaceCommand("node", ["-e", code]) pre-check no longer
 //     gates execution;
-//   - scrubSecretsFromEnv exists and strips credential-bearing env keys.
+//   - scrubSecretsFromEnv strips credential-bearing env keys, AND full mode actually
+//     PASSES it as the base env of the spawned child (REV-140).
 //
 // Each assertion below fails against the pre-fix behavior and passes against the fix.
 const test = require('node:test');
@@ -98,12 +99,20 @@ test('REV-82: safe mode cannot exfiltrate a host secret via the old vm escape', 
   }
 });
 
+// REV-140 (tests-soundness): this mock used to bind only (command, cmdArgs, timeoutMs),
+// so the 6th argument runFullNodeAccessCode passes — scrubSecretsFromEnv(process.env) —
+// was never observed by any call-site assertion in the suite. The scrub was pinned only
+// as a helper that EXISTS (the two tests at the bottom of this file), never as a call
+// that HAPPENS: deleting the argument from workspaceHandlers.ts kept this file, the
+// coverage test and index.test.js all green while full-mode run_node_code silently went
+// back to spawning the child with the unscrubbed process.env — exactly the SEC-1/REV-116
+// hole. Capture the full 6-arg signature so the base env is asserted at the call site.
 test('REV-82: full mode runs a real child process with --disallow-code-generation-from-strings first', async () => {
   let captured = null;
   const ctx = makeContext({
     allowFullNodeAccess: true,
-    runCommand: async (command, cmdArgs, timeoutMs) => {
-      captured = { command, cmdArgs, timeoutMs };
+    runCommand: async (command, cmdArgs, timeoutMs, cwd, extraEnv, envBase) => {
+      captured = { command, cmdArgs, timeoutMs, cwd, extraEnv, envBase };
       return makeCmdResult({ stdout: 'full-mode-ran' });
     },
   });
@@ -125,6 +134,60 @@ test('REV-82: full mode runs a real child process with --disallow-code-generatio
     '-e',
     'console.log("x")',
   ]);
+  assert.ok(
+    captured.envBase && typeof captured.envBase === 'object',
+    'runCommand must receive a base env as its 6th argument'
+  );
+});
+
+test('REV-140: full mode spawns the child with a credential-scrubbed base env', async () => {
+  const prevKey = process.env.SYNCRONA_STORE_KEY;
+  const prevPassword = process.env.SN_PASSWORD;
+  process.env.SYNCRONA_STORE_KEY = 'REV140-STORE-KEY';
+  process.env.SN_PASSWORD = 'REV140-PASSWORD';
+  try {
+    let captured = null;
+    const ctx = makeContext({
+      allowFullNodeAccess: true,
+      runCommand: async (command, cmdArgs, timeoutMs, cwd, extraEnv, envBase) => {
+        captured = { command, cmdArgs, timeoutMs, cwd, extraEnv, envBase };
+        return makeCmdResult();
+      },
+    });
+    const res = await handleWorkspaceTool(
+      'run_node_code',
+      { code: 'console.log(process.env.SN_PASSWORD)', confirmDestructive: true },
+      ctx
+    );
+    assert.equal(res.isError, false);
+    assert.ok(captured, 'full mode must delegate to context.runCommand');
+    assert.ok(
+      captured.envBase && typeof captured.envBase === 'object',
+      'runCommand must receive a base env as its 6th argument'
+    );
+    // The child must not inherit the credential-store master key or the instance
+    // password through its own environment.
+    for (const key of ['SYNCRONA_STORE_KEY', 'SN_PASSWORD']) {
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(captured.envBase, key),
+        false,
+        `the base env must not contain ${key}`
+      );
+    }
+    // Still a usable environment, not an empty object.
+    assert.equal(captured.envBase.PATH, process.env.PATH);
+  } finally {
+    if (prevKey === undefined) {
+      delete process.env.SYNCRONA_STORE_KEY;
+    } else {
+      process.env.SYNCRONA_STORE_KEY = prevKey;
+    }
+    if (prevPassword === undefined) {
+      delete process.env.SN_PASSWORD;
+    } else {
+      process.env.SN_PASSWORD = prevPassword;
+    }
+  }
 });
 
 test('REV-82: the isUnsafeWorkspaceCommand("node", ...) pre-check is gone (full mode still runs)', async () => {

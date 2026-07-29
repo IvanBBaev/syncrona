@@ -5,7 +5,30 @@ import { logger } from "./Logger.js";
 import fs from "fs";
 import path from "path";
 import { types } from "node:util";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 const fsp = fs.promises;
+
+// REV-140: Node's ESM loader cannot import a DIRECTORY: `import("/proj/node_modules/p")`
+// fails with ERR_UNSUPPORTED_DIR_IMPORT (and on Windows a "C:\..." path is not
+// even a valid specifier). The old code handed exactly that directory path to
+// import(), so every configured build plugin failed to load once the package
+// became native ESM. The jest suite never caught it because jest resolves
+// dynamic imports with its own CJS-style resolver, which happily does directory
+// + package.json "main" lookup. Resolve the package ENTRY FILE the way Node's
+// resolver does, from the project root, and import it as a file: URL.
+export function resolvePluginSpecifier(pluginName: string): string {
+  const rootDir = ConfigManager.getRootDir();
+  try {
+    const requireFromRoot = createRequire(path.join(rootDir, "package.json"));
+    return pathToFileURL(requireFromRoot.resolve(pluginName)).href;
+  } catch {
+    // An ESM-only plugin exposes no "require" condition, so the resolver above
+    // cannot see it. A bare specifier at least lets Node's own ESM resolution
+    // try; if that fails too, runPlugins reports the install hint.
+    return pluginName;
+  }
+}
 
 // A `/g` or `/y` match in sync.config.js makes .test() stateful: it resumes from
 // the RegExp's own lastIndex and rewinds it on a miss, so the same rule would
@@ -67,14 +90,17 @@ class PluginManager {
   ): Promise<Sync.TransformResults> {
     let output = content;
     for (const pConfig of plugins) {
-      const pluginPath = path.join(
-        ConfigManager.getRootDir(),
-        "node_modules",
-        pConfig.name
-      );
+      const pluginPath = resolvePluginSpecifier(pConfig.name);
       let plugin: Sync.Plugin;
       try {
-        plugin = await import(pluginPath);
+        const loaded = (await import(pluginPath)) as Sync.Plugin & {
+          default?: Sync.Plugin;
+        };
+        // A CommonJS plugin (`module.exports = { run }`) is exposed by Node's
+        // ESM/CJS interop as the namespace's `default`; named re-exports are
+        // best-effort. Prefer the named export, fall back to default.
+        plugin =
+          typeof loaded?.run === "function" ? loaded : (loaded?.default ?? loaded);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         throw new Error(

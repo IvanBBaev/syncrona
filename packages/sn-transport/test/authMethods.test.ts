@@ -279,7 +279,10 @@ describe("normalizeAuthMethod", () => {
     expect(resolved.method).toBe("basic");
     expect(resolved.explicit).toBe(false);
     expect(resolved.unknownExplicit).toBe(true);
-    expect(resolved.issues).toEqual(["basic requires SN_PASSWORD."]);
+    expect(resolved.issues).toEqual([
+      'Unknown SN_AUTH_METHOD "constructor"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+      "basic requires SN_PASSWORD.",
+    ]);
   });
 });
 
@@ -346,6 +349,47 @@ describe("resolveAuthMethod", () => {
     expect(r.method).toBe("basic");
     expect(r.explicit).toBe(false);
     expect(r.unknownExplicit).toBe(true);
+  });
+
+  it("reports an unrecognized explicit value as an issue, not only via unknownExplicit", () => {
+    // Regression: `unknownExplicit` is read by nothing in production — snClient,
+    // servicenowCore and the diagnostics commands all consume only `.method` and
+    // `.issues`. A typo'd selector whose inferred fallback happens to be fully
+    // configured therefore produced an EMPTY issues list, so the misconfiguration
+    // was invisible everywhere and the client silently used a different grant.
+    const r = resolveAuthMethod({
+      explicit: "oauth-jwt", // a plausible typo — not one of the JWT aliases
+      hasClientId: true,
+      hasClientSecret: true,
+      hasPassword: true,
+      hasJwtKey: true,
+    });
+    expect(r.method).toBe("oauth-password");
+    expect(r.unknownExplicit).toBe(true);
+    expect(r.issues).toEqual([
+      'Unknown SN_AUTH_METHOD "oauth-jwt"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+    ]);
+  });
+
+  it("reports the trimmed raw value and keeps the per-method issues", () => {
+    const r = resolveAuthMethod({ explicit: "  Kerberos  " });
+    expect(r.issues).toEqual([
+      'Unknown SN_AUTH_METHOD "Kerberos"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+      "basic requires SN_PASSWORD.",
+    ]);
+  });
+
+  it("does not report an unknown-method issue for a recognized alias or an absent selector", () => {
+    expect(
+      resolveAuthMethod({
+        explicit: "JWT_BEARER",
+        hasClientId: true,
+        hasClientSecret: true,
+        hasJwtKey: true,
+      }).issues
+    ).toEqual([]);
+    expect(resolveAuthMethod({ explicit: "   ", hasPassword: true }).issues).toEqual([]);
+    expect(resolveAuthMethod({ hasPassword: true }).issues).toEqual([]);
   });
 
   it("exposes the full method list", () => {

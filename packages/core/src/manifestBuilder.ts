@@ -4,6 +4,7 @@ import { isEndpointNotFoundStatus, escapeQueryValue } from "@syncrona/sn-transpo
 import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
+import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
 
 type TableAPIRecord = Record<string, string>;
@@ -48,19 +49,36 @@ const mapWithConcurrency = async <T, R>(
   const results: R[] = new Array(items.length);
   const limit = Math.max(1, Math.floor(concurrency));
   let nextIndex = 0;
+  // Abort on the first failure. Previously a rejecting worker only rejected the
+  // Promise.all, while every other runner kept pulling items off the queue: the
+  // caller had already unwound while those workers were still querying the
+  // instance, and all but the first error were discarded. Collect the errors,
+  // stop scheduling new work, and rethrow.
+  const errors: unknown[] = [];
 
   const runners = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
-      while (nextIndex < items.length) {
+      while (nextIndex < items.length && errors.length === 0) {
         const current = nextIndex;
         nextIndex += 1;
-        results[current] = await worker(items[current], current);
+        try {
+          results[current] = await worker(items[current], current);
+        } catch (e) {
+          errors.push(e);
+        }
       }
     }
   );
 
   await Promise.all(runners);
+  if (errors.length > 0) {
+    // Rethrow a lone error unchanged so callers can still classify it
+    // (isScopedEndpointUnavailableError, retry predicates, status codes).
+    throw errors.length === 1
+      ? errors[0]
+      : new AggregateError(errors, `${errors.length} concurrent operations failed.`);
+  }
   return results;
 };
 
@@ -288,7 +306,8 @@ async function getFileFieldsForTable(
   client: SNClient,
   tableName: string,
   includes: Sync.TablePropMap,
-  excludes: Sync.TablePropMap
+  excludes: Sync.TablePropMap,
+  onSkip?: () => void
 ): Promise<SN.File[]> {
   try {
     // ATF step script is stored in inputs.script and is not reliably available via dictionary.
@@ -344,7 +363,14 @@ async function getFileFieldsForTable(
     if (files.length === 0 && shouldMaterializeDataFieldsForTable(tableName)) {
       // Data-only tables may have no script/css/xml/html fields; fall back to text fields
       // so scoped records still materialize locally instead of producing an empty scope.
-      return getTextFieldsForTable(client, tableName, includes, excludes, hierarchyTableNames);
+      return getTextFieldsForTable(
+        client,
+        tableName,
+        includes,
+        excludes,
+        hierarchyTableNames,
+        onSkip
+      );
     }
 
     return files;
@@ -355,6 +381,10 @@ async function getFileFieldsForTable(
     if (!isTableSkippableError(e)) {
       throw e;
     }
+    // Report the skip: "inaccessible" and "genuinely has no file fields" are
+    // indistinguishable in the return value, and the caller must not treat the
+    // former as a reason to drop the table from a rebuilt manifest.
+    onSkip?.();
     return [];
   }
 }
@@ -364,7 +394,8 @@ async function getTextFieldsForTable(
   tableName: string,
   includes: Sync.TablePropMap,
   excludes: Sync.TablePropMap,
-  hierarchyTableNames?: string[]
+  hierarchyTableNames?: string[],
+  onSkip?: () => void
 ): Promise<SN.File[]> {
   try {
     const hierarchy = hierarchyTableNames || await getTableHierarchyTableNames(client, tableName);
@@ -416,6 +447,11 @@ async function getTextFieldsForTable(
     if (!isTableSkippableError(e)) {
       throw e;
     }
+    // This runs inside getFileFieldsForTable's own `try`, so its catch never
+    // sees this error — the skip has to be reported from here or the caller
+    // reads an empty field list as "this table genuinely has no fields" and
+    // drops the table from the rebuilt manifest.
+    onSkip?.();
     return [];
   }
 }
@@ -531,7 +567,8 @@ async function getRecordsForTable(
   tableName: string,
   scopeId: string,
   files: SN.File[],
-  tableOptions: Sync.ITableOptions | undefined
+  tableOptions: Sync.ITableOptions | undefined,
+  onSkip?: () => void
 ): Promise<SN.TableConfigRecords> {
   const displayField = getDisplayField(tableName);
   const baseQuery = `sys_scope=${scopeId}^sys_class_name=${tableName}`;
@@ -547,29 +584,42 @@ async function getRecordsForTable(
 
   const toRecords = (rows: TableAPIRecord[]): SN.TableConfigRecords => {
     const records: SN.TableConfigRecords = {};
-    // Surface names that collide once written to disk. A case-insensitive volume
-    // (macOS/Windows) or Unicode-normalization differences can map two distinct
-    // record names onto one file, silently dropping a record. We keep the
-    // server-parity name (renaming would break push/pull round-trips) but warn
-    // so the collision is visible rather than an invisibly missing record.
-    const normalizedSeen = new Map<string, string>();
-
-    for (const row of rows) {
+    // Names that collide once written to disk — a case-insensitive volume
+    // (macOS/Windows) or Unicode-normalization differences map two distinct
+    // records onto one path. Warning alone was not enough: both keys were still
+    // written to the manifest, the two records overwrote each other's files on
+    // disk, and a push from either one uploaded the other's content. Every
+    // member of a colliding group is now suffixed with its sys_id so each record
+    // owns a distinct path.
+    //
+    // The disambiguation must not depend on row order (the Table API gives no
+    // stable ordering, and a rebuild that renamed a different member of the pair
+    // would orphan the previously downloaded files), so it is decided in a first
+    // pass over the whole result set rather than as each row is seen.
+    const entries = rows.map((row) => {
       const name = buildRecordName(row, displayField, tableOptions);
-      const normalized = name.normalize("NFC").toLowerCase();
-      const prior = normalizedSeen.get(normalized);
-      if (prior !== undefined && prior !== name) {
+      return { row, name, normalized: name.normalize("NFC").toLowerCase() };
+    });
+    const sysIdsByNormalized = new Map<string, Set<string>>();
+    for (const entry of entries) {
+      let group = sysIdsByNormalized.get(entry.normalized);
+      if (!group) {
+        group = new Set<string>();
+        sysIdsByNormalized.set(entry.normalized, group);
+      }
+      group.add(entry.row.sys_id);
+    }
+
+    for (const entry of entries) {
+      const collides = (sysIdsByNormalized.get(entry.normalized)?.size ?? 0) > 1;
+      const name = collides ? `${entry.name}_${entry.row.sys_id}` : entry.name;
+      if (collides) {
         logger.warn(
-          `Record name collision in ${tableName}: "${name}" and "${prior}" resolve to the same file on case-insensitive or Unicode-normalizing filesystems; one will overwrite the other.`
-        );
-      } else if (records[name] && records[name].sys_id !== row.sys_id) {
-        logger.warn(
-          `Duplicate record name "${name}" in ${tableName} (sys_id ${records[name].sys_id} and ${row.sys_id}); the later record overwrites the earlier one in the manifest.`
+          `Record name collision in ${tableName}: "${entry.name}" is used by more than one record; storing it as "${name}" so no record is overwritten.`
         );
       }
-      normalizedSeen.set(normalized, name);
       records[name] = {
-        sys_id: row.sys_id,
+        sys_id: entry.row.sys_id,
         name,
         files: files.map((f) => ({ name: f.name, type: f.type })),
       };
@@ -586,6 +636,9 @@ async function getRecordsForTable(
     if (!isTableSkippableError(e)) {
       throw e;
     }
+    // See getFileFieldsForTable: an ACL denial must not read as "this table has
+    // no records" to the manifest builder.
+    onSkip?.();
     rows = [];
   }
 
@@ -593,7 +646,12 @@ async function getRecordsForTable(
     return toRecords(rows);
   }
 
-  const metadataRows = await getScopeMetadataRowsForTable(client, scopeId, tableName);
+  const metadataRows = await getScopeMetadataRowsForTable(
+    client,
+    scopeId,
+    tableName,
+    onSkip
+  );
   if (metadataRows.length === 0) {
     return {};
   }
@@ -622,7 +680,11 @@ async function getRecordsForTable(
       if (!isTableSkippableError(e)) {
         throw e;
       }
-      // Table not accessible — continue with other chunks.
+      // Table not accessible for this chunk — the other chunks may still
+      // succeed, so keep going, but the result is now a PARTIAL record set.
+      // Without reporting the skip, a manifest missing those records looks
+      // authoritative and `repair --prune` deletes their local files.
+      onSkip?.();
     }
   }
 
@@ -632,7 +694,8 @@ async function getRecordsForTable(
 async function getScopeMetadataRowsForTable(
   client: SNClient,
   scopeId: string,
-  tableName: string
+  tableName: string,
+  onSkip?: () => void
 ): Promise<TableAPIRecord[]> {
   try {
     return await tableAPIGetAllRows(
@@ -646,6 +709,10 @@ async function getScopeMetadataRowsForTable(
     if (!isTableSkippableError(e)) {
       throw e;
     }
+    // Same reason as the other skips: an empty row set here is returned to a
+    // caller that cannot tell "refused" from "empty", and the table would be
+    // dropped from the rebuilt manifest.
+    onSkip?.();
     return [];
   }
 }
@@ -694,25 +761,52 @@ export async function buildManifestFromTableAPI(
 
   const manifest: SN.AppManifest = { scope: scopeName, tables: {} };
   const failedTables: string[] = [];
+  // Tables whose enumeration was cut short by a skippable 400/403/404. They are
+  // NOT "empty" — see the carry-forward below.
+  const skippedTables: string[] = [];
 
   // PERF-7 (REV-100): enumerate tables through a bounded pool instead of a single
   // Promise.all that opened one request chain per table at once.
   const tableConcurrency = resolveManifestTableConcurrency(config);
   await mapWithConcurrency(tableNames, tableConcurrency, async (tableName) => {
+    let skipped = false;
+    const onSkip = () => {
+      skipped = true;
+    };
     try {
-      const files = await getFileFieldsForTable(client, tableName, includes, excludes);
-      if (files.length === 0) return;
+      const files = await getFileFieldsForTable(
+        client,
+        tableName,
+        includes,
+        excludes,
+        onSkip
+      );
+      if (files.length === 0) {
+        if (skipped) skippedTables.push(tableName);
+        return;
+      }
 
       const records = await getRecordsForTable(
         client,
         tableName,
         scopeId,
         files,
-        tableOptions[tableName]
+        tableOptions[tableName],
+        onSkip
       );
-      if (Object.keys(records).length === 0) return;
+      if (Object.keys(records).length === 0) {
+        if (skipped) skippedTables.push(tableName);
+        return;
+      }
 
       manifest.tables[tableName] = { records };
+      // A partially refused read (one `sys_idIN` chunk denied while the others
+      // answered) still yields records — but an incomplete set. Committing it as
+      // authoritative is the same data loss as dropping the table: the records
+      // that fell out stop mapping to their local files, so `push` ignores edits
+      // to them and `repair --prune` deletes them. Report the skip so the
+      // carry-forward below restores whatever the refused part would have held.
+      if (skipped) skippedTables.push(tableName);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
@@ -728,16 +822,68 @@ export async function buildManifestFromTableAPI(
     );
   }
 
+  // A table the instance refused (ACL, temporarily unreadable) used to be
+  // dropped from the rebuilt manifest exactly like a table with no records. The
+  // rebuilt manifest then replaced the good one, so every already-downloaded
+  // file of that table stopped mapping to a record: `push` silently ignored
+  // edits to them and `repair --prune` classified them as orphans. Carry the
+  // previous entries forward instead, and say so.
+  if (skippedTables.length > 0) {
+    const previous = getPreviousManifest(scopeName);
+    const carried: string[] = [];
+    for (const tableName of skippedTables.sort()) {
+      const priorTable = previous?.tables?.[tableName];
+      if (!priorTable || Object.keys(priorTable.records || {}).length === 0) {
+        continue;
+      }
+      const current = manifest.tables[tableName]?.records;
+      manifest.tables[tableName] =
+        current && Object.keys(current).length > 0
+          ? // Partial read: keep every record just enumerated (they are the
+            // fresher truth) and restore only the ones the refused part of the
+            // read would have silently dropped.
+            { ...priorTable, records: { ...priorTable.records, ...current } }
+          : priorTable;
+      carried.push(tableName);
+    }
+    logger.warn(
+      `Could not fully read ${skippedTables.length} table(s) while building the manifest for "${scopeName}" (no access or not queryable): ${skippedTables.join(", ")}.` +
+        (carried.length > 0
+          ? ` Kept the previously known records for: ${carried.join(", ")}.`
+          : "")
+    );
+  }
+
   return manifest;
+}
+
+// Best-effort read of the manifest currently loaded in memory, used only to
+// preserve entries for tables this run could not read. Returns undefined when
+// no config/manifest is loaded (first-run wizard) or it belongs to another scope.
+function getPreviousManifest(scopeName: string): SN.AppManifest | undefined {
+  try {
+    const existing = ConfigManager.getManifest(true);
+    return existing && existing.scope === scopeName ? existing : undefined;
+  } catch (_e) {
+    return undefined;
+  }
 }
 
 // ─── Public: buildBulkDownloadFromTableAPI ───────────────────────────────────
 // Full equivalent of SincUtilsMS.processMissingFiles() using only Table API
 
+/**
+ * Record names exactly as the manifest stores them, keyed by table and then by
+ * sys_id. Callers build this from the manifest that produced the missing map
+ * (see buildManifestRecordNames in downloadPipeline).
+ */
+export type ManifestRecordNames = Record<string, Record<string, string>>;
+
 export async function buildBulkDownloadFromTableAPI(
   missingFiles: SN.MissingFileTableMap,
   client: SNClient,
-  tableOptions: Sync.ITableOptionsMap
+  tableOptions: Sync.ITableOptionsMap,
+  recordNames?: ManifestRecordNames
 ): Promise<SN.TableMap> {
   const result: SN.TableMap = {};
 
@@ -778,25 +924,62 @@ export async function buildBulkDownloadFromTableAPI(
           rows.push(...extractResult(res.data));
         }
         const records: SN.TableConfigRecords = {};
+        const unreturnedFields = new Set<string>();
+
+        const namesForTable = recordNames?.[tableName];
 
         for (const row of rows) {
-          // buildRecordName applies the tableOptions.displayField override itself
-          // (override -> default -> sys_id), so it must receive the DEFAULT field
-          // here — exactly as getRecordsForTable does. Passing the already
-          // resolved override collapses that chain and names a record with an
-          // empty override value differently from the manifest.
-          const name = buildRecordName(row, defaultDisplayField, tableOpts);
+          // The MANIFEST decides where a record lives on disk, not this
+          // response: getRecordsForTable suffixes a colliding display name with
+          // its sys_id, processTablesInManifest writes at `<table>/<rec.name>`
+          // and findMissingFiles probes the manifest key. Deriving the name here
+          // a second time broke that parity for every disambiguated record — the
+          // downloader wrote at a path the manifest did not know, so the record
+          // stayed "missing" on every subsequent run and `repair --apply --prune`
+          // deleted the freshly written file as an orphan. It cannot be
+          // recomputed either: this call sees only the MISSING subset, so one
+          // member of a colliding pair looks unique and loses its suffix.
+          //
+          // buildRecordName remains the fallback for a caller that supplied no
+          // map. It must receive the DEFAULT display field — it applies the
+          // tableOptions.displayField override itself (override -> default ->
+          // sys_id), exactly as getRecordsForTable does, and passing the already
+          // resolved override collapses that chain.
+          const manifestName = namesForTable?.[row.sys_id];
+          const name =
+            typeof manifestName === "string" && manifestName.length > 0
+              ? manifestName
+              : buildRecordName(row, defaultDisplayField, tableOpts);
           const files: SN.File[] = [];
 
           for (const [fieldName, fieldType] of allFiles.entries()) {
+            // A field the response did not return AT ALL (column-level ACL,
+            // dropped from the projection) is "not fetched" — not "empty".
+            // `row[fieldName] || ""` erased that distinction, and because
+            // downloadAllFiles writes with forceWrite the resulting empty
+            // string overwrote the local file: silent data loss on every
+            // download of a read-restricted field. Omit the file instead, so
+            // the existing content is left untouched.
+            if (!(fieldName in row)) {
+              unreturnedFields.add(fieldName);
+              continue;
+            }
             files.push({
               name: fieldName,
               type: fieldType,
-              content: row[fieldName] || "",
+              content: row[fieldName] ?? "",
             });
           }
 
           records[name] = { sys_id: row.sys_id, name, files };
+        }
+
+        if (unreturnedFields.size > 0) {
+          logger.warn(
+            `Table ${tableName}: the instance returned no value for field(s) ${[...unreturnedFields]
+              .sort()
+              .join(", ")} — leaving the local file(s) untouched instead of blanking them.`
+          );
         }
 
         if (Object.keys(records).length > 0) {

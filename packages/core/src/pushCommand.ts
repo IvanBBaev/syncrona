@@ -11,6 +11,7 @@ import { defaultClient, resolveCredentials } from "./snClient.js";
 import inquirer from "inquirer";
 import { formatTable } from "./genericUtils.js";
 import { gitDiffToEncodedPaths } from "./gitUtils.js";
+import { isPromptAbort } from "./errorTaxonomy.js";
 import {
   setLogLevel,
   scopeCheck,
@@ -551,7 +552,19 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       logPushResults(pushResults);
     } catch (e) {
-      logger.getInternalLogger().error(e);
+      // Ctrl-C at the overwrite/confirmation prompt is a cancellation, not a
+      // push failure: it used to be logged as an error and exit 1, which reads
+      // as "the push broke" in CI. 130 is the conventional SIGINT exit code
+      // (same mapping as commander.ts).
+      if (isPromptAbort(e)) {
+        process.exitCode = 130;
+        return;
+      }
+      // Log the MESSAGE, not the raw Error object: the internal logger renders
+      // an Error as "[object Object]"/"{}" depending on the transport, so the
+      // actual reason for the failed push was invisible.
+      const message = e instanceof Error ? e.message : String(e);
+      logger.getInternalLogger().error(message || "Push failed with an unknown error.");
       logErrorHint(e); // DX19: actionable next step based on error category
       // exitCode instead of process.exit so the finally block can still
       // release the collaboration lock before the process ends.

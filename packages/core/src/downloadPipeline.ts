@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN } from "@syncrona/types";
+import { createHash } from "crypto";
 import path from "path";
 import * as fUtils from "./FileUtils.js";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
@@ -9,8 +10,10 @@ import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
   isScopedEndpointUnavailableError,
+  ManifestRecordNames,
 } from "./manifestBuilder.js";
 import { logger } from "./Logger.js";
+import { isSafePathComponent } from "./genericUtils.js";
 import {
   DownloadCheckpoint,
   readDownloadCheckpoint,
@@ -34,19 +37,37 @@ const mapWithConcurrency = async <T, R>(
   const results: R[] = new Array(items.length);
   const limit = Math.max(1, Math.floor(concurrency));
   let nextIndex = 0;
+  // Abort on the first failure. Previously a rejecting worker only rejected the
+  // Promise.all, while every other runner kept pulling items off the queue: the
+  // caller had already unwound (releasing the push lock, deleting the
+  // checkpoint, exiting) while those workers were still writing files and
+  // issuing requests in the background, and all but the first error were
+  // discarded. Collect the errors, stop scheduling new work, and rethrow.
+  const errors: unknown[] = [];
 
   const runners = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
-      while (nextIndex < items.length) {
+      while (nextIndex < items.length && errors.length === 0) {
         const current = nextIndex;
         nextIndex += 1;
-        results[current] = await worker(items[current], current);
+        try {
+          results[current] = await worker(items[current], current);
+        } catch (e) {
+          errors.push(e);
+        }
       }
     }
   );
 
   await Promise.all(runners);
+  if (errors.length > 0) {
+    // Rethrow a lone error unchanged so callers can still classify it
+    // (isScopedEndpointUnavailableError, retry predicates, status codes).
+    throw errors.length === 1
+      ? errors[0]
+      : new AggregateError(errors, `${errors.length} concurrent operations failed.`);
+  }
   return results;
 };
 
@@ -78,20 +99,43 @@ export const resolveWriteConcurrency = (): number => {
 // names never trip this: buildRecordName already strips separators and falls
 // back to sys_id for empty/all-dot names, and ServiceNow table names are plain
 // identifiers.
+// The predicate itself lives in genericUtils so every consumer that joins an
+// instance-supplied name onto a local path uses the SAME rule (`init --ci`
+// builds packages/<scope> directories from sys_app rows and used to skip this
+// check entirely).
 const assertSafePathComponent = (
   component: string,
   kind: "table name" | "record name"
 ): void => {
-  if (
-    typeof component !== "string" ||
-    component.length === 0 ||
-    /^\.+$/.test(component) ||
-    /[/\\]/.test(component)
-  ) {
+  if (!isSafePathComponent(component)) {
     throw new Error(
       `Refusing to download: unsafe ${kind} ${JSON.stringify(component)} ` +
         `would escape the workspace source root.`
     );
+  }
+};
+
+// Two records whose names differ only by case or Unicode normal form occupy the
+// SAME path on macOS/Windows volumes, so one silently overwrites the other's
+// files and a later push uploads the wrong content. The Table-API builder now
+// disambiguates such names, but a manifest produced by the scoped endpoint is
+// server-owned and cannot be renamed here — so at least make the collision
+// visible instead of letting it surface as mysteriously missing content.
+const warnOnRecordNameCollisions = (
+  tableName: string,
+  records: Record<string, { name: string }>
+): void => {
+  const seen = new Map<string, string>();
+  for (const rec of Object.values(records)) {
+    const name = String(rec?.name ?? "");
+    const normalized = name.normalize("NFC").toLowerCase();
+    const prior = seen.get(normalized);
+    if (prior !== undefined && prior !== name) {
+      logger.warn(
+        `Record name collision in ${tableName}: "${name}" and "${prior}" resolve to the same path on case-insensitive or Unicode-normalizing filesystems; one will overwrite the other.`
+      );
+    }
+    seen.set(normalized, name);
   }
 };
 
@@ -121,6 +165,7 @@ export const processTablesInManifest = async (
     const tablePath = path.join(sourcePath, tableName);
     const { records } = tables[tableName];
     const recKeys = Object.keys(records);
+    warnOnRecordNameCollisions(tableName, records);
 
     if (flat) {
       // DX17: flat layout writes every field file directly under the table
@@ -214,8 +259,19 @@ export const syncManifest = async (): Promise<boolean> => {
     await fUtils.writeManifestFile(newManifest);
 
     logger.info("Finding and creating missing files...");
-    await processMissingFiles(newManifest);
+    const incompleteTables = await processMissingFiles(newManifest);
+    // The manifest itself is fresh and valid, so persist it either way — the next
+    // run then retries exactly the files this one could not fetch. But a run that
+    // could not fetch every field is not a successful refresh.
     ConfigManager.updateManifest(newManifest);
+    if (incompleteTables.length > 0) {
+      logger.error(
+        `Refresh incomplete: ${incompleteTables.length} table(s) could not be fully fetched: ${incompleteTables.join(
+          ", "
+        )}. Check read access for the named field(s) and re-run.`
+      );
+      return false;
+    }
     return true;
   } catch (e) {
     let message
@@ -404,9 +460,34 @@ export const findMissingFiles = async (
   return missing;
 };
 
+// The manifest's own record names (table -> sys_id -> name). processTablesInManifest
+// writes each record at `<table>/<rec.name>` and checkRecordsForMissing probes the
+// manifest key, so the Table-API download path must reuse these names instead of
+// deriving its own — see the parity note in buildBulkDownloadFromTableAPI.
+export const buildManifestRecordNames = (
+  manifest: SN.AppManifest
+): ManifestRecordNames => {
+  // INJ-2: null-proto at both levels, matching buildFullMissingMap — a crafted
+  // manifest whose table key or sys_id is "__proto__" must stay an own slot.
+  const names: ManifestRecordNames = Object.create(null);
+  for (const [tableName, tableConfig] of Object.entries(manifest.tables)) {
+    const bySysId: Record<string, string> = Object.create(null);
+    for (const [recordKey, record] of Object.entries(tableConfig.records)) {
+      // The key and record.name are written identically by every manifest
+      // producer; prefer the name (it is what the writer joins onto the path)
+      // and fall back to the key for a hand-edited manifest missing one.
+      bySysId[record.sys_id] = record.name || recordKey;
+    }
+    names[tableName] = bySysId;
+  }
+  return names;
+};
+
+// Returns the tables the instance could not fully supply, so refresh/repair can
+// report an incomplete run instead of a clean one. An empty array means success.
 export const processMissingFiles = async (
   newManifest: SN.AppManifest
-): Promise<void> => {
+): Promise<string[]> => {
   const missing = await findMissingFiles(newManifest);
   // DX21: surface how much work the refresh found (visible at --log-level debug).
   const missingRecords = Object.values(missing).reduce(
@@ -418,6 +499,7 @@ export const processMissingFiles = async (
   );
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient();
+  const recordNames = buildManifestRecordNames(newManifest);
 
   // PERF-3 (REV-91): stream the fetch/write one table at a time instead of
   // materializing every missing file body for the whole scope in memory at once.
@@ -429,7 +511,12 @@ export const processMissingFiles = async (
     tableMissing: SN.MissingFileTableMap
   ): Promise<SN.TableMap> => {
     if (scopedEndpointUnavailable) {
-      return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+      return buildBulkDownloadFromTableAPI(
+        tableMissing,
+        client,
+        tableOptions,
+        recordNames
+      );
     }
     try {
       return await unwrapSNResponse(
@@ -439,18 +526,47 @@ export const processMissingFiles = async (
       if (isScopedEndpointUnavailableError(e)) {
         logger.info("Custom scope not found — fetching missing files from Table API...");
         scopedEndpointUnavailable = true;
-        return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+        return buildBulkDownloadFromTableAPI(
+          tableMissing,
+          client,
+          tableOptions,
+          recordNames
+        );
       }
       throw e;
     }
   };
+
+  const incompleteTables: string[] = [];
 
   for (const table of Object.keys(missing)) {
     const filesToProcess = await fetchTable({
       [table]: missing[table],
     } as SN.MissingFileTableMap);
     await processTablesInManifest(filesToProcess, false);
+
+    // REV-140 applied to the refresh/repair path. downloadTablesWithResume
+    // already refuses to checkpoint a table whose field the instance withheld,
+    // but this loop wrote whatever came back and its callers reported success.
+    // The withheld field's file is never created, so findMissingFiles reports the
+    // same records missing on the next run: `refresh` and `repair --apply`
+    // printed "complete ✅" over a workspace that can never converge. Name the
+    // gap and let the caller decide the exit status.
+    const unfetchedFields = collectUnfetchedFields(
+      missing[table],
+      filesToProcess[table]
+    );
+    if (unfetchedFields.length > 0) {
+      incompleteTables.push(table);
+      logger.warn(
+        `Table ${table} is still missing field(s) ${unfetchedFields.join(
+          ", "
+        )} (no read access, or the instance returned no value) — the local file(s) were left untouched.`
+      );
+    }
   }
+
+  return incompleteTables;
 };
 
 // Build a missing-file map that covers every file in the manifest, used to
@@ -473,6 +589,62 @@ export const buildFullMissingMap = (
   return missing;
 };
 
+// Stable digest of the work a download run has to do: every table, every
+// sys_id and every field name it expects to fetch, in sorted order so the
+// digest does not depend on key iteration order. Any manifest change that adds,
+// removes or re-fields a record changes the digest and invalidates the
+// checkpoint.
+export const computeMissingFingerprint = (
+  missing: SN.MissingFileTableMap
+): string => {
+  const parts = Object.keys(missing)
+    .sort()
+    .map((table) => {
+      const records = Object.keys(missing[table])
+        .sort()
+        .map((sysId) => {
+          const fields = (missing[table][sysId] || [])
+            .map((file) => `${file.name}.${file.type}`)
+            .sort()
+            .join(",");
+          return `${sysId}:${fields}`;
+        })
+        .join(";");
+      return `${table}|${records}`;
+    });
+  return createHash("sha1").update(parts.join("\n")).digest("hex");
+};
+
+// REV-140: fields this run ASKED for that the instance did not return for a
+// record it DID return. A column-level read ACL hides the field from the Table
+// API response, and buildBulkDownloadFromTableAPI now omits the file entirely
+// rather than fabricating an empty one (manifestBuilder.ts), so nothing is ever
+// written for it. Honest limit: records the instance did not return at all are
+// deliberately not judged here — a record deleted server-side between the
+// manifest build and the download is not a field-level gap.
+const collectUnfetchedFields = (
+  requested: SN.MissingFileRecord | undefined,
+  fetched: SN.TableConfig | undefined
+): string[] => {
+  const returnedBySysId = new Map<string, Set<string>>();
+  for (const record of Object.values(fetched?.records ?? {})) {
+    returnedBySysId.set(
+      record.sys_id,
+      new Set((record.files ?? []).map((file) => file.name))
+    );
+  }
+
+  const unfetched = new Set<string>();
+  for (const [sysId, files] of Object.entries(requested ?? {})) {
+    const returned = returnedBySysId.get(sysId);
+    if (!returned) continue;
+    for (const file of files ?? []) {
+      if (!returned.has(file.name)) unfetched.add(file.name);
+    }
+  }
+  return [...unfetched].sort();
+};
+
 // Injected dependencies for the resumable download loop, so the
 // progress/checkpoint/skip logic can be tested without a network or the disk.
 export interface DownloadTableDeps {
@@ -480,7 +652,10 @@ export interface DownloadTableDeps {
   fetchTable: (tableMissing: SN.MissingFileTableMap) => Promise<SN.TableMap>;
   /** Write a fetched table's files to disk. */
   writeTable: (files: SN.TableMap) => Promise<void>;
-  readCheckpoint: (scope: string) => Promise<DownloadCheckpoint | null>;
+  readCheckpoint: (
+    scope: string,
+    fingerprint: string
+  ) => Promise<DownloadCheckpoint | null>;
   writeCheckpoint: (checkpoint: DownloadCheckpoint) => Promise<void>;
   deleteCheckpoint: () => Promise<void>;
 }
@@ -500,7 +675,12 @@ export const downloadTablesWithResume = async (
     0
   );
 
-  const checkpoint = await deps.readCheckpoint(scope);
+  // G3: the checkpoint is only valid for the work it was recorded against.
+  // Keyed on the scope alone, a checkpoint written before a `refresh` added
+  // records made the next download skip those tables as "already done", so the
+  // new files were never fetched while the run still reported success.
+  const fingerprint = computeMissingFingerprint(missing);
+  const checkpoint = await deps.readCheckpoint(scope, fingerprint);
   const completed = new Set<string>(checkpoint?.completedTables ?? []);
   const pending = allTables.filter((table) => !completed.has(table));
 
@@ -543,8 +723,31 @@ export const downloadTablesWithResume = async (
       continue;
     }
 
+    // REV-140: the guard above only sees a table that returned NOTHING. A
+    // column-level read ACL fails differently — the rows come back, only the
+    // withheld field is absent, so its file is never fetched or written. This
+    // completeness check counted records alone, so such a table was checkpointed
+    // as done, the checkpoint was dropped on loop exit and the run printed
+    // "Download complete" over files that were never downloaded. Treat a
+    // field-level gap exactly like an inaccessible table: keep the checkpoint,
+    // name the fields, and retry on the next run.
+    const unfetchedFields = collectUnfetchedFields(missing[table], files[table]);
+    if (unfetchedFields.length > 0) {
+      failedTables.push(table);
+      logger.warn(
+        `  Table ${table} was downloaded without field(s) ${unfetchedFields.join(
+          ", "
+        )} (no read access, or the instance returned no value) — its files are incomplete and it will be retried on the next run.`
+      );
+      continue;
+    }
+
     completed.add(table);
-    await deps.writeCheckpoint({ scope, completedTables: [...completed] });
+    await deps.writeCheckpoint({
+      scope,
+      fingerprint,
+      completedTables: [...completed],
+    });
   }
 
   if (failedTables.length > 0) {
@@ -573,6 +776,7 @@ export const downloadAllFiles = async (
   const missing = buildFullMissingMap(manifest);
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient(instanceProfile);
+  const recordNames = buildManifestRecordNames(manifest);
 
   // Probe the scoped endpoint once; after the first "unavailable" go straight to
   // the Table API for the remaining tables instead of re-probing each time.
@@ -581,7 +785,12 @@ export const downloadAllFiles = async (
     tableMissing: SN.MissingFileTableMap
   ): Promise<SN.TableMap> => {
     if (scopedEndpointUnavailable) {
-      return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+      return buildBulkDownloadFromTableAPI(
+        tableMissing,
+        client,
+        tableOptions,
+        recordNames
+      );
     }
     try {
       return await unwrapSNResponse(
@@ -591,7 +800,12 @@ export const downloadAllFiles = async (
       if (isScopedEndpointUnavailableError(e)) {
         logger.info("Custom scope not found — fetching files from Table API...");
         scopedEndpointUnavailable = true;
-        return buildBulkDownloadFromTableAPI(tableMissing, client, tableOptions);
+        return buildBulkDownloadFromTableAPI(
+          tableMissing,
+          client,
+          tableOptions,
+          recordNames
+        );
       }
       throw e;
     }

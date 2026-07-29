@@ -13,10 +13,44 @@ const DEFAULT_TOOL_METADATA: ToolLifecycleMetadata = {
 };
 
 const TOOL_METADATA_OVERRIDES: Record<string, Partial<ToolLifecycleMetadata>> = {
+  // 1.2.0: both tools now declare the `dryRun` property they already honour.
   run_workspace_command: {
-    version: "1.1.0",
+    version: "1.2.0",
   },
   run_node_code: {
+    version: "1.2.0",
+  },
+  // 1.2.0 (REV-196): `dryRun` was always declared here, but REV-150 changed what it
+  // MEANS — the flag never reached the handler, so `{apply: true, dryRun: true}` used
+  // to perform the real apply (with the preflight gate skipped, because index.ts skips
+  // it for dry runs). It now short-circuits before any mutation. A client that caches
+  // tool definitions by metadata.version — the reason the field exists — would
+  // otherwise never learn that the semantics of an input it already knows about
+  // inverted, which is exactly the case a version is for.
+  sync_unified_change_workflow: {
+    version: "1.2.0",
+  },
+  // 1.2.0 (REV-195): these three honour `dryRun` and describe it in their OUTPUT
+  // schema ("When dryRun is requested, the payload is the dry-run plan"), but never
+  // declared it as an input — so a client reading the contract could not discover the
+  // only way to obtain that payload.
+  sync_set_scope: {
+    version: "1.2.0",
+  },
+  sync_set_update_set: {
+    version: "1.2.0",
+  },
+  sync_prepare_session: {
+    version: "1.2.0",
+  },
+  // 1.1.0 (REV-152/REV-198): the result grew two fields a caller must branch on —
+  // `searchComplete`, which is false when a table query failed or an unsupported table
+  // was named, and `unknownTables`. Before them, "0 matches" from a run where every
+  // query 401'd was indistinguishable from a genuine clean search, and that is the
+  // answer that gets acted on ("this identifier is unused, safe to delete"). `tables`
+  // also gained an enum. A client caching the old definition would keep reading
+  // matchCount alone.
+  sn_search_scripts: {
     version: "1.1.0",
   },
 };
@@ -173,6 +207,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         scope: {
           type: "string",
         },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the scope switch and record an audit entry without changing the session.",
+        },
         timeoutMs: {
           type: "number",
           minimum: 1000,
@@ -290,6 +330,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         createIfMissing: {
           type: "boolean",
           default: true,
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the update-set switch and record an audit entry without changing the session.",
         },
         timeoutMs: {
           type: "number",
@@ -419,6 +465,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         createUpdateSetIfMissing: {
           type: "boolean",
           default: true,
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the session alignment and record an audit entry without changing the session.",
         },
         timeoutMs: {
           type: "number",
@@ -668,6 +720,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
             "Set true if running potentially destructive commands such as deploy/download.",
           default: false,
         },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the invocation and record an audit entry without running it.",
+        },
       },
       required: ["command"],
     },
@@ -691,6 +749,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           description:
             "Set true to acknowledge that executing Node.js code may modify workspace or environment state.",
           default: false,
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the invocation and record an audit entry without running it.",
         },
       },
       required: ["code"],
@@ -1291,7 +1355,15 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           enum: ["manual", "init", "refresh", "successful_change", "drift"],
           default: "manual",
         },
-        dryRun: { type: "boolean", default: false },
+        // REV-195: these four honour dryRun and are registered in DRY_RUN_AWARE_TOOLS,
+        // but the input carried no description, so a client could not tell whether it
+        // suppressed the write or merely the report.
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the run and record an audit entry without writing any file to the workspace.",
+        },
       },
     },
   },
@@ -1314,7 +1386,15 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         includeScheduledJobs: { type: "boolean", default: true },
         includeCrossScope: { type: "boolean", default: true },
         writeFiles: { type: "boolean", default: false },
-        dryRun: { type: "boolean", default: false },
+        // REV-195: these four honour dryRun and are registered in DRY_RUN_AWARE_TOOLS,
+        // but the input carried no description, so a client could not tell whether it
+        // suppressed the write or merely the report.
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the run and record an audit entry without writing any file to the workspace.",
+        },
       },
     },
   },
@@ -1348,7 +1428,15 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         graph: { type: "object", default: {} },
         task: { type: "string", default: "" },
         writeFiles: { type: "boolean", default: false },
-        dryRun: { type: "boolean", default: false },
+        // REV-195: these four honour dryRun and are registered in DRY_RUN_AWARE_TOOLS,
+        // but the input carried no description, so a client could not tell whether it
+        // suppressed the write or merely the report.
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the run and record an audit entry without writing any file to the workspace.",
+        },
       },
       required: ["trigger"],
     },
@@ -1362,7 +1450,15 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         scope: { type: "string", default: "" },
         task: { type: "string", default: "table dependencies report" },
         writeFiles: { type: "boolean", default: false },
-        dryRun: { type: "boolean", default: false },
+        // REV-195: these four honour dryRun and are registered in DRY_RUN_AWARE_TOOLS,
+        // but the input carried no description, so a client could not tell whether it
+        // suppressed the write or merely the report.
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the run and record an audit entry without writing any file to the workspace.",
+        },
       },
     },
   },
@@ -1480,6 +1576,15 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           type: "string",
           default: "",
         },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          // REV-196: spelling out what this flag now guarantees. Until REV-150 it never
+          // reached the handler, so `{apply: true, dryRun: true}` performed the real
+          // apply — and index.ts skipped the preflight gate because it saw a dry run.
+          description:
+            "Plan the workflow and record an audit entry without applying anything. Takes precedence over `apply`: a dry run never mutates the instance.",
+        },
         timeoutMs: {
           type: "number",
           minimum: 1000,
@@ -1522,7 +1627,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sn_search_scripts",
     description:
-      "Full-text search across ServiceNow script tables (script includes, business rules, client scripts, UI scripts, scripted REST, transform scripts) and return matches with excerpts.",
+      "Full-text search across ServiceNow script tables (script includes, business rules, client scripts, UI scripts, scripted REST, transform scripts) and return matches with excerpts. The result carries `searchComplete`; if any table query fails the call returns an error result, so `matchCount: 0` only means \"no matches\" when `searchComplete` is true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1536,8 +1641,31 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
         tables: {
           type: "array",
-          items: { type: "string" },
-          description: "Optional subset of script tables to search.",
+          items: {
+            type: "string",
+            // REV-198: the searchable set is small, fixed, and was undiscoverable —
+            // `tables` was documented only as "a subset of script tables", so a caller
+            // naming a real script-bearing table this tool does not cover (sys_ui_action,
+            // sysevent_script_action, …) searched nothing. The handler now reports those
+            // in `unknownTables` and withholds `searchComplete`; enumerating them here
+            // lets a client avoid the mistake in the first place.
+            //
+            // Spelled out rather than imported from SCRIPT_SEARCH_TABLES on purpose: this
+            // module is deliberately dependency-free (the tool-contract gate and
+            // generate-tool-reference.js load it for its literals alone), and
+            // handlers/insightShared pulls in servicenowCore. searchScripts.contract.test.js
+            // asserts this list equals Object.keys(SCRIPT_SEARCH_TABLES), so it cannot drift.
+            enum: [
+              "sys_script_include",
+              "sys_script",
+              "sys_script_client",
+              "sys_ui_script",
+              "sys_ws_operation",
+              "sys_transform_script",
+            ],
+          },
+          description:
+            "Optional subset of script tables to search. Defaults to all of them. Any name outside the supported set is reported back in `unknownTables` and forces `searchComplete: false` — it is never silently ignored.",
         },
         limit: {
           type: "number",

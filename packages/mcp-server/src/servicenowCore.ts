@@ -451,10 +451,27 @@ export function getDispatcher(
   return dispatcher;
 }
 
+// REV-153: the key carried no TLS material, so two configs that differ ONLY in
+// their client certificate / CA (same instance, user, client id and secrets)
+// collided on one cached token manager — and the survivor's poster closure was
+// pinned to the FIRST config's TLS paths, so the second identity's token leg
+// silently presented the wrong client certificate. The paths (not their mtimes)
+// are folded in: rotating a cert in place must not throw away a still-valid
+// token, and freshness of the material is handled per POST by getDispatcher.
+function tokenManagerTlsKey(config: SNConfig): string {
+  return [
+    config.tlsCustom ? "1" : "0",
+    config.caBundlePath ?? "",
+    config.clientCertPath ?? "",
+    config.clientKeyPath ?? "",
+    config.rejectUnauthorized === false ? "0" : "1",
+  ].join("|");
+}
+
 function tokenManagerKey(config: SNConfig): string {
   return `${config.instance}|${config.user}|${config.clientId ?? ""}|${credentialFingerprint(
     config
-  )}`;
+  )}|${tokenManagerTlsKey(config)}`;
 }
 
 function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
@@ -466,8 +483,16 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
     tokenManagers.set(key, existing);
     return existing;
   }
-  const dispatcher = getDispatcher(config);
   const poster: TokenPoster = async (tokenPath, body) => {
+    // REV-153: the dispatcher used to be resolved ONCE, when the token manager was
+    // created, and captured here for the life of the process. That pinned the token
+    // leg to a single Agent, so (a) an in-place cert rotation rebuilt the dispatcher
+    // for data requests but the token endpoint kept presenting the expired material
+    // until restart — defeating REV-92 exactly where it matters, since a failing
+    // token leg breaks every OAuth call — and (b) once the LRU evicted (and closed)
+    // that Agent, every later token POST hit a destroyed client. Resolve per POST:
+    // getDispatcher is a cheap cache hit in the steady state and rebuilds on demand.
+    const dispatcher = getDispatcher(config);
     const init: FetchInit = {
       method: "POST",
       headers: {
@@ -600,7 +625,14 @@ function loadFromAuthStore(): Record<string, string> {
   return {
     SN_INSTANCE: cleanEnvValue(creds.instance || activeInstance || ""),
     SN_USER: cleanEnvValue(creds.user || ""),
-    SN_PASSWORD: cleanEnvValue(creds.password || ""),
+    // REV-157: cleanEnvValue trims whitespace and strips one leading/trailing
+    // quote — dotenv semantics, applied here to a secret that never went through
+    // dotenv. The credential store deliberately keeps passwords verbatim
+    // (see normalizeStoredCredentials: "Do not coerce/trim secrets"), and the core
+    // CLI uses them verbatim, so a password like `"pa$$` or one with a trailing
+    // space authenticated from the CLI but was silently mangled here into a 401
+    // that looks like a wrong password rather than a client-side bug.
+    SN_PASSWORD: creds.password || "",
   };
 }
 
@@ -617,7 +649,8 @@ export function loadAuthStoreProfile(instanceName: string): SNConfig | null {
 
   const instance = cleanEnvValue(creds.instance || cleaned);
   const user = cleanEnvValue(creds.user || "");
-  const password = cleanEnvValue(creds.password || "");
+  // REV-157: store-origin secret, used verbatim — see loadFromAuthStore.
+  const password = creds.password || "";
   if (!instance || !user || !password) {
     return null;
   }
@@ -720,8 +753,15 @@ export function resolveServiceNowSecrets(
     }
     const values = provider.load(projectDir);
     for (const key of Object.keys(merged)) {
-      const candidate = cleanEnvValue(String(values[key] || ""));
-      if (!merged[key] && candidate) {
+      const raw = String(values[key] || "");
+      // REV-157: this loop used to re-run cleanEnvValue over every provider's
+      // output. That was a no-op for the env/.env/secrets-file providers (which
+      // already normalize their own values) but silently rewrote the credential
+      // store's verbatim password. Keep dotenv-style cleanup for the identifier
+      // fields and pass the secret through untouched; presence is still judged on
+      // the trimmed form so a whitespace-only value counts as absent, as before.
+      const candidate = key === "SN_PASSWORD" ? raw : cleanEnvValue(raw);
+      if (!merged[key] && candidate.trim()) {
         merged[key] = candidate;
       }
     }
@@ -782,9 +822,22 @@ export function resolveServiceNowSecrets(
   if (needsUser && !user) {
     issues.push(`${resolved.method} requires SN_USER.`);
   }
-  if (issues.length > 0 && !hasMtls) {
+  // REV-201: the mTLS excuse used to cover EVERY issue, which quietly re-opened
+  // the hole the unknown-selector check was added to close. A client certificate
+  // supplies transport-level identity, so it can stand in for missing
+  // Authorization material — but it says nothing about an unrecognized
+  // SN_AUTH_METHOD, which is a typo that silently reroutes which grant runs.
+  // Concretely: SN_AUTH_METHOD=oauth-jwt (the real name is oauth-jwt-bearer) plus
+  // mTLS plus leftover client id/secret/password resolved to oauth-password and
+  // posted the user's password to /oauth_token.do, with the server starting clean
+  // — while README documents that it "refuses to start". So the selector fails
+  // closed regardless of mTLS; only the material issues are excusable.
+  if (issues.length > 0 && (!hasMtls || resolved.unknownExplicit)) {
+    const prefix = resolved.unknownExplicit
+      ? `Refusing to start on an unusable ServiceNow auth configuration (fell back to ${resolved.method}):`
+      : `Missing ServiceNow credentials for ${resolved.method} auth:`;
     throw new Error(
-      `Missing ServiceNow credentials for ${resolved.method} auth: ${issues.join(
+      `${prefix} ${issues.join(
         " "
       )} Provide them via env, auth store (syncrona login), .syncrona-mcp/secrets.json, or .env in project root.`
     );

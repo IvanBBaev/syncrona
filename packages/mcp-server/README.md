@@ -214,10 +214,10 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 - `sync_status` / `sync_refresh` / `sync_build` / `sync_push`
   - Wrapper tools for common SyncroNow workspace command flows
 - `run_node_code`
-  - Executes local Node snippets with explicit safety controls for destructive operations
+  - Executes local Node snippets in a child process — **disabled by default**: the call needs `confirmDestructive: true` *and* the guardrail policy must enable `allowFullNodeAccess` (default `false`), because in-process sandboxing of arbitrary Node code is not a real security boundary
 - `run_workspace_command`
   - Runs a local command (for example `node`, `npm`, `npx`) in the workspace for automation tasks, with a bounded `timeoutMs`
-  - Blocks unsafe shell-interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk; potentially destructive commands (deploy/download) require `confirmDestructive: true`
+  - Blocks unsafe shell-interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk; confirmation is **default-deny** — only the bare commands `git`, `ls`, `cat`, `pwd`, `echo` and `syncrona` may run without `confirmDestructive: true` (and even those confirm for mutating `git` / `syncrona` subcommands); anything else, including any command given as a path such as `./git`, always requires it
 - `sn_render_analysis_markdown`
   - Renders unified analysis report into deterministic markdown
 - `sync_unified_change_workflow`

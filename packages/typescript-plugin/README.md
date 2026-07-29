@@ -24,24 +24,51 @@ npm i -D @syncrona/typescript-plugin
 
 ### Order of Configurations
 
-1. Load from `sync.config.js` options.
-2. Check for `tsconfig.json` file and and override any overlapping values.
+Later entries win on every overlapping key:
+
+1. **`tsconfig.json`** — the nearest one found by walking up from the file being
+   compiled, with its `extends` chain resolved. This is the base.
+2. **`compilerOptions` from `sync.config.js`** — merged on top, so a value set here
+   overrides the same key in `tsconfig.json`. Both the string spelling
+   (`target: "ES2021"`) and an already-resolved `typescript.ScriptTarget` value are
+   accepted; an unparsable value fails the push instead of being ignored.
+3. **The plugin's own defaults**, applied only where neither source set the key:
+   - `target` → `ES2021`, the ECMAScript level current ServiceNow releases support.
+     Pinned deliberately, because TypeScript's own default tracks the newest
+     language level and changes between compiler majors.
+   - `module` → follows the effective `target` (`ES2015` for an ES2015+ target,
+     `CommonJS` below it), which is what TypeScript 5 did before its default moved.
+   - `moduleResolution` → `Bundler`, but **only** where TypeScript would otherwise
+     default to `Classic`, which cannot see `node_modules` at all. A `tsconfig.json`
+     that already implies a node-aware resolution is left alone.
+   - `alwaysStrict` → `false` for the emit when neither `strict` nor `alwaysStrict`
+     was configured anywhere, so the transpiled output carries no `"use strict"`
+     prologue. ServiceNow scripts lean on implicit globals, which strict mode turns
+     into runtime errors.
+
+The same effective option set drives the type check and the emit, so a knob that
+relaxes checking (`noImplicitAny`, `skipLibCheck`, `strict`) really does unblock a
+push.
 
 ## Example Usage
 
 This example takes `.ts` files and only type checks them.
 
 ```javascript
-//sync.config.js
-module.exports={
-  rules:{
-    match:/\.ts$/,
-    plugins:[
-      name:"@syncrona/typescript-plugin",
-      options:{
-        transpile:false
-      }
-    ]
-  }
+// sync.config.js
+module.exports = {
+  rules: [
+    {
+      match: /\.ts$/,
+      plugins: [
+        {
+          name: "@syncrona/typescript-plugin",
+          options: {
+            transpile: false,
+          },
+        },
+      ],
+    },
+  ],
 };
 ```

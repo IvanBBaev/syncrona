@@ -84,6 +84,73 @@ All notable changes to this project will be documented in this file.
 - MCP guardrail policy loading fails closed: a present-but-unreadable,
   non-object, or prototype-poisoning guardrail configuration refuses instead of
   silently loading defaults.
+- `dryRun` is honored end to end. `run_workspace_command` and `run_node_code`
+  accepted the flag, satisfied the `requireDryRun` guardrail with it, and then
+  executed for real — auditing the real run as a simulation;
+  `sync_unified_change_workflow` was never handed the flag at all, so
+  `dryRun: true` performed the actual apply with preflight disabled.
+  `sync_unified_change_workflow`'s `dryRun` therefore changed meaning, and its
+  `metadata.version` is bumped to `1.2.0` so clients caching tool definitions learn
+  that an input they already knew about now takes precedence over `apply`.
+- The two remaining `dryRun` enforcement points key on what the tool honors, not on
+  what the caller asked for. The preflight gate was skipped whenever a dry run was
+  merely *requested*, so the first mutating tool added without a dry-run-aware handler
+  would silently lose its preflight; and the `requireDryRun` guardrail — an operator
+  lock meaning "this tool may only be planned here" — inverted on any tool whose
+  handler ignores the flag, making `dryRun: true` the only accepted shape while still
+  performing the real mutation. An unenforceable `requireDryRun` entry is now refused
+  outright.
+- The `run_workspace_command` git gate allowlists the global options that may precede
+  a subcommand instead of blocking only the ones known to be dangerous. Flags that
+  point git at a caller-chosen program or repository — `--exec-path`, `-C`,
+  `--git-dir`, `--work-tree`, `--namespace`, `--super-prefix` — now require
+  confirmation even in front of a read-only verb, which is exactly where they landed:
+  `git --exec-path=/tmp/evil ls-remote https://host/r` executed
+  `/tmp/evil/git-remote-https` while `ls-remote` kept the call off the confirmation
+  path entirely.
+- The `run_workspace_command` git gate validates a subcommand's own options, not
+  just the verb. `git status --exec=...`-style option smuggling and an allowlisted
+  verb carrying a destructive option now require confirmation, and only a bare
+  command name can be allowlisted at all: a command carrying a path separator
+  (`./git`, `/tmp/evil/git`) is a caller-chosen executable and always requires
+  confirmation, where previously it matched the allowlist on its basename alone
+  and ran an attacker-planted binary unconfirmed.
+- Audit-chain hardening: the truncation high-water marker moved out of the
+  world-shared `/tmp` (symlink clobber and silent tripwire defeat), the integrity
+  checker refuses to rewrite through a symlink, the tripwire is consulted for a
+  fully-legacy log instead of returning early (wholesale erasure read as "valid"),
+  concurrent writers no longer mint duplicate `seq` numbers that poison the chain
+  as permanently tampered, and value-based redaction no longer switches itself off
+  for values over 8192 characters.
+- A non-object `policy`, `policy.tools` or `policy.environments` node is rejected
+  instead of being coerced to `{}` — a malformed guardrail file failed open.
+- `init` validates the path components it derives from the server-supplied
+  application scope, and `docs` no longer interpolates that scope straight into a
+  filename; a hostile scope value could write outside the workspace.
+- The Jira MCP untrusted-data fence covers every attacker-controlled free-text
+  field — comment author display names and parent/subtask/link summaries were
+  passed through verbatim. (Assignee and reporter stay verbatim by design; that
+  limit is now documented.)
+- The CLI fails instead of silently downgrading: incomplete api-key or JWT-bearer
+  material no longer falls back to Basic auth, and an unrecognized
+  `SN_AUTH_METHOD` is rejected rather than quietly resolving to an inferred grant
+  (a typo could POST a password to the OAuth token endpoint). An unrecognized
+  selector is now surfaced everywhere it can be: the MCP server refuses to start
+  on it *even when mutual TLS is configured* — a client certificate excuses missing
+  Authorization material, but it never excuses picking a different grant — and
+  every CLI command that authenticates warns once, naming the rejected value and
+  the method it fell back to. A merely incomplete configuration stays quiet there,
+  so first-run `init`/`login` is unaffected.
+- An ADF code block can no longer break out of its own fence. Jira content whose
+  code text contains a ``` run is now fenced with a longer backtick run, so
+  attacker-authored issue text cannot escape into the surrounding Markdown and be
+  read as instructions.
+- SECURITY.md no longer overstates two protections. It claimed *all* mutating MCP
+  tools require `confirmDestructive=true`; it now names the ones that do, and names
+  `sync_set_scope`, `sync_set_update_set` and `sync_prepare_session` (no
+  confirmation flag) plus the two workflow tools that enforce it only on
+  `apply=true`. It also claimed the opt-in diagnostic file log redacts known
+  credential fields; no redactor runs over that file, and the document now says so.
 
 ### Fixed
 
@@ -103,6 +170,99 @@ All notable changes to this project will be documented in this file.
   instead of masking a no-op deployment as success.
 - The Jira error hint no longer tells a user hitting `HTTP 403` to check their
   credentials; a forbidden response now gets its own permissions hint.
+- Build plugins load again. `PluginManager` resolved a plugin to its package
+  directory and `await import()`ed that path, which throws
+  `ERR_UNSUPPORTED_DIR_IMPORT` on Node — every configured build plugin failed to
+  load at runtime.
+- `syncrona build` exits non-zero when records fail to build; it reported the
+  failures and then exited 0, so a pipeline continued to `deploy`.
+- `syncrona push <relative-path>` no longer silently pushes nothing. The
+  workspace-containment check compared the raw, unresolved argument against the
+  absolute source root, so no file ever matched.
+- `repair --prune` no longer deletes live, manifest-tracked files whose on-disk
+  bytes have drifted from the manifest, and a 403/404 on a single table no longer
+  drops that table from the rebuilt manifest — which turned every one of its
+  local sources into an "orphan" for the next prune. The same applies to a
+  *partially* refused read: a table whose records came back incomplete (one
+  refused `sys_id` chunk, a refused metadata lookup, or a refused field lookup)
+  keeps the records the previous manifest knew about instead of being rewritten
+  as if the short answer were the whole table.
+- The download checkpoint is keyed by more than the scope, so a re-fetched
+  manifest no longer skips whole tables and leaves zero-byte files behind a
+  "Download complete" message. The bounded download pool now surfaces the first
+  worker rejection instead of discarding every later error, and a bulk Table-API
+  response with a missing field no longer coerces it to `""` and truncates the
+  local file.
+- Record names that collide on a case-insensitive or Unicode-normalizing volume
+  are disambiguated with the record's `sys_id` instead of merely warned about.
+  Both names were written to the manifest, the records overwrote each other's
+  files, and `push` then uploaded one record's content into the other's `sys_id`.
+  (The suffix is decided in one pass over the whole result set, so it does not
+  depend on the Table API's unstable row order.) Relatedly, when both layouts
+  claim the same record field after `flat` has been toggled, `push` now fails with
+  an "Ambiguous push" error naming both files instead of picking one by
+  directory-walk order.
+- Ctrl-C is handled consistently in the last two places that missed it: the push
+  confirmation printed a raw stack trace and exited 1 instead of 130, and
+  `scopeCheck` swallowed the inquirer `ExitPromptError` into a bogus error banner.
+  Aborting the `init` wizard now exits without writing the MCP configuration —
+  it exited 0 and wrote it anyway.
+- The CLI's ServiceNow data-path client and its OAuth token client both have a
+  request timeout (default 120 s; `SN_REQUEST_TIMEOUT` in milliseconds overrides
+  it, `0` restores the old unbounded behaviour); a hung socket or token endpoint
+  parked a connection-pool slot — or the whole command — indefinitely.
+- Jira: an explicit `--profile` whose credentials are missing or undecryptable now
+  fails instead of silently querying whichever site the environment points at, and
+  an ADF `expand`/`nestedExpand` title is no longer dropped from the rendered text.
+- `@syncrona/typescript-plugin`: `tsconfig.json` `extends` chains are resolved
+  (only the leaf file's `compilerOptions` were used), a string-valued `target` in
+  plugin options no longer downgrades the emit to CommonJS — which produced
+  `exports.` code that cannot run in Rhino — and plugin-supplied `compilerOptions`
+  now reach the type check that hard-fails the build, so the documented escape
+  hatches work.
+- `@syncrona/eslint-plugin` writes the `--fix` result. Autofixes were computed and
+  then thrown away.
+- `@syncrona/babel-plugin-remove-modules`: a trailing same-line `//@keepModule`
+  attached to the *next* import, so the tagged module was deleted and an untagged
+  one kept.
+- `sn_search_scripts` no longer reports a run in which every table query failed as
+  a successful zero-match result. The response is flagged as an error and carries
+  `searchComplete: false`, so "unknown" is distinguishable from "absent". A table
+  name the tool does not cover is likewise no longer dropped in silence: it comes
+  back in `unknownTables`, `searchComplete` requires that list to be empty too, and
+  the schema now enumerates the searchable tables (metadata `1.1.0`).
+- `dryRun` is reported honestly in the audit trail. Four scope-knowledge tools
+  declare and honor the flag but were missing from the dry-run-aware registry, so a
+  simulation was recorded as a real write; `sync_set_scope` accepted the string
+  `"true"` through validation and then performed the real scope switch; and three
+  tools described a dry-run payload in their **output** schema without declaring
+  `dryRun` as an input, so the contract gave no way to ask for it.
+- Jira remediation text now names the credential source the call actually used. An
+  explicit `--profile` is the exclusive source by design, so advising the user to set
+  `JIRA_BASE_URL`/`JIRA_TOKEN` was advice that provably could not fix the call; the
+  same applied to the 401 hint and to `jira-login`'s own failure hint, which pointed
+  at environment variables for credentials just typed at its prompt. Fixed on the MCP
+  handler as well as the CLI, where an agent acts on the text literally.
+- `@syncrona/typescript-plugin`'s README documented its configuration precedence
+  backwards. `tsconfig.json` is the base and `compilerOptions` from `sync.config.js`
+  are merged on top (the plugin option wins) — the README said the reverse, so
+  following it produced the opposite emit with no warning. The section now documents
+  the real order and the reason behind each plugin default.
+- MCP semantic index: an invalidation arriving during an in-flight build is no
+  longer swallowed, out-of-band deletions mark the index stale instead of serving
+  deleted symbols indefinitely, and the "non-blocking" async getter no longer runs
+  a full synchronous filesystem walk on every call including cache hits.
+- The MCP OAuth token manager resolves its undici dispatcher per token request
+  instead of pinning the one captured when the manager was created, which had
+  defeated the certificate-rotation fix; and it no longer runs the credential-store
+  password through the environment-value cleaner, which could silently alter a
+  stored secret.
+- Documentation corrections: the README claimed `refresh` re-lays an existing
+  workspace when `flat` is switched on (nothing does — the correct procedure is
+  now documented), `@syncrona/types`' README declared MIT for a GPL-3.0-or-later
+  package, and six per-package README configuration examples were unusable
+  (`rules` shown as an object where an array is required, and a plugin list that
+  is a JavaScript syntax error).
 
 ## [0.9.1] - 2026-07-04
 

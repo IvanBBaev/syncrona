@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { logger } from "./logger";
+import { toolImplementsDryRun } from "./safetyPolicy";
 
 type ToolPolicy = {
   deny?: boolean;
@@ -108,21 +109,50 @@ function normalizeStringArray(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
+/**
+ * A node that is present but is not a plain object (array, string, number, boolean) —
+ * i.e. an authoring error. `null`/`undefined` mean "absent" and keep their meaning.
+ */
+function isMalformedConfigNode(value: unknown): boolean {
+  return (
+    value !== undefined &&
+    value !== null &&
+    (typeof value !== "object" || Array.isArray(value))
+  );
+}
+
 export function parseGuardrailConfig(value: unknown): GuardrailConfig {
   // SEC-3 follow-up (REV-118): a top-level guardrail config that is a JSON array,
   // string, number or boolean is a malformed file, not "no restrictions". asRecord()
   // would coerce it to {} and hand back the permissive default. Fail closed. (null and
   // undefined keep their existing meaning: the permissive default.)
-  if (
-    value !== undefined &&
-    value !== null &&
-    (typeof value !== "object" || Array.isArray(value))
-  ) {
+  if (isMalformedConfigNode(value)) {
     return createInvalidGuardrailConfig("guardrail config root is not an object");
   }
 
   const parsed = asRecord(value);
+  // SEC-3 follow-up (REV-148): the same coercion the root check was added to stop was
+  // still applied one level down. `policy`, `policy.tools` and `policy.environments` went
+  // straight through asRecord(), which turns ANY non-object into `{}` — so
+  // `"policy": "strict"` or `"tools": ["sn_execute_script"]` parsed as "no tool policies
+  // and no environments", i.e. the fully permissive default. A malformed guardrail file
+  // silently DISABLED the guardrails, which is the exact inversion the fail-closed marker
+  // exists to prevent. Every sibling branch here (root, allowTools, denyTools) already
+  // rejects its own malformed shape; these three did not.
+  if (isMalformedConfigNode(parsed.policy)) {
+    return createInvalidGuardrailConfig("guardrail config policy is not an object");
+  }
+
   const policyRaw = asRecord(parsed.policy);
+  if (isMalformedConfigNode(policyRaw.tools)) {
+    return createInvalidGuardrailConfig("guardrail config policy.tools is not an object");
+  }
+  if (isMalformedConfigNode(policyRaw.environments)) {
+    return createInvalidGuardrailConfig(
+      "guardrail config policy.environments is not an object"
+    );
+  }
+
   const toolsRaw = asRecord(policyRaw.tools);
   const envsRaw = asRecord(policyRaw.environments);
 
@@ -133,6 +163,16 @@ export function parseGuardrailConfig(value: unknown): GuardrailConfig {
       malformedReason =
         malformedReason ?? `tool policy uses a forbidden key "${toolName}"`;
       continue;
+    }
+    // SEC-3 follow-up (REV-192): the REV-148 guard stopped the fail-open coercion at
+    // `policy`, `policy.tools` and `policy.environments`, but each ENTRY value was still
+    // handed to asRecord(), which turns a string/number/array into `{}` — so a shorthand
+    // like `"tools": {"sync_push": "deny"}` parsed as a tool policy with every flag off,
+    // i.e. the permissive default, exactly the inversion the marker exists to prevent.
+    // (`null` still means "absent" and keeps its all-false meaning.)
+    if (isMalformedConfigNode(rawPolicy)) {
+      malformedReason =
+        malformedReason ?? `tool policy "${toolName}" is not an object`;
     }
     const rule = asRecord(rawPolicy);
     tools[toolName] = {
@@ -149,6 +189,14 @@ export function parseGuardrailConfig(value: unknown): GuardrailConfig {
       malformedReason =
         malformedReason ?? `environment uses a forbidden key "${envName}"`;
       continue;
+    }
+    // SEC-3 follow-up (REV-192): same fail-open coercion one level down — an environment
+    // written as `"prod": "strict"` became an empty EnvironmentPolicy, silently dropping
+    // every allow/deny rule while still counting as a defined environment (so the
+    // unknown-environment gate did not catch it either).
+    if (isMalformedConfigNode(rawEnvPolicy)) {
+      malformedReason =
+        malformedReason ?? `environment "${envName}" is not an object`;
     }
     const envRule = asRecord(rawEnvPolicy);
     // SEC-3 (REV-84): a present-but-non-array allowTools must NOT silently
@@ -320,11 +368,33 @@ export function evaluateToolPolicy(
     };
   }
 
-  if (toolPolicy.requireDryRun === true && !dryRun) {
-    return {
-      allowed: false,
-      reason: `Tool ${toolName} requires dryRun=true by policy.tools.${toolName}.requireDryRun.`,
-    };
+  if (toolPolicy.requireDryRun === true) {
+    // SEC-3 follow-up (REV-197): `requireDryRun` is a lock — "this tool may only be
+    // PLANNED here". The check accepted the caller's REQUESTED flag, so on a tool whose
+    // handler ignores dryRun the lock inverted into its opposite: `dryRun: true` became
+    // the ONLY accepted shape, and it still performed the real mutation. An operator who
+    // locked such a tool down got every invocation executing for real, with the audit
+    // record and the preflight skip both agreeing it was a simulation.
+    //
+    // Refuse outright when the policy names a tool that cannot honour a dry run: an
+    // unenforceable lock must fail closed, not silently pass. REV-149/REV-150/REV-195
+    // closed the known gaps, so this branch is a guard against the NEXT tool that gains
+    // a requireDryRun policy entry without a dryRun-aware handler.
+    if (!toolImplementsDryRun(toolName)) {
+      logger.error("guardrail requireDryRun names a tool that does not implement dryRun", {
+        tool: toolName,
+      });
+      return {
+        allowed: false,
+        reason: `Tool ${toolName} does not implement dryRun, so policy.tools.${toolName}.requireDryRun cannot be enforced — refusing (fail-closed).`,
+      };
+    }
+    if (!dryRun) {
+      return {
+        allowed: false,
+        reason: `Tool ${toolName} requires dryRun=true by policy.tools.${toolName}.requireDryRun.`,
+      };
+    }
   }
 
   if (toolPolicy.requireConfirmDestructive === true && args.confirmDestructive !== true) {

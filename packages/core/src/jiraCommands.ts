@@ -8,8 +8,9 @@ import {
   resolveJiraConfig,
   verifyAuth,
   isJiraHttpError,
-  NO_JIRA_CONFIG_MESSAGE,
+  jiraAuthRecheckHint,
   jiraUndecryptableMessage,
+  noJiraConfigMessage,
   type JiraComment,
   type JiraDeployment,
   type JiraIssue,
@@ -59,14 +60,19 @@ function formatComment(comment: JiraComment): string {
  * sending them to `jira-login` contradicts the message the client itself prints.
  * Failures raised before any response (timeouts, DNS) are plain Errors with no
  * status, so the message-based branches remain as the fallback.
+ *
+ * REV-203: the 401 branch takes its wording from the caller, because only the caller
+ * knows where the credentials came from. The generic text names both `jira-login` and
+ * JIRA_EMAIL/JIRA_TOKEN, which is right only when either could have supplied them —
+ * on an explicit `--profile` the environment is deliberately ignored (REV-130), and
+ * inside `jira-login` the user typed them a second ago, so in both cases the generic
+ * text points at something that had no bearing on the request that failed.
  */
-function logJiraErrorHint(e: unknown): void {
+function logJiraErrorHint(e: unknown, authRecheckHint = jiraAuthRecheckHint()): void {
   if (isJiraHttpError(e)) {
     switch (e.kind) {
       case "unauthorized":
-        logger.info(
-          "Hint: re-check your Jira credentials with `syncrona jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
-        );
+        logger.info(authRecheckHint);
         return;
       case "forbidden":
         logger.info(
@@ -86,9 +92,7 @@ function logJiraErrorHint(e: unknown): void {
 
   const message = e instanceof Error ? e.message : String(e);
   if (/HTTP 401|authentication failed/i.test(message)) {
-    logger.info(
-      "Hint: re-check your Jira credentials with `syncrona jira-login`, or verify JIRA_EMAIL / JIRA_TOKEN."
-    );
+    logger.info(authRecheckHint);
   } else if (/HTTP 404|not found/i.test(message)) {
     logger.info("Hint: verify the issue key and that your account can view it.");
   } else if (/timed out|timeout/i.test(message)) {
@@ -183,15 +187,19 @@ export async function jiraCommand(
     return;
   }
 
+  const explicitProfile = (args.profile || "").trim();
   const config = await resolveJiraConfig({ profile: args.profile });
   if (!config) {
-    const profile = (args.profile || "").trim() || "default";
+    const profile = explicitProfile || "default";
     // Distinguish "nothing configured" from "a stored profile exists but won't
     // decrypt" so the user re-logs in instead of assuming they never set it up.
     if (jiraCredentialHealth(profile) === "undecryptable") {
       logger.error(jiraUndecryptableMessage(profile));
     } else {
-      logger.error(NO_JIRA_CONFIG_MESSAGE);
+      // REV-203: the remediation has to name the path the caller took — an explicit
+      // profile is never served from JIRA_BASE_URL/JIRA_TOKEN (REV-130), so the
+      // env half of the generic message is a dead end for it.
+      logger.error(noJiraConfigMessage(explicitProfile));
     }
     process.exitCode = 1;
     return;
@@ -208,7 +216,7 @@ export async function jiraCommand(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(message);
-    logJiraErrorHint(e);
+    logJiraErrorHint(e, jiraAuthRecheckHint(explicitProfile));
     process.exitCode = 1;
     return;
   }
@@ -295,7 +303,12 @@ export async function jiraLoginCommand(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     logger.error(`Could not authenticate to Jira: ${message}`);
-    logJiraErrorHint(e);
+    // REV-203: these credentials were typed at the prompt seconds ago, so neither
+    // `jira-login` nor JIRA_EMAIL/JIRA_TOKEN is the thing to re-check.
+    logJiraErrorHint(
+      e,
+      "Hint: the base URL, deployment type, or the token you just entered was rejected — for Jira Cloud the email must be the account that owns the API token."
+    );
     process.exitCode = 1;
     return;
   }

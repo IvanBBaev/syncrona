@@ -112,8 +112,21 @@ export type ResolvedAuthMethod = {
   explicit: boolean;
   /** True when the raw explicit value was present but unrecognized (fell back to inference). */
   unknownExplicit: boolean;
-  /** Missing-field problems for the chosen method (empty ⇒ config is complete). */
+  /**
+   * Problems with the configuration (empty ⇒ config is complete): missing fields
+   * for the chosen method, plus an unrecognized {@link AUTH_METHOD_ENV} selector.
+   */
   issues: string[];
+  /**
+   * The unrecognized-selector issue on its own, when there is one. It is also the
+   * first entry of {@link issues}, but callers need it separately: a missing field
+   * surfaces on its own the moment a request is attempted, whereas an unrecognized
+   * selector *succeeds* under an inferred method, so it is the one issue that has
+   * to be reported even where reporting every issue would be noise (REV-201).
+   * Exposed as a field rather than left to `issues[0]` so no caller has to
+   * re-derive the wording or depend on the list's order.
+   */
+  unknownExplicitIssue?: string;
 };
 
 function validateAuthMethod(method: AuthMethod, inputs: AuthMethodInputs): string[] {
@@ -155,11 +168,13 @@ function validateAuthMethod(method: AuthMethod, inputs: AuthMethodInputs): strin
  * the method is inferred exactly as SyncroNow AI did before the multi-method
  * work — OAuth password when a client id + secret + password are all present,
  * otherwise Basic — so existing setups keep behaving identically. The returned
- * `issues` list reports any credential fields the chosen method still needs.
+ * `issues` list reports any credential fields the chosen method still needs, and
+ * an unrecognized explicit selector.
  */
 export function resolveAuthMethod(inputs: AuthMethodInputs): ResolvedAuthMethod {
   const explicit = normalizeAuthMethod(inputs.explicit);
-  const hadExplicitValue = !!(inputs.explicit || "").trim();
+  const rawExplicit = (inputs.explicit || "").trim();
+  const hadExplicitValue = !!rawExplicit;
   let method: AuthMethod;
   if (explicit) {
     method = explicit;
@@ -168,10 +183,30 @@ export function resolveAuthMethod(inputs: AuthMethodInputs): ResolvedAuthMethod 
   } else {
     method = "basic";
   }
+  const unknownExplicit = hadExplicitValue && !explicit;
+  const issues = validateAuthMethod(method, inputs);
+  // A typo'd selector used to be reported ONLY through `unknownExplicit`, which
+  // no production caller reads (snClient, servicenowCore and the diagnostics
+  // commands all consume just `.method` and `.issues`). So an unrecognized
+  // SN_AUTH_METHOD fell through to inference silently, and when the leftover
+  // credentials happened to complete the inferred method the issues list was
+  // empty — e.g. SN_AUTH_METHOD=oauth-jwt (not an alias) with stale client
+  // id/secret/password still in .env resolved to oauth-password and posted the
+  // user's password to /oauth_token.do, with doctor reporting a healthy config.
+  // Reporting it as an issue makes the misconfiguration fail loudly everywhere
+  // the issues list is already surfaced.
+  let unknownExplicitIssue: string | undefined;
+  if (unknownExplicit) {
+    unknownExplicitIssue = `Unknown ${AUTH_METHOD_ENV} "${rawExplicit}"; expected one of: ${AUTH_METHODS.join(
+      ", "
+    )}.`;
+    issues.unshift(unknownExplicitIssue);
+  }
   return {
     method,
     explicit: !!explicit,
-    unknownExplicit: hadExplicitValue && !explicit,
-    issues: validateAuthMethod(method, inputs),
+    unknownExplicit,
+    issues,
+    ...(unknownExplicitIssue ? { unknownExplicitIssue } : {}),
   };
 }

@@ -165,6 +165,55 @@ describe("download writer fan-out cap (REV-89)", () => {
   });
 });
 
+describe("bounded fan-out abort semantics", () => {
+  // The pool used to await a plain Promise.all over its runners: the first
+  // rejection unwound the CALLER immediately (releasing the push lock, deleting
+  // the checkpoint, exiting) while the surviving runners kept pulling items off
+  // the queue and writing files in the background, and every error after the
+  // first was discarded. A failure must now stop the queue.
+  it("stops scheduling new work after a write fails", async () => {
+    const failure = new Error("disk full");
+    let started = 0;
+    writeSNFileCurry.mockImplementation(() => async () => {
+      const mine = started;
+      started += 1;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (mine === 0) throw failure;
+    });
+
+    const { processTablesInManifest } = await import("../appUtils.js");
+    // The original error is rethrown unchanged so callers can still classify it.
+    await expect(processTablesInManifest(singleTableManyFiles(), true)).rejects.toBe(
+      failure
+    );
+
+    // Give any still-running background runner ample time to drain the queue —
+    // the whole point of the bug was that work continued after the caller left.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(started).toBeLessThanOrEqual(CAP);
+    expect(started).toBeLessThan(N);
+  });
+
+  it("reports every failure when several run concurrently", async () => {
+    let started = 0;
+    writeSNFileCurry.mockImplementation(() => async () => {
+      const mine = started;
+      started += 1;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (mine < 2) throw new Error(`write ${mine} failed`);
+    });
+
+    const { processTablesInManifest } = await import("../appUtils.js");
+    // Two runners fail in the same batch: neither error may be swallowed.
+    const err = await processTablesInManifest(singleTableManyFiles(), true).then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(err).toBeInstanceOf(AggregateError);
+    expect((err as AggregateError).errors).toHaveLength(2);
+  });
+});
+
 describe("missing-file probe fan-out cap (REV-97)", () => {
   it("never stats more than the configured number of record dirs at once", async () => {
     const { findMissingFiles } = await import("../appUtils.js");

@@ -488,7 +488,14 @@ describe("manifestBuilder coverage", () => {
     );
   });
 
-  it("warns on a duplicate record name that overwrites in the manifest", async () => {
+  // #5: two records that produce the SAME name used to collide in the record
+  // map — the later row silently overwrote the earlier one, so that record was
+  // never downloaded and a later push from the shared path uploaded the wrong
+  // content under the wrong sys_id. Both records must survive, under distinct
+  // sys_id-suffixed keys, and each key must equal its record's `name` (the
+  // downloader builds the on-disk path from `name`, while getFileContextFromPath
+  // looks the directory name up as the map key).
+  it("keeps both records when two rows produce the same name", async () => {
     const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => {});
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockImplementation(async (table: string) => {
@@ -503,8 +510,7 @@ describe("manifestBuilder coverage", () => {
         return {
           data: {
             result: [
-              // Identical display name, different sys_ids → the later record
-              // overwrites the earlier one and a duplicate warning is emitted.
+              // Identical display name, different sys_ids.
               { sys_id: "rec-1", name: "Same", script: "a" },
               { sys_id: "rec-2", name: "Same", script: "b" },
             ],
@@ -521,10 +527,14 @@ describe("manifestBuilder coverage", () => {
     );
 
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Duplicate record name "Same" in sys_script_include')
+      expect.stringContaining("Record name collision in sys_script_include")
     );
-    // The later record wins.
-    expect(manifest.tables.sys_script_include.records["Same"].sys_id).toBe("rec-2");
+    const records = manifest.tables.sys_script_include.records;
+    expect(records["Same"]).toBeUndefined();
+    expect(records["Same_rec-1"].sys_id).toBe("rec-1");
+    expect(records["Same_rec-2"].sys_id).toBe("rec-2");
+    expect(records["Same_rec-1"].name).toBe("Same_rec-1");
+    expect(records["Same_rec-2"].name).toBe("Same_rec-2");
   });
 
   it("swallows a skippable error from the primary record query and falls back to metadata ids", async () => {

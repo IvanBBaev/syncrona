@@ -11,7 +11,7 @@ import {
   type MetadataType,
   type ToolMetricEvent,
 } from "./analysis";
-import { isMutatingTool } from "./safetyPolicy";
+import { isEffectiveDryRun, isMutatingTool } from "./safetyPolicy";
 import { logger } from "./logger";
 import { sanitizeForAudit, writeAuditEvent } from "./audit";
 import { appendMetricEvent } from "./metricsStore";
@@ -340,7 +340,11 @@ export function auditMutatingTool(
     args: sanitizeForAudit(args),
     outcome: sanitizeForAudit(outcome),
     durationMs: typeof durationMs === "number" ? Math.max(durationMs, 0) : 0,
-    dryRun: args.dryRun === true,
+    // SEC-6 follow-up (REV-151): report whether the run WAS a simulation, not whether one
+    // was requested. See isEffectiveDryRun — a flag the tool ignores used to stamp a real
+    // mutation as `dryRun: true` in the tamper-evident log, which is the one place that
+    // must never overstate safety.
+    dryRun: isEffectiveDryRun(toolName, args),
   };
   if (typeof correlationId === "string" && correlationId.trim()) {
     entry.correlationId = correlationId.trim();
@@ -365,7 +369,8 @@ export function auditToolCall(
     event: "tool.call",
     tool: toolName,
     mutating: isMutatingTool(toolName, args),
-    dryRun: args.dryRun === true,
+    // SEC-6 follow-up (REV-151): same correction as auditMutatingTool above.
+    dryRun: isEffectiveDryRun(toolName, args),
     args: sanitizeForAudit(args),
     ok: !outcome.isError,
     error: outcome.error ? sanitizeForAudit(outcome.error) : "",
@@ -378,7 +383,11 @@ export function auditToolCall(
 }
 
 export function shouldInvalidateSemanticIndex(toolName: string, args: Record<string, unknown>): boolean {
-  if (args.dryRun === true) {
+  // SEC-6 follow-up (REV-151): the early return trusted the REQUESTED dryRun. For a tool
+  // that ignores the flag the workspace really did change, so skipping the invalidation
+  // left every later analysis answering from a stale semantic index — wrong output with no
+  // error anywhere. Only a dry run the tool actually implements means "nothing changed".
+  if (isEffectiveDryRun(toolName, args)) {
     return false;
   }
 
@@ -830,6 +839,12 @@ export async function executeMcpToolIntegration(
   const workflowToolResponse = await handleWorkflowTool(toolName, args, {
     timeoutMs,
     startedAt: Date.now(),
+    // SEC-6 follow-up (REV-150): the integration entry point honours dryRun for every
+    // other module, so the workflow module must receive it here too — otherwise the
+    // same "dry run that applies for real" hole reopens through this caller.
+    dryRun,
+    makeDryRunAuditResponse: (innerToolName, innerArgs, details) =>
+      makeDryRunAuditResponse(innerToolName, innerArgs, details, correlationId),
     parseUnifiedTaskType,
     isDeepAnalysisSatisfied,
     buildPreflightReport: async (resolvedTimeoutMs) => {

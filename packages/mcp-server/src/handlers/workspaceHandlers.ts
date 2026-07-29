@@ -291,6 +291,19 @@ export async function handleWorkspaceTool(
         };
       }
 
+      // SEC-3 follow-up (REV-149): this tool ignored dryRun entirely. Because the guardrail
+      // `requireDryRun` rule is enforced by REQUIRING dryRun=true on the call, an operator
+      // who locked run_workspace_command down to dry runs got the exact opposite of what
+      // they configured: every accepted invocation executed for real. Honor the flag here,
+      // like sync_push and sync_deploy already do.
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          command,
+          args: cmdArgs,
+          confirmDestructive,
+        });
+      }
+
       // SEC-1 follow-up (REV-116): run_workspace_command can also run `node -e ...`,
       // so it must spawn with the same credential-scrubbed base env as run_node_code's
       // full mode — otherwise the scrub is trivially bypassed via this sibling tool.
@@ -358,6 +371,17 @@ export async function handleWorkspaceTool(
             },
           ],
         };
+      }
+
+      // SEC-3 follow-up (REV-149): same inversion as run_workspace_command above — dryRun
+      // was ignored, so a `requireDryRun` guardrail on run_node_code turned "only ever
+      // simulate this" into "always execute it". Checked after the allowFullNodeAccess gate
+      // so a dry run cannot be used to probe whether host access is enabled.
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          codeLength: code.length,
+          confirmDestructive,
+        });
       }
 
       // Full mode: an explicit opt-in to host access. Runs actual Node in a child

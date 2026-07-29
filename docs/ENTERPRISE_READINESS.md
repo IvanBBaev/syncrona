@@ -44,8 +44,9 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   `jira_get_issue` MCP tool fetch issue context over HTTPS only. Credentials
   (Cloud API token or Server/DC PAT) live in the same encrypted CredentialStore
   as ServiceNow, resolved via `--profile` > `JIRA_*` env vars > default profile.
-  Untrusted issue prose (summary / description / comment bodies) is fenced before
-  it reaches an LLM, so it cannot be read as instructions. No write path exists.
+  Untrusted issue prose (summary / description / comment bodies, comment author
+  names, and parent / subtask / linked-issue summaries) is fenced before it
+  reaches an LLM, so it cannot be read as instructions. No write path exists.
 
 ## 2. Distribution & release (D5)
 - 🔴 **npm publish** — `@syncrona/*` not yet published; verify scope

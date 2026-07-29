@@ -280,16 +280,27 @@ export const isDirectory = async (p: string): Promise<boolean> => {
 };
 
 export const getPathsInPath = async (p: string): Promise<string[]> => {
+  // INJ-1: the containment check must run on the SAME string the walk starts
+  // from. Previously the guard compared the raw argument while the walk seeded
+  // path.resolve(p), so a relative ("src/../../etc") or ".."-bearing path could
+  // pass the token comparison and then resolve outside the source/build trees.
+  // Resolve first, compare second — and log the rejection instead of returning
+  // an empty list silently (an empty list reads as "no files", which callers
+  // like repair --prune interpret as a meaningful, actionable result).
+  const resolved = path.resolve(p);
   if (
-    !isUnderPath(ConfigManager.getSourcePath(), p) &&
-    !isUnderPath(ConfigManager.getBuildPath(), p)
+    !isUnderPath(path.resolve(ConfigManager.getSourcePath()), resolved) &&
+    !isUnderPath(path.resolve(ConfigManager.getBuildPath()), resolved)
   ) {
+    logger.warn(
+      `Refusing to scan "${resolved}": it is outside the configured source and build directories.`
+    );
     return [];
   }
   const maxDepth = 20;
   const files: string[] = [];
   const stack: Array<{ filePath: string; depth: number }> = [
-    { filePath: path.resolve(p), depth: 0 },
+    { filePath: resolved, depth: 0 },
   ];
 
   while (stack.length > 0) {

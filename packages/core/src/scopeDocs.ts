@@ -2,6 +2,7 @@
 import { SN } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import path from "path";
+import { isSafePathComponent } from "./genericUtils.js";
 
 export const DOCS_AUTO_START = "<!-- SYNCRONA:DOCS:START -->";
 export const DOCS_AUTO_END = "<!-- SYNCRONA:DOCS:END -->";
@@ -235,8 +236,25 @@ export async function generateScopeDocs(
   const body = buildScopeDocBody(summary, options.now);
   const autoBlock = wrapAutoSection(body);
 
+  // INJ-1: `summary.scope` comes from the manifest, i.e. ultimately from the
+  // instance, and was interpolated straight into a filename. A scope containing
+  // a separator or ".." (or an absolute path, which path.join does not stop
+  // from escaping via "..") made this write a Markdown file anywhere the
+  // process can reach. Validate the component, then verify the joined path
+  // really stays under outDir.
+  if (!isSafePathComponent(summary.scope)) {
+    throw new Error(
+      `Refusing to write scope documentation: unsafe scope name ${JSON.stringify(summary.scope)}.`
+    );
+  }
   await fsp.mkdir(outDir, { recursive: true });
   const filePath = path.join(outDir, `${summary.scope}.md`);
+  const relative = path.relative(outDir, filePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(
+      `Refusing to write scope documentation outside ${outDir} (resolved to ${filePath}).`
+    );
+  }
 
   let existing = "";
   try {

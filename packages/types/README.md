@@ -28,4 +28,12 @@ are used when writing plugins.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+<!-- License drift (BA8 follow-up): this section used to read "MIT", a leftover
+     from the unattributed MIT relicense that docs/PROVENANCE.md records as the
+     original GPL violation. The package LICENSE file is the verbatim GPL-3.0
+     text and package.json declares GPL-3.0-or-later, so the README was
+     misrepresenting the license on the rendered npm page — and the
+     license-consistency gate only inspected LICENSE files and package.json
+     `license` fields, never READMEs, so CI stayed green. -->
+
+GPL-3.0-or-later — see [LICENSE](LICENSE).

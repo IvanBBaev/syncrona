@@ -33,6 +33,11 @@ const MUST_CONFIRM = [
   // Previously-covered mutating verbs still confirm.
   ['git', ['-C', '/repo', 'reset', '--hard']],
   ['git', ['push']],
+  // REV-194: every repository/exec redirect confirms, whatever verb follows it.
+  ['git', ['-C', '/repo', 'status']],
+  ['git', ['--git-dir', '/repo/.git', 'log']],
+  ['git', ['--work-tree', '/tmp/x', 'status']],
+  ['git', ['--exec-path=/tmp/evil', 'ls-remote', 'https://host/r']],
 ];
 
 for (const [command, args] of MUST_CONFIRM) {
@@ -47,7 +52,9 @@ const NO_CONFIRM = [
   ['git', ['diff']],
   ['git', ['diff', '-c']], // `-c` AFTER the subcommand is a combined-diff option, not injection
   ['git', ['show', 'HEAD']],
-  ['git', ['-C', '/repo', 'status']],
+  // `['git', ['-C', '/repo', 'status']]` moved to MUST_CONFIRM under REV-194: the
+  // pre-subcommand region is default-deny now, because the repository redirect — not
+  // the verb behind it — is what makes git read an untrusted .git/config.
   ['git', ['rev-parse', 'HEAD']],
   ['git', ['for-each-ref']],
   ['git', ['version']],

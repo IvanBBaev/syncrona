@@ -76,6 +76,17 @@ jobs:
         env:
           SKIP_TESTS: "1"
 
+      # REV-133: this job hand-replicates the `npm run check` chain step by step
+      # instead of invoking it, and `verify:pack` — the last link of that chain —
+      # was missing. It is the only gate that inspects tarball CONTENTS (secret
+      # files, stray sources, missing bin/dist, undeclared runtime deps), so a
+      # `files:` regression reached the release branch with CI fully green and
+      # was caught only if someone ran `npm run check` locally. Keep this step in
+      # lockstep with the root `check` script; `test/ciCheckChain.test.js` fails
+      # the build if a link of the chain has no CI step again.
+      - name: Tarball content + bin smoke (verify:pack)
+        run: npm run verify:pack
+
       # gap-analysis D1: pack-install smoke. The #1 post-publish CLI failure
       # mode is a broken `files:`/`bin:` entry in the published tarball —
       # invisible to workspace-run tests, which execute straight from the

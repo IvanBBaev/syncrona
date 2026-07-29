@@ -7,7 +7,6 @@ const run: Sync.PluginFunc = async function(
   content: string,
   options?: ESLint.Options
 ): Promise<Sync.PluginResults> {
-  const output = content;
   // Honor the lint configuration declared in sync.config.js. The README states
   // the order explicitly — options first, then the eslint config discovered for
   // the file — but the options were never accepted, so every rule tweak a project
@@ -24,6 +23,16 @@ const run: Sync.PluginFunc = async function(
   const results = await linter.lintText(content, {
     filePath: context.filePath,
   });
+
+  // Return what ESLint actually produced. With `fix: true` the linter rewrites
+  // the source and hands the fixed text back in `results[i].output`, but this
+  // used to return the untouched `content` captured before the lint call, so
+  // every computed autofix was silently thrown away: the unfixed source was
+  // threaded to the next plugin and pushed, and the same fixable violations
+  // reappeared on the next run. ESLint only sets `output` when a fix actually
+  // changed the text (and returns no result at all for an ignored file), so
+  // fall back to `content` in both cases — that is the no-fix behavior.
+  const output = results[0]?.output ?? content;
 
   const isSuccess = results.every((r) => r.errorCount === 0);
   if (!isSuccess) {

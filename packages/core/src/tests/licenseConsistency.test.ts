@@ -85,4 +85,64 @@ describe("license consistency (GPL relicense, BA8)", () => {
       nonGplOffenders: [],
     });
   });
+
+  // The gate above inspected only legally-binding artifacts, so
+  // packages/types/README.md could claim "MIT — see LICENSE" while its LICENSE
+  // was verbatim GPL-3.0 and its package.json said GPL-3.0-or-later, and CI
+  // still went green. npm renders the README on the package page, so that line
+  // was the license a consumer actually read — exactly the misrepresentation
+  // docs/PROVENANCE.md records as the original violation. Assert the READMEs
+  // too, so a revert to an MIT claim fails the gate.
+  it("no README claims MIT, and every README License section names GPL-3.0", () => {
+    const packagesDir = path.join(REPO_ROOT, "packages");
+    const readmes = [path.join(REPO_ROOT, "README.md")];
+    for (const name of readdirSync(packagesDir)) {
+      if (!existsSync(path.join(packagesDir, name, "package.json"))) continue;
+      const readmePath = path.join(packagesDir, name, "README.md");
+      if (existsSync(readmePath)) readmes.push(readmePath);
+    }
+
+    // "MIT" stated as the license, in the usual phrasings ("MIT License",
+    // "License: MIT", "licensed under MIT", "MIT — see LICENSE").
+    const MIT_CLAIMS = [
+      /\bMIT\b[^\n]*\blicen[cs]e/i,
+      /\blicen[cs]e[ds]?\b[^\n]*\bMIT\b/i,
+      /^\s*(?:[-*]\s*)?MIT\b\s*[—–-]/,
+    ];
+    const isLicenseHeading = (line: string): boolean => /^#{2,}\s.*licen[cs]e/i.test(line);
+    const GPL_MENTION = /GPL-3\.0|General Public License/i;
+    // HTML comments are not rendered by npm or GitHub, so they cannot mislead a
+    // reader; drop them (e.g. maintainer notes about this very regression).
+    const stripHtmlComments = (text: string): string => text.replace(/<!--[\s\S]*?-->/g, "");
+
+    const mitClaims: string[] = [];
+    const sectionsMissingGpl: string[] = [];
+    for (const readmePath of readmes) {
+      const rel = path.relative(REPO_ROOT, readmePath);
+      const lines = stripHtmlComments(readFileSync(readmePath, "utf-8")).split("\n");
+      let licenseSection: string[] | undefined;
+      for (const line of lines) {
+        if (MIT_CLAIMS.some((pattern) => pattern.test(line))) {
+          mitClaims.push(`${rel}: ${line.trim()}`);
+        }
+        if (/^#{2,}\s/.test(line)) {
+          // A "License" heading must state the GPL, not leave it implicit.
+          if (licenseSection && !licenseSection.some((body) => GPL_MENTION.test(body))) {
+            sectionsMissingGpl.push(rel);
+          }
+          licenseSection = isLicenseHeading(line) ? [] : undefined;
+          continue;
+        }
+        licenseSection?.push(line);
+      }
+      if (licenseSection && !licenseSection.some((body) => GPL_MENTION.test(body))) {
+        sectionsMissingGpl.push(rel);
+      }
+    }
+
+    expect({ mitClaims, sectionsMissingGpl }).toEqual({
+      mitClaims: [],
+      sectionsMissingGpl: [],
+    });
+  });
 });

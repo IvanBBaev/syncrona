@@ -447,8 +447,11 @@ test('handleSearchScripts: non-2xx response is recorded in errors and excluded f
     async () => {
       global.fetch = async () => mkResponse(403, { error: { message: 'Forbidden' } });
       const res = await handleSearchScripts({ query: 'x', tables: ['sys_script_include'] }, 1000);
-      assert.equal(res.isError, false);
+      // REV-152: a table query that failed searched nothing, so a zero-match answer is
+      // "unknown", not "absent" — the response is flagged like insightCompareInstances does.
+      assert.equal(res.isError, true);
       const parsed = JSON.parse(res.content[0].text);
+      assert.equal(parsed.searchComplete, false);
       assert.equal(parsed.matchCount, 0);
       assert.equal(parsed.errors.length, 1);
       assert.equal(parsed.errors[0].table, 'sys_script_include');

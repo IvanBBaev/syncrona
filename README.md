@@ -182,8 +182,10 @@ for backward compatibility. Every auth variable also accepts a per-profile
 
 Without `SN_AUTH_METHOD` the method is inferred exactly as before — OAuth password
 when a client id/secret pair **and** a password are present, otherwise Basic — so
-existing setups keep working unchanged. Use a dedicated least-privilege
-integration user.
+existing setups keep working unchanged. An **unrecognized** value is an error
+rather than a fallback: `syncrona doctor` reports `Unknown SN_AUTH_METHOD "<value>"`
+and the MCP server refuses to start, so a typo can no longer resolve silently to a
+different method. Use a dedicated least-privilege integration user.
 
 **Mutual TLS (client certificate)** is orthogonal to the method above and combines
 with any of them (or works alone): point `SN_CLIENT_CERT` and `SN_CLIENT_KEY` at
@@ -206,6 +208,13 @@ bundle (or set Node's built-in `NODE_EXTRA_CA_CERTS`, which also covers the MCP
 server's native-fetch client). As a last resort for a throwaway test instance,
 `SYNCRONA_TLS_REJECT_UNAUTHORIZED=0` disables certificate verification — insecure,
 never use it against a real instance.
+
+**Request timeout:** every ServiceNow request the CLI makes (data path and OAuth
+token endpoint alike) is bounded at 120 seconds. Raise or lower it with
+`SN_REQUEST_TIMEOUT` in milliseconds — a large bulk download over a slow link may
+need more, and `0` restores the old unbounded behaviour. An unparseable or
+negative value falls back to the 120-second default rather than disabling the
+timeout.
 
 ### Instructions
 
@@ -247,12 +256,12 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncrona refresh`              |
 | `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncrona dev`                  |
 | `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch. Use `--ci` to provision every scope the detected `.env` exposes without prompting. | `npx syncrona init`                 |
-| `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file                                                  | `npx syncrona push`                 |
+| `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file. Takes an optional path argument (`push src/sys_script/MyBusinessRule`, absolute or relative to the current directory) to push just that file or folder; the path must resolve inside the configured source or build directory, otherwise the push is refused with a warning. | `npx syncrona push`                 |
 | `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncrona download my_test_app` |
 | `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncrona build`                |
 | `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance. Use `--ci` to skip the overwrite confirmation in noninteractive runs.                     | `npx syncrona deploy`               |
 | `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncrona docs`                 |
-| `repair`           | **none** | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files no record claims. Use `--apply` to re-download missing files, `--prune` (with `--apply`) to delete orphans, and `--ci` for non-interactive runs. | `npx syncrona repair`               |
+| `repair`           | **none** | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files — files under the source directory that carry the manifest's `<table>/<record>/<field>.<ext>` layout (or its flat `<table>/<record>~<field>.<ext>` form) but that no manifest record claims. Hand-written sources, dot-directories and anything of another shape are never orphans. Use `--apply` to re-download missing files, `--prune` (with `--apply`) to delete orphans, and `--ci` for non-interactive runs; pruning is refused outright when `sourceDirectory` resolves to the project root. | `npx syncrona repair`               |
 | `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncrona status`               |
 | `check-env`        | **none** | Checks machine prerequisites (Node 22+, supported platform/WSL, Git) and prints actionable fixes.                                                          | `npx syncrona check-env`            |
 | `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncrona doctor`               |
@@ -649,11 +658,15 @@ The `~` separator never appears in a ServiceNow dictionary field name, so the
 record is everything before the last `~` and the field everything after it. The
 conversion is implemented as pure, fully-tested helpers
 (`folderRelToFlat` / `flatRelToFolder` in `packages/core/src/flatLayout.ts`).
-`pull`/`push`/`build` honour `flat: true` automatically — files are written and
-read back in the flat shape, and the build tree mirrors it so `deploy` works
-unchanged. It remains opt-in and labelled experimental pending broad validation
-against a live instance; switching `flat` on an existing workspace re-lays files
-on the next `refresh`.
+`download`/`refresh`/`push`/`build` honour `flat: true` automatically — files are
+written and read back in the flat shape, and the build tree mirrors it so
+`deploy` works unchanged. It remains opt-in and labelled experimental pending
+broad validation against a live instance. **Switching `flat` on an existing
+workspace does not convert what is already on disk**: nothing re-lays the tree,
+and `refresh` only fetches files the manifest does not have yet, so the old
+per-record folders stay where they are and new files land in the other shape.
+Delete the downloaded tree (or start a fresh workspace) and re-download after
+changing the setting.
 
 ### There are WAY too many files in here!
 
