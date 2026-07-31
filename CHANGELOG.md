@@ -151,9 +151,53 @@ All notable changes to this project will be documented in this file.
   confirmation flag) plus the two workflow tools that enforce it only on
   `apply=true`. It also claimed the opt-in diagnostic file log redacts known
   credential fields; no redactor runs over that file, and the document now says so.
+- A JWT private key is no longer reproduced in a filesystem error message. Key and
+  certificate settings accept either PEM text or a path, and anything without PEM
+  armor was read as a path — so Node's `ENOENT`/`ENAMETOOLONG` message, which quotes
+  the path verbatim, printed a base64-encoded key in full to stderr, into the audit
+  trail and into the error text returned to an MCP client. The audit secret scanner
+  could not catch it, because it matches literal PEM armor, which is exactly the
+  shape that goes down this path. The replacement message names the setting, states
+  that the value was read as a path, and reports the fs error code and the value's
+  byte length — never the value. Fixed in the CLI and the MCP server alike.
+- Confirmation for a destructive workspace command no longer depends on where the
+  verb sits. The gate resolved a single "first operand", so a global option that
+  takes a space-separated value (`--logLevel debug push`, `--instance-profile dev
+  push`, `-d main push`) shifted the verb out of view and a live push to a
+  ServiceNow instance was reported as needing no confirmation. Any destructive verb
+  anywhere in the operand region now requires confirmation, in the same default-deny
+  way the git option regions already worked.
+- The MCP identifier gate no longer validates one value and forwards another. Every
+  identifier schema trims before matching its pattern, so a padded value parsed
+  clean while the untrimmed original — newlines included — reached the Table API URL
+  builder and the audit line. The normalized value is written back, and a
+  whitespace-only identifier becomes empty rather than arriving supplied-but-blank
+  at handlers that test it for truthiness.
+- A tool name that names an `Object.prototype` member is rejected as an unknown
+  tool. `toolArgSchemas[name]` returned the inherited member for `"constructor"`,
+  so the call failed as an internal error instead of an argument error. The same
+  own-property fix applies to the display-field and file-type lookups in the CLI,
+  where an inherited function was returned typed as a string and sent on as a
+  ServiceNow field name or interpolated into a filename.
+- A manifest `type` can no longer escape the build directory. The source-tree writer
+  was hardened against a manifest-supplied path component; the build-tree writer was
+  not, and the value is interpolated into the output filename and written without a
+  containment check, so `js/../../../../evil` left both the build directory and the
+  workspace.
+- The MCP audit sanitizer bounds its walk over client-supplied arguments on depth
+  and breadth, and states in the record when it truncated.
+- A timed-out child process is escalated on a budget: SIGTERM, then SIGKILL, so a
+  child that ignores SIGTERM cannot hold a tool call open indefinitely.
 
 ### Fixed
 
+- The MCP server reported the wrong version to its clients. `SERVER_VERSION` was
+  a hardcoded `"0.1.0"` while the package was at 0.9.1, so the `initialize`
+  handshake, `sync_health` and every tool-module banner understated the server by
+  eight minor releases — enough for a client to gate a feature it actually had.
+  The version is now read from the package's own `package.json` at runtime, the
+  same fix `syncrona --version` received in 0.9.1; if that lookup ever fails the
+  handshake reports `0.0.0-unknown` rather than guessing a number.
 - `logout` no longer claims success it did not achieve. Removing a single
   instance now reports whether a credential file was actually deleted, a
   failed removal exits non-zero instead of printing "Logged out", and
@@ -263,6 +307,102 @@ All notable changes to this project will be documented in this file.
   package, and six per-package README configuration examples were unusable
   (`rules` shown as an object where an array is required, and a plugin list that
   is a JavaScript syntax error).
+- Releasing the collaboration lock no longer deletes a collaborator's live lock. A
+  push that outlives the staleness window is legitimately reclaimed by another
+  developer while it is still running; the old unconditional unlink then removed the
+  new owner's lock, and the next push proceeded with no mutual exclusion at all. Each
+  acquisition now records an owner token and only removes a lock it can prove is its
+  own. A lock left behind by a crashed process is still reclaimed immediately, since
+  its pid stops answering.
+- A reference field no longer aborts the download of every table. ServiceNow returns
+  a reference column as a `{ link, value }` object unless the request opts out, which
+  this client does not, so a `displayField` or `differentiatorField` pointing at a
+  reference column raised `name.replace is not a function` from outside the per-table
+  error handling — failing the whole download and naming neither table nor record.
+  Such a value is now read as its display value.
+- Records with unusable names are skipped with a counted warning instead of
+  corrupting the workspace: a record whose `sys_id` is `..` no longer materializes
+  the parent directory as a record folder, a record with no `sys_id` no longer lands
+  under the literal name `undefined`, and a record named `__proto__` no longer
+  vanishes from the manifest while the run reports success.
+- `repair --apply --prune` no longer deletes files the manifest does claim. Presence
+  on disk was decided with a case-insensitive filesystem call while the orphan lookup
+  compared names byte-exactly, so on macOS and Windows a record differing only in
+  case was neither reported missing nor recognized as claimed — and was deleted along
+  with any unpushed local edits. Name comparison now folds case the same way the
+  manifest builder does when it detects colliding record names.
+- The missing-record probe looks where the writer actually writes. Where a manifest
+  key and the record's name differed, the record was permanently stuck:
+  re-downloaded on every run, then deleted by `repair --prune` as an orphan.
+
+### Testing
+
+- Per-file coverage floors in both packages, so a weak module can no longer hide
+  behind a green global ratchet: 21 module floors plus raised tree-wide thresholds in
+  the core CLI, and 19 module floors plus an 80% line / 45% branch default in the MCP
+  server. A floor whose pattern no longer matches any file fails the gate rather than
+  silently gating nothing, and dedicated tests prove each floor rejects a file below
+  it.
+- `bench:guard` and `scan:secrets` are now links in `npm run check` and steps in CI.
+  A test re-derives the check chain from `package.json` and fails the build if a link
+  has no matching CI step, so the local gate and CI cannot drift apart. The
+  performance guard asserts a median against a deliberately loose ceiling — it is a
+  blowup detector for accidental quadratic behavior, not a microbenchmark.
+- Property-based tests grew from three files to eight, covering manifest name
+  derivation, transport auth, MCP input validation and the command safety policy.
+  They found the reference-field crash, the `..` sys_id escape and the `__proto__`
+  disappearance listed above.
+- First measured mutation scores for the MCP policy layer: 100% for endpoint policy,
+  87% for input validation, 83% for create-table policy, and 63% for the command
+  safety policy — where 327 of 383 survivors were a single shape, deleting one entry
+  from a policy table. The suite tested the helpers thoroughly and the table contents
+  barely at all, so a new contract suite now asserts the observable decision for
+  every entry of every table (including all 302 allowlisted git subcommand options),
+  alongside 34 targeted regression tests. The MCP suite grew from 1585 to 1610 tests.
+  Re-measured afterwards, the command safety policy scores **94.90%** (1039 mutants:
+  985 killed, 1 timeout, 53 survived) — the `StringLiteral` class that was the whole
+  finding fell from 327 survivors to 9.
+- A multi-process race harness for the push collaboration lock (`npm run race:lock`)
+  spawns N real processes against one real directory and releases them from a
+  busy-wait barrier into the same millisecond. It exposed that
+  `writeFile(path, body, {flag:"wx"})` is atomic in exclusion but **not** in
+  publication — `O_CREAT|O_EXCL` publishes the name before the bytes, so a concurrent
+  reader can see an empty file and treat the lock as abandoned. The lock and its
+  eviction claims are now staged under a private name and published with `link()`,
+  which has no such split. Four earlier designs failed this harness; the current one
+  survived 195 rounds at up to 24 concurrent racers with zero violations.
+- A hostile-input harness over the real MCP stdio boundary
+  (`packages/mcp-server/scripts/stdio-fuzz.js`, wired into the suite as
+  `test/stdioFuzz.test.js`). Every other test in that package calls exported
+  functions directly, so transport framing, the JSON-RPC parser, a log line on the
+  wrong file descriptor and a fatal unhandled rejection were all untested — on the
+  only surface a real client touches. It spawns the compiled server as a child
+  process and feeds 42 hostile frames down a real pipe (truncated JSON, NUL and
+  lone-surrogate bytes, batches, duplicate ids, prototype-pollution keys,
+  1000-deep nesting, a 1 MB payload, a Trojan Source bidi tool name), checking
+  after each that stdout stays pure JSON-RPC, the process still answers a ping, no
+  id is invented or reused, and no stack frame or absolute path leaks into an
+  error payload. It also verifies from the server's own audit log that no frame
+  reached real work — a claim added after two frames were found to be spawning a
+  real `syncrona status` subprocess. It found that the server was reporting the
+  wrong version in its handshake (see Fixed), and runs in 221 ms.
+- The two path-escape tests in `fileUtilsCoverage.test.ts` asserted on
+  `os.tmpdir()` itself rather than on a directory they owned, so they could neither
+  clean up after the escape they provoke nor survive an unrelated file of the same
+  name. The mutation run made that concrete: a mutant with the traversal guard
+  removed genuinely wrote outside the root and left the file behind, breaking every
+  later run. The source root is now nested inside a tracked sandbox.
+- The eviction-claim scheme that publishes the collaboration lock arrived with the
+  race harness but without unit coverage, which the per-file floor caught. Its
+  branches are now driven on a real filesystem rather than through mocks: a path made
+  a directory is occupied for `link()` yet unreadable for `readFile()`, a dangling
+  symlink makes `stat()` report `ENOENT`, and a backdated mtime ages a claim. That
+  covers the generation walk, the step budget, the back-off behind a live evictor and
+  the sweep's short-circuits, and pins the rule that only *positive* evidence abandons
+  a claim — an unparseable or unstattable claim is treated as live. `push` also now
+  proves it fails the shell when the instance is unreachable, before touching any
+  record. `pushCommand.ts` measures 100% lines / 93.91% branches and its floor was
+  raised accordingly.
 
 ## [0.9.1] - 2026-07-04
 

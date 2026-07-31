@@ -898,6 +898,490 @@ the file was restored afterwards and checked byte-identical.
       assertion that fires when the warn is widened to the full issues list (proven: 1
       failure). Both source files restored byte-identical by SHA-256 after each proof.
 
+### Ninth adversarial pass (2026-07-29 … 2026-07-30) — REV-205 … REV-212 + verification axes
+The eight passes before this one all worked the same way: read the code adversarially,
+argue about what a finding implies, fix it, add a regression test. That loop has a
+blind spot it cannot see past — it can only find what a reader thinks to look for, and
+it takes the *tests* on faith. So the ninth pass spent most of its effort on the
+verification apparatus itself, and then let the improved apparatus find the code
+defects. It worked: every unmarked finding in the second group below was surfaced by a
+property test or by a mutation survivor, not by a human reading a diff. Two axes the
+repository simply did not have are now measured (per-file coverage floors, mutation
+score), and two gates that existed but were never wired into a chain now run in both
+`npm run check` and CI.
+
+#### Fixes found by reading (REV-205 … REV-212)
+- [x] **REV-205. releasing the collaboration lock deleted whatever file sat at the
+      path** — `releaseCollaborationLock` unlinked the lock unconditionally, and a lock
+      legitimately changes hands *while its original owner is still running*: a push
+      that outlives the 30-minute age window is judged stale by a collaborator, who
+      atomically reclaims the path. When the long push then reached its `finally`, it
+      deleted the collaborator's **live** lock and the next push walked straight in —
+      two pushes writing the same records with no mutual exclusion, which is the one
+      thing this lock exists to prevent. A pid cannot establish ownership either (the
+      same pid can hold the lock twice in a row, and a lock written on another host may
+      carry a pid that matches ours), so the lock payload gained an `owner` token minted
+      per acquisition (`randomUUID`), remembered in a module-level `heldLockOwner`, and
+      compared before the unlink. Refusing to delete is the safe direction: a lock we
+      cannot prove is ours is left in place, and once this process exits its pid stops
+      answering `process.kill(pid, 0)`, so the staleness path reclaims it immediately —
+      nobody waits out the age window for our restraint. `owner` is optional so a legacy
+      lock still parses; such a lock is never recognized as ours, which fails safe.
+      A repeated release is now harmless too, which it was not before: the second call
+      used to delete whichever lock the *next* push had meanwhile acquired.
+- [x] **REV-208. a JWT private key was reproduced verbatim in a filesystem error
+      message** — `readPemMaterial` (`snClient.ts`, and the same function in the MCP
+      server's `servicenowCore.ts`) treats any value without PEM armor as a path and
+      calls `readFileSync` on it. Node puts the path argument into the message verbatim
+      (`ENOENT: no such file or directory, open '<value>'`, or `ENAMETOOLONG` past the
+      OS filename limit) and also hangs it off `err.path` — so the standard way to carry
+      a key in one environment variable or CI secret, base64 with no armor, is a private
+      key printed in full to stderr, into the audit trail, and into the error text
+      returned to an MCP client. The audit secret scanner cannot save it: that scanner
+      matches literal `-----BEGIN … PRIVATE KEY-----` armor, which is precisely the
+      shape this function short-circuits on, so a non-armored key structurally never
+      matches. The replacement message keeps every fact a genuine path typo needs — which
+      setting was read, that it was read as a path, the fs error code, and the value's
+      byte length — and carries none of the value. The original error is deliberately
+      **not** attached as `cause`: enough loggers stringify a cause chain that keeping it
+      would re-open the same leak one indirection later.
+- [x] **REV-209. the build-tree writer never got INJ-1's containment guard** — INJ-1
+      hardened the *source*-tree writer (`writeSNFileCurry`) precisely because a
+      manifest-supplied filename is untrusted there. The build tree was left on the old
+      model: `getBuildExt` returns the manifest's `type` verbatim, `pushPipeline`
+      interpolates it (`${relPathNoExt}.${buildExt}`), joins it onto the build root, and
+      `writeFileForce` is a bare `fsp.writeFile` with no containment check of any kind —
+      so a manifest `type` of `js/../../../../evil` escapes the build directory *and* the
+      workspace. Half a threat model enforced is not a threat model. Validated at
+      `getBuildExt` rather than at the write site, because that is the single point where
+      the untrusted value leaves the manifest, so every build layout and any future
+      caller is covered by one check — and with `isSafePathComponent`, the same rule the
+      download side uses, so the two cannot drift.
+- [x] **REV-210. the process-kill escalation had no budget and two ways to settle
+      twice** — after a timeout fired, `processRunner` sent SIGTERM and then waited on a
+      child that may never exit; the settle promise could also resolve from more than one
+      path. Rewritten around a single exit from the promise plus an explicit escalation
+      budget (SIGTERM immediately, SIGKILL after the budget), so a child that ignores
+      SIGTERM cannot hold a tool call open indefinitely and a settled call cannot settle
+      again.
+- [x] **REV-211. `sanitizeForAudit` walked attacker-influenced data unbounded on both
+      axes** — `args` is whatever an MCP client sends, and the sanitizer recursed through
+      it to build the audit line. Depth alone is not enough (a wide object at shallow
+      depth is just as expensive as a deep one), so the walk is now bounded on depth
+      *and* breadth, with the truncation stated in the record rather than silently
+      applied — an audit line that quietly dropped fields would be worse than one that
+      says it was truncated.
+- [x] **REV-212. the ATF poll's `timeoutMs` was spent per request, not per poll** —
+      `handleRunAtfTests` treats `timeoutMs` as the budget for the whole poll, and the
+      docs say so, but the implementation applied it to each individual request; a poll
+      of N requests could therefore run for N × the budget the caller set. Now the
+      budget is checked against elapsed wall time for the poll as a whole. The regression
+      suite mocks the clock instead of sleeping, so it asserts the arithmetic rather than
+      racing it.
+
+#### Fixes the new verification apparatus found
+Each of these came out of a property test or a mutation survivor, and each is a defect
+eight adversarial reading passes had walked past.
+- [x] **a reference field flattened to an object aborted the download of every table** —
+      `TableAPIRecord` is typed `Record<string, string>`, but that is an unvalidated
+      claim about a remote response, and it is wrong in a routine rather than adversarial
+      way: ServiceNow flattens a reference column to its bare value only when
+      `sysparm_exclude_reference_link=true`, which `snClient.tableAPIGet` never sets, so
+      every reference column arrives as `{ link, value }`. A `tableOptions.displayField`
+      or `differentiatorField` pointing at a reference column therefore handed an
+      **object** to `String.prototype.replace`, and the resulting TypeError escaped
+      `buildBulkDownloadFromTableAPI`'s per-table catch (it is not a skippable HTTP
+      error) — aborting the download of *every* table with `name.replace is not a
+      function` and naming neither the table nor the record. A property test shrank it to
+      one requested record and one returned row `{}`. Introduced `fieldText`, which takes
+      `.value` for the reference shape precisely so a name derived here is identical to
+      one derived from a response that did set the parameter.
+- [x] **a record whose `sys_id` was `".."` materialized the parent directory** — the
+      all-dots guard added earlier rejected `.`/`..` in the *display* value and then
+      returned `record.sys_id` unchecked, so a row whose sys_id was itself `..` walked
+      straight through the check that had just fired. A property test shrank it to
+      `{ sys_id: ".." }`. Both the name and the sys_id are now checked as path
+      components — the sys_id too, because it is interpolated into the directory name
+      whenever names collide (`${name}_${sysId}`), so an unusable sys_id escapes through
+      the name. A row that cannot be named or keyed is dropped with a counted warning
+      instead of becoming an `undefined` folder that no push can ever target.
+- [x] **a record named `__proto__` vanished silently** — `records[name] = record` on an
+      object literal invokes the inherited setter for that one key instead of creating a
+      property, so the record disappeared: `Object.keys` did not list it, the manifest
+      never mentioned it, the downloader never wrote it, and the run reported success. If
+      it was the table's only record the whole table disappeared from the result.
+      `__proto__` is a legal ServiceNow display name, a legal directory name, and also
+      arrives as a *supplied* manifest name (`JSON.parse` makes it an own property).
+      Stored via `Object.defineProperty` as the own, enumerable, JSON-serializable
+      property every consumer already assumes it is.
+- [x] **three prototype-chain lookups returned functions typed as strings** — the same
+      bug class in three modules, all keyed by a name that comes from outside the
+      process. `getDisplayField("constructor")` returned the `Object` *function* typed
+      `string` and truthy enough to pass the `|| "name"` default, from where it is sent
+      as a `sysparm_fields` entry; `SN_TYPE_MAP[internal_type]` did the same for a value
+      that is interpolated into a filename; and `toolArgSchemas[toolName]` returned a
+      truthy non-schema for a client calling the tool `"constructor"` — `index.ts` hands
+      `request.params.name` to the validator *before* any is-this-a-real-tool check, so
+      `schema.safeParse is not a function` surfaced as an internal error instead of a
+      clean `INVALID_ARGUMENTS`. All three now go through an own-property check, matching
+      the `normalizeAuthMethod` guard that had the same hole.
+- [x] **the identifier gate declared values clean and then passed the unclean original
+      through** — every top-level identifier schema `.trim()`s before matching its regex,
+      so parsing `" <sys_id> "` succeeds; keeping only `parsed.success` and discarding
+      `parsed.data` reported "valid" while leaving the untrimmed string in the arguments
+      the handler goes on to use. That happened for any field the tool's own schema had
+      not already normalized — an extra key on a `looseObject` (`sn_query_records` +
+      `sysId`), or any tool with no `toolArgSchemas` entry at all (`sn_search_scripts` +
+      `table`) — and the characters that escaped are exactly the ones `trim` strips,
+      newlines included, so a value the gate had called regex-clean reached the Table API
+      URL builder and the audit line. The normalized value is now written back, and a
+      whitespace-only identifier is normalized to `""` rather than passed through:
+      "treat as not supplied" only holds downstream if the value is falsy there, and
+      handlers test `args.table`/`args.sysId` for truthiness, so `" "` arrived as a
+      supplied-but-blank table name.
+- [x] **`repair --apply --prune` deleted files the manifest does claim** — the orphan
+      predicate compared record names byte-exactly while `SNFileExists` decides "already
+      present" with `fsp.stat`, which is case-insensitive on APFS and NTFS, the defaults
+      on macOS and Windows. A manifest record `Foo` whose folder is on disk as `foo` was
+      therefore never reported missing (stat found it) and never claimed by the orphan
+      lookup either — so prune deleted it, along with any local edits not yet pushed.
+      `canonicalName` now case-folds, which is what `manifestBuilder` already does when
+      it decides two record names collide, so the two modules agree on when two names are
+      "the same name". `toLowerCase`, never `toLocaleLowerCase`: the latter is
+      locale-dependent (Turkish dotless ı) and would make pruning depend on the
+      operator's locale. Merging two records that differ only in case can only ever make
+      this predicate refuse to delete.
+- [x] **the missing-record probe looked in a directory the writer never uses** — it
+      probed `<table>/<manifest key>` while the writer writes `<table>/<rec.name>`. The
+      two agree in a manifest this CLI produced, but nothing enforces it for a
+      hand-edited or foreign one, and where they diverged the record was permanently
+      stuck: the probe found nothing, every run re-downloaded it, the writer put it back
+      under `rec.name`, and `repair --prune` then deleted that file as an orphan. The
+      probe now follows the writer, falling back to the key so a record whose `name` a
+      manifest omitted stays probeable.
+- [x] **`isDestructiveWorkspaceCommand` decided the gate on the first operand** —
+      resolving "the" CLI subcommand means knowing which tokens are option *values*, and
+      that is a per-option question: `--logLevel debug push`, `--instance-profile dev
+      push` and `-d main push` all put a value where the first operand would be, and all
+      three really run push (verified against the CLI's yargs registration). So the gate
+      reported `requiresConfirmation === false` for a live push to a ServiceNow instance.
+      An enumeration of the value-taking options would re-open every time the CLI grows
+      one, so the check is default-deny in the same way the git option regions are: any
+      destructive verb **anywhere** in the operand region confirms. `findSyncroCliSubcommand`
+      survives for display purposes with its best-effort limitation documented, and its
+      doc comment now points security decisions at the other function.
+
+#### Verification axis 1 — per-file coverage floors (GATE-2, GATE-3)
+Both packages had a global coverage ratchet and nothing else, and a global-only ratchet
+is a gate one weak file hides behind. Measured, not assumed: `dist/scopeBootstrap.js`
+really did sit at 24.32% under a green gate.
+- [x] Core: the two tree-wide `coverageThreshold` globs moved from 20/20 — a floor only
+      against a file with no test at all — to 62 branches / 78 lines, a few points under
+      the weakest legitimate file in the tree (`mcpCommand.ts`, 83.33% lines / 68.18%
+      branches, whose uncovered code spawns the MCP server and branches on
+      `process.platform === "win32"`). On top of that, **21 per-module floors** on
+      everything that writes files, pushes to the instance, holds credentials, resolves a
+      scope or shells out — each pinned ~3pts under its measured lines and ~4-5pts under
+      its measured branches, with the measurement recorded inline as `// measured L/B`.
+      The asymmetry is deliberate: branch coverage is the metric that moves between macOS
+      and Linux CI (keychain, homedir, platform). Verified against `@jest/reporters` that
+      the mechanics hold: a covered file is pushed into *every* threshold group it
+      matches, so adding keys cannot disable the globs or the global ratchet; a key that
+      matches nothing fails loudly ("Coverage data for <key> was not found"), so a floor
+      orphaned by a rename is reported rather than silently gating nothing; and keys
+      resolve against `process.cwd()`, not `rootDir`, which is why the suite must run
+      from the package.
+- [x] MCP server: `PER_FILE_LINE_FLOOR` 10 → 80 (weakest of the 55 reported modules is
+      88.17%), a new `PER_FILE_BRANCH_FLOOR` of 45, and **19 module floors** for policy
+      evaluation, input validation, the audit trail, the tool wrappers, transport/scope
+      handling and anything that starts a process or a listener. The branch floor is the
+      one that matters: deleting the guard case of an `if` keeps every line executed by
+      the happy path, so a line-only floor cannot see a safety check losing its only
+      negative test. A floor whose pattern matches nothing in the report **fails** the
+      gate (`findStaleFloors`) — that is how a per-file gate quietly stops gating.
+- [x] GATE-3: a gate nobody has seen fail is a hypothesis, so `coverageFloors.test.ts`
+      (core) and `coverageGatePerFile.test.js` (MCP) drive the threshold logic directly
+      and prove each floor rejects a file below it, that the per-file floor stays under
+      the aggregate ratchet, and that a stale floor is reported.
+
+#### Verification axis 2 — gate parity (local `check` ≡ CI)
+- [x] `bench:guard` and `scan:secrets` were in neither `npm run check` nor CI. Both are
+      now links in the chain and steps in the workflow. `scripts/bench.mjs` had supported
+      `--max-ms` since G14 and nothing ever passed a threshold, so the "baseline" was a
+      number a human compared by hand; the guard runs the same CPU-bound manifest/doc
+      path with a deliberately loose ceiling (25 ms against a 4.9 ms median measured
+      while the machine was *under load*, because a shared CI runner is the loaded case
+      and a performance gate that flakes gets disabled). It is a blowup detector for an
+      accidental O(n²), not a microbenchmark.
+- [x] `scripts/scan-secrets.mjs` is the developer-side mirror of the CI `secret-scan`
+      job, running gitleaks over the working tree with the same `.gitleaks.toml`. When
+      gitleaks is absent it prints an explicit SKIPPED notice rather than a false pass —
+      the hosted runners are exactly that case, and the enforcing gate remains the CI job
+      that scans the full history from a pinned action. This mattered concretely: the
+      scan used to live only in CI, so `npm run check` could be exit 0 on a tree CI would
+      reject, which is how a fixture value reached the default branch and turned it red.
+- [x] `ciCheckChain.test.js` re-derives the chain from the root `package.json` and fails
+      the build when a link has no matching step in `.github/workflows/ci.yml`, so the
+      two gates cannot drift apart again. `npm run test:mutation` is deliberately **not**
+      a link — a mutation run is far too slow for a per-change gate.
+- [x] `.stryker-tmp/` and `**/reports/mutation/` are now git-ignored. Stryker copies the
+      entire package root into its sandbox, including `.syncrona-mcp/` runtime state and
+      the git-excluded AI-harness files; those exclusions are path-anchored and do not
+      cover a nested copy, so an unignored sandbox turns local-only files into
+      committable ones. It is also expensive — three leftover sandboxes grew the tree the
+      local secret scan walks from 37 MB / 2 s to 108 MB / 13 s.
+
+#### Verification axis 3 — property-based tests (3 files → 8)
+Added `manifestBuilder.property.test.ts` (core), `auth.property.test.ts` (sn-transport),
+`inputValidation.property.test.js` and `safetyPolicy.property.test.js` (MCP), and
+extended `adf.property.test.ts` (jira). These are what found the reference-object crash,
+the `sys_id: ".."` escape and the `__proto__` disappearance above — three defects that
+example-based tests had no reason to reach, each shrunk by the runner to a minimal
+witness small enough to paste into a regression test.
+
+#### Verification axis 4 — measured mutation score (W1/W2)
+Stryker 8.7.1, `testRunner: "command"` over the compiled `dist/` (`npx tsc && node
+--test test/*.test.js`), run from the repo root because ~26 governance tests read root
+artifacts through `../../`. First real numbers for this repository:
+
+| module | score | killed | timeout | survived |
+|---|---|---|---|---|
+| `endpointPolicy.ts` | **100.00%** | 24 | 0 | 0 |
+| `inputValidation.ts` | **86.99%** | 107 | 0 | 16 |
+| `createTablePolicy.ts` | **83.33%** | 60 | 0 | 12 |
+| `safetyPolicy.ts` | **63.14%** → **94.90%** | 607 → 985 | 49 → 1 | 383 → 53 |
+
+- [x] The `safetyPolicy.ts` number is the finding. **327 of its 383 survivors are
+      `StringLiteral` mutants**, and ~85% of those are one shape: empty a single entry
+      out of a policy-name `Set`. The suite tested the *helpers* thoroughly and the
+      *table contents* barely at all — so deleting `"pkill"` from `BLOCKED_COMMANDS`, or
+      `"ls-remote"` from the 27 read-only git verbs, changed no test result. On a
+      denylist that is a security hole; on an allowlist it is over-confirmation.
+- [x] The response: 34 targeted kill-proofs, plus
+      `safetyPolicy.tableCompleteness.test.js` — a behavioural contract suite that
+      asserts the observable policy decision through the public API for *every entry of
+      every table*: 8 blocked commands, 4 shell interpreters, 8 shell tokens, 3
+      destructive CLI subcommands, 3 package runners, 18 dry-run-aware tools, the 6-entry
+      read-only allowlist, 13 git main options, 27 read-only git verbs, **302** safe
+      subcommand options, and 41 safe short flags plus the 11 held-out uppercase ones
+      that must confirm. Suite total: 1585 → **1610** MCP tests.
+- [x] **Design rule, learned the hard way and recorded so it is not re-learned:** a
+      table-completeness fixture must be a **literal list inside the test file**. A list
+      derived by parsing `src/safetyPolicy.ts` at runtime moves *with* the mutant, so the
+      assertion stays true and the mutant survives — the test then measures nothing while
+      looking rigorous.
+- [x] `servicenowCore.ts` and `policyConfig.ts` are deliberately out of mutation scope:
+      ~32 s per mutant × 1639 lines is over two hours for one module. Recorded as a
+      scoping decision, not an oversight.
+- [x] **Re-measured (2026-07-31), and the fix holds.** `safetyPolicy.ts` alone, 1039
+      mutants: **94.90%** — 985 killed, 1 timeout, 53 survived, 0 no-coverage. The
+      `StringLiteral` class that was the whole finding collapsed from **327 survivors to
+      9**; what is left is no longer a table-coverage gap but a scattered tail of 18
+      `ConditionalExpression`, 7 `BlockStatement` and 5 `MethodExpression` mutants across
+      the normalisation helpers (`safetyPolicy.ts:123`, `:144-152`, `:194-214`). Caveat
+      kept honest: Stryker scores that 1 timeout as a kill, so the true figure is
+      marginally below 94.90%. Triage with
+      `node --max-old-space-size=8192 scripts/mutation-triage.mjs reports/mutation/<name>.json`
+      — the JSON report for a single module of this size is ~350 MB, which is why the
+      default heap is not enough.
+- [x] **`packages/core` measured for the first time (2026-07-31).** The core config had
+      never actually been run — the number below is the baseline, not a regression check.
+      750 mutants over the five modules in scope, **14 min 38 s** with the jest runner and
+      `coverageAnalysis: "perTest"` (14.21 tests per mutant, so the per-test narrowing is
+      doing real work — the command runner in mcp-server has no such option and pays the
+      whole suite per mutant).
+
+      | module | score | killed | timeout | survived | no cov |
+      |---|---|---|---|---|---|
+      | `genericUtils.ts` | **97.17%** | 51 | 52 | 2 | 1 |
+      | `FileUtils.ts` | **91.11%** | 138 | 108 | 18 | 6 |
+      | `downloadCheckpoint.ts` | **81.82%** | 22 | 5 | 6 | 0 |
+      | `repairCommand.ts` | **80.84%** | 197 | 14 | 44 | 6 |
+      | `PluginManager.ts` | **78.21%** | 41 | 20 | 17 | 0 |
+      | **all files** | **86.63%** | 449 | 199 | 87 | 13 |
+
+- [x] **Read that 86.63% as a ceiling, not a figure.** **199 of the 750 mutants (26.5%)
+      are timeouts, and Stryker scores a timeout as a kill.** The honest reading is a
+      band: if every timeout were instead a survivor the score would be **60.0%**, so the
+      true number is somewhere in `[60.0%, 86.63%]` and closer to the top only to the
+      extent that those timeouts are genuine infinite loops rather than a loaded machine.
+      `FileUtils.ts` (138 killed vs **108** timeouts) and `genericUtils.ts` (51 vs **52**)
+      are where that uncertainty lives — both are loop-heavy, so a mutated loop condition
+      really does hang, but the run shared the box with other work. **Open:** re-run
+      `packages/core` alone on an idle machine before quoting a single number.
+- [x] **The shape of the 87 survivors** is 28 `ConditionalExpression`, 24 `StringLiteral`,
+      14 `BlockStatement`, 9 `EqualityOperator` — no single dominant class like the
+      `safetyPolicy.ts` finding, so this is a diffuse tail rather than one missing kind of
+      test. The weakest real module is `PluginManager.ts` (78.21%, 17 survivors and **0**
+      no-coverage — every mutant was executed and 17 still went undetected, which is a
+      test-strength gap, not a reachability gap).
+- [x] **Hazard, recorded — and its first diagnosis corrected.** A phantom suite failure
+      during this work was initially attributed to Stryker rebuilding the shared
+      `packages/mcp-server/dist/`. That is **wrong, and verified wrong**: the sandbox
+      contains its own real `dist/` directory (not a symlink), rebuilt per mutant at
+      14:19 while the checkout's `dist/safetyPolicy.js` still carried its 14:04
+      timestamp. The actual hazard is **hand-injecting a mutant into the real `src/`**
+      to check whether a test kills it — the REV-201 kill-proof pattern — because any
+      concurrent suite run then compiles and executes that mutant and reports failures
+      that are not real. Do kill-proofs in a scratch clone, or restore and re-verify by
+      checksum before anything else runs. What a live mutation run *does* cost is the
+      whole machine: at concurrency 12 with `coverageAnalysis: off`, a heavy suite
+      started alongside it can push a sandbox past `timeoutMS`, and Stryker scores a
+      timeout as a **kill** — so the score comes out inflated rather than wrong-looking.
+
+#### Verification axis 5 — multi-process race harness for the collaboration lock (REV-233)
+`npm run race:lock` (`scripts/lock-race.mjs` + `scripts/lock-race-child.mjs`) spawns N real
+processes against one real temp directory, releases them from a busy-wait barrier into the
+same millisecond, and imports the compiled `packages/core/dist/pushCommand.js` so the code
+under test is the shipped code.
+
+- [x] **Why a process harness and not a unit test.** The lock's two load-bearing mechanisms
+      are kernel-level — `link()`'s all-or-nothing publication and `process.kill(pid, 0)`
+      liveness. Neither means anything inside one Node process against a mocked filesystem,
+      so the unit suites can only assert the logic *around* them. Every real defect this
+      lock has had was found here and was invisible to the unit suites.
+- [x] **The invariant, after the first version of it was wrong.** "At most one racer per
+      round acquires" reported 15/15 failures against correct code: a winner that releases —
+      or simply exits, freeing its lock by pid liveness — legitimately hands the lock to a
+      racer still inside its retry loop. Sequential handoff is the system working. The two
+      sound checks are (1) **temporal overlap** of held intervals, each recorded as a strict
+      subset of the true one so any overlap is genuine, and (2) the decisive **self-watch**:
+      the holder polls its own lock file synchronously for the whole hold and must never see
+      anything but its own pid — no clock reasoning required.
+- [x] **What it caught.** Four designs failed here before the current one:
+
+      | design | result |
+      |---|---|
+      | rename-based reclaim | 2/15 rounds at 3 racers, 9/12 at 5 (three simultaneous winners twice) — the lock path stands empty between rename-aside and restore |
+      | mutex-file guard | held at 3 and 5, broke 7/20 at 8 — the mutex is itself a contended path with the same problem one level up |
+      | claim + `wx` create | 2/20 at 16 — `O_CREAT\|O_EXCL` publishes the **name** before the **bytes**, so a claim being born reads as empty, and empty reads as abandoned |
+      | claim + `wx` on the lock | 1/20 at 16 — the same window on the lock file itself |
+      | claim + `link()` | **0 anomalies** (current design) |
+
+- [x] **The fix that came out of it (REV-233).** `writeFile(path, body, {flag:"wx"})` is
+      atomic in *exclusion* but not in *publication*. `createExclusiveWithContent()` now
+      writes `sync.collaboration.staging.<pid>.<basename>` first and publishes it with
+      `fsp.link()`, which has no name/bytes split and still fails `EEXIST` rather than
+      overwriting. The post-acquire sweep reaps abandoned staging files and eviction claims.
+- [x] **Measured 2026-07-31, 195 rounds over 9 configurations, 0 anomalies:** 20×3 / 20×5 /
+      20×8 / 20×12 / 30×16 / 15×24 in `stale` mode, plus 20×12 `fresh`, 20×8 with
+      `--release 0`, and 30×12 with `--hold-ms 0`. Contention was real in every row
+      (1872 losses, 93 handoffs); zero stolen locks, zero interval overlaps, zero rounds
+      with no winner, and no leftover lock, claim or staging file anywhere.
+- [x] **The harness refuses to report a false green.** It exits non-zero as `INCONCLUSIVE`
+      when a multi-racer run observes no losses *and* no handoffs, because that means the
+      racers never met and the run proved nothing. It also rejects non-integer `--rounds` /
+      `--racers` / `--hold-ms`: a first matrix run "passed" all 9 configurations instantly
+      because zsh does not word-split unquoted expansions, `--rounds` parsed to `NaN`, and
+      the round loop executed zero times. A safety check that silently runs zero rounds is
+      worse than no safety check — it looks like proof.
+
+#### Verification axis 6 — hostile-input harness over the real MCP stdio boundary
+- [x] **The one surface no test touched.** Every other test in `packages/mcp-server`
+      calls an exported function directly, so the transport framing, the SDK's JSON-RPC
+      parser, a stray `console.log` landing on fd 1 and an unhandled rejection taking the
+      process down are all invisible to them — and that boundary is the *only* thing a
+      real MCP client sees. `packages/mcp-server/scripts/stdio-fuzz.js` spawns the
+      compiled server as a child process, feeds **42** hostile frames down a real pipe
+      and checks five invariants after each one:
+      1. **STDOUT PURITY** — every line on stdout parses as JSON-RPC. One log line on the
+         wrong fd corrupts the stream for the whole session.
+      2. **LIVENESS** — a `ping` after each frame must still be answered. No frame may
+         wedge or kill the process.
+      3. **ID FIDELITY** — every response id was requested, ids are never reused, and a
+         notification (no id) is never answered.
+      4. **NO LEAKAGE** — error payloads carry no stack frames, no absolute paths and no
+         `node_modules`. A model reads these, and a client shows them to a user.
+      5. **HERMETICITY** — the corpus must not make the server do real work.
+- [x] **Invariant 5 exists because the file's own SCOPE claim was false.** The first draft
+      documented the corpus as non-executing while two frames named the real `sync_status`
+      tool; dispatch reached the CLI and each spawned a **2–4 s** `syncrona status`
+      subprocess. That is what made the run flaky — under load the response missed the
+      drain window and the harness reported `unanswered-request: id 1024`. The fix was not
+      to widen the timeout. The two frames were retargeted at a name that does not exist
+      (the `normalizeTimeout` semantics they were probing are asserted directly in
+      `test/toolService.cov.test.js`), and the prose claim became a machine check read from
+      the **server's own audit log**: any `tool.call` entry with `ok: true` is a tool that
+      ran, and fails the suite. A future frame that reaches real work now breaks the build
+      instead of quietly making it slow.
+- [x] **Corpus:** truncated and malformed JSON, a lone `\n`, 100 KB of garbage, NUL and
+      lone-surrogate bytes, a UTF-8 BOM, CRLF framing, JSON-RPC batches, wrong/missing
+      `jsonrpc`, duplicate and colliding ids, `__proto__`/`constructor.prototype` in
+      params, `tools/call` with a missing/non-object/array `arguments`, 1000-deep nesting,
+      a 1 MB payload, and a bidi-override tool name (Trojan Source, CVE-2021-42574). The
+      bidi frame is written as `\u202E`/`\u202C` escapes rather than literal characters:
+      as literals the file becomes *binary* to `grep` and `diff` — which silently broke
+      several searches while it was being written — and it would itself carry exactly the
+      bytes a source scanner exists to flag. Escaped, the file stays ASCII and the same
+      bytes still reach the wire.
+- [x] **Result: `frames=42 messages=68 stdout=46802B violations=0`**, byte-identical over
+      three consecutive runs. Wall time **221 ms** — measured with `execFile` + `Date.now()`
+      after both `time` and `date +%s%N` gave untrustworthy figures on macOS/zsh. That cost
+      is why it belongs in the default suite rather than behind a flag, and it is not
+      incidental: `npm test` globs `test/*.test.js`, which Stryker re-runs **per mutant**,
+      so a multi-second test here would multiply across an entire mutation run.
+- [x] **`test/stdioFuzz.test.js` guards the harness against a false green** the same way
+      the race harness does: it pins the corpus at ≥40 frames with unique names, requires
+      seven named frames to still exist, and asserts the run delivered the *whole* corpus —
+      the loop breaks on the first wedge, so a violation-free report over three frames
+      would otherwise read as success.
+
+#### The MCP handshake reported the wrong version for eight minor releases
+- [x] **`SERVER_VERSION` was the literal `"0.1.0"`** in `runtimeConfig.ts` while the package
+      was at 0.9.1 — so the `initialize` handshake, `sync_health` and every tool-module
+      banner told clients 0.1.0. Found by the stdio harness, which reads the real handshake
+      off the wire. Same defect and same fix as `syncrona --version` in 0.9.1: read the
+      version from the package's own `package.json` at runtime. The failure fallback is the
+      deliberately implausible `"0.0.0-unknown"` rather than a guessed number — if the
+      lookup breaks, the handshake should say so instead of asserting something false.
+      Verified on the wire: `"serverInfo":{"name":"syncrona-mcp-server","version":"0.9.1"}`.
+
+#### A mutant proved a guard was load-bearing — and left the proof on disk
+- [x] **`fileUtilsCoverage.test.ts` asserted on paths it did not own.** Two escape tests
+      checked that nothing was written to `path.dirname(root)`, and with `root` from
+      `mkdtemp` that resolves to `os.tmpdir()` itself — shared with every process on the
+      machine. Not hermetic in either direction: an unrelated `/tmp/escape.js` fails a
+      healthy build, and the test cannot clean up after the escape it provokes.
+      Both happened. The core mutation run produced a mutant with the traversal guard in
+      `FileUtils.ts` removed; the escape then genuinely occurred and wrote `escape.js`
+      into `os.tmpdir()`. The mutant was correctly **killed** by the `rejects.toThrow`
+      above it, so the run stayed green — but the byte survived, and every later run of
+      that file failed on the stale artifact. Fixed with a `makeNestedRoot()` helper that
+      puts the source root one level inside a tracked sandbox, so the parent is a directory
+      the suite owns and `afterAll` removes. The incident is worth keeping: it is direct
+      evidence the traversal guard is load-bearing (without it the write really does
+      escape) and a reminder that a test asserting on a shared namespace is a test that
+      can be broken by anything.
+
+#### Also added
+`cliCommandWiring`, `repairPruneConfirm`, `pemMaterialLeak` (core) and
+`pemMaterialLeak`, `processRunnerSettle`, `mcp-auditRev211`, `mcp-atfRev212`,
+`scopeBootstrapAutoPull`, `scopePathsCoverage`, `toolServiceGuards` (MCP).
+
+#### Verification (2026-07-31, `npm run check` → exit 0)
+Exit code captured directly (`npm run check > log 2>&1; echo $?`), not through a pipe —
+`cmd | tail` reports *tail's* status and has masked a failing chain here three times.
+- Build: 14 workspace packages. Lint: eslint `--max-warnings=0`, plus
+  dependency-cruiser — 125 modules / 418 dependencies, no violations.
+- Tests: **2954** unique across 14 packages — core **990 in 94 suites**, MCP server
+  **1628**, jira 124, credential-store 66, sn-transport 65, eight plugin packages 81.
+  (The naive sum is higher: the MCP suite runs twice in the chain, under `test:mcp` and
+  again under `test:coverage:gates`.)
+- Coverage: core aggregate 96.44 stmts / 86.69 branch / 97.37 func / 97.08 lines against
+  the 92/79/89/92 ratchet, plus 21 per-file floors; MCP server **97.27% line / 90.25%
+  branch** against gates of 90/80, plus 19 module floors and the 80/45 defaults.
+- `pushCommand.ts` now measures **100.00 lines / 93.91 branches**, so its floor was
+  raised 96/87 → **97/89**. The ratchet moved up, as it is meant to: the failure that
+  exposed it was closed with 24 new tests, never by lowering a number.
+- Governance gates (tool-contract hash, docs drift, release checklist): pass.
+  `verify:pack`: 14 tarballs plus two bin smoke tests.
+- `bench:guard`: median **0.903 ms** (p95 1.309) against the 25 ms ceiling (3200 records
+  / 4280 files, 200 iterations). `scan:secrets`: gitleaks 8.30.1 over 391.88 MB in
+  2 m 13 s — no findings. The scan grew from 31.67 MB because this session's Stryker
+  reports (342 MB in `reports/`, 1.4 MB in `packages/core/reports/`) sit gitignored in
+  the working tree; the CI job scans history from a clean checkout and is unaffected.
+- **AR9 remains refused**, for the third time: high risk for zero behaviour change.
+
 ---
 
 ## PHASE D — Distribution polish (remainder)
@@ -1770,8 +2254,15 @@ roadmap re-frame the engineering backlog (D5/G1–G17/DX) by adoption impact.
       Syncrona vs ServiceNow native Git, Sincronia, and update sets (capability
       matrix, when-to-choose, the one-line difference, honest gaps). Linked from
       README and BUSINESS_ANALYSIS §4.
-- [ ] **BA4. Enterprise auth (Basic only)** is the #1 paying-market blocker —
-      promote G1 (OAuth/SSO) to "Must". (Tech work tracked as G1.)
+- [~] **BA4. Enterprise auth (Basic only)** is the #1 paying-market blocker —
+      promote G1 (OAuth/SSO) to "Must". (Tech work tracked as G1.) MOSTLY DONE:
+      the premise no longer holds — G1 landed 2026-06-16, so auth is not
+      Basic-only. `syncrona login` offers Basic, OAuth (password,
+      client-credentials, JWT-bearer) and an inbound REST API key, each with
+      optional mutual TLS. REMAINING [owner decision]: the interactive
+      authorization-code / true-SSO grant, which needs a redirect URI and a
+      registered OAuth app — a product decision, not engineering work
+      (`ROADMAP.md:272`).
 - [ ] **BA5. No business model / sustainability / bus factor 1** — decide
       OSS-only vs OSS+paid-support; document ownership; recruit co-maintainer.
 - [ ] **BA6. Brand fragmentation** (syncrona / SyncroNow AI / syncrona /

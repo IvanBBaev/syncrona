@@ -32,9 +32,11 @@ follows the same precedence (see the mcp-server README).
   only the failed records**. Declining a confirmation prompt leaves no
   checkpoint behind.
 - `sync.collaboration.lock.json` — an atomically-created lock that prevents
-  two concurrent pushes against the same workspace. A crash cannot leave it
-  behind for long: locks older than 30 minutes are treated as stale and
-  replaced automatically.
+  two concurrent pushes against the same workspace. It is staged under a private
+  name and published with a hard link, so a collaborator can never observe it
+  half-written. A crash cannot leave it behind for long: a lock whose owning
+  process no longer exists is reclaimed immediately, and locks older than 30
+  minutes are treated as stale and replaced automatically.
 
 Push retries only network errors and retryable HTTP statuses (5xx/408/429);
 authentication failures fail fast instead of being retried.
