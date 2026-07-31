@@ -59,8 +59,21 @@ function isManifestShapedPath(sourcePath: string, filePath: string): boolean {
 // reported missing and never re-downloaded either — `repair --apply --prune`
 // simply deleted it, along with any local edits not yet pushed. Compare the two
 // names in a canonical form before calling a shape-matching path an orphan.
+// Case folds too, because the third way the two names diverge is case and it is
+// the most common of the three: `SNFileExists` decides "already present" with
+// `fsp.stat`, which is case-insensitive on APFS and NTFS — the default on both
+// macOS and Windows. So a manifest record "Foo" whose folder is on disk as "foo"
+// is not reported missing (stat finds it) while the orphan lookup, which is a
+// byte-exact `records[recordName]`, does not claim it — and `repair --apply
+// --prune` deleted a file the manifest does claim. Folding here is also what
+// manifestBuilder already does when it decides two record names collide
+// (`normalize("NFC").toLowerCase()`), so the two modules agree on when two names
+// are "the same name". `toLowerCase`, never `toLocaleLowerCase`: the latter is
+// locale-dependent (Turkish dotless ı) and would make pruning depend on the
+// operator's locale. Merging two records that differ only in case is the safe
+// direction — it can only ever make this predicate refuse to delete.
 const canonicalName = (name: string): string =>
-  name.normalize("NFC").replace(/[.\s]+$/u, "");
+  name.normalize("NFC").toLowerCase().replace(/[.\s]+$/u, "");
 
 // The <table>/<record> pair a manifest-shaped path encodes (folder mode keeps
 // them as their own segments; flat mode packs the record into the file stem

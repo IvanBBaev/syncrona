@@ -5,6 +5,7 @@ import fs, { promises as fsp } from "fs";
 import path from "path";
 import * as ConfigManager from "./config.js";
 import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout.js";
+import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 
 const sleep = (ms: number): Promise<void> =>
@@ -193,6 +194,27 @@ export const getBuildExt = (
   const file = files.find((f) => f.name === field);
   if (!file) {
     throw new Error("Unable to find file");
+  }
+  // REV-209: this value is interpolated into a filename and joined onto the build
+  // root by pushPipeline (`${relPathNoExt}.${buildExt}` → path.join(buildPath, ...)
+  // → writeFileForce), and writeFileForce is a bare fsp.writeFile with no
+  // containment check of any kind. The source-tree writer received the INJ-1
+  // containment guard (writeSNFileCurry above) exactly because manifest-supplied
+  // names are treated as untrusted there — but the build-tree writer was left
+  // unguarded, so the same threat model was only half enforced. A manifest `type`
+  // of "js/../../../../evil" escapes the build directory AND the workspace.
+  //
+  // Validate here rather than at the write site: this is the single point where the
+  // untrusted value leaves the manifest, so both build layouts and any other future
+  // caller are covered by one check. isSafePathComponent is the same rule the
+  // download side uses, so the two cannot drift.
+  if (!isSafePathComponent(file.type)) {
+    throw new Error(
+      `Refusing to build "${recordName}" in table "${table}": the manifest records ` +
+        `an unusable file type for field "${field}". A file type must be a single ` +
+        `path component (no "/" or "\\", not empty, not only dots). Re-run ` +
+        `\`syncrona refresh\` to rebuild the manifest from the instance.`
+    );
   }
   return file.type;
 };

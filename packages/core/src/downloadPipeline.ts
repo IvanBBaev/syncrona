@@ -385,7 +385,18 @@ const checkRecordsForMissing = async (
     return;
   }
 
-  const recPaths = recNames.map(fUtils.appendToPath(tablePath));
+  // Probe the directory the WRITER uses, which is `rec.name` — not the manifest
+  // key. The two are the same in a manifest this CLI produced (getRecordsForTable
+  // stores each record under its own name), but nothing enforces it for a
+  // hand-edited or foreign manifest, and the flat branch above already reads
+  // `record.name`. Where they diverged the record was permanently stuck: the probe
+  // found no directory at the key, so every run re-downloaded the record, the
+  // writer put it back under `rec.name`, and `repair --prune` then deleted that
+  // file as an orphan (getFileContextFromPath resolves a path by the key). Falling
+  // back to the key keeps a record whose `name` a manifest omitted probeable.
+  const recPaths = recNames.map((recName) =>
+    fUtils.appendToPath(tablePath)(records[recName]?.name || recName)
+  );
   // PERF-4 (REV-97): bound the directory-existence probe fan-out across records.
   const concurrency = resolveWriteConcurrency();
   const checks = await mapWithConcurrency(

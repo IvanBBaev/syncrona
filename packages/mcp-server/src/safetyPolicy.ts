@@ -156,8 +156,9 @@ function isCliPackageToken(token: string): boolean {
   return CLI_PACKAGE_NAMES.has(packageNameOf(token));
 }
 
-/** First token that is not a flag (and not the `--` separator). */
-function firstOperand(tokens: string[]): string | null {
+/** Every token that is not a flag (and not the `--` separator), lowercased. */
+function operandsOf(tokens: string[]): string[] {
+  const operands: string[] = [];
   for (const token of tokens) {
     if (token === "--") {
       continue;
@@ -165,32 +166,40 @@ function firstOperand(tokens: string[]): string | null {
     if (token.startsWith("-")) {
       continue;
     }
-    return token.toLowerCase();
+    operands.push(token.toLowerCase());
   }
-  return null;
+  return operands;
+}
+
+/** Index of the first operand in `tokens`, or -1. */
+function firstOperandIndex(tokens: string[]): number {
+  return tokens.findIndex((token) => token !== "--" && !token.startsWith("-"));
 }
 
 /**
- * Resolves the CLI subcommand an invocation would actually run, or null when the
+ * The operand region of an invocation that reaches the CLI, or null when the
  * invocation does not reach the CLI at all. Parsed structurally rather than by
  * free-text substring search: the binary is `syncrona`, so a phrase like
  * "sync push" never occurs in a real invocation and matching it gates nothing.
  */
-export function findSyncroCliSubcommand(command: string, args: string[]): string | null {
+function cliOperands(command: string, args: string[]): string[] | null {
   const base = normalizeBinaryName(command);
   const tokens = args.map((token) => token.trim()).filter((token) => token.length > 0);
 
   if (isCliPackageToken(base)) {
-    return firstOperand(tokens);
+    return operandsOf(tokens);
   }
 
   let rest: string[] | null = null;
   if (PACKAGE_RUNNERS.has(base)) {
     rest = tokens;
   } else if (PACKAGE_MANAGERS.has(base)) {
-    const first = firstOperand(tokens);
+    // Index first, then lowercase: `tokens.indexOf(lowercased)` missed a
+    // mixed-case `Run`/`EXEC` token and sliced from -1, re-scanning the whole argv.
+    const at = firstOperandIndex(tokens);
+    const first = at >= 0 ? (tokens[at] as string).toLowerCase() : null;
     if (first && PACKAGE_MANAGER_EXEC_SUBCOMMANDS.has(first)) {
-      rest = tokens.slice(tokens.indexOf(first) + 1);
+      rest = tokens.slice(at + 1);
     }
   }
   if (!rest) {
@@ -198,7 +207,7 @@ export function findSyncroCliSubcommand(command: string, args: string[]): string
   }
 
   // `npx --package syncrona syncrona push` and `npx -y syncrona push` both reach
-  // the CLI: locate the package token, then take the following operand. Scan from
+  // the CLI: locate the package token, then take the following operands. Scan from
   // the right so a `--package syncrona` value does not shadow the binary token
   // that actually precedes the subcommand.
   let cliIndex = -1;
@@ -212,13 +221,48 @@ export function findSyncroCliSubcommand(command: string, args: string[]): string
   if (cliIndex < 0) {
     return null;
   }
-  return firstOperand(rest.slice(cliIndex + 1));
+  return operandsOf(rest.slice(cliIndex + 1));
 }
 
-/** True when the invocation runs a CLI subcommand that mutates the instance. */
+/**
+ * Resolves the CLI subcommand an invocation would most likely run, or null when
+ * the invocation does not reach the CLI at all.
+ *
+ * Best-effort by construction: yargs registers the shared options per command, so
+ * the subcommand is normally the first operand — but a space-separated global
+ * option value (`syncrona --logLevel debug push`) occupies that position instead.
+ * Use {@link isDestructiveWorkspaceCommand} for any security decision; it does not
+ * depend on picking the right operand.
+ */
+export function findSyncroCliSubcommand(command: string, args: string[]): string | null {
+  const operands = cliOperands(command, args);
+  if (operands === null) {
+    return null;
+  }
+  return operands[0] ?? null;
+}
+
+/**
+ * True when the invocation runs a CLI subcommand that mutates the instance.
+ *
+ * Checks EVERY operand, not just the first. Resolving "the" subcommand means
+ * knowing which tokens are option values, and that is a per-option question:
+ * `--logLevel debug push`, `--instance-profile dev push` and `-d main push` all
+ * put a value where the first operand would be, and all three really run push
+ * (verified against the CLI's yargs registration). Deciding the gate on the first
+ * operand therefore reported `requiresConfirmation === false` for a live push to a
+ * ServiceNow instance. An enumeration of the value-taking options would re-open
+ * every time the CLI grows one, so this is default-deny in the same way the git
+ * option regions are: any destructive verb anywhere in the operand region confirms.
+ * The cost is over-confirming a read-only command that happens to take
+ * "push"/"deploy"/"download" as a positional argument, which is the safe direction.
+ */
 export function isDestructiveWorkspaceCommand(command: string, args: string[]): boolean {
-  const subcommand = findSyncroCliSubcommand(command, args);
-  return subcommand !== null && DESTRUCTIVE_CLI_SUBCOMMANDS.has(subcommand);
+  const operands = cliOperands(command, args);
+  if (operands === null) {
+    return false;
+  }
+  return operands.some((operand) => DESTRUCTIVE_CLI_SUBCOMMANDS.has(operand));
 }
 
 // REV-83 (SEC-2): read-only command allowlist for run_workspace_command.

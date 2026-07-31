@@ -104,18 +104,41 @@ function snSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollAtfResults(
+// REV-212: `timeoutMs` is the budget for the WHOLE poll, not for each request in
+// it. The old loop spent it per attempt and never looked at the clock: 40 attempts
+// × (a 30 s request + a 1.5 s sleep) is a tool call that can block for 20 minutes
+// on a `timeoutMs` of 30 000 — past every client-side deadline, so the caller had
+// already given up while this kept issuing requests against the instance. One
+// deadline, taken once, is the fix; every attempt is then charged against what is
+// actually left.
+const ATF_POLL_INTERVAL_MS = 1500;
+const ATF_MAX_POLL_ATTEMPTS = 40;
+const ATF_MIN_ATTEMPT_TIMEOUT_MS = 1000;
+
+// Exported for the budget test, alongside buildAtfRunScript/parseAtfTrigger/
+// summarizeAtfResults: the alternative is asserting on wall-clock through
+// handleRunAtfTests, which also has to satisfy the trigger request first.
+export async function pollAtfResults(
   table: string,
   query: string,
   fields: string,
   timeoutMs: number
 ): Promise<{ status: number; rows: Record<string, unknown>[] }> {
-  const interval = 1500;
-  const maxAttempts = Math.max(1, Math.min(40, Math.ceil(timeoutMs / interval)));
+  const deadline = Date.now() + Math.max(0, timeoutMs);
   let lastStatus = 0;
   let lastRows: Record<string, unknown>[] = [];
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < ATF_MAX_POLL_ATTEMPTS; attempt += 1) {
+    const remaining = deadline - Date.now();
+    // Gated on `attempt > 0` so the first request is always sent. A caller with an
+    // already-exhausted budget (a tiny or zero `timeoutMs`, or a preceding step
+    // that consumed it) must still get a real status and rows back — returning
+    // `status: 0` with no rows would be reported to the model as "the run produced
+    // no results", which is a different claim from "it timed out".
+    if (attempt > 0 && remaining <= 0) {
+      break;
+    }
+
     const params = new URLSearchParams();
     params.set("sysparm_query", query);
     params.set("sysparm_limit", "50");
@@ -125,7 +148,11 @@ async function pollAtfResults(
       "GET",
       `/api/now/table/${table}?${params.toString()}`,
       undefined,
-      timeoutMs
+      // Never longer than the budget left, and never shorter than the floor: a
+      // sub-second timeout aborts before an ordinary Table API round trip can
+      // complete, which would turn the last attempt of every poll into a
+      // guaranteed transport error rather than a result.
+      Math.max(ATF_MIN_ATTEMPT_TIMEOUT_MS, Math.min(timeoutMs, remaining))
     );
     lastStatus = response.status;
     lastRows = toTableResultRows(response.data);
@@ -133,9 +160,21 @@ async function pollAtfResults(
     if (isAtfTerminal(lastRows)) {
       return { status: lastStatus, rows: lastRows };
     }
-    if (attempt < maxAttempts - 1) {
-      await snSleep(interval);
+
+    // No wait is owed after the final attempt: the loop is about to end either
+    // way, so sleeping here only withholds the answer the caller already has.
+    if (attempt + 1 >= ATF_MAX_POLL_ATTEMPTS) {
+      break;
     }
+
+    // Sleeping the full interval past the deadline is the same overrun in
+    // miniature, so the wait is clamped to what is left; a non-positive remainder
+    // ends the poll instead.
+    const beforeSleep = deadline - Date.now();
+    if (beforeSleep <= 0) {
+      break;
+    }
+    await snSleep(Math.min(ATF_POLL_INTERVAL_MS, beforeSleep));
   }
 
   return { status: lastStatus, rows: lastRows };

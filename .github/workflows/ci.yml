@@ -87,6 +87,33 @@ jobs:
       - name: Tarball content + bin smoke (verify:pack)
         run: npm run verify:pack
 
+      # G14 regression guard. `scripts/bench.mjs` has existed since G14 and has
+      # always supported `--max-ms`, but nothing ever passed a threshold, so the
+      # baseline was a number a human had to read and compare by hand. The guard
+      # runs the same CPU-bound manifest/doc path with a deliberately loose
+      # ceiling (see the THRESHOLD note in scripts/bench.mjs): ~10x the measured
+      # local median, so it catches an algorithmic blowup and ignores runner
+      # noise. No `npm run build` here — the chain already built above.
+      - name: Performance regression guard (bench:guard)
+        run: npm run bench:guard
+
+      # Local/CI gate parity. The secret scan used to live ONLY in the
+      # `secret-scan` job below, so `npm run check` could be exit 0 on a tree CI
+      # would reject — which is exactly how a fixture value reached the default
+      # branch and turned it red. `scan:secrets` is the developer-side mirror of
+      # that job, and `test/ciCheckChain.test.js` requires every link of the
+      # `check` chain to appear here.
+      #
+      # EXPECT THIS STEP TO REPORT "SKIPPED" on the hosted runners: gitleaks is
+      # not an npm dependency and is not preinstalled, and the script says so out
+      # loud instead of pretending to have scanned. Enforcement in CI is the
+      # `secret-scan` job, which runs gitleaks from a pinned action over the full
+      # history and uploads SARIF. Do not "fix" the skip by allowlisting or by
+      # dropping the step — its value is that developers get the same answer
+      # before they push.
+      - name: Secret scan parity check (scan:secrets)
+        run: npm run scan:secrets
+
       # gap-analysis D1: pack-install smoke. The #1 post-publish CLI failure
       # mode is a broken `files:`/`bin:` entry in the published tarball —
       # invisible to workspace-run tests, which execute straight from the
@@ -204,8 +231,16 @@ jobs:
           disable_search: true
           fail_ci_if_error: false
 
-  # G16: secret scanning across the full git history. Test fixtures and example
-  # files use placeholder credentials and are allowlisted in .gitleaks.toml.
+  # G16: secret scanning across the full git history — the enforcing gate.
+  #
+  # .gitleaks.toml no longer allowlists test directories (a real credential once
+  # leaked from a test path), so fixture values are exempt only by matching the
+  # placeholder-value regexes or by carrying an inline `gitleaks:allow` comment
+  # that says why the value is inert. A fixture that trips a rule fails THIS job.
+  #
+  # `npm run scan:secrets` in the check job is the developer-side mirror of this
+  # scan, not a replacement: it runs the same config over the working tree so a
+  # finding surfaces before the push instead of on a red default branch.
   secret-scan:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,30 @@
+{
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing for the security-critical guard modules of @syncrona/mcp-server. WHY THE COMMAND RUNNER: this package's suite is node:test running against the COMPILED dist (the AR9 decision in TODO deliberately keeps it that way), so neither the jest nor the mocha runner applies. Stryker mutates the TypeScript source inside its sandbox, the command re-runs `tsc` so the mutation actually reaches dist, and the existing suite then executes against that freshly built dist; a mutant is killed when the suite exits non-zero. WHY IT RUNS FROM THE REPO ROOT: ~26 governance tests in this suite read repo-root artifacts through `../../` (root package.json, CLAUDE.md, .changeset, .github/workflows, .dependency-cruiser.cjs). A package-level sandbox re-roots `../../` at packages/mcp-server and those tests fail, which aborts Stryker's initial run. Sandboxing the whole monorepo (5.8 MB of tracked files, node_modules symlinked) keeps every path faithful, so `npm run test:mutation` cds to the root and points Stryker back at this file. CONSEQUENCES: coverageAnalysis MUST be `off` — the command runner only reports the whole-suite exit code, so there is no per-test coverage to narrow the run with; every single mutant therefore costs a full rebuild plus the full suite. Measured on a 10-core darwin box: ~32 s per mutant serially, 9.2 s amortised at concurrency 6 and 4.2 s at concurrency 12 (the suite is timer/IO-bound, ~12 s CPU for 32 s wall, so it oversubscribes well) — hence concurrency 12 and a deliberately tiny `mutate`. SCOPE RATIONALE — only modules where a surviving mutant is a real security risk: safetyPolicy.ts (destructive-command blocklist, shell-injection tokens, confirmDestructive / dryRun gating, minimal-footprint budget), inputValidation.ts (the zod boundary that rejects malformed mutating calls before any side effect), createTablePolicy.ts (model-supplied table names / column shapes) and endpointPolicy.ts (model-supplied remote script endpoints). servicenowCore.ts and policyConfig.ts are intentionally OUT of scope: at ~32 s per mutant their combined 1639 lines put a single run well over two hours, which is not a cost this suite should pay on every investigation. TIMEOUT: timeoutMS is deliberately high (180 s vs. the ~32 s suite) because Stryker scores a timeout as a KILL — if six concurrent sandboxes make one run merely slow, a surviving mutant would be silently counted as detected and inflate the score. Non-blocking (break: null) — this surfaces a baseline mutation score, it is not a CI gate.",
+  "packageManager": "npm",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "cd packages/mcp-server && npx tsc && node --test test/*.test.js"
+  },
+  "coverageAnalysis": "off",
+  "mutate": [
+    "packages/mcp-server/src/safetyPolicy.ts",
+    "packages/mcp-server/src/inputValidation.ts",
+    "packages/mcp-server/src/createTablePolicy.ts",
+    "packages/mcp-server/src/endpointPolicy.ts"
+  ],
+  "ignorePatterns": ["**/.stryker-tmp", "**/reports", "**/dist", "**/coverage"],
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mcp-server.json"
+  },
+  "concurrency": 12,
+  "timeoutMS": 180000,
+  "timeoutFactor": 2,
+  "dryRunTimeoutMinutes": 10,
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  }
+}

@@ -20,6 +20,17 @@ coverage
 # nyc test coverage
 .nyc_output
 
+# Stryker mutation-testing sandboxes and HTML reports.
+# Stryker copies the ENTIRE package/repo root into .stryker-tmp/sandbox-*/ —
+# node_modules, coverage, and every local file, including .syncrona-mcp/ runtime
+# state and the git-excluded AI harness files. Those originals are excluded via
+# .gitignore or .git/info/exclude, but the exclusions are path-anchored and do
+# NOT cover a nested copy, so an unignored sandbox turns local-only files into
+# committable ones. It is also expensive: three leftover sandboxes grew the
+# working tree the local secret scan walks from 37 MB / 2s to 108 MB / 13s.
+.stryker-tmp/
+**/reports/mutation/
+
 # Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
 

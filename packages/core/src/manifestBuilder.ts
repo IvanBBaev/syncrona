@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncrona/types";
 import { isEndpointNotFoundStatus, escapeQueryValue } from "@syncrona/sn-transport";
-import { SN_TYPE_MAP, SN_TYPE_QUERY, getDisplayField } from "./fieldMap.js";
+import {
+  SN_TYPE_QUERY,
+  getDisplayField,
+  getFileTypeForInternalType,
+} from "./fieldMap.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
 import * as ConfigManager from "./config.js";
+import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 
 type TableAPIRecord = Record<string, string>;
@@ -347,7 +352,7 @@ async function getFileFieldsForTable(
       .filter((r) => r.element && r.internal_type)
       .map((r) => ({
         name: r.element,
-        type: (SN_TYPE_MAP[r.internal_type] || "txt") as SN.FileType,
+        type: getFileTypeForInternalType(r.internal_type) as SN.FileType,
       }));
 
     // Apply field-level includes overrides
@@ -497,14 +502,67 @@ async function getTableHierarchyTableNames(
 
 // ─── Records for a single table ──────────────────────────────────────────────
 
+/**
+ * A response field as the text the on-disk name is built from, or "" when it
+ * cannot be text.
+ *
+ * `TableAPIRecord` claims `Record<string, string>`, but that is a claim about a
+ * remote JSON response that nothing validates, and it is wrong in a way that is
+ * routine rather than adversarial: ServiceNow flattens a reference field to its
+ * value only when `sysparm_exclude_reference_link=true`, and snClient.tableAPIGet
+ * never sets it, so every reference column arrives as `{ link, value }`. A
+ * `tableOptions.displayField` or `differentiatorField` pointing at a reference
+ * column — a widget differentiated by its `sp_instance`, a record named after its
+ * parent — therefore handed an OBJECT to `String.prototype.replace`, and the
+ * TypeError escaped `buildBulkDownloadFromTableAPI`'s per-table catch (it is not a
+ * "skippable" HTTP error), aborting the download of EVERY table with
+ * "name.replace is not a function" and naming neither the table nor the record.
+ * A property test shrank it to the minimum: one requested record, one returned row
+ * `{}`, where even `record.sys_id` is absent.
+ *
+ * `.value` is taken for the reference shape because it is exactly what the
+ * flattened response would have carried, so a name derived here stays identical to
+ * the one derived from a response that did set the parameter.
+ */
+function fieldText(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    const referenced = (value as { value?: unknown }).value;
+    if (typeof referenced === "string") {
+      return referenced;
+    }
+  }
+  return "";
+}
+
+/**
+ * The record's sys_id, or "" when the response did not return a usable one.
+ *
+ * Every consumer keys off it — the manifest indexes records by name and stores the
+ * sys_id as the push/download target, findMissingFiles probes by sys_id — so a
+ * record without one cannot be represented. It used to become the literal string
+ * "undefined" in the manifest (and in the download's missing-file map), which then
+ * looked like a real record forever after.
+ */
+function recordSysId(record: TableAPIRecord): string {
+  return fieldText(record.sys_id).trim();
+}
+
 function buildRecordName(
   record: TableAPIRecord,
   displayField: string,
   tableOptions: Sync.ITableOptions | undefined
 ): string {
-  let name = tableOptions?.displayField
-    ? record[tableOptions.displayField] || record[displayField] || record.sys_id
-    : record[displayField] || record.sys_id;
+  const sysId = recordSysId(record);
+  const override = tableOptions?.displayField
+    ? fieldText(record[tableOptions.displayField])
+    : "";
+  let name = override || fieldText(record[displayField]) || sysId;
 
   if (tableOptions?.differentiatorField) {
     const isStringDiff = typeof tableOptions.differentiatorField === "string";
@@ -512,7 +570,7 @@ function buildRecordName(
       ? [tableOptions.differentiatorField as string]
       : [...tableOptions.differentiatorField];
     for (const field of diffFields) {
-      const val = record[field];
+      const val = fieldText(record[field]);
       if (val) {
         // Match SincUtilsMS behavior: string uses only value, array uses field:value.
         name = isStringDiff ? `${name} (${val})` : `${name} (${field}:${val})`;
@@ -522,14 +580,50 @@ function buildRecordName(
   }
 
   // Match server-side: replace path separators
-  const safe = (name || record.sys_id).replace(/[/\\]/g, "〳");
+  const safe = (name || sysId).replace(/[/\\]/g, "〳");
   // Never let a record materialize as "." / ".." (or any all-dots name): those
   // resolve to the current/parent directory, so the record's field files would
   // land outside its own folder and then get deleted by `repair --apply --prune`.
   if (safe.trim() === "" || /^\.+$/.test(safe.trim())) {
-    return record.sys_id;
+    // The fallback has to clear the same bar as the name it replaces. The guard
+    // above rejected "." / ".." in the display value but then returned the sys_id
+    // unchecked, so a row whose sys_id was ITSELF ".." (or carried a separator)
+    // walked straight through the very check that had just fired — a property test
+    // shrank it to `{ sys_id: ".." }`, which materialized the parent directory as
+    // a record folder. A real sys_id is 32 hex characters, so this only triggers
+    // on a malformed or hostile response; returning "" makes the callers drop the
+    // row (see the `unusableRows` filters) rather than inventing a path for it.
+    return isSafePathComponent(sysId) ? sysId : "";
   }
   return safe;
+}
+
+/**
+ * Stores a record under its on-disk name.
+ *
+ * `records[name] = record` looks total but is not: `records` is an object literal,
+ * so assigning the one key `"__proto__"` invokes the inherited setter instead of
+ * creating a property. The record then vanished — `Object.keys` did not list it, so
+ * the manifest never mentioned it and the downloader never wrote it, while the
+ * response had returned it and the run reported success. If it was the table's only
+ * record the whole table disappeared from the result. `__proto__` is a perfectly
+ * legal ServiceNow display name and a perfectly legal directory name (INJ-1's
+ * isSafePathComponent accepts it), and it also arrives as a *supplied* manifest name
+ * (JSON.parse makes `"__proto__"` an own property, so buildManifestRecordNames
+ * passes it straight through). defineProperty stores it as the own, enumerable,
+ * JSON-serializable property every consumer already expects.
+ */
+function setRecord(
+  records: SN.TableConfigRecords,
+  name: string,
+  record: SN.MetaRecord
+): void {
+  Object.defineProperty(records, name, {
+    value: record,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 // Builds the Table API `sysparm_fields` list for a record query. buildRecordName
@@ -596,10 +690,32 @@ async function getRecordsForTable(
     // stable ordering, and a rebuild that renamed a different member of the pair
     // would orphan the previously downloaded files), so it is decided in a first
     // pass over the whole result set rather than as each row is seen.
-    const entries = rows.map((row) => {
-      const name = buildRecordName(row, displayField, tableOptions);
-      return { row, name, normalized: name.normalize("NFC").toLowerCase() };
-    });
+    // A row with no usable sys_id cannot be a manifest record (see recordSysId),
+    // and buildRecordName has nothing left to name it after, so drop it here
+    // rather than writing an entry keyed "undefined" that no push can ever target.
+    let unusableRows = 0;
+    const entries = rows
+      .map((row) => {
+        const sysId = recordSysId(row);
+        const name = buildRecordName(row, displayField, tableOptions);
+        return { sysId, name, normalized: name.normalize("NFC").toLowerCase() };
+      })
+      .filter((entry) => {
+        // Both values are checked as path components, not just for emptiness: the
+        // name becomes a directory, and the sys_id is interpolated into that
+        // directory name whenever the group below collides
+        // (`${name}_${sysId}`), so an unusable sys_id escapes through the name.
+        if (isSafePathComponent(entry.name) && isSafePathComponent(entry.sysId)) {
+          return true;
+        }
+        unusableRows += 1;
+        return false;
+      });
+    if (unusableRows > 0) {
+      logger.warn(
+        `Table ${tableName}: skipped ${unusableRows} record(s) the instance returned without a usable sys_id.`
+      );
+    }
     const sysIdsByNormalized = new Map<string, Set<string>>();
     for (const entry of entries) {
       let group = sysIdsByNormalized.get(entry.normalized);
@@ -607,22 +723,22 @@ async function getRecordsForTable(
         group = new Set<string>();
         sysIdsByNormalized.set(entry.normalized, group);
       }
-      group.add(entry.row.sys_id);
+      group.add(entry.sysId);
     }
 
     for (const entry of entries) {
       const collides = (sysIdsByNormalized.get(entry.normalized)?.size ?? 0) > 1;
-      const name = collides ? `${entry.name}_${entry.row.sys_id}` : entry.name;
+      const name = collides ? `${entry.name}_${entry.sysId}` : entry.name;
       if (collides) {
         logger.warn(
           `Record name collision in ${tableName}: "${entry.name}" is used by more than one record; storing it as "${name}" so no record is overwritten.`
         );
       }
-      records[name] = {
-        sys_id: entry.row.sys_id,
+      setRecord(records, name, {
+        sys_id: entry.sysId,
         name,
         files: files.map((f) => ({ name: f.name, type: f.type })),
-      };
+      });
     }
 
     return records;
@@ -925,10 +1041,20 @@ export async function buildBulkDownloadFromTableAPI(
         }
         const records: SN.TableConfigRecords = {};
         const unreturnedFields = new Set<string>();
+        let unusableRows = 0;
 
         const namesForTable = recordNames?.[tableName];
 
         for (const row of rows) {
+          // Same rule as the manifest path: no sys_id, no record. The download
+          // writes at `<table>/<name>` and reports progress per record, so a row
+          // that cannot be named or keyed is dropped with a count instead of
+          // becoming an "undefined" folder.
+          const sysId = recordSysId(row);
+          if (!isSafePathComponent(sysId)) {
+            unusableRows += 1;
+            continue;
+          }
           // The MANIFEST decides where a record lives on disk, not this
           // response: getRecordsForTable suffixes a colliding display name with
           // its sys_id, processTablesInManifest writes at `<table>/<rec.name>`
@@ -945,11 +1071,20 @@ export async function buildBulkDownloadFromTableAPI(
           // tableOptions.displayField override itself (override -> default ->
           // sys_id), exactly as getRecordsForTable does, and passing the already
           // resolved override collapses that chain.
-          const manifestName = namesForTable?.[row.sys_id];
+          const manifestName = namesForTable?.[sysId];
           const name =
             typeof manifestName === "string" && manifestName.length > 0
               ? manifestName
               : buildRecordName(row, defaultDisplayField, tableOpts);
+          // buildRecordName returns "" when neither the display value nor the
+          // sys_id can be a path component. A supplied manifest name is NOT
+          // filtered here: downloadPipeline default-denies it loudly, which is the
+          // right outcome for a manifest that asks for an impossible path —
+          // dropping it silently would leave the record "missing" on every run.
+          if (!name) {
+            unusableRows += 1;
+            continue;
+          }
           const files: SN.File[] = [];
 
           for (const [fieldName, fieldType] of allFiles.entries()) {
@@ -971,7 +1106,13 @@ export async function buildBulkDownloadFromTableAPI(
             });
           }
 
-          records[name] = { sys_id: row.sys_id, name, files };
+          setRecord(records, name, { sys_id: sysId, name, files });
+        }
+
+        if (unusableRows > 0) {
+          logger.warn(
+            `Table ${tableName}: skipped ${unusableRows} record(s) the instance returned without a usable sys_id.`
+          );
         }
 
         if (unreturnedFields.size > 0) {

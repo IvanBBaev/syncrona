@@ -29,6 +29,9 @@ beforeAll(() => {
     "failplugin",
     "module.exports = { run: async () => ({ success: false, output: '' }) };"
   );
+  // A package that resolves and imports cleanly but is not a build plugin at
+  // all — the shape mistake `npm install`ing the wrong package produces.
+  writePlugin("norunplugin", "module.exports = { transform: () => 'nope' };");
 });
 
 afterAll(() => {
@@ -43,8 +46,15 @@ jest.unstable_mockModule("../config.js", () => ({
   getRootDir: (...a: unknown[]) => getRootDir(...a),
 }));
 
+const loggerWarn = jest.fn();
+
 jest.unstable_mockModule("../Logger.js", () => ({
-  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: (...a: unknown[]) => loggerWarn(...a),
+    error: jest.fn(),
+  },
 }));
 
 const context = (filePath: string): Sync.FileContext =>
@@ -64,11 +74,20 @@ beforeEach(() => {
 });
 
 describe("PluginManager.getFinalFileContents", () => {
+  // `processFile: false` is how push/deploy read the file that is already built:
+  // the bytes on disk must go up verbatim. Running the chain a second time would
+  // double-transform (minify a minified bundle, re-prepend a banner), so the flag
+  // is asserted against a rule that DOES match and DOES change the content —
+  // asserting only "the raw text is still in there" would pass either way.
   it("returns raw file contents when processFile is disabled", async () => {
-    getConfig.mockReturnValue({ rules: [] });
+    getConfig.mockReturnValue({
+      rules: [{ match: /\.js$/, plugins: [{ name: "okplugin", options: {} }] }],
+    });
     const PluginManager = (await import("../PluginManager.js")).default;
+    await PluginManager.loadPluginConfig();
     const out = await PluginManager.getFinalFileContents(context(SOURCE_FILE), false);
-    expect(out).toContain('gs.info("hello")');
+    expect(out).toBe('gs.info("hello");\n');
+    expect(out).not.toContain("// transformed");
   });
 
   it("copies a file as-is when no rule matches its path", async () => {
@@ -176,5 +195,54 @@ describe("PluginManager.determinePlugins with stateful user regexes", () => {
     const PluginManager = await withRules([{ match: /\.ts$/g, plugins }]);
 
     expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual([]);
+  });
+});
+
+// sync.config.js is hand-written user code that is never type-checked, so both
+// the rule list and the plugin packages it names can arrive in the wrong shape.
+// A build must not die with `reg.test is not a function` or
+// `plugin.run is not a function` — those name the internals, not the user's
+// mistake, and the first one aborts the whole build over one bad rule.
+describe("PluginManager malformed configuration", () => {
+  const plugins = [{ name: "okplugin", options: {} }];
+
+  it("skips malformed rules with a warning and still honours a later valid rule", async () => {
+    getConfig.mockReturnValue({
+      rules: [
+        null,
+        { match: "\\.js$", plugins: [{ name: "failplugin", options: {} }] },
+        { match: /\.js$/, plugins },
+      ],
+    });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    await PluginManager.loadPluginConfig();
+
+    // The valid rule after the two broken ones still decides the build.
+    expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual(plugins);
+    // One warning per malformed rule: the missing rule and the string `match`.
+    expect(loggerWarn).toHaveBeenCalledTimes(2);
+    // The warning has to be actionable — it names the offending property and
+    // the type that actually arrived, which is what points at the bad rule.
+    const warnings = loggerWarn.mock.calls.map((c) => String(c[0]));
+    expect(warnings[0]).toContain("match");
+    expect(warnings[0]).toContain("undefined");
+    expect(warnings[1]).toContain("match");
+    expect(warnings[1]).toContain("string");
+  });
+
+  it("reports a plugin package that exports no run() instead of crashing on it", async () => {
+    getConfig.mockReturnValue({
+      rules: [{ match: /\.js$/, plugins: [{ name: "norunplugin", options: {} }] }],
+    });
+    const PluginManager = (await import("../PluginManager.js")).default;
+
+    // The message must distinguish "installed but not a build plugin" from the
+    // "could not be loaded / is it installed?" hint, or the user reinstalls a
+    // package that was there all along.
+    await expect(
+      PluginManager.getFinalFileContents(context(SOURCE_FILE))
+    ).rejects.toThrow(
+      'Build plugin "norunplugin" does not export a run(context, content, options) function.'
+    );
   });
 });

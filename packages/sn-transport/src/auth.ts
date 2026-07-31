@@ -129,6 +129,37 @@ export type ResolvedAuthMethod = {
   unknownExplicitIssue?: string;
 };
 
+/** Longest echo of an untrusted selector; a real method name is ~24 characters. */
+const MAX_ECHOED_SELECTOR = 64;
+
+/**
+ * Renders an unrecognized selector for inclusion in an issue string.
+ *
+ * The selector is the one piece of untrusted text that gets echoed back, and the
+ * issues list is not a dead end: core/snClient logs it, core/diagnosticsCommands
+ * pushes it verbatim into the reported "missing env vars" list, and
+ * mcp-server/servicenowCore embeds it in the Error it refuses to start with. All
+ * three are line-oriented reports read by an operator or an LLM, so an
+ * `SN_AUTH_METHOD` carrying newlines forges lines in them — a property test shrank
+ * it to `SN_AUTH_METHOD="basic\nSN_PASSWORD requires nothing."`, which reproduces
+ * this module's own issue wording inside the report. Same indirect-injection class
+ * as the ADF code-fence escape (REV-202), reachable from a `.env` in any workspace
+ * the agent was pointed at. Escape the line terminators and control characters, and
+ * bound the length, so the echo stays diagnosable without being able to add a line.
+ */
+function describeSelector(raw: string): string {
+  const escaped = raw.replace(
+    // No eslint-disable here: `no-control-regex` is not enabled for this package,
+    // and `npm run lint` runs with --max-warnings=0, so a needless directive is
+    // itself a lint failure. Matching control characters is the point of the class.
+    /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g,
+    (char) => `\\u${(char.codePointAt(0) as number).toString(16).padStart(4, "0")}`
+  );
+  return escaped.length > MAX_ECHOED_SELECTOR
+    ? `${escaped.slice(0, MAX_ECHOED_SELECTOR)}...`
+    : escaped;
+}
+
 function validateAuthMethod(method: AuthMethod, inputs: AuthMethodInputs): string[] {
   const issues: string[] = [];
   const need = (present: boolean | undefined, envVar: string, label: string): void => {
@@ -197,9 +228,9 @@ export function resolveAuthMethod(inputs: AuthMethodInputs): ResolvedAuthMethod 
   // the issues list is already surfaced.
   let unknownExplicitIssue: string | undefined;
   if (unknownExplicit) {
-    unknownExplicitIssue = `Unknown ${AUTH_METHOD_ENV} "${rawExplicit}"; expected one of: ${AUTH_METHODS.join(
-      ", "
-    )}.`;
+    unknownExplicitIssue = `Unknown ${AUTH_METHOD_ENV} "${describeSelector(
+      rawExplicit
+    )}"; expected one of: ${AUTH_METHODS.join(", ")}.`;
     issues.unshift(unknownExplicitIssue);
   }
   return {

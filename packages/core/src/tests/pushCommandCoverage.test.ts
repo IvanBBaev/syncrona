@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "path";
 export {};
 
 // Closes the pushCommand.ts branches the flow/lock suites leave uncovered:
@@ -10,7 +11,7 @@ export {};
 //    unlink error,
 //  - loadCollaborationLock rejecting an invalid object and swallowing errors,
 //  - acquireCollaborationLock re-throwing a non-EEXIST write error and giving up
-//    after both atomic-create attempts lose to a (repeatedly stale) lock,
+//    after every atomic-create attempt loses to a lock that keeps coming back,
 //  - the decrypt-warning branch when no server is configured,
 //  - the git-diff path selection, the declined-resume clearPushCheckpoint call,
 //    and the update-set confirm/decline/create prompts.
@@ -37,7 +38,9 @@ const mockGitDiffToEncodedPaths = jest.fn();
 const mockReadFile = jest.fn();
 const mockWriteFile = jest.fn();
 const mockUnlink = jest.fn();
-const mockRename = jest.fn();
+const mockLink = jest.fn();
+const mockReaddir = jest.fn();
+const mockStat = jest.fn();
 const mockGetRootDir = jest.fn();
 const mockGetActiveInstance = jest.fn();
 const mockLoadCredentials = jest.fn();
@@ -100,7 +103,13 @@ jest.unstable_mockModule("fs", () => {
     readFile: (...args: unknown[]) => mockReadFile(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
-    rename: (...args: unknown[]) => mockRename(...args),
+    // REV-233: the lock and its eviction claims are no longer written in place.
+    // They are staged under a private name and published with link(), and the
+    // post-acquire sweep walks the state directory — so the seam has to answer
+    // link/readdir/stat as well, or every acquire aborts before it starts.
+    link: (...args: unknown[]) => mockLink(...args),
+    readdir: (...args: unknown[]) => mockReaddir(...args),
+    stat: (...args: unknown[]) => mockStat(...args),
   };
   return { ...actual, promises, default: { ...actual, promises } };
 });
@@ -127,6 +136,64 @@ const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });
 const eexist = () => Object.assign(new Error("exists"), { code: "EEXIST" });
 const eacces = () => Object.assign(new Error("denied"), { code: "EACCES" });
 
+const LOCK_FILE_NAME = "sync.collaboration.lock.json";
+const LOCK_PATH = path.join("/tmp/project", LOCK_FILE_NAME);
+
+// An in-memory filesystem for the collaboration-lock family of files.
+//
+// The lock suite below cannot script an exact syscall sequence any more: one
+// acquire now writes a staging file, links it into place, unlinks the staging
+// file and lists the directory, and an eviction adds three more calls on a path
+// derived from the lock's own bytes. Modelling that as ordered mock returns is
+// both unreadable and brittle. A path→content map instead lets each test state
+// the situation it means — "a stale lock is already there" — and assert the
+// logical outcome, while still exercising link()'s real contract: it publishes
+// an already-complete file and fails EEXIST rather than overwriting.
+const collabFiles = new Map<string, string>();
+const isCollabPath = (target: unknown): boolean =>
+  String(target).includes("sync.collaboration.");
+
+function installCollaborationFs(): void {
+  collabFiles.clear();
+  mockReadFile.mockImplementation((target: unknown) =>
+    collabFiles.has(String(target))
+      ? Promise.resolve(collabFiles.get(String(target)))
+      : Promise.reject(enoent())
+  );
+  mockStat.mockImplementation((target: unknown) =>
+    collabFiles.has(String(target))
+      ? Promise.resolve({ mtimeMs: Date.now() })
+      : Promise.reject(enoent())
+  );
+  mockWriteFile.mockImplementation((target: unknown, data: unknown) => {
+    if (isCollabPath(target)) {
+      collabFiles.set(String(target), String(data));
+    }
+    return Promise.resolve(undefined);
+  });
+  mockLink.mockImplementation((from: unknown, to: unknown) => {
+    if (collabFiles.has(String(to))) {
+      return Promise.reject(eexist());
+    }
+    if (!collabFiles.has(String(from))) {
+      return Promise.reject(enoent());
+    }
+    collabFiles.set(String(to), collabFiles.get(String(from)) as string);
+    return Promise.resolve(undefined);
+  });
+  mockUnlink.mockImplementation((target: unknown) => {
+    collabFiles.delete(String(target));
+    return Promise.resolve(undefined);
+  });
+  mockReaddir.mockImplementation((dir: unknown) =>
+    Promise.resolve(
+      [...collabFiles.keys()]
+        .filter((entry) => path.dirname(entry) === String(dir))
+        .map((entry) => path.basename(entry))
+    )
+  );
+}
+
  
 const rec = (sysId: string) => ({ table: "sys_script", sysId, fields: { script: { filePath: `/tmp/${sysId}.js` } } }) as any;
 
@@ -146,10 +213,7 @@ describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetRootDir.mockReturnValue("/tmp/project");
-    mockUnlink.mockResolvedValue(undefined);
-    mockWriteFile.mockResolvedValue(undefined);
-    mockReadFile.mockRejectedValue(enoent());
-    mockRename.mockResolvedValue(undefined);
+    installCollaborationFs();
   });
 
   it("getStateBaseDir falls back to cwd when no config root is loaded", () => {
@@ -179,34 +243,87 @@ describe("pushCommand lock/checkpoint internals (mocked fs)", () => {
     });
   });
 
-  it("gives up after both attempts lose to a repeatedly stale lock", async () => {
-    // Every atomic create hits EEXIST; the existing lock is always stale (dead
-    // pid), so it is reclaimed and retried — but after two rounds acquire returns
-    // the "could not acquire" fallback rather than looping forever.
-    mockWriteFile.mockRejectedValue(eexist());
-    mockReadFile.mockResolvedValue(
-      JSON.stringify({ command: "push", pid: 2 ** 22, createdAt: new Date().toISOString() })
-    );
+  it("acquireCollaborationLock re-throws a non-EEXIST publish error and still clears its staging file", async () => {
+    // REV-233 publishes the lock with link(), and EEXIST is the one failure that
+    // means something benign: someone else got there first. Anything else — a
+    // read-only tree, a permission problem — is a real failure the caller must
+    // see. Reading it as "lost the race" would send acquire into its retry loop
+    // and end in a misleading "could not acquire" for a filesystem fault.
+    mockLink.mockRejectedValueOnce(eacces());
+
+    await expect(__lockInternals.acquireCollaborationLock("push")).rejects.toMatchObject({
+      code: "EACCES",
+    });
+
+    // The staging file is cleaned up on the failure path too, so a tree that
+    // recovers is not left carrying litter nobody will ever claim.
+    expect([...collabFiles.keys()]).toEqual([]);
+  });
+
+  it("gives up after every attempt loses to a lock that keeps coming back", async () => {
+    // Worst case for the retry loop: the lock in the path is always stale (dead
+    // pid), so every round evicts it successfully — and a collaborator restarting
+    // its push in a tight loop puts a fresh one back before the next atomic create
+    // reaches the path. Acquire must terminate with the honest failure rather than
+    // spin, and must leave no eviction litter behind on the way out.
+    const stale = JSON.stringify({
+      command: "push",
+      pid: 2 ** 22,
+      createdAt: new Date().toISOString(),
+    });
+    collabFiles.set(LOCK_PATH, stale);
+    mockUnlink.mockImplementation((target: unknown) => {
+      collabFiles.delete(String(target));
+      if (String(target) === LOCK_PATH) {
+        collabFiles.set(LOCK_PATH, stale);
+      }
+      return Promise.resolve(undefined);
+    });
 
     const result = await __lockInternals.acquireCollaborationLock("push");
+
     expect(result.acquired).toBe(false);
     expect(result.reason).toBe("Could not acquire collaboration lock.");
-    // Two atomic-create attempts, each followed by an atomic stale-lock reclaim:
-    // rename the lock aside, confirm it is stale, then unlink the moved-aside file.
-    expect(mockWriteFile).toHaveBeenCalledTimes(2);
-    expect(mockRename).toHaveBeenCalledTimes(2);
-    expect(mockUnlink).toHaveBeenCalledTimes(2);
-    // Each unlink targets the reclaim sidecar, never the live lock path directly.
-    for (const call of mockUnlink.mock.calls) {
-      expect(String(call[0])).toContain(".reclaim");
-    }
+    // One atomic create per round, every one of them losing to the lock in place.
+    expect(mockLink.mock.calls.filter((call) => String(call[1]) === LOCK_PATH)).toHaveLength(4);
+    // Every eviction claim it won was released again, and every staging file it
+    // wrote was cleaned up: only the collaborator's lock is left.
+    expect([...collabFiles.keys()]).toEqual([LOCK_PATH]);
   });
 
   it("releaseCollaborationLock re-throws a non-ENOENT unlink error", async () => {
-    mockUnlink.mockRejectedValueOnce(eacces());
+    // Release is ownership-checked (REV-205) and removes the lock through the same
+    // eviction claim the acquire path uses (REV-233), so it only reaches the lock's
+    // own unlink for a lock it still holds — which is why it has to acquire first.
+    expect((await __lockInternals.acquireCollaborationLock("push")).acquired).toBe(true);
+    mockUnlink.mockImplementation((target: unknown) => {
+      if (String(target) === LOCK_PATH) {
+        return Promise.reject(eacces());
+      }
+      collabFiles.delete(String(target));
+      return Promise.resolve(undefined);
+    });
+
     await expect(__lockInternals.releaseCollaborationLock()).rejects.toMatchObject({
       code: "EACCES",
     });
+  });
+
+  it("releaseCollaborationLock leaves a lock it does not own in place", async () => {
+    // A lock whose owner token is not ours (a collaborator reclaimed the path
+    // while our long push was still running) must never be removed.
+    expect((await __lockInternals.acquireCollaborationLock("push")).acquired).toBe(true);
+    const foreign = JSON.stringify({
+      command: "push",
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+      owner: "someone-else",
+    });
+    collabFiles.set(LOCK_PATH, foreign);
+
+    await expect(__lockInternals.releaseCollaborationLock()).resolves.toBeUndefined();
+
+    expect(collabFiles.get(LOCK_PATH)).toBe(foreign);
   });
 });
 
@@ -241,7 +358,12 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     mockReadFile.mockRejectedValue(enoent());
     mockWriteFile.mockResolvedValue(undefined);
     mockUnlink.mockResolvedValue(undefined);
-    mockRename.mockResolvedValue(undefined);
+    // These branches are about the orchestration around the lock, not the lock
+    // itself, so the seam is the permissive one: the staging link always lands
+    // (the lock is always free) and the post-acquire sweep finds nothing.
+    mockLink.mockResolvedValue(undefined);
+    mockReaddir.mockResolvedValue([]);
+    mockStat.mockRejectedValue(enoent());
   });
 
   afterEach(() => {
@@ -264,6 +386,25 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     );
     expect(process.exitCode).toBe(1);
     expect(mockCheckConnection).not.toHaveBeenCalled();
+  });
+
+  it("fails the shell when the instance cannot be reached, before touching any record", async () => {
+    // #3: an unreachable instance must fail the shell rather than report success,
+    // and #49: the hint has to classify the real reason instead of hardcoding
+    // SN_* advice. Nothing may be pushed and no update set created on the way out.
+    mockCheckConnection.mockRejectedValue(
+      Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" })
+    );
+
+    await runPush();
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Unable to reach ServiceNow instance instance.service-now.com")
+    );
+    expect(process.exitCode).toBe(1);
+    expect(mockGetAppFileList).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    expect(mockCreateAndAssignUpdateSet).not.toHaveBeenCalled();
   });
 
   it("derives encoded paths from the git diff when no target is provided", async () => {
@@ -509,14 +650,14 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
     // process is alive, so it is not stale and cannot be reclaimed. The push is
     // aborted having pushed nothing — which must fail the shell rather than
     // report a green, no-op deployment to CI.
-    mockWriteFile.mockImplementation(async (p: string) => {
-      if (String(p).includes("sync.collaboration.lock.json")) {
+    mockLink.mockImplementation(async (_from: string, to: string) => {
+      if (String(to).endsWith("sync.collaboration.lock.json")) {
         throw eexist();
       }
       return undefined;
     });
     mockReadFile.mockImplementation(async (p: string) => {
-      if (String(p).includes("sync.collaboration.lock.json")) {
+      if (String(p).endsWith("sync.collaboration.lock.json")) {
         return JSON.stringify({
           command: "push",
           pid: process.pid,

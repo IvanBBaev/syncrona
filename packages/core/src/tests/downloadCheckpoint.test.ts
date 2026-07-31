@@ -74,6 +74,19 @@ describe("download checkpoint", () => {
     await expect(deleteDownloadCheckpoint()).resolves.toBeUndefined();
   });
 
+  // getRootDir throws until a project config is loaded, and `download` can run
+  // before that. The checkpoint then belongs next to the invocation (cwd) — the
+  // path helper must not propagate the failure, or a first download in a fresh
+  // directory dies on bookkeeping.
+  it("falls back to the current working directory when no project root is loaded", () => {
+    mockGetRootDir.mockImplementation(() => {
+      throw new Error("no config loaded");
+    });
+    expect(getDownloadCheckpointPath()).toBe(
+      path.join(process.cwd(), DOWNLOAD_CHECKPOINT_FILE)
+    );
+  });
+
   // The scope alone does not identify the work: after a `refresh` added records
   // to an already-completed table, the resume still skipped that table as "done"
   // and the new files were never downloaded, while the run reported success.

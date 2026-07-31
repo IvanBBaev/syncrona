@@ -33,10 +33,15 @@ jest.unstable_mockModule("../config.js", () => ({
   getRefresh: (...a: unknown[]) => mockGetRefresh(...a),
 }));
 
+// Run the wrapped callback directly so the real devCommand body executes.
+const passThroughScopeCheck = async (fn: () => unknown) => {
+  await fn();
+};
+const mockScopeCheck = jest.fn(passThroughScopeCheck);
+
 jest.unstable_mockModule("../commandHelpers.js", () => ({
   setLogLevel: (...a: unknown[]) => mockSetLogLevel(...a),
-  // Run the wrapped callback directly so the real devCommand body executes.
-  scopeCheck: (fn: () => unknown) => fn(),
+  scopeCheck: (fn: () => unknown) => mockScopeCheck(fn),
 }));
 
 jest.unstable_mockModule("../Logger.js", () => ({
@@ -144,6 +149,120 @@ describe("devCommands", () => {
       expect(sigint).toBeDefined();
       sigint?.();
       expect(mockStopWatching).toHaveBeenCalled();
+    });
+
+    // REV-96 (GATE-2): the `refresher` closure — the whole point of the interval —
+    // had no test. Its refreshInFlight guard is the only thing stopping a slow
+    // instance from stacking concurrent manifest syncs, so the tick, the guard
+    // and the guard RELEASE are all asserted here rather than left to the global
+    // coverage average.
+    it("skips a scheduled refresh while the previous one is still in flight", async () => {
+      // Flush enough microtask turns for the refresher's await chain
+      // (refresher -> refreshCommand -> scopeCheck -> syncManifest) to settle.
+      const flush = async () => {
+        for (let i = 0; i < 10; i += 1) {
+          await Promise.resolve();
+        }
+      };
+
+      jest.useFakeTimers();
+      try {
+        let release: (value: boolean) => void = () => {};
+        mockSyncManifest.mockImplementation(
+          () =>
+            new Promise<boolean>((resolve) => {
+              release = resolve;
+            })
+        );
+
+        await devCommand({ logLevel: "info", refreshInterval: 1 } as never);
+
+        // First tick starts a refresh that has not settled yet.
+        jest.advanceTimersByTime(1000);
+        await flush();
+        expect(mockSyncManifest).toHaveBeenCalledTimes(1);
+
+        // Second tick lands while the first refresh is still running: it must be
+        // DROPPED, not queued behind the first one.
+        jest.advanceTimersByTime(1000);
+        await flush();
+        expect(mockSyncManifest).toHaveBeenCalledTimes(1);
+        expect(mockLoggerDebug).toHaveBeenCalledWith(
+          "Skipping scheduled refresh: previous refresh still running."
+        );
+
+        // Completing the refresh releases the guard and reports the cost (DX21).
+        release(true);
+        await flush();
+        expect(mockLoggerDebug).toHaveBeenCalledWith(
+          expect.stringMatching(/^Manifest refresh took \d+ms$/)
+        );
+
+        // The guard is released, so the next tick refreshes again — the skip is a
+        // one-tick drop, not a permanent stall.
+        jest.advanceTimersByTime(1000);
+        await flush();
+        expect(mockSyncManifest).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+        // The never-settling implementation must not leak into later tests.
+        mockSyncManifest.mockReset();
+      }
+    });
+
+    it("keeps polling after a refresh fails and raises no unhandled rejection", async () => {
+      // `setInterval(() => void refresher())` discards the promise, so anything
+      // that escapes refresher() becomes an unhandled rejection and (under Node's
+      // default --unhandled-rejections=throw) kills the dev watcher. Production is
+      // safe only because the real scopeCheck sinks command-body errors and sets
+      // exitCode=1, so this test uses that faithful behaviour instead of the
+      // pass-through stub — and then asserts both halves of the contract: nothing
+      // escapes, and polling continues.
+      const flush = async () => {
+        for (let i = 0; i < 10; i += 1) {
+          await Promise.resolve();
+        }
+      };
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      const prevExitCode = process.exitCode;
+
+      jest.useFakeTimers();
+      process.on("unhandledRejection", onUnhandled);
+      mockScopeCheck.mockImplementation(async (fn: () => unknown) => {
+        try {
+          await fn();
+        } catch {
+          process.exitCode = 1;
+        }
+      });
+      try {
+        mockSyncManifest
+          .mockRejectedValueOnce(new Error("instance unreachable"))
+          .mockResolvedValue(true);
+
+        await devCommand({ logLevel: "info", refreshInterval: 1 } as never);
+
+        jest.advanceTimersByTime(1000);
+        await flush();
+        expect(mockSyncManifest).toHaveBeenCalledTimes(1);
+
+        // The failed refresh released the guard, so the next tick runs a real
+        // refresh instead of being skipped forever.
+        jest.advanceTimersByTime(1000);
+        await flush();
+        expect(mockSyncManifest).toHaveBeenCalledTimes(2);
+        expect(mockLoggerDebug).not.toHaveBeenCalledWith(
+          "Skipping scheduled refresh: previous refresh still running."
+        );
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+        jest.useRealTimers();
+        mockSyncManifest.mockReset();
+        mockScopeCheck.mockImplementation(passThroughScopeCheck);
+        process.exitCode = prevExitCode;
+      }
     });
   });
 });

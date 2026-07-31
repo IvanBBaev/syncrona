@@ -66,6 +66,26 @@ const makeTmpDir = (): string => {
   return dir;
 };
 
+// A source root nested one level inside a tracked sandbox, for the tests that
+// assert nothing was written *above* the root.
+//
+// Those assertions look at `path.dirname(root)`. With a plain makeTmpDir() root
+// that resolves to os.tmpdir() itself — a directory shared with every process on
+// the machine — so the assertion is not hermetic in either direction: an
+// unrelated `/tmp/escape.js` fails a healthy build, and the test cannot clean up
+// after the escape it is trying to provoke. That is not hypothetical. The
+// mutation run of FileUtils.ts produced a mutant with the traversal guard
+// removed; the escape then genuinely happened, wrote `escape.js` into os.tmpdir()
+// (the mutant was correctly killed by the rejects.toThrow above it, so the run
+// stayed green) and left the byte behind, after which every later run of this
+// file failed on a stale artifact. Nesting makes the parent a directory this
+// suite owns and afterAll removes.
+const makeNestedRoot = (): string => {
+  const root = path.join(makeTmpDir(), "src");
+  fs.mkdirSync(root);
+  return root;
+};
+
 afterEach(() => {
   jest.clearAllMocks();
 });
@@ -130,7 +150,7 @@ describe("writeSNFileCurry content coercion", () => {
   });
 
   it("refuses to write a name that escapes the source root", async () => {
-    const root = makeTmpDir();
+    const root = makeNestedRoot();
     // mockReturnValueOnce (not mockReturnValue): the guard reads getSourcePath
     // exactly once per write, and a persistent stub would leak into the later
     // writer tests that rely on the unloaded-project fallback (getSourcePath
@@ -155,7 +175,7 @@ describe("writeSNFileCurry content coercion", () => {
     // from an unsanitized "../evil" component and already points outside the
     // loaded source root. A guard anchored only to parentPath would wave this
     // through; re-anchoring to the source root catches it.
-    const root = makeTmpDir();
+    const root = makeNestedRoot();
     asMock(ConfigManager.getSourcePath).mockReturnValueOnce(root);
     const escapedParent = path.join(root, "..", "evil-table");
     await expect(
@@ -167,6 +187,21 @@ describe("writeSNFileCurry content coercion", () => {
     expect(
       fs.existsSync(path.join(path.dirname(root), "evil-table", "innocent.js"))
     ).toBe(false);
+  });
+
+  // The other half of the INJ-1 anchor: when the loaded config exposes no usable
+  // source root (an empty `sourceDirectory`), the guard must fall back to
+  // containing the write to its parentPath. Anchoring an empty root instead
+  // resolves to the process cwd, which would refuse every legitimate write whose
+  // target lives outside the directory the CLI happens to be invoked from.
+  it("anchors the guard to parentPath when the configured source root is empty", async () => {
+    const root = makeTmpDir();
+    asMock(ConfigManager.getSourcePath).mockReturnValueOnce("");
+    await writeSNFileCurry(false)(
+      { name: "anchored", type: "js", content: "written" } as any,
+      root
+    );
+    expect(fs.readFileSync(path.join(root, "anchored.js"), "utf8")).toBe("written");
   });
 
   it("skips the write when checkExists=true and the file already exists", async () => {
@@ -249,6 +284,63 @@ describe("getBuildExt", () => {
     expect(() =>
       getBuildExt("sys_script_include", "MyUtil", "missing")
     ).toThrow("Unable to find file");
+  });
+
+  // REV-209: the value returned here is interpolated into a filename and joined
+  // onto the build root by pushPipeline (`${relPathNoExt}.${buildExt}` →
+  // path.join(buildPath, ...) → writeFileForce), and writeFileForce is a bare
+  // fsp.writeFile with no containment check. The source-tree writer got the INJ-1
+  // containment guard (FileUtils.writeSNFileCurry) precisely because the manifest
+  // is treated as untrusted input there; the build-tree writer never got it. A
+  // manifest `type` of "js/../../../../evil" therefore escapes both the build
+  // directory and the workspace: path.join("<build>/table", "Rec.js/../../../../evil")
+  // resolves four levels above the build root. Reject it at the seam where the
+  // untrusted value enters, so both the folder and flat build layouts are covered.
+  it("rejects a manifest file type that is not a single path component", () => {
+    asMock(ConfigManager.getManifest).mockReturnValue(
+      manifestWith([{ name: "script", type: "js/../../../../evil" }])
+    );
+    expect(() => getBuildExt("sys_script_include", "MyUtil", "script")).toThrow(
+      /file type/i
+    );
+  });
+
+  it("rejects a backslash-separated file type, which escapes on Windows", () => {
+    asMock(ConfigManager.getManifest).mockReturnValue(
+      manifestWith([{ name: "script", type: "js\\..\\..\\evil" }])
+    );
+    expect(() => getBuildExt("sys_script_include", "MyUtil", "script")).toThrow(
+      /file type/i
+    );
+  });
+
+  it("rejects an empty or all-dots file type", () => {
+    asMock(ConfigManager.getManifest).mockReturnValue(
+      manifestWith([{ name: "script", type: "" }])
+    );
+    expect(() => getBuildExt("sys_script_include", "MyUtil", "script")).toThrow(
+      /file type/i
+    );
+    asMock(ConfigManager.getManifest).mockReturnValue(
+      manifestWith([{ name: "script", type: ".." }])
+    );
+    expect(() => getBuildExt("sys_script_include", "MyUtil", "script")).toThrow(
+      /file type/i
+    );
+  });
+
+  it("names the record and table it refused, so the bad manifest entry is findable", () => {
+    asMock(ConfigManager.getManifest).mockReturnValue(
+      manifestWith([{ name: "script", type: "js/../evil" }])
+    );
+    let message = "";
+    try {
+      getBuildExt("sys_script_include", "MyUtil", "script");
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("sys_script_include");
+    expect(message).toContain("MyUtil");
   });
 });
 
@@ -375,6 +467,27 @@ describe("getPathsInPath", () => {
     // out loud.
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Refusing to scan"));
     warnSpy.mockRestore();
+  });
+
+  // The containment guard admits TWO roots, and `deploy`/`build` walk the build
+  // tree, which is a sibling of the source tree rather than a child of it. Every
+  // other test here points both roots at the same directory, so a guard that
+  // demanded containment in source AND build would look fine there and silently
+  // return "no files" for the whole build tree. The exact list is asserted so a
+  // phantom entry cannot slip into callers such as `repair --prune` either.
+  it("scans the build tree even though it is outside the source root", async () => {
+    const parent = makeTmpDir();
+    const sourceRoot = path.join(parent, "source");
+    const buildRoot = path.join(parent, "build");
+    fs.mkdirSync(sourceRoot);
+    fs.mkdirSync(buildRoot);
+    asMock(ConfigManager.getSourcePath).mockReturnValue(sourceRoot);
+    asMock(ConfigManager.getBuildPath).mockReturnValue(buildRoot);
+
+    const built = path.join(buildRoot, "bundle.js");
+    fs.writeFileSync(built, "compiled");
+
+    expect(await getPathsInPath(buildRoot)).toEqual([path.resolve(built)]);
   });
 
   it("accepts a relative path that really is inside the source root", async () => {

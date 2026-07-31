@@ -57,6 +57,39 @@ afterAll(() => {
 const perFileGroups = () =>
   Object.keys(jestConfig.coverageThreshold).filter((key) => key !== "global");
 
+// GATE-2 added a second kind of per-file group: single-file PATH floors
+// ('./src/FileUtils.ts') pinning one safety-relevant module just under its
+// measured coverage, alongside the tree-wide GLOBs that hold up the REV-141
+// invariant. Jest checks the two differently (a GLOB group is scored per matching
+// file, a PATH group by prefix match), so the invariants below differ too — only
+// the tree-wide globs have to match every source file.
+const isTreeWide = (group: string) => /[*?[\]]/.test(group);
+const treeWideGroups = () => perFileGroups().filter(isTreeWide);
+const singleFileFloors = () => perFileGroups().filter((group) => !isTreeWide(group));
+
+const PACKAGE_ROOT = path.join(__dirname, "..", "..");
+
+// The real collected source set: `collectCoverageFrom: ['src/**/*.ts',
+// '!src/tests/**']`.
+const collectedSources = (): string[] => {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      const rel = path.relative(PACKAGE_ROOT, abs).split(path.sep).join("/");
+      if (entry.isDirectory()) {
+        if (rel !== "src/tests") {
+          walk(abs);
+        }
+      } else if (entry.name.endsWith(".ts")) {
+        out.push(rel);
+      }
+    }
+  };
+  walk(path.join(PACKAGE_ROOT, "src"));
+  return out;
+};
+
 // Mirrors @jest/reporters: path.resolve() the group, then glob.sync it.
 const filesMatching = (group: string): string[] =>
   glob
@@ -85,16 +118,16 @@ describe("core coverage-threshold groups (REV-141)", () => {
   });
 
   it("still matches top-level source files so their per-file floors stay live", () => {
-    for (const group of perFileGroups()) {
+    for (const group of treeWideGroups()) {
       expect(filesMatching(group)).toContain(TOP_LEVEL);
     }
   });
 
   it("keeps src/index.ts exempt from the lines floor but subject to the branches floor", () => {
-    const branchesGroups = perFileGroups().filter(
+    const branchesGroups = treeWideGroups().filter(
       (group) => jestConfig.coverageThreshold[group].branches !== undefined
     );
-    const linesGroups = perFileGroups().filter(
+    const linesGroups = treeWideGroups().filter(
       (group) => jestConfig.coverageThreshold[group].lines !== undefined
     );
 
@@ -105,6 +138,81 @@ describe("core coverage-threshold groups (REV-141)", () => {
     }
     for (const group of linesGroups) {
       expect(filesMatching(group)).not.toContain(ENTRY_BARREL);
+    }
+    // The entry barrel measures 0% lines by design (it only runs in the subprocess
+    // smoke tests), so no single-file floor may pin its lines either.
+    for (const group of singleFileFloors()) {
+      if (jestConfig.coverageThreshold[group].lines !== undefined) {
+        expect(group.endsWith("/index.ts")).toBe(false);
+      }
+    }
+  });
+
+  // --- GATE-2: the single-file floors -----------------------------------------
+
+  it("names a source file that really exists for every single-file floor", () => {
+    // Jest reports a key that matches nothing as "Coverage data for <key> was not
+    // found", so a floor left behind by a rename fails the build — but only on a
+    // full coverage run. Asserting it here means the rename is reported by the
+    // ordinary suite, next to the code that caused it.
+    const sources = collectedSources();
+    expect(singleFileFloors().length).toBeGreaterThan(0);
+    for (const group of singleFileFloors()) {
+      const rel = path.relative(PACKAGE_ROOT, path.resolve(PACKAGE_ROOT, group))
+        .split(path.sep)
+        .join("/");
+      expect(sources).toContain(rel);
+    }
+  });
+
+  it("scores exactly one file per single-file floor", () => {
+    // A PATH group is a PREFIX match, not an equality test: a key that named a
+    // directory — or a file whose name is a prefix of another ('./src/config' next
+    // to 'src/configSchema.ts') — would silently average several modules together
+    // and stop being a per-file floor at all.
+    const sources = collectedSources();
+    for (const group of singleFileFloors()) {
+      const prefix = path.relative(PACKAGE_ROOT, path.resolve(PACKAGE_ROOT, group))
+        .split(path.sep)
+        .join("/");
+      expect(sources.filter((rel) => rel.startsWith(prefix))).toEqual([prefix]);
+    }
+  });
+
+  it("keeps every single-file floor at or above the tree-wide floor it refines", () => {
+    // Both groups are checked independently, so a single-file value BELOW the
+    // tree-wide glob does not relax anything — the glob still fails the file. Such
+    // an entry is a no-op that reads like a deliberate (lower) decision, which is
+    // how a floor table rots into decoration.
+    for (const metric of ["lines", "branches", "statements", "functions"] as const) {
+      const treeWide = treeWideGroups()
+        .map((group) => jestConfig.coverageThreshold[group][metric])
+        .filter((value): value is number => value !== undefined);
+      if (treeWide.length === 0) {
+        continue;
+      }
+      const strictestTreeWide = Math.max(...treeWide);
+      for (const group of singleFileFloors()) {
+        const value = jestConfig.coverageThreshold[group][metric];
+        if (value !== undefined) {
+          expect(value).toBeGreaterThanOrEqual(strictestTreeWide);
+        }
+      }
+    }
+  });
+
+  it("keeps the tree-wide floors meaningful rather than nominal", () => {
+    // They used to be 20/20, which only ever caught a file with no test at all: a
+    // module could fall from 98% to 21% and still ship green. They are the only
+    // floor for every file without a single-file entry, so they must stay in the
+    // range of real coverage.
+    for (const group of treeWideGroups()) {
+      for (const value of Object.values(jestConfig.coverageThreshold[group])) {
+        expect(value).toBeGreaterThanOrEqual(60);
+        // Still below the global ratchet: the tree-wide floor is sized for the
+        // weakest legitimate file, not for the package average.
+        expect(value).toBeLessThan(jestConfig.coverageThreshold.global.lines);
+      }
     }
   });
 });

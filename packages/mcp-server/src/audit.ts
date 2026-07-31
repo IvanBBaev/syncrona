@@ -518,7 +518,54 @@ function looksLikeSecretValue(value: string): boolean {
   );
 }
 
+// REV-211: the walk has to be bounded on both axes, because everything it visits
+// is attacker-influenced — `args` is whatever a model sent, `outcome` is whatever
+// the instance returned — and this runs INSIDE the audit write, while the audit
+// lock is held.
+//
+// Depth: an unbounded self-call overflows the stack on a deeply nested argument,
+// and a RangeError raised here propagates out of the audit write for a mutating
+// tool call — losing exactly the record the trail exists to keep. A CYCLIC graph
+// is worse: it never terminates, and even if it did, `JSON.stringify` in
+// writeAuditEvent would throw "Converting circular structure to JSON". Capping
+// depth turns a cycle into a finite chain, so both cases degrade to a marker
+// instead of a lost record. 8 is far past anything real: the deepest argument
+// shape in the tool contract nests 4.
+//
+// Breadth: depth alone bounds nothing — one flat array of 5 million
+// secret-shaped strings is depth 1 and still runs the detector 5 million times.
+// 200 leaves every real payload intact (these handlers cap `sysparm_limit` at 50
+// rows) and the omission is COUNTED in the output, so a truncated entry can never
+// be misread as a complete one.
+const AUDIT_SANITIZE_MAX_DEPTH = 8;
+const AUDIT_SANITIZE_MAX_ENTRIES = 200;
+const AUDIT_TRUNCATED_KEY = "<audit-truncated>";
+
+// `out[k] = v` is not total: for the single key "__proto__" an object literal
+// invokes the inherited setter instead of creating a property, so that field
+// silently VANISHED from the audit record (and, when its value was an object,
+// re-pointed `out`'s prototype instead). `__proto__` is a legal JSON key, so any
+// model-supplied argument or instance response could carry it. defineProperty
+// stores the own, enumerable, JSON-serializable property every consumer expects,
+// and behaves identically to assignment for every ordinary key.
+function setAuditField(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 export function sanitizeForAudit(value: unknown): unknown {
+  return sanitizeAuditValue(value, 0);
+}
+
+function sanitizeAuditValue(value: unknown, depth: number): unknown {
   // SEC-8 follow-up (REV-123): a BARE string (not an object property) reaches here when
   // a raw error message is audited directly. It must be inspected too, else a
   // secret-shaped error string is logged in cleartext.
@@ -526,26 +573,54 @@ export function sanitizeForAudit(value: unknown): unknown {
     return looksLikeSecretValue(value) ? "<redacted>" : value;
   }
 
-  if (Array.isArray(value)) {
-    return value.map(sanitizeForAudit);
-  }
-
   if (!value || typeof value !== "object") {
     return value;
   }
 
+  // Nothing past the cap is inspected, so nothing past it may be reproduced
+  // either: the marker carries the container's type and size, never a value.
+  if (depth >= AUDIT_SANITIZE_MAX_DEPTH) {
+    return Array.isArray(value)
+      ? `<depth-capped: array(${value.length})>`
+      : `<depth-capped: object(${Object.keys(value).length} keys)>`;
+  }
+
+  if (Array.isArray(value)) {
+    // NOT `value.map(sanitizeAuditValue)`: map passes (item, INDEX, array), so the
+    // index would arrive as `depth` — element 0 would recurse with a full budget
+    // while element 8 was capped outright, making redaction depend on array
+    // position. The arrow is load-bearing.
+    const kept: unknown[] = value
+      .slice(0, AUDIT_SANITIZE_MAX_ENTRIES)
+      .map((item) => sanitizeAuditValue(item, depth + 1));
+    if (value.length > AUDIT_SANITIZE_MAX_ENTRIES) {
+      kept.push(
+        `<${value.length - AUDIT_SANITIZE_MAX_ENTRIES} more item(s) omitted>`
+      );
+    }
+    return kept;
+  }
+
   const obj = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
+  const entries = Object.entries(obj);
+  for (const [k, v] of entries.slice(0, AUDIT_SANITIZE_MAX_ENTRIES)) {
     if (isSensitiveAuditKey(k)) {
-      out[k] = "<redacted>";
+      setAuditField(out, k, "<redacted>");
     } else if (k.toLowerCase() === "script" && typeof v === "string") {
-      out[k] = `<script:${v.length} chars>`;
+      setAuditField(out, k, `<script:${v.length} chars>`);
     } else if (typeof v === "string" && looksLikeSecretValue(v)) {
-      out[k] = "<redacted>";
+      setAuditField(out, k, "<redacted>");
     } else {
-      out[k] = sanitizeForAudit(v);
+      setAuditField(out, k, sanitizeAuditValue(v, depth + 1));
     }
+  }
+  if (entries.length > AUDIT_SANITIZE_MAX_ENTRIES) {
+    setAuditField(
+      out,
+      AUDIT_TRUNCATED_KEY,
+      `${entries.length - AUDIT_SANITIZE_MAX_ENTRIES} more key(s) omitted`
+    );
   }
   return out;
 }

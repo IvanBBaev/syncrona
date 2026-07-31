@@ -67,22 +67,89 @@ module.exports = {
     // instead of the whole tree — silently turning the repo-wide ratchet into a
     // single-file check (and skipping the per-file floor for it as well).
     //
-    // The floors are deliberately conservative — far below the weakest
-    // legitimately-thin file so cross-OS coverage noise never fails green, yet
-    // well above a 0%-covered newcomer. Current weakest legitimate files
-    // (2026-07-03 baseline): branches — authCommands.ts 55.6%; lines (excl.
-    // index.ts) — cliCommands.ts 36.1%. Tune upward as coverage grows.
-    //
     // src/index.ts is the CLI entry barrel (exercised only via subprocess
     // smoke tests, so it measures 0% lines/functions but 100% branches). It is
     // matched only by the branches glob below (which it passes) and excluded
     // from the lines glob via the '!(index)' extglob, so its legitimate 0%
     // lines does not fail the floor.
+    //
+    // GATE-2: these two globs used to sit at 20/20, which is a floor only against
+    // a file with no test whatsoever — a module could fall from 98% to 21% and
+    // still ship green. Measured 2026-07-30 (whole suite, `jest --coverage`), the
+    // weakest legitimate file in the tree is src/mcpCommand.ts at 83.33% lines /
+    // 68.18% branches (its uncovered code spawns the MCP server process and
+    // branches on `process.platform === "win32"`), and the next weakest lines are
+    // bootstrap.ts 84.00% (uncovered code sits behind `JEST_WORKER_ID` guards, so
+    // it is unreachable from this suite by construction) and repairCommand.ts
+    // 88.13%. The tree-wide floors are therefore set a few points under the
+    // weakest legitimate file, which keeps them tolerant of cross-OS branch noise
+    // (keychain / homedir / platform) while still failing a real regression.
     './src/**/*.ts': {
-      branches: 20,
+      branches: 62,
     },
     './src/**/!(index).ts': {
-      lines: 20,
+      lines: 78,
     },
+    // GATE-2, per-module floors. The tree-wide globs above are necessarily sized
+    // for the weakest file in the package, so on their own they let the modules
+    // that write files, push to the instance, hold credentials or shell out drop
+    // 15-20 points and still pass. Each key below pins ONE file a few points under
+    // what it measures today (2026-07-30, recorded per entry as `measured L/B`):
+    // ~3pts of headroom on lines and ~4-5pts on branches, because branch coverage
+    // is the metric that moves between macOS and Linux CI (keychain, homedir and
+    // platform branches). A ratchet, not a cliff: raise a floor when coverage
+    // rises, never lower one to turn a red build green.
+    //
+    // Mechanics that make these safe (verified in @jest/reporters, coverage
+    // reporter `_checkThreshold`):
+    //   - A covered file is pushed into EVERY threshold group it matches, so a
+    //     file listed here is still scored by the globs above and still feeds the
+    //     `global` ratchet; adding keys cannot disable either.
+    //   - A key that resolves to an existing file becomes a PATH group (prefix
+    //     match); full filenames are used so one key can only ever score one file.
+    //   - A key that matches nothing fails loudly with "Jest: Coverage data for
+    //     <key> was not found.", so a floor left behind by a rename or a delete is
+    //     reported instead of silently gating nothing.
+    //   - Keys are resolved against process.cwd(), NOT rootDir (Jest does not
+    //     expand <rootDir> in coverageThreshold keys). The suite runs from this
+    //     package via `npm --workspace syncrona test`; running jest from the repo
+    //     root with `-c packages/core/jest.config.cjs` makes every key below fail
+    //     as "not found" rather than pass vacuously.
+    //
+    // Only lines and branches are pinned. Statements track lines almost exactly
+    // here, and a functions floor on a single file is too coarse to mean anything
+    // (one uncovered arrow in a 4-function module is a 25pt drop).
+
+    // Local filesystem writes and the path-containment guard.
+    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.21 / 91.80
+    // Everything that mutates the ServiceNow instance, plus the collaboration
+    // lock and the resumable checkpoint that protect a partial push.
+    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.91
+    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.03 / 79.16
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 97.82 / 85.39
+    './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    './src/manifestBuilder.ts': { lines: 91, branches: 74 }, // measured 94.39 / 78.96
+    // Deletes local files under `repair --apply --prune`.
+    './src/repairCommand.ts': { lines: 85, branches: 79 }, // measured 88.13 / 83.54
+    // Transport: auth headers, retries and the request surface every command uses.
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.28
+    // Credentials: the keychain/file store and the auth-method picker.
+    './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.62 / 75.89
+    './src/config.ts': { lines: 96, branches: 85 }, // measured 99.46 / 89.92
+    './src/envFile.ts': { lines: 96, branches: 80 }, // measured 100.00 / 85.00
+    // Scope resolution — a scope code reaches both a URL and a local path.
+    './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
+    './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 71.79
+    './src/commands.ts': { lines: 93, branches: 77 }, // measured 96.19 / 81.81
+    // Spawns plugin processes / watches the tree / drives the interactive setup.
+    './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 89.65
+    './src/Watcher.ts': { lines: 91, branches: 68 }, // measured 94.25 / 73.07
+    './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
+    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.57 / 71.79
+    './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    // The CLI registry: 23 one-line delegations, so a floor on LINES is what
+    // catches an entry that no longer routes anywhere (it declares no branches,
+    // and a branch floor on 0/0 is reported as 100% and would gate nothing).
+    './src/cliCommands.ts': { lines: 96 }, // measured 100.00 lines (0 branches)
   },
 }
