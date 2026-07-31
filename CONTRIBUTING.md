@@ -22,9 +22,144 @@ remains; `TODO` and `DONE` are the working journals.
 npm run build      # build:deps (credential-store, sn-transport) + all workspaces
 npm run typecheck  # tsc across core + mcp-server
 npm run lint       # eslint core + mcp-server, --max-warnings=0
-npm run test       # core jest (146+) + mcp node:test (172+)
-npm run check      # the full gate: build + typecheck + lint + tests + coverage + governance
+npm run test       # 2900+ tests: core jest (990) + mcp node:test (1628) + shared + plugins
+npm run check      # the full gate — every link below, in order
 ```
+
+`npm run check` = build + typecheck + lint (incl. dependency boundaries) + all
+workspace tests + coverage gates + governance gates + `verify:pack` (tarball
+contents and bin smoke) + `bench:guard` + `scan:secrets`.
+
+The last two are the newest links and both mirror something CI does, so a local
+run and a CI run agree:
+
+- **`bench:guard`** runs `scripts/bench.mjs --max-ms 25` over the CPU-bound
+  manifest/doc path. Loose on purpose, and the ceiling comes from the median
+  measured while the machine was **under load** (4.9 ms), not the idle median
+  (0.97 ms) — a shared CI runner is the loaded case, and a performance gate that
+  flakes gets disabled. It is a blowup detector for an accidental O(n²), not a
+  microbenchmark.
+- **`scan:secrets`** runs gitleaks over the working tree with the same
+  `.gitleaks.toml` the CI `secret-scan` job uses. gitleaks is not an npm
+  dependency; without it the step prints an explicit SKIPPED notice instead of a
+  false pass (`brew install gitleaks` to get the real answer before you push).
+  The CI job remains the enforcing gate — it scans the full history from a pinned
+  action. A fixture value that trips a rule must be marked with an inline
+  `gitleaks:allow` comment explaining why it is inert; do **not** allowlist its
+  directory, and see the security note in `.gitleaks.toml` for why.
+
+Every link of the chain also runs as its own CI step, and that is enforced:
+`packages/mcp-server/test/ciCheckChain.test.js` re-derives the chain from the
+root `package.json` and fails the build if a link has no matching step in
+`.github/workflows/ci.yml`, so the local gate and the CI gate cannot drift apart.
+
+`npm run test:mutation` is deliberately **not** a link — a mutation run is far
+too slow for a per-change gate. Run it by hand (or per package, e.g.
+`npm --workspace syncrona run test:mutation`) when you change logic whose tests
+you want to trust. Two things to know before you do:
+
+- **Never hand-inject a mutant into the real source tree.** Verifying "does my test
+  kill this mutant?" by editing `src/` directly means every other suite run —
+  yours, another terminal's, an editor's test task — compiles and executes the
+  mutant and reports failures that are not real. That has cost real debugging time
+  here. Stryker itself is safe in this respect: it copies the repo into
+  `.stryker-tmp/sandbox-*/` and builds that copy's own `dist/`, so the tree you
+  work in is untouched (verified: the sandbox `dist/` is a real directory, rebuilt
+  per mutant, while the checkout's `dist/` keeps its timestamp). If you must
+  hand-inject, do it in a scratch clone, or restore and re-verify by checksum.
+- **A mutation run saturates the machine** (concurrency 12 with no coverage
+  analysis, since the command runner reports only a whole-suite exit code). Running
+  another heavy suite alongside it does not corrupt your tree, but it can push a
+  sandbox past `timeoutMS` — and Stryker scores a timeout as a **kill**, so the
+  score comes out inflated. Let the run finish before you start something big.
+- **A table-completeness fixture must be a literal list inside the test file.** A
+  list derived by parsing the source at runtime moves *with* the mutant — the
+  assertion stays true, the mutant survives, and the test measures nothing while
+  looking rigorous. See `test/safetyPolicy.tableCompleteness.test.js`, which is why
+  that suite spells out all 302 allowlisted git subcommand options by hand.
+
+Both configs write a machine-readable report next to the console output
+(`packages/core/reports/mutation/core.json`,
+`reports/mutation/mcp-server.json` — both gitignored). Read it with:
+
+```bash
+node --max-old-space-size=8192 scripts/mutation-triage.mjs reports/mutation/mcp-server.json
+```
+
+The extra heap is not optional for a large module: the report for `safetyPolicy.ts`
+alone is ~350 MB, because Stryker embeds the full source next to every one of its
+1039 mutants.
+
+It prints the score, the killed/timeout/survived/no-coverage split, and — the part
+that matters — **survivors grouped by mutator**. The clear-text reporter lists
+survivors in file order, which hides the only thing worth knowing: whether you are
+looking at N problems or one missing kind of test. The first `safetyPolicy.ts`
+measurement came back with 383 survivors, of which 327 were `StringLiteral` and most
+of those the same shape — one entry emptied out of a policy table. That is a single
+gap, and it took one table-completeness suite to close. Use `--mutator <name>` to
+drill into one group and `--limit 0` to print them all.
+
+### `npm run race:lock` — the collaboration-lock race harness
+
+`npm run race:lock` builds, then spawns N real processes against one real temp
+directory and releases them from a busy-wait barrier into the same millisecond:
+
+```bash
+npm run race:lock                                            # 20 rounds × 12 racers
+node scripts/lock-race.mjs --rounds 20 --racers 24 --mode stale
+node scripts/lock-race.mjs --racers 12 --hold-ms 0 --release 0
+```
+
+Also not a `check` link — it costs minutes and needs a quiet machine. Run it whenever
+you touch `acquireCollaborationLock` / `releaseCollaborationLock` / `evictLockFile` in
+`packages/core/src/pushCommand.ts`. Three things to know:
+
+- **It must be separate processes.** The lock's two load-bearing mechanisms are
+  kernel-level — `link()`'s all-or-nothing publication and `process.kill(pid, 0)`
+  liveness. Neither means anything inside one Node process against a mocked
+  filesystem, so the unit suites can only assert the logic *around* them. Every real
+  defect this lock has had was found here and was invisible to the unit suites.
+- **"One winner per round" is the wrong invariant.** The first version of this check
+  used it and reported 15/15 failures against correct code: a winner that releases —
+  or simply exits, freeing its lock by pid liveness — legitimately hands the lock to a
+  racer still in its retry loop. Sequential handoff is the system working. The harness
+  instead flags overlapping *held intervals* and, decisively, a holder that ever polls
+  its own lock file and sees anything but its own pid.
+- **A green run with no contention is a false green**, so the harness exits non-zero as
+  `INCONCLUSIVE` when a multi-racer run records no losses and no handoffs, and rejects
+  non-integer `--rounds` / `--racers` / `--hold-ms`. Both guards exist because a matrix
+  run once "passed" all nine configurations instantly — zsh does not word-split
+  unquoted expansions, `--rounds` parsed to `NaN`, and zero rounds ran.
+
+### `scripts/stdio-fuzz.js` — the MCP stdio boundary harness
+
+Unlike the two above, this one **is** in the default suite (`test/stdioFuzz.test.js`),
+because it costs 221 ms. Run it standalone for a readable report:
+
+```bash
+cd packages/mcp-server && npm run build && node scripts/stdio-fuzz.js
+# frames=42 messages=68 stdout=46802B violations=0
+```
+
+It spawns the compiled server as a real child process and writes 42 hostile frames
+into its stdin, checking five invariants after each: stdout stays pure JSON-RPC,
+the process still answers a `ping`, no response id was unrequested or reused, no
+error payload leaks a stack frame or an absolute path, and the corpus never made
+the server do real work. Two things to know before you add a frame:
+
+- **Keep it non-executing.** The corpus uses tool names that do not exist and
+  argument shapes the boundary rejects before dispatch. That is the whole reason it
+  can live in the default suite — and it is checked, not trusted: the harness reads
+  the server's own audit log at the end and fails on any `tool.call` with
+  `ok: true`. The check exists because the first draft's two `timeoutMs` frames
+  named the real `sync_status` tool, each spawned a 2–4 s subprocess, and the run
+  became flaky under load. Prove a timeout or dispatch *semantic* in a unit test;
+  prove only the *bytes* here.
+- **Write non-ASCII payloads as escapes, not literals.** The bidi-override frame
+  (Trojan Source, CVE-2021-42574) uses `\u202E`/`\u202C` string escapes. With the
+  literal characters in the file, `grep` classifies the whole source as binary and
+  silently matches nothing — which cost real time here — and the file would itself
+  carry the exact bytes a source scanner exists to flag.
 
 CI runs the same gates plus governance checks (tool-contract hash,
 README/CLAUDE.md docs-drift, release checklist) — on GitHub Actions via
@@ -32,9 +167,21 @@ README/CLAUDE.md docs-drift, release checklist) — on GitHub Actions via
 `.github/workflows/codeql.yml` and the owner-gated publish in
 `.github/workflows/release.yml`.
 
-The core Jest coverage floor is a ratchet in `packages/core/jest.config.js`:
-**statements 85 / branches 71 / functions 80 / lines 85** (set just under the
-measured baseline; raise, never lower).
+The core Jest coverage floor is a ratchet in `packages/core/jest.config.cjs`:
+**statements 92 / branches 79 / functions 89 / lines 92** globally, plus per-file
+floors for the highest-risk modules (a global-only floor lets one weak file hide
+behind the tree average). All of them are set just under the measured baseline;
+raise, never lower. Each floor records its measurement inline as `// measured L/B`,
+and branch floors sit further under the measurement than line floors on purpose —
+branch coverage is what moves between macOS and Linux CI (keychain, homedir,
+`process.platform`).
+
+The MCP server gate works the same way through
+`packages/mcp-server/scripts/check-coverage-gate.js`: **90% line / 80% branch**
+aggregate, an **80 / 45** per-file default, and named floors for the policy, audit,
+transport and process-spawning modules. In both packages a floor whose pattern no
+longer matches any file **fails** the gate rather than silently gating nothing — if
+you rename a module, move its floor with it.
 
 **Running a single test file:** run it from inside the package — ts-jest is
 configured per-package — e.g. `cd packages/core && npx jest src/tests/foo.test.ts`,
@@ -44,7 +191,7 @@ that's a runner-resolution quirk, not a code error.
 
 ## Conventions
 
-- **Coverage is a ratchet.** `packages/core/jest.config.js` thresholds may be
+- **Coverage is a ratchet.** `packages/core/jest.config.cjs` thresholds may be
   raised, never lowered.
 - **stdout discipline (MCP):** the MCP server speaks JSON-RPC on stdout —
   log only to stderr (`logger.ts`).

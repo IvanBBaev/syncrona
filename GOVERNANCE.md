@@ -38,7 +38,10 @@ require a vendor support SLA.
 - Incoming issues are labeled by type (bug / enhancement / question / docs) and
   priority. Bugs with a clear repro and a failing test are prioritized.
 - A change is "done" only when it passes `npm run check` (build, typecheck, lint,
-  tests, coverage gates, docs-drift). Red gates are never merged.
+  tests, coverage gates, docs-drift, tarball contents). Red gates are never
+  merged. Every link of that chain also runs in CI —
+  `packages/mcp-server/test/ciCheckChain.test.js` fails the build if one does
+  not, so the local gate and the CI gate cannot drift apart.
 - `main` is protected: PRs require the CI checks to pass.
 
 ## How decisions are made

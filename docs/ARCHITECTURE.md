@@ -273,7 +273,11 @@ Every tool family is one `ToolHandlerModule` in `TOOL_HANDLER_MODULES`:
    never overwrite a good manifest.
 4. **Push state lives in the project root** (`sync.push.checkpoint.json`,
    `sync.collaboration.lock.json`); the lock is acquired atomically and always
-   released in `finally`.
+   released in `finally`. "Atomically" means **staged under a private name and
+   published with `link()`** — never `writeFile(..., {flag:"wx"})`, which is atomic
+   in exclusion but not in publication (`O_CREAT|O_EXCL` publishes the name before
+   the bytes, so a concurrent reader can read an empty file and treat a live lock as
+   abandoned). `npm run race:lock` is the multi-process harness that proves it.
 5. **Destructive operations confirm first** (`push`, `download`, `deploy`;
    `--ci` opts out) and write state only after confirmation.
 6. **sync.config.js is executable code** — loaded fresh per load for reload
