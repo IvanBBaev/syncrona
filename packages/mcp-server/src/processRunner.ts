@@ -17,6 +17,16 @@ export type CmdResult = {
 const MAX_OUTPUT_CHARS = 5_000_000;
 const TRUNCATION_NOTICE = "\n[output truncated: exceeded capture limit]";
 
+// REV-210: escalation budget after a timeout fires. SIGTERM goes out immediately,
+// SIGKILL follows after KILL_GRACE_MS, and GIVE_UP_MS after the SIGTERM we answer
+// unconditionally — because `close` is not ours to wait for (see settle() below).
+const KILL_GRACE_MS = 1500;
+const GIVE_UP_MS = 2500;
+const GIVE_UP_NOTICE =
+  "\n[timed out: the child was killed but its output streams stayed open " +
+  "(a grandchild process is likely still holding them); reporting without waiting " +
+  "for them to close]";
+
 export function runCommand(
   command: string,
   args: string[],
@@ -45,15 +55,69 @@ export function runCommand(
     let stderrTruncated = false;
     let timedOut = false;
     let finished = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    let giveUpTimer: NodeJS.Timeout | undefined;
+
+    // REV-210: the single exit from this promise. Two things were wrong before.
+    //
+    // (1) The promise could only settle from `error` or `close`. Node emits `close`
+    //     after the process has exited AND its stdio streams have been closed, so a
+    //     child that spawns a grandchild with inherited stdio keeps the pipes open
+    //     after it dies — and neither SIGTERM nor the follow-up SIGKILL reaches the
+    //     grandchild, since the child is not spawned in its own process group. The
+    //     timeout branch therefore killed the child and then waited forever. Every
+    //     caller plainly awaits this function with no outer deadline, so the MCP tool
+    //     call hung indefinitely. A timeout has to be a guarantee about when we
+    //     answer, so the timeout branch now arms a give-up timer that settles without
+    //     depending on any child event.
+    //
+    // (2) With more than one settle path, `resolve` had to become idempotent, and
+    //     every timer had to be cleared from one place — otherwise the escalation
+    //     chain keeps the event loop alive for seconds after we have already
+    //     answered. Detaching the stream listeners and destroying the pipes matters
+    //     for the same reason: an abandoned grandchild must not keep writing into
+    //     buffers nobody will read, nor hold a handle that stops the server exiting.
+    const settle = (result: CmdResult): void => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timeout);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
+      if (giveUpTimer) {
+        clearTimeout(giveUpTimer);
+      }
+      child.stdout?.removeAllListeners("data");
+      child.stderr?.removeAllListeners("data");
+      resolve(result);
+    };
 
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
         if (!finished) {
           child.kill("SIGKILL");
         }
-      }, 1500);
+      }, KILL_GRACE_MS);
+      giveUpTimer = setTimeout(() => {
+        if (finished) {
+          return;
+        }
+        // Release what we can before abandoning the child: the pipes are the only
+        // handles we own, and holding them would keep this process from exiting.
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        child.unref();
+        settle({
+          exitCode: 1,
+          stdout: finalStdout(),
+          stderr: `${finalStderr()}${GIVE_UP_NOTICE}`,
+          timedOut: true,
+        });
+      }, GIVE_UP_MS);
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
@@ -82,9 +146,7 @@ export function runCommand(
     const finalStderr = (): string => (stderrTruncated ? stderr + TRUNCATION_NOTICE : stderr);
 
     child.on("error", (err: Error) => {
-      clearTimeout(timeout);
-      finished = true;
-      resolve({
+      settle({
         exitCode: 1,
         stdout: finalStdout(),
         stderr: `${finalStderr()}\n${err.message}`,
@@ -93,9 +155,7 @@ export function runCommand(
     });
 
     child.on("close", (code: number | null) => {
-      clearTimeout(timeout);
-      finished = true;
-      resolve({
+      settle({
         exitCode: code ?? 1,
         stdout: finalStdout(),
         stderr: finalStderr(),

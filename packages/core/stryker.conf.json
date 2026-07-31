@@ -1,0 +1,65 @@
+{
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": [
+    "Mutation testing for the core CLI. Non-blocking (break: null) — run via",
+    "`npm run test:mutation` to surface a real mutation score, not as a CI gate.",
+    "",
+    "WHY A TARGETED SCOPE: mutating all of src/**/*.ts is ~7k mutants and takes",
+    "hours, which nobody runs. The `mutate` list below is the subset where a",
+    "SURVIVING mutant is a safety problem rather than a cosmetic one — anything",
+    "that deletes files, decides what is skipped, builds a filesystem path, or",
+    "executes third-party code:",
+    "",
+    "  src/repairCommand.ts       (260 mutants) `repair --apply --prune` DELETES",
+    "                             local files. A survivor here means the prune",
+    "                             set can be wrong (deleting a claimed file, or",
+    "                             silently keeping an orphan) with no test noticing.",
+    "  src/downloadCheckpoint.ts   (33 mutants) decides which tables a resumed",
+    "                             download SKIPS. A survivor means a stale",
+    "                             checkpoint is accepted and files are never",
+    "                             downloaded while the run reports success —",
+    "                             silent data loss, the exact bug the fingerprint",
+    "                             check was added to fix.",
+    "  src/FileUtils.ts           (262 mutants) builds every local path and does",
+    "                             every read/write/delete on disk. Survivors here",
+    "                             are wrong-file / wrong-directory bugs.",
+    "  src/genericUtils.ts        (108 mutants) owns the INJ-1 `isSafePathComponent`",
+    "                             path-traversal guard that FileUtils, the download",
+    "                             pipeline and the docs generator all rely on, plus",
+    "                             the chunking used to cap request fan-out.",
+    "  src/PluginManager.ts        (78 mutants) resolves and executes third-party",
+    "                             plugin code in-process; survivors are",
+    "                             arbitrary-code-execution-shaped.",
+    "",
+    "TOTAL IN SCOPE: 741 mutants, ~11 min wall clock on a 10-core machine.",
+    "",
+    "DELIBERATELY DEFERRED (measured, not forgotten): src/snClient.ts (733",
+    "mutants) and src/manifestBuilder.ts (738 mutants). Both are high value, but",
+    "together they triple the runtime to ~50 min, which pushes the run out of",
+    "\"a developer will actually do this\" territory. Widen by appending them to",
+    "`mutate` when there is time to triage ~200 more survivors."
+  ],
+  "packageManager": "npm",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.config.cjs"
+  },
+  "mutate": [
+    "src/repairCommand.ts",
+    "src/downloadCheckpoint.ts",
+    "src/FileUtils.ts",
+    "src/genericUtils.ts",
+    "src/PluginManager.ts"
+  ],
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/core.json"
+  },
+  "coverageAnalysis": "perTest",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  }
+}

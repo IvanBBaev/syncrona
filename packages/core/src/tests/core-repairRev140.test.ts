@@ -159,6 +159,26 @@ describe("REV-140: prune keeps tracked files whose on-disk name is encoded diffe
     expect(existsSync(file)).toBe(true);
   });
 
+  // A real table holds hundreds of records, and only ONE of them is the
+  // differently-encoded match. The encoding check therefore has to be an
+  // existence question over the record names ("does any name canonicalize to
+  // this?"), not a property of all of them — a table with a single record is the
+  // only fixture where those two readings agree.
+  test("finds the differently-encoded record among many records of the same table", async () => {
+    getManifest.mockReturnValue(
+      manifestWith({
+        Alpha: recordEntry("Alpha"),
+        [NFC_RECORD]: recordEntry(NFC_RECORD),
+        Zeta: recordEntry("Zeta"),
+      }) as never
+    );
+    const file = seed(["sys_script", NFD_RECORD, "script.js"]);
+
+    await repairCommand(pruneArgs);
+
+    expect(existsSync(file)).toBe(true);
+  });
+
   test("still deletes a file no manifest record claims under any encoding", async () => {
     getManifest.mockReturnValue(
       manifestWith({ [NFC_RECORD]: recordEntry(NFC_RECORD) }) as never

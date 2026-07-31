@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
 import path from "path";
+// Not mocked (it only depends on "path"), so the suite asserts against the real
+// delimiter instead of hard-coding a platform-specific one.
+import { PATH_DELIMITER } from "../constants.js";
 
 export {};
 
@@ -42,13 +45,16 @@ jest.unstable_mockModule("../Logger.js", () => ({
 // real config/FileUtils before the mocks take effect.
 let gitDiffToEncodedPaths: typeof import("../gitUtils.js").gitDiffToEncodedPaths;
 let writeDiff: typeof import("../gitUtils.js").writeDiff;
+let getCurrentBranch: typeof import("../gitUtils.js").getCurrentBranch;
 
 describe("gitUtils", () => {
   let cwdSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    ({ gitDiffToEncodedPaths, writeDiff } = await import("../gitUtils.js"));
+    ({ gitDiffToEncodedPaths, writeDiff, getCurrentBranch } = await import(
+      "../gitUtils.js"
+    ));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.
@@ -186,6 +192,88 @@ describe("gitUtils", () => {
 
     const result = await gitDiffToEncodedPaths("HEAD~1");
     expect(result).toContain(path.resolve("/repo", cyrillicPath));
+  });
+
+  // REV-96 (GATE-2): the DIFF_OUTPUT fixture above starts with a blank line, but
+  // execGit trims stdout, so the `diffFile === ""` guard in formatGitFiles was
+  // never actually reached. Only an INTERIOR blank line exercises it — and git
+  // does emit one when a diff chunk is separated (e.g. `-z`-less multi-range
+  // output), so the guard is live code, not dead code.
+  it("skips a blank line in the middle of the diff without dropping the files around it", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        if (args.includes("rev-parse")) {
+          cb(null, "/repo\n");
+        } else {
+          cb(
+            null,
+            [
+              "M\tpackages/scope/src/before.js",
+              "",
+              "M\tpackages/scope/src/after.js",
+            ].join("\n")
+          );
+        }
+      }
+    );
+
+    const result = await gitDiffToEncodedPaths("HEAD~1");
+    expect(result).toContain(path.resolve("/repo", "packages/scope/src/before.js"));
+    expect(result).toContain(path.resolve("/repo", "packages/scope/src/after.js"));
+    // Exactly two entries: the blank line must not become a third (which would
+    // resolve to the repo root and get pushed as a bogus path).
+    expect(result.split(PATH_DELIMITER)).toHaveLength(2);
+  });
+
+  // getCurrentBranch feeds `syncrona jira`'s branch fallback (jiraCommands.ts):
+  // when no issue key is passed, the branch name is mined for one. It had no test
+  // at all, so every one of its degradation paths was unverified.
+  describe("getCurrentBranch", () => {
+    it("returns the trimmed branch name from git rev-parse --abbrev-ref HEAD", async () => {
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+          cb(null, "feature/ABC-123-add-widget\n")
+      );
+
+      await expect(getCurrentBranch()).resolves.toBe("feature/ABC-123-add-widget");
+      expect(mockExecFile.mock.calls[0][1]).toEqual([
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+      ]);
+    });
+
+    it("returns null on a detached HEAD instead of the literal \"HEAD\"", async () => {
+      // git reports "HEAD" when detached; treating that as a branch name would
+      // send "HEAD" to the Jira key parser and produce a bogus lookup.
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+          cb(null, "HEAD\n")
+      );
+
+      await expect(getCurrentBranch()).resolves.toBeNull();
+    });
+
+    it("returns null when git prints nothing", async () => {
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+          cb(null, "   \n")
+      );
+
+      await expect(getCurrentBranch()).resolves.toBeNull();
+    });
+
+    it("resolves to null instead of throwing when git fails", async () => {
+      // Not a repo / git not installed: the caller uses this for best-effort key
+      // inference, so it must degrade to "no branch", never reject.
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+          cb(new Error("fatal: not a git repository"), "")
+      );
+
+      await expect(getCurrentBranch()).resolves.toBeNull();
+    });
   });
 
   it("writeDiff resolves encoded paths and writes them to the diff file as JSON", async () => {

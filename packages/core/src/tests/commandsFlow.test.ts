@@ -35,6 +35,8 @@ const mockGitDiffToEncodedPaths = jest.fn();
 const mockReadFile = jest.fn();
 const mockWriteFile = jest.fn();
 const mockUnlink = jest.fn();
+const mockLink = jest.fn();
+const mockReaddir = jest.fn();
 const mockStat = jest.fn();
 const mockMkdir = jest.fn();
 const mockSpawn = jest.fn();
@@ -43,6 +45,28 @@ const mockGetBuildPathConfig = jest.fn();
 const mockGetConfig = jest.fn();
 const mockGetManifest = jest.fn();
 const mockGetRootDir = jest.fn();
+
+// A small in-memory filesystem for the collaboration-lock family of files.
+//
+// REV-205 made releaseCollaborationLock ownership-aware: it removes the lock only
+// while the file on disk still carries the owner token this process wrote, so it
+// reads the lock back before unlinking. A mock whose readFile always answers
+// ENOENT turns every release into a silent no-op and the lock assertions below
+// pass vacuously.
+//
+// REV-233 raised the bar again. The lock is no longer written in place — it is
+// assembled under a staging name and published with link(), because 'wx' creates
+// the name before the bytes and a racer can read a half-written lock. Modelling
+// that needs a real directory, not a single "is the lock there" flag: staging
+// file, atomic link, eviction claims and the post-acquire sweep all touch it. So
+// this seam keeps a path→content map and implements link/readdir/stat over it,
+// which also means the tests below can stage a foreign or stale lock by simply
+// putting it in the map instead of scripting an exact syscall sequence.
+const LOCK_FILE_NAME = "sync.collaboration.lock.json";
+const CHECKPOINT_FILE_NAME = "sync.push.checkpoint.json";
+const collabFiles = new Map<string, string>();
+const isCollabPath = (target: unknown): boolean =>
+  String(target).includes("sync.collaboration.");
 
 jest.unstable_mockModule("../Watcher.js", () => ({
   stopWatching: jest.fn(),
@@ -147,6 +171,8 @@ jest.unstable_mockModule("fs", () => {
     readFile: (...args: unknown[]) => mockReadFile(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
+    link: (...args: unknown[]) => mockLink(...args),
+    readdir: (...args: unknown[]) => mockReaddir(...args),
     stat: (...args: unknown[]) => mockStat(...args),
     mkdir: (...args: unknown[]) => mockMkdir(...args),
   };
@@ -190,11 +216,48 @@ describe("command flows", () => {
     mockGetScopedEndpointPrefix.mockReturnValue("x_nuvo_sinc");
     mockLoggerWarn.mockReset();
     const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
-    mockReadFile.mockRejectedValue(enoent);
-    mockStat.mockRejectedValue(enoent);
+    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
+    collabFiles.clear();
+    mockReadFile.mockImplementation((target: unknown) =>
+      isCollabPath(target) && collabFiles.has(String(target))
+        ? Promise.resolve(collabFiles.get(String(target)))
+        : Promise.reject(enoent)
+    );
+    mockStat.mockImplementation((target: unknown) =>
+      collabFiles.has(String(target))
+        ? Promise.resolve({ mtimeMs: Date.now() })
+        : Promise.reject(enoent)
+    );
     mockMkdir.mockResolvedValue(undefined);
-    mockWriteFile.mockResolvedValue(undefined);
-    mockUnlink.mockResolvedValue(undefined);
+    mockWriteFile.mockImplementation((target: unknown, data: unknown) => {
+      if (isCollabPath(target)) {
+        collabFiles.set(String(target), String(data));
+      }
+      return Promise.resolve(undefined);
+    });
+    // link() is the exclusivity primitive: it publishes an already-complete file
+    // and fails EEXIST rather than overwriting. Both halves matter here.
+    mockLink.mockImplementation((from: unknown, to: unknown) => {
+      if (collabFiles.has(String(to))) {
+        return Promise.reject(eexist);
+      }
+      if (!collabFiles.has(String(from))) {
+        return Promise.reject(enoent);
+      }
+      collabFiles.set(String(to), collabFiles.get(String(from)) as string);
+      return Promise.resolve(undefined);
+    });
+    mockUnlink.mockImplementation((target: unknown) => {
+      collabFiles.delete(String(target));
+      return Promise.resolve(undefined);
+    });
+    mockReaddir.mockImplementation((dir: unknown) =>
+      Promise.resolve(
+        [...collabFiles.keys()]
+          .filter((entry) => path.dirname(entry) === String(dir))
+          .map((entry) => path.basename(entry))
+      )
+    );
     mockSpawn.mockImplementation(() => ({
       once: (event: string, cb: (...args: unknown[]) => void) => {
         if (event === "close") {
@@ -241,8 +304,17 @@ describe("command flows", () => {
     expect(mockGetAppFileList).toHaveBeenCalledWith("encoded:/tmp/a.js");
     expect(mockPushFiles).toHaveBeenCalledWith(appFileList, undefined);
     expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
-    expect(mockWriteFile).toHaveBeenCalledTimes(3);
-    expect(mockUnlink).toHaveBeenCalledTimes(2);
+    // Counting raw writeFile calls would now measure how the lock is published
+    // (staging file + link) rather than what the flow did, so assert the logical
+    // effects: the checkpoint is written and cleared, and the lock directory is
+    // left empty — no lock, no claim, no staging litter.
+    expect(
+      mockWriteFile.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(2);
+    expect(
+      mockUnlink.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(1);
+    expect([...collabFiles.keys()]).toEqual([]);
 
     process.env.SN_INSTANCE = oldInstance;
   });
@@ -254,21 +326,17 @@ describe("command flows", () => {
     const { pushCommand } = await import("../commands.js");
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
-    const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
-    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
-    // 1st read: checkpoint (missing); atomic lock create fails with EEXIST;
-    // 2nd read: the active lock owned by another process.
-    mockReadFile.mockRejectedValueOnce(enoent);
-    mockWriteFile.mockRejectedValueOnce(eexist);
-    mockReadFile.mockResolvedValueOnce(
+    // Another process already holds the lock. #18: a lock is only "active" if its
+    // owning process is still alive, so use THIS process's pid (guaranteed alive)
+    // — otherwise the pid-liveness check reclaims it as stale and the
+    // block-on-active-lock behavior this test asserts never runs.
+    collabFiles.set(
+      path.join("/tmp/project", LOCK_FILE_NAME),
       JSON.stringify({
         command: "push",
-        // #18: the lock is only "active" if its owning process is still alive.
-        // Use THIS process's pid (guaranteed alive) so the pid-liveness check
-        // does not reclaim it as stale — the block-on-active-lock behavior is
-        // what this test asserts.
         pid: process.pid,
         createdAt: new Date().toISOString(),
+        owner: "another-process",
       })
     );
 
@@ -283,6 +351,11 @@ describe("command flows", () => {
 
     expect(mockLoggerWarn).toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
+    // The other process still holds exactly what it wrote: losing the race must
+    // never disturb the winner's lock.
+    expect(
+      JSON.parse(collabFiles.get(path.join("/tmp/project", LOCK_FILE_NAME)) as string).owner
+    ).toBe("another-process");
 
     process.env.SN_INSTANCE = oldInstance;
   });
@@ -295,17 +368,15 @@ describe("command flows", () => {
     const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
     mockGetAppFileList.mockResolvedValue(appFileList);
     mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
-    const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
-    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
-    // checkpoint missing; first atomic create hits a leftover lock file that
-    // is stale (>30min old), which gets removed before the retry succeeds.
-    mockReadFile.mockRejectedValueOnce(enoent);
-    mockWriteFile.mockRejectedValueOnce(eexist);
-    mockReadFile.mockResolvedValueOnce(
+    // A leftover lock file that is stale (>30min old): the first atomic create
+    // hits it, it gets evicted, and the retry succeeds.
+    collabFiles.set(
+      path.join("/tmp/project", LOCK_FILE_NAME),
       JSON.stringify({
         command: "push",
         pid: 4242,
         createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        owner: "crashed-run",
       })
     );
 
@@ -319,6 +390,9 @@ describe("command flows", () => {
     });
 
     expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    // The stale lock was evicted through a claim on its exact bytes, and this
+    // run's own lock was released afterwards — nothing survives the flow.
+    expect([...collabFiles.keys()]).toEqual([]);
 
     process.env.SN_INSTANCE = oldInstance;
   });
@@ -342,12 +416,17 @@ describe("command flows", () => {
     });
 
     expect(mockPushFiles).not.toHaveBeenCalled();
-    // Only the lock file is written (and released); no checkpoint state may
-    // survive a declined prompt.
-    expect(mockWriteFile).toHaveBeenCalledTimes(1);
-    expect(String(mockWriteFile.mock.calls[0][0])).toContain("sync.collaboration.lock.json");
-    expect(mockUnlink).toHaveBeenCalledTimes(1);
-    expect(String(mockUnlink.mock.calls[0][0])).toContain("sync.collaboration.lock.json");
+    // The lock is taken and released; no checkpoint state may survive a declined
+    // prompt. Assert on the published lock path rather than on call counts — the
+    // staging file shares the lock's name, so a substring match on writeFile
+    // would be satisfied by the staging write alone.
+    const lockPath = path.join("/tmp/project", LOCK_FILE_NAME);
+    expect(mockLink.mock.calls.map((call) => String(call[1]))).toContain(lockPath);
+    expect(mockUnlink.mock.calls.map((call) => String(call[0]))).toContain(lockPath);
+    expect(
+      mockWriteFile.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(0);
+    expect([...collabFiles.keys()]).toEqual([]);
 
     process.env.SN_INSTANCE = oldInstance;
   });

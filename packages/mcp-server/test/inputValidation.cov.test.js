@@ -605,3 +605,147 @@ test('null value for identifier reports must be a string', () => {
   assert.equal(result.valid, false);
   assert.equal(result.error, 'table: must be a string');
 });
+
+// ---------------------------------------------------------------------------
+// Mutation-testing findings (stryker, inputValidation.ts)
+// ---------------------------------------------------------------------------
+
+// Survivors at 26:40 / 27:12: the `error` option on optionalSysIdSchema's union could be
+// emptied or removed outright and every existing test still passed, because the tests that
+// exercise a malformed optional sys_id all pass a STRING and assert only the `"<field>: "`
+// prefix. Measured against zod 4.4.3, the option changes the surfaced message only for a
+// NON-string value: for a string that misses the regex, zod already surfaces the branch's own
+// check message, but for a number/null/boolean/object BOTH branches fail on type and zod
+// collapses the union to a bare "Invalid input" — so without the option the caller learns
+// only that the field is wrong, never that a 32-character hex sys_id was expected. That is
+// the regression the zod 4 migration note above the schema was written to prevent, so the
+// non-string case is the one that has to be pinned.
+test('a malformed optional sys_id surfaces the sys_id format message, not a generic union error', () => {
+  const expected = 'must be a 32-character hexadecimal sys_id';
+
+  // Non-string values: the union would otherwise degrade to "Invalid input".
+  for (const value of [123, null, true, {}, []]) {
+    const result = validateToolArguments('sync_set_update_set', { updateSetSysId: value });
+    assert.equal(result.valid, false);
+    assert.equal(
+      result.error,
+      `updateSetSysId: ${expected}`,
+      `a non-string updateSetSysId (${JSON.stringify(value)}) must still explain the expected shape`
+    );
+  }
+  const prepare = validateToolArguments('sync_prepare_session', {
+    expectedUpdateSetSysId: 42,
+  });
+  assert.equal(prepare.valid, false);
+  assert.equal(prepare.error, `expectedUpdateSetSysId: ${expected}`);
+
+  // A string that misses the regex, and the required (non-union) sys_id field, carry the
+  // same message, so the spellings of "this is not a sys_id" cannot drift apart.
+  const badString = validateToolArguments('sync_set_update_set', { updateSetSysId: 'bad' });
+  assert.equal(badString.valid, false);
+  assert.equal(badString.error, `updateSetSysId: ${expected}`);
+  const metadata = validateToolArguments('sn_get_metadata_record', { sysId: 'bad' });
+  assert.equal(metadata.valid, false);
+  assert.equal(metadata.error, `sysId: ${expected}`);
+});
+
+// Survivors at 63:18 / 71:18 / 80:18: the whole field map of these three schemas could be
+// replaced with `looseObject({})` — i.e. "accept anything" — without a single test noticing.
+// The reason is that their only *asserted* rejections are on sys_id fields, and those are
+// re-checked afterwards by validateTopLevelIdentifiers regardless of the tool's own schema.
+// So for these three tools the schema's independent contribution was untested, and it is
+// not decorative: `dryRun` typing is precisely the REV-195 bug documented on sync_set_scope
+// above (a `dryRun: "true"` string passed validation, then failed the handler's `=== true`
+// test, so a caller asking for a simulation silently got the real mutation), and `timeoutMs`
+// bounds are the only thing standing between a caller-supplied number and the transport.
+test('sync_set_update_set rejects a non-boolean dryRun and an out-of-range timeoutMs', () => {
+  const stringDryRun = validateToolArguments('sync_set_update_set', { dryRun: 'true' });
+  assert.equal(stringDryRun.valid, false, 'a string dryRun must never be accepted as a request to simulate');
+  assert.match(stringDryRun.error, /^dryRun: /);
+
+  assert.equal(validateToolArguments('sync_set_update_set', { timeoutMs: 10 }).valid, false);
+  assert.equal(validateToolArguments('sync_set_update_set', { timeoutMs: 900001 }).valid, false);
+  assert.equal(validateToolArguments('sync_set_update_set', { updateSetName: 42 }).valid, false);
+});
+
+test('sync_prepare_session rejects a non-boolean dryRun and an out-of-range timeoutMs', () => {
+  const stringDryRun = validateToolArguments('sync_prepare_session', { dryRun: 'true' });
+  assert.equal(stringDryRun.valid, false, 'a string dryRun must never be accepted as a request to simulate');
+  assert.match(stringDryRun.error, /^dryRun: /);
+
+  assert.equal(validateToolArguments('sync_prepare_session', { timeoutMs: 10 }).valid, false);
+  assert.equal(
+    validateToolArguments('sync_prepare_session', { createUpdateSetIfMissing: 'yes' }).valid,
+    false
+  );
+});
+
+test('sync_preflight_check rejects an out-of-range timeoutMs and a non-string expectedScope', () => {
+  assert.equal(validateToolArguments('sync_preflight_check', { timeoutMs: 10 }).valid, false);
+  assert.equal(validateToolArguments('sync_preflight_check', { timeoutMs: 900001 }).valid, false);
+  assert.equal(validateToolArguments('sync_preflight_check', { expectedScope: 42 }).valid, false);
+});
+
+// Survivors at 130:13 / 141:14: dropping `.trim()` from these two schemas survived, because
+// the nearest tests use `''` (which `min(1)` rejects on its own) or omit the field. `.trim()`
+// does two jobs here and both were unasserted: it makes a whitespace-only value fail — so a
+// Script Include literally named "   " cannot be created — and it normalizes a padded value,
+// so `"  Foo  "` reaches the instance as `"Foo"` instead of being written with its padding.
+// The sibling tools (sync_set_scope, sync_create_script_include) already have the
+// whitespace-only case covered; these two were the gap.
+test('sync_create_script_include_and_sync trims its name and refuses a whitespace-only one', () => {
+  const blank = validateToolArguments('sync_create_script_include_and_sync', {
+    name: '   ',
+    confirmDestructive: true,
+  });
+  assert.equal(blank.valid, false, 'a whitespace-only Script Include name must be refused');
+  assert.match(blank.error, /^name: /);
+
+  const padded = validateToolArguments('sync_create_script_include_and_sync', {
+    name: '  MyScriptInclude  ',
+    confirmDestructive: true,
+  });
+  assert.equal(padded.valid, true);
+  assert.equal(padded.normalizedArgs.name, 'MyScriptInclude');
+});
+
+test('sync_run_atf_tests trims its scope and refuses a whitespace-only one', () => {
+  const blank = validateToolArguments('sync_run_atf_tests', {
+    scope: '   ',
+    confirmDestructive: true,
+  });
+  assert.equal(blank.valid, false, 'a whitespace-only scope must be refused');
+  assert.match(blank.error, /^scope: /);
+
+  const padded = validateToolArguments('sync_run_atf_tests', {
+    scope: '  x_custom_app  ',
+    confirmDestructive: true,
+  });
+  assert.equal(padded.valid, true);
+  assert.equal(padded.normalizedArgs.scope, 'x_custom_app');
+});
+
+// Survivors at 161:25, 161:35, 162:40, 168:33, 168:43, 168:51: any single member of these
+// three enums could be replaced with `""` and no test failed, because only the rejection of
+// an out-of-enum value was asserted. These lists are the tool's advertised input contract
+// (mirrored in toolSchemas.ts, which is what the model reads), so a dropped member means a
+// caller sending a documented value gets INVALID_ARGUMENTS. `riskLevel` in particular feeds
+// the approval gate, where the members are not interchangeable. Assert acceptance member by
+// member, the same way sync_push already does for logLevel.
+test('sync_unified_change_workflow accepts every declared taskType, executionMode and riskLevel', () => {
+  for (const taskType of ['script', 'metadata', 'hybrid']) {
+    const result = validateToolArguments('sync_unified_change_workflow', { taskType });
+    assert.equal(result.valid, true, `taskType "${taskType}" must be accepted`);
+    assert.equal(result.normalizedArgs.taskType, taskType);
+  }
+  for (const executionMode of ['mocked', 'remote']) {
+    const result = validateToolArguments('sync_unified_change_workflow', { executionMode });
+    assert.equal(result.valid, true, `executionMode "${executionMode}" must be accepted`);
+    assert.equal(result.normalizedArgs.executionMode, executionMode);
+  }
+  for (const riskLevel of ['low', 'medium', 'high', 'critical']) {
+    const result = validateToolArguments('sync_unified_change_workflow', { riskLevel });
+    assert.equal(result.valid, true, `riskLevel "${riskLevel}" must be accepted`);
+    assert.equal(result.normalizedArgs.riskLevel, riskLevel);
+  }
+});

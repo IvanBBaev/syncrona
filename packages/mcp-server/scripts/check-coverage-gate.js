@@ -121,11 +121,71 @@ const COVERAGE_EXCLUDES = ['**/toolSchemas.ts', '**/toolSchemas.js'];
 // exercised nothing in it) barely moves the aggregate and ships green, which is
 // the exact opposite of what a coverage gate is for. This floor scores every
 // reported source file on its own, so a present-but-untested file fails even while
-// the aggregate stays above its threshold. It is deliberately far below the
-// `--line-threshold 90` global ratchet — it exists to catch ~0% files, not to
-// second-guess legitimately-thin ones — so the aggregate remains the ceiling
-// raiser and this is only the floor.
-const PER_FILE_LINE_FLOOR = 10;
+// the aggregate stays above its threshold. It stays below the `--line-threshold 90`
+// aggregate on purpose: the aggregate raises the ceiling, this is only the floor.
+//
+// GATE-2: this floor used to be 10, which meant a module could rot from 98% to 11%
+// and still ship green because the aggregate absorbed it — `dist/scopeBootstrap.js`
+// really did sit at 24.32% under a green gate. Measured 2026-07-30 across all 55
+// reported dist modules, the WEAKEST line coverage is 88.17%
+// (`semanticIndexState.js`), so 80 leaves ~8pts of headroom for legitimately-thin
+// new code while still failing a module that loses a third of its coverage.
+const PER_FILE_LINE_FLOOR = 80;
+
+// Per-file BRANCH floor. Lines alone hide the dangerous regression: deleting the
+// guard case of an `if` keeps every line executed by the happy path but drops the
+// branch, so a line-only floor cannot see a safety check losing its only negative
+// test. Measured 2026-07-30, the weakest reported branch coverage is 55.56%
+// (`dist/index.js`, the stdio server bootstrap, whose argv/env branches are
+// process-level), so the default sits at 45 to catch collapse rather than to police
+// thin files. Modules that must do better carry an explicit MODULE_FLOORS entry.
+const PER_FILE_BRANCH_FLOOR = 45;
+
+// Per-module floors for the safety-relevant modules, pinned just under what each
+// one MEASURES today (a ratchet, not a cliff). The defaults above are a blunt
+// instrument sized for the weakest file in the tree; without these, the modules that
+// evaluate policy, validate input, write the audit trail, spawn processes and build
+// ServiceNow paths could each shed 10-15 points and still pass every gate.
+//
+// `pattern` is matched against the report path with the same glob syntax as
+// COVERAGE_EXCLUDES. Measured line/branch values are recorded per entry (2026-07-30,
+// `node --test --experimental-test-coverage` against dist/, no source maps). Raise a
+// floor when coverage rises; never lower one to turn a red build green — that
+// regression is exactly what the floor exists to report.
+//
+// A pattern that matches nothing in the report FAILS the gate (findStaleFloors): a
+// floor naming a module that was renamed or deleted is dead weight, and that is how
+// a per-file gate quietly stops gating.
+const MODULE_FLOORS = [
+  // Guardrail evaluation and the mutating-tool policy: the fail-closed paths here
+  // are the difference between a blocked and an executed write.
+  { pattern: 'dist/safetyPolicy.js', line: 97, branch: 94 }, // measured 99.48 / 97.60
+  { pattern: 'dist/policyConfig.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  { pattern: 'dist/createTablePolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  { pattern: 'dist/endpointPolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  // Input validation is the injection/traversal boundary for every tool argument.
+  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.30 / 96.15
+  // The audit trail is the tamper-evident record; a lost branch here is an event
+  // that silently is not written.
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.33 / 91.74
+  // Preflight, dry-run and the mutating-tool wrappers.
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.60 / 91.01
+  { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.22 / 95.65
+  // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
+  // local filesystem path.
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.36 / 91.64
+  { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
+  { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
+  { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
+  { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.04 / 77.27
+  // Anything that starts a process or a listener, plus the handlers that actually
+  // mutate the instance.
+  { pattern: 'dist/processRunner.js', line: 94, branch: 85 }, // measured 96.97 / 89.29
+  { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
+  { pattern: 'dist/healthServer.js', line: 95, branch: 62 }, // measured 97.56 / 67.65
+  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
 // reports coverage for scripts it saw execute. A dist module that no test ever
@@ -187,12 +247,17 @@ function parseReportedFiles(output) {
   return files;
 }
 
-// Per-file line coverage as an array of { file, linePct }, reconstructed from the
-// SAME indented TAP tree parseReportedFiles walks: one space of indent per depth
+// Per-file coverage as an array of { file, linePct, branchPct }, reconstructed from
+// the SAME indented TAP tree parseReportedFiles walks: one space of indent per depth
 // level, directory rows carry a blank line% cell (skipped), only file rows carry a
 // finite number. Kept separate from parseReportedFiles because that returns a Set
-// of paths for the unreported-module diff, whereas this must retain the percentage.
-function parsePerFileLineCoverage(output) {
+// of paths for the unreported-module diff, whereas this must retain the percentages.
+//
+// branchPct is null when the cell is missing or unparseable rather than 0: a missing
+// cell is a REPORT-FORMAT problem, and scoring it 0 would fail every file for the
+// wrong reason. Callers that enforce a branch floor treat null as a parse failure
+// (fail closed) instead of silently skipping the check.
+function parsePerFileCoverage(output) {
   const files = [];
   const stack = [];
   let inside = false;
@@ -230,20 +295,114 @@ function parsePerFileLineCoverage(output) {
     // the emptiness must be tested first or every directory would score 0%.
     const linePct = (cells[1] || '').trim();
     if (linePct !== '' && Number.isFinite(Number(linePct))) {
-      files.push({ file: stack.join('/'), linePct: Number(linePct) });
+      const branchCell = (cells[2] || '').trim();
+      files.push({
+        file: stack.join('/'),
+        linePct: Number(linePct),
+        branchPct:
+          branchCell !== '' && Number.isFinite(Number(branchCell)) ? Number(branchCell) : null,
+      });
     }
   }
   return files;
 }
 
-// Reported source files scoring below the per-file floor. The same excludes that
-// keep the pure-data schema literal out of the aggregate are honored here, so the
-// floor can never fail on a file the aggregate itself does not count.
-function findFilesBelowFloor(output, floor = PER_FILE_LINE_FLOOR) {
+// Line-only view of the report, kept as the shape the per-file gate was originally
+// built on (and asserted by coverageGatePerFile.test.js).
+function parsePerFileLineCoverage(output) {
+  return parsePerFileCoverage(output).map(({ file, linePct }) => ({ file, linePct }));
+}
+
+// Reported files, minus the ones the aggregate itself does not count. Honoring
+// COVERAGE_EXCLUDES here means no floor can ever fail on a file that was
+// deliberately excluded from the ratio.
+function coveredReportRows(output) {
   const excludes = COVERAGE_EXCLUDES.map(globToRegExp);
-  return parsePerFileLineCoverage(output).filter(
-    ({ file, linePct }) => !excludes.some((re) => re.test(file)) && linePct < floor
-  );
+  return parsePerFileCoverage(output).filter(({ file }) => !excludes.some((re) => re.test(file)));
+}
+
+// The floors that apply to one reported file: its MODULE_FLOORS entry if it has one,
+// otherwise the defaults. A file matched by several patterns takes the STRICTEST of
+// each metric, so an overlapping glob can only tighten a floor, never relax it.
+function resolveFloorsFor(file, moduleFloors = MODULE_FLOORS, defaults = {}) {
+  const defaultLine = defaults.line === undefined ? PER_FILE_LINE_FLOOR : defaults.line;
+  const defaultBranch = defaults.branch === undefined ? PER_FILE_BRANCH_FLOOR : defaults.branch;
+  let line = defaultLine;
+  let branch = defaultBranch;
+  let matched = null;
+  for (const entry of moduleFloors) {
+    if (!globToRegExp(entry.pattern).test(file)) {
+      continue;
+    }
+    matched = matched === null ? entry.pattern : `${matched}, ${entry.pattern}`;
+    if (typeof entry.line === 'number') {
+      line = Math.max(line, entry.line);
+    }
+    if (typeof entry.branch === 'number') {
+      branch = Math.max(branch, entry.branch);
+    }
+  }
+  return { line, branch, pattern: matched };
+}
+
+// Every reported file that misses a floor, one row per FILE listing which metrics
+// failed. `reasons` carries a ready-to-print explanation so the CLI message can name
+// the file, the measured value, the floor it missed and where that floor came from.
+function findFloorViolations(output, options = {}) {
+  const moduleFloors = options.moduleFloors === undefined ? MODULE_FLOORS : options.moduleFloors;
+  const violations = [];
+
+  for (const row of coveredReportRows(output)) {
+    const floors = resolveFloorsFor(row.file, moduleFloors, options.defaults);
+    const source = floors.pattern === null ? 'default floor' : `floor for ${floors.pattern}`;
+    const reasons = [];
+
+    if (floors.line > 0 && row.linePct < floors.line) {
+      reasons.push(
+        `line ${row.linePct.toFixed(2)}% < ${floors.line.toFixed(2)}% (${source})`
+      );
+    }
+    if (floors.branch > 0) {
+      if (row.branchPct === null) {
+        // Fail closed: an unparseable branch cell means the gate cannot verify the
+        // floor, and "cannot verify" must never read as "passed".
+        reasons.push(`branch % missing from the report, cannot verify ${source}`);
+      } else if (row.branchPct < floors.branch) {
+        reasons.push(
+          `branch ${row.branchPct.toFixed(2)}% < ${floors.branch.toFixed(2)}% (${source})`
+        );
+      }
+    }
+
+    if (reasons.length > 0) {
+      violations.push({ ...row, lineFloor: floors.line, branchFloor: floors.branch, reasons });
+    }
+  }
+
+  return violations;
+}
+
+// MODULE_FLOORS entries that match no reported file. A floor on a module that was
+// renamed, split or deleted keeps passing forever while protecting nothing, so the
+// stale entry itself is a gate failure — the table has to stay honest about the tree.
+function findStaleFloors(output, moduleFloors = MODULE_FLOORS) {
+  const rows = coveredReportRows(output);
+  return moduleFloors
+    .filter((entry) => {
+      const re = globToRegExp(entry.pattern);
+      return !rows.some(({ file }) => re.test(file));
+    })
+    .map((entry) => entry.pattern);
+}
+
+// Reported source files scoring below the per-file LINE floor. Retained as the
+// narrow, line-only primitive (main() uses findFloorViolations, which also applies
+// branch floors and the per-module table).
+function findFilesBelowFloor(output, floor = PER_FILE_LINE_FLOOR) {
+  return findFloorViolations(output, {
+    moduleFloors: [],
+    defaults: { line: floor, branch: 0 },
+  }).map(({ file, linePct }) => ({ file, linePct }));
 }
 
 function globToRegExp(glob) {
@@ -423,22 +582,41 @@ function main() {
     process.exit(1);
   }
 
-  // Per-file floor, checked BEFORE the aggregate: a file present in the report but
-  // effectively untested (~0%) is invisible to the `all files` ratio, so the
-  // aggregate can read 90%+ while a specific module has no real test at all.
-  const belowFloor = findFilesBelowFloor(run.output);
-  if (belowFloor.length > 0) {
+  // A stale floor is checked FIRST: if MODULE_FLOORS names a module that no longer
+  // exists, every later verdict about that module is meaningless, and the table has
+  // to be corrected before its results can be trusted.
+  const staleFloors = findStaleFloors(run.output);
+  if (staleFloors.length > 0) {
     console.error(
-      `Coverage gate failed: ${belowFloor.length} file(s) under ${COVERAGE_ROOT}/ are below the ` +
-        `per-file line floor of ${PER_FILE_LINE_FLOOR.toFixed(2)}% (present in the report but ` +
-        'effectively untested):'
+      `Coverage gate failed: ${staleFloors.length} MODULE_FLOORS pattern(s) match no file in the ` +
+        'coverage report, so they gate nothing:'
     );
-    for (const { file, linePct } of belowFloor) {
-      console.error(`- ${file} (${linePct.toFixed(2)}%)`);
+    for (const pattern of staleFloors) {
+      console.error(`- ${pattern}`);
     }
     console.error(
-      'Add a test that exercises each file, or exclude it deliberately via COVERAGE_EXCLUDES ' +
-        'with a stated reason.'
+      'Point each pattern at the module it was meant to protect (renamed? split?), or delete the ' +
+        'entry with a stated reason.'
+    );
+    process.exit(1);
+  }
+
+  // Per-file floors, checked BEFORE the aggregate: a single module's regression is
+  // invisible to the `all files` ratio, so the aggregate can read 90%+ while a
+  // specific module has lost a third of its coverage — or has no real test at all.
+  const violations = findFloorViolations(run.output);
+  if (violations.length > 0) {
+    console.error(
+      `Coverage gate failed: ${violations.length} file(s) under ${COVERAGE_ROOT}/ are below their ` +
+        `per-file floor (defaults: line ${PER_FILE_LINE_FLOOR.toFixed(2)}%, branch ` +
+        `${PER_FILE_BRANCH_FLOOR.toFixed(2)}%):`
+    );
+    for (const { file, reasons } of violations) {
+      console.error(`- ${file}: ${reasons.join('; ')}`);
+    }
+    console.error(
+      'Add tests that cover the lost lines/branches in each file. A floor may only be lowered ' +
+        'with a stated reason, and never to make a red build green.'
     );
     process.exit(1);
   }
@@ -486,11 +664,18 @@ module.exports = {
   parseArgs,
   parseAllFilesLineCoverage,
   parseReportedFiles,
+  parsePerFileCoverage,
   parsePerFileLineCoverage,
+  coveredReportRows,
+  resolveFloorsFor,
+  findFloorViolations,
+  findStaleFloors,
   findFilesBelowFloor,
   listCoverageCandidates,
   findUnreportedModules,
   isTypeOnlyEmit,
   globToRegExp,
+  MODULE_FLOORS,
   PER_FILE_LINE_FLOOR,
+  PER_FILE_BRANCH_FLOOR,
 };

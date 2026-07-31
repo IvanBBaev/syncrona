@@ -43,11 +43,39 @@ type CollaborationLock = {
   pid: number;
   createdAt: string;
   instanceProfile?: string;
+  // REV-205: identity of the acquisition, not of the process. A pid cannot
+  // establish ownership — the same pid can hold the lock twice in a row (release
+  // then re-acquire), and a lock written on another host may carry a pid that
+  // happens to match ours. Release compares this token so it can only ever
+  // remove the lock file it created. Optional so a legacy lock (written before
+  // this field existed) still parses; such a lock is simply never recognized as
+  // ours, which fails safe — we leave it for the age/liveness reclaim path.
+  owner?: string;
 };
 
 const PUSH_CHECKPOINT_FILE = "sync.push.checkpoint.json";
 const COLLABORATION_LOCK_FILE = "sync.collaboration.lock.json";
 const COLLABORATION_LOCK_MAX_AGE_MS = 30 * 60 * 1000;
+
+// REV-233: emptying the lock path is the one operation that can break mutual
+// exclusion, so it is mediated by an *eviction claim* — a file named after the exact
+// bytes being removed, created with the same atomic 'wx' as the lock itself. See
+// evictLockFile for why the atomic create on the lock alone was not enough.
+const COLLABORATION_EVICT_PREFIX = "sync.collaboration.evict.";
+const COLLABORATION_EVICT_SUFFIX = ".json";
+// Where a lock or a claim is assembled before it is published under its real name.
+// Never inspected by anyone, so its contents are allowed to be momentarily incomplete.
+const COLLABORATION_STAGING_PREFIX = "sync.collaboration.staging.";
+// A claim is held across three filesystem calls, so ten seconds is roughly four
+// orders of magnitude of headroom: a claim older than that is abandoned, not slow.
+const COLLABORATION_EVICT_MAX_AGE_MS = 10 * 1000;
+// How many abandoned claims one eviction steps over before giving up and letting the
+// caller retry. Reached only after repeated crashes inside the eviction itself.
+const COLLABORATION_EVICT_MAX_GENERATIONS = 8;
+// Acquisition retries: enough for a racer that lost the eviction to observe the
+// winner's lock, short enough that a wedged path fails the CLI in well under a second.
+const COLLABORATION_LOCK_ACQUIRE_ATTEMPTS = 4;
+const COLLABORATION_LOCK_RETRY_MS = 20;
 
 // Lock/checkpoint live in the project root so runs from subdirectories share
 // the same state; fall back to cwd when no config has been loaded yet.
@@ -129,23 +157,26 @@ async function clearPushCheckpoint(): Promise<void> {
   }
 }
 
+function parseCollaborationLock(raw: string): CollaborationLock | null {
+  try {
+    const parsed = JSON.parse(raw) as CollaborationLock;
+    return parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.command === "string" &&
+      typeof parsed.createdAt === "string"
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 async function loadCollaborationLock(): Promise<CollaborationLock | null> {
   try {
-    const raw = await fsp.readFile(getCollaborationLockPath(), "utf8");
-    const parsed = JSON.parse(raw) as CollaborationLock;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      typeof parsed.command !== "string" ||
-      typeof parsed.createdAt !== "string"
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
+    return parseCollaborationLock(await fsp.readFile(getCollaborationLockPath(), "utf8"));
+  } catch {
+    // ENOENT (no lock) and an unreadable lock are both reported as "nothing usable
+    // here" — every caller treats the two identically, so they are not separated.
     return null;
   }
 }
@@ -183,98 +214,382 @@ function isCollaborationLockStale(lock: CollaborationLock): boolean {
   return Date.now() - createdAtMs > COLLABORATION_LOCK_MAX_AGE_MS;
 }
 
+// The owner token of the lock this process currently holds, or null when it
+// holds none. Set only after a successful atomic create, cleared on release.
+let heldLockOwner: string | null = null;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Judged on `createdAt` alone — deliberately looser than parseCollaborationLock, so
+// a legacy lock written before the `command` field existed is still reclaimable
+// rather than permanently immovable. Anything less structured than that is junk, and
+// junk is stale.
+function isRawLockStale(raw: string): boolean {
+  let parsed: CollaborationLock | null = null;
+  try {
+    parsed = JSON.parse(raw) as CollaborationLock;
+  } catch {
+    return true;
+  }
+  return parsed && typeof parsed === "object" && typeof parsed.createdAt === "string"
+    ? isCollaborationLockStale(parsed)
+    : true;
+}
+
+// An eviction claim records who is currently allowed to remove one specific lock
+// content from the lock path, and nothing else.
+type EvictionClaim = { pid: number; createdAt: string };
+
+// Create `targetPath` carrying `body`, atomically, failing rather than overwriting.
+//
+// `writeFile(..., {flag:"wx"})` looks like this primitive but is not: O_CREAT|O_EXCL
+// publishes the *name* first and the bytes second, so a racer that reads in between
+// gets an empty or half-written file. That is not theoretical here — every reader of
+// the lock path decides "is this stale?" from the bytes, and unparseable bytes read as
+// stale, so a racer could judge a lock that was being born as abandoned and remove it.
+// Measured with sixteen racers: 1/20 rounds lost a live lock to exactly that.
+//
+// link() has no such split. The staging file is fully written under a name nobody
+// inspects, and link() then publishes it complete-or-not-at-all, still failing EEXIST
+// if someone else got there first — the same mutual exclusion, without the window.
+async function createExclusiveWithContent(targetPath: string, body: string): Promise<boolean> {
+  const stagingPath = `${COLLABORATION_STAGING_PREFIX}${process.pid}.${path.basename(targetPath)}`;
+  const staging = path.join(path.dirname(targetPath), stagingPath);
+  await fsp.writeFile(staging, body, { encoding: "utf8" });
+  try {
+    await fsp.link(staging, targetPath);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
+    throw e;
+  } finally {
+    await fsp.unlink(staging).catch(() => undefined);
+  }
+}
+
+// Named after the exact bytes it authorizes removing, so every racer looking at the
+// same stale lock competes for the same file — and the atomic 'wx' create picks
+// exactly one of them. `generation` exists only to keep the scheme live: a claim
+// whose holder was killed mid-eviction would otherwise wedge the lock path forever,
+// so racers that agree it is abandoned all step to the same next generation and
+// again exactly one wins.
+const getEvictionClaimPath = (raw: string, generation: number): string => {
+  const digest = createHash("sha256").update(raw).digest("hex").slice(0, 16);
+  return path.join(
+    getStateBaseDir(),
+    `${COLLABORATION_EVICT_PREFIX}${digest}.${generation}${COLLABORATION_EVICT_SUFFIX}`
+  );
+};
+
+// A claim is abandoned only on *positive* evidence: a holder that no longer exists, or
+// an age no live eviction could reach. Absence of evidence is not evidence — 'wx'
+// creates the file and fills it in two steps, so a racer can legitimately read a claim
+// that is still empty or half-written, and judging that "abandoned" is precisely what
+// lets two evictors exist for the same content. Measured with sixteen racers: 2/20
+// rounds lost a *live* lock that way, the second racer walking into the path the rogue
+// evictor had emptied. Unjudgeable content therefore falls back to the file's own
+// mtime, which a claim being written right now cannot fake.
+function isEvictionClaimAbandoned(raw: string, mtimeMs: number): boolean {
+  const abandonedByMtime =
+    Number.isFinite(mtimeMs) && Date.now() - mtimeMs > COLLABORATION_EVICT_MAX_AGE_MS;
+  let parsed: EvictionClaim | null = null;
+  try {
+    parsed = JSON.parse(raw) as EvictionClaim;
+  } catch {
+    return abandonedByMtime;
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.createdAt !== "string" ||
+    typeof parsed.pid !== "number"
+  ) {
+    return abandonedByMtime;
+  }
+  const createdAtMs = Date.parse(parsed.createdAt);
+  if (!Number.isFinite(createdAtMs)) {
+    return abandonedByMtime;
+  }
+  if (!isProcessAlive(parsed.pid)) {
+    return true;
+  }
+  return Date.now() - createdAtMs > COLLABORATION_EVICT_MAX_AGE_MS;
+}
+
+// REV-233: WHY REMOVAL NEEDS A CLAIM, when the lock create is already an atomic 'wx'.
+//
+// Atomicity of the create was never the hole. The hole was the *removal*. To drop a
+// stale lock without blindly unlinking a lock a racer may have just created, the old
+// reclaim took custody of the path with a rename and put the file back if it turned
+// out to be live. Between that rename and the restore the lock path stood EMPTY — and
+// a third push's 'wx' create walked straight into it and reported success. The restore
+// then overwrote that push's lock, so two processes both believed they held the lock
+// and pushed the same records concurrently. Reproduced with a real multi-process
+// harness against a planted stale lock: 2/15 rounds with three racers, 9/12 with five
+// (three simultaneous winners in two of those). With no stale lock present, 0/12 — the
+// plain 'wx' path was always sound.
+//
+// No amount of care inside a rename-based reclaim closes that window, and a mutex over
+// the path only moves it: the mutex file is itself a contended path that has to be
+// reclaimed when abandoned, which is the same problem one level up (measured — a guard
+// built that way held at three and five racers and broke at eight).
+//
+// So removal is made exclusive the same way creation already is, with one atomic 'wx'
+// on a path derived from the bytes being removed. The path is never held aside and
+// never restored: it is emptied by exactly one process, and everyone else meets either
+// the old content (and re-evaluates) or a free path (and races for it with 'wx', which
+// is atomic). That is the whole invariant — the lock file is removed only by the winner
+// of a claim on its exact content — and it holds for the acquire path and the release
+// path alike.
+//
+// Residual: a claim holder that neither dies nor finishes for over
+// COLLABORATION_EVICT_MAX_AGE_MS is stepped over, so two evictors can be live at once;
+// they would have to interleave two syscalls precisely for the second to remove a lock
+// the first already replaced. That needs a process stalled inside three filesystem calls
+// for ten seconds — the same class of assumption the lock's own 30-minute age window
+// already rests on.
+async function evictLockFile(raw: string): Promise<boolean> {
+  let generation = 0;
+  // `generation` advances only on a claim we confirmed abandoned, so a claim that
+  // merely vanished is retried at the same generation — stepping over it would let a
+  // racer win the freed name while we win the next one, and two evictors is exactly
+  // what this is here to prevent. `step` bounds the retries either way.
+  for (let step = 0; step < COLLABORATION_EVICT_MAX_GENERATIONS * 2; step += 1) {
+    if (generation >= COLLABORATION_EVICT_MAX_GENERATIONS) {
+      return false;
+    }
+    const claimPath = getEvictionClaimPath(raw, generation);
+    const won = await createExclusiveWithContent(
+      claimPath,
+      JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }, null, 2)
+    );
+    if (!won) {
+      let existing: string | null = null;
+      let mtimeMs = Number.NaN;
+      try {
+        // Read and stat together: the content answers "whose claim is this", and the
+        // mtime answers "how old is it" for a claim the content cannot answer for.
+        const [content, stats] = await Promise.all([
+          fsp.readFile(claimPath, "utf8"),
+          fsp.stat(claimPath),
+        ]);
+        existing = content;
+        mtimeMs = stats.mtimeMs;
+      } catch {
+        existing = null;
+      }
+      if (existing !== null && isEvictionClaimAbandoned(existing, mtimeMs)) {
+        // Every racer that agrees it is abandoned steps to the same next generation,
+        // where the atomic create again admits exactly one of them.
+        generation += 1;
+        continue;
+      }
+      if (existing !== null) {
+        // Someone is actively evicting this content. Back off and re-read the path.
+        return false;
+      }
+      continue;
+    }
+
+    try {
+      // Re-read under the claim. We are the only process permitted to remove this
+      // content, so the only way it can have changed is its own owner releasing it —
+      // and then there is nothing here for us to remove.
+      let current: string | null = null;
+      try {
+        current = await fsp.readFile(getCollaborationLockPath(), "utf8");
+      } catch {
+        current = null;
+      }
+      if (current === raw) {
+        try {
+          await fsp.unlink(getCollaborationLockPath());
+        } catch (e) {
+          // ENOENT means it is already gone, which is the outcome we wanted. Anything
+          // else (a permission problem, a read-only tree) is a real failure the caller
+          // must see rather than silently treat as a released lock.
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw e;
+          }
+        }
+      }
+    } finally {
+      await fsp.unlink(claimPath).catch(() => undefined);
+    }
+    return true;
+  }
+  return false;
+}
+
+// Safe only from a process that has just created the lock: a live claim would mean a
+// racer is removing content from the lock path, but the path now holds our brand-new
+// lock, which nothing can yet have judged stale. Any claim still lying around is
+// therefore the litter of an eviction that already finished or crashed, and re-winning
+// one can only lead its holder to the same "content changed, nothing to remove" no-op.
+async function sweepEvictionClaims(): Promise<void> {
+  const baseDir = getStateBaseDir();
+  let entries: string[] = [];
+  try {
+    entries = await fsp.readdir(baseDir);
+  } catch {
+    // No readable state directory (or a test seam without readdir) — litter, if any,
+    // is inert and the next successful acquire will get another chance to clear it.
+    return;
+  }
+  await Promise.all(
+    entries.map(async (name) => {
+      const full = path.join(baseDir, name);
+      if (name.startsWith(COLLABORATION_EVICT_PREFIX) && name.endsWith(COLLABORATION_EVICT_SUFFIX)) {
+        await fsp.unlink(full).catch(() => undefined);
+        return;
+      }
+      if (!name.startsWith(COLLABORATION_STAGING_PREFIX)) {
+        return;
+      }
+      // A staging file belongs to a link() that is a syscall or two from finishing, so
+      // unlinking one on age alone is safe while unlinking one on sight is not: it
+      // would make its owner's link() fail spuriously.
+      try {
+        const stats = await fsp.stat(full);
+        if (Date.now() - stats.mtimeMs > COLLABORATION_EVICT_MAX_AGE_MS) {
+          await fsp.unlink(full).catch(() => undefined);
+        }
+      } catch {
+        // Already gone, or no stat in this seam — nothing to clean either way.
+      }
+    })
+  );
+}
+
 async function acquireCollaborationLock(
   command: string,
   instanceProfile?: string
 ): Promise<{ acquired: boolean; reason?: string }> {
+  const owner = randomUUID();
   const lockPayload: CollaborationLock = {
     command,
     pid: process.pid,
     createdAt: new Date().toISOString(),
     instanceProfile,
+    owner,
   };
   const payload = JSON.stringify(lockPayload, null, 2);
 
-  // "wx" makes creation atomic: two concurrent runs cannot both win the race.
-  // One retry after removing a stale/corrupt lock file.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await fsp.writeFile(getCollaborationLockPath(), payload, { encoding: "utf8", flag: "wx" });
+  // Creation is atomic *and* whole: two concurrent runs cannot both win the race, and
+  // no racer can ever observe a lock mid-write. The retries exist for the one case the
+  // atomic create cannot settle by itself — a stale lock occupying the path — where the
+  // loop re-reads and re-evaluates after each eviction attempt rather than assuming
+  // what it will find.
+  for (let attempt = 0; attempt < COLLABORATION_LOCK_ACQUIRE_ATTEMPTS; attempt += 1) {
+    if (await createExclusiveWithContent(getCollaborationLockPath(), payload)) {
+      heldLockOwner = owner;
+      await sweepEvictionClaims();
       return { acquired: true };
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw e;
-      }
-      const existing = await loadCollaborationLock();
-      if (existing && !isCollaborationLockStale(existing)) {
-        const owner = typeof existing.pid === "number" ? `pid ${existing.pid}` : "unknown pid";
-        return {
-          acquired: false,
-          reason: `Detected active ${existing.command} lock (${owner}) created at ${existing.createdAt}.`,
-        };
-      }
-      // The lock is stale (or corrupt). Reclaim it atomically — a blind unlink
-      // here would delete a *live* lock a racing push created after we observed
-      // the stale one, letting both pushes proceed (see reclaimStaleLock).
-      await reclaimStaleLock();
+    }
+
+    let raw: string | null = null;
+    try {
+      raw = await fsp.readFile(getCollaborationLockPath(), "utf8");
+    } catch {
+      // Released between our failed create and this read; the next iteration races
+      // for the freed path with the same atomic create.
+      continue;
+    }
+
+    const existing = parseCollaborationLock(raw);
+    if (existing !== null && !isCollaborationLockStale(existing)) {
+      const holder = typeof existing.pid === "number" ? `pid ${existing.pid}` : "unknown pid";
+      return {
+        acquired: false,
+        reason: `Detected active ${existing.command} lock (${holder}) created at ${existing.createdAt}.`,
+      };
+    }
+    if (!isRawLockStale(raw)) {
+      // Live, but too malformed to describe — a legacy lock written before the
+      // `command` field existed. Never evicted on those grounds alone.
+      return { acquired: false, reason: "Detected an active collaboration lock." };
+    }
+
+    if (!(await evictLockFile(raw))) {
+      // Another racer is evicting the same content. Wait out its three filesystem
+      // calls, with jitter so racers that arrived together do not retry in lockstep.
+      await sleep(
+        COLLABORATION_LOCK_RETRY_MS + Math.floor(Math.random() * COLLABORATION_LOCK_RETRY_MS)
+      );
     }
   }
 
   return { acquired: false, reason: "Could not acquire collaboration lock." };
 }
 
+// REV-205: release must be as ownership-aware as reclaimStaleLock below. The old
+// code unlinked whatever file sat at the lock path, and a lock can legitimately
+// change hands while its original owner is still running: a push that outlives
+// the 30-minute age window is judged stale by a collaborator, who reclaims the
+// path and takes the lock: when the long push then reached the `finally` in
+// pushCommand it deleted the collaborator's LIVE lock, and the next push walked
+// straight in — two pushes writing the same records with no mutual exclusion.
+// So we remove the lock only while it still carries the token we created.
+//
+// Refusing to delete is the safe direction: a lock we cannot prove is ours is
+// left in place, and once this process exits its pid stops answering
+// process.kill(pid, 0), so isCollaborationLockStale reclaims it immediately —
+// nobody is blocked for the age window by our restraint.
 async function releaseCollaborationLock(): Promise<void> {
-  try {
-    await fsp.unlink(getCollaborationLockPath());
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw e;
-    }
-  }
-}
-
-// Atomically reclaim a lock we've judged stale, without ever removing a lock a
-// concurrent push may have legitimately created. The old code blindly unlinked
-// whatever file was at the lock path, so two pushes that both observed the same
-// stale lock would each unlink it and create their own — breaking mutual
-// exclusion. Instead we move the file aside with a single atomic rename: for a
-// given path only one racer's rename can win (the loser sees ENOENT), and we
-// then re-check what we actually moved. If it is stale we discard it, freeing
-// the path for the caller's 'wx' create; if a racer had already replaced it
-// with a live lock, we put that lock back and let the caller re-evaluate.
-async function reclaimStaleLock(): Promise<void> {
-  const lockPath = getCollaborationLockPath();
-  const asidePath = `${lockPath}.${process.pid}.reclaim`;
-  try {
-    await fsp.rename(lockPath, asidePath);
-  } catch (e) {
-    // ENOENT: another racer already moved/removed the stale lock. Nothing to
-    // reclaim — the retry loop re-reads whatever is at the path now.
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-      return;
-    }
-    throw e;
-  }
-  const moved = await (async (): Promise<CollaborationLock | null> => {
-    try {
-      const parsed = JSON.parse(await fsp.readFile(asidePath, "utf8")) as CollaborationLock;
-      return parsed && typeof parsed === "object" && typeof parsed.createdAt === "string"
-        ? parsed
-        : null;
-    } catch {
-      // Unparseable/unreadable content is junk by definition — safe to discard.
-      return null;
-    }
-  })();
-
-  if (moved === null || isCollaborationLockStale(moved)) {
-    // Confirmed stale (or corrupt) — discard it; the path is now free.
-    await fsp.unlink(asidePath).catch(() => undefined);
+  const owner = heldLockOwner;
+  if (owner === null) {
+    // We hold no lock (never acquired, or already released). Notably this is
+    // what makes a repeated release harmless: without it, a second call would
+    // delete whichever lock the next push had meanwhile acquired. Checked before
+    // the guard so the common no-op release costs nothing.
     return;
   }
-  // We moved a live lock a racer created in the window before our rename.
-  // Restore it so its owner keeps the lock, and abort the reclaim.
-  await fsp.rename(asidePath, lockPath).catch(() => undefined);
+  let raw: string | null = null;
+  try {
+    raw = await fsp.readFile(getCollaborationLockPath(), "utf8");
+  } catch {
+    // Gone already (or unreadable). Either way there is nothing of ours left here.
+    heldLockOwner = null;
+    return;
+  }
+  const current = parseCollaborationLock(raw);
+  if (current === null || current.owner !== owner) {
+    // Another acquisition owns the path now. Leave it alone, and stop claiming to
+    // hold a lock, so no later release retries this.
+    heldLockOwner = null;
+    return;
+  }
+  // REV-233: release removes the lock through the same eviction claim the acquire
+  // path uses, so the invariant has no exception — the lock file is only ever removed
+  // by the winner of a claim on its exact content. Without that, a collaborator who
+  // judged our aged-out lock stale could install its own between our read and our
+  // unlink, and we would delete a live lock we do not own.
+  //
+  // A failure here propagates with heldLockOwner still set: the file is still there
+  // and still ours, so a retry may yet release it rather than abandoning it to the
+  // stale path.
+  await evictLockFile(raw);
+  heldLockOwner = null;
+}
+
+// Drops a lock we've judged stale, without ever removing a lock a concurrent push may
+// have legitimately created. The removal itself goes through evictLockFile, so it is
+// exclusive and content-checked; this wrapper only supplies the staleness verdict.
+// A live lock found at the path is left exactly as it is.
+async function reclaimStaleLock(): Promise<void> {
+  let raw: string;
+  try {
+    raw = await fsp.readFile(getCollaborationLockPath(), "utf8");
+  } catch {
+    // Another racer already removed it (or there was never one). Nothing to reclaim.
+    return;
+  }
+  if (!isRawLockStale(raw)) {
+    return;
+  }
+  await evictLockFile(raw);
 }
 
 // #18: the collaboration-lock primitives are otherwise reachable only through
@@ -291,6 +606,12 @@ export const __lockInternals = {
   isCollaborationLockStale,
   isProcessAlive,
   getCollaborationLockPath,
+  // REV-233 eviction-claim primitives.
+  evictLockFile,
+  getEvictionClaimPath,
+  isEvictionClaimAbandoned,
+  isRawLockStale,
+  sweepEvictionClaims,
 };
 
 export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {

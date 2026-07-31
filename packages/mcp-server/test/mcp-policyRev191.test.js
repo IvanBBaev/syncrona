@@ -36,6 +36,12 @@ const MUST_CONFIRM = [
   // REV-140: `git help -w` / -m / -i hand the topic to an external viewer.
   ['git', ['help', '-w', 'git']],
   ['git', ['help', '--web', 'git']],
+  // Mutation-testing finding (stryker, safetyPolicy.ts:446): only `-w`/`--web` were
+  // covered, so emptying `-m` or `-i` out of GIT_VERB_DANGEROUS_OPTIONS survived — both
+  // are ordinary lowercase letters and would fall straight through to the safe-short-flag
+  // allowlist, which is precisely the case that Map exists to override.
+  ['git', ['help', '-m', 'git']],
+  ['git', ['help', '-i', 'git']],
   // REV-191: the dangerous flag hides behind a flag that is value-taking for SOME verb.
   ['git', ['grep', '-nOtouch /tmp/PWN', 'hello']],
   ['git', ['grep', '-inOtouch /tmp/PWN', 'hello']],

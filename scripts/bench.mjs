@@ -14,6 +14,28 @@
 //
 // It imports the COMPILED output, so run `npm run build` first (the `bench` npm
 // script does this for you).
+//
+// REGRESSION GUARD: `npm run bench:guard` runs this with `--max-ms 25`, and that
+// link is part of the root `check` chain and of CI. The threshold is deliberately
+// loose, and the number comes from two measurements of the default dataset (3200
+// records / 4280 files) rather than from one:
+//
+//   idle machine        median 0.966 ms
+//   machine under load  median 4.932 ms   (p95 93.9 ms, max 224 ms)
+//
+// The second run is the one that sets the threshold. The median is already
+// noise-resistant, so the 5x shift is not spikiness — it is sustained CPU
+// contention, exactly the condition a shared CI runner is in. A ceiling picked
+// from the idle number alone (10 ms) left only 2x headroom over a loaded machine,
+// and a performance gate that flakes gets disabled, which is worse than a loose
+// one. 25 ms keeps ~5x headroom over the loaded median while still standing ~25x
+// above the idle baseline.
+//
+// It is a blowup detector, not a microbenchmark: an accidental O(n^2) over records
+// or a per-record filesystem call moves this path by an order of magnitude and
+// trips the gate, while runner contention cannot. Tighten it only together with a
+// measurement on the slowest runner in the matrix, taken while that runner is
+// busy.
 
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";

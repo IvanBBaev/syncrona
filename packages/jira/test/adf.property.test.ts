@@ -69,6 +69,230 @@ describe("adfToText (property, #20)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The code fence — the one construct in this renderer that can be broken out of.
+//
+// adf.test.ts pins REV-202 by example: content holding ``` gets a longer fence.
+// What an example cannot state is the actual security contract, which is not
+// "the fence is longer" but "no character of the untrusted content is ever read
+// as document structure". So instead of asserting on the emitted string, the
+// property below runs a CommonMark fenced-code scanner over the rendered output
+// and asserts on what a *consumer* sees: exactly one closed code region, its
+// content byte-identical to the input (modulo the renderer's declared
+// trailing-whitespace normalization), and nothing outside it but the two
+// paragraphs the document really contained.
+// ---------------------------------------------------------------------------
+
+type FenceRegion = { fenceLength: number; info: string; lines: string[]; closed: boolean };
+
+/**
+ * Split text into fenced-code regions and the lines outside them, following the
+ * CommonMark rules the renderer relies on: an opener is up to three spaces of
+ * indent, a run of >= 3 backticks and an info string with no backtick in it; only
+ * a run at least as long as the opener, alone on its line, closes it.
+ */
+function scanFences(text: string): { regions: FenceRegion[]; outside: string[] } {
+  const regions: FenceRegion[] = [];
+  const outside: string[] = [];
+  let open: FenceRegion | null = null;
+  for (const line of text.split("\n")) {
+    if (open) {
+      const closer = /^ {0,3}(`{3,})[ \t]*$/.exec(line);
+      if (closer && closer[1].length >= open.fenceLength) {
+        open.closed = true;
+        regions.push(open);
+        open = null;
+        continue;
+      }
+      open.lines.push(line);
+      continue;
+    }
+    const opener = /^ {0,3}(`{3,})([^`]*)$/.exec(line);
+    if (opener) {
+      open = { fenceLength: opener[1].length, info: opener[2], lines: [], closed: false };
+      continue;
+    }
+    outside.push(line);
+  }
+  if (open) {
+    regions.push(open);
+  }
+  return { regions, outside };
+}
+
+// Lines that a fixed three-backtick fence — or a naive "count only whole-line
+// runs" fix — would let through: bare runs of every length around the boundary,
+// runs with an info string, runs indented by the up-to-three spaces CommonMark
+// still accepts, and runs buried mid-line.
+const backtickRun = fc.integer({ min: 1, max: 6 }).map((n) => "`".repeat(n));
+const fenceLikeLine = fc.oneof(
+  backtickRun,
+  backtickRun.map((run) => `${run}js`),
+  backtickRun.map((run) => `   ${run}`),
+  backtickRun.map((run) => `${run}  `),
+  backtickRun.map((run) => `text ${run} text`),
+  fc.constantFrom(
+    "```",
+    "````",
+    "`````",
+    "~~~",
+    "   ~~~",
+    "",
+    " ",
+    "\t",
+    "plain line",
+    "``` ```"
+  )
+);
+
+const codeContent = fc
+  .array(
+    fc.oneof({ arbitrary: fenceLikeLine, weight: 4 }, { arbitrary: fc.string({ maxLength: 12 }), weight: 1 }),
+    { maxLength: 6 }
+  )
+  .map((lines) => lines.join("\n"));
+
+// The info string is the second half of REV-202: a language carrying a backtick or
+// a newline broke the opener itself.
+const languageAttr = fc.oneof(
+  fc.constantFrom(
+    "js",
+    "ts",
+    "c++",
+    "c#",
+    "shell_session",
+    "asp.net",
+    "",
+    "js`",
+    "js\n```\nescaped",
+    "  js",
+    "js x",
+    "`",
+    "\n",
+    "a".repeat(40)
+  ),
+  fc.string({ maxLength: 20 }),
+  fc.integer(),
+  fc.constant(undefined)
+);
+
+/**
+ * What the code content must look like coming back out. The renderer declares one
+ * transformation of a root block — `[ \t]+\n` collapses and the block is
+ * right-trimmed — so trailing whitespace on a code line, and at the very end of
+ * the content, is expected to be gone. Everything else must survive byte for byte.
+ */
+function normalizedCode(code: string): string {
+  return `${code}\n`.replace(/[ \t]+\n/g, "\n").slice(0, -1);
+}
+
+describe("adfToText code fence (property, REV-202)", () => {
+  const render = (code: string, language: unknown): string =>
+    adfToText({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "BEFORE" }] },
+        {
+          type: "codeBlock",
+          attrs: language === undefined ? {} : { language },
+          content: [{ type: "text", text: code }],
+        },
+        { type: "paragraph", content: [{ type: "text", text: "AFTER" }] },
+      ],
+    });
+
+  it("never lets code-block content escape the fence into document structure", () => {
+    fc.assert(
+      fc.property(codeContent, languageAttr, (code, language) => {
+        const { regions, outside } = scanFences(render(code, language));
+        // Exactly one region, properly closed: an unclosed or a second region both
+        // mean the content terminated the fence and the rest of it is now prose.
+        expect(regions).toHaveLength(1);
+        expect(regions[0].closed).toBe(true);
+        // And the only lines a consumer reads as document text are the two
+        // paragraphs that really were document text.
+        expect(outside.filter((line) => line.length > 0)).toEqual(["BEFORE", "AFTER"]);
+      }),
+      { numRuns: 3000 }
+    );
+  });
+
+  it("preserves the code content exactly, up to the declared trailing-whitespace trim", () => {
+    // The fence must be widened, never the content edited: a renderer that escaped
+    // or stripped the backticks would satisfy the property above while corrupting
+    // every script an agent is asked to read.
+    fc.assert(
+      fc.property(codeContent, languageAttr, (code, language) => {
+        const { regions } = scanFences(render(code, language));
+        expect(regions[0].lines.join("\n")).toBe(normalizedCode(code));
+      }),
+      { numRuns: 3000 }
+    );
+  });
+
+  it("emits an info string that is either empty or a real language identifier", () => {
+    const SAFE_CODE_LANGUAGE = /^[A-Za-z0-9+#._-]{1,32}$/;
+    fc.assert(
+      fc.property(codeContent, languageAttr, (code, language) => {
+        const { regions } = scanFences(render(code, language));
+        const info = regions[0].info;
+        expect(info === "" || SAFE_CODE_LANGUAGE.test(info)).toBe(true);
+        // Round-trip: a legitimate language must not be dropped, so the drop rule
+        // cannot degenerate into "always emit nothing".
+        if (typeof language === "string" && SAFE_CODE_LANGUAGE.test(language)) {
+          expect(info).toBe(language);
+        }
+      }),
+      { numRuns: 2000 }
+    );
+  });
+
+  it("keeps holding when the fenced block is nested inside a list item", () => {
+    // renderCodeBlock's output is re-joined by its parents, so the fence has to
+    // survive being embedded, not just being a root block. A list item hangs its
+    // continuation lines under the marker, which is a list *container* — the fence
+    // and its content are then read relative to the item's content column. The
+    // scanner above is flat, so undo that one container (drop the marker and the
+    // matching pad) first; without it the scanner reports the renderer's correct
+    // output as broken, which is how this test was first written and how
+    // fast-check caught it, shrinking to the empty code block { seed: -1451706671,
+    // path: "0:0" } where "- ```" is not an opener to a flat scanner but "  ```"
+    // is.
+    const undoListContainer = (rendered: string): string =>
+      rendered
+        .split("\n")
+        .map((line) => (line.startsWith("- ") || line.startsWith("  ") ? line.slice(2) : line))
+        .join("\n");
+
+    fc.assert(
+      fc.property(codeContent, (code) => {
+        const rendered = adfToText({
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "BEFORE" }] },
+            {
+              type: "bulletList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [{ type: "codeBlock", content: [{ type: "text", text: code }] }],
+                },
+              ],
+            },
+            { type: "paragraph", content: [{ type: "text", text: "AFTER" }] },
+          ],
+        });
+        const { regions, outside } = scanFences(undoListContainer(rendered));
+        expect(regions).toHaveLength(1);
+        expect(regions[0].closed).toBe(true);
+        expect(regions[0].lines.join("\n")).toBe(normalizedCode(code));
+        expect(outside.filter((line) => line.length > 0)).toEqual(["BEFORE", "AFTER"]);
+      }),
+      { numRuns: 1500 }
+    );
+  });
+});
+
 // List items, table rows and table cells are the paths that read a child's
 // `.content` without validating the child first, so a null/undefined item, row
 // or cell used to abort the whole issue fetch with a TypeError. These pin the

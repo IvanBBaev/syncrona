@@ -184,11 +184,42 @@ function credentialFingerprint(config: SNConfig): string {
 
 // Read PEM material that may be supplied inline (starts with a PEM armor) or as
 // a filesystem path. Used for the JWT bearer signing key (SN_JWT_KEY).
+//
+// REV-208: readFileSync must never throw its own error out of here. Node puts the
+// path argument into the message verbatim ("ENOENT: no such file or directory, open
+// '<value>'", or ENAMETOOLONG for anything past the OS filename limit) and also
+// attaches it as `err.path`. This function reaches the filesystem for exactly the
+// values that are NOT armored, so a key supplied base64-encoded — the standard way
+// to carry a PEM in one environment variable or CI secret — becomes a private key
+// reproduced in full inside an error message. From a tool failure that message fans
+// out to all three sinks index.ts builds: the stderr logger (no redaction), the
+// audit event, and the structured error text returned to the client. The audit
+// scanner cannot save it: audit.ts matches literal `-----BEGIN ... PRIVATE KEY-----`
+// armor, precisely the shape short-circuited above, and the message is well under
+// SECRET_SCAN_BUDGET.
+//
+// The replacement keeps every fact needed to debug a genuine path typo — which
+// setting was read, that it was read as a path, the fs error code, the value's size
+// — and none of the value. The original error is deliberately not attached as
+// `cause`, since a cause chain is stringified by enough loggers that keeping it
+// would re-open the leak one indirection later.
 function readPemMaterial(value: string): string {
   if (value.includes("-----BEGIN")) {
     return value;
   }
-  return readFileSync(value, "utf-8");
+  try {
+    return readFileSync(value, "utf-8");
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code ?? "unknown error";
+    throw new Error(
+      `Could not read the JWT signing key: the configured value carries no PEM armor, ` +
+        `so it was treated as a filesystem path and reading it failed with ${code} ` +
+        `(${Buffer.byteLength(value, "utf-8")} bytes supplied). Point ${JWT_KEY_ENV} at a ` +
+        `readable .pem file, or supply the key inline including its ` +
+        `"-----BEGIN ... PRIVATE KEY-----" lines. The value itself is withheld from ` +
+        `this message because it may be the key.`
+    );
+  }
 }
 
 // Translate a resolved config into the OAuth grant descriptor the shared token

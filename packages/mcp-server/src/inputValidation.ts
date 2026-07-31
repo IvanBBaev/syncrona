@@ -199,6 +199,24 @@ function formatZodError(error: z.ZodError): string {
   return `${path}: ${issue.message}`;
 }
 
+/**
+ * Re-checks the identifier fields every tool shares, and writes the normalized
+ * value back into `args`.
+ *
+ * The write-back is the point: each identifier schema `.trim()`s before it matches
+ * the regex, so parsing `" <sys_id> "` succeeds. Keeping only `parsed.success` and
+ * discarding `parsed.data` therefore reported "valid" while leaving the untrimmed
+ * string in the arguments the handler goes on to use — and that happened whenever
+ * the tool's own schema had not already normalized the field: for an extra key on
+ * a `looseObject` (`sn_query_records` + `sysId`) or for any tool with no entry in
+ * `toolArgSchemas` at all (`sn_search_scripts` + `table`). The characters that
+ * escaped are exactly the ones `String.prototype.trim` strips, newlines included,
+ * so a value the gate had declared regex-clean reached the Table API URL builder
+ * and the audit line. Normalizing here makes `normalizedArgs` the single
+ * normalized truth, which is what every caller already assumes it is.
+ *
+ * Mutates `args`, so the caller must hand in an object it owns.
+ */
 function validateTopLevelIdentifiers(args: Record<string, unknown>): ToolValidationResult | null {
   for (const [key, schema] of Object.entries(topLevelIdentifierSchemas)) {
     if (!(key in args)) {
@@ -214,6 +232,12 @@ function validateTopLevelIdentifiers(args: Record<string, unknown>): ToolValidat
     }
 
     if (value.trim().length === 0) {
+      // Normalize to "" rather than passing the blank through. "Treat as not
+      // supplied" only holds downstream if the value is falsy there: handlers test
+      // `args.table` / `args.sysId` for truthiness to decide whether to resolve by
+      // name, and " " is truthy, so a whitespace-only identifier was declared
+      // absent here and arrived as a supplied-but-blank table name or sys_id.
+      args[key] = "";
       continue;
     }
 
@@ -224,6 +248,7 @@ function validateTopLevelIdentifiers(args: Record<string, unknown>): ToolValidat
         error: `${key}: ${formatZodError(parsed.error)}`,
       };
     }
+    args[key] = parsed.data;
   }
 
   return null;
@@ -233,7 +258,17 @@ export function validateToolArguments(
   toolName: string,
   args: Record<string, unknown>
 ): ToolValidationResult {
-  const schema = toolArgSchemas[toolName];
+  // Own properties only: a bare `toolArgSchemas[toolName]` also resolves inherited
+  // Object.prototype members, so a client calling the tool "constructor" (or
+  // "toString"/"valueOf"/"hasOwnProperty"/"__proto__") got a truthy non-schema back
+  // and `schema.safeParse(args)` threw `TypeError: schema.safeParse is not a
+  // function`. index.ts hands us `request.params.name` verbatim, before any
+  // is-this-a-real-tool check, so the name is fully client-controlled and the throw
+  // surfaced as an internal error instead of a clean INVALID_ARGUMENTS. Same guard
+  // as normalizeAuthMethod in @syncrona/sn-transport, which had the same bug.
+  const schema = Object.prototype.hasOwnProperty.call(toolArgSchemas, toolName)
+    ? toolArgSchemas[toolName]
+    : undefined;
   let normalizedArgs = args;
 
   if (schema) {
@@ -245,6 +280,12 @@ export function validateToolArguments(
       };
     }
     normalizedArgs = parsed.data;
+  } else {
+    // No schema of its own, so `parsed.data` did not give us a fresh object.
+    // Copy before validateTopLevelIdentifiers normalizes in place: index.ts keeps
+    // the raw arguments for the audit trail and the correlation id, and must not
+    // see them rewritten underneath it.
+    normalizedArgs = { ...args };
   }
 
   const identifierValidation = validateTopLevelIdentifiers(normalizedArgs);

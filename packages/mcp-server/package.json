@@ -12,6 +12,7 @@
     "test:coverage": "npm run build && node --enable-source-maps --test --experimental-test-coverage test/*.test.js",
     "test:coverage:gate": "npm run build && node scripts/check-coverage-gate.js --line-threshold 90 --branch-threshold 80",
     "test:coverage:gate100": "npm run build && node scripts/check-coverage-gate.js --line-threshold 100",
+    "test:mutation": "cd ../.. && stryker run packages/mcp-server/stryker.conf.json",
     "quality-gates": "bash scripts/quality-gates.sh",
     "check-tool-contract": "node scripts/check-tool-contract.js",
     "check-docs-drift": "node scripts/check-docs-drift.js",
@@ -33,7 +34,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^8.7.1",
     "@types/node": "^26.1.0",
+    "fast-check": "^3.23.2",
     "typescript": "~6.0.3"
   },
   "files": [

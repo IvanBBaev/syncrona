@@ -27,8 +27,12 @@ describe("formatTable", () => {
     expect(out.split("\n")).toEqual(["A  B", "-  -"]);
   });
 
+  // A short row must contribute nothing to the width of the columns it does not
+  // reach: the whole rendered block is asserted, so a missing cell that widened
+  // its column (padding the header and separator out to a phantom width) would
+  // show up here instead of only in the row itself.
   it("treats missing cells as empty", () => {
     const out = formatTable(["A", "B"], [["x"]]);
-    expect(out.split("\n")[2]).toBe("x");
+    expect(out.split("\n")).toEqual(["A  B", "-  -", "x"]);
   });
 });

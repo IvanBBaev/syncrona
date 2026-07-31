@@ -15,6 +15,7 @@ const {
 const {
   isMutatingTool,
   isDestructiveWorkspaceCommand,
+  findSyncroCliSubcommand,
   isUnsafeWorkspaceCommand,
   riskLevelFromScore,
   parseRiskLevel,
@@ -441,6 +442,38 @@ test('isMutatingTool: true for known mutating tools, false for read-only/unknown
   assert.equal(isMutatingTool('unknown_tool'), false);
 });
 
+// Mutation-testing finding (stryker, safetyPolicy.ts:56-71): emptying almost any
+// single entry of MUTATING_TOOLS survived the whole suite, because only three of the
+// twelve names were ever asserted. A dropped entry is a silent security downgrade —
+// isMutatingTool() feeds the preflight gate, the confirmation gate and the audit
+// record, so an unlisted tool writes to the instance while the forensic trail calls
+// it read-only. DRY_RUN_AWARE_TOOLS is already protected against exactly this drift
+// by dryRunAwareTools.contract.test.js (which is why no mutant of that list survived);
+// this list has no schema to derive from, so its membership is pinned literally.
+test('isMutatingTool: every tool the policy declares mutating is classified as mutating', () => {
+  const declaredMutatingTools = [
+    'sync_set_scope',
+    'sync_set_update_set',
+    'sync_prepare_session',
+    'sync_push',
+    'sn_create_record',
+    'sn_execute_background_script',
+    'sync_create_script_include',
+    'sync_create_script_include_and_sync',
+    'sn_update_metadata_record',
+    'sn_autonomous_remediation_workflow',
+    'sync_unified_change_workflow',
+    'sync_run_atf_tests',
+  ];
+  for (const toolName of declaredMutatingTools) {
+    assert.equal(
+      isMutatingTool(toolName),
+      true,
+      `${toolName} must stay on the mutating-tool list (it gates preflight, confirmation and audit)`
+    );
+  }
+});
+
 // run_workspace_command is not a mutating tool by name: the same tool runs
 // `syncrona push` (reaches the instance) and `npm test` (does not), so the
 // answer has to come from the invocation.
@@ -498,6 +531,111 @@ test('isMutatingTool: tolerates malformed run_workspace_command args', () => {
 test('isDestructiveWorkspaceCommand: is reachable from the policy module', () => {
   assert.equal(isDestructiveWorkspaceCommand('syncrona', ['push']), true);
   assert.equal(isDestructiveWorkspaceCommand('npm', ['test']), false);
+});
+
+// Mutation-testing finding (stryker, safetyPolicy.ts:50-51 and :176/:187): only `npx`
+// and `pnpm dlx` were ever exercised, so emptying "npm", "yarn" or "bun" from
+// PACKAGE_MANAGERS — or "exec"/"run" from PACKAGE_MANAGER_EXEC_SUBCOMMANDS — left the
+// suite green while `npm exec syncrona push` stopped being recognised as destructive.
+// The whole declared matrix is asserted here because each entry is one bypass.
+test('isDestructiveWorkspaceCommand: every declared package-manager exec form reaches the CLI', () => {
+  for (const manager of ['npm', 'pnpm', 'yarn', 'bun']) {
+    for (const subcommand of ['exec', 'dlx', 'run']) {
+      assert.equal(
+        isDestructiveWorkspaceCommand(manager, [subcommand, 'syncrona', 'push']),
+        true,
+        `${manager} ${subcommand} syncrona push must be recognised as destructive`
+      );
+    }
+  }
+  // The runner form takes the package name directly.
+  for (const runner of ['npx', 'pnpx', 'bunx']) {
+    assert.equal(
+      isDestructiveWorkspaceCommand(runner, ['syncrona', 'deploy']),
+      true,
+      `${runner} syncrona deploy must be recognised as destructive`
+    );
+  }
+});
+
+// Mutation-testing finding (stryker, safetyPolicy.ts:176 and :187): the exec-subcommand
+// lookup happens at the FIRST OPERAND, and the argv is trimmed and emptied first. Both
+// steps were unasserted, and both are trivially reachable by a caller: a manager flag
+// before the subcommand, a stray empty argument, or an untrimmed one. Each mutation
+// turned a real `syncrona push` into an unrecognised (therefore unconfirmed, and
+// audited as read-only) invocation, so the padding forms are pinned.
+test('isDestructiveWorkspaceCommand: argv padding cannot hide a package-manager exec form', () => {
+  assert.equal(
+    isDestructiveWorkspaceCommand('npm', ['--silent', 'exec', 'syncrona', 'push']),
+    true,
+    'a manager flag before the exec subcommand must not hide the invocation'
+  );
+  assert.equal(
+    isDestructiveWorkspaceCommand('npm', ['', 'exec', 'syncrona', 'push']),
+    true,
+    'an empty argument must not hide the invocation'
+  );
+  assert.equal(
+    isDestructiveWorkspaceCommand('npm', [' exec ', ' syncrona ', ' push ']),
+    true,
+    'untrimmed arguments must not hide the invocation'
+  );
+  // Mixed case is handled too (the reason the index is taken before lowercasing).
+  assert.equal(isDestructiveWorkspaceCommand('npm', ['EXEC', 'syncrona', 'push']), true);
+});
+
+// Mutation-testing finding (stryker, safetyPolicy.ts:144-145): the launcher-suffix strip
+// and the backslash normalisation in normalizeBinaryName had no test at all, so
+// `npx.cmd` and `C:\...\npx.cmd` — the ordinary Windows spellings — could stop being
+// recognised without the suite noticing. requiresConfirmation() still gates a
+// path-qualified command by REV-141, but isMutatingTool() does not: it would classify a
+// live `syncrona push` as read-only and the audit record would say so.
+test('isDestructiveWorkspaceCommand: Windows launcher spellings still reach the CLI', () => {
+  const windowsInvocations = [
+    ['npx.cmd', ['syncrona', 'push']],
+    ['npm.exe', ['exec', 'syncrona', 'push']],
+    ['C:\\Program Files\\nodejs\\npx.cmd', ['syncrona', 'push']],
+    ['..\\node_modules\\.bin\\syncrona.cmd', ['push']],
+  ];
+  for (const [command, args] of windowsInvocations) {
+    assert.equal(
+      isDestructiveWorkspaceCommand(command, args),
+      true,
+      `${command} ${args.join(' ')} must be recognised as destructive`
+    );
+    assert.equal(
+      isMutatingTool('run_workspace_command', { command, args }),
+      true,
+      `${command} ${args.join(' ')} must be audited as a mutating invocation`
+    );
+  }
+});
+
+// Mutation-testing finding (stryker, safetyPolicy.ts:161-242): findSyncroCliSubcommand is
+// exported but no test imported it, so mutants that made it return null for EVERY input,
+// or return the package token instead of the subcommand, all survived. It is documented
+// as best-effort and must not be used for a security decision, but it is still a public
+// API whose answer ends up in operator-facing output.
+test('findSyncroCliSubcommand: resolves the subcommand for the invocation forms it supports', () => {
+  assert.equal(findSyncroCliSubcommand('syncrona', ['push']), 'push');
+  assert.equal(findSyncroCliSubcommand('syncrona', ['status', '--json']), 'status');
+  // The package token itself is not the subcommand, and flags are not operands.
+  assert.equal(findSyncroCliSubcommand('npx', ['-y', 'syncrona', 'push']), 'push');
+  assert.equal(findSyncroCliSubcommand('npm', ['exec', 'syncrona', 'deploy']), 'deploy');
+  // Not an invocation of the CLI at all.
+  assert.equal(findSyncroCliSubcommand('npm', ['test']), null);
+  assert.equal(findSyncroCliSubcommand('git', ['push']), null);
+  // No operand after the package token.
+  assert.equal(findSyncroCliSubcommand('npx', ['syncrona']), null);
+});
+
+// The documented limitation, pinned so it stays a KNOWN one: a space-separated global
+// option value occupies the first operand position, so the "subcommand" reported for
+// `syncrona --logLevel debug push` is the option's value. This is why every security
+// decision goes through isDestructiveWorkspaceCommand, which checks every operand.
+test('findSyncroCliSubcommand: known limitation — a detached option value shadows the subcommand', () => {
+  assert.equal(findSyncroCliSubcommand('syncrona', ['--logLevel', 'debug', 'push']), 'debug');
+  assert.equal(isDestructiveWorkspaceCommand('syncrona', ['--logLevel', 'debug', 'push']), true);
 });
 
 test('isUnsafeWorkspaceCommand: blocks exact blocked command basenames', () => {
@@ -619,6 +757,32 @@ test('isApprovalSatisfied: medium/high/critical require an approvalId and enough
   );
 });
 
+// Mutation-testing finding (stryker, safetyPolicy.ts:732-733): removing the approvalId
+// requirement entirely — and removing its .trim() — both survived, because every case
+// that exercised a missing or blank id ALSO had zero approvers, so the approver count
+// carried the assertion on its own. With enough approvers present, the two guards are
+// what stop approval evidence that names no approval record from satisfying the gate.
+test('isApprovalSatisfied: a missing or blank approvalId fails even with enough approvers', () => {
+  assert.equal(
+    isApprovalSatisfied({ approvers: ['alice'] }, 'medium'),
+    false,
+    'approval evidence without an approvalId must not satisfy the gate'
+  );
+  assert.equal(
+    isApprovalSatisfied({ approvalId: '   ', approvers: ['alice'] }, 'medium'),
+    false,
+    'a whitespace-only approvalId must not satisfy the gate'
+  );
+  assert.equal(
+    isApprovalSatisfied({ approvalId: '', approvers: ['alice', 'bob'] }, 'high'),
+    false,
+    'an empty approvalId must not satisfy the gate'
+  );
+  // The same evidence with a real id does satisfy it, so the assertions above are
+  // failing on the id and not on the approver count.
+  assert.equal(isApprovalSatisfied({ approvalId: 'appr-1', approvers: ['alice'] }, 'medium'), true);
+});
+
 test('isApprovalSatisfied: high risk needs at least 2 valid approvers', () => {
   assert.equal(
     isApprovalSatisfied({ approvalId: 'appr-1', approvers: ['alice'] }, 'high'),
@@ -727,6 +891,24 @@ test('evaluateMinimalFootprint: ignores non-string filePath/objectId and non-fin
   assert.equal(result.metrics.changedFiles, 0);
   assert.equal(result.metrics.changedObjects, 0);
   assert.equal(result.metrics.changedLines, 0);
+});
+
+// Mutation-testing finding (stryker, safetyPolicy.ts:834 and :837): flipping the line
+// and object comparisons from `>` to `>=` survived — only the file comparison had a
+// boundary test. The budget is a MAXIMUM, so a change that lands exactly on it is
+// within budget; without this the gate would refuse the largest allowed change and the
+// documented numbers (200 lines, 10 objects) would silently mean 199 and 9.
+test('evaluateMinimalFootprint: metrics exactly at the budget are still within it', () => {
+  // 5 files, 10 objects, 10 x 20 = 200 lines: the default budget exactly.
+  const changes = Array.from({ length: 10 }, (_, i) => ({
+    filePath: `file${i % 5}.js`,
+    objectId: `obj${i}`,
+    estimatedLines: 20,
+  }));
+  const result = evaluateMinimalFootprint(changes);
+  assert.deepEqual(result.metrics, { changedFiles: 5, changedLines: 200, changedObjects: 10 });
+  assert.deepEqual(result.violations, []);
+  assert.equal(result.withinBudget, true);
 });
 
 test('evaluateMinimalFootprint: flags violations when metrics exceed the default budget', () => {

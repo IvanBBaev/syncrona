@@ -102,4 +102,21 @@ describe("formatDuration", () => {
     expect(formatDuration(Number.NaN)).toBe("0s");
     expect(formatDuration(Infinity)).toBe("0s");
   });
+
+  // A negative ETA is not hypothetical: it comes out of `remaining / rate` the
+  // moment the clock or the rate estimate skews. Small negatives round to -0 and
+  // render as "0s" by accident, so the clamp is only actually observable on a
+  // negative larger than half a second.
+  it("clamps a large negative duration to 0s rather than rendering it", () => {
+    expect(formatDuration(-100_000)).toBe("0s");
+  });
+
+  // The seconds/minutes switchover. Exactly 60s must promote to "1m" — rendering
+  // "60s" is the off-by-one that a `<=` here would produce, and 59.5s must round
+  // up into the same branch.
+  it("switches from seconds to minutes at exactly one minute", () => {
+    expect(formatDuration(59_499)).toBe("59s");
+    expect(formatDuration(59_500)).toBe("1m");
+    expect(formatDuration(60_000)).toBe("1m");
+  });
 });

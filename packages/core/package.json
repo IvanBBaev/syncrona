@@ -9,7 +9,8 @@
   "private": false,
   "scripts": {
     "prepack": "tsc",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --ci --reporters=jest-junit --reporters=default --coverage --coverageReporters=lcov --coverageReporters=cobertura --coverageReporters=html"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --ci --reporters=jest-junit --reporters=default --coverage --coverageReporters=lcov --coverageReporters=cobertura --coverageReporters=html",
+    "test:mutation": "NODE_OPTIONS=--experimental-vm-modules stryker run"
   },
   "engines": {
     "node": ">=22.12.0"

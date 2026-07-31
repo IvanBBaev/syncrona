@@ -834,11 +834,41 @@ export const resetClient = (): void => {
 
 // Read PEM material that may be supplied inline (starts with a PEM armor) or as
 // a filesystem path. Used for the JWT bearer signing key (SN_JWT_KEY).
+//
+// REV-208: the readFileSync call must never be allowed to throw its own error out
+// of here. Node puts the path argument into the message verbatim ("ENOENT: no such
+// file or directory, open '<value>'", or ENAMETOOLONG for anything past the OS
+// filename limit) and also hangs it off `err.path`. Since this function reaches the
+// filesystem for exactly the values that are NOT armored, a key supplied base64-
+// encoded — the standard way to carry a PEM in one environment variable or CI
+// secret — is a private key reproduced in full inside an error message, which then
+// fans out to stderr logs, the audit trail and the error text returned to a client.
+// The audit secret scanner cannot save us either: it matches literal
+// `-----BEGIN ... PRIVATE KEY-----` armor, precisely the shape this function
+// short-circuits on, so a non-armored key structurally never matches.
+//
+// The replacement message keeps every fact needed to debug a genuine path typo —
+// which setting was read, that it was interpreted as a path, the fs error code, and
+// the value's size — while carrying none of the value. The original error is
+// deliberately NOT attached as `cause`: a cause chain is stringified by enough
+// loggers that keeping it would re-open the same leak one indirection later.
 function readPemMaterial(value: string): string {
   if (value.includes("-----BEGIN")) {
     return value;
   }
-  return fs.readFileSync(value, "utf8");
+  try {
+    return fs.readFileSync(value, "utf8");
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code ?? "unknown error";
+    throw new Error(
+      `Could not read the JWT signing key: the configured value carries no PEM armor, ` +
+        `so it was treated as a filesystem path and reading it failed with ${code} ` +
+        `(${Buffer.byteLength(value, "utf8")} bytes supplied). Point SN_JWT_KEY at a ` +
+        `readable .pem file, or supply the key inline including its ` +
+        `"-----BEGIN ... PRIVATE KEY-----" lines. The value itself is withheld from ` +
+        `this message because it may be the key.`
+    );
+  }
 }
 
 // Translate resolved credentials into the transport-level auth descriptor the
