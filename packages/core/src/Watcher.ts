@@ -13,10 +13,13 @@ import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
 const { debounce } = lodash;
 const DEBOUNCE_MS = 300;
-// Self-driving retry backoff for a failed batch. A rejected push requeues its
-// files, but nothing guarantees another fs event will ever arrive to drive the
-// next drain — so the requeued changes would strand indefinitely. Instead the
-// drain schedules its own retry on a capped exponential backoff.
+// Self-driving retry backoff for a failed batch. A failed push requeues its
+// files — whether the drain THREW or pushFiles RESOLVED per-record failures
+// (pushRec converts every transport/HTTP error into a resolved
+// { success: false } result, so the common failure mode never throws) — but
+// nothing guarantees another fs event will ever arrive to drive the next
+// drain, so the requeued changes would strand indefinitely. Instead the drain
+// schedules its own retry on a capped exponential backoff.
 const RETRY_BASE_MS = 500;
 const MAX_RETRY_MS = 30_000;
 let pushQueue: string[] = [];
@@ -29,6 +32,22 @@ let processing = false;
 // keep firing retries or carry a stale backoff into the next failure.
 let retryTimer: NodeJS.Timeout | undefined = undefined;
 let retryAttempt = 0;
+
+// Arms the self-driving retry on the capped exponential backoff. Guarded
+// against stacking so overlapping failures schedule at most one pending retry.
+const scheduleRetry = (): void => {
+  if (retryTimer) {
+    return;
+  }
+  const delay = Math.min(RETRY_BASE_MS * 2 ** retryAttempt, MAX_RETRY_MS);
+  retryAttempt += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined;
+    void drainQueue();
+  }, delay);
+  // A pending retry must not by itself keep the Node process alive.
+  retryTimer.unref();
+};
 
 const drainQueue = async (): Promise<void> => {
   if (processing) {
@@ -59,32 +78,66 @@ const drainQueue = async (): Promise<void> => {
       // each drain routes to the current record. A transient read failure
       // preserves the existing manifest (see ConfigManager.reloadManifest).
       await ConfigManager.reloadManifest();
-      const fileContexts = toProcess
-        .map(getFileContextFromPath)
-        .filter((ctx): ctx is Sync.FileContext => !!ctx);
+      const pathContexts: { queuedPath: string; ctx: Sync.FileContext }[] = [];
+      for (const queuedPath of toProcess) {
+        const ctx = getFileContextFromPath(queuedPath);
+        if (ctx) {
+          pathContexts.push({ queuedPath, ctx });
+        }
+      }
+      const fileContexts = pathContexts.map((pc) => pc.ctx);
       const buildables = groupAppFiles(fileContexts);
       const contextByBuildable = new Map<string, Sync.FileContext>();
-      for (const ctx of fileContexts) {
+      // Queued paths per record, so a record whose push failed can requeue
+      // exactly the files that produced it instead of the whole batch.
+      const pathsByBuildable = new Map<string, string[]>();
+      for (const { queuedPath, ctx } of pathContexts) {
         const key = `${ctx.tableName}-${ctx.sys_id}`;
         if (!contextByBuildable.has(key)) {
           contextByBuildable.set(key, ctx);
         }
+        const paths = pathsByBuildable.get(key);
+        if (paths) {
+          paths.push(queuedPath);
+        } else {
+          pathsByBuildable.set(key, [queuedPath]);
+        }
       }
 
       const updateResults = await pushFiles(buildables);
+      const failedPaths: string[] = [];
       updateResults.forEach((res, index) => {
         const buildable = buildables[index];
         if (!buildable) {
           return;
         }
 
-        const ctx = contextByBuildable.get(`${buildable.table}-${buildable.sysId}`);
+        const key = `${buildable.table}-${buildable.sysId}`;
+        const ctx = contextByBuildable.get(key);
         if (ctx) {
           logFilePush(ctx, res);
         }
+        if (!res.success) {
+          failedPaths.push(...(pathsByBuildable.get(key) ?? []));
+        }
       });
-      // Batch pushed successfully — nothing to requeue if a later batch fails.
+      // Batch handed off — a later batch's throw must not requeue it
+      // wholesale; per-record failures are requeued selectively below.
       inFlight = [];
+      if (failedPaths.length > 0) {
+        // pushFiles RESOLVES per-record failures (pushRec converts every
+        // transport/HTTP error into a { success: false } result), so the
+        // common failure mode — instance unreachable, expired auth, 5xx —
+        // never reaches the catch below. Requeue the failed files and drive
+        // the same backoff ladder; otherwise those changes would be dropped
+        // until the user happens to re-save the file.
+        pushQueue = Array.from(new Set([...failedPaths, ...pushQueue]));
+        logger.warn(
+          `${failedPaths.length} file(s) failed to push — retrying automatically.`
+        );
+        scheduleRetry();
+        return;
+      }
     }
     // Full, failure-free drain: reset the backoff ladder and cancel any pending
     // self-driving retry — the queue is empty, so there is nothing left to
@@ -109,18 +162,8 @@ const drainQueue = async (): Promise<void> => {
     logger.error("Watcher queue processing failed");
     logger.error(message);
     // Drive the next drain ourselves: without a guaranteed future fs event the
-    // requeued batch would otherwise never be retried. Guard against stacking
-    // so overlapping failures schedule at most one pending retry.
-    if (!retryTimer) {
-      const delay = Math.min(RETRY_BASE_MS * 2 ** retryAttempt, MAX_RETRY_MS);
-      retryAttempt += 1;
-      retryTimer = setTimeout(() => {
-        retryTimer = undefined;
-        void drainQueue();
-      }, delay);
-      // A pending retry must not by itself keep the Node process alive.
-      retryTimer.unref();
-    }
+    // requeued batch would otherwise never be retried.
+    scheduleRetry();
   } finally {
     processing = false;
   }
@@ -205,6 +248,9 @@ export async function stopWatching(): Promise<void> {
     retryTimer = undefined;
   }
   retryAttempt = 0;
+  // Drop queued/requeued paths as well: a watcher restarted in the same
+  // process must not push stale changes from the previous session.
+  pushQueue = [];
   if (watcher) {
     const current = watcher;
     watcher = undefined;

@@ -54,6 +54,17 @@ jobs:
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=high
 
+      # `changeset publish` creates ANNOTATED tags (`git tag -m`), which need a
+      # committer identity. Runners have none, so the tag call fails inside
+      # changesets — which swallows the exit code and still prints "New tag:" —
+      # and the tag-push step then truthfully reports "Everything up-to-date".
+      # This is why 0.9.0 and 0.9.1 shipped without per-package tags.
+      - name: Configure git identity for release tags
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       # Real publish path: tag pushes (the `inputs` context is empty there, so
       # the event-name guard decides) and dispatches that explicitly untick
       # dry_run. `inputs.dry_run` is a real boolean on workflow_dispatch, so

@@ -4,6 +4,7 @@ import { createFsFromVolume, Volume } from "memfs";
 import webpack from "webpack";
 import path from "path";
 import fs from "fs";
+import { pathToFileURL } from "url";
 interface webpackPluginOpts {
   configGenerator?: (context: Sync.FileContext) => webpack.Configuration;
   webpackConfig?: webpack.Configuration;
@@ -82,17 +83,22 @@ const run: Sync.PluginFunc = async function (
     });
   }
   function getWebpackConfigPath() {
-    const pathChunks = context.filePath.split(path.sep);
-    pathChunks.pop();
-    pathChunks.push("webpack.config.js");
-    return path.sep + path.join(...pathChunks);
+    // Deriving this by splitting on path.sep and prepending path.sep mangled
+    // every native-Windows path (C:\a\entry.js -> \C:\a\webpack.config.js) and
+    // any win32 path using forward slashes (-> \webpack.config.js).
+    return path.join(path.dirname(context.filePath), "webpack.config.js");
   }
   async function loadWebpackConfig(): Promise<unknown> {
     const configPath = getWebpackConfigPath();
     try {
       // Deliberately untyped: webpack.config.js is authored by the user and may
       // export any of the shapes webpack's CLI accepts, not just a plain object.
-      const config: unknown = (await import(configPath)).default;
+      // Import via a file:// URL: a raw absolute Windows path is not a valid
+      // import specifier (the drive letter parses as a URL scheme), while the
+      // not-found error message still names the plain path, so isConfigAbsent
+      // keeps matching.
+      const config: unknown = (await import(pathToFileURL(configPath).href))
+        .default;
       return config;
     } catch (e) {
       if (isConfigAbsent(e, configPath)) {
