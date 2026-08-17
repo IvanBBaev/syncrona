@@ -31,13 +31,56 @@ export const withRetry = async <T>(
   throw lastError;
 };
 
+// The extension a field wears locally is NOT fixed to the manifest's `type`.
+// The push side is the proof: getFileContextFromPath resolves a local path to a
+// field by stripping WHATEVER extension it carries and reading the stem, and
+// getBuildExt then compiles that source back to the manifest type on the way
+// out. So a TypeScript workspace legitimately keeps `script.ts` for a field the
+// instance stores as `js`, and that file IS the field's local representation.
+//
+// Comparison is in the same canonical form repairCommand uses for record names.
+// The exact-path probe below is an fsp.stat, which is case-insensitive on APFS
+// and NTFS and normalization-insensitive on HFS+ — a listing scan that folded
+// differently would make the two halves of one predicate disagree about when two
+// names are "the same name". `toLowerCase`, never `toLocaleLowerCase`: the
+// latter is locale-dependent (Turkish dotless ı).
+const canonicalStem = (name: string): string =>
+  name.normalize("NFC").toLowerCase();
+
+// The file already representing `fieldName` in `parentDirPath`, whatever
+// extension it carries, or undefined when the field has no local file at all.
+//
+// Matching is on the STEM and nothing looser. A prefix regex like /^name\..*$/
+// was tried once and wrongly claimed files that merely share the start of the
+// stem (field `foo` matching `foo.min.js`), reporting them as present and
+// skipping a real download. Stem equality rejects those (`foo.min` !== `foo`)
+// while still accepting dot-walked field names (`inputs.script.js` ->
+// `inputs.script`) and the DX17 flat stem (`<record>~<field>`). Entries with no
+// extension are skipped outright: the writer always produces `<name>.<type>`
+// with a non-empty type, so a bare directory named like a field is not a
+// representation of it.
+export const findFieldRepresentation = async (
+  parentDirPath: string,
+  fieldName: string
+): Promise<string | undefined> => {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(parentDirPath);
+  } catch (_) {
+    return undefined;
+  }
+  const wanted = canonicalStem(fieldName);
+  return entries.find((entry) => {
+    const ext = path.extname(entry);
+    return ext !== "" && canonicalStem(path.basename(entry, ext)) === wanted;
+  });
+};
+
 export const SNFileExists = (parentDirPath: string) => async (
   file: SN.File
 ): Promise<boolean> => {
-  // Check for the exact file the writer produces (`<name>.<type>`). A prefix
-  // regex like /^name\..*$/ also matched unrelated files that merely share the
-  // stem (e.g. field `foo` matching `foo.min.js`), wrongly reporting them as
-  // already present and skipping the real download.
+  // Check for the exact file the writer produces (`<name>.<type>`) first: it is
+  // one stat, it is the overwhelmingly common answer, and it costs nothing.
   const expected = path.join(parentDirPath, `${file.name}.${file.type}`);
   try {
     await fsp.stat(expected);
@@ -59,7 +102,16 @@ export const SNFileExists = (parentDirPath: string) => async (
     // `syncrona download` force-writes every tracked field and heals them.
     return true;
   } catch (_) {
-    return false;
+    // Not under the manifest's own extension — but the field may still be on
+    // disk under the one the workspace actually edits it in.
+    //
+    // Answering "missing" here is what made `syncrona refresh` download
+    // `script.js` next to an existing `script.ts`: the probe could not see the
+    // TypeScript source, the refresh fetched the field, and the writer created a
+    // second file claiming it. The workspace then held two claimants for one
+    // field and the next `syncrona push` failed outright — groupAppFiles rejects
+    // that pair as an "Ambiguous push" — so the damage outlived the stray file.
+    return (await findFieldRepresentation(parentDirPath, file.name)) !== undefined;
   }
 };
 
@@ -167,14 +219,40 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
       }
       return await withRetry(() => fsp.writeFile(fullPath, content));
     };
-    if (checkExists) {
+  if (checkExists) {
     const exists = await SNFileExists(parentPath)(file);
     if (!exists) {
       await write();
     }
-  } else {
-    await write();
+    return;
   }
+  // Force write (`syncrona download`, and the wizard's first pull). Overwriting
+  // the field's OWN file is the whole point — that is how a half-written or
+  // legacy-placeholder workspace heals. Bringing a SECOND file for the same
+  // field into existence is not: `<field>.ts` and `<field>.js` side by side are
+  // two claimants for one field, which is exactly the state that makes the next
+  // push fail. Force therefore overwrites whenever `<name>.<type>` is the file
+  // on disk, and declines only when it would create the duplicate.
+  const target = path.join(parentPath, `${name}.${type}`);
+  if (!(await pathExists(target))) {
+    const representation = await findFieldRepresentation(parentPath, name);
+    if (representation !== undefined) {
+      // Name the kept file by its full path. A scope-wide download hits this
+      // branch once per affected record, and every record spells the field the
+      // same way ("script"), so a message built from `name` alone repeats
+      // verbatim N times and tells the user nothing about WHICH records to look
+      // at. The path is the only part that differs.
+      const kept = path.join(parentPath, representation);
+      logger.warn(
+        `Keeping local "${kept}" for field "${name}" — not writing ` +
+          `"${name}.${type}" beside it, because two files claiming one field make ` +
+          `the next push ambiguous. Delete "${kept}" first if you want ` +
+          `the downloaded ${type} version instead.`
+      );
+      return;
+    }
+  }
+  await write();
 };
 
 // DX17: write a record's field file in the flat layout — a single file named
@@ -237,7 +315,24 @@ export const isUnderPath = (
     p.split(/[/\\]/).filter((token) => token !== "");
   const parentTokens = splitSegments(parentPath);
   const childTokens = splitSegments(potentialChildPath);
-  return parentTokens.every((token, index) => token === childTokens[index]);
+  // Windows drive letters are case-insensitive device designators — "C:" and
+  // "c:" name the same volume, and mismatched casing between two absolute
+  // paths is routine there (VS Code's integrated terminal and Git Bash yield a
+  // lowercase drive in process.cwd() while configs carry uppercase). A strict
+  // compare made getPathsInPath refuse a legitimately in-tree path and return
+  // [], so push/build silently saw "no files". Fold ONLY the leading token and
+  // ONLY when both sides are pure drive designators (^[A-Za-z]:$): directory
+  // names keep byte equality — node:path never case-folds names either, and
+  // NTFS case handling is a filesystem property, not a path-semantics one.
+  const isDriveToken = (token: string | undefined): token is string =>
+    typeof token === "string" && /^[A-Za-z]:$/.test(token);
+  return parentTokens.every((token, index) => {
+    const childToken = childTokens[index];
+    if (index === 0 && isDriveToken(token) && isDriveToken(childToken)) {
+      return token.toLowerCase() === childToken.toLowerCase();
+    }
+    return token === childToken;
+  });
 };
 
 const getFileExtension = (filePath: string): string => {

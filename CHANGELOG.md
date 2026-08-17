@@ -227,6 +227,30 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `refresh` no longer downloads a `.js` file for a field the workspace already
+  keeps as `.ts` (or any other extension a plugin rule maps to). The
+  missing-file probe compared only against the exact `<field>.<manifest type>`
+  path, but the push side has always resolved a local file to a field by
+  stripping *whatever* extension it carries and compiling it back to the
+  manifest type on the way out — so on a TypeScript workspace `script.ts` was
+  invisible, the field was reported missing, and the writer created `script.js`
+  beside it. The stray file was only half the damage: two files claiming one
+  field is exactly what `groupAppFiles` rejects as an "Ambiguous push", so the
+  next `push` failed outright until the file was deleted by hand. The probe now
+  falls back to a stem match over the record directory (canonicalised the same
+  way `repair` canonicalises record names, so both halves agree about when two
+  names are the same name), and a forced write — `download`, and the wizard's
+  first pull — declines to create a second claimant and names, by full path, the
+  local file it kept: a scope-wide download hits that branch once per affected
+  record and every record spells the field the same way, so a message built from
+  the field name alone repeated verbatim and identified nothing. Forced writes
+  still overwrite the field's *own* file, so a half-written workspace heals as
+  before.
+- `push` now names every field claimed by more than one local file instead of
+  aborting on the first pair it meets. A workspace acquires these in bulk — the
+  refresh bug above left one downloaded copy per TypeScript-backed field — so a
+  message naming a single pair turned the cleanup into one failed push per file.
+  All claimants of a field are listed too, not just the first two.
 - A tracked field whose value on the instance is legitimately empty now
   converges. The download wrote it as a zero-byte file, and `SNFileExists` read
   zero bytes as "placeholder, not fetched yet", so every later refresh reported

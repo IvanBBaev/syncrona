@@ -28,6 +28,24 @@ export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
   // file (O(n²) in file count). `cur` is always a defined FileContext here, so
   // the old `cur ?? ""` fallback was dead code (and the wrong type).
   const combinedFiles: Record<string, Sync.BuildableRecord> = {};
+  // Two distinct files resolving to the SAME record+field is ambiguous, and the
+  // plain assignment silently kept whichever came last. That happens for real
+  // when a workspace holds both layouts of one field (DX17 flat
+  // `<record>~<field>.js` next to a leftover folder `<record>/<field>.js`), and
+  // it happened wholesale to workspaces refreshed before the download side
+  // learned that a field's local file is not tied to the manifest's `type` —
+  // every TypeScript-backed field got a downloaded `.js` copy written beside the
+  // `.ts` the workspace edits. Either way the loser's edits were dropped and the
+  // winner depended on directory iteration order, so the same push could upload
+  // different bytes on different machines. Fail loudly instead of guessing.
+  //
+  // Every conflict is collected before throwing, rather than throwing on the
+  // first pair. A workspace that acquired these in bulk has one per affected
+  // field, and a message naming only the first turns the cleanup into one failed
+  // push per file. Distinct paths only: getAppFileList can legitimately hand the
+  // same path twice (two globs, one file), which is not a conflict.
+  const claimants = new Map<string, string[]>();
+  const fieldOrder: string[] = [];
   for (const cur of fileCtxs) {
     const { tableName, targetField, sys_id } = cur;
     const key = `${tableName}-${sys_id}`;
@@ -36,20 +54,42 @@ export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
       entry = { table: tableName, sysId: sys_id, fields: {} };
       combinedFiles[key] = entry;
     }
-    // Two distinct files resolving to the SAME record+field is ambiguous, and
-    // the plain assignment silently kept whichever came last. That happens for
-    // real when a workspace holds both layouts of one field (DX17 flat
-    // `<record>~<field>.js` next to a leftover folder `<record>/<field>.js`):
-    // the loser's edits were dropped and the winner depended on directory
-    // iteration order, so the same push could upload different bytes on
-    // different machines. Fail loudly instead of guessing.
-    const existing = entry.fields[targetField];
-    if (existing && existing.filePath !== cur.filePath) {
-      throw new Error(
-        `Ambiguous push: "${tableName}" record ${sys_id} field "${targetField}" is claimed by two local files:\n  ${existing.filePath}\n  ${cur.filePath}\nDelete the stale copy (they are the same field in different layouts) and retry.`
-      );
+    const fieldKey = `${key}-${targetField}`;
+    let paths = claimants.get(fieldKey);
+    if (!paths) {
+      paths = [];
+      claimants.set(fieldKey, paths);
+      // First-seen order, so the report reads in the order the caller supplied.
+      fieldOrder.push(fieldKey);
+    }
+    if (!paths.includes(cur.filePath)) {
+      paths.push(cur.filePath);
     }
     entry.fields[targetField] = cur;
+  }
+
+  const ambiguous = fieldOrder
+    .map((fieldKey) => ({ fieldKey, paths: claimants.get(fieldKey) as string[] }))
+    .filter(({ paths }) => paths.length > 1);
+  if (ambiguous.length > 0) {
+    // Re-derive the human parts from the contexts rather than by splitting the
+    // key: a table name or field name containing "-" would split wrongly.
+    const describe = ({ fieldKey, paths }: { fieldKey: string; paths: string[] }) => {
+      const ctx = fileCtxs.find(
+        (c) => `${c.tableName}-${c.sys_id}-${c.targetField}` === fieldKey
+      ) as Sync.FileContext;
+      return (
+        `  "${ctx.tableName}" record ${ctx.sys_id} field "${ctx.targetField}":\n` +
+        paths.map((p) => `    ${p}`).join("\n")
+      );
+    };
+    throw new Error(
+      `Ambiguous push: ${ambiguous.length} record field(s) are claimed by more than one local file.\n` +
+        ambiguous.map(describe).join("\n") +
+        "\nEach field can be pushed from exactly one file. Delete the stale copies — " +
+        "they are the same field in two layouts, or a downloaded copy sitting next to " +
+        "the source you actually edit — and retry."
+    );
   }
   return Object.values(combinedFiles);
 };
