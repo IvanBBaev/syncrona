@@ -477,6 +477,14 @@ All notable changes to this project will be documented in this file.
   gate's own procedure the second reading is declared rather than chased with a
   test, lower value first so the headroom audit keeps checking the floor
   against the conservative measurement.
+- The core per-file coverage annotations were re-recorded after the `.meta.json`
+  sidecar landed: `FileUtils` 98.32 / 92.53 to 98.34 / 92.75, `pushPipeline`
+  96.03 / 79.16 to 96.55 / 81.03, `downloadPipeline` 97.87 / 84.61 to 97.95 /
+  84.53, `manifestBuilder` 93.86 / 82.37 to 94.26 / 83.43 and `repairCommand`
+  96.61 / 93.67 to 96.66 / 93.82. Both legs of the CI matrix print the same new
+  pairs. Only the comments moved — every floor stayed where it was, and the
+  widest headroom this leaves is `manifestBuilder`'s 6.43 branch points, inside
+  the 8-point ceiling the floor audit enforces.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
