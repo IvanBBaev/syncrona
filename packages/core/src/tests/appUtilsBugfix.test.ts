@@ -240,11 +240,14 @@ describe("appUtils critical bugfixes", () => {
     // The 4th argument is the manifest's own record names (table -> sys_id -> name):
     // the fallback must write each record at the path the manifest already claims,
     // not at a name re-derived from the row it just fetched.
+    // The 5th (DX22) is the manifest's metaFields per table — empty here, because
+    // this manifest carries no metadata layer.
     expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledWith(
       expect.objectContaining({ sys_script: expect.anything() }),
       expect.anything(),
       {},
-      expect.objectContaining({ sys_script: { abc: "rec1" } })
+      expect.objectContaining({ sys_script: { abc: "rec1" } }),
+      {}
     );
   });
 

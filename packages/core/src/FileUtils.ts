@@ -6,6 +6,7 @@ import path from "path";
 import * as ConfigManager from "./config.js";
 import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout.js";
 import { isSafePathComponent } from "./genericUtils.js";
+import { META_FILE_NAME, isMetaSidecarPath } from "./metaFields.js";
 import { logger } from "./Logger.js";
 
 const sleep = (ms: number): Promise<void> =>
@@ -331,6 +332,21 @@ export const getFileContextFromPath = (
     const segments = filePath.split(/[/\\]/).filter((token) => token !== "");
     [tableName, recordName] = segments.slice(-3, -1);
     targetField = getTargetFieldFromPath(filePath, tableName, ext);
+  }
+  // DX22: the sidecar is identified by its FILE NAME, overriding whatever the
+  // branches above derived. Both of them happen to reach ".meta" on an ordinary
+  // table, but `sys_atf_step` forces every field to the dot-walked "inputs.script"
+  // — so on that table a sidecar would otherwise resolve to the ATF step's script
+  // and a push would overwrite it with the sidecar's JSON. Keying on the path
+  // instead of on the derived name keeps the sidecar independent of both layouts
+  // and of every per-table special case.
+  //
+  // ".meta" is a real entry in `record.files`, so the lookup below finds it and
+  // hands push and build a context for the pseudo-field. Nothing ever PATCHes a
+  // column literally named ".meta": pushPipeline expands that context into the
+  // record's actual columns (see expandMetaSidecar).
+  if (isMetaSidecarPath(filePath)) {
+    targetField = META_FILE_NAME;
   }
   const manifest = ConfigManager.getManifest();
   if (!manifest) {

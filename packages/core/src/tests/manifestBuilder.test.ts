@@ -568,7 +568,14 @@ describe("manifestBuilder", () => {
         return { data: { result: [{ sys_class_name: "sys_atf_step" }] } };
       }
       if (table === "sys_dictionary") {
-        throw new Error("sys_dictionary should not be queried for sys_atf_step");
+        // File-field discovery is what must not happen here: the ATF step script
+        // lives in the dot-walked `inputs.script`, which the dictionary does not
+        // describe. DX22's metadata discovery is a separate, wider query and is
+        // allowed — sys_atf_step's own columns are ordinary dictionary columns.
+        if (String(_query).includes("internal_type=")) {
+          throw new Error("sys_dictionary should not be queried for sys_atf_step");
+        }
+        return { data: { result: [{ element: "order", internal_type: "integer" }] } };
       }
       if (table === "sys_atf_step") {
         return {
@@ -594,9 +601,11 @@ describe("manifestBuilder", () => {
 
     expect(manifest.tables.sys_atf_step).toBeDefined();
     const rec = Object.values(manifest.tables.sys_atf_step.records)[0];
-    expect(rec.files).toEqual([{ name: "inputs.script", type: "js" }]);
-    const queriedDictionary = tableAPIGet.mock.calls.some((call) => call[0] === "sys_dictionary");
-    expect(queriedDictionary).toBe(false);
+    expect(rec.files).toContainEqual({ name: "inputs.script", type: "js" });
+    const queriedFileDictionary = tableAPIGet.mock.calls.some(
+      (call) => call[0] === "sys_dictionary" && String(call[1]).includes("internal_type=")
+    );
+    expect(queriedFileDictionary).toBe(false);
   });
 
   it("queries dictionary across table hierarchy (table + ancestors)", async () => {

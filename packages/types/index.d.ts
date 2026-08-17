@@ -32,6 +32,16 @@ export namespace Sync {
     refreshInterval: number;
     /** DX17: store records as a flat <table>/<record>~<field>.<ext> tree. */
     flat?: boolean;
+    /**
+     * Write a `.meta.json` sidecar next to every record's field files, holding
+     * the record's non-file columns. Defaults to true; set false to opt out.
+     */
+    meta?: boolean;
+    /**
+     * Push local edits to a `.meta.json` sidecar back to the instance. Defaults
+     * to true; set false to keep the sidecar as read-only reference data.
+     */
+    metaPush?: boolean;
   }
 
   interface ITableOptionsMap {
@@ -42,6 +52,11 @@ export namespace Sync {
     displayField?: string;
     differentiatorField?: string | string[];
     query: string;
+    /**
+     * Explicit sidecar columns for this table. Replaces dictionary discovery,
+     * so it can also re-add a column the default rules exclude.
+     */
+    metaFields?: string[];
   }
 
   interface FieldConfig {
@@ -178,6 +193,18 @@ export namespace SN {
 
   interface TableConfig {
     records: TableConfigRecords;
+    /**
+     * Columns serialized into each record's `.meta.json` sidecar. Absent when
+     * the manifest carries no metadata layer (scoped-endpoint manifests, or
+     * `meta: false`), in which case no record lists the sidecar pseudo-file.
+     */
+    metaFields?: string[];
+    /**
+     * The subset of `metaFields` the dictionary marks read-only or virtual.
+     * Written into the sidecar for reading, never sent back by a push — the
+     * Table API would accept and discard them and still answer 200.
+     */
+    metaReadOnlyFields?: string[];
   }
 
   interface TableConfigRecords {
@@ -209,7 +236,7 @@ export namespace SN {
     result: Record[];
   }
 
-  type FileType = "js" | "css" | "xml" | "html" | "scss" | "txt";
+  type FileType = "js" | "css" | "xml" | "html" | "scss" | "txt" | "json";
 
   interface TypeMap {
     [type: string]: string;

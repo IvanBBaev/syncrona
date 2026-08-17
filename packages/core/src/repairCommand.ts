@@ -7,6 +7,7 @@ import * as ConfigManager from "./config.js";
 import * as AppUtils from "./appUtils.js";
 import * as FileUtils from "./FileUtils.js";
 import { isFlatEncoded, FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
+import { isMetaSidecarPath } from "./metaFields.js";
 import { logger } from "./Logger.js";
 import { formatTable } from "./genericUtils.js";
 import { setLogLevel, logErrorHint } from "./commandHelpers.js";
@@ -140,6 +141,15 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   const orphans: string[] = [];
   const encodingMismatches: string[] = [];
   for (const file of allFiles) {
+    // DX22: a `.meta.json` sidecar is tracked but deliberately unmapped —
+    // getFileContextFromPath disowns it so push can never target it, which is
+    // exactly the signature this scan reads as "orphan". In the nested layout
+    // the shape filter already hides it (dot-prefixed segment); in the flat
+    // layout `<record>~.meta.json` is an ordinary file name, so without this
+    // `repair --apply --prune` would delete every sidecar it just downloaded.
+    if (isMetaSidecarPath(file)) {
+      continue;
+    }
     if (
       !isManifestShapedPath(sourcePath, file) ||
       FileUtils.getFileContextFromPath(file) !== undefined

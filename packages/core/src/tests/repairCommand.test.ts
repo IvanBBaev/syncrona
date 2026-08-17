@@ -210,6 +210,23 @@ describe("report output", () => {
     expect(successSpy).not.toHaveBeenCalled();
   });
 
+  // DX22: `<record>~.meta.json` is a perfectly ordinary file name in the flat
+  // layout, and the push-side lookup deliberately disowns the sidecar — which is
+  // precisely the signature of an orphan. Without the sidecar filter,
+  // `repair --apply --prune` would delete a tracked file on every run.
+  it("does not report a metadata sidecar as an orphan", async () => {
+    getPathsInPath.mockResolvedValue([
+      "/src/sys_script_include/MyUtil/.meta.json",
+      "/src/sys_script_include/MyUtil~.meta.json",
+    ]);
+    getFileContextFromPath.mockReturnValue(undefined);
+
+    await repairCommand({ logLevel: "info" } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("0 orphan file(s)");
+    expect(messageWith(infoSpy, "Orphans")).toBeUndefined();
+  });
+
   it("tables each missing record with the number of files it is short of", async () => {
     findMissingFiles.mockResolvedValue({
       sys_script: { sysA: [{ name: "script", type: "js" }] },

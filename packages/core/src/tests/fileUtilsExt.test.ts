@@ -109,6 +109,68 @@ describe("getFileContextFromPath extension handling", () => {
     expect(ctx?.targetField).toBe("script");
     expect(ctx?.sys_id).toBe("def456");
   });
+
+  // DX22: the sidecar rides the manifest as the pseudo-file `.meta`, and the
+  // push side expands that pseudo-field back into real columns — so the lookup
+  // must resolve it, in both layouts, to the record that owns it.
+  it.each([
+    ["nested", path.join("/proj/src/sys_script_include/MyUtil", ".meta.json")],
+    ["flat", path.join("/proj/src/sys_script_include", "MyUtil~.meta.json")],
+  ])("resolves the %s metadata sidecar to the .meta pseudo-field", (_layout, filePath) => {
+    getManifest.mockReturnValue({
+      scope: "x_test_app",
+      tables: {
+        sys_script_include: {
+          metaFields: ["api_name"],
+          records: {
+            MyUtil: {
+              sys_id: "def456",
+              files: [
+                { name: "script", type: "js" },
+                { name: ".meta", type: "json" },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    const ctx = getFileContextFromPath(filePath);
+
+    expect(ctx?.targetField).toBe(".meta");
+    expect(ctx?.tableName).toBe("sys_script_include");
+    expect(ctx?.name).toBe("MyUtil");
+    expect(ctx?.sys_id).toBe("def456");
+  });
+
+  // The sidecar is keyed on the FILE NAME, not on the field name either layout
+  // derives — because on sys_atf_step both branches force the dot-walked
+  // "inputs.script". Resolving the sidecar through that path would make a push
+  // overwrite the ATF step's script with the sidecar's JSON.
+  it.each([
+    ["nested", path.join("/proj/src/sys_atf_step/Step1", ".meta.json")],
+    ["flat", path.join("/proj/src/sys_atf_step", "Step1~.meta.json")],
+  ])("does not resolve the %s sys_atf_step sidecar to inputs.script", (_layout, filePath) => {
+    getManifest.mockReturnValue({
+      scope: "x_test_app",
+      tables: {
+        sys_atf_step: {
+          metaFields: ["order"],
+          records: {
+            Step1: {
+              sys_id: "atf789",
+              files: [
+                { name: "inputs.script", type: "js" },
+                { name: ".meta", type: "json" },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(getFileContextFromPath(filePath)?.targetField).toBe(".meta");
+  });
 });
 
 describe("SNFileExists regex safety", () => {
