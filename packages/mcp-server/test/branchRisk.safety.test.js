@@ -351,3 +351,73 @@ test('scope discovery returns an empty graph when the workspace has no src/ dire
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// REV-213. Pins: the two exported twins must answer a workspace the same way. The
+// test above already pins the "no src/ at all" shape; this one pins the shape that
+// gets PAST `existsSync(sourceDir)` and then cannot be listed, which is where the two
+// disagreed. `discoverWorkspaceScopeKnowledgeAsync` wrapped its `readdir` in a
+// try/catch and continued; the sync twin called `readdirSync` bare in the `for...of`
+// header — the one unguarded fs call in a walk whose `statSync` and `readFileSync`
+// were both already best-effort — so it threw ENOTDIR out of `sync_scope_knowledge`,
+// a READ path, instead of reporting the entities it could see.
+//
+// The stake is not the exception type: it is that which of the two exported entry
+// points a caller happens to use decided whether a legal-but-awkward working tree
+// produced a graph or a filesystem error the user cannot act on.
+test('scope discovery degrades to an empty graph when src/ exists but cannot be listed', async () => {
+  const dir = mkTmpDir('syncrona-unlistable-src-');
+  try {
+    // `src` present as a regular file is the reproducible stand-in for the real
+    // cases (a `src` symlink to a file, a directory whose read bit was stripped, a
+    // subdirectory removed after the walk pushed it onto its stack): `existsSync`
+    // says yes, `readdirSync` raises ENOTDIR.
+    fs.writeFileSync(path.join(dir, 'src'), 'not a directory\n', 'utf-8');
+
+    const sync = discoverWorkspaceScopeKnowledge(dir);
+    assert.deepEqual(sync.entities, [], 'sync: an unlistable src/ must not throw');
+    assert.deepEqual(sync.graph, { nodes: [], edges: [] });
+
+    const async_ = await discoverWorkspaceScopeKnowledgeAsync(dir, {});
+    assert.deepEqual(async_, sync, 'the two twins must agree on this workspace');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REV-213 companion: the guard must skip only the directory it could not list, not
+// abandon the walk. Without this, "make readdirSync best-effort" could be satisfied
+// by a `return` (as the recursive walkers in analysis/semantic.ts legitimately use)
+// instead of the `continue` this stack-based loop needs — and every entity queued
+// behind the bad directory would silently vanish from the graph.
+test('scope discovery skips only the directory it cannot list and still reports its siblings', async () => {
+  const dir = mkTmpDir('syncrona-partial-src-');
+  try {
+    const srcDir = path.join(dir, 'src');
+    fs.mkdirSync(path.join(srcDir, 'good'), { recursive: true });
+    fs.writeFileSync(
+      path.join(srcDir, 'good', 'incident.js'),
+      'var gr = new GlideRecord("incident");\n',
+      'utf-8'
+    );
+    // A dangling symlink that stats as absent: the walk lists it, cannot stat it, and
+    // must step over it. Its sibling is the thing that must survive.
+    fs.symlinkSync(path.join(srcDir, 'never-existed'), path.join(srcDir, 'ghost'));
+
+    const sync = discoverWorkspaceScopeKnowledge(dir);
+    assert.equal(
+      sync.entities.some((e) => e.path === 'src/good/incident.js'),
+      true,
+      'sync: the readable sibling must still be discovered'
+    );
+    assert.equal(
+      sync.graph.nodes.some((n) => n.id === 'table:incident'),
+      true,
+      'sync: the GlideRecord table edge must still be built'
+    );
+
+    const async_ = await discoverWorkspaceScopeKnowledgeAsync(dir, {});
+    assert.deepEqual(async_, sync, 'the two twins must agree on this workspace');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

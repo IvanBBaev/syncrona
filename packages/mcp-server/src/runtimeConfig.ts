@@ -12,9 +12,17 @@ export const SERVER_NAME = "syncrona-mcp-server";
 // while the package was at 0.9.1, so every client was told the wrong version for
 // eight minor releases. Same defect, same fix as `syncrona --version` in 0.9.1.
 // The compiled file lives in dist/, so `..` is the package root.
-function resolveServerVersion(): string {
+//
+// REV-213: `pkgPath` is a parameter (production calls the zero-argument form) for the
+// same reason `now` is one in audit.ts and metricsStore.ts — with the path baked in, the
+// only manifest this function could ever read was the one that happens to sit next to the
+// build, so both fallback arms were decided by the shape of the checkout rather than by a
+// test. They are not decoration: this value is what every MCP client is told in the
+// `initialize` handshake, and it is the arm that has to say "unknown" instead of a guess.
+export function resolveServerVersion(
+  pkgPath: string = path.join(__dirname, "..", "package.json")
+): string {
   try {
-    const pkgPath = path.join(__dirname, "..", "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: unknown };
     if (typeof pkg.version === "string" && pkg.version.length > 0) {
       return pkg.version;

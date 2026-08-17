@@ -686,13 +686,7 @@ export function writeAuditEvent(
         const dir = path.dirname(auditFile);
         const ext = path.extname(auditFile);
         const base = path.basename(auditFile, ext);
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        let rotatedPath = path.join(dir, `${base}.${stamp}${ext}`);
-        let suffix = 0;
-        while (existsSync(rotatedPath)) {
-          suffix += 1;
-          rotatedPath = path.join(dir, `${base}.${stamp}.${suffix}${ext}`);
-        }
+        const rotatedPath = toRotatedAuditPath(auditFile);
         renameSync(auditFile, rotatedPath);
         pruneRotatedAuditFiles(dir, base, ext, maxBackups);
         // Fresh active file: reset the high-water so a failed append below cannot leave a
@@ -747,18 +741,42 @@ export function writeAuditEvent(
   }
 }
 
-function toCorruptAuditPath(auditFile: string): string {
+// CONC-3 follow-up (REV-205). Both ways this module retires a log — rotation on size, and
+// quarantine on corruption — name the retired file after the instant it was retired, and
+// both therefore collide when the same file is retired twice inside one millisecond. The
+// loop below is the only thing standing between such a collision and `renameSync` writing
+// the second file on top of the first, i.e. destroying exactly the history the audit log
+// exists to keep. This used to be two copies of the same block, so it is now one.
+//
+// `now` is a parameter rather than an embedded `new Date()` because the collision arm was
+// otherwise unreachable on purpose: whether it ran came down to how fast the machine
+// happened to execute a test that retires the same file repeatedly, and `dist/audit.js`
+// duly reported 96.57 / 92.12 on some runs of an unchanged tree and 96.25 / 91.70 on
+// others. Production still calls the one-argument form; only the tests pass an instant.
+function withCollisionSuffix(auditFile: string, infix: string, now: Date): string {
   const dir = path.dirname(auditFile);
   const ext = path.extname(auditFile);
   const base = path.basename(auditFile, ext);
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  let candidate = path.join(dir, `${base}.corrupt.${stamp}${ext}`);
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  let candidate = path.join(dir, `${base}.${infix}${stamp}${ext}`);
   let suffix = 0;
   while (existsSync(candidate)) {
     suffix += 1;
-    candidate = path.join(dir, `${base}.corrupt.${stamp}.${suffix}${ext}`);
+    candidate = path.join(dir, `${base}.${infix}${stamp}.${suffix}${ext}`);
   }
   return candidate;
+}
+
+// `audit.log` -> `audit.<stamp>.log`, the name a size rotation retires the chain under.
+export function toRotatedAuditPath(auditFile: string, now: Date = new Date()): string {
+  return withCollisionSuffix(auditFile, "", now);
+}
+
+// `audit.log` -> `audit.corrupt.<stamp>.log`. `pruneCorruptAuditFiles` and
+// `pruneRotatedAuditFiles` both key off this `corrupt.` marker to tell the two kinds of
+// retired file apart, so the infix is load-bearing, not decoration.
+export function toCorruptAuditPath(auditFile: string, now: Date = new Date()): string {
+  return withCollisionSuffix(auditFile, "corrupt.", now);
 }
 
 // CONC-3 (REV-94): prune old `.corrupt.` quarantine files so a crash-loop that keeps

@@ -101,6 +101,37 @@ const COVERAGE_INCLUDE = 'dist/**';
 // The directory COVERAGE_INCLUDE scopes to, resolved against the gate's cwd.
 const COVERAGE_ROOT = 'dist';
 
+// Where the raw coverage report is persisted after a successful run, relative to
+// the gate's cwd (the package root). `coverage/` is gitignored, so this is a build
+// artifact and never committed.
+//
+// It exists so `scripts/check-coverage-annotations.mjs` can verify the
+// `// measured L / B` comments in MODULE_FLOORS against the SAME bytes this gate
+// just scored, instead of paying for a second full `node --test` run (or, worse,
+// inventing a second source of truth that could disagree with this one).
+//
+// Reading the same bytes is not a nicety here: two `node --test` runs over an
+// UNCHANGED tree do not always produce the same percentages (see the note above
+// MODULE_FLOORS), so a second run would be a second measurement, not a check of
+// this one. Keeping a report from a failed run would be worse still — hence
+// removeReportFile() below.
+const REPORT_FILE = path.join('coverage', 'coverage-report.txt');
+
+function writeReportFile(output, rootDir = process.cwd()) {
+  const target = path.join(rootDir, REPORT_FILE);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, output, 'utf-8');
+  return target;
+}
+
+// Drop the persisted report when a run does NOT produce a trustworthy one. Without
+// this, an aborted or failed run leaves the PREVIOUS run's file on disk, and a
+// downstream reader would happily judge today's tree against yesterday's numbers —
+// the exact "passes vacuously" failure these gates exist to prevent.
+function removeReportFile(rootDir = process.cwd()) {
+  fs.rmSync(path.join(rootDir, REPORT_FILE), { force: true });
+}
+
 // `toolSchemas` is ~1500 lines of a single top-level declarative object literal
 // (the MCP tool schema catalogue). V8's line coverage cannot mark the body of a
 // static data literal as executed — even a test that requires the module and
@@ -130,6 +161,12 @@ const COVERAGE_EXCLUDES = ['**/toolSchemas.ts', '**/toolSchemas.js'];
 // reported dist modules, the WEAKEST line coverage is 88.17%
 // (`semanticIndexState.js`), so 80 leaves ~8pts of headroom for legitimately-thin
 // new code while still failing a module that loses a third of its coverage.
+//
+// REV-213: that module is no longer the weakest — it measures 98.63 now that the
+// walk's skip/refusal arms and the in-flight build collapse are pinned. The floor
+// stays at 80 because the argument is unchanged, not because the number is: the
+// weakest reported module today is `analysis/scopeDiscovery.js` at 90.63, so the
+// same ~10pts of headroom still separates a thin file from a collapsing one.
 const PER_FILE_LINE_FLOOR = 80;
 
 // Per-file BRANCH floor. Lines alone hide the dangerous regression: deleting the
@@ -156,35 +193,79 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // A pattern that matches nothing in the report FAILS the gate (findStaleFloors): a
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
+//
+// Two entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
+// audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
+// 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
+// because V8 counted one extra range that was already being executed (226/244 vs 227/245;
+// 25/26 vs 26/27). No test can drive a range that is already covered, and both candidate
+// V8 flags were A/B tested and refuted, so the second value is DECLARED rather than
+// tolerated: exactly those two readings pass the annotations gate and a third is drift.
+// The LOWER reading is written first on purpose — the headroom audit in
+// test/coverageGatePerFile.test.js parses the first pair and ignores the rest, so the
+// floor is still checked against the conservative measurement.
+//
+// REV-213 raised three floors that had drifted 4-8 points below what their module
+// measures (processRunner, healthServer, safetyPolicy's branch floor); the measured
+// pairs beside them did not move, only the floors did. Each new floor sits 2.6-3.9
+// points under its measurement rather than flush against it, and the reason is the CI
+// matrix: these numbers were measured on macOS and the gate also runs on
+// ubuntu-latest. Every entry in this table is currently annotation-exact on BOTH
+// runners, so the two platforms do agree today — but agreement observed is not
+// agreement guaranteed, and a floor set flush turns the first one-branch difference
+// into a red build on a platform the author never ran. Three points is roughly one
+// branch in a 30-branch module: enough to absorb a granularity difference, far too
+// little to hide a test being deleted.
+//
+// The same pass then added the three entries in the last group below. Those modules had
+// NO named floor at all, so they were scored only by the 80/45 defaults — `runtimeConfig`
+// could have shed 42 branch points and still passed. They are sized by the same rule
+// (2.6-3.9 points under measurement) and for the same reason, which bites hardest here:
+// `runtimeConfig` resolves the package version by walking up from `__dirname`, and
+// `metricsStore` is all filesystem, so these two are exactly the kind of module whose
+// branch count can differ between the macOS and ubuntu-latest legs of the matrix.
 const MODULE_FLOORS = [
   // Guardrail evaluation and the mutating-tool policy: the fail-closed paths here
   // are the difference between a blocked and an executed write.
-  { pattern: 'dist/safetyPolicy.js', line: 97, branch: 94 }, // measured 99.48 / 97.60
+  { pattern: 'dist/safetyPolicy.js', line: 97, branch: 96 }, // measured 99.74 / 98.64
   { pattern: 'dist/policyConfig.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/createTablePolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/endpointPolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // Input validation is the injection/traversal boundary for every tool argument.
-  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.30 / 96.15
+  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.30 / 96.15 (also 99.30 / 96.30: V8 range granularity, 25/26 vs 26/27 branches, same uncovered lines)
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.33 / 91.74
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.83 / 92.62 (also 96.83 / 92.65: V8 range granularity, 226/244 vs 227/245 branches, same uncovered lines)
   // Preflight, dry-run and the mutating-tool wrappers.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.60 / 91.01
+  // The declared reading here runs the other way: 92.05 is what 61 of 62 runs print,
+  // and the odd one is LOWER. An extra range appeared that was NOT executing, so the
+  // denominator grew alone. The grammar still wants the lower value first, which is
+  // why the number you will almost always measure is the one in parentheses.
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.60 / 91.53 (also 92.60 / 92.05: V8 range granularity, 162/177 vs 162/176 branches, same uncovered lines; 162/176 measured from raw V8 data, the 177 denominator is the only pair within +-12 on both counters that renders 91.53)
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.22 / 95.65
   // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
   // local filesystem path.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.36 / 91.64
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.50 / 91.64
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
   { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.04 / 77.27
   // Anything that starts a process or a listener, plus the handlers that actually
   // mutate the instance.
-  { pattern: 'dist/processRunner.js', line: 94, branch: 85 }, // measured 96.97 / 89.29
+  { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.08 / 91.89
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
-  { pattern: 'dist/healthServer.js', line: 95, branch: 62 }, // measured 97.56 / 67.65
+  { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
   { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  // REV-213: process-lifetime state and on-disk telemetry. None of these three had a
+  // named floor before, and each just rose a long way — the semantic index cache from
+  // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
+  // once its prune's two load-bearing catches were driven on purpose. A module that
+  // jumps and is not pinned can fall back just as far under the defaults.
+  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.63 / 94.03
+  { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
+  { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.77 / 92.86
 ];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
@@ -559,9 +640,16 @@ function main() {
   process.stdout.write(run.output);
 
   if (run.exitCode !== 0) {
+    removeReportFile();
     console.error('Coverage run failed before threshold check.');
     process.exit(run.exitCode);
   }
+
+  // Persisted BEFORE the floor checks on purpose: when a floor fails, the report is
+  // still the freshest true measurement of the tree, and that is exactly when
+  // someone needs `npm run test:coverage:annotations` to tell them which recorded
+  // numbers to correct.
+  writeReportFile(run.output);
 
   // Run this BEFORE the ratio checks: an untested module is absent from the
   // report rather than scored, so "all files" can read 100% while real code has
@@ -675,6 +763,9 @@ module.exports = {
   findUnreportedModules,
   isTypeOnlyEmit,
   globToRegExp,
+  writeReportFile,
+  removeReportFile,
+  REPORT_FILE,
   MODULE_FLOORS,
   PER_FILE_LINE_FLOOR,
   PER_FILE_BRANCH_FLOOR,

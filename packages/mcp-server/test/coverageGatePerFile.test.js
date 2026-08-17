@@ -26,6 +26,20 @@ const {
   PER_FILE_BRANCH_FLOOR,
 } = require('../scripts/check-coverage-gate.js');
 
+// REV-213: the fixtures below trip a real MODULE_FLOORS entry, and the floor they
+// trip is READ from the table instead of typed into the assertion. Raising a floor
+// is the routine, expected event here — the table is a ratchet — and a hardcoded
+// "< 94.00%" turns every raise into a red test in a file that has nothing to do with
+// the module being raised. That is what happened: three floors went up and this was
+// the only thing that objected. Each fixture also asserts its own percentage is
+// still below the floor, so a future raise past the fixture value fails loudly
+// rather than quietly testing nothing.
+function floorFor(pattern) {
+  const entry = MODULE_FLOORS.find((candidate) => candidate.pattern === pattern);
+  assert.ok(entry, `${pattern} must still be in MODULE_FLOORS for this fixture to mean anything`);
+  return entry;
+}
+
 // The same indented TAP tree the coverage runner emits: one space of indent per
 // depth level, directory rows carry blank percentage cells, the `all files`
 // summary row is an aggregate, not a file.
@@ -202,7 +216,12 @@ test('a module regression fails on its own while the aggregate stays green', () 
   const violations = findFloorViolations(report);
   assert.equal(violations.length, 1);
   assert.equal(violations[0].file, 'dist/audit.js');
-  assert.match(violations[0].reasons.join(' '), /line 84\.00% < 94\.00%/);
+  const auditLineFloor = floorFor('dist/audit.js').line;
+  assert.ok(auditLineFloor > 84, 'the fixture must sit below the floor it is meant to trip');
+  assert.match(
+    violations[0].reasons.join(' '),
+    new RegExp(`line 84\\.00% < ${auditLineFloor.toFixed(2)}%`)
+  );
   assert.match(violations[0].reasons.join(' '), /floor for dist\/audit\.js/);
   assert.ok(
     violations[0].linePct > PER_FILE_LINE_FLOOR,
@@ -226,7 +245,12 @@ test('a deleted guard is caught by the branch floor with lines still at 100%', (
   assert.equal(violations.length, 1);
   assert.equal(violations[0].file, 'dist/safetyPolicy.js');
   assert.equal(violations[0].linePct, 100);
-  assert.match(violations[0].reasons.join(' '), /branch 71\.00% < 94\.00%/);
+  const safetyBranchFloor = floorFor('dist/safetyPolicy.js').branch;
+  assert.ok(safetyBranchFloor > 71, 'the fixture must sit below the floor it is meant to trip');
+  assert.match(
+    violations[0].reasons.join(' '),
+    new RegExp(`branch 71\\.00% < ${safetyBranchFloor.toFixed(2)}%`)
+  );
 });
 
 test('an unverifiable branch cell fails closed instead of passing', () => {
@@ -332,6 +356,14 @@ test('every MODULE_FLOORS floor agrees with the measured value recorded beside i
     }
   }
 
+  // The match is unanchored on the right, so an annotation that declares a second
+  // reading — `// measured 96.83 / 92.62 (also 96.83 / 92.65: cause)`, the form
+  // scripts/check-coverage-annotations.mjs allows on THIS package because V8 range
+  // coverage is not reproducible run-to-run — is read here as its FIRST pair only.
+  // That is why the declaration grammar requires the lower reading first: this
+  // audit and its core twin both size headroom against pair one, so a higher value
+  // there would quietly widen the allowance by the gap between the two readings.
+
   // Branch coverage is the metric that drifts between macOS and Linux CI, so the
   // headroom allowance matches the core suite's 8 points rather than demanding an
   // exact pin.
@@ -339,7 +371,7 @@ test('every MODULE_FLOORS floor agrees with the measured value recorded beside i
   assert.equal(
     annotations.size,
     MODULE_FLOORS.length,
-    'every MODULE_FLOORS entry needs a `// measured L / B` annotation on its own line'
+    'every MODULE_FLOORS entry needs a `// measured L / B` annotation on its own line (a trailing `(also L / B: cause)` declaration is allowed and read as its first pair)'
   );
   for (const entry of MODULE_FLOORS) {
     const measured = annotations.get(entry.pattern);
