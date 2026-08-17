@@ -250,6 +250,17 @@ jobs:
           disable_search: true
           fail_ci_if_error: false
 
+      - name: Upload redaction coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/redaction/coverage/lcov.info
+          flags: redaction
+          name: redaction
+          disable_search: true
+          fail_ci_if_error: false
+
   # G16: secret scanning across the full git history — the enforcing gate.
   #
   # .gitleaks.toml no longer allowlists test directories (a real credential once

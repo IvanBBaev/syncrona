@@ -18,6 +18,7 @@ import { createHash, createHmac } from "crypto";
 import { homedir } from "os";
 import path from "path";
 import { getStoreKey } from "@syncrona/credential-store";
+import { isSensitiveKey, looksLikeSecretValue } from "@syncrona/redaction";
 import { logger } from "./logger";
 
 const DEFAULT_AUDIT_MAX_BYTES = 10 * 1024 * 1024;
@@ -400,123 +401,25 @@ function isMutatingAuditRecord(entry: Record<string, unknown>): boolean {
 
 export type AuditWriteResult = { ok: boolean; mutating: boolean; error?: string };
 
-// SEC-8 (REV-96): broaden the key allow-list. The old `/(^|[_-])key($|[_-])/` required a
-// separator, so camelCase creds (`apiKey`, `privateKey`, `signingKey`, `clientKey`) slipped
-// through unredacted. We drop the separator and add explicit credential-ish tokens.
-function isSensitiveAuditKey(key: string): boolean {
-  const normalized = key.toLowerCase();
-  const patterns = [
-    /password/,
-    /passwd/,
-    /pwd/,
-    /token/,
-    /authorization/,
-    /(^|[^a-z])auth([^a-z]|$)/,
-    /secret/,
-    /api[_-]?key/,
-    /key/,
-    /credential/,
-    /jwt/,
-    /assertion/,
-    /bearer/,
-    /cert/,
-    /cookie/,
-    /session/,
-    /(^|[^a-z])sid([^a-z]|$)/,
-    /passphrase/,
-    /(^|[^a-z])otp([^a-z]|$)/,
-    /(^|[^a-z])mfa([^a-z]|$)/,
-    /(^|[^a-z])pin([^a-z]|$)/,
-    /nonce/,
-  ];
-  return patterns.some((pattern) => pattern.test(normalized));
-}
-
-// SEC-8 (REV-96): inspect VALUES, not just keys. A secret smuggled under a benign key
-// (a connection string with `user:pass@host`, a JWT, a PEM private key, an inline
-// `Authorization` value, an AWS access key id) must still be redacted.
+// SEC-8 (REV-96 → REV-126 → REV-145 → REV-147 → REV-190): the sensitive-key list and the
+// value-shape scanner used to live here, hardened one review at a time. They moved to
+// `@syncrona/redaction` (WP-M1) when the full-instance git mirror needed the same
+// detection: a copy-paste would have left two corpora to drift apart, and the copy nobody
+// is currently reviewing is the one that falls behind — with the leak landing in the
+// consumer that writes to a REPOSITORY rather than to a local log file.
 //
-// SEC-8 follow-up (REV-126): the original six patterns missed the most common
-// vendor-prefixed API-key / token formats and raw high-entropy secrets. Each added
-// pattern is anchored on a vendor-assigned prefix (or a full 256-bit hex blob), which
-// keeps precision high — ordinary forensic values (URLs, table paths, prose, 32-char
-// sys_ids, 40-char git SHAs) do not match — while closing the gap.
-// SEC-8 follow-up (REV-147): the inline-Authorization pattern was the scheme keyword plus
-// 8 characters of a charset that contains every letter, so ordinary PROSE matched — "Basic
-// authentication failed for user admin" was classified as a secret and, because a match
-// redacts the WHOLE value, the entire message became "<redacted>". That silently destroys
-// the forensic detail of exactly the auth-failure records an operator needs. The keyword
-// alone is not evidence: either the value carries the header/assignment context, or the
-// token itself has to look like credential material (base64/hex carries digits or base64
-// symbols; an English word following "Basic" carries neither).
+// Nothing about the behaviour changed in the move; the audit suite that pins it was not
+// touched. The rationale for each individual pattern, and the honest limit each one
+// accepts, travelled with the code — see `packages/redaction/src/{sensitiveKeys,
+// secretValues}.ts`, and the two-sided corpus (true positives AND the near-miss prose that
+// must survive verbatim) in `packages/redaction/test/corpus.ts`.
 //
-// Honest limit: a digit-free, symbol-free base64 token in bare prose is not caught by the
-// second form. The header-context form, the sensitive-key allow-list and the JWT pattern
-// cover the realistic carriers, and widening this one back out costs more (whole-value
-// redaction of benign prose) than it buys.
-const AUTH_HEADER_SECRET =
-  /\bauthorization["']?\s*[:=]\s*["']?\s*(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/i;
-const AUTH_SCHEME_TOKEN = /\b(?:bearer|basic)\s+([A-Za-z0-9._~+/=-]{12,})/i;
-
-// SEC-8 follow-up (REV-190): the same whole-value over-redaction hit the bare
-// `user:pass@host` form, which accepted ANY `[\w.-]+` as the host. Ordinary forensic values
-// shaped `name:value@thing` therefore matched — a package spec ("npm:lodash@4.17.21
-// installed") or a record reference ("incident:INC0010001@dev12345 failed") was classified
-// as a credential and the whole message was replaced with "<redacted>", losing exactly the
-// detail an operator needs. Require the host to actually look like a host: an FQDN with an
-// alphabetic TLD, `localhost`, or a dotted-quad IPv4.
-//
-// Honest limit: credentials against a single-label internal hostname (`admin:pw@snprod`)
-// are no longer caught by THIS form. The `scheme://user:pass@host` pattern below, the
-// sensitive-key allow-list and the vendor-token patterns cover the realistic carriers, and
-// widening it back out costs whole-value redaction of benign prose.
-const BARE_USERPASS_HOST =
-  /(^|\s)[\w.-]+:[^\s:@/]+@(?:(?:[\w-]+\.)+[A-Za-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})\b/i;
-
-function looksLikeInlineAuthorization(value: string): boolean {
-  if (AUTH_HEADER_SECRET.test(value)) {
-    return true;
-  }
-  const match = AUTH_SCHEME_TOKEN.exec(value);
-  return match ? /[0-9]/.test(match[1]) || /[+/=]/.test(match[1]) : false;
-}
-
-// SEC-8 follow-up (REV-145): the length guard used to `return false` for anything over the
-// budget — a plain fail-OPEN. Padding a secret past 8 KB (trivial for a model-supplied
-// argument, a pasted PEM bundle or a verbose remote error body) was all it took to get it
-// written to the audit log in cleartext. The budget exists to bound regex work, not to
-// whitelist large strings, so a value that cannot be scanned in full is now redacted
-// instead of trusted.
-const SECRET_SCAN_BUDGET = 8192;
-
-function looksLikeSecretValue(value: string): boolean {
-  if (value.length === 0) {
-    return false;
-  }
-  if (value.length > SECRET_SCAN_BUDGET) {
-    return true;
-  }
-  return (
-    /\/\/[^/\s:@]+:[^/\s:@]+@/.test(value) || // scheme://user:pass@host
-    BARE_USERPASS_HOST.test(value) || // user:pass@host (REV-190)
-    /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+/.test(value) || // JWT (embedded)
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || // PEM private key
-    looksLikeInlineAuthorization(value) || // inline Authorization
-    /\bAKIA[0-9A-Z]{16}\b/.test(value) || // AWS access key id
-    // REV-126: vendor-prefixed API keys / tokens (Stripe, OpenAI, GitHub, Slack,
-    // GitLab, Google). Each prefix is a high-signal marker, so a broad trailing
-    // charset does not over-match ordinary text.
-    /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/i.test(value) || // Stripe-style
-    /\bsk-[A-Za-z0-9]{20,}/.test(value) || // OpenAI-style
-    /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/.test(value) || // GitHub token
-    /\bgithub_pat_[A-Za-z0-9_]{20,}/.test(value) || // GitHub fine-grained PAT
-    /\bxox[baprs]-[A-Za-z0-9-]{10,}/.test(value) || // Slack token
-    /\bglpat-[A-Za-z0-9_-]{16,}/.test(value) || // GitLab PAT
-    /\bAIza[A-Za-z0-9_-]{20,}/.test(value) || // Google API key
-    /\baws_?secret_?access_?key\b/i.test(value) || // labelled AWS secret key
-    /\b[A-Fa-f0-9]{64}\b/.test(value) // raw 256-bit hex secret / key material
-  );
-}
+// Two things worth keeping in view from here. The scan budget FAILS CLOSED: an
+// over-budget value is reported as a secret rather than waved through, because the
+// historical fail-open meant padding a secret past 8 KB was enough to land it in this log
+// in cleartext (REV-145). And a match redacts the WHOLE value, which is why the value
+// patterns are narrow — an over-eager one replaces the entire operator-facing message,
+// destroying exactly the forensic detail an audit record exists to keep (REV-147, REV-190).
 
 // REV-211: the walk has to be bounded on both axes, because everything it visits
 // is attacker-influenced — `args` is whatever a model sent, `outcome` is whatever
@@ -605,7 +508,7 @@ function sanitizeAuditValue(value: unknown, depth: number): unknown {
   const out: Record<string, unknown> = {};
   const entries = Object.entries(obj);
   for (const [k, v] of entries.slice(0, AUDIT_SANITIZE_MAX_ENTRIES)) {
-    if (isSensitiveAuditKey(k)) {
+    if (isSensitiveKey(k)) {
       setAuditField(out, k, "<redacted>");
     } else if (k.toLowerCase() === "script" && typeof v === "string") {
       setAuditField(out, k, `<script:${v.length} chars>`);

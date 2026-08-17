@@ -132,6 +132,7 @@ const FIXTURE_PACKAGES = {
   "mcp-server": "@syncrona/mcp-server",
   "credential-store": "@syncrona/credential-store",
   "babel-plugin": "@syncrona/babel-plugin",
+  redaction: "@syncrona/redaction",
 };
 
 /**
@@ -183,6 +184,10 @@ export function writeViolatingFixtures(root, { tsConfigFileName = "tsconfig.json
   w("packages/credential-store/src/violation.ts", "import 'syncrona';\nexport const b = 1;\n");
   // types-is-leaf: @syncrona/types importing another @syncrona package.
   w("packages/types/index.d.ts", "import { X } from '@syncrona/credential-store';\nexport type Y = X;\n");
+  // redaction-is-leaf: the strictest leaf importing ANY sibling. Deliberately a
+  // foundation package rather than a consumer, so this fixture keeps failing even
+  // if the rule is ever relaxed to only the `foundation-no-consumers` shape.
+  w("packages/redaction/src/violation.ts", "import '@syncrona/credential-store';\nexport const r = 1;\n");
   // plugins-are-leaves: a build plugin importing a non-types @syncrona package.
   w("packages/babel-plugin/src/violation.ts", "import '@syncrona/credential-store';\nexport const c = 1;\n");
   // no-circular: a genuine runtime (value) cycle between two local modules.
