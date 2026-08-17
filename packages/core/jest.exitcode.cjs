@@ -24,19 +24,23 @@
 //     unrelated passes) buries the one result that was true.
 //
 // This hook, registered via setupFilesAfterEnv, makes the guarantee global and
-// exception-safe by construction, so no suite has to remember. `initial` is read
-// once per test file at setup time, before any test has run, so it is Jest's own
-// pristine value for this worker rather than an accumulated one.
+// exception-safe by construction, so no suite has to remember. It resets to
+// `undefined` — Node's pristine value, and a value the setter accepts — rather
+// than to a snapshot taken at setup time. A snapshot is NOT pristine: workers
+// are reused across test files, and jest-circus runs same-block afterEach hooks
+// in REGISTRATION order, so a suite-local afterEach (two suites park the code
+// at 0 in one) runs after this file's afterEach and its leftovers are what the
+// next file's setup would snapshot. That baseline poisoned every later file in
+// the worker — a scheduling-dependent failure that only surfaced on the
+// two-worker macOS CI runner, where exitCodeIsolation.test.ts caught it.
 //
 // It cannot mask a real defect: it only touches the boundary BETWEEN tests.
 // Inside a test the code under test still sets whatever it sets, and every
 // assertion still observes exactly that.
-const initial = process.exitCode;
-
 beforeEach(() => {
-  process.exitCode = initial;
+  process.exitCode = undefined;
 });
 
 afterEach(() => {
-  process.exitCode = initial;
+  process.exitCode = undefined;
 });
