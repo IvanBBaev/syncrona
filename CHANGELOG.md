@@ -448,6 +448,16 @@ All notable changes to this project will be documented in this file.
   DETECTED, each of those flips silently promotes an undetected mutant to a kill, so
   the honest reading of the 2026-08-17 run is the band `[59.2%, 85.92%]` — 763
   mutants, 14 min 9 s, 203 timeouts (26.6%) — and not the 85.92%.
+- `dist/semanticIndexState.js` carries the third declared second reading in the
+  mcp-server per-file coverage table: 98.63 / 94.03 measured on darwin, 98.63 /
+  94.20 on the ubuntu leg of the CI matrix — the first entry where the two
+  platforms split rather than one run flickering. The uncovered-line list is
+  byte-identical in both readings, darwin prints 63/67 branches under Node
+  22.23.0 and 22.23.2 alike, and 65/69 is the only nearby pair that renders
+  94.20 — V8 range granularity across platforms, not behaviour, so per the
+  gate's own procedure the second reading is declared rather than chased with a
+  test, lower value first so the headroom audit keeps checking the floor
+  against the conservative measurement.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
