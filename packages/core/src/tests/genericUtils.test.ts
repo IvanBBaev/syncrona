@@ -34,9 +34,22 @@ describe("chunkArr", () => {
 
 describe("allSettled", () => {
   it("reports fulfilled and rejected results without short-circuiting", async () => {
+    // The no-op handler is load-bearing. allSettled is the only thing that
+    // attaches a real rejection handler to this promise, so any change that
+    // stops it doing so leaves the rejection unhandled — and an unhandled
+    // rejection kills the whole Jest worker with exit code 1 rather than
+    // failing the assertions below. Mutation testing found this the hard way:
+    // emptying allSettled's map callback produced "Test runner crashed. Tried
+    // twice to restart it without any luck" twice in a row, so Stryker scored
+    // those mutants RuntimeError and could not grade them at all. Pre-handling
+    // the rejection here keeps the failure inside the test, where
+    // `results[1].status` is undefined and the expectation fails normally.
+    const rejected = Promise.reject<number>(new Error("boom"));
+    rejected.catch(() => undefined);
+
     const results = await allSettled<number>([
       Promise.resolve(1),
-      Promise.reject(new Error("boom")),
+      rejected,
       Promise.resolve(3),
     ]);
     expect(results[0]).toEqual({ status: "fulfilled", value: 1 });
