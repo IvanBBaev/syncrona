@@ -829,4 +829,26 @@ describe("checkEnvCommand", () => {
       process.exitCode = oldExit;
     }
   });
+
+  it("reports any other platform by name and kernel release (the else arm)", async () => {
+    // The third arm of the platform check was covered only by ACCIDENT: it is
+    // whatever is neither win32 nor linux, and the developer machines run macOS,
+    // so the host itself walked into it. On the ubuntu half of the CI matrix
+    // nothing reached it, and this file measured 99.58 / 97.67 there against
+    // 100.00 / 98.44 on macOS — the same class of host-dependent coverage that
+    // sized a tree-wide floor off a macOS number and turned ubuntu red.
+    // Pinning darwin makes the arm reachable on every host.
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    mockExecFileSync.mockReturnValue("git version 2.42.0\n");
+    try {
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
+      const result = checkEnvCommand({ logLevel: "info" } as never);
+      const platform = result.checks.find((c) => c.name === "platform");
+      expect(platform?.ok).toBe(true);
+      expect(platform?.details).toBe(`darwin (${os.release()})`);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+    }
+  });
 });

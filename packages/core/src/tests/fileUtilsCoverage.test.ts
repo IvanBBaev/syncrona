@@ -149,14 +149,12 @@ describe("writeSNFileCurry content coercion", () => {
     expect(raw).toBe("[object Object]");
   });
 
-  it("refuses to write a name that escapes the source root", async () => {
+  it("refuses to write a name that escapes its target directory", async () => {
     const root = makeNestedRoot();
-    // mockReturnValueOnce (not mockReturnValue): the guard reads getSourcePath
-    // exactly once per write, and a persistent stub would leak into the later
-    // writer tests that rely on the unloaded-project fallback (getSourcePath
-    // undefined -> anchor to parentPath), since clearAllMocks does not reset
-    // implementations.
-    asMock(ConfigManager.getSourcePath).mockReturnValueOnce(root);
+    // No getSourcePath stub here on purpose: the component check now rejects the
+    // name BEFORE the containment guard runs, so this write never reads the
+    // configured source root. (Leaving a mockReturnValueOnce unconsumed would
+    // shift the queue into the later writer tests, which do depend on it.)
     const escaping: any = {
       name: path.join("..", "escape"),
       type: "js",
@@ -164,7 +162,7 @@ describe("writeSNFileCurry content coercion", () => {
     };
     await expect(
       writeSNFileCurry(false)(escaping, root)
-    ).rejects.toThrow(/Refusing to write .* outside the workspace source root/);
+    ).rejects.toThrow(/unsafe file name .* would escape its target directory/);
     // Nothing must have been written above the source root.
     const parent = path.dirname(root);
     expect(fs.existsSync(path.join(parent, "escape.js"))).toBe(false);

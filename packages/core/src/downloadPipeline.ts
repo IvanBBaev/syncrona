@@ -86,33 +86,76 @@ export const resolveWriteConcurrency = (): number => {
   return Math.min(Math.max(Math.floor(candidate), 1), 50);
 };
 
-// INJ-1: table names (the keys of the server- or manifest-supplied table map)
-// and record names (including scoped-endpoint `name` values) both flow into
-// path.join under the workspace source root below. A tampered manifest or a
-// hostile scoped-download response could smuggle "..", ".", an empty string, or
-// an embedded path separator into a component and walk the write out of the
-// source tree — a manifest-driven arbitrary-file-write. This seam is the single
-// chokepoint every pull path (wizard, refresh, download) converges on, so
-// rejecting an unsafe component here — loudly, before it ever reaches path.join,
-// rather than silently rewriting it (which would mask a compromised source) —
-// guarantees no write escapes regardless of what upstream produced. Legitimate
-// names never trip this: buildRecordName already strips separators and falls
-// back to sys_id for empty/all-dot names, and ServiceNow table names are plain
-// identifiers.
+// INJ-1: FOUR manifest-supplied strings reach path.join on the way to a local
+// write — the table name (a key of the server- or manifest-supplied table map),
+// the record name (including scoped-endpoint `name` values), and each file's
+// `name` and `type`, which are interpolated together as `<name>.<type>`. A
+// tampered manifest or a hostile scoped-download response can smuggle "..", ".",
+// an empty string, or an embedded path separator into any of them and walk the
+// write somewhere it does not belong — a manifest-driven arbitrary-file-write.
+//
+// The two halves are NOT the same threat. Table and record names escape the
+// workspace source root outright. The per-file components escape only as far as
+// a sibling directory inside the source tree — which is why the containment
+// guard in writeSNFileCurry, anchored at the source root, never caught them: a
+// field named "../Bar/script" written from record Foo's folder lands on record
+// Bar's real file, is skipped-as-present when Bar's own write follows (checkExists
+// is on unless --force), and a later `syncrona push` uploads the payload into
+// Bar's field. Staying inside the source root makes it quieter, not safer.
+//
+// So every one of the four is validated here, before it reaches path.join, and
+// loudly rather than by silent rewriting (which would mask a compromised source).
+// This seam is the single chokepoint every pull path (wizard, refresh, download)
+// converges on; writeSNFileCurry re-checks the per-file components itself, so the
+// guarantee holds for any caller that reaches the writer by another route.
+// Legitimate names never trip this: buildRecordName already strips separators and
+// falls back to sys_id for empty/all-dot names, ServiceNow table names are plain
+// identifiers, and the predicate accepts dots inside a component so dot-walked
+// field names ("inputs.script") keep working.
+//
+// Scope of the guarantee: no DOWNLOAD write escapes its intended directory. The
+// read-only probes (SNFileExists in checkFilesForMissing) still join manifest
+// components without this check — a traversal there can only mis-report a file as
+// present, and any manifest that could trigger it is rejected by this seam before
+// a single byte is written.
+//
 // The predicate itself lives in genericUtils so every consumer that joins an
 // instance-supplied name onto a local path uses the SAME rule (`init --ci`
 // builds packages/<scope> directories from sys_app rows and used to skip this
 // check entirely).
+type UnsafeComponentKind =
+  | "table name"
+  | "record name"
+  | "field name"
+  | "file type";
+
+// What each component would escape if it were let through — table/record names
+// leave the workspace entirely, per-file components leave only the record's own
+// directory. Naming the right boundary keeps the error honest.
+const CONTAINMENT_BOUNDARY: Record<UnsafeComponentKind, string> = {
+  "table name": "the workspace source root",
+  "record name": "the workspace source root",
+  "field name": "its record's directory",
+  "file type": "its record's directory",
+};
+
 const assertSafePathComponent = (
   component: string,
-  kind: "table name" | "record name"
+  kind: UnsafeComponentKind
 ): void => {
   if (!isSafePathComponent(component)) {
     throw new Error(
       `Refusing to download: unsafe ${kind} ${JSON.stringify(component)} ` +
-        `would escape the workspace source root.`
+        `would escape ${CONTAINMENT_BOUNDARY[kind]}.`
     );
   }
+};
+
+// Both layouts interpolate these two into the same `<name>.<type>` file name, so
+// both layouts validate them the same way.
+const assertSafeFileComponents = (file: SN.File): void => {
+  assertSafePathComponent(file.name, "field name");
+  assertSafePathComponent(file.type, "file type");
 };
 
 // Two records whose names differ only by case or Unicode normal form occupy the
@@ -178,6 +221,7 @@ export const processTablesInManifest = async (
         // too, not only in the nested layout.
         assertSafePathComponent(rec.name, "record name");
         for (const file of rec.files) {
+          assertSafeFileComponents(file);
           fileTasks.push(() =>
             fUtils.writeFlatSNFileCurry(!forceWrite)(file, tablePath, rec.name)
           );
@@ -190,6 +234,7 @@ export const processTablesInManifest = async (
         const recPath = path.join(tablePath, rec.name);
         dirTasks.push(recPath);
         for (const file of rec.files) {
+          assertSafeFileComponents(file);
           fileTasks.push(() =>
             fUtils.writeSNFileCurry(!forceWrite)(file, recPath)
           );

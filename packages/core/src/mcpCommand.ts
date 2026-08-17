@@ -54,10 +54,30 @@ async function pathExists(filePath: string): Promise<boolean> {
 }
 
 async function resolveMcpServerPath(explicitPath: string | undefined, workspaceRoot: string): Promise<string> {
+  const explicit = String(explicitPath || "").trim();
+  if (explicit) {
+    // Resolved against the invoking cwd BEFORE the stat, and the absolute path
+    // is what gets returned: the client configs and the spawn both run with
+    // cwd=workspaceRoot, so a relative path validated here as-is would be
+    // consumed against a different base than the one it was checked in.
+    const resolved = path.resolve(explicit);
+    if (await pathExists(resolved)) {
+      return resolved;
+    }
+    // An explicit --mcp-server-path is honoured or it fails: falling through to
+    // the discovery candidates would start a DIFFERENT server than the one that
+    // was asked for, or report "unable to find" without ever naming the typo.
+    const where = resolved === explicit ? explicit : `${explicit} (resolved to ${resolved})`;
+    throw new Error(
+      `MCP server entrypoint not found at --mcp-server-path: ${where}`
+    );
+  }
+
   const fromEnv = String(process.env.SYNCRONA_MCP_SERVER_PATH || "").trim();
   const candidates = [
-    explicitPath || "",
-    fromEnv,
+    // Same base-mismatch hazard as the explicit flag: the env var may be
+    // relative, and the consumers resolve against workspaceRoot, not cwd.
+    fromEnv ? path.resolve(fromEnv) : "",
     path.join(workspaceRoot, "packages", "mcp-server", "dist", "index.js"),
     path.join(workspaceRoot, "node_modules", "@syncrona", "mcp-server", "dist", "index.js"),
     path.resolve(__dirname, "..", "..", "mcp-server", "dist", "index.js"),
@@ -74,21 +94,49 @@ async function resolveMcpServerPath(explicitPath: string | undefined, workspaceR
   );
 }
 
+// An MCP client config must be a JSON object. Arrays are excluded explicitly:
+// `typeof [] === "object"`, and JSON.stringify drops the non-index properties of
+// an array — so an array config would swallow the mcpServers entry and still be
+// written back (and reported) as a success.
+function isMcpClientConfigDocument(value: unknown): value is McpClientConfig {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string, workspaceRoot: string): Promise<string> {
   await fsp.mkdir(path.dirname(mcpConfigPath), { recursive: true });
 
   let config: McpClientConfig = {};
+  let existingRaw: string | null = null;
   try {
-    const raw = await fsp.readFile(mcpConfigPath, "utf8");
-    const parsed = JSON.parse(raw) as McpClientConfig;
-    if (parsed && typeof parsed === "object") {
-      config = parsed;
-    }
+    existingRaw = await fsp.readFile(mcpConfigPath, "utf8");
   } catch (_) {
-    config = {};
+    // No config file yet (or it cannot be read): start from an empty document.
+    existingRaw = null;
   }
 
-  const existingServers = config.mcpServers && typeof config.mcpServers === "object"
+  if (existingRaw !== null) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(existingRaw);
+    } catch (_) {
+      parsed = undefined;
+    }
+
+    if (isMcpClientConfigDocument(parsed)) {
+      config = parsed;
+    } else {
+      // Self-healing is kept (the command must not abort on a corrupt file), but
+      // the rewrite is announced with the path so the user can tell which file
+      // lost its previous contents.
+      logger.warn(`Replacing malformed MCP client config: ${mcpConfigPath}`);
+      config = {};
+    }
+  }
+
+  // Same array exclusion as the document-level guard: spreading an array here
+  // would register its elements as servers named "0", "1", ... — a garbage
+  // entry per element, written back as a success.
+  const existingServers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
     ? config.mcpServers
     : {};
 
@@ -134,21 +182,30 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
     );
   }
 
-  if (process.platform === "win32" && appData) {
-    targets.push(
-      {
-        clientName: "Claude Desktop",
-        configPath: path.join(appData, "Claude", "claude_desktop_config.json"),
-        restartHint: "Claude Desktop: fully quit and open again.",
-        onlyIfExists: true,
-      },
-      {
-        clientName: "Cursor",
-        configPath: path.join(appData, "Cursor", "mcp.json"),
-        restartHint: "Cursor: run `Developer: Reload Window`.",
-        onlyIfExists: true,
-      }
-    );
+  if (process.platform === "win32") {
+    if (appData) {
+      targets.push(
+        {
+          clientName: "Claude Desktop",
+          configPath: path.join(appData, "Claude", "claude_desktop_config.json"),
+          restartHint: "Claude Desktop: fully quit and open again.",
+          onlyIfExists: true,
+        },
+        {
+          clientName: "Cursor",
+          configPath: path.join(appData, "Cursor", "mcp.json"),
+          restartHint: "Cursor: run `Developer: Reload Window`.",
+          onlyIfExists: true,
+        }
+      );
+    } else {
+      // Without %APPDATA% there is no roaming profile to derive the desktop
+      // client paths from. Say so, or the skip is indistinguishable from "those
+      // clients are not installed".
+      logger.warn(
+        "APPDATA is not set: skipping Claude Desktop and Cursor configuration on win32."
+      );
+    }
   }
 
   const resolved: McpClientTarget[] = [];
@@ -173,7 +230,15 @@ async function writeMcpSecretsConfig(args: Sync.SharedCmdArgs, workspaceRoot: st
   }
 
   const credentials = resolveCredentials(args.instanceProfile);
-  const targetInstance = instanceFromStore || credentials.instance;
+  // An explicit --instance-profile is a deliberate target selection, so the
+  // credentials resolved for THAT profile outrank the stored active instance
+  // (`syncrona use`); without a profile the stored active instance stays the
+  // authority over a stale SN_INSTANCE in the environment. Never fall back
+  // across that line: writing another instance into the secrets file would
+  // silently point the MCP server at the wrong environment.
+  const targetInstance = args.instanceProfile
+    ? credentials.instance
+    : instanceFromStore || credentials.instance;
   if (!targetInstance) {
     return null;
   }

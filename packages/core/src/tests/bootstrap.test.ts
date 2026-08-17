@@ -67,16 +67,24 @@ let init: typeof import("../bootstrap.js").init;
 
 describe("bootstrap init", () => {
   const prevExit = process.exitCode;
+  const realArgv = process.argv;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     ({ init } = await import("../bootstrap.js"));
     mockGetEnvPath.mockReturnValue("/tmp/does-not-exist.env");
+    // init() reads process.argv to decide stdout routing. Under Jest that argv
+    // belongs to the RUNNER (empty in a worker, jest's own CLI args in an
+    // in-band run), so without pinning it these tests would exercise whichever
+    // arm of stdoutIsProtocolChannel the runner happened to hand them. Pin a
+    // plain command: this describe is about config/dotenv, not routing.
+    process.argv = ["node", "syncrona", "status"];
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
     process.exitCode = prevExit;
+    process.argv = realArgv;
   });
 
   it("logs the message and sets exitCode=1 when config loading fails", async () => {
@@ -183,6 +191,32 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
 
   it("does not mistake an option value of `mcp` for the command", async () => {
     process.argv = ["node", "syncrona", "--instance-profile", "mcp", "status"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
+  // The two tests below drive the argv-EXHAUSTED fall-through (the final
+  // `return false`), the one path no test used to reach on purpose. It was
+  // "covered" only because a Jest worker starts with an empty process.argv,
+  // i.e. by the runner rather than by this suite: run the same file in-band and
+  // jest's own CLI argv has a positional token, so the loop returns early and
+  // the fall-through goes uncovered. Coverage that moves with how the runner was
+  // invoked is the same defect class as the process.exitCode flapper.
+  it("does not route when no command was given at all (bare `syncrona`)", async () => {
+    process.argv = ["node", "syncrona"];
+    await init();
+    // A bare invocation prints yargs' help, which is human-readable text on
+    // stdout. If the fall-through ever returned true, `syncrona | less` and
+    // `syncrona > help.txt` would both come back empty.
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
+  it("does not route when a trailing global option swallows a token named `mcp`", async () => {
+    // `mcp` here is the VALUE of --log-level, not a command, and it is also the
+    // last token — so the option-skip has to run off the end of argv rather than
+    // land on a positional. Getting this wrong would silently redirect the whole
+    // session's output to stderr for an argv that names no protocol command.
+    process.argv = ["node", "syncrona", "--log-level", "mcp"];
     await init();
     expect(mockRouteAllToStderr).not.toHaveBeenCalled();
   });

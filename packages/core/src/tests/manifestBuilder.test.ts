@@ -14,6 +14,12 @@ function createClient(tableAPIGet: TableApiGet) {
   return { tableAPIGet } as unknown as import("../snClient").SNClient;
 }
 
+// Paged reads append `^ORDERBYsys_id` (see withStableOrder in manifestBuilder)
+// so offset paging walks a stable order. Fixtures that dispatch on the exact
+// query text match the caller's half of it, not the pager's suffix.
+const withoutOrder = (query: string): string =>
+  query.replace(/\^?ORDERBYsys_id$/, "");
+
 describe("manifestBuilder", () => {
   it("buildManifestFromTableAPI builds tables, records, and files", async () => {
     const tableAPIGet: TableApiGet = jest.fn();
@@ -164,8 +170,12 @@ describe("manifestBuilder", () => {
     const nameLikeCall = tableAPIGet.mock.calls.find(
       (c) => c[0] === "sys_dictionary" && String(c[1]).startsWith("nameLIKE")
     );
-    // The trailing structural ^nameISNOTEMPTY stays; only the injected ^ is gone.
-    expect(nameLikeCall?.[1]).toBe("nameLIKEx_demo sys_id=INJECT^nameISNOTEMPTY");
+    // The structural conditions stay — the trailing ^nameISNOTEMPTY and the
+    // ^ORDERBYsys_id the pager appends for a stable walk. Only the injected ^ is
+    // gone, so the value is one condition instead of two.
+    expect(nameLikeCall?.[1]).toBe(
+      "nameLIKEx_demo sys_id=INJECT^nameISNOTEMPTY^ORDERBYsys_id"
+    );
   });
 
   it("never names a record '.' or '..' (would escape its own directory)", async () => {
@@ -324,10 +334,13 @@ describe("manifestBuilder", () => {
         return { data: { result: [{ sys_id: "scope-1" }] } };
       }
       if (table === "sys_metadata") {
-        if (query === "sys_scope=scope-1") {
+        if (withoutOrder(query) === "sys_scope=scope-1") {
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
         }
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           return { data: { result: [{ sys_id: "rec-1", sys_class_name: "sys_script_include" }] } };
         }
       }
@@ -342,7 +355,10 @@ describe("manifestBuilder", () => {
         };
       }
       if (table === "sys_script_include") {
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           return { data: { result: [] } };
         }
         if (query === "sys_idINrec-1") {

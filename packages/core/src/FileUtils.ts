@@ -39,10 +39,24 @@ export const SNFileExists = (parentDirPath: string) => async (
   // already present and skipping the real download.
   const expected = path.join(parentDirPath, `${file.name}.${file.type}`);
   try {
-    const stats = await fsp.stat(expected);
-    // Treat zero-byte placeholder files as missing so their content gets
-    // (re)fetched on refresh instead of being skipped as "already present".
-    return stats.size > 0;
+    await fsp.stat(expected);
+    // Existence is the whole answer. This used to be `stats.size > 0` so that
+    // the skeleton phase's zero-byte placeholders were re-fetched on refresh —
+    // but a field whose value on the instance is legitimately "" writes exactly
+    // zero bytes too, so that rule could not tell "not downloaded yet" from
+    // "downloaded, and it really is empty". It always guessed the former, so an
+    // empty tracked field was reported missing and re-downloaded on every run,
+    // forever, while the command still printed "Download complete".
+    //
+    // The ambiguity is fixed at its SOURCE instead of here: writeSNFileCurry no
+    // longer creates a file for a request that carries no content (see the note
+    // there), so a placeholder is now an absent file rather than an empty one,
+    // and the only zero-byte file a pull can produce is a converged empty field.
+    //
+    // Legacy note: a workspace initialised by an older version may still hold
+    // placeholders written under the old rule. Those now read as present.
+    // `syncrona download` force-writes every tracked field and heals them.
+    return true;
   } catch (_) {
     return false;
   }
@@ -60,11 +74,54 @@ export const writeManifestFile = async (man: SN.AppManifest) => {
   });
 };
 
+// INJ-1, writer half. `name` and `type` are both interpolated into the file name
+// (`<name>.<type>`) and joined onto parentPath below, so either one can carry a
+// path separator or a ".." and relocate the write. The containment guard further
+// down only anchors at the workspace SOURCE ROOT, which means a traversal that
+// stays inside the source tree — the sibling-record case: a field named
+// "../Bar/script" written from record Foo's folder — sails straight through it.
+// Rejecting the components here, before path.join ever sees them, makes this
+// function a true chokepoint: no caller can produce a write outside the
+// directory it named as the parent.
+//
+// The rule is isSafePathComponent, shared with the download seam and getBuildExt
+// so the three cannot drift. It deliberately accepts dots INSIDE a component,
+// because dot-walked field names ("inputs.script" on sys_atf_step) and the DX17
+// flat stem ("<record>~<field>") are both legitimate single components.
+const assertSafeWriteComponent = (
+  value: string,
+  kind: "file name" | "file type" | "record name"
+): void => {
+  if (!isSafePathComponent(value)) {
+    throw new Error(
+      `Refusing to write: unsafe ${kind} ${JSON.stringify(value)} would escape ` +
+        `its target directory.`
+    );
+  }
+};
+
 export const writeSNFileCurry = (checkExists: boolean) => async (
   file: SN.File,
   parentPath: string
 ): Promise<void> => {
   const { name, type } = file;
+  assertSafeWriteComponent(name, "file name");
+  assertSafeWriteComponent(type, "file type");
+  // A manifest ENTRY and a fetched EMPTY VALUE are different things, and the old
+  // skeleton phase collapsed them into the same artifact. `{ name, type }` with
+  // no `content` key means "this record has this field, its value has not been
+  // fetched"; `{ name, type, content: "" }` means "fetched, and the value is
+  // empty". Writing the first produced a zero-byte file byte-identical to the
+  // second, which is why SNFileExists had to guess (see the note there).
+  //
+  // So the entry writes nothing at all. processTablesInManifest still creates
+  // every record DIRECTORY, so `init` still materialises the layout; the field
+  // is then absent rather than empty, checkFilesForMissing still reports it
+  // missing, and the follow-up refresh/download still fetches it — the same end
+  // state as before, minus the artifact nobody downstream could interpret.
+  if (!("content" in file)) {
+    return;
+  }
   let { content = "" } = file;
   // content can sometimes be null
   if (!content) {
@@ -121,14 +178,23 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
 
 // DX17: write a record's field file in the flat layout — a single file named
 // `<record>~<field>.<ext>` directly under the table directory, instead of a
-// per-record folder. Reuses writeSNFileCurry (and its zero-byte / already-exists
-// checks) by composing the flat base name, so flat and folder layouts share one
-// writer and stay byte-for-byte identical apart from the path.
-export const writeFlatSNFileCurry = (checkExists: boolean) => (
+// per-record folder. Reuses writeSNFileCurry (and its containment guard, its
+// entry-vs-empty-value rule and its already-exists check) by composing the flat
+// base name, so flat and folder layouts share one writer and stay byte-for-byte
+// identical apart from the path.
+export const writeFlatSNFileCurry = (checkExists: boolean) => async (
   file: SN.File,
   tableDirPath: string,
   recordName: string
 ): Promise<void> => {
+  // INJ-1: validate the two halves BEFORE composing them. The composed stem is
+  // checked again by writeSNFileCurry (a separator or a lone ".." in either half
+  // survives concatenation, so the composed check alone would also catch it), but
+  // an empty or all-dots half disappears into an innocuous-looking composed name
+  // — and, more practically, an error that names the offending half is what a
+  // maintainer can act on.
+  assertSafeWriteComponent(recordName, "record name");
+  assertSafeWriteComponent(file.name, "file name");
   const flatFile: SN.File = {
     ...file,
     name: `${recordName}${FLAT_FIELD_SEPARATOR}${file.name}`,
