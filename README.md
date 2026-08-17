@@ -1,13 +1,7 @@
 # SyncroNow AI
 
-<!-- npm badges intentionally omitted: the @syncrona/* packages are not yet
-     published to npm, so live npm version/downloads shields would render as
-     "invalid". Restore them at first publish:
-     [![npm version](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona)
-     [![npm downloads](https://img.shields.io/npm/dm/syncrona?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/syncrona) -->
-
 <!-- badges:start -->
-| ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | ![npm: not yet published](https://img.shields.io/badge/npm-not%20yet%20published-lightgrey?style=flat-square&logo=npm&logoColor=white) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+| ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | [![npm](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
 |:--:|:--:|:--:|:--:|:--:|
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
 <!-- badges:end -->
