@@ -68,6 +68,25 @@ jobs:
       - name: Coverage gates (core jest thresholds 92/79/89/92, mcp lines>=90% branches>=80%)
         run: npm run test:coverage:gates
 
+      # Both coverage gates record, beside every per-file floor, the measurement the
+      # floor was derived from (`// measured L / B`). The two floor audits compare the
+      # FLOOR to that annotation and take the annotation on faith, so the annotations
+      # rotted unnoticed — and "measured minus floor" is the headroom every
+      # raise-the-floor decision is made from. This step compares the annotations to
+      # the reports the two steps above just produced (core: Jest json-summary;
+      # mcp-server: the persisted TAP report), so it must stay AFTER them.
+      # Comparison is exact, with one narrow exception: an mcp-server entry may
+      # declare a second reading, `// measured L / B (also L / B: cause)`, because V8
+      # range coverage is not reproducible run-to-run on an unchanged tree. Exactly
+      # the two declared readings pass and a third is still drift; the core/istanbul
+      # side has no such hatch. If this step reddens on a file the PR did not touch,
+      # diff the uncovered-LINE column of two reports before the percentage — an
+      # unchanged column means V8 granularity, a moved one means a real branch.
+      # `test/ciCheckChain.test.js` requires every link of `npm run check` to appear
+      # here as its own step.
+      - name: Coverage annotation drift (recorded `// measured` vs the real reports)
+        run: npm run test:coverage:annotations
+
       # SKIP_TESTS=1: the mcp suite already ran in the two steps above, so the
       # governance gate skips its redundant third run and only re-checks the
       # tool contract / docs drift / release checklist (gap-analysis #24).
