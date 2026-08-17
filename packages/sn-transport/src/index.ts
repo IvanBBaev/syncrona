@@ -188,3 +188,9 @@ export * from "./oauth";
 export * from "./auth";
 // Shared JWT bearer-assertion builder (RS256 via node:crypto; IO-free).
 export * from "./jwt";
+// Full-instance mirror transport policy (WP-M0): error-envelope classification,
+// reachability tri-state, retry backoff and keyset paging. Pure decisions.
+export * from "./mirrorPolicy";
+// Path-safety rules shared with the v1 core download pipeline, plus the D18
+// mirror guards (NFC, UTF-8 byte cap, case-insensitive uniqueness).
+export * from "./pathSafety";
