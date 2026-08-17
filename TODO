@@ -1209,6 +1209,73 @@ artifacts through `../../`. First real numbers for this repository:
       are where that uncertainty lives — both are loop-heavy, so a mutated loop condition
       really does hang, but the run shared the box with other work. **Open:** re-run
       `packages/core` alone on an idle machine before quoting a single number.
+- [x] **That re-run happened (2026-08-17) and the machine was never the cause.**
+      `packages/core` alone, idle box, default budget: 763 mutants in **14 min 9 s** —
+      the same wall clock as the "loaded" baseline's 14 min 38 s — scoring **85.92%**
+      with **203 timeouts (26.6%)**, against 26.5% before. The band is therefore
+      `[59.2%, 85.92%]` (450 killed of 760 scored, errors excluded) and it is a real
+      property of this suite, not an artefact of who else was using the CPU.
+
+      | module | score | killed | timeout | survived | no cov | error |
+      |---|---|---|---|---|---|---|
+      | `genericUtils.ts` | **95.24%** | 37 | 63 | 4 | 1 | 3 |
+      | `FileUtils.ts` | **88.34%** | 159 | 91 | 27 | 6 | 0 |
+      | `downloadCheckpoint.ts` | **84.85%** | 22 | 6 | 5 | 0 | 0 |
+      | `repairCommand.ts` | **81.23%** | 196 | 16 | 43 | 6 | 0 |
+      | `PluginManager.ts` | **80.77%** | 36 | 27 | 15 | 0 | 0 |
+      | **all files** | **85.92%** | 450 | 203 | 94 | 13 | 3 |
+
+      Getting to that number first required fixing a regression that had switched the
+      whole mutation run off — see the `<rootDir>` anchoring of
+      `testPathIgnorePatterns` in the 2026-08-17 WORKLOG entry.
+- [x] **The budget is not the lever, and the earlier reasoning was corrected.** Raising
+      it to `timeoutMS` 30000 / `timeoutFactor` 3 — **2.7x** the effective allowance, not
+      6x, since Stryker computes `timeoutFactor * netTime + timeoutMS + timeOverheadMS`
+      ([`mutant-test-planner.js:106`](node_modules/@stryker-mutator/core/dist/src/mutants/mutant-test-planner.js))
+      — moved the rate from 26.5% to 26.7%. Reverted to the defaults. Two claims written
+      down during that pass were wrong and have been removed rather than left standing:
+      that the raised budget made the run "about 6x slower" (it did not — 14 m 9 s vs
+      14 m 38 s), and that `StringLiteral`/`ArrayDeclaration` mutants "cannot loop"
+      (`[]` → `["Stryker was here"]` into a drain-and-refill loop hangs perfectly well).
+- [x] **Answered: the timeouts are NOT hangs, and they are NOT stable.** The question
+      decides whether the band's top or bottom is honest, so it was measured rather than
+      argued. `genericUtils.ts` (108 mutants) was re-run with `coverageAnalysis: "off"`,
+      which runs **363 tests per mutant instead of 18** — twenty times the work against
+      only 1.65x the budget. A wall-clock explanation predicts far more timeouts; a
+      genuine-hang explanation predicts the *same mutants* timing out. Neither happened.
+      The rate barely moved (58.3% → 55.6%) but the *identity* of the timeouts churned
+      almost completely:
+
+      | perTest → off | count |
+      |---|---|
+      | Timeout → Timeout | 32 |
+      | **Timeout → Killed** | **27** |
+      | **Killed → Timeout** | **22** |
+      | Killed → Killed | 15 |
+      | Survived → Timeout | 2 |
+      | **Timeout → Survived** | **1** |
+      | other (Survived/RuntimeError/NoCoverage) | 9 |
+
+      An infinite loop times out in both configurations, every time. Only 32 of 60 did.
+      **27 mutants scored as "detected by timeout" were provably killed by a real
+      assertion**, and — the line that matters — **1 mutant scored as detected was
+      provably a SURVIVOR**, with 2 more known survivors scored as kills the other way.
+      So a timeout here is a coin flip, and Stryker's "TimedOut counts as DETECTED"
+      is silently converting an unknown number of survivors into kills. Corroborating:
+      **0 of the 203** timeouts tripped Stryker's instrumented hit limit, which a loop
+      through the mutated statement should trip, and the only 3 errors in the run are
+      all `genericUtils.ts`, two of them `Test runner crashed. Tried twice to restart
+      it without any luck` — a runner fault, not a mutant one.
+- [ ] **Open: pin the mechanism, then decide the remedy.** The leading explanation is
+      that Stryker calibrates every mutant's budget on a dry run it performs **solo**
+      (`Ran 880 tests in 17 seconds (net 7683 ms, overhead 9455 ms)` — `timeOverheadMS`
+      is that solo overhead) and then executes mutants **9 at a time** on a 10-core box,
+      so the allowance never accounts for the contention the mutants actually run under.
+      That also explains the per-module gradient, because `jest.enableFindRelatedTests`
+      defaults to on: `genericUtils.ts` is imported almost everywhere, so each of its
+      mutants reloads most of the suite (58% timeouts), while `repairCommand.ts` is
+      reachable from two test files (6%). Being measured now with `--concurrency 1`.
+      Until it is settled, **quote the band `[59.2%, 85.92%]`, never the 85.92%.**
 - [x] **The shape of the 87 survivors** is 28 `ConditionalExpression`, 24 `StringLiteral`,
       14 `BlockStatement`, 9 `EqualityOperator` — no single dominant class like the
       `safetyPolicy.ts` finding, so this is a diffuse tail rather than one missing kind of

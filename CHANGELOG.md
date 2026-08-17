@@ -436,6 +436,18 @@ All notable changes to this project will be documented in this file.
   nor coverage breadth (10.6 vs 11.7 covering tests, 2.85 vs 2.58 covering test
   files) separates Timeout from Killed; what does correlate is the mutated file —
   48% of `genericUtils.ts` against 5% of `repairCommand.ts`.
+- The core mutation score is now quoted as a band, because the timeouts behind it
+  were shown to be non-deterministic. Re-running `genericUtils.ts` under
+  `coverageAnalysis: "off"` — 363 tests per mutant instead of 18, twenty times the
+  work — barely moved the rate (58.3% to 55.6%) but almost entirely changed *which*
+  mutants timed out: only 32 of 60 timed out in both, 27 that had "timed out" were
+  killed by a real assertion, 22 that had been killed timed out instead, and one
+  mutant scored as detected was in fact a **survivor** (with two known survivors
+  scored as kills the other way). A genuine infinite loop times out in every
+  configuration; a coin flip does not. Since Stryker counts a TimedOut mutant as
+  DETECTED, each of those flips silently promotes an undetected mutant to a kill, so
+  the honest reading of the 2026-08-17 run is the band `[59.2%, 85.92%]` — 763
+  mutants, 14 min 9 s, 203 timeouts (26.6%) — and not the 85.92%.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
