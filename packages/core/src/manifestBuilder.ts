@@ -6,6 +6,16 @@ import {
   getDisplayField,
   getFileTypeForInternalType,
 } from "./fieldMap.js";
+import {
+  META_DICTIONARY_FIELDS,
+  META_FILE_NAME,
+  META_FILE_TYPE,
+  isMetaFieldCandidate,
+  isMetaFile,
+  isReadOnlyDictionaryRow,
+  metaFile,
+  serializeMetaFields,
+} from "./metaFields.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
 import * as ConfigManager from "./config.js";
@@ -359,7 +369,11 @@ async function getFileFieldsForTable(
   tableName: string,
   includes: Sync.TablePropMap,
   excludes: Sync.TablePropMap,
-  onSkip?: () => void
+  onSkip?: () => void,
+  // DX22: the hierarchy walk this function performs is the same one the metadata
+  // discovery needs. Handing it back costs nothing and spares the caller a second
+  // sys_db_object walk per table.
+  onHierarchy?: (tableNames: string[]) => void
 ): Promise<SN.File[]> {
   try {
     // ATF step script is stored in inputs.script and is not reliably available via dictionary.
@@ -368,6 +382,7 @@ async function getFileFieldsForTable(
     }
 
     const hierarchyTableNames = await getTableHierarchyTableNames(client, tableName);
+    onHierarchy?.(hierarchyTableNames);
     const tableNameQuery = hierarchyTableNames
       .map((name) => `name=${name}`)
       .join("^OR");
@@ -515,6 +530,122 @@ async function getTextFieldsForTable(
     // drops the table from the rebuilt manifest.
     onSkip?.();
     return [];
+  }
+}
+
+/**
+ * DX22: the non-file columns of a table, i.e. what goes into each record's
+ * `.meta.json` sidecar.
+ *
+ * Deliberately a SEPARATE dictionary query rather than a widening of
+ * getFileFieldsForTable's `internal_type` filter. Widening that query would put
+ * every metadata column through the file-field code path, where each one becomes
+ * a manifest file, an on-disk file and a push target — the exact outcome the
+ * sidecar exists to avoid. Keeping the two lists disjoint at the source is also
+ * what lets the file half stay byte-for-byte unchanged.
+ *
+ * Unlike its file-field sibling this never reports a skip: metadata is additive,
+ * and a table whose columns could not be enumerated must still contribute its
+ * scripts rather than be treated as unreadable and carried forward wholesale.
+ */
+interface MetaFieldSet {
+  /** Every column serialized into the sidecar. */
+  fields: string[];
+  /** The subset of `fields` a push must never send back. */
+  readOnly: string[];
+}
+
+const NO_META_FIELDS: MetaFieldSet = { fields: [], readOnly: [] };
+
+async function getMetaFieldsForTable(
+  client: SNClient,
+  tableName: string,
+  fileFieldNames: string[],
+  tableOptions: Sync.ITableOptions | undefined,
+  hierarchyTableNames?: string[]
+): Promise<MetaFieldSet> {
+  const fileFields = new Set(fileFieldNames);
+  const dropFileFields = (fields: string[]): string[] =>
+    [...new Set(fields)].filter(
+      (field) => typeof field === "string" && field.length > 0 && !fileFields.has(field)
+    );
+
+  // An explicit list replaces discovery outright — that is what makes it usable
+  // to re-add a column the default rules exclude. File fields are still removed:
+  // two claimants for one column would write the value twice and let a push read
+  // back whichever the walker happened to reach first.
+  //
+  // It carries no read-only set either: the point of an explicit list is that
+  // the operator decided, so a column they named is a column they intend to
+  // write. (The instance still has the final say — the Table API drops a
+  // read-only value, and the push reports what it sent, not what stuck.)
+  if (Array.isArray(tableOptions?.metaFields)) {
+    return { fields: dropFileFields(tableOptions.metaFields).sort(), readOnly: [] };
+  }
+
+  try {
+    const hierarchy =
+      hierarchyTableNames || (await getTableHierarchyTableNames(client, tableName));
+    const tableNameQuery = hierarchy.map((name) => `name=${name}`).join("^OR");
+    // Paged at 500 for the same reason as the file-field query: this one is
+    // strictly wider (no internal_type filter), so a task- or cmdb_ci-derived
+    // table routinely returns several hundred dictionary rows.
+    const rows = await tableAPIGetAllRows(
+      client,
+      "sys_dictionary",
+      `${tableNameQuery}^elementISNOTEMPTY`,
+      META_DICTIONARY_FIELDS,
+      500
+    );
+
+    const seen = new Set<string>();
+    const fields: string[] = [];
+    const readOnly = new Set<string>();
+    for (const row of rows) {
+      const element = row.element;
+      if (!element || fileFields.has(element)) {
+        continue;
+      }
+      // Read-only-ness is collected from EVERY row for the column, before the
+      // first-wins dedupe below. A hierarchy query returns the base table's
+      // dictionary entry alongside any child override, in no guaranteed order,
+      // and either one may be the row that marks the column read-only. Taking
+      // the union is the conservative reading: a column no push may write is a
+      // worse thing to get wrong than a column pushed for nothing.
+      if (isReadOnlyDictionaryRow(row)) {
+        readOnly.add(element);
+      }
+      if (seen.has(element)) {
+        continue;
+      }
+      seen.add(element);
+      if (!isMetaFieldCandidate(element, row.internal_type)) {
+        continue;
+      }
+      fields.push(element);
+    }
+    // Sorted so the manifest's own metaFields list is stable across rebuilds.
+    fields.sort();
+    return {
+      fields,
+      readOnly: fields.filter((field) => readOnly.has(field)),
+    };
+  } catch (e) {
+    // Deliberately swallows EVERY error, unlike getFileFieldsForTable which
+    // rethrows anything that is not a 404-ish endpoint miss. The metadata layer
+    // is strictly additive: a table without it is the pre-DX22 table, which is a
+    // complete and usable result, whereas propagating here would push a table
+    // whose FILES fetched perfectly well into failedTables and fail the build.
+    // (A read ACL that hides sys_dictionary from this user answers 403, not 404,
+    // so the skippable-error rule would not have covered the common case anyway.)
+    // Reporting onSkip is equally wrong: a "skipped" table is carried forward
+    // wholesale from the previous manifest, discarding the records just built.
+    logger.debug(
+      `Table ${tableName}: metadata columns not enumerable ` +
+        `(${e instanceof Error ? e.message : String(e)}), ` +
+        `writing no .meta.json sidecar for it.`
+    );
+    return NO_META_FIELDS;
   }
 }
 
@@ -721,7 +852,12 @@ async function getRecordsForTable(
   scopeId: string,
   files: SN.File[],
   tableOptions: Sync.ITableOptions | undefined,
-  onSkip?: () => void
+  onSkip?: () => void,
+  // DX22: what each record LISTS, which is the file fields plus the `.meta`
+  // pseudo-file. Kept separate from `files` because `files` is what the query
+  // SELECTS, and `.meta` is not a column — asking the Table API for it would
+  // make the whole projection invalid.
+  recordFiles: SN.File[] = files
 ): Promise<SN.TableConfigRecords> {
   const displayField = getDisplayField(tableName);
   const baseQuery = `sys_scope=${scopeId}^sys_class_name=${tableName}`;
@@ -796,7 +932,7 @@ async function getRecordsForTable(
       setRecord(records, name, {
         sys_id: entry.sysId,
         name,
-        files: files.map((f) => ({ name: f.name, type: f.type })),
+        files: recordFiles.map((f) => ({ name: f.name, type: f.type })),
       });
     }
 
@@ -914,11 +1050,15 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 export async function buildManifestFromTableAPI(
   scopeName: string,
   client: SNClient,
-  config: Pick<Sync.Config, "includes" | "excludes" | "tableOptions">
+  config: Pick<Sync.Config, "includes" | "excludes" | "tableOptions" | "meta">
 ): Promise<SN.AppManifest> {
   const includes = config.includes || {};
   const excludes = config.excludes || {};
   const tableOptions = config.tableOptions || {};
+  // DX22: opt-out, not opt-in. A workspace holding only the scripts of its
+  // records is missing most of what defines them, and a default-off flag would
+  // have left every existing project in that state indefinitely.
+  const metaEnabled = config.meta !== false;
 
   const scopeId = await getScopeId(client, scopeName);
   if (!scopeId) {
@@ -952,18 +1092,33 @@ export async function buildManifestFromTableAPI(
     const onSkip = () => {
       skipped = true;
     };
+    let hierarchyTableNames: string[] | undefined;
     try {
       const files = await getFileFieldsForTable(
         client,
         tableName,
         includes,
         excludes,
-        onSkip
+        onSkip,
+        (names) => {
+          hierarchyTableNames = names;
+        }
       );
       if (files.length === 0) {
         if (skipped) skippedTables.push(tableName);
         return;
       }
+
+      const meta = metaEnabled
+        ? await getMetaFieldsForTable(
+            client,
+            tableName,
+            files.map((f) => f.name),
+            tableOptions[tableName],
+            hierarchyTableNames
+          )
+        : NO_META_FIELDS;
+      const hasMeta = meta.fields.length > 0;
 
       const records = await getRecordsForTable(
         client,
@@ -971,14 +1126,22 @@ export async function buildManifestFromTableAPI(
         scopeId,
         files,
         tableOptions[tableName],
-        onSkip
+        onSkip,
+        hasMeta ? [...files, metaFile()] : files
       );
       if (Object.keys(records).length === 0) {
         if (skipped) skippedTables.push(tableName);
         return;
       }
 
-      manifest.tables[tableName] = { records };
+      // metaReadOnlyFields is omitted when empty rather than written as []: the
+      // manifest is diffed by humans and committed, so an always-present empty
+      // key would be noise on every table that has no read-only column.
+      manifest.tables[tableName] = !hasMeta
+        ? { records }
+        : meta.readOnly.length > 0
+          ? { records, metaFields: meta.fields, metaReadOnlyFields: meta.readOnly }
+          : { records, metaFields: meta.fields };
       // A partially refused read (one `sys_idIN` chunk denied while the others
       // answered) still yields records — but an incomplete set. Committing it as
       // authoritative is the same data loss as dropping the table: the records
@@ -1058,11 +1221,20 @@ function getPreviousManifest(scopeName: string): SN.AppManifest | undefined {
  */
 export type ManifestRecordNames = Record<string, Record<string, string>>;
 
+/**
+ * DX22: the sidecar columns per table, exactly as the manifest recorded them.
+ * The download side cannot re-derive this — it holds only the missing subset,
+ * not the dictionary — so the caller reads it off the manifest that produced the
+ * missing map (see buildManifestMetaFields in downloadPipeline).
+ */
+export type ManifestMetaFields = Record<string, string[]>;
+
 export async function buildBulkDownloadFromTableAPI(
   missingFiles: SN.MissingFileTableMap,
   client: SNClient,
   tableOptions: Sync.ITableOptionsMap,
-  recordNames?: ManifestRecordNames
+  recordNames?: ManifestRecordNames,
+  metaFieldsByTable?: ManifestMetaFields
 ): Promise<SN.TableMap> {
   const result: SN.TableMap = {};
 
@@ -1074,18 +1246,30 @@ export async function buildBulkDownloadFromTableAPI(
       const tableOpts = tableOptions[tableName];
       const defaultDisplayField = getDisplayField(tableName);
 
-      // Collect all unique file fields across missing records
+      // Collect all unique file fields across missing records. DX22: the `.meta`
+      // pseudo-file is filtered out here — it names no column, so leaving it in
+      // would put ".meta" into sysparm_fields and make the whole projection
+      // invalid. It is re-attached per record after the row is read.
       const allFiles = new Map<string, SN.FileType>();
+      let metaRequested = false;
       for (const files of Object.values(recordMap)) {
         for (const f of files) {
+          if (isMetaFile(f)) {
+            metaRequested = true;
+            continue;
+          }
           allFiles.set(f.name, f.type as SN.FileType);
         }
       }
+      const metaFields = metaFieldsByTable?.[tableName] ?? [];
+      const wantMeta = metaRequested && metaFields.length > 0;
 
-      // Same field list as the manifest path so record names stay in parity.
+      // Same field list as the manifest path so record names stay in parity —
+      // plus the sidecar columns, which only this path (not the manifest build)
+      // needs the values of.
       const tableFields = buildRecordFieldList(
         defaultDisplayField,
-        [...allFiles.keys()],
+        wantMeta ? [...allFiles.keys(), ...metaFields] : [...allFiles.keys()],
         tableOpts
       );
 
@@ -1168,6 +1352,18 @@ export async function buildBulkDownloadFromTableAPI(
               name: fieldName,
               type: fieldType,
               content: row[fieldName] ?? "",
+            });
+          }
+
+          // DX22: the sidecar is synthesized, not fetched — it is one JSON
+          // document built from columns the row already carries, so it costs no
+          // extra request. Only for records that actually asked for it: a
+          // targeted refresh may be re-fetching one field of one record.
+          if (wantMeta && (recordMap[sysId] ?? []).some(isMetaFile)) {
+            files.push({
+              name: META_FILE_NAME,
+              type: META_FILE_TYPE,
+              content: serializeMetaFields(row, metaFields),
             });
           }
 

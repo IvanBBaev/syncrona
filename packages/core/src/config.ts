@@ -25,6 +25,12 @@ const DEFAULT_CONFIG: Sync.Config = {
   excludes,
   tableOptions: {},
   refreshInterval: 30,
+  // DX22: write the `.meta.json` sidecar unless a project opts out.
+  meta: true,
+  // DX22: and push local edits to it back, unless a project opts out. Separate
+  // from `meta` because "show me the metadata" and "let me change it" are
+  // different decisions — a team can keep the sidecar as read-only reference.
+  metaPush: true,
 };
 
 type ConfigState = {
@@ -81,6 +87,8 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" 
   tableOptions: "object",
   refreshInterval: "number",
   flat: "boolean",
+  meta: "boolean",
+  metaPush: "boolean",
 };
 
 export function validateConfigShape(config: unknown, configPath: string): void {
@@ -551,7 +559,11 @@ export function getDefaultConfigFile(sourceDirectory = "src"): string {
       excludes:{},
       includes:{},
       tableOptions:{},
-      refreshInterval:30
+      refreshInterval:30,
+      // DX22: set to false to stop writing the per-record .meta.json sidecar.
+      meta:true,
+      // DX22: set to false to keep that sidecar read-only (never pushed back).
+      metaPush:true
     };
     `.trim();
 }

@@ -185,8 +185,16 @@ describe("manifest paging", () => {
     // The field that only exists on the second page is what truncation lost.
     expect(files).toContain("late_field");
 
+    // Only the FILE-field discovery query is under test here. DX22's metadata
+    // discovery hits the same table with the same field list, so match on the
+    // internal_type filter that is unique to file discovery.
     const dictOffsets = tableAPIGet.mock.calls
-      .filter((c) => c[0] === "sys_dictionary" && c[2] === "element,internal_type")
+      .filter(
+        (c) =>
+          c[0] === "sys_dictionary" &&
+          c[2] === "element,internal_type" &&
+          String(c[1]).includes("internal_type=")
+      )
       .map((c) => c[4]);
     expect(dictOffsets).toEqual([0, 200]);
   });

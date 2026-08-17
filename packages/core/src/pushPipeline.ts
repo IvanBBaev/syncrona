@@ -6,6 +6,11 @@ import * as ConfigManager from "./config.js";
 import { PUSH_RETRY_LIMIT, PUSH_RETRY_WAIT } from "./constants.js";
 import PluginManager from "./PluginManager.js";
 import {
+  META_FILE_NAME,
+  isMetaFieldName,
+  resolveMetaUpdate,
+} from "./metaFields.js";
+import {
   defaultClient,
   getErrorResponseStatus,
   isRetryableRequestError,
@@ -67,7 +72,15 @@ const buildRec = async (
 ): Promise<Sync.RecBuildRes> => {
   const fields = Object.keys(rec.fields);
   const buildPromises = fields.map((field) => {
-    return PluginManager.getFinalFileContents(rec.fields[field]);
+    // The sidecar is read RAW. It is data, not source: a plugin rule matching
+    // "*.json" (a formatter, a bundler, a template step) would rewrite the very
+    // bytes resolveMetaUpdate has to parse, and any rule that emits something
+    // other than an object of column values turns a metadata edit into a push
+    // failure with no obvious cause. Field files keep the full plugin chain.
+    return PluginManager.getFinalFileContents(
+      rec.fields[field],
+      !isMetaFieldName(field)
+    );
   });
   const builtFiles = await allSettled(buildPromises);
   const buildSuccess = !builtFiles.find(
@@ -95,6 +108,59 @@ const buildRec = async (
   return {
     success: true,
     builtRec,
+  };
+};
+
+/** A record's update body once its `.meta` pseudo-field has been expanded. */
+interface MetaExpansion {
+  /** Column → value, ready for the Table API. Never contains ".meta". */
+  fields: Record<string, string>;
+  /** Sidecar columns deliberately not sent (read-only, or `metaPush: false`). */
+  skipped: string[];
+}
+
+/**
+ * Turn the `.meta` pseudo-field into the real columns it stands for.
+ *
+ * Deliberately at PUSH time and not at build time. `build` writes whatever
+ * buildRec produced into the build tree, so leaving the sidecar intact there
+ * means the build tree holds a `.meta.json` that looks exactly like the source
+ * one — and `deploy`, which re-reads that tree through the same path resolver,
+ * expands it here by the same rules. Expanding during build would instead leave
+ * the build tree holding files named after columns, which is neither layout.
+ *
+ * Field files win over sidecar columns on a name collision. Discovery already
+ * removes file fields from `metaFields`, so this only bites when an explicit
+ * `tableOptions.<table>.metaFields` re-adds one; the file is the value the user
+ * edits, so it is the value that goes.
+ */
+export const expandMetaSidecar = (
+  rec: Sync.BuildableRecord,
+  builtRec: Record<string, string>
+): MetaExpansion => {
+  if (!(META_FILE_NAME in builtRec)) {
+    return { fields: builtRec, skipped: [] };
+  }
+  const { [META_FILE_NAME]: content, ...fileFields } = builtRec;
+
+  if ((ConfigManager.getConfig() as Sync.Config).metaPush === false) {
+    // Not silent: dropping an edit the user made and saying nothing is the exact
+    // failure this feature exists to remove. The record still pushes its files.
+    logger.info(
+      `${summarizeRecord(rec.table, rec.fields[META_FILE_NAME].name)} : ` +
+        "metadata not pushed (`metaPush: false` in sync.config.js)."
+    );
+    return { fields: fileFields, skipped: [] };
+  }
+
+  const table = ConfigManager.getManifest()?.tables[rec.table];
+  const update = resolveMetaUpdate(content, {
+    metaFields: table?.metaFields,
+    readOnlyFields: table?.metaReadOnlyFields,
+  });
+  return {
+    fields: { ...update.fields, ...fileFields },
+    skipped: update.skipped,
   };
 };
 
@@ -209,11 +275,35 @@ export const pushFiles = async (
       tick();
       return { success: false, message: `${recSummary} : ${buildRes.message}` };
     }
+    let expanded: MetaExpansion;
+    try {
+      expanded = expandMetaSidecar(rec, buildRes.builtRec);
+    } catch (e) {
+      // An unusable sidecar is a per-record failure like any build failure: the
+      // other records in the push still go, and the message names the columns.
+      tick();
+      return {
+        success: false,
+        message: `${recSummary} : ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+    if (expanded.skipped.length > 0) {
+      logger.info(
+        `${recSummary} : skipping read-only metadata column(s) ` +
+          `${expanded.skipped.join(", ")} — the instance would discard them.`
+      );
+    }
+    if (Object.keys(expanded.fields).length === 0) {
+      // Only reachable for a sidecar-only record whose every column was skipped.
+      // PATCHing `{}` would answer 200 and report a push that changed nothing.
+      tick();
+      return { success: true, message: `${recSummary} : nothing to push.` };
+    }
     const pushRes = await pushRec(
       client,
       rec.table,
       rec.sysId,
-      buildRes.builtRec,
+      expanded.fields,
       recSummary
     );
     tick();

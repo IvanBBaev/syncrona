@@ -10,8 +10,10 @@ import {
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
   isScopedEndpointUnavailableError,
+  ManifestMetaFields,
   ManifestRecordNames,
 } from "./manifestBuilder.js";
+import { isMetaFile } from "./metaFields.js";
 import { logger } from "./Logger.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
@@ -539,6 +541,24 @@ export const buildManifestRecordNames = (
   return names;
 };
 
+// DX22: the manifest's sidecar columns per table (table -> metaFields). Only the
+// Table-API manifest builder records them, so a manifest produced by the scoped
+// endpoint yields an empty map — and with no `.meta` pseudo-file in its records
+// either, that path simply carries no metadata layer.
+export const buildManifestMetaFields = (
+  manifest: SN.AppManifest
+): ManifestMetaFields => {
+  // INJ-2: null-proto for the same reason as buildManifestRecordNames.
+  const metaFields: ManifestMetaFields = Object.create(null);
+  for (const [tableName, tableConfig] of Object.entries(manifest.tables)) {
+    const fields = tableConfig.metaFields;
+    if (Array.isArray(fields) && fields.length > 0) {
+      metaFields[tableName] = fields;
+    }
+  }
+  return metaFields;
+};
+
 // Returns the tables the instance could not fully supply, so refresh/repair can
 // report an incomplete run instead of a clean one. An empty array means success.
 export const processMissingFiles = async (
@@ -556,6 +576,7 @@ export const processMissingFiles = async (
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient();
   const recordNames = buildManifestRecordNames(newManifest);
+  const metaFields = buildManifestMetaFields(newManifest);
 
   // PERF-3 (REV-91): stream the fetch/write one table at a time instead of
   // materializing every missing file body for the whole scope in memory at once.
@@ -571,7 +592,8 @@ export const processMissingFiles = async (
         tableMissing,
         client,
         tableOptions,
-        recordNames
+        recordNames,
+        metaFields
       );
     }
     try {
@@ -586,7 +608,8 @@ export const processMissingFiles = async (
           tableMissing,
           client,
           tableOptions,
-          recordNames
+          recordNames,
+          metaFields
         );
       }
       throw e;
@@ -695,6 +718,11 @@ const collectUnfetchedFields = (
     const returned = returnedBySysId.get(sysId);
     if (!returned) continue;
     for (const file of files ?? []) {
+      // DX22: the sidecar is not a column, so "the instance did not return it"
+      // is not a read-access gap. The scoped bulk endpoint never produces one,
+      // and counting its absence here would make every refresh against an
+      // instance that HAS that endpoint report itself incomplete forever.
+      if (isMetaFile(file)) continue;
       if (!returned.has(file.name)) unfetched.add(file.name);
     }
   }
@@ -833,6 +861,7 @@ export const downloadAllFiles = async (
   const { tableOptions = {} } = ConfigManager.getConfig();
   const client = defaultClient(instanceProfile);
   const recordNames = buildManifestRecordNames(manifest);
+  const metaFields = buildManifestMetaFields(manifest);
 
   // Probe the scoped endpoint once; after the first "unavailable" go straight to
   // the Table API for the remaining tables instead of re-probing each time.
@@ -845,7 +874,8 @@ export const downloadAllFiles = async (
         tableMissing,
         client,
         tableOptions,
-        recordNames
+        recordNames,
+        metaFields
       );
     }
     try {
@@ -860,7 +890,8 @@ export const downloadAllFiles = async (
           tableMissing,
           client,
           tableOptions,
-          recordNames
+          recordNames,
+          metaFields
         );
       }
       throw e;

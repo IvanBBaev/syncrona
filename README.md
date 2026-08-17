@@ -632,6 +632,13 @@ module.exports = {
   // <table>/<record>~<field>.<ext> instead of per-record folders. The mapping
   // is lossless and reversible (see "Flat layout" below).
   flat: false,
+  // Write a `.meta.json` sidecar next to each record's field files, holding the
+  // record's non-file columns (see "Record metadata" below). Set to false to
+  // stop writing it.
+  meta: true,
+  // Push local edits to that sidecar back to the instance. Set to false to keep
+  // it as read-only reference data.
+  metaPush: true,
 };
 ```
 
@@ -661,6 +668,76 @@ and `refresh` only fetches files the manifest does not have yet, so the old
 per-record folders stay where they are and new files land in the other shape.
 Delete the downloaded tree (or start a fresh workspace) and re-download after
 changing the setting.
+
+#### Record metadata (`.meta.json`)
+
+A record is more than its code. A script include also carries `api_name`,
+`access`, `client_callable`, `active` and `description`; a business rule carries
+`when`, `order`, `condition` and `collection`. None of those is a *file field* —
+ServiceNow types them as string, boolean, choice or reference — so they used to
+be invisible: a workspace held the script and nothing else.
+
+Each record now also gets a metadata sidecar holding its non-file columns:
+
+```
+sys_script_include/MyUtil/script.js
+sys_script_include/MyUtil/.meta.json      <- and flat: MyUtil~.meta.json
+```
+
+```json
+{
+  "access": "public",
+  "active": "true",
+  "api_name": "x_demo.MyUtil",
+  "client_callable": "false",
+  "description": "Shared helpers"
+}
+```
+
+The columns are discovered from the dictionary, per table, and the manifest
+records the list it used. Excluded by default: every field field (it already has
+its own file), `password`/`password2` (credentials must never reach the working
+tree), journal fields and binaries (no stable string form), and the `sys_*`
+plumbing that changes without the artifact changing. Keys are sorted and empty
+values dropped, so re-downloading an unchanged record produces no diff.
+
+**The sidecar is editable.** `push`, `dev` and `deploy` expand it back into an
+update of the record's real columns, in the same request that carries the field
+files. Three rules, each there because the alternative loses an edit silently:
+
+- **A column the table does not track is an error.** ServiceNow ignores unknown
+  columns in an update and still answers `200`, so a typo (`descripton`) would
+  otherwise be reported as a successful push that changed nothing. The push fails
+  for that record and names the keys.
+- **A read-only or virtual column is withheld, not rejected.** `api_name` is
+  derived server-side; it is written into the sidecar because it is worth reading
+  next to the script, and skipped on the way back because the instance would
+  discard it and still answer `200`. The push logs what it withheld. Those
+  columns are recorded in the manifest as `metaReadOnlyFields`.
+- **A missing key is not a request to clear the column.** Empty values are
+  dropped when the file is written, so "absent" and "empty on the instance" are
+  the same state. To clear a column, write `""` explicitly.
+
+Everything on the instance still applies on top: write ACLs, business rules and
+data policies can reject or rewrite a value the push sent.
+
+Set `metaPush: false` in `sync.config.js` to keep the sidecar as read-only
+reference data — the field files still push, and each skipped record says so.
+Set `meta: false` to stop writing sidecars at all. To control which columns a
+given table records, list them explicitly — that replaces discovery for that
+table, so it can also re-add a column the default rules exclude:
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  tableOptions: {
+    sys_script: {
+      metaFields: ["when", "order", "condition", "collection", "sys_overrides"],
+    },
+  },
+};
+```
 
 ### There are WAY too many files in here!
 
@@ -769,6 +846,9 @@ module.exports = {
       differentiatorField: ["some_field", "sys_id"],
       // an encoded query to filter records by
       query: "some_field=test",
+      // the columns written into each record's .meta.json sidecar; replaces
+      // dictionary discovery for this table
+      metaFields: ["active", "order"],
     },
   },
 };
@@ -789,6 +869,14 @@ module.exports = {
   An array tries each field in order until one has a value.
 - **`query`** — an encoded query that limits which records are tracked for the
   table. Use it to scope large tables down to the records you actually edit.
+- **`metaFields`** — the exact columns written into this table's `.meta.json`
+  sidecars, replacing dictionary discovery. Use it to trim a noisy sidecar down
+  to the handful of columns you care about, or to re-add one the default rules
+  exclude (`sys_overrides`, say). File fields are always removed from the list —
+  they already have their own file. An explicit list is taken as a decision, so
+  none of its columns are withheld from a push; the instance still has the final
+  say on a column it will not write. See
+  [Record metadata](#record-metadata-metajson).
 
 **Note on differentiatorField**
 

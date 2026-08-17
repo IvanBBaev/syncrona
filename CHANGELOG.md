@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Record metadata is now synced in both directions. Field discovery only ever
+  admitted the eight script-ish dictionary types, so a script include's
+  `api_name`, `access`, `client_callable`, `active` and `description` were never
+  selected, never written and never diffable — the workspace held the code and
+  nothing else. Each record now also gets a `.meta.json` sidecar (flat layout:
+  `<record>~.meta.json`) holding its non-file columns, with the column list
+  discovered per table and recorded in the manifest. Passwords, journal fields,
+  binaries and `sys_*` plumbing are excluded; keys are sorted and empty values
+  dropped, so re-downloading an unchanged record produces no diff. Set
+  `meta: false` to opt out, or `tableOptions.<table>.metaFields` to choose the
+  columns explicitly. `repair --prune` does not treat the sidecar as an orphan.
+- Edits to a `.meta.json` sidecar are pushed back. `push`, `dev` and `deploy`
+  expand it into an update of the record's real columns, in the same request as
+  the field files. A column the table does not track fails that record rather
+  than being sent, because ServiceNow ignores unknown columns and still answers
+  `200`; a column the dictionary marks read-only or virtual is withheld and
+  reported (recorded in the manifest as `metaReadOnlyFields`); a missing key is
+  not a clear, since empty values are never written — clear a column with `""`.
+  Set `metaPush: false` to keep the sidecar as read-only reference data.
 - `deploy --ci` skips the overwrite confirmation, so a deploy can run in a
   noninteractive pipeline.
 - `init --ci` is now accepted. The flag was documented and read by the command,
