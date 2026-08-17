@@ -181,16 +181,16 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.32 / 92.53
+    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.34 / 92.75
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.91
-    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.03 / 79.16
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 97.87 / 84.61
+    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.55 / 81.03
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 97.95 / 84.53
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 93.86 / 82.37
+    './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.26 / 83.43
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.61 / 93.67
+    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.66 / 93.82
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.28
     // Credentials: the keychain/file store and the auth-method picker.
