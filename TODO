@@ -1384,6 +1384,488 @@ Exit code captured directly (`npm run check > log 2>&1; echo $?`), not through a
 
 ---
 
+## Wave — the gate that was lying (2026-08-02)
+
+Trigger: three open dependency PRs were red on **ubuntu only** and green on macOS.
+Not a test failure — a per-file coverage floor, missed **by one line**.
+
+#### Root cause
+`packages/core/src/mcpCommand.ts` had no named floor while being the weakest file
+in the tree, so the two tree-wide globs were sized against *it*: 78 lines / 62
+branches, derived from its **macOS** measurement of 83.33 / 68.18. The file branches
+on `process.platform` to find Claude Desktop and Cursor config paths; on Linux
+neither the darwin nor the win32 arm runs and it measures **77.77 / 52.27**. The
+floor it had set was 0.23 points above what it could reach on the OS CI runs.
+
+The suite that should have caught this was worse than absent. In
+`commandsFlow.test.ts`, the merge-semantics test built its `expectedPaths` by
+**mirroring the source's own `process.platform` branching**. On Linux both arms are
+false, the array is empty, and the `for` loop over it asserts nothing — a green test
+that had verified nothing, on exactly the platform that was failing.
+
+#### Fixed
+- 39 tests for `mcpCommand.ts` that **pin** the platform rather than read it —
+  100.00 lines / 98.11 branches on every host, behind a new **97/93** floor.
+- The vacuous test now pins darwin and asserts `expectedPaths` is non-empty before
+  looping, so it can never go vacuous again.
+- Four real defects surfaced while covering the file, all in the CHANGELOG:
+  an explicit `--mcp-server-path` silently falling through to discovery; a JSON
+  array accepted as a client config and then silently emptied by `JSON.stringify`;
+  win32 without `APPDATA` reporting a configure that wrote nothing; and
+  `--instance-profile` being outranked by the stored active instance, which aimed
+  the MCP server at an instance the user did not name.
+- With that anchor gone, the tree-wide globs ratchet **78/62 → 81/67**. The new
+  anchors are honest ones: lines `bootstrap.ts` 84.00 (uncovered code sits behind
+  `JEST_WORKER_ID` guards — unreachable from this suite by construction), branches
+  `commandHelpers.ts` and `wizard.ts` at 71.79.
+
+#### The second-order fix
+Correcting the floors exposed that the `// measured L/B` annotations beside them
+were themselves stale — and both floor audits compute **headroom** (measured minus
+floor) from those comments. `manifestBuilder.ts` recorded 94.39 / 78.96 while
+measuring 93.55 / 81.02: the audit written to catch an unsatisfiable floor was
+reading a number that no longer described the file.
+
+`scripts/check-coverage-annotations.mjs` closes the loop as a new check-chain link
+and CI step. It takes floor **keys** from both configs by `require()` (audited set
+≡ enforced set), and fails closed — missing report, stale report, unannotated floor,
+orphan annotation, ambiguous pattern, unparseable payload. Ten annotations were
+wrong when it first ran. It then caught an eleventh, `commands.ts` at 96.19 / 81.81
+against a real 96.73 / 83.11, that a careful manual pass had just missed — which is
+the whole argument for the gate. Floor raised 77 → **79** accordingly.
+
+Also ratcheted from re-measurement: `repairCommand.ts` 85/79 → **93/88**,
+`manifestBuilder.ts` branches 74 → **77**.
+
+#### The risk that gate introduced, and how it was closed
+An exact-match annotation gate assumes coverage is **host-independent** — the
+annotations are macOS measurements, and ubuntu CI runs the same gate. If any
+annotated file measured differently there, the gate would red the ubuntu half of
+the matrix for reasons no PR could fix, which is the very failure mode this wave
+started from.
+
+Measured rather than assumed: the full core suite was re-run with
+`process.platform` forced to `linux` into a separate coverage directory and
+diffed per file against the macOS report. Exactly **one** file differed —
+`diagnosticsCommands.ts`, 100.00/98.44 on macOS vs 99.58/97.67 — and it carries no
+annotation, so the gate was already safe. The cause is worth recording anyway: the
+platform check's third arm is "neither win32 nor linux", and it was covered only
+because the developer machines *are* macOS. A pinned test closed it; simulated
+Linux now measures 100.00/98.44, identical to macOS, and **zero** files differ
+between the two platforms.
+
+#### The second way an exact-match gate can go red for free
+Host-independence is only half of it. The gate also assumes coverage is
+**run-independent** — that the same tree measured twice produces the same numbers.
+It did not. `dist/policyConfig.js` reported 100.00 / 100.00 on most runs and
+97.60 / 99.00 on others, uncovering lines 311-318: the REV-197 fail-closed refusal
+for a `requireDryRun` guardrail naming a tool whose handler cannot honour a dry run.
+
+The cause is worth more than the symptom. That branch had **no test of its own**.
+Measured per file across all 60 mcp-server suites, *not one* covers line 311 in
+isolation — every tool named with `requireDryRun` anywhere in the suite
+(`sync_push`, `sync_unified_change_workflow`, `run_node_code`, `sn_create_record`)
+is dry-run aware, so the refusal arm was only ever reached incidentally, from
+whatever the concurrent full run happened to do. Coverage arriving by accident is
+not coverage: it says nothing about the guard, and it moves between runs.
+
+`guardrailFailClosed.test.js` now drives it directly — the refusal, the negative
+control that `dryRun: true` does **not** buy a pass (before the guard it was the
+only accepted shape and still performed the real mutation), the logged operator
+error, and a second test pinning that the refusal stays scoped to tools that
+cannot honour a dry run. Two in-process assertions, no subprocess, no ordering:
+`policyConfig.js` is 100.00 / 100.00 by construction now, not by luck.
+
+The general lesson for anything the annotation gate covers: an exact-match
+comparison is only as stable as the weakest incidentally-covered line in the tree.
+When it goes red on a file nobody touched, the first question is not "which
+annotation is stale" but "which branch has no test and was being covered by
+accident".
+
+The very next full run proved the lesson by producing a second one. `dist/audit.js`
+had already been recorded three different ways across this session — 96.33 / 91.74,
+then 96.57 / 92.12, then 96.25 / 91.70 — and diffing the per-file rows of five saved
+runs isolated the whole difference to a single range: the `while (existsSync(...))`
+collision arm of `toCorruptAuditPath`. The quarantine filename carries a *millisecond*
+timestamp, so that arm runs only when the same audit file is quarantined twice inside
+one millisecond. `REV-94 caps the number of retained .corrupt. quarantine files`
+quarantines five times in a tight loop, which collides on an idle machine and does not
+under `check` load — coverage decided by the scheduler, not by a test.
+
+Note the difference from the `policyConfig` case: this branch was not untested for want
+of an idea, it was **untestable**, because the clock was embedded in the function. So
+the fix is a source change, not just a test — `toCorruptAuditPath` now takes `now` as a
+parameter (production still calls the one-argument form) and is exported so a frozen
+instant can drive the collision on purpose. `auditIntegrity.test.js` pins the `.1`/`.2`
+suffixes, that neither earlier quarantine is clobbered — the arm guards *tamper
+evidence*, so a clobber is the failure that matters — and that the default arm still
+stamps wall-clock time.
+
+Two independent files, two different mechanisms, one shape: **a branch whose coverage
+depended on something other than a test**. Worth running the row-diff across a handful
+of saved reports whenever the gate reddens; it localises the flapping range in seconds
+and costs nothing. Across the five reports on hand, `audit.js` was the last one.
+
+Grepping for the shape afterwards found three sites, not one. The same millisecond
+stamp names a *rotated* log too, so `writeAuditEvent`'s size-rotation block carried a
+second copy of the collision loop — never covered at all, since no test rotates twice
+that fast. The two copies are now one `withCollisionSuffix` behind `toRotatedAuditPath`
+and `toCorruptAuditPath`; the `corrupt.` infix is load-bearing rather than decorative,
+because `pruneRotatedAuditFiles` excludes names containing it (`audit.ts:55`) and
+`pruneCorruptAuditFiles` requires them (`audit.ts:793`), so a rotated log and a
+quarantine are told apart by that marker alone — hence a test that pins its absence
+from a rotated name. `dist/audit.js` now measures 96.63 / 92.15, identical across two
+consecutive gate runs. The third site is `toRotatedMetricsPath`
+(`src/metricsStore.ts:63-75`): same shape, but at the time covered identically across
+four runs and carrying no annotation, so it was latent rather than active — worth the
+same treatment when that file was next touched.
+
+**Closed (REV-213).** That file was next touched in this pass, and the deferral turned
+out to have been sized against the wrong risk. "Covered identically across four runs"
+described the *measurement*, not the branch: the only thing reaching the arm was the
+prune test's four rotations in a row, which collide on an idle host and do not under
+load — the same accident, one sample short of showing it. And the loss it guards is
+worse here than in the audit case, because a clobbered rotated `metrics.jsonl` is
+samples nothing else holds a copy of, where a clobbered quarantine at least leaves the
+live audit log. `toRotatedMetricsPath` now takes `now` and is exported; two tests in
+`infra.cov.test.js` drive the collision with a frozen instant (`.1`/`.2` suffixes,
+neither earlier file clobbered) and pin that the default arm still stamps wall-clock
+time. The lesson worth keeping is about the deferral rather than the fix: **"currently
+stable" is not evidence a branch is covered on purpose** — it is the same reading the
+audit site gave right up until the run that reddened. All three sites the grep found
+are now closed.
+
+**The third red run was the same class again, through a third carrier: shared process
+state.** `packages/core`'s `./src/commands.ts` flapped between `96.73 / 83.11` and
+`96.19 / 81.81`, and the row-diff localised the entire gap to one statement and one
+branch — `commands.ts:262`, `if (process.exitCode)`, the guard that stops
+`downloadCommand` printing "Download complete ✅" over a pull that lost a table.
+`process.exitCode` is per-PROCESS, not per-test; Jest runs many suites in one worker,
+around twenty source sites set a non-zero code, and not every suite restores it. So
+which arm ran here was decided by what happened to execute earlier in the same worker.
+`commandsDownload.test.ts` now pins the value in `beforeEach`/`afterEach` — which also
+stops this suite leaking onto the next — and drives the failure arm on purpose, pinning
+that a partial pull is reported as a warning, that the success line is *not* printed,
+and that the non-zero code survives the command (otherwise CI shows a green step over
+missing files). Isolated, the branch counters now read `[1, 3]`; two consecutive full
+runs agree at 96.73 / 83.11.
+
+**A methodology note that cost real time here.** Two "confirming" samples were taken
+with `--testPathPatterns commands`, which runs a *subset* of the suites that touch
+`commands.ts`; both showed the low pair, and on that basis the annotation was briefly
+"corrected" to `96.19 / 81.81` — the wrong direction, since the full suite measures
+`96.73 / 83.11`. A subset run is not a sample of the gate's number. Re-measure with the
+same command the gate uses, or the evidence argues for the opposite conclusion. The
+floor stays at 79: a real ratchet over the committed 77, while 81 was rejected because
+0.81 points of headroom is not enough for a file with keychain and homedir branches that
+measure differently on Linux.
+
+So the class has three carriers so far — an embedded clock, a duplicated copy of the
+same clock-named path, and shared mutable process state — and one signature: the
+row-diff pins the flapping range to a line or two in seconds. `process.exitCode` is the
+carrier most likely to recur, because every command sets it and nothing forces a suite
+to put it back.
+
+**Closed 2026-08-12 — something now forces it.** The per-suite fix above left the class
+open: pinning `commandsDownload.test.ts` fixed the suite that had flapped, not the
+mechanism. A sweep of the package found 41 source sites setting `process.exitCode` (and
+exactly one reading it) across 25 suites, and — the part that mattered — two *unequal* guard
+patterns in use. Save in `beforeEach` / restore in `afterEach` is exception-safe. Save
+at the top of a test BODY and restore at the bottom is not: the restore is skipped the
+moment an assertion between them throws, so the first genuine failure poisons every
+test after it in that worker, and the cascade of unrelated results buries the one that
+was true. Ten such inline restores were live, eight of them in `commandsGaps.test.ts`.
+`jest.exitcode.cjs` (registered via `setupFilesAfterEnv`, which unlike `setupFiles` runs
+late enough to register global hooks) now resets the value around every test in every
+suite, so no suite has to remember and none can leak. It cannot mask a defect — it only
+touches the boundary between tests; inside a test the code under test still sets what it
+sets. `exitCodeIsolation.test.ts` pins the guarantee with a deliberate polluter followed
+by a clean-slate assertion, plus a test that throws past a would-be inline restore;
+with the hook removed, two of its four cases fail, which is the negative control that
+makes it load-bearing rather than decorative. Measured effect: core is unchanged at
+97.52 / 87.53 with all 42 `// measured` annotations still exact — so no coverage in the
+tree had been depending on the leak, which was the open question the per-suite fix could
+not answer. The carrier does not exist in `packages/mcp-server` (zero occurrences in
+`src/` and in `test/`, and node:test gives each file its own process anyway) nor in any
+other workspace package.
+
+The sibling carriers were swept at the same time, since "shared mutable process state"
+is the class and `process.exitCode` is only one member of it. `process.env` (21 suites
+mutate it), `process.cwd`/`process.chdir` (`configCoverage.test.ts` really chdirs into a
+temp project; `commandsInitAuto.test.ts` replaces both functions outright) and
+`process.argv` (`bootstrap.test.ts`) are all already restored from `afterEach`, i.e. in
+the exception-safe form — so `process.exitCode` was the outlier, not the first of many.
+Worth knowing when the next flapper appears: the static scan is what misleads here (a
+grep for a restore misses `prevShell`/`originalDiag`/`saved` spellings and reports false
+gaps), so read the hook, not the identifier.
+
+#### Deferred, deliberately
+- mcp-server floors (`processRunner` 94/85 vs measured 98.08/91.89, `healthServer`
+  95/62 vs 100.00/69.70, `safetyPolicy` branch 94 vs 98.64) — process and network
+  boundaries with plausible cross-OS variance. Ratchet after one green Linux run,
+  not before.
+- fast-check 3→4 (`fc.stringOf` was removed; two property suites use it) and
+  undici 6→8 (reintroduces the `fast-uri` advisory `ccc3358` had just cleared).
+  Kept out of this wave so a lockfile change would not ride along with coverage work.
+- ~~Two small regressions the corrected annotations exposed~~ — CLOSED, they were
+  never regressions. `manifestBuilder.ts` read 94.39 / 78.96 and now reads
+  93.55 / **81.02**; `downloadPipeline.ts` read 97.82 / 85.39 and now reads
+  **97.83** / 84.61. Both pairs moved in *opposite* directions, which no lost test
+  can produce, and neither source file changed; the two modified core suites
+  (`commandsFlow`, `diagnosticsCommandsCoverage`) delete nothing that touches
+  either module. The old pairs were simply stale — hand-recorded before
+  `test:coverage:annotations` existed, exactly the drift that gate was written to
+  end. The current numbers are the first machine-verified ones for these files.
+
+#### Review pass over this wave (2026-08-07)
+Before commit, the wave itself went through the standing adversarial protocol:
+four finder dimensions, every finding judged by a two-skeptic panel (a reproduce
+lens and an already-handled/consequence lens), default-refute. Nine raw findings:
+one confirmed, five contested and adjudicated, three refuted.
+
+**Confirmed and fixed — a relative `--mcp-server-path` was validated against one
+base and consumed against another.** `resolveMcpServerPath` stat'ed the flag
+value as given (cwd-relative), but the value it returned is written into client
+configs and spawned with `cwd: workspaceRoot`. A relative flag therefore either
+passed validation and aimed every consumer at `workspaceRoot/<relative>` — a
+silently persistent misconfiguration in `.vscode/mcp.json` and the desktop-client
+configs — or failed without naming the base the stat looked in. Both skeptics
+reproduced it end-to-end; all 39 wave tests seeded absolute paths, so nothing
+constrained it. The flag (and the `SYNCRONA_MCP_SERVER_PATH` candidate — same
+hazard) is now resolved to an absolute path before the stat, that absolute is
+what every consumer receives, and the not-found error names the resolved
+location. The three regression tests use a real `chdir`: a `process.cwd` spy
+cannot see the bug, because jest hands each suite a COPY of the process object
+while `path.resolve` reads the real one. A mutation check (dropping the
+`path.resolve`) fails exactly those three tests and nothing else.
+
+**Adjudicated from the contested set (four fixed, one rejected):**
+- The new annotations gate had a hole its own fail-closed doctrine covers: a
+  filtered `jest --testPathPatterns` run with coverage on overwrites
+  `coverage-summary.json` with subset numbers, `collectCoverageFrom` still lists
+  every unloaded file at 0%, and that report is NEWER than the sources — so the
+  missing-data and staleness checks both read healthy and the verdict was exit-1
+  "drift" with `fix: // measured 0.00 / 0.00` directives. Now a fourth
+  fail-closed check: an annotated file at 0.00% lines against a non-zero
+  annotation is a suspected PARTIAL report and exits 2 "cannot judge", pointing
+  at the full-suite command.
+- The freshness inputs were narrower than the measurement: `jest.setup.cjs`
+  (forces `SYNCRONA_USE_KEYCHAIN=0`, which decides which keychain branches a run
+  can reach at all) and each package.json (carries the test invocation the
+  report comes from) now count among the files a report must be newer than.
+- A nested `mcpServers` ARRAY passed the map guard (`typeof [] === "object"`)
+  and was spread element-by-element into servers named "0", "1", ... — the same
+  class the document-level array guard excludes, one level down. Guarded, with a
+  regression test.
+- CONTRIBUTING called the three newest check links "the last three";
+  `test:coverage:annotations` sits fifth of nine. Reworded.
+- The `--instance-profile` fallback to the base `SN_INSTANCE` is the documented
+  profile-overlay design, not a defect — rejected, and recorded in ROADMAP as a
+  second-look under the "refuted means not proven, not proven safe" rule
+  (whether a NAMED profile with no instance should fail loudly on the `mcp`
+  path, where the fallback is persisted into `.syncrona-mcp/secrets.json`).
+
+**Refuted (3):** the mcp-server annotations lacking Linux-side verification (the
+wave had measured it), `commands.ts` still being run-dependent (fixed within the
+wave itself), and the postmortem's "third red run" wording (accurate as written).
+
+**Closed (2026-08-09) — `dist/audit.js` branch measurement was load-dependent;
+now pinned.** During the post-review full-check runs the annotations gate itself
+caught it: two full-chain runs and one direct gate run on the same tree measured
+96.63/92.15, 96.63/92.18, 96.63/92.15 — a fourth run-dependence carrier next to
+the wave's three: cross-process lock contention, where scheduling decides which
+rare lock-loop arm executes. Localization: six instrumented gate runs under CPU
+load (raw `NODE_V8_COVERAGE`, merged per-block) never reproduced the flip but
+narrowed the candidates to exactly two zero-count V8 blocks in the lock region —
+the stale-reclaim body (`unlinkSync` + `continue`) and the release best-effort
+catch — with the vanished-lock inner catch and the deadline arm at 3–4 incidental
+hits per suite (a flicker-DOWN hazard on a quiet machine). Pin:
+`test/auditLockContention.test.js` drives every contention arm deterministically
+through `writeAuditEvent` — planted fresh lock (deadline fall-through, the
+foreign lock survives), planted stale lock (reclaim, the lock is gone), lock
+vanishing between the EEXIST failure and the stat (one-shot `fs.statSync`
+interception), and a release that finds its lock already stale-reclaimed
+(one-shot `fs.unlinkSync` interception). Measured effect: audit.js rose to
+96.83/92.62 and three consecutive gate runs were byte-identical, including the
+uncovered-lines list (the release-catch lines 284-285 left it). The annotation
+now records the deterministic 96.83 / 92.62 instead of a modal value.
+
+**Tree-wide determinism check (2026-08-09) — the annotated numbers are now
+measured, not sampled.** The pin above closed one file; the question it left
+open was whether anything else in the tree is still decided by the scheduler,
+because every `// measured` annotation is only as meaningful as the
+reproducibility of the run behind it. Three checks, all green:
+(1) two mcp gate runs — one of them instrumented with `NODE_V8_COVERAGE`, which
+perturbs timing on its own — produce a **byte-identical per-file coverage
+table** (61 rows);
+(2) two core jest coverage runs produce an **identical `coverage-summary.json`**
+(no metric moves in any file);
+(3) the definitive one — per-block V8 coverage captured from a quiet run and
+from a run under `ncpu/2` CPU burners, diffed on covered/not-covered across
+**4,028 blocks in 56 dist files: zero flips**.
+A discarded heuristic worth not repeating: "blocks reached ≤3 times are at
+risk" flagged 1,249 blocks and is noise — a block one test walks through once
+is perfectly deterministic. The hazard was never low hit count; it was
+*provenance* (reached by scheduling instead of by a test), which only a
+run-to-run covered-set diff can see.
+
+**Corrected (2026-08-09) — check (1) above was under-sampled, and the
+annotations gate now allows a declared second reading.** Two runs are enough to
+find a flip, never enough to establish reproducibility. Over **45** saved
+mcp-server coverage tables on an unchanged tree, `dist/audit.js` reported
+96.83 / 92.62 in 42 and 96.83 / **92.65** in 3; `dist/inputValidation.js`
+reported 99.30 / 96.15 in 44 and 99.30 / **96.30** in 1. So the exact-match
+gate reddens on trees nobody touched — reproduced end to end: replaying one
+real dissenting report through the gate exited 1 with two "drift" verdicts, and
+the same report exits 0 after the fix.
+
+The mechanism, and why no test can close it: numerator **and** denominator each
+move by one (226/244 vs 227/245; 25/26 vs 26/27), and across all 45 tables each
+file reported exactly **one** distinct uncovered-lines list — the column never
+moved. V8 occasionally counts one extra range that was *already executing*.
+There is nothing uncovered to cover. Two mechanical fixes were tried and both
+**refuted** by interleaved, load-controlled A/B (6 rounds each, flags verified
+to reach the child via `execArgv`): `--no-flush-bytecode`, and
+`--no-lazy-feedback-allocation` — which flaked *more* than the default. A
+`measured ≥ recorded` rule is also refuted: `dist/workflowHandlers.js` moves
+99/118 = 83.90 → 99/122 = 81.15, denominator only, percentage **down**.
+
+A blind tolerance was rejected on this repo's own grounds — previously-caught
+real defects moved a file by as little as 0.42 points, which the same tolerance
+would absorb. Instead the annotation grammar gained a **declared second
+reading**: `// measured 96.83 / 92.62 (also 96.83 / 92.65: cause)`. Exactly the
+two declared readings pass; a third is still drift. The cause is mandatory, the
+**lower** reading must come first (both floor audits parse only the first pair,
+so a higher one there would silently widen headroom), and the form is permitted
+**only** on the V8/mcp-server target. The istanbul side keeps exact match with
+no hatch, measured rather than assumed: three full core runs produced a
+**byte-identical** `coverage-summary.json` (39 files) — on one host, which says
+nothing about the cross-OS drift the core floors are separately sized for.
+
+The diagnostic this leaves behind, encoded in the gate header: when the
+annotations step reddens on a file the PR did not touch, diff the
+**uncovered-lines column** of the two reports *before* the percentage. Moved
+column → a real branch changed; drive it with a test. Identical column while
+the percentage moved → V8 range granularity; declare it. Do not "correct" the
+annotation to the new number — that only moves the flake to the other side.
+
+**Corrected again (2026-08-09) — the declared set was incomplete, and the
+corpus was not one tree.** An adversarial review of the change above found a
+**third** flickering annotated file that every driver script had missed, because
+each printed a hand-picked watch list that never included it:
+`dist/toolService.js` reads 92.60 / **92.05** in 61 of 62 default-config runs and
+92.60 / **91.53** in one, with a byte-identical uncovered-lines column
+(`465-501 571-575 579-586 607 676`) and unchanged funcs %. It is now declared.
+Two things it forces into the doctrine:
+
+- **The class runs in both directions.** Here the odd reading is *lower*:
+  162/176 = 92.05 against 162/177 = 91.53 — an extra range that was **not**
+  executing, enlarging the denominator alone. So the grammar's "lower reading
+  first" rule puts the value you will almost always measure in the parentheses.
+  Direction does not sort the classes and neither does size: the odd readings
+  span 0.03 to 0.52 points, while real defects this repo has fixed moved a file
+  by as little as 0.42. Only the uncovered-lines column sorts them.
+- **The counters are measured, not inferred.** Percentages do not pin a
+  fraction — 162/176 vs 162/177 and 324/352 vs 324/354 both render 92.05 / 91.53
+  exactly, as does every multiple. Raw V8 data via `--test-reporter=lcov` gives
+  `toolService` 162/176, and confirms the already-recorded `audit` 226/244 and
+  `inputValidation` 25/26 against ground truth rather than against arithmetic.
+  The 177 denominator remains **derived**: no run printing 91.53 was caught while
+  capturing raw data, and 162/177 is the only pair within ±12 on both counters
+  that renders it. `coverageAnnotationDrift.test.js` now divides every declared
+  fraction out and asserts it renders the reading beside it, so a transposed
+  digit cannot pass as evidence.
+
+Two honest limits on all of this. The 45-table corpus quoted above is **not one
+tree end to end** — a test file landed after the first four tables; all three
+flickering files read their modal value in those four and every odd reading falls
+in the homogeneous block that follows, so the result stands, but the phrase was
+loose. And completeness is **not** established: the toolService reading occurred
+once in 62, and a sample that size misses a defect of exactly that rarity with
+probability ≈ 37%. Another annotated file flickering at ~1.6% is more likely than
+not to have escaped. Everything measured is macOS/arm64 on Node v22.23.0; CI's
+platform could produce different range granularity entirely.
+
+Follow-up, NOT part of this change — three unannotated files whose uncovered-lines
+column genuinely **moves**, i.e. real branches nothing exercises on purpose rather
+than granularity: `dist/analysis/graph.js` (3 readings; `443-444`, `466-467`),
+`dist/analysis/scopeKnowledge.js` (9 readings; `122-123 195-196 267-268 272-273
+311-312` — still moving under load *after* the render-skip tests, so that pinning
+is incomplete), `dist/metricsStore.js` (2 readings; `41-42`). None carries a floor
+today, so none reddens the gate; adding a floor + annotation to any of them
+without first driving those arms would produce permanent red.
+
+---
+
+## Wave — REV-210..213: an adversarial pass that went looking for data loss (2026-08-09)
+
+A read-only adversarial review of `packages/core/src/**` — the thirteenth such pass,
+so the cheap findings were long gone. It was told to hunt four shapes that survive
+review (partial failure, resumability, path handling, boundary arithmetic) and to try
+to REFUTE each candidate before reporting it. It refuted six of its own and reported
+four. All four were independently re-verified against the source before any fix.
+
+#### REV-210 — the INJ-1 guard was incomplete, and the comment above it was wrong
+`processTablesInManifest` validates `tableName` and `rec.name` through
+`assertSafePathComponent`, whose `kind` parameter is typed
+`"table name" | "record name"` — a union whose missing third member *is* the bug.
+`file.name` and `file.type` reach `path.join(parentPath, \`${name}.${type}\`)`
+(`FileUtils.ts:80`) with no validation at all, and `manifestBuilder.ts:354` maps
+`sys_dictionary.element` straight into `SN.File.name` upstream.
+
+The containment guard does not cover for it, because it anchors at the **workspace
+source root** rather than at the record's own folder. A `..` in a field name therefore
+does not *escape* — it *relocates*, to a sibling record's directory, and passes.
+The write lands on another record's tracked file; that record's own write then finds a
+non-empty file and is silently skipped by the `checkExists` path; and the next
+`syncrona push` reads the path, maps it to the victim record, and uploads the wrong
+content to the instance. Server-side corruption with no error on any run.
+
+The comment at `downloadPipeline.ts:98` claimed this seam "guarantees no write escapes
+regardless of what upstream produced". True for escapes out of the root; false for
+relocation inside it. A guarantee stated more broadly than it holds is worse than none,
+because it stops the next reader from looking.
+
+#### REV-211 — a legitimately empty field never converges
+`SNFileExists` treats zero bytes as missing (deliberate: it distinguishes skeleton
+files, and `fileUtilsExt.test.ts:149` pins it). But a field whose server value is `""`
+writes exactly zero bytes, and `manifestBuilder.ts:1098` counts `""` as *fetched* —
+equally deliberate, since its rule keys on `fieldName in row` to tell a withheld field
+from an empty one. Each rule is right on its own; together they make an empty tracked
+field re-download over the network on every `refresh`/`repair`, forever, under a
+printed `Download complete ✅`. `repair` reports N missing files it can never reduce.
+This is the same "invisible loop" the comment at `repairCommand.ts:294` claims to have
+closed — closed for the unreadable-field case, still open for the empty-value one.
+
+#### REV-212 — field discovery takes one page and never says so
+`tableAPIGetAllRows` exists precisely to page, and `getRecordsForTable` uses it. But
+the discovery queries call `tableAPIGet` directly with a fixed limit and no offset loop
+and no `page.length === limit` check: `manifestBuilder.ts:344` (200), `:421` (500),
+and the table lists at `:261`, `:281`, `:295`, `:822` (10000). Past the limit the
+extra fields are not downloaded and not reported — `collectUnfetchedFields` only
+inspects fields the manifest already lists, so a scope ships incomplete in silence.
+Rated PLAUSIBLE on trigger frequency (unverified whether a real scope exceeds 200
+script fields on one table), CONFIRMED on mechanism. The silence is the defect.
+
+#### REV-213 — offset pagination with no stable sort, and prune as the amplifier
+`tableAPIGetAllRows` walks `offset += pageSize` over a query carrying no `ORDERBY`.
+A concurrent insert on a shared instance can shift the window between two pages and
+drop a record from the manifest. The record's local file then has nothing claiming it,
+`findOrphanFiles` classifies it as an orphan, and `repair --apply --prune` **deletes**
+it — possibly with unpushed local edits in it. The pagination bug is ordinary; what
+makes it worth ranking is that the repair path converts a missed read into a delete.
+
+#### Refuted, recorded so the negative work is visible
+Push result ↔ checkpoint-key misalignment (the pool preserves order and rethrows
+rather than leaving holes); `pushFiles` reaching the wrong instance via bare
+`defaultClient()` (`setLogLevel` sets the active profile first); sys_id-chunk
+pagination overflow (chunks are ≤200 against a limit of 10000); unbounded `Promise.all`
+over tables (every in-scope caller passes a single-table map — real only for a future
+caller); plus the watcher drain/requeue ordering and the `isUnderPath` relative-path
+bypass, both traced and refuted in earlier passes.
+
+---
+
 ## PHASE D — Distribution polish (remainder)
 
 ### D5. Distribution polish

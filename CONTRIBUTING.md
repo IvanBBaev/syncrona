@@ -22,16 +22,16 @@ remains; `TODO` and `DONE` are the working journals.
 npm run build      # build:deps (credential-store, sn-transport) + all workspaces
 npm run typecheck  # tsc across core + mcp-server
 npm run lint       # eslint core + mcp-server, --max-warnings=0
-npm run test       # 2900+ tests: core jest (990) + mcp node:test (1628) + shared + plugins
+npm run test       # 3000+ tests: core jest (1059) + mcp node:test (1683) + shared + plugins
 npm run check      # the full gate — every link below, in order
 ```
 
 `npm run check` = build + typecheck + lint (incl. dependency boundaries) + all
-workspace tests + coverage gates + governance gates + `verify:pack` (tarball
-contents and bin smoke) + `bench:guard` + `scan:secrets`.
+workspace tests + coverage gates + `test:coverage:annotations` + governance gates
++ `verify:pack` (tarball contents and bin smoke) + `bench:guard` + `scan:secrets`.
 
-The last two are the newest links and both mirror something CI does, so a local
-run and a CI run agree:
+Three of these links are newer than the rest and each mirrors something CI does,
+so a local run and a CI run agree:
 
 - **`bench:guard`** runs `scripts/bench.mjs --max-ms 25` over the CPU-bound
   manifest/doc path. Loose on purpose, and the ceiling comes from the median
@@ -47,6 +47,31 @@ run and a CI run agree:
   action. A fixture value that trips a rule must be marked with an inline
   `gitleaks:allow` comment explaining why it is inert; do **not** allowlist its
   directory, and see the security note in `.gitleaks.toml` for why.
+- **`test:coverage:annotations`** runs `scripts/check-coverage-annotations.mjs`,
+  which compares every `// measured L/B` comment beside a coverage floor with the
+  report that package actually produced. Both floor audits (core GATE-3,
+  mcp-server `coverageGatePerFile.test.js`) enforce a maximum *headroom* — measured
+  minus floor — against that comment, so a stale comment makes the judgement about
+  whether a floor is safe to raise wrong. Ten of them had drifted when the gate
+  first ran, in both directions. It takes the floor **keys** from the two configs
+  by `require()`, so the audited set is by construction the enforced set, and it
+  fails closed: a missing report, a stale report, a suspected partial report (an
+  annotated file at 0.00% lines against a non-zero annotation — the trace of a
+  filtered `--testPathPatterns` run), a floor with no annotation, or an annotation
+  naming a file the report does not contain all exit non-zero rather than
+  reporting "no drift". It reuses the reports the two coverage links just
+  wrote, so it adds no second test run — but it must therefore stay *after* them
+  in the chain.
+  There is one narrow escape hatch, and only on the mcp-server side: V8 range
+  coverage is not reproducible run-to-run on an unchanged tree, so an entry may
+  record a **declared second reading**, `// measured L / B (also L / B: cause)`.
+  Exactly the two recorded readings pass and a third is still drift — a
+  declaration is not a tolerance window, which would absorb the real regressions
+  this gate has caught (one moved a file by 0.42 points). The cause is mandatory,
+  the *lower* reading is written first because both floor audits parse the first
+  pair, and the core/istanbul target rejects a declaration outright: three full
+  runs there produced a byte-identical summary, so an istanbul annotation that no
+  longer matches is drift, not flicker.
 
 Every link of the chain also runs as its own CI step, and that is enforced:
 `packages/mcp-server/test/ciCheckChain.test.js` re-derives the chain from the
@@ -168,13 +193,34 @@ README/CLAUDE.md docs-drift, release checklist) — on GitHub Actions via
 `.github/workflows/release.yml`.
 
 The core Jest coverage floor is a ratchet in `packages/core/jest.config.cjs`:
-**statements 92 / branches 79 / functions 89 / lines 92** globally, plus per-file
-floors for the highest-risk modules (a global-only floor lets one weak file hide
-behind the tree average). All of them are set just under the measured baseline;
-raise, never lower. Each floor records its measurement inline as `// measured L/B`,
-and branch floors sit further under the measurement than line floors on purpose —
-branch coverage is what moves between macOS and Linux CI (keychain, homedir,
-`process.platform`).
+**statements 92 / branches 79 / functions 89 / lines 92** globally, two tree-wide
+globs at **81 lines / 67 branches** that catch any file drifting far below its
+neighbours, plus per-file floors for the highest-risk modules (a global-only floor
+lets one weak file hide behind the tree average). All of them are set just under
+the measured baseline; raise, never lower. Each floor records its measurement
+inline as `// measured L/B`, and those comments are machine-checked from both
+sides: GATE-3 asserts the floor sits under its annotation and within the allowed
+headroom, `test:coverage:annotations` asserts the annotation still equals reality.
+Two mcp-server entries carry a second reading in the `(also L / B: cause)` form
+described above; both floor audits read the first pair only, which is why that
+pair must be the lower of the two.
+
+Branch floors sit further under the measurement than line floors on purpose —
+branch coverage is what moves between macOS and Linux CI. That used to include
+`process.platform`, and it cost a red build: `mcpCommand.ts` had no named floor,
+measured 83.33 / 68.18 on macOS, and failed the tree-wide line floor **by a single
+line** on ubuntu (77.77 / 52.27). The fix was not a lower floor but a suite that
+*pins* the platform instead of reading it. `process.platform` now appears in
+exactly two source files here (`mcpCommand.ts`, `diagnosticsCommands.ts`), and
+every arm of both is pinned by a test — including the arms a macOS host used to
+walk into for free. Verified by re-running the whole core suite with
+`process.platform` forced to `linux`: **every one of the 21 annotated files, and
+both platform files, measure identically on the two platforms**, so the annotation
+gate above cannot go red on one half of the CI matrix and green on the other.
+Re-run that check before adding a `process.platform` branch. **A test that mirrors the source's own
+`process.platform` branching to build its expectations is not a test** — on the
+other OS both arms go false, the assertion loop iterates zero times, and it passes
+having asserted nothing. Pin the platform and assert the behaviour.
 
 The MCP server gate works the same way through
 `packages/mcp-server/scripts/check-coverage-gate.js`: **90% line / 80% branch**

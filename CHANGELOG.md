@@ -188,9 +188,82 @@ All notable changes to this project will be documented in this file.
   and breadth, and states in the record when it truncated.
 - A timed-out child process is escalated on a budget: SIGTERM, then SIGKILL, so a
   child that ignores SIGTERM cannot hold a tool call open indefinitely.
+- The high-severity production advisories are cleared again: `fast-uri` (host
+  confusion via a backslash authority introducer, reached through `ajv`) and
+  `ip-address` (three SSRF / trust-boundary bypasses, reached through
+  `express-rate-limit` under the MCP SDK). Both are transitive, so both are
+  pinned in the root `overrides`, alongside a `hono` bump that also clears four
+  moderate advisories. Two moderates remain deliberately: `undici` stays on 6.x
+  because 8.x reintroduces GHSA-4c8g-83qw-93j6, and `@hono/node-server`'s fix
+  requires a 2.x that sits outside the MCP SDK's declared range for a
+  `serve-static` path traversal the stdio server never reaches.
+- The download write seam validates every path component at the chokepoint,
+  before `path.join` sees it. The source-root containment guard only anchors at
+  the workspace root, so a field named `../Bar/script` written from record Foo's
+  folder relocated the write onto a *sibling record* and stayed inside the root
+  the whole time — quieter, not safer. `writeSNFileCurry` and
+  `writeFlatSNFileCurry` now reject unsafe file names, file types and record
+  names outright, and the download pipeline names which component failed and
+  which boundary it would have crossed.
 
 ### Fixed
 
+- A tracked field whose value on the instance is legitimately empty now
+  converges. The download wrote it as a zero-byte file, and `SNFileExists` read
+  zero bytes as "placeholder, not fetched yet", so every later refresh reported
+  the field missing and fetched it again — forever — while the command printed
+  "Download complete". The ambiguity is removed at the write seam rather than at
+  the probe: a request carrying no `content` key (a manifest entry) writes
+  nothing at all, `{ content: "" }` (a fetched empty value) writes the zero-byte
+  file, and existence is once again the whole answer. The skeleton phase still
+  materialises every record directory, so `init` lays out the tree as before.
+- Manifest paging is stable and no longer truncates. Record paging walked
+  `offset += pageSize` over a query with no `ORDERBY`, so the Table API was free
+  to return a different order for the second page and a row that crossed the
+  boundary in between was never returned at all — it never reached the manifest,
+  `findOrphanFiles` reported its local file as unclaimed, and
+  `repair --apply --prune` deleted it. Every paged query now carries a
+  `sys_id` ordering (`withStableOrder`, which leaves an ordering the caller
+  already chose alone, since ServiceNow honours the first `ORDERBY` as the
+  primary key). Separately, field and table discovery called the Table API once
+  with a fixed limit and no offset loop, so a table with more dictionary rows
+  than the limit produced a quietly incomplete manifest — no error, no warning,
+  and the same partial answer on every run. Both now page; the lookups that
+  cannot truncate by construction stay unpaged with the reason written down.
+- `mcp --instance-profile <name>` no longer aims the MCP server at the wrong
+  instance. The generated secrets file took the *stored active instance* over the
+  profile named on the command line, so after `syncrona use prod`, an explicit
+  `mcp --instance-profile qa` resolved qa's credentials and then wrote prod's host
+  next to them — the server talked to production while the flag said qa, and
+  nothing in the output said so. An explicit profile now wins; the stored instance
+  is still the default when no profile is given. Both directions are pinned by
+  tests.
+- `mcp --mcp-server-path <path>` now fails loudly when that path does not exist.
+  A typo fell through to the automatic discovery candidates, so the command either
+  started a **different** server than the one that was asked for, or reported
+  "unable to find the MCP server" without ever naming the path it was handed.
+- A **relative** `--mcp-server-path` (or `SYNCRONA_MCP_SERVER_PATH`) is resolved
+  against the invoking directory before it is validated, and that absolute path
+  is what reaches every consumer. It was stat'ed as given — cwd-relative — while
+  the client configs and the server spawn both run with `cwd` set to the
+  workspace root, so a relative path that passed validation was then consumed
+  against a different base: a silently persistent misconfiguration in
+  `.vscode/mcp.json` and the desktop-client configs. The not-found error now
+  names the resolved location, so the typo hunt starts from the right base.
+- Auto-configure no longer corrupts an MCP client config whose JSON root is an
+  array. `typeof [] === "object"` passed the validity check, and `JSON.stringify`
+  drops an array's non-index properties — so the `mcpServers` entry was written,
+  silently discarded on serialisation, and the run still reported success. A
+  non-object config is now treated as malformed and replaced, with a warning
+  naming the file (previously it was replaced in silence).
+- The same guard now applies one level down: a config whose **`mcpServers` value**
+  is an array also passed the object check, and spreading it registered every
+  element as a server named by its index (`"0"`, `"1"`, ...) — one garbage client
+  entry per element, written back as a success. An array there is replaced like
+  any other non-map value.
+- `mcp --auto-configure` on Windows without `APPDATA` set now says so. It resolved
+  no Claude Desktop or Cursor target and reported a successful configure that had
+  written nothing.
 - The MCP server reported the wrong version to its clients. `SERVER_VERSION` was
   a hardcoded `"0.1.0"` while the package was at 0.9.1, so the `initialize`
   handshake, `sync_health` and every tool-module banner understated the server by
@@ -337,6 +410,209 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
+  the harness rather than by each suite remembering. 41 source sites set the
+  value and one reads it (`downloadCommand`, to decide whether a partial pull is
+  announced as success), while `process.exitCode` is per-process and Jest runs
+  many suites in one worker. Suites guarded it two ways, and only one of them
+  held: saving in `beforeEach` and restoring in `afterEach` survives a failing
+  test, whereas saving at the top of a test body and restoring at the bottom is
+  skipped the moment an assertion between them throws — so the first genuine
+  failure silently poisoned every test after it. A global hook
+  (`jest.exitcode.cjs`, via `setupFilesAfterEnv`) now resets the value around
+  every test. It touches only the boundary between tests, never what the code
+  under test sets inside one. `exitCodeIsolation.test.ts` pins it with a
+  deliberate polluter, a clean-slate assertion and a test that throws past a
+  would-be inline restore; with the hook removed two of its four cases fail.
+  Coverage is unchanged (97.52 / 87.53, all 42 `// measured` annotations still
+  exact), which answers the open question the earlier per-suite fix could not:
+  nothing in the tree had been covered by the leak.
+- The download write seam is pinned against a tampered manifest over a real
+  filesystem, not a mocked one: a field name, a file type and a flat-layout
+  record name each carrying a traversal, in both the folder and the flat layout,
+  plus the two chokepoint writers driven directly. The fixtures join their
+  segments raw rather than through `path.join`, because `path.join` normalizes
+  as it builds and would collapse the very `x/..` sequences the exploit depends
+  on — a tampered manifest is a JSON string, not something Node normalized on
+  the way in. Two companion tests assert the legitimate dot-walked names
+  (`inputs.script` on `sys_atf_step`, the `<record>~<field>` flat stem) still
+  write, so the guard cannot be tightened into a regression.
+- The empty-field convergence is pinned end to end — the manifest entry creates
+  no file and still reads as missing, the fetched empty value writes zero bytes
+  and then reads as present, and `findMissingFiles` stops naming the field after
+  the download that supplied it.
+- `withStableOrder` is pinned including its two ways to be wrong: it must not
+  double-order a query that already has an `ORDERBY` (which would silently
+  demote the caller's sort to secondary rather than replace it), and it must not
+  mistake an ordinary column whose name merely contains `orderby` for an
+  ordering clause. The paging tests drive a full first page so a second request
+  is forced, and assert both requests carry byte-identical query text — an
+  offset only means the same row on the second request if the ordering it
+  indexes into is identical.
+- The audit log retires a file two ways — rotation on size and quarantine on
+  corruption — and both named the retired file after the millisecond they ran in,
+  so both collided when the same file was retired twice inside one millisecond.
+  The collision arm is what decides whether the second file is written beside the
+  first or `renameSync`d on top of it, i.e. whether the history the audit log
+  exists to keep survives at all. It was one duplicated block and is now one
+  helper, `withCollisionSuffix`, behind the two exported names `toRotatedAuditPath`
+  and `toCorruptAuditPath` (the `corrupt.` infix stays load-bearing: it is how
+  `pruneRotatedAuditFiles` and `pruneCorruptAuditFiles` tell the two kinds of
+  retired file apart).
+  Both now take the instant they stamp as a parameter — production still calls the
+  one-argument form — because the embedded clock made the arm untestable rather
+  than merely untested. Nothing but machine speed had ever reached it: the
+  `.corrupt.` cap test quarantines five times in a tight loop, which collides on an
+  idle machine and does not under load, so `dist/audit.js` was recorded three
+  different ways (96.33/91.74, 96.57/92.12, 96.25/91.70) across runs of an
+  unchanged tree, while the rotation copy of the arm was never covered at all.
+  `auditIntegrity.test.js` now drives both with a frozen clock and pins the
+  `.1`/`.2` suffixes, that neither earlier file is clobbered, that a rotated name
+  carries no `corrupt.` marker, and that the default arm still stamps wall-clock
+  time. Two consecutive gate runs now report byte-identical per-file rows.
+- The metrics store carried the third copy of that same clock-named path, and it
+  is closed the same way. `toRotatedMetricsPath` stamps a rotated
+  `metrics.jsonl` with the millisecond it was retired, so two rotations inside
+  one millisecond produce one name twice and the `renameSync` below the call
+  lands the second on top of the first — discarding samples nothing else holds a
+  copy of. The arm's only coverage was accidental in exactly the audit shape: the
+  prune test rotates four times in a row, which collides on an idle host and does
+  not under load. The function now takes the instant it stamps (production still
+  calls the one-argument form) and is exported, so a frozen clock drives the
+  collision on purpose; the tests pin the `.1`/`.2` suffixes, that neither
+  earlier rotated file is clobbered, and that the default arm still stamps
+  wall-clock time. That closes the last of the three sites the original grep
+  found.
+- `resolveServerVersion`'s fallbacks are driven deliberately rather than left to
+  the shape of the checkout: an unreadable manifest, an unparseable one, one with
+  no `version`, an empty string and a non-string all resolve to the
+  `0.0.0-unknown` sentinel, and `SERVER_VERSION` is asserted to be *derived* from
+  the package manifest rather than equal to a literal — the failure that shipped
+  the wrong version through the `initialize` handshake for eight minor releases.
+- The audit lock's contention arms are now driven deterministically instead of
+  by scheduling luck — a fourth run-dependence carrier next to the embedded
+  clock, the clock-named path and shared process state: **cross-process lock
+  contention**, where the concurrent full suite decides which rare arm of
+  `acquireAuditLock` executes. The arms ran only incidentally (the stale-reclaim
+  body and the release best-effort catch usually never; the vanished-lock and
+  deadline arms 3–4 times per suite), so `dist/audit.js` measured 92.15 branches
+  on some full-chain runs and 92.18 on others — caught by the annotations gate —
+  and a quiet machine could have dropped below either.
+  `auditLockContention.test.js` stages each arm from outside the (unexported)
+  lock: a planted fresh lock must stall the writer to the 500ms deadline and
+  then be left standing while the record is still written; a planted stale lock
+  must be reclaimed, not waited on; a lock vanishing between the failed `O_EXCL`
+  open and the stat (one-shot `fs.statSync` interception) must retry
+  immediately; and a release that finds its lock already stale-reclaimed
+  (one-shot `fs.unlinkSync` interception) must stay best-effort. `dist/audit.js`
+  now measures 96.83/92.62, byte-identical across three consecutive gate runs.
+- `downloadCommand`'s partial-pull guard is now tested rather than inherited.
+  `commands.ts` ends by branching on `process.exitCode` — set by `downloadAllFiles`
+  when a table could not be fetched — to warn instead of printing "Download
+  complete ✅" over an incomplete pull. `process.exitCode` is per-process, not
+  per-test: Jest runs many suites in one worker, around twenty source sites set a
+  non-zero code, and not every suite restores it, so which arm ran depended on what
+  executed earlier in the same worker (`commands.ts` measured 96.73/83.11 on one
+  full run and 96.19/81.81 on another, with no source change). `commandsDownload.test.ts`
+  now pins the value around every test — which also stops the suite leaking onto its
+  neighbours — and drives the failure arm deliberately, asserting that the warning is
+  printed, that the success line is not, and that the non-zero exit code survives the
+  command so CI cannot show a green step over missing files.
+- The REV-197 fail-closed refusal in `policyConfig` — a `requireDryRun` guardrail
+  naming a tool whose handler cannot honour a dry run — is now driven by its own
+  tests. It previously had none: every tool the suite named with `requireDryRun` is
+  dry-run aware, so the refusal arm was reached only incidentally by the concurrent
+  full run, which made `dist/policyConfig.js` report 100.00/100.00 on most runs and
+  97.60/99.00 on others and flipped the new annotation gate red at random. Both the
+  refusal and its negative control (`dryRun: true` must not buy a pass) are pinned,
+  along with the logged operator error.
+- `npm run test:coverage:annotations` — a new link in the check chain (and a CI
+  step) that compares every `// measured L/B` comment beside a coverage floor with
+  the report the package actually produced. Both floor audits enforce a maximum
+  *headroom* against those comments, so a stale one silently corrupts the decision
+  about whether a floor is safe to raise. Ten had drifted, in both directions. The
+  checker takes its keys from the two configs by `require()` — the audited set is
+  by construction the enforced set — and fails closed on a missing, unreadable or
+  stale report rather than reporting "no drift".
+- The annotation checker's fail-closed contract gained the case its own doctrine
+  had missed: a **partial** report. A filtered `jest --testPathPatterns` run with
+  coverage on overwrites the summary with subset numbers, `collectCoverageFrom`
+  still lists every unloaded file at 0%, and the report is *newer* than the
+  sources — so the missing-data and staleness checks both read healthy, and the
+  gate prescribed `fix: // measured 0.00 / 0.00` transcriptions of the artifact.
+  An annotated file at 0.00% lines against a non-zero annotation now exits 2
+  ("cannot judge — re-run the full suite") instead of 1 ("drift"). Its staleness
+  check also now counts the measurement's configuration among the inputs a
+  report must be newer than: `jest.setup.cjs` (decides whether keychain branches
+  are reachable at all) and each package's `package.json` (carries the test
+  invocation the report comes from).
+- The annotation checker's exact-match rule rested on a premise that measurement
+  falsified: that two runs over an unchanged tree produce the same numbers. Over
+  45 saved mcp-server coverage tables, `dist/audit.js` reported 96.83 / 92.62 in
+  42 and 96.83 / 92.65 in 3, and `dist/inputValidation.js` reported 99.30 / 96.15
+  in 44 and 99.30 / 96.30 in 1 — so the gate reddened on trees nobody had
+  touched. The mechanism rules out a test-side fix: numerator *and* denominator
+  each move by one (226/244 vs 227/245), and every one of the 45 tables reported
+  the same uncovered-lines list, so V8 is occasionally counting one extra range
+  that was already executing — there is nothing uncovered to cover.
+  `--no-flush-bytecode` and `--no-lazy-feedback-allocation` were both tried and
+  refuted under interleaved, load-controlled A/B; the second flag flaked more
+  than the default. A `measured >= recorded` rule is refuted too
+  (`dist/workflowHandlers.js` moves 99/118 → 99/122, percentage *down*), and a
+  blind tolerance would absorb regressions this repo has actually caught at 0.42
+  points. So annotations may now **declare** a second reading —
+  `// measured 96.83 / 92.62 (also 96.83 / 92.65: cause)` — where exactly those
+  two readings pass and a third is still drift. The cause is mandatory, the
+  lower reading must come first (both floor audits parse only the first pair, so
+  a higher one there would silently widen their headroom allowance), and the
+  form is accepted **only** on the mcp-server/V8 target: three full core runs
+  produced a byte-identical `coverage-summary.json`, so the istanbul side keeps
+  exact match with no escape hatch. The gate header now carries the diagnostic —
+  diff the uncovered-*lines* column before the percentage: a moved column is a
+  real branch change, an identical one is V8 range granularity.
+- That first pass declared two files and missed a third. Every driver script
+  printed a hand-picked watch list, and `dist/toolService.js` was not on it: it
+  reads 92.60 / 92.05 in 61 of 62 default-config runs and 92.60 / 91.53 in one,
+  uncovered-lines column byte-identical. It is now declared, and it corrects the
+  doctrine in two ways. The class runs in **both** directions — here the odd
+  reading is *lower* (162/176 = 92.05 against 162/177 = 91.53, an extra range
+  that was *not* executing, enlarging the denominator alone), so the
+  lower-reading-first rule puts the value you will almost always measure in the
+  parentheses. And the counters are now ground truth rather than arithmetic: raw
+  V8 data confirms `toolService` 162/176, `audit` 226/244 and `inputValidation`
+  25/26, since percentages alone never pin a fraction (162/176 vs 162/177 and
+  324/352 vs 324/354 both render 92.05 / 91.53). A new test divides every
+  declared fraction out and asserts it renders the reading beside it. Two limits
+  stated rather than glossed: the 177 denominator is *derived* — no run printing
+  91.53 was caught while capturing raw data — and completeness is not
+  established, since a reading seen once in 62 escapes a sample that size about
+  37% of the time.
+- The annotation checker itself gained five fixes found by review: declaration
+  comparisons now round to the two decimals the instrument actually has (raw
+  `Number` comparisons in one place and rounding in another let a `fix:`
+  directive emit text the same gate rejects as malformed); "this target does not
+  accept a second reading" now outranks "this one is written wrong", so the
+  istanbul side no longer advises a form it refuses unconditionally; a cause must
+  contain a letter, so `.` or an invisible U+200B no longer satisfies it; the
+  failure banner offers the declaration recipe only when a failing target allows
+  one; and a doubled word in three "cannot judge" messages is gone.
+- `mcpCommand.ts` went from **no named floor and the weakest file in the tree** to
+  100.00% lines / 98.27% branches behind a 97/93 floor. It was the direct cause of
+  a red ubuntu build: the tree-wide floors had been sized against *its* macOS
+  numbers (83.33 / 68.18), while on Linux it measured 77.77 / 52.27 and missed the
+  line floor by one line. With that anchor gone the tree-wide globs ratchet from
+  78/62 to **81/67**.
+- `check-env`'s third platform arm (anything that is neither win32 nor linux) was
+  covered only *by accident*, because the developer machines run macOS and the host
+  walked into it; on ubuntu nothing reached it. It is now pinned by a test, which
+  makes the whole core tree's coverage host-independent — re-measured by forcing
+  `process.platform` to `linux` for a full suite run, every annotated file lands on
+  the same number as macOS.
+- A test asserting that MCP client configs are merged rather than overwritten was
+  **vacuous on Linux** — it mirrored the source's own `process.platform` branching
+  to build its expected paths, so on the OS CI runs, both arms went false, the
+  array came out empty, and the assertion loop iterated zero times. It now pins the
+  platform, and asserts the array is non-empty before looping.
 - Per-file coverage floors in both packages, so a weak module can no longer hide
   behind a green global ratchet: 21 module floors plus raised tree-wide thresholds in
   the core CLI, and 19 module floors plus an 80% line / 45% branch default in the MCP
