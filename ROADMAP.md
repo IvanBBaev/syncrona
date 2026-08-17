@@ -301,6 +301,19 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   on Windows — needs the Windows host already gated below), and the
   README/SECURITY claim that the MCP server honors every auth method when the
   credential-store path it reads is user/password.
+- 📋 **Second look: profile fallback to the base instance** (review pass,
+  2026-08-07). Rejected as designed behaviour, recorded here under the same
+  "refuted means not proven, not proven safe" rule: with `--instance-profile p`
+  and `SN_INSTANCE_P` unset, credential resolution falls back to the base
+  `SN_INSTANCE` (`snClient.ts` — `instanceFromProfile || SN_INSTANCE`), which is
+  the documented profile-overlay design (README "Instance profiles"). The
+  question worth revisiting is narrower: when the user NAMES a profile and that
+  profile defines no instance, is a silent fallback to the base instance ever
+  what they meant — particularly on the `mcp` path, where the fallback is
+  persisted into `.syncrona-mcp/secrets.json` and every subsequent MCP session
+  inherits it? A loud "profile p defines no instance" error would cost one
+  legitimate use (a profile that only overrides credentials, not the target),
+  so measure whether that use exists before changing the contract.
 
 ### Product & support
 - 🔒 **ServiceNow compatibility matrix** — test against named ServiceNow releases
