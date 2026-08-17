@@ -426,6 +426,16 @@ All notable changes to this project will be documented in this file.
   leftover sandbox still reached the haste map as a second `package.json` claiming
   the name `syncrona` — a naming collision Jest resolves arbitrarily, letting an
   import bind to the stale copy.
+- The Stryker timeout budget is back at the default. It had been raised to
+  `timeoutMS` 30000 / `timeoutFactor` 3 on the theory that slow, variable ts-jest
+  ESM startup under machine load was expiring the budget on mutants the suite never
+  reacted to. Measurement disproved it: on an idle machine the raised budget —
+  2.7x the effective per-mutant allowance, since that is `timeoutMS` plus
+  `timeoutFactor` times the ~17s dry run — timed out on 70 of the first 262
+  mutants, 26.7% against the 26.5% it was meant to fix. Neither `static` (6 vs 8)
+  nor coverage breadth (10.6 vs 11.7 covering tests, 2.85 vs 2.58 covering test
+  files) separates Timeout from Killed; what does correlate is the mutated file —
+  48% of `genericUtils.ts` against 5% of `repairCommand.ts`.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
