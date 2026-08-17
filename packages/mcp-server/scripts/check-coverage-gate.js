@@ -194,7 +194,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Three entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Five entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
@@ -215,7 +215,11 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // on BOTH runners; `semanticIndexState.js` has since become the first entry where the
 // platforms split — ubuntu counts two branch ranges that darwin never reports (65/69
 // against 63/67, with a byte-identical uncovered-line list), so its ubuntu reading is
-// declared below exactly like the run-to-run flickers. Agreement observed is not
+// declared below exactly like the run-to-run flickers. `servicenowCore.js` is the
+// second, and it split on a commit that touched neither the module nor its tests: the
+// same +2/+2 shape (265/289 against 263/287), the same byte-identical uncovered-line
+// list, and one extra function range on top (62/64 against 61/64). Two entries is no
+// longer an outlier — assume any entry can split. Agreement observed is not
 // agreement guaranteed, and a floor set flush turns the first one-branch difference
 // into a red build on a platform the author never ran. Three points is roughly one
 // branch in a 30-branch module: enough to absorb a granularity difference, far too
@@ -250,7 +254,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.22 / 95.65
   // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
   // local filesystem path.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.50 / 91.64
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.50 / 91.64 (also 98.50 / 91.70: V8 range granularity, 263/287 vs 265/289 branches, same uncovered lines; ubuntu counts one extra function range too, 62/64 against darwin's 61/64, so this is the same +2/+2 split as semanticIndexState rather than the other pair within +-12 on both counters, 254/277, which would need ten ranges fewer)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75

@@ -485,6 +485,17 @@ All notable changes to this project will be documented in this file.
   pairs. Only the comments moved — every floor stayed where it was, and the
   widest headroom this leaves is `manifestBuilder`'s 6.43 branch points, inside
   the 8-point ceiling the floor audit enforces.
+- `dist/servicenowCore.js` carries a declared second reading, and it is the
+  second entry where the CI platforms split rather than one run flickering:
+  98.50 / 91.64 on darwin, 98.50 / 91.70 on the ubuntu leg, on a commit that
+  touched neither the module nor its tests. The uncovered-line list is
+  byte-identical (432-436, 441-442, 792, 942-944, 970-971, 985-986), 265/289 is
+  the only pair within +-12 of both counters that renders 91.70 against darwin's
+  263/287, and ubuntu counts one extra *function* range on top (62/64 against
+  61/64) — the same +2/+2 shape `semanticIndexState.js` showed, which is the
+  instrument counting and not the tree changing. The header's count of declared
+  readings was off by one from the commit that introduced it, and now reads the
+  true five.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
