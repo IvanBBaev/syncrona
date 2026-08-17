@@ -1,6 +1,6 @@
 # SyncroNow AI — Product State
 
-> Last updated: 2026-07-03. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Last updated: 2026-08-17. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
 
 ## TL;DR
@@ -9,12 +9,12 @@
 |---|---|
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
 | CLI | 23 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
-| MCP server | 61 tools in 11 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | core: **72 suites / 668 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp: node:test suite (vs dist); shared packages (jira / credential-store / sn-transport): jest, all gated |
-| Coverage | core **95.5%** lines (re-measured 2026-07-03) / mcp **82.7%** lines — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
+| MCP server | 61 tools in 12 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
+| Tests | **3415 passing** — core **108 suites / 1162 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1691** (node:test, against `dist`); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-17) |
+| Coverage | core **97.61%** lines / 87.93% branches; mcp **97.85%** lines / 91.31% branches (both re-measured 2026-08-17) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92); historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
-| Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**private**) |
-| Biggest gaps | distribution (Homebrew/Windows), live-instance compatibility matrix, DX backlog (DX1–DX24); **owner-gated** publish decisions (IP/provenance, brand, npm scope) |
+| Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
+| Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, DX backlog (DX1–DX24) |
 
 ## Metrics snapshot (2026-06-12)
 
@@ -110,10 +110,19 @@ companion scoped app via the Table-API fallback layer.
   machine-derived fallback (obfuscation-grade; keeps old files decrypting). Also
   stores Jira credential profiles.
 - `@syncrona/sn-transport` — shared scoped-prefix, retry-status, and
-  endpoint-not-found policies consumed by both HTTP clients.
+  endpoint-not-found policies consumed by both HTTP clients, plus the instance
+  error taxonomy (`transient` / `auth` / `acl` / `not-found` / `fatal` with
+  tri-state reachability) and the path-safety rules that turn a ServiceNow record
+  name into a filename legal on every supported filesystem.
 - `@syncrona/jira` — shared read-only Jira client (Cloud v3 + Server/DC v2),
   ADF-to-text rendering, branch-key inference, and config/credential resolution;
   consumed by both the CLI `jira` command and the MCP `jira_get_issue` tool.
+- `@syncrona/redaction` — the single credential-detection primitive: sensitive key
+  names, secret-shaped values (connection strings, JWTs, PEM keys, vendor API keys,
+  raw key material), a fail-closed scan budget, and the stable
+  `__SYNCRONA_REDACTED__<sha256-12>` marker. A leaf by acceptance criterion — it
+  imports no other `@syncrona` package, `types` included — so the MCP audit trail
+  and any future consumer cannot fork the detection rules.
 
 ## 2026-06-12 fix series — what changed (CR1–CR30)
 
@@ -153,12 +162,14 @@ mindmap
 
 ## What is NOT done
 
-1. **D5 distribution** — scaffolding shipped in [`packaging/`](../packaging/)
-   (Homebrew formula template, Windows `install.ps1`, provenance release
-   workflow); activation is **owner-gated** on npm publish (scope ownership +
-   2FA) and repo-public. macOS/Windows/libsecret keychain for the at-rest key
-   shipped via AR2 (opt-in). Remaining: `homebrew-tap` repo + first publish to
-   complete the "brew install syncrona" definition of done.
+1. **D5 distribution** — the npm half is **done**: 0.9.1 is live on npm with build
+   provenance, published from the `release` workflow (2026-08-17), so
+   `npx syncrona` works for anyone. macOS/Windows/libsecret keychain for the
+   at-rest key shipped via AR2 (opt-in). Remaining: the `homebrew-tap` repo and a
+   released formula to complete the "brew install syncrona" definition of done —
+   [`packaging/`](../packaging/) holds the formula template and the Windows
+   `install.ps1`, whose `url`/`sha256` are still placeholders — plus native
+   Windows support beyond WSL.
 2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2).
    CR22 is closed: the `sys.scripts.do` fallback was live-verified 2026-07-03
    (fixed a 404-only trigger that missed the real `400` response; confirmed it

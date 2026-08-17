@@ -143,11 +143,28 @@ human-facing summary of them.
   regression suite (drive-letter-case fix in `isUnderPath`), and the release
   pipeline gained the git identity `changeset publish` needs to create its
   per-package tags (the silent failure that shipped 0.9.0/0.9.1 untagged).
-  0.9.1 is live on npm with provenance (14 packages). Suite totals: core 1118
-  tests / 106 suites, mcp 1691, jira 126, credential-store 70, webpack-plugin 14.
+  0.9.1 is live on npm with provenance (14 packages). Suite totals after the
+  documentation pass (2026-08-17): **3415 tests** — core 1162 / 108 suites, mcp
+  1691, jira 126, credential-store 70, redaction 132, sn-transport 151, and 83
+  across the eight build plugins.
   The remaining distance to 1.0 is owner/live-gated (live-instance verification,
   native Windows CI host, Homebrew tap, business decisions), not
   engineering-completable offline.
+- **Shared foundation grew by one leaf (2026-08-17):** the credential detectors
+  that had been hardened inside the MCP audit trail over five reviews moved out
+  into **`@syncrona/redaction`**, a fifteenth workspace package that imports
+  nothing — `@syncrona/types` included — so a security primitive at the bottom of
+  the graph can be audited on its own. A `redaction-is-leaf` dependency-cruiser
+  rule and the package's own manifest contract test both enforce that. In the same
+  pass `@syncrona/sn-transport` gained `mirrorPolicy.ts` (instance-failure
+  taxonomy — transient / auth / ACL / not-found / fatal, retry schedule, and a
+  tri-state reachability probe that keeps wrong-credentials, wrong-URL and
+  hibernating-instance as three distinct operator actions) and `pathSafety.ts`
+  (turning instance-supplied names into filenames legal on every supported
+  filesystem: separator folding, a byte-rather-than-code-point cap, deterministic
+  collision resolution). `@syncrona/redaction` is not on npm yet — it publishes
+  with the next release, which the fixed changesets version group handles without
+  configuration.
 - **Last updated:** 2026-08-17
 
 ## Status legend

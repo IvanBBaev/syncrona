@@ -61,7 +61,10 @@ understand what it touches:
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP
   server reads metadata for analysis and keeps an audit log under
-  `.syncrona-mcp/` (with secret redaction).
+  `.syncrona-mcp/` (with secret redaction — the detectors live in
+  `@syncrona/redaction`, a package that imports nothing, so every consumer asks
+  the same code whether a key name or a value is credential material, and an
+  oversized value is redacted rather than skipped).
 - **Opt-in diagnostic log.** The CLI does not write logs to disk by default.
   Setting `SYNCRONA_DIAGNOSTIC_LOG=1` appends CLI output to
   `~/.syncrona/logs/cli.log` (size-bounded with rotation) for support — it

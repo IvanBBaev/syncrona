@@ -1,6 +1,7 @@
 # SyncroNow AI — Architecture
 
-> Last updated: 2026-06-12 (post CR1–CR30 fix series). Companion document:
+> Last updated: 2026-08-17 (post seventh-wave fixes; `@syncrona/redaction`
+> extracted). Companion document:
 > [PRODUCT_STATE.md](PRODUCT_STATE.md) for what is done and what remains.
 
 SyncroNow AI is a monorepo that ships a ServiceNow development toolchain:
@@ -16,7 +17,9 @@ packages/
   mcp-server/           @syncrona/mcp-server       — MCP runtime (stdio JSON-RPC)
   types/                @syncrona/types            — shared .d.ts type surface
   credential-store/     @syncrona/credential-store — at-rest credential crypto
-  sn-transport/         @syncrona/sn-transport     — shared HTTP transport policy
+  sn-transport/         @syncrona/sn-transport     — shared HTTP transport + record policy
+  jira/                 @syncrona/jira             — read-only Jira issue client
+  redaction/            @syncrona/redaction        — secret detection + redaction
   babel-plugin/  babel-plugin-remove-modules/  babel-preset-servicenow/
   typescript-plugin/  webpack-plugin/  sass-plugin/  prettier-plugin/  eslint-plugin/
                         — build-pipeline plugins loaded via sync.config.js rules
@@ -28,8 +31,10 @@ packages/
 graph TD
     subgraph shared["Shared foundation (pure, no IO)"]
         types["@syncrona/types<br/>.d.ts only"]
-        transport["@syncrona/sn-transport<br/>prefix + retry + endpoint policy"]
+        redaction["@syncrona/redaction<br/>secret detection + redaction"]
+        transport["@syncrona/sn-transport<br/>prefix + retry + endpoint +<br/>error taxonomy + path safety"]
         credstore["@syncrona/credential-store<br/>AES-256-GCM at-rest store"]
+        jira["@syncrona/jira<br/>read-only Jira client"]
     end
 
     core["syncrona<br/>CLI (yargs, axios)"]
@@ -39,14 +44,26 @@ graph TD
     core --> types
     core --> transport
     core --> credstore
+    core --> jira
     mcp --> transport
     mcp --> credstore
+    mcp --> jira
+    mcp --> redaction
+    jira --> credstore
     mcp -. "spawns as child process" .-> core
     core -. "dynamic import via<br/>sync.config.js rules" .-> plugins
 ```
 
-Build order is enforced by the root `build:deps` script: `credential-store` and
-`sn-transport` compile before their consumers.
+Build order is enforced by the root `build:deps` script: `credential-store`,
+`jira`, `redaction` and `sn-transport` compile before their consumers.
+
+`types` and `redaction` are the two leaves. `types` may import no other
+`@syncrona` package; `redaction` is stricter still — it may import **nothing**,
+`types` included. It is the single implementation of "is this key or value a
+credential", shared by the MCP audit trail and the instance mirror, and a
+security primitive at the bottom of the graph has to be auditable on its own.
+Both rules are machine-enforced (`types-is-leaf`, `redaction-is-leaf` in
+`.dependency-cruiser.cjs`).
 
 **Two HTTP clients by design.** The CLI uses axios (+ rate limit, one-shot
 process); the MCP server uses native `fetch` (long-lived process, per-status
@@ -55,7 +72,20 @@ agree on lives in `@syncrona/sn-transport`:
 
 - scoped API prefix order (`x_nuvo_sinc`/`x_nuvo_sync`, `SYNCRONA_SCOPED_API_PREFIXES` override),
 - retryable HTTP statuses (408/425/429/5xx),
-- endpoint-not-found statuses (400/403/404 — "scoped app not installed, fall back").
+- endpoint-not-found statuses (400/403/404 — "scoped app not installed, fall back"),
+- the **error taxonomy** (`mirrorPolicy.ts`): every instance failure classifies as
+  `transient` / `auth` / `acl` / `not-found` / `fatal`, and reachability is
+  tri-state (reachable / unreachable / unknown) rather than a boolean, so a
+  caller can tell "the instance said no" apart from "we never got an answer",
+- **path safety** (`pathSafety.ts`): turning an arbitrary ServiceNow record name
+  into a filename that is legal on every supported filesystem — separator folding,
+  a 200-byte name cap applied to bytes rather than code points, and deterministic
+  disambiguation when two records fold to the same name.
+
+The last two exist because the instance mirror and the CLI must agree on how a
+record is named on disk and on which failures are worth retrying; putting them
+in the transport package keeps that agreement in one place rather than in two
+clients that drift.
 
 ## 2. Core CLI
 
@@ -268,17 +298,23 @@ Every tool family is one `ToolHandlerModule` in `TOOL_HANDLER_MODULES`:
 1. **stdout belongs to JSON-RPC** in the MCP server; anything human-readable
    goes to stderr.
 2. **Both HTTP clients consume `@syncrona/sn-transport`** for prefix order,
-   retry statuses, and endpoint-not-found statuses; never re-hardcode them.
-3. **Manifest builds are all-or-nothing** per refresh: a partial result must
+   retry statuses, endpoint-not-found statuses, error classification and
+   on-disk record naming; never re-hardcode them.
+3. **Secret detection lives only in `@syncrona/redaction`.** Anything that
+   decides whether a key name or a value is a credential — the MCP audit trail,
+   the mirror's redactor, anything added later — imports it rather than carrying
+   its own regex. The package imports nothing, so it can be reviewed in
+   isolation and can never be made to import something that imports it back.
+4. **Manifest builds are all-or-nothing** per refresh: a partial result must
    never overwrite a good manifest.
-4. **Push state lives in the project root** (`sync.push.checkpoint.json`,
+5. **Push state lives in the project root** (`sync.push.checkpoint.json`,
    `sync.collaboration.lock.json`); the lock is acquired atomically and always
    released in `finally`. "Atomically" means **staged under a private name and
    published with `link()`** — never `writeFile(..., {flag:"wx"})`, which is atomic
    in exclusion but not in publication (`O_CREAT|O_EXCL` publishes the name before
    the bytes, so a concurrent reader can read an empty file and treat a live lock as
    abandoned). `npm run race:lock` is the multi-process harness that proves it.
-5. **Destructive operations confirm first** (`push`, `download`, `deploy`;
+6. **Destructive operations confirm first** (`push`, `download`, `deploy`;
    `--ci` opts out) and write state only after confirmation.
-6. **sync.config.js is executable code** — loaded fresh per load for reload
+7. **sync.config.js is executable code** — loaded fresh per load for reload
    support; a broken config is a hard error, never a silent default.

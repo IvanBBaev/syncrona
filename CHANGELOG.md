@@ -33,6 +33,33 @@ All notable changes to this project will be documented in this file.
 - MCP fetch client now honors `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` via an
   undici `EnvHttpProxyAgent` dispatcher, composed with the existing
   mutual-TLS/custom-CA dispatcher cache (G9 follow-up).
+- New package `@syncrona/redaction` — the single answer to "is this a
+  credential?". `isSensitiveKey` (property names), `looksLikeSecretValue`
+  (connection strings, JWTs, PEM private keys, inline `Authorization`, AWS access
+  keys, vendor-prefixed API keys, raw 256-bit hex) and `redactValue`
+  (`__SYNCRONA_REDACTED__<sha256-12>`, digested from the plaintext so a rotated
+  secret still shows a diff) were extracted from the MCP audit trail, where they
+  had been hardened one security review at a time. The package imports nothing —
+  not even `@syncrona/types` — which is an acceptance criterion rather than a
+  preference: a security primitive at the bottom of the graph can be audited on
+  its own and can never be made to import something that imports it back. A
+  `redaction-is-leaf` dependency-cruiser rule enforces it. Detection fails closed:
+  a value longer than the 8192-character scan budget is reported as a secret
+  instead of being scanned, because padding a secret past the budget used to be
+  all it took to launder it into a log in cleartext.
+- `@syncrona/sn-transport` gained the two policy modules a full-instance mirror
+  needs before it may touch the network or the filesystem, shared so that the CLI
+  and the MCP server agree with them rather than re-derive them. `mirrorPolicy.ts`
+  is the failure taxonomy — which HTTP status/body pairs are transient, auth, ACL,
+  not-found or fatal, the retry schedule, and a **tri-state** reachability probe
+  that keeps "wrong credentials", "wrong URL / no network" and "hibernating PDI"
+  as three distinct operator actions instead of one useless "cannot reach
+  instance". The classifications are measurements from a live instance, carried in
+  the tests as fixtures, so a future cleanup back to status-code-only
+  classification fails loudly instead of quietly mis-routing errors.
+  `pathSafety.ts` is the on-disk half: the safe-component predicate, a byte cap
+  applied to bytes rather than code points, and deterministic collision resolution
+  when two instance-supplied names fold to the same filename.
 
 ### Changed
 
@@ -227,6 +254,42 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Watch mode never retried a failed push. The retry ladder in `Watcher.ts` was
+  reached only when the drain threw, but `pushRec` converts every transport/HTTP
+  error into a resolved `{ success: false }`, so the common failure mode never
+  threw: failed pushes requeued their files and then waited for an fs event that
+  may never come. The drain now schedules its own retry on a capped exponential
+  backoff (unref'd, so a pending retry cannot by itself keep the process alive,
+  and guarded so overlapping failures stack at most one timer) and requeues per
+  record rather than per batch.
+- Keychain master-key provisioning raced. Two processes starting at once could
+  each provision a key, and the loser's ciphertext became undecryptable.
+  Provisioning is now behind a cross-process mutex — `mkdir` of a lock directory,
+  atomic on every platform — with a stale-lock steal for a crashed provisioner.
+- Jira dropped comments it already had. `fetchRecentComments` returned an empty
+  array for a page that contradicted the truncation signal that triggered the
+  fetch; an empty array is truthy, so it passed the caller's guard and wiped the
+  embedded comments. An empty page is now a failure and the caller falls back as
+  designed.
+- The MCP server's legacy `sys.scripts.do` fallback aborted before authenticating.
+  It now reuses the same `Authorization` header — whichever method is configured —
+  and the same mTLS/proxy dispatcher as the primary REST path, instead of being
+  Basic-only.
+- The MCP server degraded stored credentials to Basic auth. A stored profile's
+  auth method is now adopted when the environment supplies no auth material;
+  the environment still wins, and a stored profile for a different instance is
+  ignored, failing closed. Mutual TLS stays environment-only in both clients.
+- The webpack plugin could not find its config on Windows: a POSIX-style split
+  produced an invalid import specifier. It now uses `path.join` plus
+  `pathToFileURL`.
+- A named profile that defines no instance still falls back to the base
+  `SN_INSTANCE` by design, but it now warns once per process on both the CLI and
+  the MCP path. The user named that profile, and on the `mcp` path the fallback
+  target is persisted into `.syncrona-mcp/secrets.json` for every later session.
+- Releases are tagged again. `release.yml` now configures a git identity:
+  `changeset publish` creates annotated tags, which need a committer, and without
+  one the tag call fails silently inside changesets while still printing
+  "New tag:" — which is why 0.9.0 and 0.9.1 shipped without per-package tags.
 - `refresh` no longer downloads a `.js` file for a field the workspace already
   keeps as `.ts` (or any other extension a plugin rule maps to). The
   missing-file probe compared only against the exact `<field>.<manifest type>`
@@ -453,6 +516,21 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- Every Jest config sets `waitForUnhandledRejections: true`. Node 22 defaults to
+  `--unhandled-rejections=throw` and jest-circus drops its own listener at
+  teardown, so a rejection settling in the same turn as the test killed the worker
+  mid-file: every test the worker had not reached silently never ran, and the suite
+  still looked green. `unhandledRejectionConfig.test.ts` pins it in both
+  directions. This was also the single cause of every `RuntimeError` mutant
+  Stryker could not grade.
+- `stryker.conf.json` pins `concurrency: 4`, because concurrency is part of the
+  measurement rather than a performance knob: Stryker calibrates each mutant's
+  time allowance from a dry run it performs solo, then runs mutants N at a time.
+  Re-running `genericUtils.ts` unchanged at `--concurrency 1` moved 47 of its 60
+  timeouts to Killed and 2 to Survived, taking the honest band from
+  [36.27%, 95.10%] to [77.67%, 94.17%] while Stryker's own headline moved
+  95.10% → 94.17%. CONTRIBUTING and the config comments now say to read the
+  timeout count before the score, and to quote a band.
 - The mutation run can no longer be silently switched off by the config that is
   meant to protect it. `testPathIgnorePatterns` has to skip a leftover
   `.stryker-tmp/` sandbox when Jest runs from the package root, yet find those same

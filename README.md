@@ -70,6 +70,9 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 - [packages/credential-store/README.md](packages/credential-store/README.md) —
   the global encrypted credential store (AES-256-GCM at rest, key derivation)
   shared by the CLI and MCP server.
+- [packages/redaction/README.md](packages/redaction/README.md) — the shared
+  secret-detection and redaction primitive: which key names and value shapes count
+  as credentials, why detection fails closed, and what the redaction marker encodes.
 - [docs/VERSIONING.md](docs/VERSIONING.md) — semver policy, lockstep releases,
   the MCP tool-contract stability promise, and the Node.js support window.
 - [CHANGELOG.md](CHANGELOG.md) — notable changes per release.
