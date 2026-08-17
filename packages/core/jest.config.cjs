@@ -45,6 +45,12 @@ module.exports = {
   ],
   testPathIgnorePatterns: [
     ".js",
+    // Stryker copies the whole package (tests included) into its sandbox and
+    // does not clean it up when a run is interrupted, so without this a
+    // leftover .stryker-tmp makes Jest run every suite twice — and the sandbox
+    // copies resolve REPO_ROOT relative to themselves, which fails the
+    // license-consistency suite from inside an otherwise green tree.
+    "/\\.stryker-tmp/",
   ],
   coverageThreshold: {
     global: {
