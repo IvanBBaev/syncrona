@@ -1,0 +1,35 @@
+{
+  "name": "@syncrona/redaction",
+  "version": "0.9.1",
+  "description": "Shared secret detection and redaction for SyncroNow AI (sensitive key names, secret-shaped values, stable redaction markers) used by the MCP server audit trail and the instance mirror.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepack": "tsc",
+    "test": "jest --coverage"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.1.1",
+    "typescript": "~6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/redaction"
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

@@ -1,7 +1,7 @@
 # Codecov configuration for the syncrona monorepo.
 #
-# Only the four packages that ship real unit-test suites are measured:
-#   core, jira, credential-store, sn-transport.
+# Only the packages that ship real unit-test suites are measured:
+#   core, jira, credential-store, sn-transport, redaction.
 # The thin build-tool plugin packages (babel-*, webpack, sass, prettier,
 # eslint, typescript) have no tests yet, and mcp-server carries its own
 # node --test coverage gate (>=90% lines, >=80% branches over its own dist/**;
@@ -30,6 +30,10 @@ coverage:
           - jira
           - credential-store
           - sn-transport
+          # redaction carries a jest floor of 100/100/100/100, well above this
+          # 90% project gate, so counting it cannot drag the aggregate below
+          # target.
+          - redaction
     patch:
       default:
         # New / changed lines in a PR must themselves be >=90% covered.
@@ -54,6 +58,10 @@ flags:
   sn-transport:
     paths:
       - packages/sn-transport/src
+    carryforward: true
+  redaction:
+    paths:
+      - packages/redaction/src
     carryforward: true
 
 # Exclude everything that is not part of the measured, tested surface.

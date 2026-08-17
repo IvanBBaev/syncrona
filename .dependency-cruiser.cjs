@@ -4,9 +4,11 @@
  * Enforces the ARCHITECTURE §5 / §6 contract in `npm run lint`:
  *  - no circular dependencies anywhere;
  *  - the shared foundation packages (`types`, `credential-store`,
- *    `jira`, `sn-transport`) never depend on the `core` / `mcp-server`
- *    consumers — dependency arrows point down only;
+ *    `jira`, `redaction`, `sn-transport`) never depend on the `core` /
+ *    `mcp-server` consumers — dependency arrows point down only;
  *  - `@syncrona/types` stays a pure leaf;
+ *  - `@syncrona/redaction` stays a pure leaf too — stricter than `types`, it may
+ *    not import ANY other @syncrona package (mirror-architecture WP-M1);
  *  - the `core` and `mcp-server` consumers never import each other directly;
  *  - the 8 build-plugin packages are leaves that may only import `types`.
  *
@@ -37,10 +39,10 @@ module.exports = {
     {
       name: "foundation-no-consumers",
       comment:
-        "Shared foundation packages (types, credential-store, jira, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only. REV-139: the specifier alternative used to read `@syncrona/(core|mcp-server)`, but `@syncrona/core` is a package name that exists nowhere in the workspace — the core CLI publishes as the unscoped `syncrona` (packages/core/package.json). (Reaches: packages/credential-store/src, packages/jira/src, packages/sn-transport/src, packages/types/index.d.ts.)",
+        "Shared foundation packages (types, credential-store, jira, redaction, sn-transport) must never import the core/mcp-server consumers — dependency arrows point down only. REV-139: the specifier alternative used to read `@syncrona/(core|mcp-server)`, but `@syncrona/core` is a package name that exists nowhere in the workspace — the core CLI publishes as the unscoped `syncrona` (packages/core/package.json). (Reaches: packages/credential-store/src, packages/jira/src, packages/redaction/src, packages/sn-transport/src, packages/types/index.d.ts.)",
       severity: "error",
       from: {
-        path: "^packages/(credential-store|jira|sn-transport)/src|^packages/types/",
+        path: "^packages/(credential-store|jira|redaction|sn-transport)/src|^packages/types/",
       },
       to: {
         path: "(@syncrona/mcp-server(/|$)|^syncrona(/|$)|^packages/(core|mcp-server)/)",
@@ -54,6 +56,16 @@ module.exports = {
       from: { path: "^packages/types/" },
       to: {
         path: "(@syncrona/(?!types[/$])[a-z-]+|^packages/(?!types/)[a-z-]+/)",
+      },
+    },
+    {
+      name: "redaction-is-leaf",
+      comment:
+        "@syncrona/redaction is the strictest leaf in the graph: unlike the other foundation packages it may not import ANY @syncrona package, `types` included. It is the single implementation of \"is this key or value a credential\", shared by the mcp-server audit log and the mirror's redactor (mirror-architecture WP-M1 / INV-3), and the whole point of extracting it was that a security primitive at the bottom of the graph can be audited on its own and can never be made to import something that imports it back. The package's own `test/packageContract.test.ts` asserts the manifest-level version of this rule (no @syncrona dependency, in fact no runtime dependency at all); this rule is the module-level half, which is where such an import actually gets added. Matched in both the specifier and the resolved-path form for the same REV-139 reason as the rules below. (Reaches: packages/redaction/src.)",
+      severity: "error",
+      from: { path: "^packages/redaction/src" },
+      to: {
+        path: "(@syncrona/[a-z-]+|^syncrona(/|$)|^packages/(?!redaction/)[a-z-]+/)",
       },
     },
     {
