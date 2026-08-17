@@ -14,11 +14,16 @@ const {
   logger,
 } = require('../dist/logger.js');
 const { sanitizeForAudit, writeAuditEvent, checkAuditLogIntegrity } = require('../dist/audit.js');
-const { appendMetricEvent, loadMetricEvents } = require('../dist/metricsStore.js');
+const {
+  appendMetricEvent,
+  loadMetricEvents,
+  toRotatedMetricsPath,
+} = require('../dist/metricsStore.js');
 const {
   closeResource,
   createGracefulShutdownController,
 } = require('../dist/gracefulShutdown.js');
+const { SERVER_VERSION, resolveServerVersion } = require('../dist/runtimeConfig.js');
 
 function mkTmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -583,6 +588,65 @@ test('appendMetricEvent prunes rotated backups beyond maxBackups, keeping only t
   }
 });
 
+// REV-213, the metrics twin of REV-205 in auditIntegrity.test.js. The rotated name
+// carries a millisecond timestamp, so two rotations of the same file inside one
+// millisecond collide; `toRotatedMetricsPath` resolves that with a numeric suffix, and
+// the prune test above was its only — accidental — coverage: four rotations in a tight
+// loop collide on an idle machine and do not under load, i.e. the arm was decided by
+// machine speed rather than by an assertion. A frozen clock turns that race into one.
+test('REV-213 toRotatedMetricsPath: a same-millisecond collision suffixes instead of clobbering', () => {
+  const dir = mkTmpDir('syncrona-metrics-collision-');
+  try {
+    const metricsFile = path.join(dir, 'metrics.jsonl');
+    // One instant, reused for every call — exactly the burst-of-rotations case the arm
+    // exists for.
+    const frozen = new Date('2026-08-07T12:34:56.789Z');
+    const stamp = '2026-08-07T12-34-56-789Z';
+
+    const first = toRotatedMetricsPath(metricsFile, frozen);
+    assert.equal(path.basename(first), `metrics.${stamp}.jsonl`);
+    fs.writeFileSync(first, '{"tool":"first"}\n', 'utf-8');
+
+    const second = toRotatedMetricsPath(metricsFile, frozen);
+    assert.equal(path.basename(second), `metrics.${stamp}.1.jsonl`);
+    fs.writeFileSync(second, '{"tool":"second"}\n', 'utf-8');
+
+    // The loop must keep counting, not stop at one collision.
+    const third = toRotatedMetricsPath(metricsFile, frozen);
+    assert.equal(path.basename(third), `metrics.${stamp}.2.jsonl`);
+
+    // The whole point of the arm: the renameSync the caller is about to perform must
+    // not land on a rotated file that still holds samples nothing else has a copy of.
+    assert.equal(fs.readFileSync(first, 'utf-8'), '{"tool":"first"}\n');
+    assert.equal(fs.readFileSync(second, 'utf-8'), '{"tool":"second"}\n');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('REV-213 toRotatedMetricsPath: defaults to the wall clock when no instant is supplied', () => {
+  const dir = mkTmpDir('syncrona-metrics-collision-default-');
+  try {
+    const metricsFile = path.join(dir, 'metrics.jsonl');
+    const before = Date.now();
+    const candidate = toRotatedMetricsPath(metricsFile);
+    const after = Date.now();
+
+    // appendMetricEvent calls the one-argument form; this pins that the default arm
+    // still stamps the real time, so the frozen-clock test above cannot drift away
+    // from the caller it describes.
+    const match = /^metrics\.(.+)\.jsonl$/.exec(path.basename(candidate));
+    assert.ok(match, `unexpected rotated name: ${path.basename(candidate)}`);
+    const stampedAt = Date.parse(match[1].replace(/-(\d{2})-(\d{2})-(\d{3})Z$/, ':$1:$2.$3Z'));
+    assert.ok(
+      stampedAt >= before && stampedAt <= after,
+      `stamp ${match[1]} outside [${before}, ${after}]`
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('appendMetricEvent swallows errors when the path is unwritable (best-effort)', () => {
   const dir = mkTmpDir('syncrona-metrics-badpath-');
   try {
@@ -609,6 +673,156 @@ test('loadMetricEvents returns [] and swallows errors on unreadable path', () =>
     fs.writeFileSync(blockerFile, 'not-a-dir');
     const metricsFile = path.join(blockerFile, 'metrics.jsonl');
     const loaded = loadMetricEvents(blockerFile, metricsFile);
+    assert.deepEqual(loaded, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REV-213. The stake is unbounded disk growth. `pruneRotatedMetricsFiles` sorts the
+// rotated backups newest-first and retires everything past `maxBackups`, so the sort key
+// decides which files are safe. An entry the OS refuses to `stat` has no usable key; the
+// catch scores it 0, which sorts it LAST and therefore retires it FIRST. Scoring it as
+// "now" instead — the obvious alternative when someone rewrites this — would let a single
+// broken entry occupy a retention slot permanently, and the directory it exists to bound
+// would grow without limit while the function reported success.
+test('REV-213 prune: an entry that cannot be stat-ed is retired before entries that can', () => {
+  const dir = mkTmpDir('syncrona-metrics-unstattable-');
+  try {
+    const metricsFile = path.join(dir, 'metrics.jsonl');
+    fs.writeFileSync(metricsFile, '{"tool":"pending"}\n', 'utf-8');
+
+    // A real rotated backup, and a dangling symlink shaped like one. `readdirSync` lists
+    // both; `statSync` resolves the symlink and raises ENOENT on the second.
+    const keeper = path.join(dir, 'metrics.2026-01-01T00-00-00-000Z.jsonl');
+    fs.writeFileSync(keeper, '{"tool":"keeper"}\n', 'utf-8');
+    const unstattable = path.join(dir, 'metrics.2026-01-02T00-00-00-000Z.jsonl');
+    fs.symlinkSync(path.join(dir, 'target-that-never-existed'), unstattable);
+
+    // maxBytes=1 forces a rotation, which is the only path into the prune. maxBackups=2
+    // leaves room for exactly two of the three post-rotation backups, so the assertion is
+    // about ordering rather than about deleting everything.
+    appendMetricEvent(dir, metricsFile, {
+      tool: 'after',
+      ok: true,
+      latencyMs: 1,
+      timestamp: '2026-01-03T00:00:00.000Z',
+    }, 1, 2);
+
+    const names = fs.readdirSync(dir);
+    assert.equal(
+      names.includes(path.basename(unstattable)),
+      false,
+      'the unstattable entry must be the one retired'
+    );
+    assert.equal(
+      names.includes(path.basename(keeper)),
+      true,
+      'a stattable backup inside the retention window must survive'
+    );
+    // The just-rotated file plus the keeper: retention held at maxBackups.
+    assert.equal(names.filter((n) => n !== 'metrics.jsonl').length, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REV-213. The stake is that one stuck entry must not disable retention for good. The
+// inner catch around `unlinkSync` lets the prune step over an entry it cannot remove and
+// keep going; without it the first failure aborts the whole prune, every later rotation
+// re-fails on the same entry, and — because the prune runs inside `appendMetricEvent`'s
+// try — the exception also skips the `appendFileSync` below it, silently dropping the
+// metric sample that triggered the rotation.
+test('REV-213 prune: an undeletable entry is stepped over and the rest of the prune still runs', () => {
+  const dir = mkTmpDir('syncrona-metrics-undeletable-');
+  try {
+    const metricsFile = path.join(dir, 'metrics.jsonl');
+    fs.writeFileSync(metricsFile, '{"tool":"pending"}\n', 'utf-8');
+
+    // A directory wearing a rotated file's name: listed by readdirSync, stat-able (so it
+    // gets a real sort key), and refused by unlinkSync on every platform (EPERM on macOS,
+    // EISDIR on Linux) without needing chmod or root.
+    const stuck = path.join(dir, 'metrics.2026-01-02T00-00-00-000Z.jsonl');
+    fs.mkdirSync(stuck);
+    // The entry that must still be reached after the failure. Older mtime => sorts after
+    // the stuck one in newest-first order, so the prune hits the failure first.
+    const behind = path.join(dir, 'metrics.2026-01-01T00-00-00-000Z.jsonl');
+    fs.writeFileSync(behind, '{"tool":"behind"}\n', 'utf-8');
+    fs.utimesSync(stuck, new Date('2026-01-02T00:00:00Z'), new Date('2026-01-02T00:00:00Z'));
+    fs.utimesSync(behind, new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'));
+
+    appendMetricEvent(dir, metricsFile, {
+      tool: 'after',
+      ok: true,
+      latencyMs: 7,
+      timestamp: '2026-01-03T00:00:00.000Z',
+    }, 1, 1);
+
+    const names = fs.readdirSync(dir);
+    assert.equal(names.includes(path.basename(stuck)), true, 'the undeletable entry stays');
+    assert.equal(
+      names.includes(path.basename(behind)),
+      false,
+      'the prune must continue past the failure and retire the entry behind it'
+    );
+
+    // And the sample that triggered the rotation must still have landed.
+    const loaded = loadMetricEvents(dir, metricsFile);
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].tool, 'after');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REV-213. The stake is the very first metric event on a fresh install. `appendMetricEvent`
+// wraps everything in a best-effort catch, so if it did not create the metrics directory
+// itself the append would raise ENOENT, be swallowed, and the sample would vanish with no
+// error anywhere — and every later append would too, since nothing else creates that
+// directory on the write path. `loadMetricEvents` creating it on the READ path is not a
+// substitute: a server that only ever writes metrics would never call it.
+test('REV-213 appendMetricEvent creates a missing metrics directory instead of dropping the sample', () => {
+  const dir = mkTmpDir('syncrona-metrics-freshinstall-');
+  try {
+    // Two levels down, so this also pins `recursive: true` — a plain mkdir would fail.
+    const metricsDir = path.join(dir, 'state', 'metrics');
+    const metricsFile = path.join(metricsDir, 'metrics.jsonl');
+    assert.equal(fs.existsSync(metricsDir), false);
+
+    appendMetricEvent(metricsDir, metricsFile, {
+      tool: 'first_ever',
+      ok: true,
+      latencyMs: 3,
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+
+    assert.equal(fs.existsSync(metricsDir), true, 'the metrics directory must be created');
+    const loaded = loadMetricEvents(metricsDir, metricsFile);
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].tool, 'first_ever');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REV-213. The stake is that a damaged metrics file must degrade to an empty series rather
+// than throw out of a read path. `loadMetricEvents` backs the metrics reporting tool; if a
+// truncated, replaced or otherwise unreadable file propagated its fs error, the tool call
+// would fail outright instead of reporting "no samples". The existing unreadable-path test
+// above stops at `existsSync(metricsFile) === false` and returns early, so it never reaches
+// this arm — the file has to exist and still refuse to be read.
+test('REV-213 loadMetricEvents degrades to an empty series when the metrics file cannot be read', () => {
+  const dir = mkTmpDir('syncrona-metrics-unreadable-');
+  try {
+    // A directory at the metrics file's path: `existsSync` says yes, `readFileSync` raises
+    // EISDIR. Same shape as a metrics path a user pointed at the wrong thing.
+    const metricsFile = path.join(dir, 'metrics.jsonl');
+    fs.mkdirSync(metricsFile);
+
+    let loaded;
+    assert.doesNotThrow(() => {
+      loaded = loadMetricEvents(dir, metricsFile);
+    });
     assert.deepEqual(loaded, []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -826,5 +1040,51 @@ test('createGracefulShutdownController: uses default logger/exitFn/audit paths w
   } finally {
     process.exit = originalExit;
     console.error = originalErrorLog;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// runtimeConfig.ts
+// ---------------------------------------------------------------------------
+
+test('SERVER_VERSION reports this package\'s real version, not a literal that can rot', () => {
+  // This is not a tautology dressed as a test: the value used to be a hardcoded
+  // "0.1.0" while the package was at 0.9.1, so every MCP client was told the wrong
+  // version through the `initialize` handshake for eight minor releases. The
+  // assertion is that the handshake value is DERIVED from the manifest.
+  const declared = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+  ).version;
+  assert.equal(SERVER_VERSION, declared);
+  assert.notEqual(SERVER_VERSION, '0.0.0-unknown', 'the real manifest must resolve');
+  assert.equal(resolveServerVersion(), declared, 'the zero-argument form is what production calls');
+});
+
+test('resolveServerVersion falls back to the "unknown" sentinel rather than guessing a version', () => {
+  // Both fallback arms, driven deliberately instead of being left to the shape of the
+  // checkout. A version that cannot be read must surface as unknown: a plausible-looking
+  // number here is worse than an admission, because a client cannot tell it is a guess.
+  const dir = mkTmpDir('syncrona-runtimeconfig-');
+  try {
+    const missing = path.join(dir, 'does-not-exist', 'package.json');
+    assert.equal(resolveServerVersion(missing), '0.0.0-unknown', 'unreadable manifest');
+
+    const notJson = path.join(dir, 'broken.json');
+    fs.writeFileSync(notJson, '{ not json', 'utf-8');
+    assert.equal(resolveServerVersion(notJson), '0.0.0-unknown', 'unparseable manifest');
+
+    const noVersion = path.join(dir, 'no-version.json');
+    fs.writeFileSync(noVersion, JSON.stringify({ name: '@syncrona/mcp-server' }), 'utf-8');
+    assert.equal(resolveServerVersion(noVersion), '0.0.0-unknown', 'manifest with no version');
+
+    const emptyVersion = path.join(dir, 'empty-version.json');
+    fs.writeFileSync(emptyVersion, JSON.stringify({ version: '' }), 'utf-8');
+    assert.equal(resolveServerVersion(emptyVersion), '0.0.0-unknown', 'empty version string');
+
+    const numericVersion = path.join(dir, 'numeric-version.json');
+    fs.writeFileSync(numericVersion, JSON.stringify({ version: 9 }), 'utf-8');
+    assert.equal(resolveServerVersion(numericVersion), '0.0.0-unknown', 'non-string version');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

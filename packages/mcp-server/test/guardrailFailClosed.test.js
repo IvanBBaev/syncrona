@@ -21,6 +21,14 @@ const { logger } = require('../dist/logger.js');
 
 const DENY_REASON = /guardrail config unreadable — refusing mutations/;
 
+// A `SYNCRONA_ENV` inherited from the developer's shell selects an environment and can
+// change a policy decision, so every assertion in this file would depend on the shell it
+// ran from. `node --test` gives each test FILE its own process, so clearing it once here
+// is both sufficient and total — and, unlike a save/restore wrapper, it carries no
+// set-vs-delete arm that no test ever takes (this package's branch coverage counts test
+// files too, so an unreachable arm in a helper is a real branch lost).
+delete process.env.SYNCRONA_ENV;
+
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'guardrail-failclosed-'));
 }
@@ -124,6 +132,59 @@ test('cloneDefaultGuardrailConfig: returns a deep, mutable copy that never alias
   // Mutating the clone must not throw and must not touch the shared default.
   clone.policy.environments.injected = { allowTools: [] };
   assert.deepEqual(DEFAULT_GUARDRAIL_CONFIG.policy.environments, {});
+});
+
+// SEC-3 follow-up (REV-197): `requireDryRun` on a tool whose handler ignores dryRun is
+// an UNENFORCEABLE lock, and policyConfig refuses it outright rather than letting the
+// caller's requested flag stand in for a real simulation. That refusal had no test of
+// its own: the branch was reached only incidentally, from whichever suite happened to
+// evaluate a policy against a non-dry-run-aware tool, so `dist/policyConfig.js` measured
+// 100% on most runs and 97.60 / 99.00 on others — enough to flip the exact-match
+// coverage-annotation gate red at random. The declared-second-reading hatch that gate
+// now offers does NOT cover this case, and the difference is the whole point of the
+// diagnostic: here the uncovered-LINE column moved, which marks a branch nothing
+// exercises on purpose, not the V8 range-granularity artefact the hatch exists for.
+// A guard this consequential should not depend on an accident for its coverage;
+// these two pins drive it directly.
+test('evaluateToolPolicy: requireDryRun on a tool that cannot honour it is refused, not enforced', () => {
+  // `sn_query_table` is deliberately absent from DRY_RUN_AWARE_TOOLS (pinned by
+  // safetyPolicy.tableCompleteness.test.js) — a read-only tool has nothing to simulate.
+  const config = parseGuardrailConfig({
+    policy: { tools: { sn_query_table: { requireDryRun: true } } },
+  });
+
+  withCapturedErrors((calls) => {
+    const requested = evaluateToolPolicy(config, 'sn_query_table', {}, true);
+    assert.equal(requested.allowed, false);
+    assert.match(requested.reason, /does not implement dryRun/);
+    assert.match(requested.reason, /fail-closed/);
+
+    // The negative control that makes this a lock rather than a filter: asking for
+    // dryRun=true must NOT buy the caller a pass. Before the guard it was the only
+    // accepted shape, and it still performed the real mutation.
+    const notRequested = evaluateToolPolicy(config, 'sn_query_table', {}, false);
+    assert.equal(notRequested.allowed, false);
+    assert.match(notRequested.reason, /does not implement dryRun/);
+
+    // An unenforceable guardrail is an operator mistake; it has to reach the log.
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.match(call.message, /does not implement dryRun/);
+      assert.deepEqual(call.fields, { tool: 'sn_query_table' });
+    }
+  });
+});
+
+test('evaluateToolPolicy: requireDryRun on a dry-run-aware tool still enforces normally', () => {
+  // Negative control for the test above: the refusal must be scoped to tools that
+  // cannot honour a dry run, not applied to every requireDryRun entry.
+  const config = parseGuardrailConfig({
+    policy: { tools: { sync_push: { requireDryRun: true } } },
+  });
+  assert.deepEqual(evaluateToolPolicy(config, 'sync_push', {}, true), { allowed: true });
+  const denied = evaluateToolPolicy(config, 'sync_push', {}, false);
+  assert.equal(denied.allowed, false);
+  assert.match(denied.reason, /requires dryRun=true/);
 });
 
 test('createInvalidGuardrailConfig: produces a deny-all config carrying the reason', () => {

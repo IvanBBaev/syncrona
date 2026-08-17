@@ -33,17 +33,43 @@ export function extractSymbolsFromCode(code: string, file: string): SemanticSymb
   return symbols;
 }
 
+/**
+ * REV-213: every fs call in this walk is best-effort, matching
+ * buildSemanticIndexFromWorkspaceAsync below and sampleSourceTree in
+ * semanticIndexState.ts — whose doc comment already claimed the three walkers
+ * behaved alike, while this one was the odd one out. It used bare `readdirSync`,
+ * `statSync` and `readFileSync`, so anything the filesystem could refuse threw
+ * straight out of `getSemanticIndex`, i.e. out of a READ path: sync_semantic_search
+ * and sync_symbol_xref failed rather than returning the symbols they could see.
+ * The everyday trigger is a dangling symlink (a `.ts` link whose target was removed
+ * or was never checked out) — `statSync` follows links, so it raises ENOENT on an
+ * entry `readdirSync` had just listed. The same shape is a genuine race for the
+ * other two calls: readdir names an entry, and a checkout or an editor deletes it
+ * before the stat or the read lands. Whether the crash happened was decided by the
+ * state of the working tree, never by anything a caller did wrong; skipping the
+ * entry costs at most one file's symbols until the next rebuild.
+ */
 export function buildSemanticIndexFromWorkspace(rootDir: string): SemanticSymbol[] {
   const symbols: SemanticSymbol[] = [];
 
   const walk = (dir: string) => {
-    const entries = readdirSync(dir);
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch (_) {
+      return;
+    }
     for (const entry of entries) {
       if (entry === "node_modules" || entry === "dist" || entry.startsWith(".")) {
         continue;
       }
       const fullPath = path.join(dir, entry);
-      const st = statSync(fullPath);
+      let st;
+      try {
+        st = statSync(fullPath);
+      } catch (_) {
+        continue;
+      }
       if (st.isDirectory()) {
         walk(fullPath);
         continue;
@@ -51,7 +77,12 @@ export function buildSemanticIndexFromWorkspace(rootDir: string): SemanticSymbol
       if (!/\.(js|ts)$/.test(entry)) {
         continue;
       }
-      const content = readFileSync(fullPath, "utf-8");
+      let content: string;
+      try {
+        content = readFileSync(fullPath, "utf-8");
+      } catch (_) {
+        continue;
+      }
       symbols.push(...extractSymbolsFromCode(content, fullPath));
     }
   };

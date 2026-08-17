@@ -197,6 +197,14 @@ async function sampleSourceTreeAsync(rootDir: string): Promise<SourceTreeSample>
  * on every read, which is exactly the cost this poll exists to avoid.
  */
 function isSampleStale(sample: SourceTreeSample): boolean {
+  // REV-213: unreachable by construction, kept as a guard rather than deleted. The
+  // only caller is the `||` chain in getSemanticIndex, which tests `!LAST_SEMANTIC_INDEX`
+  // first and short-circuits, plus isSemanticIndexStaleAsync, which returns on the same
+  // condition before it gets here. Deliberately NOT covered: driving it would mean
+  // exporting a private predicate purely so a test could call it in a state no caller can
+  // produce. It stays because "nothing built yet" is the primary guard's answer, not this
+  // one's, and a future caller that forgets the check should get "not stale" rather than
+  // compare a sample against a builtAt of 0 and force a rebuild loop.
   if (!LAST_SEMANTIC_INDEX) {
     return false;
   }
@@ -213,6 +221,10 @@ function isSampleStale(sample: SourceTreeSample): boolean {
 }
 
 async function isSemanticIndexStaleAsync(projectDir: string): Promise<boolean> {
+  // REV-213: unreachable by construction, same reasoning as isSampleStale above — the
+  // sole caller is the `&&` chain in getSemanticIndexAsync, whose first operand is
+  // `LAST_SEMANTIC_INDEX`, so a null index never reaches this call. Left uncovered on
+  // purpose.
   if (!LAST_SEMANTIC_INDEX) {
     return false;
   }

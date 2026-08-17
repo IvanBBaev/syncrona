@@ -628,6 +628,25 @@ export async function discoverWorkspaceScopeKnowledgeAsync(
   };
 }
 
+/**
+ * REV-213: the directory listing is best-effort, matching
+ * discoverWorkspaceScopeKnowledgeAsync above — which wraps its `readdir` in a
+ * try/catch and `continue`s past a directory it cannot list.
+ *
+ * This twin used a bare `readdirSync` in the `for...of` header while its `statSync`
+ * and `readFileSync` were both already guarded, so it was the ONE fs call in the
+ * whole walk that could throw, and the two exported twins disagreed on a plain
+ * deterministic input: with `src` present but not listable, the async form answers
+ * with an empty graph and the sync form threw ENOTDIR/EACCES/ENOENT straight out of
+ * `sync_scope_knowledge` — a READ path, failing rather than reporting what it could
+ * see. `existsSync(sourceDir)` above does not narrow it: `existsSync` is true for a
+ * regular file and for a symlink to one, and a directory pushed onto `stack` after a
+ * successful `statSync` can be renamed or removed before the pop reaches it.
+ *
+ * Whether the crash happened was decided by the shape of the working tree, never by
+ * anything the caller did wrong. Skipping the directory costs the entities under it
+ * until the next call, which is what the async twin has always cost.
+ */
 export function discoverWorkspaceScopeKnowledge(projectDir: string = PROJECT_DIR): WorkspaceScopeKnowledge {
   const sourceDir = path.join(projectDir, "src");
   if (!existsSync(sourceDir)) {
@@ -645,7 +664,13 @@ export function discoverWorkspaceScopeKnowledge(projectDir: string = PROJECT_DIR
 
   while (stack.length > 0) {
     const currentDir = stack.pop() || sourceDir;
-    for (const entryName of readdirSync(currentDir)) {
+    let entryNames: string[];
+    try {
+      entryNames = readdirSync(currentDir);
+    } catch (_) {
+      continue;
+    }
+    for (const entryName of entryNames) {
       const entryPath = path.join(currentDir, entryName);
       let stats;
       try {
