@@ -8,11 +8,12 @@ future maintainer can answer "where did this code come from, under what license,
 and what still needs a human sign-off before public distribution?" without
 reconstructing it from scattered notes.
 
-> **Status (2026-07):** the engineering and documentation side of provenance is
-> **complete and CI-guarded**. What remains is a **legal sign-off that only the
-> owner can obtain** — see [§6 Open items](#6-open-items-owner--legal). Every
-> public-distribution step (npm publish, tagged GitHub release) is gated on that
-> sign-off.
+> **Status (2026-08-17):** the engineering and documentation side of provenance is
+> **complete and CI-guarded**. The public-distribution steps have since been taken
+> by the owner — the repository went public on 2026-06-21 and 0.9.1 shipped to npm
+> with build provenance on 2026-08-17. The **legal sign-off in
+> [§6 Open items](#6-open-items-owner--legal) is still open**, and only the owner
+> can close it; it is now a standing obligation rather than a pending gate.
 
 ---
 
@@ -60,8 +61,8 @@ GPL-3.0-**only** is one of the open legal questions in [§6](#6-open-items-owner
 |---|---|---|
 | Root license | Verbatim GPL-3.0 text | [`LICENSE`](../LICENSE) |
 | Attribution / NOTICE | Names Sincronia/Nuvolo origin, per-area copyright split, trademark disclaimer | [`NOTICE`](../NOTICE) |
-| Workspace `license` fields | All 14 packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
-| Per-file SPDX headers | `SPDX-License-Identifier: GPL-3.0-or-later` on **120/120** non-test source `.ts` files (shebang-aware on the 2 bin files) | `packages/*/src/**` |
+| Workspace `license` fields | All 15 packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
+| Per-file SPDX headers | `SPDX-License-Identifier: GPL-3.0-or-later` on **132/132** non-test source `.ts` files (shebang-aware on the 2 bin files) | `packages/*/src/**` |
 | README license section | Declares GPL-3.0, points at Sincronia + NOTICE, states the GPL redistribution obligation | [`README.md`](../README.md) |
 | Governance note | License + derivative status recorded | [`GOVERNANCE.md`](../GOVERNANCE.md) |
 | Drift guard (CI) | `licenseConsistency.test.ts` fails the build on any revert to MIT / missing NOTICE / non-GPL workspace license | `packages/core/src/tests/licenseConsistency.test.ts` |
@@ -100,8 +101,10 @@ lawyer. They are the actual content of the "IP / provenance clearance" gate:
      corresponding-source obligations.
 2. **Confirm the right to distribute the pre-existing code publicly.** The tree
    previously carried `nuvolo` references and now lives on a personal account;
-   the owner must confirm ownership / redistribution rights. This is a **hard
-   gate on every public step** (npm publish, tagged GitHub release).
+   the owner must confirm ownership / redistribution rights. This was written as a
+   **hard gate on every public step**; those steps have since been taken (repo
+   public 2026-06-21, npm publish 2026-08-17), so the confirmation is now
+   outstanding on already-distributed material rather than blocking a future one.
 
 ## 7. Residual upstream references to clean before public launch
 

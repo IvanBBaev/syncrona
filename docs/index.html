@@ -1045,6 +1045,7 @@ includes: {
             <li><strong>Dry-run everything risky.</strong> <code>--dry-run</code> previews <code>push</code>, <code>deploy</code>, <code>download</code> and <code>build</code>; the MCP server gates writes behind confirmation and dry-run.</li>
             <li><strong>Destructive ops confirm first.</strong> <code>download</code> and <code>repair</code> ask before overwriting (<code>--ci</code> skips the prompt) — keep source in Git so a bad run is a <code>git checkout</code> away.</li>
             <li><strong>Secrets stay out of Git.</strong> Ignore <code>.env</code> and <code>node_modules</code>; for CI, source <code>SYNCRONA_STORE_KEY</code> from a secrets manager.</li>
+            <li><strong>One secret detector, fail-closed.</strong> <code>@syncrona/redaction</code> is the single answer to &ldquo;is this a credential?&rdquo; — key names, secret-shaped values, a bounded scan budget that reports rather than skips oversized input, and a redaction marker digested from the plaintext so a rotated secret still shows a diff.</li>
           </ul>
           <div class="callout security">
             <span class="c-label">SECURITY</span>
@@ -1063,9 +1064,9 @@ includes: {
             <h2 class="sec-title">Architecture</h2>
           </div>
           <p class="sec-intro sm">
-            A Node 22 monorepo of 13 <code class="inline">@syncrona/*</code> packages. Two ServiceNow clients — the
-            core CLI and the MCP server — share one transport policy and one encrypted credential store, so auth, scoped-API
-            resolution and retry behaviour are identical across both.
+            A Node 22 monorepo of 14 <code class="inline">@syncrona/*</code> packages. Two ServiceNow clients — the
+            core CLI and the MCP server — share one transport policy, one encrypted credential store and one secret
+            detector, so auth, scoped-API resolution, retry behaviour and redaction are identical across both.
           </p>
           <figure class="arch">
             <div class="arch-body">
@@ -1112,12 +1113,13 @@ includes: {
               </svg>
             </div>
             <div class="arch-pkgs" aria-label="Workspace packages">
-              <span class="apk-label">14 PACKAGES</span>
+              <span class="apk-label">15 PACKAGES</span>
               <span class="apk">core</span>
               <span class="apk">mcp-server</span>
               <span class="apk">types</span>
               <span class="apk">sn-transport</span>
               <span class="apk">credential-store</span>
+              <span class="apk">redaction</span>
               <span class="apk">jira</span>
               <span class="apk">typescript</span>
               <span class="apk">babel</span>
@@ -1128,8 +1130,8 @@ includes: {
               <span class="apk">+2 babel presets</span>
             </div>
             <figcaption>
-              Two clients over one transport and one credential store; shared <code>types</code> keep their contracts in
-              lock-step, and six build plugins power the local pipeline — one Node 22 workspace.
+              Two clients over one transport, one credential store and one secret detector; shared <code>types</code> keep
+              their contracts in lock-step, and six build plugins power the local pipeline — one Node 22 workspace.
             </figcaption>
           </figure>
           <p class="sec-note">

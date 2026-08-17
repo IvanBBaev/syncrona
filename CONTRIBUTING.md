@@ -19,10 +19,10 @@ remains; `TODO` and `DONE` are the working journals.
 ## Quality gates — run before every change is "done"
 
 ```bash
-npm run build      # build:deps (credential-store, sn-transport) + all workspaces
+npm run build      # build:deps (credential-store, jira, redaction, sn-transport) + all workspaces
 npm run typecheck  # tsc across core + mcp-server
 npm run lint       # eslint core + mcp-server, --max-warnings=0
-npm run test       # 3000+ tests: core jest (1059) + mcp node:test (1683) + shared + plugins
+npm run test       # 3415 tests: core jest (1162) + mcp node:test (1691) + shared (479) + plugins (83)
 npm run check      # the full gate — every link below, in order
 ```
 
@@ -268,7 +268,13 @@ that's a runner-resolution quirk, not a code error.
 - **stdout discipline (MCP):** the MCP server speaks JSON-RPC on stdout —
   log only to stderr (`logger.ts`).
 - **Transport policy lives in `@syncrona/sn-transport`** — never re-hardcode
-  scoped prefixes, retry statuses, or endpoint-not-found statuses in a client.
+  scoped prefixes, retry statuses, endpoint-not-found statuses, instance-error
+  classification, or on-disk record naming in a client.
+- **Secret detection lives in `@syncrona/redaction`** — never add a local
+  "does this look like a password?" check. That package imports nothing (not even
+  `@syncrona/types`), so it can be reviewed on its own; a second copy of the rules
+  is a copy that stops being reviewed. Both leaf rules are machine-enforced
+  (`types-is-leaf`, `redaction-is-leaf` in `.dependency-cruiser.cjs`).
 - **Command tables drift-checked:** changing the CLI surface requires updating
   README and CLAUDE.md in the same change, or CI fails.
 - **Destructive CLI actions confirm first** and support `--dry-run`/`--ci`.

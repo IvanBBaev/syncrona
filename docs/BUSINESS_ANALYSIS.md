@@ -2,7 +2,7 @@
 
 > Author lens: Business Analyst (BABOK-aligned). Companion to the engineering
 > docs ([ARCHITECTURE.md](ARCHITECTURE.md), [PRODUCT_STATE.md](PRODUCT_STATE.md)).
-> Last updated: 2026-06-13. This document is the product/market source of truth;
+> Last updated: 2026-08-17. This document is the product/market source of truth;
 > the engineering `TODO`/`DONE` track delivery against it.
 
 ## 1. Product vision
@@ -67,8 +67,10 @@ AI layer that understands your scope.* Publish this as a one-page comparison.
 - **Strengths:** strong engineering quality (gates, tests, audit=0); works
   with/without companion app (low adoption friction); timely AI/MCP layer;
   registry-driven extensibility.
-- **Weaknesses:** Basic-auth only (enterprise blocker); single maintainer (bus
-  factor 1); fragmented brand; no published release yet; weak at-rest crypto.
+- **Weaknesses:** no authorization-code SSO (OAuth grants, API key and mTLS ship,
+  but SSO is what enterprises ask for); single maintainer (bus factor 1);
+  fragmented brand; npm only, no Homebrew/Windows installer; the at-rest key
+  falls back to a machine-derived value when no keychain is available.
 - **Opportunities:** AI-assisted ServiceNow dev is early and differentiating;
   SI/consultancy beachhead; plugin ecosystem.
 - **Threats:** ServiceNow improves native Git further; IP/provenance ambiguity;
@@ -101,8 +103,9 @@ AI layer that understands your scope.* Publish this as a one-page comparison.
 - NFR-3 Secure credential storage — **partial/weak** (machine-key obfuscation;
   Basic auth). Enterprise NFR not met.
 - NFR-4 Supportability — **GAP** (no SLA, no support channel, bus factor 1).
-- NFR-5 Distribution / install ease — **GAP (D5)**: Homebrew/Windows/Keychain,
-  npm publish not done.
+- NFR-5 Distribution / install ease — **partial (D5)**: npm publish done (0.9.1
+  live with provenance) and the OS keychain is the default key backend; Homebrew
+  tap and native Windows remain.
 - NFR-6 ServiceNow version compatibility statement — **GAP**.
 
 ## 7. Success metrics (KPIs) — to instrument
@@ -153,15 +156,15 @@ not technical risk.
 | R3 | Bus factor 1 — single maintainer | High | Medium | Document ownership; recruit co-maintainer; reduce knowledge silos (docs are now good). |
 | R4 | ServiceNow extends native Git, eroding differentiation | Medium | Medium | Lean into the AI/MCP and multi-scope CLI moat; ship fast. |
 | R5 | Weak at-rest credential crypto / data handling | Medium | Medium | OS keychain (AR2); publish data-handling statement (SECURITY.md). |
-| R6 | No published release / install friction | High | High (current) | D5 distribution; reduce time-to-value. |
+| R6 | Install friction on non-npm paths | High | Medium (was High) | Retired for npm — `npx syncrona` works since 0.9.1 (2026-08-17). Homebrew tap + native Windows still open under D5. |
 | R7 | Brand fragmentation hurts discoverability | Low | High | Unify on one name across npm/repo/CLI. |
 | R8 | No user-research loop → building the wrong things | Medium | Medium | Run interviews; instrument KPIs; tie roadmap to demand. |
 
 ## 10. Adoption funnel & enterprise-readiness gate
 
 **Funnel (current friction in bold):**
-discover → **install (Node 22 / WSL on Windows / not yet published)** → init →
-**first push (Basic auth only; weak crypto)** → daily use → **team rollout (no
+discover → install (`npx syncrona`, published; **Node 22 / WSL on Windows**) → init →
+first push (Basic, OAuth, API key or mTLS; keychain-backed store) → daily use → **team rollout (no
 support/SLA, compatibility unknown)** → advocate.
 
 **Enterprise-readiness checklist (procurement will ask):**

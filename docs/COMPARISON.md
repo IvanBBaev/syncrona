@@ -43,7 +43,10 @@ code. (Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §4.)
 
 ## Honest gaps (today)
 
-SyncroNow AI is pre-1.0. Versus first-party tooling it still lacks **OAuth/SSO**
-(Basic auth only — see [SECURITY.md](../SECURITY.md)), a **support SLA**, and a
-published **distribution** (Homebrew/Windows installer). These are the active
-priorities — see the roadmap in [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §8.
+SyncroNow AI is pre-1.0. Versus first-party tooling it still lacks **full SSO**
+(OAuth password, client-credentials and JWT-bearer grants ship, plus inbound REST
+API key and mutual TLS — but not the authorization-code/SSO flow; see
+[SECURITY.md](../SECURITY.md)), a **support SLA**, and distribution beyond npm
+(`npx syncrona` works since 0.9.1; a Homebrew tap and a native Windows installer
+do not exist yet). These are the active priorities — see the roadmap in
+[BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §8.

@@ -2,7 +2,7 @@
 
 What it takes to take SyncroNow AI from "alpha-ready" to a **public 1.0** that an
 enterprise can adopt. Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md)
-(§10 enterprise gate) and the engineering `TODO`/`DONE`. Status as of 2026-06-21.
+(§10 enterprise gate) and the engineering `TODO`/`DONE`. Status as of 2026-08-17.
 
 Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 (needs an account, a credential, a live instance, or a decision).
@@ -38,6 +38,16 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   read/written + opt-in diagnostic log).
 - ✅ **Secret scanning in CI** — gitleaks runs in the GitHub Actions workflow
   (full-history job, fixtures allowlisted via `.gitleaks.toml`).
+- ✅ **One secret detector, not several** — DONE 2026-08-17: the credential
+  detectors that grew inside the MCP audit trail now live in
+  [`@syncrona/redaction`](../packages/redaction/README.md), a leaf package that
+  imports nothing (not even `@syncrona/types`) and is enforced as a leaf by a
+  `redaction-is-leaf` dependency-cruiser rule. Every component that persists
+  instance data or tool traffic asks the same code "is this a credential?", so the
+  rules cannot drift apart between consumers. Detection **fails closed**: a value
+  longer than the 8 KiB scan budget is reported as a secret rather than scanned,
+  and the redaction marker embeds a digest of the plaintext so a rotated secret
+  still produces a visible diff.
 - ✅ **Dependency audit gate** — `npm audit --omit=dev --audit-level=high` = 0,
   enforced in CI.
 - ✅ **Jira integration (read-only)** — the `jira` CLI command and the
@@ -49,18 +59,24 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   reaches an LLM, so it cannot be read as instructions. No write path exists.
 
 ## 2. Distribution & release (D5)
-- 🔴 **npm publish** — `@syncrona/*` not yet published; verify scope
-  ownership + enable 2FA, add the `NPM_TOKEN` secret, then release via the
-  `Release` workflow (`changeset publish`, exposed locally as `npm run release`).
+- ✅ **npm publish** — DONE 2026-08-17: the `@syncrona` scope is claimed with 2FA
+  and an automation token, and **0.9.1 is live on npm** for the 14 packages that
+  existed at the time, released from the `Release` workflow (`changeset publish`,
+  exposed locally as `npm run release`). `@syncrona/redaction`, extracted after
+  that release, publishes with the next one — `.changeset/config.json` fixes
+  `syncrona` and `@syncrona/*` in one version group, so a new package joins the
+  lockstep without any config change.
 - 🔴 **Homebrew tap** — create `homebrew-tap` repo + Formula + release action.
 - 🔴 **Windows** — PowerShell install script + Windows Credential Manager (and
   native-Windows support beyond WSL).
 - ✅ **Release automation (G6)** — DONE: Changesets wired in (`.changeset/`,
   `npm run changeset` / `version-packages` / `release`); all `@syncrona/*`
-  packages version in lockstep. Publishing itself stays owner-gated (npm scope +
-  2FA).
-- 🟡 **CI publish with provenance** — publish from CI with `--provenance` + 2FA
-  instead of a laptop (depends on npm publish decision).
+  packages version in lockstep.
+- ✅ **CI publish with provenance** — DONE: 0.9.1 was published from the `release`
+  workflow with `--provenance`, not from a laptop. One follow-up fix landed with
+  it — `changeset publish` creates annotated per-package tags and needs a
+  committer identity on the runner; without one the tag call fails silently
+  inside changesets, which is why 0.9.0 and 0.9.1 shipped untagged.
 
 ## 3. Compatibility & support
 - ✅ **ServiceNow compatibility statement** — README (release-agnostic via REST/
@@ -82,8 +98,11 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   least-privilege `permissions: contents: read`.
 - ✅ **CI hardening** — least-privilege permissions + GitHub Actions pinned to commit SHAs.
 - ✅ **Module-boundary enforcement (G10)** — DONE: dependency-cruiser runs in
-  `npm run lint` (`lint:boundaries`); enforces no-circular and that the shared
-  foundation packages never import the core/mcp-server consumers.
+  `npm run lint` (`lint:boundaries`); enforces no-circular, that the shared
+  foundation packages never import the core/mcp-server consumers, and that the two
+  leaves stay leaves (`types-is-leaf`, `redaction-is-leaf`). A self-test
+  (`lint:boundaries:selftest`) proves each rule still fires, so a rule that stops
+  matching anything fails the build instead of passing vacuously.
 - 🟡 **Mutation/perf baselines (G13/G14)** — Stryker / bench (dev deps).
 - 🔴/🟡 **ts-jest migration of mcp tests (AR9)** — HIGH RISK; deferred.
 
