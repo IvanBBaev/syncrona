@@ -829,20 +829,21 @@ describe("command flows", () => {
   it("mcpCommand updates discovered MCP client configs without removing existing entries", async () => {
     const { mcpCommand } = await import("../commands.js");
     const homeDir = os.homedir();
-    const appData = process.env.APPDATA || "";
 
-    let expectedPaths: string[] = [];
-    if (process.platform === "darwin") {
-      expectedPaths = [
-        path.join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
-        path.join(homeDir, ".cursor", "mcp.json"),
-      ];
-    } else if (process.platform === "win32" && appData) {
-      expectedPaths = [
-        path.join(appData, "Claude", "claude_desktop_config.json"),
-        path.join(appData, "Cursor", "mcp.json"),
-      ];
-    }
+    // The platform is PINNED, not read. This assertion used to mirror the
+    // source's own `process.platform` branching to build `expectedPaths`; on
+    // Linux both arms were false, the array came out empty, and the assertion
+    // loop below iterated zero times — the test passed having asserted nothing,
+    // on exactly the OS CI runs. Pinning darwin makes the merge semantics the
+    // subject on every host; per-platform *target discovery* is covered
+    // exhaustively in mcpCommand.test.ts.
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+
+    const expectedPaths = [
+      path.join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+      path.join(homeDir, ".cursor", "mcp.json"),
+    ];
 
     mockResolveCredentials.mockReturnValue({
       instance: "dev.service-now.com",
@@ -875,13 +876,23 @@ describe("command flows", () => {
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
     });
 
-    await mcpCommand({
-      logLevel: "info",
-      autoConfigure: true,
-      start: false,
-      mcpServerPath: "/tmp/mcp/dist/index.js",
-    });
+    try {
+      await mcpCommand({
+        logLevel: "info",
+        autoConfigure: true,
+        start: false,
+        mcpServerPath: "/tmp/mcp/dist/index.js",
+      });
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
 
+    // Guards the loop below against ever going vacuous again: a `for` over an
+    // empty array asserts nothing and still reports green.
+    expect(expectedPaths).toHaveLength(2);
     for (const clientPath of expectedPaths) {
       const match = mockWriteFile.mock.calls.find((call) => call[0] === clientPath);
       expect(match).toBeDefined();
@@ -890,7 +901,6 @@ describe("command flows", () => {
       expect(writtenConfig.mcpServers?.["syncrona"]).toBeDefined();
       expect(writtenConfig.mcpServers?.["syncrona"]?.args).toEqual(["/tmp/mcp/dist/index.js"]);
     }
-
   });
 
   it("mcpCommand requires login before start when credentials are missing", async () => {

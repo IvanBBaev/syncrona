@@ -16,6 +16,12 @@ function createClient(tableAPIGet: TableApiGet) {
   return { tableAPIGet } as unknown as import("../snClient").SNClient;
 }
 
+// Paged reads append `^ORDERBYsys_id` (see withStableOrder in manifestBuilder)
+// so offset paging walks a stable order. Fixtures that dispatch on the exact
+// query text match the caller's half of it, not the pager's suffix.
+const withoutOrder = (query: string): string =>
+  query.replace(/\^?ORDERBYsys_id$/, "");
+
 // A "skippable" error carries a 4xx status that axios recognises (ACL/404):
 // the builder swallows these as "table not accessible". A plain Error has no
 // HTTP status, so it counts as a real failure that must propagate.
@@ -545,7 +551,10 @@ describe("manifestBuilder coverage", () => {
         if (fields === "sys_class_name")
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
         // Scope metadata rows (sys_id lookup) used to seed the fallback query.
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           return { data: { result: [{ sys_id: "rec-1", sys_class_name: "sys_script_include" }] } };
         }
       }
@@ -615,7 +624,10 @@ describe("manifestBuilder coverage", () => {
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
         // The metadata-rows pager for the fallback is forbidden (skippable) →
         // getScopeMetadataRowsForTable returns [] → getRecordsForTable returns {}.
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           throw skippableError(403);
         }
       }
@@ -645,7 +657,10 @@ describe("manifestBuilder coverage", () => {
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
         // The metadata-rows pager for the fallback hits a network error →
         // getScopeMetadataRowsForTable must re-throw, failing the table.
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           throw new Error("socket hang up");
         }
       }
@@ -669,7 +684,10 @@ describe("manifestBuilder coverage", () => {
       if (table === "sys_metadata") {
         if (fields === "sys_class_name")
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           return { data: { result: [{ sys_id: "rec-1", sys_class_name: "sys_script_include" }] } };
         }
       }
@@ -702,7 +720,10 @@ describe("manifestBuilder coverage", () => {
       if (table === "sys_metadata") {
         if (fields === "sys_class_name")
           return { data: { result: [{ sys_class_name: "sys_script_include" }] } };
-        if (query === "sys_scope=scope-1^sys_class_name=sys_script_include") {
+        if (
+          withoutOrder(query) ===
+          "sys_scope=scope-1^sys_class_name=sys_script_include"
+        ) {
           return { data: { result: [{ sys_id: "rec-1", sys_class_name: "sys_script_include" }] } };
         }
       }

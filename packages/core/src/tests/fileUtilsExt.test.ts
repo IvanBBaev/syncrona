@@ -146,11 +146,28 @@ describe("SNFileExists regex safety", () => {
     expect(exists).toBe(false);
   });
 
-  it("reports a zero-byte placeholder as missing", async () => {
+  it("counts a zero-byte file as present, because an empty field is converged", async () => {
+    // This used to assert the opposite: zero bytes meant "still a placeholder,
+    // re-fetch it". That rule existed for the skeleton phase, which manufactured
+    // zero-byte files for manifest entries — and it also caught every field whose
+    // value on the instance is legitimately "", so such a field was re-downloaded
+    // on every run and never converged. writeSNFileCurry no longer writes a file
+    // for a request that carries no content (the placeholder is now an ABSENT
+    // file, covered by the test below), so zero bytes can only mean "downloaded,
+    // and the field really is empty".
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-snexists-"));
     fs.writeFileSync(path.join(root, "empty.js"), "");
 
     const exists = await SNFileExists(root)({ name: "empty", type: "js" } as any);
+
+    expect(exists).toBe(true);
+  });
+
+  it("reports a field whose file was never created as missing", async () => {
+    // The placeholder case the zero-byte rule used to serve: nothing on disk.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-snexists-"));
+
+    const exists = await SNFileExists(root)({ name: "absent", type: "js" } as any);
 
     expect(exists).toBe(false);
   });

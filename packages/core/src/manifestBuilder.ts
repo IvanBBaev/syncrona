@@ -96,6 +96,33 @@ function isTableSkippableError(e: unknown): boolean {
   return typeof status === "number" && isEndpointNotFoundStatus(status);
 }
 
+// Offset paging over an UNORDERED result set is not a walk, it is a sequence of
+// unrelated snapshots. The Table API returns rows in whatever order the database
+// happened to produce them, and `sysparm_offset` counts rows into that order; if
+// it changes between two page requests — another user saving a record, the
+// optimizer re-planning the query, replication lag — a row that crosses a page
+// boundary is returned twice or NOT AT ALL. The duplicate is harmless (records
+// are keyed by sys_id). The dropped row is not: it never reaches the manifest,
+// findOrphanFiles then finds a local file no manifest record claims, and
+// `repair --apply --prune` DELETES it, taking any unpushed local edit with it.
+//
+// ORDERBY makes the order total and stable, so an offset means the same thing on
+// every request of the walk. sys_id is the right key: every ServiceNow table has
+// it, it is unique, and it never changes — a mutable column (sys_updated_on, a
+// display name) would reorder under exactly the concurrent-edit scenario this
+// guards against.
+export const withStableOrder = (query: string): string => {
+  // Do not double-order. A caller that already chose an ordering owns it, and
+  // ServiceNow applies the FIRST ORDERBY as the primary sort key, so appending
+  // ours would leave theirs in place but silently demote any second clause.
+  if (/(^|\^)ORDERBY/i.test(query)) {
+    return query;
+  }
+  // An empty query must not grow a leading "^": that reads as an empty first
+  // condition and the platform can reject or ignore the whole clause.
+  return query.length > 0 ? `${query}^ORDERBYsys_id` : "ORDERBYsys_id";
+};
+
 // Pages through the Table API so tables with more rows than the page size are
 // fully enumerated instead of silently truncated.
 async function tableAPIGetAllRows(
@@ -105,10 +132,17 @@ async function tableAPIGetAllRows(
   fields: string,
   pageSize: number
 ): Promise<TableAPIRecord[]> {
+  const orderedQuery = withStableOrder(query);
   const rows: TableAPIRecord[] = [];
   let offset = 0;
   for (;;) {
-    const res = await client.tableAPIGet(table, query, fields, pageSize, offset);
+    const res = await client.tableAPIGet(
+      table,
+      orderedQuery,
+      fields,
+      pageSize,
+      offset
+    );
     const page = extractResult(res.data);
     rows.push(...page);
     if (page.length < pageSize) {
@@ -162,6 +196,8 @@ async function getScopeId(
   scopeName: string
 ): Promise<string | null> {
   try {
+    // Deliberately unpaged: this is a lookup, not an enumeration. Only the first
+    // row is ever read, so a limit of 1 is the intent rather than a truncation.
     const res = await client.tableAPIGet(
       "sys_app",
       // Escape the config-supplied scope name — an unescaped `^`/`=` would inject
@@ -258,13 +294,19 @@ async function getTableNamesFromDbObject(
   excludes: Sync.TablePropMap
 ): Promise<string[]> {
   try {
-    const res = await client.tableAPIGet(
+    // Paged, not a bare request with a big limit: this enumerates every table a
+    // scope declares, and "the limit happened to be larger than the answer" is
+    // not a guarantee. A truncated table list is invisible — the missing tables
+    // simply never appear in the manifest, and `repair --prune` then treats
+    // their already-downloaded files as orphans.
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_db_object",
       `sys_scope=${scopeId}^nameISNOTEMPTY`,
       "name",
       10000
     );
-    return filterUniqueTableNames(extractResult(res.data), includes, excludes);
+    return filterUniqueTableNames(rows, includes, excludes);
   } catch {
     return [];
   }
@@ -278,13 +320,17 @@ async function getTableNamesFromDictionary(
   excludes: Sync.TablePropMap
 ): Promise<string[]> {
   try {
-    const res = await client.tableAPIGet(
+    // Paged for the same reason as sys_db_object above, and more urgently: this
+    // queries sys_dictionary, which holds one row per FIELD, so a scope with a
+    // few hundred tables passes 10000 rows on its own.
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_dictionary",
       `sys_scope=${scopeId}^nameISNOTEMPTY`,
       "name",
       10000
     );
-    const tables = filterUniqueTableNames(extractResult(res.data), includes, excludes);
+    const tables = filterUniqueTableNames(rows, includes, excludes);
     if (tables.length > 0) {
       return tables;
     }
@@ -292,13 +338,14 @@ async function getTableNamesFromDictionary(
   }
 
   try {
-    const res = await client.tableAPIGet(
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_dictionary",
       `nameLIKE${escapeQueryValue(scopeName)}^nameISNOTEMPTY`,
       "name",
       10000
     );
-    return filterUniqueTableNames(extractResult(res.data), includes, excludes);
+    return filterUniqueTableNames(rows, includes, excludes);
   } catch {
     return [];
   }
@@ -341,13 +388,19 @@ async function getFileFieldsForTable(
       }
     }
 
-    const res = await client.tableAPIGet(
+    // Paged. This is the field-discovery query, and it runs against the whole
+    // TABLE HIERARCHY (`name=child^ORname=parent^OR...`), so a record extending a
+    // deep OOB hierarchy — anything under task, cmdb_ci or sys_metadata — clears
+    // 200 dictionary rows routinely. Truncation here does not fail: it returns a
+    // manifest that is simply missing fields 201+, so those fields are never
+    // downloaded, never pushed, and nothing in the CLI ever mentions them.
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_dictionary",
       query,
       "element,internal_type",
       200
     );
-    const rows = extractResult(res.data);
     const files: SN.File[] = rows
       .filter((r) => r.element && r.internal_type)
       .map((r) => ({
@@ -418,7 +471,11 @@ async function getTextFieldsForTable(
       }
     }
 
-    const res = await client.tableAPIGet(
+    // Paged, for the same reason as getFileFieldsForTable: one dictionary row
+    // per field of the whole hierarchy, and a truncated field list produces a
+    // manifest that is quietly incomplete rather than one that fails.
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_dictionary",
       query,
       "element",
@@ -427,7 +484,7 @@ async function getTextFieldsForTable(
 
     const seen = new Set<string>();
     const files: SN.File[] = [];
-    for (const row of extractResult(res.data)) {
+    for (const row of rows) {
       const fieldName = row.element;
       if (!fieldName || seen.has(fieldName)) {
         continue;
@@ -479,6 +536,8 @@ async function getTableHierarchyTableNames(
     ordered.push(current);
 
     try {
+      // Deliberately unpaged: `name` is unique in sys_db_object, so this is a
+      // single-row lookup of one table's parent, not an enumeration.
       const res = await client.tableAPIGet(
         "sys_db_object",
         `name=${current}`,
@@ -785,6 +844,10 @@ async function getRecordsForTable(
       : idQueryBase;
 
     try {
+      // Deliberately unpaged: bounded by construction. The query is
+      // `sys_idIN<chunk>`, sys_id is unique, and chunks are SYS_ID_CHUNK_SIZE
+      // (200) ids against a limit of 500 — the response can never reach the
+      // limit, so there is nothing to truncate and nothing to order.
       const res = await client.tableAPIGet(
         tableName,
         idQuery,
@@ -1028,7 +1091,9 @@ export async function buildBulkDownloadFromTableAPI(
 
       try {
         // Chunk the sys_id list so large record sets cannot overflow the URL
-        // length limit (mirrors getRecordsForTable).
+        // length limit (mirrors getRecordsForTable). Deliberately unpaged for
+        // the same reason as that fallback: 200 unique sys_ids per request
+        // against a limit of 500 cannot truncate.
         const rows: TableAPIRecord[] = [];
         for (const chunk of chunkArray(sysIds, SYS_ID_CHUNK_SIZE)) {
           const res = await client.tableAPIGet(
@@ -1146,13 +1211,18 @@ export async function listAppsFromTableAPI(
   client: SNClient
 ): Promise<SN.App[]> {
   try {
-    const res = await client.tableAPIGet(
+    // Paged. This feeds the `init` application picker, so a truncated list does
+    // not error — the app the user came to provision is simply not offered, and
+    // there is no signal distinguishing that from "the instance does not have
+    // it". Instances with more than 200 active applications are ordinary once
+    // store apps are counted.
+    const rows = await tableAPIGetAllRows(
+      client,
       "sys_app",
       "active=true",
       "sys_id,scope,name",
       200
     );
-    const rows = extractResult(res.data);
     return rows.map((r) => ({
       sys_id: r.sys_id,
       scope: r.scope,

@@ -70,6 +70,14 @@ function parseMeasuredAnnotations(): Map<string, { lines?: number; branches?: nu
     }
     // Two shapes are in use: "measured 98.21 / 91.80" and, for a file that
     // declares no branches, "measured 100.00 lines (0 branches)".
+    //
+    // The mcp-server side has a third — `measured L / B (also L / B: cause)`,
+    // declaring the second value V8 range coverage reports for an unchanged tree.
+    // It is deliberately absent here: istanbul is reproducible (three full runs of
+    // this suite produced a byte-identical coverage-summary.json), so
+    // scripts/check-coverage-annotations.mjs REJECTS that form on this file. If one
+    // ever appears, the regex below would silently read only its first pair, and
+    // the annotations gate is what stops it from getting that far.
     const pair = line.match(/\/\/\s*measured\s+([\d.]+)\s*\/\s*([\d.]+)/);
     if (pair) {
       measured.set(keyMatch[1], { lines: Number(pair[1]), branches: Number(pair[2]) });

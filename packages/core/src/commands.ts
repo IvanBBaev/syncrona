@@ -244,9 +244,10 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   // checkExists=true (forceWrite=false): the manifest file is still force-written
   // (processManifest always does that), and downloadAllFiles below force-writes
   // full content for every pending table — but the skeleton phase must NOT blank
-  // already-downloaded, non-empty files, or a resumed download would truncate the
-  // tables it then skips via the checkpoint. SNFileExists treats zero-byte as
-  // missing, so genuinely-empty skeletons are still (re)created.
+  // already-downloaded files, or a resumed download would truncate the tables it
+  // then skips via the checkpoint. It cannot blank anything now in any case: a
+  // manifest entry carries no `content`, and writeSNFileCurry creates no file for
+  // a request without one — this phase only materialises the directories.
   await AppUtils.processManifest(man, false);
   logger.info("Fetching file contents...");
   await AppUtils.downloadAllFiles(man, args.instanceProfile);
