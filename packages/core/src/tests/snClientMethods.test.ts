@@ -349,16 +349,23 @@ describe("snClient response unwrap helpers", () => {
   it("unwrapSNResponse logs and rethrows on an unexpected (non-404) error", async () => {
     const { unwrapSNResponse } = await import("../snClient.js");
     const err = { response: { status: 500 }, message: "boom" };
-    await expect(
-      unwrapSNResponse(Promise.reject(err) as never)
-    ).rejects.toBe(err);
+    // Pre-handled on purpose: `expect(...).rejects` attaches a handler to what
+    // unwrapSNResponse RETURNS, not to what it is given. A change that stops it
+    // awaiting its argument would leave this rejection unhandled and take the
+    // Jest worker down with exit code 1 instead of failing the assertion. See
+    // the same guard in genericUtils.test.ts for the mutation run that proved it.
+    const failing = Promise.reject(err);
+    failing.catch(() => undefined);
+    await expect(unwrapSNResponse(failing as never)).rejects.toBe(err);
     expect(mockLoggerError).toHaveBeenCalledWith("Error processing server response");
   });
 
   it("unwrapSNResponse stays quiet on an expected 404 fallback", async () => {
     const { unwrapSNResponse } = await import("../snClient.js");
     const err = { response: { status: 404 } };
-    await expect(unwrapSNResponse(Promise.reject(err) as never)).rejects.toBe(err);
+    const failing = Promise.reject(err); // pre-handled below, see the 500 case
+    failing.catch(() => undefined);
+    await expect(unwrapSNResponse(failing as never)).rejects.toBe(err);
     expect(mockLoggerError).not.toHaveBeenCalled();
   });
 
