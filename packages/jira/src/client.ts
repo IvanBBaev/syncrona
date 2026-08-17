@@ -267,8 +267,9 @@ function isCommentPageTruncated(fields: unknown): boolean {
  * Fetch the most-recent `limit` comments via `/issue/{key}/comment` ordered
  * newest-first, then return them oldest-first so `normalizeIssue`'s
  * chronological `slice(-limit)` keeps them intact. Returns null on any failure
- * so the caller falls back to the embedded (possibly truncated) page rather than
- * failing the whole issue fetch over a comments-only problem.
+ * — including an empty page — so the caller falls back to the embedded
+ * (possibly truncated) page rather than failing the whole issue fetch over a
+ * comments-only problem.
  */
 async function fetchRecentComments(
   config: JiraConfig,
@@ -288,7 +289,11 @@ async function fetchRecentComments(
       return null;
     }
     const container = data as Record<string, unknown>;
-    if (!Array.isArray(container.comments)) {
+    // An empty page contradicts the truncation signal that triggered this fetch
+    // (total > shown, yet "no comments"). Treat it as a failure: an empty array
+    // is truthy, so returning it would pass the caller's `if (recent)` guard and
+    // wipe the embedded comments instead of falling back to them.
+    if (!Array.isArray(container.comments) || container.comments.length === 0) {
       return null;
     }
     // `-created` yields newest-first; reverse to oldest-first so downstream

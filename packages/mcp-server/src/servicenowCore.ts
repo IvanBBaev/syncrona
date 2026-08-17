@@ -5,6 +5,7 @@ import path from "path";
 import {
   getActiveInstanceSync,
   loadCredentialsSync,
+  type StoredCredentials,
 } from "@syncrona/credential-store";
 import {
   DEFAULT_SCOPED_API_PREFIXES,
@@ -775,6 +776,9 @@ export function resolveServiceNowSecrets(
     SN_USER: "",
     SN_PASSWORD: "",
   };
+  // Which provider filled each key — the stored-material fallback below must
+  // know whether the identity came from an env-side source or the auth store.
+  const sourceByKey: Record<string, string> = {};
 
   for (const provider of providers) {
     // Stop as soon as every key is filled so lower-priority providers
@@ -794,6 +798,7 @@ export function resolveServiceNowSecrets(
       const candidate = key === "SN_PASSWORD" ? raw : cleanEnvValue(raw);
       if (!merged[key] && candidate.trim()) {
         merged[key] = candidate;
+        sourceByKey[key] = provider.name;
       }
     }
   }
@@ -809,20 +814,61 @@ export function resolveServiceNowSecrets(
     );
   }
 
-  // Additional auth material (OAuth client, API key, JWT, mTLS) is read straight
-  // from the process environment, mirroring how SN_OAUTH_CLIENT_ID/SECRET have
-  // always been read here. The credential store persists these in a later phase.
+  // Additional auth material (OAuth client, API key, JWT) is read from the
+  // process environment first, mirroring how SN_OAUTH_CLIENT_ID/SECRET have
+  // always been read here.
   const env = (name: string): string => cleanEnvValue(process.env[name] || "");
-  const clientId = env(OAUTH_CLIENT_ID_ENV);
-  const clientSecret = env(OAUTH_CLIENT_SECRET_ENV);
-  const apiKey = env(API_KEY_ENV);
-  const apiKeyHeader = env(API_KEY_HEADER_ENV);
-  const jwtKey = env(JWT_KEY_ENV);
-  const jwtKid = env(JWT_KID_ENV);
-  const jwtIss = env(JWT_ISS_ENV);
-  const jwtSub = env(JWT_SUB_ENV);
-  const jwtAud = env(JWT_AUD_ENV);
-  const explicitMethod = env(AUTH_METHOD_ENV);
+  let clientId = env(OAUTH_CLIENT_ID_ENV);
+  let clientSecret = env(OAUTH_CLIENT_SECRET_ENV);
+  let apiKey = env(API_KEY_ENV);
+  let apiKeyHeader = env(API_KEY_HEADER_ENV);
+  let jwtKey = env(JWT_KEY_ENV);
+  let jwtKid = env(JWT_KID_ENV);
+  let jwtIss = env(JWT_ISS_ENV);
+  let jwtSub = env(JWT_SUB_ENV);
+  let jwtAud = env(JWT_AUD_ENV);
+  let explicitMethod = env(AUTH_METHOD_ENV);
+
+  // `syncrona login` persists the same multi-method material in the credential
+  // store, and the core CLI consumes it from there (snClient's stored-credentials
+  // path) — so a non-Basic login used to authenticate from the CLI while the MCP
+  // server silently fell back to Basic or refused to start. Mirror the CLI here,
+  // with the same all-or-nothing rule so a stored secret can never pair with an
+  // env client id: the active store record supplies the method and its material
+  // only when the environment supplies none, the identity did not come from an
+  // env-side source, and the record targets the SAME instance (extras from login
+  // X must never be sent to an env-configured instance Y). mTLS stays env-only,
+  // exactly like the CLI's buildHttpsAgent.
+  const identityFromEnv = ["SN_USER", "SN_PASSWORD"].some(
+    (key) => merged[key] !== "" && sourceByKey[key] !== "auth-store"
+  );
+  const hasEnvAuthMaterial = !!(
+    explicitMethod ||
+    clientId ||
+    clientSecret ||
+    apiKey ||
+    jwtKey
+  );
+  if (!identityFromEnv && !hasEnvAuthMaterial) {
+    const activeInstance = getActiveInstanceSync();
+    const stored: StoredCredentials | null = activeInstance
+      ? loadCredentialsSync(activeInstance)
+      : null;
+    if (stored && cleanEnvValue(stored.instance || activeInstance || "") === instance) {
+      explicitMethod = stored.authMethod || "";
+      clientId = stored.clientId || "";
+      // REV-157: store-origin secrets are used verbatim, never dotenv-cleaned.
+      clientSecret = stored.clientSecret || "";
+      apiKey = stored.apiKey || "";
+      jwtKey = stored.jwtKeyPath || "";
+      // Non-secret modifiers keep the usual env-wins precedence.
+      apiKeyHeader = apiKeyHeader || stored.apiKeyHeader || "";
+      jwtKid = jwtKid || stored.jwtKid || "";
+      jwtIss = jwtIss || stored.jwtIss || "";
+      jwtSub = jwtSub || stored.jwtSub || "";
+      jwtAud = jwtAud || stored.jwtAud || "";
+    }
+  }
 
   const resolved = resolveAuthMethod({
     explicit: explicitMethod,
@@ -1210,6 +1256,27 @@ export async function runBackgroundScript(
 
   const config = getServiceNowConfig(projectDir);
   const baseUrl = instanceToBaseUrl(config.instance);
+
+  // sys.scripts.do is a UI processor that accepts Basic (and OAuth Bearer)
+  // session auth. Reuse the same Authorization the REST path would send, plus
+  // the mTLS/custom-CA dispatcher, so mTLS-secured instances still reach it.
+  //
+  // Resolve auth BEFORE arming the abort timer — the same ordering rule as
+  // snRequestWithConfig. The token leg is bounded by its own budget (registered
+  // below; this controller cannot cancel it), and arming first would let a slow
+  // token acquisition — a short-lived token inside the 30s expiry skew, or an
+  // LRU-evicted manager — abort the signal so the fallback request below
+  // rejects without ever being sent, the budget silently consumed by auth.
+  const authHeaders = usesOAuth(config)
+    ? {
+        Authorization: `Bearer ${await withTokenBudget(
+          tokenManagerKey(config),
+          Date.now() + timeoutMs,
+          () => getTokenManager(config, baseUrl).getToken()
+        )}`,
+      }
+    : staticAuthHeaders(config);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1217,18 +1284,6 @@ export async function runBackgroundScript(
     const form = new URLSearchParams();
     form.set("script", script);
     form.set("runscript", "Run script");
-
-    // sys.scripts.do is a UI processor that accepts Basic (and OAuth Bearer)
-    // session auth. Reuse the same Authorization the REST path would send, plus
-    // the mTLS/custom-CA dispatcher, so mTLS-secured instances still reach it.
-    const authHeaders = usesOAuth(config)
-      ? {
-          Authorization: `Bearer ${await getTokenManager(
-            config,
-            baseUrl
-          ).getToken()}`,
-        }
-      : staticAuthHeaders(config);
     const init: FetchInit = {
       method: "POST",
       headers: {

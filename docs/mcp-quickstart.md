@@ -24,8 +24,11 @@ npm run mcp:build
 ## Start MCP for Scope Project
 
 Prefer the global credential store over inline env vars: run
-`npx syncrona login` once, then start the server. If you must use env vars,
-set your own values (never commit real credentials):
+`npx syncrona login` once, then start the server — it adopts the stored
+profile's auth method (Basic, any OAuth grant, or an inbound REST API key;
+mutual-TLS cert/key paths stay env-only). Env auth material, when present,
+always wins over the store. If you must use env vars, set your own values
+(never commit real credentials):
 
 ```bash
 cd <SCOPE_PROJECT>

@@ -1266,16 +1266,129 @@ artifacts through `../../`. First real numbers for this repository:
       through the mutated statement should trip, and the only 3 errors in the run are
       all `genericUtils.ts`, two of them `Test runner crashed. Tried twice to restart
       it without any luck` — a runner fault, not a mutant one.
-- [ ] **Open: pin the mechanism, then decide the remedy.** The leading explanation is
-      that Stryker calibrates every mutant's budget on a dry run it performs **solo**
-      (`Ran 880 tests in 17 seconds (net 7683 ms, overhead 9455 ms)` — `timeOverheadMS`
-      is that solo overhead) and then executes mutants **9 at a time** on a 10-core box,
-      so the allowance never accounts for the contention the mutants actually run under.
-      That also explains the per-module gradient, because `jest.enableFindRelatedTests`
-      defaults to on: `genericUtils.ts` is imported almost everywhere, so each of its
-      mutants reloads most of the suite (58% timeouts), while `repairCommand.ts` is
-      reachable from two test files (6%). Being measured now with `--concurrency 1`.
-      Until it is settled, **quote the band `[59.2%, 85.92%]`, never the 85.92%.**
+- [x] **Mechanism pinned: the timeouts are CPU contention against a budget calibrated
+      on an idle machine.** Stryker derives every mutant's allowance from a dry run it
+      performs **solo** (`Ran 880 tests in 17 seconds (net 7683 ms, overhead 9455 ms)` —
+      `timeOverheadMS` is that solo overhead) and then executes mutants **9 at a time**
+      on a 10-core box, so the allowance never accounts for the contention the mutants
+      actually run under and the shortfall is charged to the mutant as a hang. The
+      decisive experiment: `genericUtils.ts` re-run unchanged at `--concurrency 1`.
+      Same 105 mutants, same budget, same tests, one variable.
+
+      | perTest@9 → perTest@1 | count |
+      |---|---|
+      | **Timeout → Killed** | **47** |
+      | Killed → Killed | 32 |
+      | Timeout → Timeout | 11 |
+      | Killed → Timeout | 5 |
+      | **Timeout → Survived** | **2** |
+      | other (Survived/RuntimeError/NoCoverage) | 8 |
+
+      **47 of 60 timeouts were real kills and 2 were real survivors.** The band went
+      `[36.27%, 95.10%]` → `[77.67%, 94.17%]` while Stryker's headline barely moved
+      (95.10% → 94.17%) — the reported number is nearly blind to the thing destroying
+      the measurement under it. This also explains the per-module gradient, since
+      `jest.enableFindRelatedTests` defaults to on: `genericUtils.ts` is imported
+      almost everywhere so each mutant reloads most of the suite (58% timeouts), while
+      `repairCommand.ts` is reachable from two test files (6%).
+- [x] **Remedy applied: `concurrency: 4` is now in `stryker.conf.json`,** documented
+      there as part of the measurement rather than a performance knob, with the
+      instruction to lower it further on a smaller machine. The two alternatives were
+      both measured and both failed — machine load (idle box 26.6% vs loaded 26.5%)
+      and budget (`timeoutMS` 30000 / `timeoutFactor` 3, ~2.7x, gave 26.7%).
+- [x] **The current whole-scope number, measured after both fixes** (`concurrency: 4`
+      and `waitForUnhandledRejections: true`, 2026-08-17): exit 0, 21 min 27 s,
+      763 mutants, 20.50 tests per mutant.
+
+      | file | score | killed | timeout | survived | no cov | errors |
+      |---|---|---|---|---|---|---|
+      | `genericUtils.ts` | 94.44% | 78 | 24 | 5 | 1 | 0 |
+      | `FileUtils.ts` | 84.81% | 205 | 35 | 37 | 6 | 0 |
+      | `downloadCheckpoint.ts` | 81.82% | 23 | 4 | 6 | 0 | 0 |
+      | `repairCommand.ts` | 80.84% | 201 | 10 | 44 | 6 | 0 |
+      | `PluginManager.ts` | 76.92% | 48 | 12 | 18 | 0 | 0 |
+      | **all files** | **83.88%** | **555** | **85** | **110** | **13** | **0** |
+
+      **The honest reading is the band `[72.74%, 83.88%]`** — bottom counts every
+      timeout as a survivor (555/763), top is Stryker's own figure (640/763). Two
+      things moved and they pull in opposite directions, which is why only the band
+      is quoted. Timeouts fell from **203/763 (26.6%) at `concurrency: 9` to 85/763
+      (11.1%)**, so the band narrowed from 26.7pp to 11.14pp — that is the
+      `concurrency: 4` remedy paying off, and it is the whole reason the number means
+      anything. Meanwhile the headline went **down** 84.10% → 83.88% versus the
+      pre-`waitForUnhandledRejections` run at the same concurrency, because the
+      denominator grew 761 → 763: the two mutants that used to escape as un-gradable
+      `RuntimeError` are now scored like everything else. A score that gets slightly
+      worse when the harness stops losing mutants is the correct direction. **The
+      `# errors` column is 0 for every file**, and both former offenders — 38:40
+      `BlockStatement -> "{}"` and 40:18 `ArrowFunction -> "() => undefined"` in
+      `genericUtils.ts` — now report `Killed` in `reports/mutation/core.json`.
+      Cost of the flag: 19.52 → 20.50 tests per mutant and 20 min 14 s → 21 min 27 s
+      (+6%), which is the extra event-loop turn jest-circus now awaits per test.
+- [x] **Second finding, and the more valuable one: the `RuntimeError` mutants were a
+      real hole in the test harness, not a Stryker fault.** They reduce to one
+      mechanism — an unhandled promise rejection kills a Jest ESM worker with exit code
+      1 instead of failing a test, because Node 22 defaults to
+      `--unhandled-rejections=throw`. Every test that worker had not reached yet then
+      silently never runs, so a suite that stopped running half its files still looks
+      green from the outside. Reproduced deterministically in ~1 min: mutants 432
+      (`BlockStatement 38:40 -> "{}"`) and 433 (`ArrowFunction 40:18 -> "() =>
+      undefined"`) in `src/genericUtils.ts`, both of which make `allSettled` attach no
+      handler, crashing `appUtilsScope.test.ts`.
+      **The first fix was wrong and is recorded as wrong.** `jest.unhandled.cjs` in
+      `setupFilesAfterEnv` registered `process.on('unhandledRejection', ...)` on the
+      theory that ANY listener overrides Node's fatal default. The listener is never
+      called: a `setupFilesAfterEnv` file runs inside the test VM, whose `process` is a
+      deep copy made by jest-util's `createProcessObject()` with its own EventEmitter —
+      jest-circus states this outright at `jestAdapterInit.js` `case 'setup'`. It was
+      shipped, and the next full run still reported the same 2 un-gradable mutants with
+      it installed. It has been deleted rather than left in place.
+      **The real fix is `waitForUnhandledRejections: true` in `jest.config.cjs`.** Jest
+      does install a listener on the real process, but without that flag jest-circus
+      never `await untilNextEventLoopTurn()`s before `teardown` removes it again, so a
+      rejection that becomes unhandled in the same turn the test settles is delivered
+      into the gap. With the flag, `appUtilsScope.test.ts` reports 6 ordinary failures
+      instead of dying and both mutants are Killed. Pinned by
+      `src/tests/unhandledRejectionConfig.test.ts` (3 tests, ~2 s) in BOTH directions:
+      a child Jest on `src/tests/fixtures/unhandledRejection.fixture.ts` must print
+      `Tests: 1 failed`, and the same fixture with `--waitForUnhandledRejections=false`
+      must print Node's fatal banner and no reporter summary at all. Asserting only the
+      first would keep passing if the fixture ever stopped reproducing the bug.
+- [x] **Extended to the other three Jest packages, after getting the evidence rather
+      than assuming it.** The first note here deferred `credential-store`, `jira` and
+      `sn-transport` on the grounds that they run Jest in CJS mode and had never
+      reported this failure — but "never reported" is what the bug looks like, since a
+      worker that dies mid-file leaves a green-looking run. Dropping the same
+      throwaway fixture into `sn-transport` reproduced it exactly: fatal Node banner
+      and no reporter summary with the flag off, `Tests: 1 failed` with it on. The
+      mechanism is in the runner, not in the module system. All three configs now set
+      `waitForUnhandledRejections: true`; suites stay green (124 + 66 + 65 tests, exit
+      0), so nothing was masking a latent rejection.
+- [x] **Residual triaged, and it cuts the other way: some timeouts are honest.** The
+      question was whether the mutants that time out even without contention are real
+      hangs. Cross-referencing the `--concurrency 1` probe (17 of `genericUtils.ts`'s
+      108 mutants timed out) against the post-fix whole-scope run leaves **7 that time
+      out in both**; the other 10 flipped to Killed, more contention noise. Of those 7,
+      **3 are provably genuine hangs by construction — no timing argument needed:**
+
+      | mutant | why it cannot terminate |
+      |---|---|
+      | `wait` 16:35 `BlockStatement -> "{}"` | the `Promise` executor never calls `setTimeout`, so the promise never settles — and `retryOnErr` does `await wait(msBetween)` (`snClient.ts:178`), so every retry path hangs forever |
+      | `chunkArr` 27:34 `UpdateOperator -> "i--"` | `i` decreases while the guard is still `i < numChunks` — infinite loop, and it `push`es a slice per iteration, so it also grows without bound |
+      | `chunkArr` 27:19 `EqualityOperator -> "i >= numChunks"` | on the empty-array path `numChunks === 0`, so `0 >= 0` holds and stays holding — infinite loop (for a non-empty array the guard is false at entry and the loop simply never runs) |
+
+      The remaining 4 (`isSafePathComponent` 10:3, `formatDuration` 71:7 and 80:7,
+      `chunkArr` 30:7) contain no loop and no looping caller — `isSafePathComponent`
+      appears only in `if` guards, `formatDuration` only feeds progress strings, and
+      30:7 changes `rangeEnd` while leaving the `i < numChunks` bound untouched, so
+      `chunkArr` still terminates in exactly `numChunks` iterations. Those 4 are the
+      honest residue: not explained, but not hangs either.
+      **What this does to the band:** the bottom (72.74%) assumes every timeout is a
+      survivor, and that assumption is now known to be too pessimistic by at least the
+      3 mutants above, which genuinely hang and are genuinely detected. The top assumes
+      every timeout is a kill, which the `Timeout → Survived` flips already disproved.
+      The true score is strictly inside `[72.74%, 83.88%]` — which is the whole reason
+      it is published as a band and not as a number.
 - [x] **The shape of the 87 survivors** is 28 `ConditionalExpression`, 24 `StringLiteral`,
       14 `BlockStatement`, 9 `EqualityOperator` — no single dominant class like the
       `safetyPolicy.ts` finding, so this is a diffuse tail rather than one missing kind of

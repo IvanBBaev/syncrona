@@ -33,8 +33,12 @@ understand what it touches:
   secrets manager. See the "Credential storage security" section in the core README.
 - **Transport.** Authentication uses HTTP Basic auth over HTTPS by default, and
   every ServiceNow inbound REST auth method is supported in **both** the CLI and
-  the MCP server, selected with `SN_AUTH_METHOD` (see the README authentication
-  table):
+  the MCP server — selected with `SN_AUTH_METHOD`, or adopted from the stored
+  profile saved by `syncrona login` when the environment supplies no auth
+  material (env always wins; a stored profile for a different instance is
+  ignored, failing closed to Basic-from-store). Mutual TLS is the one env-only
+  exception: cert/key paths are never read from the store in either client.
+  (See the README authentication table):
   - **OAuth 2.0** — password, client-credentials, and JWT-bearer grants. All
     exchange at `oauth_token.do` for a short-lived Bearer token (refreshed on
     expiry/401). JWT-bearer signs an RS256 assertion with the key at `SN_JWT_KEY`.
@@ -49,8 +53,10 @@ understand what it touches:
   request time — it is never copied into the encrypted credential store or logs.
   Use a dedicated least-privilege integration user/credential and rotate it if a
   credential file, API key, or private key may have been exposed. (The MCP
-  server's legacy `sys.scripts.do` fallback remains Basic-only; it is a
-  best-effort last resort — see CR22.)
+  server's legacy `sys.scripts.do` fallback reuses the same `Authorization`
+  header — whichever auth method is configured — and the same mTLS/proxy
+  dispatcher as the primary REST path; it is a best-effort last resort — see
+  CR22.)
 - **What is read/written.** SyncroNow AI reads scoped-application source/metadata
   from the instance and writes it to local files; `push`/`deploy` write code
   back to the instance (with a confirmation prompt unless `--ci`). The MCP

@@ -92,11 +92,23 @@ you want to trust. Two things to know before you do:
   work in is untouched (verified: the sandbox `dist/` is a real directory, rebuilt
   per mutant, while the checkout's `dist/` keeps its timestamp). If you must
   hand-inject, do it in a scratch clone, or restore and re-verify by checksum.
-- **A mutation run saturates the machine** (concurrency 12 with no coverage
-  analysis, since the command runner reports only a whole-suite exit code). Running
-  another heavy suite alongside it does not corrupt your tree, but it can push a
-  sandbox past `timeoutMS` — and Stryker scores a timeout as a **kill**, so the
-  score comes out inflated. Let the run finish before you start something big.
+- **Read the timeout count before the score, and treat `concurrency` as part of the
+  measurement.** Stryker scores a `TimedOut` mutant as a **kill**, so timeouts inflate
+  the number rather than making it conservative — and in this repo they are mostly not
+  hangs. Stryker calibrates every mutant's allowance from a dry run it performs *solo*
+  (`timeoutFactor * netTime + timeoutMS + timeOverheadMS`) and then runs mutants
+  N-at-a-time, so the allowance never accounts for the contention they actually run
+  under. Measured on `packages/core`: re-running `genericUtils.ts` unchanged at
+  `--concurrency 1` moved **47 of its 60 timeouts to Killed and 2 to Survived**, taking
+  the band from `[36.27%, 95.10%]` to `[77.67%, 94.17%]` while Stryker's own headline
+  moved only 95.10% → 94.17%. `packages/core/stryker.conf.json` therefore pins
+  `concurrency: 4` (lower it further on a smaller machine); the mcp-server config still
+  runs at 12 with no coverage analysis, since its command runner reports only a
+  whole-suite exit code. Quote a run as a **band** — Stryker's figure at the top, the
+  same figure with every timeout counted as a survivor at the bottom.
+- **A mutation run saturates the machine.** Running another heavy suite alongside it
+  does not corrupt your tree, but it adds to exactly the contention described above.
+  Let the run finish before you start something big.
 - **A table-completeness fixture must be a literal list inside the test file.** A
   list derived by parsing the source at runtime moves *with* the mutant — the
   assertion stays true, the mutant survives, and the test measures nothing while
@@ -123,6 +135,20 @@ measurement came back with 383 survivors, of which 327 were `StringLiteral` and 
 of those the same shape — one entry emptied out of a policy table. That is a single
 gap, and it took one table-completeness suite to close. Use `--mutator <name>` to
 drill into one group and `--limit 0` to print them all.
+
+A `RuntimeError` mutant is not noise to skip past — Stryker cannot grade it, so the
+mutant escapes scoring entirely, and in `packages/core` every instance so far has been
+the same real harness defect: an unhandled promise rejection killing the Jest ESM
+worker with exit code 1 instead of failing a test. That one is fixed at the root
+(`waitForUnhandledRejections: true` in `jest.config.cjs`, pinned in both directions by
+`unhandledRejectionConfig.test.ts` — read the comment there before touching it, the
+obvious alternative is a no-op). Reproducing a `RuntimeError` is cheap and does not
+need the full run: `npx stryker run --concurrency 1 --cleanTempDir false --mutate
+'<file>:<from>-<to>'`, then activate one mutant inside the kept sandbox with
+`__STRYKER_ACTIVE_MUTANT__=<id>` and run Jest there directly. Note that `--mutate`
+line ranges require the mutant's AST node to be **fully contained** in the range — a
+range that ends mid-statement silently drops exactly the mutants you were chasing and
+looks like a clean run. Never hand-edit a mutant into the real source tree instead.
 
 ### `npm run race:lock` — the collaboration-lock race harness
 

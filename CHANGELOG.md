@@ -489,8 +489,90 @@ All notable changes to this project will be documented in this file.
   scored as kills the other way). A genuine infinite loop times out in every
   configuration; a coin flip does not. Since Stryker counts a TimedOut mutant as
   DETECTED, each of those flips silently promotes an undetected mutant to a kill, so
-  the honest reading of the 2026-08-17 run is the band `[59.2%, 85.92%]` — 763
-  mutants, 14 min 9 s, 203 timeouts (26.6%) — and not the 85.92%.
+  the honest reading of that run is the band `[59.2%, 85.92%]` — 763 mutants,
+  14 min 9 s, 203 timeouts (26.6%) — and not the 85.92%. The cause of the
+  non-determinism is identified in the next entry.
+- The Stryker timeouts were CPU contention, not hangs, and the run now pins
+  `concurrency` to 4 because of it. Stryker calibrates every mutant's allowance
+  from a dry run it performs **solo** (`timeout = timeoutFactor * netTime +
+  timeoutMS + timeOverheadMS`; under `coverageAnalysis: "perTest"` `netTime`
+  counts only the covering tests, so a small pure function is budgeted at little
+  more than the constants) and then executes mutants N-at-a-time — the allowance
+  never accounts for the contention the mutants actually run under, and the
+  shortfall is charged to the mutant as if it had hung. Re-running
+  `genericUtils.ts` unchanged at `--concurrency 1` changed nothing but that one
+  variable — same 105 mutants matched one-to-one by mutator, position and
+  replacement, zero unmatched — and moved **47 of its 60 timeouts to Killed and 2
+  to Survived**, leaving 11 timing out both times; the band went `[36.27%,
+  95.10%]` to `[77.67%, 94.17%]`. Stryker's own headline moved 95.10% to 94.17%,
+  which is the point: the reported number is nearly blind to the thing destroying
+  the measurement underneath it. The other two candidate explanations were
+  measured and are wrong — machine load (idle 26.6% against loaded 26.5%) and the
+  budget (2.7x the allowance gave 26.7%) — and 0 of the 203 timeouts in the full
+  run tripped Stryker's instrumented hit limit, which a loop through the mutated
+  statement must trip. `concurrency: 4` is therefore documented in
+  `stryker.conf.json` as part of the measurement rather than a performance knob,
+  with the instruction to lower it further on a smaller machine.
+- The core mutation band is now `[72.74%, 83.88%]`, measured with both fixes in
+  place — 763 mutants, 21 min 27 s, 20.50 tests per mutant, 555 killed / 85
+  timed out / 110 survived / 13 no coverage / **0 errors**, per file 94.44%
+  `genericUtils.ts`, 84.81% `FileUtils.ts`, 81.82% `downloadCheckpoint.ts`,
+  80.84% `repairCommand.ts`, 76.92% `PluginManager.ts`. The bottom of the band
+  counts every timeout as a survivor and the top is Stryker's own figure, so the
+  band's *width* is the measurement error: it fell from 26.7pp to 11.14pp as
+  timeouts dropped from 203/763 (26.6%) to 85/763 (11.1%) under `concurrency: 4`.
+  The headline moved the other way, 84.10% down to 83.88%, and that is the
+  intended direction — the denominator grew from 761 to 763 because the two
+  mutants that used to escape scoring entirely as un-gradable `RuntimeError` are
+  now graded like every other mutant. The flag costs about 6% of wall clock
+  (19.52 to 20.50 tests per mutant) for the event-loop turn it adds per test.
+  Seven `genericUtils.ts` mutants time out both with and without contention, and
+  three of them are genuine hangs by construction rather than by measurement:
+  emptying `wait`'s Promise executor leaves a promise that never settles, which
+  `retryOnErr` awaits (`snClient.ts:178`); `chunkArr`'s `i++` turned into `i--`
+  never fails `i < numChunks`; and `i < numChunks` turned into `i >= numChunks`
+  loops forever on the empty-array path, where `numChunks` is 0. So the bottom of
+  the band — which counts every timeout as a survivor — is now known to be too
+  pessimistic, just as the observed `Timeout → Survived` flips show the top is too
+  optimistic. The true score sits strictly inside the band, which is why it is
+  published as one.
+- An unhandled promise rejection no longer kills a `packages/core` Jest worker:
+  `jest.config.cjs` sets `waitForUnhandledRejections: true`. Node 22 defaults to
+  `--unhandled-rejections=throw`, so a rejection with no listener is fatal. Jest
+  does install one on the real process for the duration of a run, but without
+  this flag jest-circus never yields to the event loop before `teardown` removes
+  it again — a rejection that becomes unhandled in the same turn the test settles
+  lands in that gap, and the worker printed the raw error and exited with code 1
+  mid-file. Every test it had not reached yet silently never ran, and the report
+  blamed the process rather than the promise. This is the normal shape of an
+  error-path test, not an exotic one: `allSettled([..., rejected, ...])`,
+  `unwrapSNResponse(Promise.reject(err))` and a mock armed with
+  `mockRejectedValueOnce` all let the code under test be the thing that attaches
+  the handler, which means "the production code stopped catching" takes down the
+  worker instead of reddening one test. Mutation testing is what surfaced it: two
+  `src/genericUtils.ts` mutants (`BlockStatement 38:40 -> "{}"` and
+  `ArrowFunction 40:18 -> "() => undefined"`, both of which make `allSettled`
+  attach no handler) reported "Test runner crashed. Tried twice to restart it
+  without any luck" — a result Stryker cannot grade at all, so they escaped
+  scoring entirely. With the flag they are Killed, and `appUtilsScope.test.ts`
+  reports 6 ordinary failures instead of dying.
+  The first fix attempted here was wrong and has been removed rather than left in
+  place: a `setupFilesAfterEnv` file registering `process.on('unhandledRejection',
+  ...)` is a no-op, because that file runs inside the test VM whose `process` is a
+  deep copy made by jest-util's `createProcessObject()` with its own EventEmitter
+  — jest-circus says so itself at `jestAdapterInit.js` `case 'setup'`. It was
+  shipped, and the next mutation run still crashed on the same two mutants with it
+  installed. `unhandledRejectionConfig.test.ts` pins the real fix from a child
+  Jest, in both directions: the shipped config turns the fixture rejection into
+  `Tests: 1 failed`, and the same fixture run with `--waitForUnhandledRejections=false`
+  produces Node's fatal banner and no reporter summary at all. Asserting only the
+  first would pass just as happily if the fixture had stopped reproducing the bug.
+  `@syncrona/credential-store`, `@syncrona/jira` and `@syncrona/sn-transport` set the
+  same flag. They were initially left out on the grounds that they run Jest in CJS
+  mode and had never reported the failure — but "never reported" is what this bug
+  looks like from outside, and dropping the same fixture into `sn-transport`
+  reproduced it exactly. The mechanism is in the runner, not the module system. Their
+  suites stay green (124 + 66 + 65 tests), so nothing there was masking a rejection.
 - `dist/semanticIndexState.js` carries the third declared second reading in the
   mcp-server per-file coverage table: 98.63 / 94.03 measured on darwin, 98.63 /
   94.20 on the ubuntu leg of the CI matrix — the first entry where the two

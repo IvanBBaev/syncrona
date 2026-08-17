@@ -243,7 +243,14 @@ const MODULE_FLOORS = [
   { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.30 / 96.15 (also 99.30 / 96.30: V8 range granularity, 25/26 vs 26/27 branches, same uncovered lines)
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.83 / 92.62 (also 96.83 / 92.65: V8 range granularity, 226/244 vs 227/245 branches, same uncovered lines)
+  // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
+  // lines, all of them fully covered), so both percentages fell without a single
+  // branch going untested: the denominators shrank. The declared second reading
+  // that used to sit here (96.83 / 92.65, 226/244 vs 227/245) is deliberately NOT
+  // carried forward — it was evidence about a file that no longer exists, and a
+  // stale declaration is just a tolerance. If the V8 flicker reappears on this
+  // file, re-declare it from a fresh pair of readings.
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.17
   // Preflight, dry-run and the mutating-tool wrappers.
   // The declared reading here runs the other way: 92.05 is what 61 of 62 runs print,
   // and the odd one is LOWER. An extra range appeared that was NOT executing, so the
@@ -254,7 +261,26 @@ const MODULE_FLOORS = [
   { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.22 / 95.65
   // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
   // local filesystem path.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 98.50 / 91.64 (also 98.50 / 91.70: V8 range granularity, 263/287 vs 265/289 branches, same uncovered lines; ubuntu counts one extra function range too, 62/64 against darwin's 61/64, so this is the same +2/+2 split as semanticIndexState rather than the other pair within +-12 on both counters, 254/277, which would need ten ranges fewer)
+  // Both readings moved UP together (98.50 -> 99.05 line, 91.64 -> 93.49 branch):
+  // newly covered branches, not a granularity flicker. The old declared pair
+  // (98.50 / 91.70) now sits BELOW the measurement, so per the checker's own rule
+  // it is dropped rather than carried — a second reading under the first is a
+  // tolerance, not a declaration.
+  //
+  // Dropping it does NOT mean the split went away, and the next author should not
+  // read its absence as agreement. This is the entry the header block calls the
+  // second splitter: darwin printed 263/287 branch ranges where ubuntu printed
+  // 265/289 — same uncovered-line list, plus one extra covered function range.
+  // Nothing here fixed that; the module simply gained coverage, which re-based both
+  // counters and made the ubuntu pair evidence about ranges that no longer exist.
+  // Expect the ubuntu leg to land one notch above 93.49 again. That is the known
+  // split, NOT drift: re-declare it from that leg's own report in this table's
+  // grammar (`(also <line> / <branch>: cause)`, lower reading first) rather than
+  // loosening the floor. The value is deliberately left unpredicted — every other
+  // declared pair here was measured on the runner that printed it, and a computed
+  // guess wearing the word `measured` is the single thing these annotations exist
+  // to prevent.
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.49
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75

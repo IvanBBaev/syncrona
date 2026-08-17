@@ -637,6 +637,33 @@ export function resetAuthIssueWarnings(): void {
   warnedAuthIssues.clear();
 }
 
+// A named profile that defines no instance falls back to the base SN_INSTANCE by
+// design (profile overlay — a credentials-only profile is legitimate, which is
+// why this is a warning and not an error). But the user NAMED that profile, so
+// the silent retarget is exactly what they did not ask for — worst on the `mcp`
+// path, where the fallback instance is persisted into .syncrona-mcp/secrets.json
+// and every later MCP session inherits it. Same dedupe rationale as
+// warnedAuthIssues: resolution runs several times per command.
+const warnedProfileFallbacks = new Set<string>();
+
+function warnAboutProfileInstanceFallback(profile: string, fallbackInstance: string): void {
+  const profileVar = profileEnvVar("SN_INSTANCE", profile);
+  const line =
+    `Instance profile "${profile}" defines no instance (${profileVar} is not set): ` +
+    `falling back to the base SN_INSTANCE "${fallbackInstance}". ` +
+    `If that target is intended, set ${profileVar} to it explicitly to silence this warning.`;
+  if (warnedProfileFallbacks.has(line)) {
+    return;
+  }
+  warnedProfileFallbacks.add(line);
+  logger.warn(line);
+}
+
+/** Test seam: the dedupe cache would otherwise leak between cases. */
+export function resetProfileFallbackWarnings(): void {
+  warnedProfileFallbacks.clear();
+}
+
 // Single source of truth for both the credentials and where they came from, so
 // the precedence logic is never duplicated between resolution and reporting.
 function resolveCredentialsInternal(profile?: string): {
@@ -721,6 +748,10 @@ function resolveCredentialsInternal(profile?: string): {
     resolved,
     normalizedProfile ? `profile ${normalizedProfile}` : "environment"
   );
+
+  if (normalizedProfile && !instanceFromProfile && SN_INSTANCE) {
+    warnAboutProfileInstanceFallback(normalizedProfile, SN_INSTANCE);
+  }
 
   const creds: SNCredentials = {
     user: userFromProfile || SN_USER,

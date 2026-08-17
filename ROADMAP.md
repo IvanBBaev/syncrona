@@ -131,7 +131,24 @@ human-facing summary of them.
   95.41% line / 88.57% branch). The remaining distance
   to 10/10 is owner/live-gated (npm publish, live-instance verification, Windows host,
   business decisions), not engineering-completable offline.
-- **Last updated:** 2026-07-25
+- **Seventh-wave re-examination + release hardening (2026-08-17):** the six
+  findings the seventh-wave panel refuted were re-examined with reproduction
+  harnesses instead of argument — **all six reproduced as real defects** and are
+  now fixed, each with a test that fails on the unfixed code (watch-mode retry
+  ladder, keychain key-provision write race, Jira empty-comment-page wipe,
+  `sys.scripts.do` abort-before-auth, webpack-plugin Windows config discovery,
+  MCP credential-store auth-method degradation to Basic). The profile
+  instance-fallback second look resolved with a loud once-per-process warning
+  (MCP path included), win32 path semantics are pinned by a host-independent
+  regression suite (drive-letter-case fix in `isUnderPath`), and the release
+  pipeline gained the git identity `changeset publish` needs to create its
+  per-package tags (the silent failure that shipped 0.9.0/0.9.1 untagged).
+  0.9.1 is live on npm with provenance (14 packages). Suite totals: core 1118
+  tests / 106 suites, mcp 1691, jira 126, credential-store 70, webpack-plugin 14.
+  The remaining distance to 1.0 is owner/live-gated (live-instance verification,
+  native Windows CI host, Homebrew tap, business decisions), not
+  engineering-completable offline.
+- **Last updated:** 2026-08-17
 
 ## Status legend
 
@@ -226,8 +243,13 @@ mostly by **owner decisions**, with a small amount of engineering left.
 - ✅ **Repository → public** — done 2026-06-21; the repo is now public and the
   CodeQL workflow (guarded to public repos) activates automatically. (Confirm IP
   clearance below is settled, since it was the intended gate for this step.)
-- 🔒 **npm publish + 2FA** (D5) — claim the `@syncrona` scope, enable 2FA,
-  then run the `release` workflow (Changesets publish with provenance).
+- ✅ **npm publish + 2FA** (D5) — done 2026-08-17: the `@syncrona` scope is
+  claimed with 2FA + an automation token, and 0.9.1 shipped to npm with
+  provenance for all 14 packages via the `release` workflow. Follow-up fix in
+  [`release.yml`](.github/workflows/release.yml): `changeset publish` creates
+  annotated tags, which need a committer identity on the runner — without one
+  the tag call fails silently inside changesets (the reason 0.9.0/0.9.1
+  published without per-package tags).
 - 🔒 **Business model / sustainability** (BA5) — OSS-only vs OSS + paid support;
   ownership and co-maintainer (bus factor is 1 today).
 
@@ -259,7 +281,18 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
 - 🚧 **Windows support** (D5) — [`packaging/windows/install.ps1`](packaging/windows/install.ps1)
   shipped; Windows Credential Manager works natively via `@napi-rs/keyring`
   (the keychain is the default; disable with `SYNCRONA_USE_KEYCHAIN=0`).
-  Remaining: broader native-Windows path testing.
+  Win32 path semantics are now regression-tested on any host (the suite forces
+  `path.win32`): drive-letter case-folding in `isUnderPath` (a lowercase `c:`
+  cwd from Git Bash / VS Code no longer makes `push`/`build` see zero files),
+  traversal/containment invariants, and the webpack-plugin's Windows config
+  discovery (`path.join` + `pathToFileURL` instead of a POSIX-style split that
+  produced an invalid import specifier) —
+  `packages/core/src/tests/win32PathSemantics.test.ts`,
+  `packages/webpack-plugin/test/win32ConfigDiscovery.test.js`. Reserved device
+  names (`CON`, `NUL`) and trailing dots/spaces stay as-is by contract (renaming
+  would diverge on-disk layouts; `repair`'s canonical-name check already defuses
+  the prune vector). Remaining: a native `windows-latest` CI runner (proposed as
+  a non-required job).
 
 ### Auth & connectivity
 - ✅ **Proxy / TLS configuration** (G9) — CLI honors `HTTPS_PROXY` / `NO_PROXY`
@@ -287,33 +320,42 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   suites (against `dist`, per the AR9 decision) cover the weakest handlers'
   validation/guard/dry-run paths. The old "ratchet toward 80%" target is long
   passed — MCP coverage stands at 95.41% line / 88.57% branch against 90/80 gates.
-- 📋 **Re-examine the six refuted high-severity findings** (seventh wave,
-  2026-07-25). The verification panel is deliberately biased to refute under
-  uncertainty, so "refuted" means *not proven*, not *proven safe*. Worth a second
-  look with a reproduction harness rather than by argument:
-  `Watcher.ts:87` (watch-mode retry ladder never engaging for the common failure
-  mode), `credential-store/src/index.ts:236` (a lost `keyFromKeychain()` write
-  race making stored credentials permanently undecryptable),
-  `jira/src/client.ts:244` (an empty dedicated comment response wiping the
-  embedded comment page), `servicenowCore.ts:1130` (the abort timer armed before
-  the OAuth token await, so the `sys.scripts.do` fallback could abort before it
-  is sent), `webpack-plugin/src/index.ts:88` (a user `webpack.config.js` ignored
-  on Windows — needs the Windows host already gated below), and the
-  README/SECURITY claim that the MCP server honors every auth method when the
-  credential-store path it reads is user/password.
-- 📋 **Second look: profile fallback to the base instance** (review pass,
-  2026-08-07). Rejected as designed behaviour, recorded here under the same
-  "refuted means not proven, not proven safe" rule: with `--instance-profile p`
-  and `SN_INSTANCE_P` unset, credential resolution falls back to the base
-  `SN_INSTANCE` (`snClient.ts` — `instanceFromProfile || SN_INSTANCE`), which is
-  the documented profile-overlay design (README "Instance profiles"). The
-  question worth revisiting is narrower: when the user NAMES a profile and that
-  profile defines no instance, is a silent fallback to the base instance ever
-  what they meant — particularly on the `mcp` path, where the fallback is
-  persisted into `.syncrona-mcp/secrets.json` and every subsequent MCP session
-  inherits it? A loud "profile p defines no instance" error would cost one
-  legitimate use (a profile that only overrides credentials, not the target),
-  so measure whether that use exists before changing the contract.
+- ✅ **Re-examine the six refuted high-severity findings** (seventh wave,
+  2026-07-25) — done 2026-08-17, and the second look was warranted: reproduction
+  harnesses confirmed **all six** as real defects (every refutation had been
+  argued, not executed). Each fix landed with a test that fails on the unfixed
+  code: the `Watcher.ts` retry ladder never engaged because push failures
+  resolve to `{ success: false }` instead of rejecting — failed watch pushes
+  now requeue with capped exponential backoff
+  (`watcherResolvedPushFailureRetry.test.ts`); the `keyFromKeychain()` write
+  race (two processes both generating a fresh key, the lost write leaving
+  stored credentials permanently undecryptable) is closed with a cross-process
+  lock plus a double-checked re-read (`keychainProvisionRace.test.ts`); an
+  empty dedicated Jira comment response no longer wipes the embedded comment
+  page (`commentMergeEmptyResponse.test.ts`); the `sys.scripts.do` fallback
+  resolves auth before arming the abort timer and budgets the OAuth token leg
+  (`backgroundScriptFallbackAuthBudget.test.js`); the webpack-plugin discovers
+  `webpack.config.js` on Windows via `path.join` + `pathToFileURL` — the old
+  POSIX split produced an invalid import specifier that threw on every file
+  (`win32ConfigDiscovery.test.js`); and the MCP server now adopts the stored
+  profile's auth method — OAuth grants, API key — all-or-nothing instead of
+  silently degrading to Basic, with env auth material always winning and an
+  instance mismatch failing closed (`authStoreMultiMethod.test.js`; mTLS stays
+  env-only in both clients, and the stale SECURITY claim that the fallback is
+  "Basic-only" is corrected — it reuses the full Authorization and mTLS
+  dispatcher).
+- ✅ **Second look: profile fallback to the base instance** (review pass,
+  2026-08-07) — resolved 2026-08-17. The contract stays (a credentials-only
+  profile that overrides no instance remains legal — a hard error would break
+  that documented overlay use), but the fallback is no longer silent: when a
+  named profile defines no instance and resolution falls back to the base
+  `SN_INSTANCE`, the CLI warns once per process, naming the profile, the
+  fallback instance, and the variable that silences the warning (e.g.
+  `SN_INSTANCE_QA`). The `mcp` path is covered without extra code —
+  `syncrona mcp` resolves credentials *before* persisting
+  `.syncrona-mcp/secrets.json`, so the warning fires (on stderr, MCP-protocol
+  safe) before the fallback is inherited by later sessions
+  (`profileInstanceFallbackWarning.test.ts`, `mcpProfileFallbackWarning.test.ts`).
 
 ### Product & support
 - 🔒 **ServiceNow compatibility matrix** — test against named ServiceNow releases
@@ -378,7 +420,8 @@ Engineering-completable, not release-blocking; sequenced by demand.
 
 ---
 
-> **Note:** SyncroNow AI is now a **public** repository (2026-06-21); CodeQL is
-> active. The remaining public-facing items (npm publish, Homebrew) still sit
-> behind the IP/provenance and business decisions above. Internal item IDs
-> (G*, AR*, CR*, DX*, BA*) reference [`TODO`](TODO) and [`DONE`](DONE).
+> **Note:** SyncroNow AI is now a **public** repository (2026-06-21) with CodeQL
+> active, and the `@syncrona/*` packages are **live on npm** with provenance
+> (0.9.1, 2026-08-17). The remaining public-facing item (Homebrew tap) still
+> sits behind the owner steps above. Internal item IDs (G*, AR*, CR*, DX*, BA*)
+> reference [`TODO`](TODO) and [`DONE`](DONE).

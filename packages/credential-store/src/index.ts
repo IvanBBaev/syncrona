@@ -24,7 +24,14 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { existsSync, promises as fsp, readFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  promises as fsp,
+  readFileSync,
+  rmdirSync,
+  statSync,
+} from "fs";
 import os from "os";
 import path from "path";
 
@@ -223,6 +230,94 @@ function openKeychainEntry(): KeyringEntry | null {
   }
 }
 
+const PROVISION_LOCK_DIRNAME = "store-key.lock";
+const PROVISION_LOCK_WAIT_MS = 250;
+const PROVISION_LOCK_POLL_MS = 25;
+const PROVISION_LOCK_STALE_MS = 5000;
+
+function provisionLockPath(): string {
+  return path.join(getSyncronaDir(), PROVISION_LOCK_DIRNAME);
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Cross-process mutex around master-key provisioning. `mkdir` of the lock
+ * directory is atomic on every platform, so exactly one process can hold it; a
+ * lock left behind by a crashed provisioner is stolen once it is older than
+ * PROVISION_LOCK_STALE_MS (the critical section itself takes milliseconds).
+ * Returns false when the lock could not be acquired within the wait window.
+ */
+function acquireProvisionLock(): boolean {
+  const lockPath = provisionLockPath();
+  const deadline = Date.now() + PROVISION_LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        // ~/.syncrona itself does not exist yet (first run) — create it and retry.
+        try {
+          mkdirSync(getSyncronaDir(), { recursive: true, mode: 0o700 });
+        } catch {
+          return false;
+        }
+      } else {
+        try {
+          if (Date.now() - statSync(lockPath).mtimeMs > PROVISION_LOCK_STALE_MS) {
+            rmdirSync(lockPath);
+          }
+        } catch {
+          // The holder released (or another steal raced ours) — just retry.
+        }
+      }
+      if (Date.now() >= deadline) return false;
+      sleepSync(PROVISION_LOCK_POLL_MS);
+    }
+  }
+}
+
+function releaseProvisionLock(): void {
+  try {
+    rmdirSync(provisionLockPath());
+  } catch {
+    // Best-effort: a leftover lock is stolen after PROVISION_LOCK_STALE_MS.
+  }
+}
+
+/**
+ * Generate and persist the master key when the keychain holds none. The naive
+ * get-then-generate-then-set is a cross-process TOCTOU: two processes (e.g. a
+ * CLI `login` and the MCP server starting up) can both read an empty keychain,
+ * each write its own random key, and the second write silently overwrites the
+ * first — every credential file already encrypted with the overwritten key
+ * becomes PERMANENTLY undecryptable once that process exits, because a random
+ * key exists nowhere else and decryptWithFallback only retries the
+ * deterministic machine key. So the generate+set runs under a cross-process
+ * lock with a re-read after acquiring it: the loser of the race adopts the
+ * winner's key instead of clobbering it. If the lock cannot be acquired, fall
+ * back to the machine key (return null) — it is deterministic, so anything
+ * encrypted with it stays recoverable, unlike an unserialized random key.
+ */
+function provisionKeychainKey(entry: KeyringEntry): Buffer | null {
+  if (!acquireProvisionLock()) return null;
+  try {
+    const existing = entry.getPassword();
+    if (existing) {
+      const parsed = parseKeyMaterial(existing);
+      if (parsed) return parsed;
+    }
+    const generated = randomBytes(KEY_LENGTH);
+    entry.setPassword(generated.toString("hex"));
+    return generated;
+  } finally {
+    releaseProvisionLock();
+  }
+}
+
 function keyFromKeychain(): Buffer | null {
   if (!isKeychainEnabled()) return null;
   const entry = openKeychainEntry();
@@ -233,9 +328,7 @@ function keyFromKeychain(): Buffer | null {
       const parsed = parseKeyMaterial(existing);
       if (parsed) return parsed;
     }
-    const generated = randomBytes(KEY_LENGTH);
-    entry.setPassword(generated.toString("hex"));
-    return generated;
+    return provisionKeychainKey(entry);
   } catch {
     // keychain locked or unavailable — fall through to the machine key.
     return null;

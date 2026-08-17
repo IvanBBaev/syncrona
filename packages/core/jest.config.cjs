@@ -28,6 +28,26 @@ module.exports = {
   // value another one left behind; see the file for why the per-suite guards
   // were not enough on their own.
   setupFilesAfterEnv: ['<rootDir>/jest.exitcode.cjs'],
+  // An unhandled promise rejection must fail a test, not kill the worker.
+  // Node 22 defaults to `--unhandled-rejections=throw`, so a rejection with no
+  // listener is fatal. jest-circus does install a listener on the real process
+  // for the duration of a run, but WITHOUT this flag it never yields to the
+  // event loop before `teardown` removes it again — so a rejection that becomes
+  // unhandled as the last test settles is delivered into the gap and takes the
+  // whole process down with it, mid-run and with no reporter output at all.
+  // Setting this makes jest-circus `await untilNextEventLoopTurn()` at
+  // `test_fn_success` / `test_fn_failure` / `hook_*` / `teardown`, which closes
+  // the gap and attributes the rejection to the test that caused it.
+  //
+  // Measured, because the obvious alternative does not work: registering
+  // `process.on('unhandledRejection', ...)` from a `setupFilesAfterEnv` file is
+  // a no-op. That file runs inside the test VM, whose `process` is a deep copy
+  // made by jest-util's `createProcessObject()` with its own EventEmitter, so
+  // nothing is ever emitted on it — see the comment at
+  // jest-circus/build/jestAdapterInit.js `case 'setup'`. Such a guard was
+  // written, shipped, and then disproved by a Stryker mutant that still killed
+  // the runner with it installed; this flag is what actually fixed it.
+  waitForUnhandledRejections: true,
   // Whole-source coverage: the gate previously measured only src/commands.ts,
   // which made the "core >= 80%" CI claim meaningless. Thresholds below are a
   // ratchet floor set just under the measured baseline (2026-07-03: statements
@@ -181,18 +201,18 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.34 / 92.75
+    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.53 / 93.90
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.91
-    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.55 / 81.03
+    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.91 / 81.66
     './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 97.95 / 84.53
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.26 / 83.43
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.66 / 93.82
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.28
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 100.00 / 94.13
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.62 / 75.89
     './src/config.ts': { lines: 96, branches: 85 }, // measured 99.46 / 89.92
@@ -203,7 +223,7 @@ module.exports = {
     './src/commands.ts': { lines: 93, branches: 79 }, // measured 96.73 / 83.11
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 89.65
-    './src/Watcher.ts': { lines: 91, branches: 68 }, // measured 94.25 / 73.07
+    './src/Watcher.ts': { lines: 91, branches: 68 }, // measured 94.49 / 75.00
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.57 / 71.79
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
