@@ -50,8 +50,27 @@ module.exports = {
     // leftover .stryker-tmp makes Jest run every suite twice — and the sandbox
     // copies resolve REPO_ROOT relative to themselves, which fails the
     // license-consistency suite from inside an otherwise green tree.
-    "/\\.stryker-tmp/",
+    //
+    // The `<rootDir>/` anchor is load-bearing, not decoration. These patterns are
+    // matched against the ABSOLUTE path of each test file, and inside a Stryker
+    // sandbox that path is `<pkg>/.stryker-tmp/sandbox-XXXX/src/tests/*.test.ts`
+    // — which contains `/.stryker-tmp/` too. An unanchored pattern therefore
+    // hides the tests from the mutation run itself: Stryker copies the package,
+    // starts Jest inside the copy, Jest matches zero files, and the whole run
+    // dies with "No tests were found". Anchoring pins the pattern to whichever
+    // root Jest was started with, so it still skips a leftover sandbox from the
+    // package root while matching nothing when Jest runs from inside one.
+    // strykerSandboxDiscovery.test.ts pins both halves of that.
+    "<rootDir>/\\.stryker-tmp/",
   ],
+  // testPathIgnorePatterns only decides which files Jest RUNS; the haste map still
+  // scans a leftover sandbox and finds a second `package.json` naming the same
+  // module, which Jest reports as "Haste module naming collision: syncrona" and
+  // resolves arbitrarily — so an import could bind to the stale copy instead of the
+  // real one. Excluding the sandbox from module resolution as well closes that.
+  // Anchored for the same reason as above: unanchored, this would blind the
+  // mutation run to its own modules.
+  modulePathIgnorePatterns: ["<rootDir>/\\.stryker-tmp/"],
   coverageThreshold: {
     global: {
       statements: 92,

@@ -410,6 +410,22 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- The mutation run can no longer be silently switched off by the config that is
+  meant to protect it. `testPathIgnorePatterns` has to skip a leftover
+  `.stryker-tmp/` sandbox when Jest runs from the package root, yet find those same
+  tests when Stryker starts Jest *inside* that sandbox — and because the patterns
+  are matched against the ABSOLUTE path, an unanchored `/\.stryker-tmp/` satisfies
+  the first requirement and destroys the second. It did: `npm run test:mutation`
+  died with "No tests were found" while the ordinary suite stayed green, because
+  nothing outside the mutation run exercises the sandbox path. The patterns are now
+  anchored with `<rootDir>/`, which Jest expands against whichever root it was
+  started with, and `strykerSandboxDiscovery.test.ts` pins both halves plus the
+  rule that these entries are regexes rather than globs. The same anchoring is
+  applied to a new `modulePathIgnorePatterns`, which closes the neighbouring hole
+  `testPathIgnorePatterns` cannot: it filters only which files Jest *runs*, so a
+  leftover sandbox still reached the haste map as a second `package.json` claiming
+  the name `syncrona` — a naming collision Jest resolves arbitrarily, letting an
+  import bind to the stale copy.
 - Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
   the harness rather than by each suite remembering. 41 source sites set the
   value and one reads it (`downloadCommand`, to decide whether a partial pull is
