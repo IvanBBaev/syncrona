@@ -60,4 +60,66 @@ describe("groupAppFiles", () => {
     expect(grouped).toHaveLength(1);
     expect(Object.keys(grouped[0].fields)).toEqual(["script"]);
   });
+
+  // Throwing on the FIRST conflicting pair turns the cleanup into one failed
+  // push per affected field, and a workspace acquires these in bulk — a refresh
+  // that wrote a downloaded `.js` beside every `.ts` leaves one per field. The
+  // whole list has to come out of a single run.
+  it("reports every ambiguous field, not just the first", () => {
+    let message = "";
+    try {
+      groupAppFiles([
+        ctx("/tmp/src/sys_script_include/A/script.ts", "sys_script_include", "rec_a", "script"),
+        ctx("/tmp/src/sys_script_include/A/script.js", "sys_script_include", "rec_a", "script"),
+        ctx("/tmp/src/sys_script_include/B/script.ts", "sys_script_include", "rec_b", "script"),
+        ctx("/tmp/src/sys_script_include/B/script.js", "sys_script_include", "rec_b", "script"),
+      ]);
+      throw new Error("expected groupAppFiles to reject the ambiguous workspace");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toMatch(/^Ambiguous push: 2 record field\(s\)/);
+    for (const claimant of [
+      "/tmp/src/sys_script_include/A/script.ts",
+      "/tmp/src/sys_script_include/A/script.js",
+      "/tmp/src/sys_script_include/B/script.ts",
+      "/tmp/src/sys_script_include/B/script.js",
+    ]) {
+      expect(message).toContain(claimant);
+    }
+    expect(message).toContain("rec_a");
+    expect(message).toContain("rec_b");
+  });
+
+  it("lists all claimants when three files claim one field", () => {
+    expect(() =>
+      groupAppFiles([
+        ctx("/tmp/src/sys_script/rec_1/script.ts", "sys_script", "rec_1", "script"),
+        ctx("/tmp/src/sys_script/rec_1/script.js", "sys_script", "rec_1", "script"),
+        ctx("/tmp/src/sys_script/rec_1~script.js", "sys_script", "rec_1", "script"),
+      ])
+    ).toThrow(/rec_1~script\.js/);
+  });
+
+  // The report is rebuilt from the contexts, not by splitting the composite key
+  // on "-": a table or field name carrying a hyphen would split in the wrong
+  // place and name the wrong record in the message the user has to act on.
+  it("names the right table and field when they contain a hyphen", () => {
+    expect(() =>
+      groupAppFiles([
+        ctx("/tmp/a.ts", "x_app_my-table", "rec-1", "my-field"),
+        ctx("/tmp/a.js", "x_app_my-table", "rec-1", "my-field"),
+      ])
+    ).toThrow(/"x_app_my-table" record rec-1 field "my-field"/);
+  });
+
+  it("still groups a clean workspace with several records and fields", () => {
+    const grouped = groupAppFiles([
+      ctx("/tmp/a/script.ts", "sys_script", "rec_1", "script"),
+      ctx("/tmp/a/condition.js", "sys_script", "rec_1", "condition"),
+      ctx("/tmp/b/script.ts", "sys_script", "rec_2", "script"),
+    ]);
+    expect(grouped).toHaveLength(2);
+  });
 });
