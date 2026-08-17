@@ -468,8 +468,11 @@ All notable changes to this project will be documented in this file.
   skipped the moment an assertion between them throws — so the first genuine
   failure silently poisoned every test after it. A global hook
   (`jest.exitcode.cjs`, via `setupFilesAfterEnv`) now resets the value around
-  every test. It touches only the boundary between tests, never what the code
-  under test sets inside one. `exitCodeIsolation.test.ts` pins it with a
+  every test — to `undefined`, Node's pristine value, rather than to a snapshot
+  taken when the setup file loads: workers are reused across test files and a
+  top-level suite `afterEach` runs after this hook, so a suite that parks the
+  code at `0` would otherwise become the next file's baseline. It touches only
+  the boundary between tests, never what the code under test sets inside one. `exitCodeIsolation.test.ts` pins it with a
   deliberate polluter, a clean-slate assertion and a test that throws past a
   would-be inline restore; with the hook removed two of its four cases fail.
   Coverage is unchanged (97.52 / 87.53, all 42 `// measured` annotations still

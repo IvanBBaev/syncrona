@@ -1644,7 +1644,13 @@ test after it in that worker, and the cascade of unrelated results buries the on
 was true. Ten such inline restores were live, eight of them in `commandsGaps.test.ts`.
 `jest.exitcode.cjs` (registered via `setupFilesAfterEnv`, which unlike `setupFiles` runs
 late enough to register global hooks) now resets the value around every test in every
-suite, so no suite has to remember and none can leak. It cannot mask a defect — it only
+suite, so no suite has to remember and none can leak. It resets to `undefined` — Node's
+pristine value — and NOT to a snapshot taken when the setup file loads, which is the
+subtlety that cost a round here: a snapshot is not pristine. Workers are reused across
+test files, and a top-level suite `afterEach` is registered in the same block as this
+hook and therefore runs *after* it, so a suite that parks the code at `0` leaves that
+behind as the baseline the next file in the worker would snapshot — poisoning every file
+after it, scheduling-dependently. It cannot mask a defect — it only
 touches the boundary between tests; inside a test the code under test still sets what it
 sets. `exitCodeIsolation.test.ts` pins the guarantee with a deliberate polluter followed
 by a clean-slate assertion, plus a test that throws past a would-be inline restore;
