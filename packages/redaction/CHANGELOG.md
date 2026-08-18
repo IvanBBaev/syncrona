@@ -1,5 +1,11 @@
 # @syncrona/redaction
 
+## 0.9.3
+
+### Minor Changes
+
+- First published release. The credential-detection primitive is extracted here out of the MCP server, so "is this a credential?" has one answer every package shares.
+
 ## 0.9.1
 
 ### Minor Changes

@@ -22,7 +22,7 @@ remains; `TODO` and `DONE` are the working journals.
 npm run build      # build:deps (credential-store, jira, redaction, sn-transport) + all workspaces
 npm run typecheck  # tsc across core + mcp-server
 npm run lint       # eslint core + mcp-server, --max-warnings=0
-npm run test       # 3415 tests: core jest (1162) + mcp node:test (1691) + shared (479) + plugins (83)
+npm run test       # 4750 tests: core jest (1202) + mcp node:test (1696) + mirror jest (1290) + shared (479) + plugins (83)
 npm run check      # the full gate — every link below, in order
 ```
 

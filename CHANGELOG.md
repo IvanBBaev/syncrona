@@ -4,8 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-08-18
+
+Everything below had accumulated on `main` since 0.9.1 without a release to carry
+it. `0.9.2` was never published and the number is left unused.
+
 ### Added
 
+- New package `@syncrona/mirror` and the `syncrona mirror` command — a
+  full-instance git mirror. The engine catalogs an instance from
+  `sys_dictionary`, sweeps every in-scope table over the Table API and writes a
+  sharded, deterministically ordered tree; `mirror init` provisions the
+  repository for a checkout that size (`feature.manyFiles`, `core.fsmonitor`,
+  `core.precomposeunicode`, scheduled `git maintenance`, `.gitattributes`),
+  `mirror sync` runs the sweep and prints a suggested commit message without
+  ever committing, `mirror status` compares the tree against the live instance,
+  `mirror verify` checks the tree against its own manifests with no network at
+  all, and `mirror report` re-prints the last sweep. Exit codes: 0 clean, 1 the
+  run could not finish, 2 completed with drift or findings. Four invariants are
+  machine-enforced rather than documented: a re-sync over an unchanged instance
+  is byte-identical (one bytewise comparator, plus an e2e that syncs twice and
+  diffs the trees); the engine issues no state-changing request (checked by
+  grepping its built output, which is why the one POST the design needs — the
+  OAuth token exchange — lives in the CLI adapter and hands the engine a ready
+  `Authorization` header, rather than as a carve-out that would turn a
+  mechanical check into a judgement call); the `complete` flag is the only
+  completion signal, so an aborted sweep leaves nothing that reads as finished;
+  and an unreadable manifest is never reported as an empty one. The package
+  ships CommonJS so the ESM core CLI reaches it through Node's interop, and
+  carries 100/100/100/100 coverage floors; `mirrorCommand.ts` gets its own named
+  floor in core because it shells out to git and holds credential material for a
+  whole sweep.
 - Record metadata is now synced in both directions. Field discovery only ever
   admitted the eight script-ish dictionary types, so a script include's
   `api_name`, `access`, `client_callable`, `active` and `description` were never
@@ -516,6 +545,10 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
+- A source-text gate (`scripts/check-source-text.mjs`) forbids literal invisible
+  characters in source. Three files carried them and now spell them as escapes —
+  including the one line whose entire security value *is* a zero-width space,
+  which read as a no-op join in every diff and every review.
 - Every Jest config sets `waitForUnhandledRejections: true`. Node 22 defaults to
   `--unhandled-rejections=throw` and jest-circus drops its own listener at
   teardown, so a rejection settling in the same turn as the test killed the worker
@@ -1145,7 +1178,8 @@ TLS) and the shared encrypted credential store.
 
 - nothing removed
 
-[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/IvanBBaev/syncrona/compare/v0.9.1...v0.9.3
 [0.9.1]: https://github.com/IvanBBaev/syncrona/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.9.0
 [0.4.1]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.1
