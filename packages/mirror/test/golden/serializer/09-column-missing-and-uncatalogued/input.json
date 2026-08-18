@@ -1,0 +1,17 @@
+{
+  "description": "Both directions of catalog/row disagreement. F5: 'description' and 'script' are catalogued but absent from the response (column-level read ACL), so nothing is written for them — the mirror never claims a value it was not shown. R3: 'u_extra' is in the response but not in the catalog, so it is written as a plain string rather than silently skipped.",
+  "table": {
+    "name": "sys_script_include",
+    "fields": [
+      { "element": "description" },
+      { "element": "name" },
+      { "element": "script", "internalType": "script", "extractAs": "js" },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "8899aabbccddeeff001122334455aabb",
+    "name": "Partial",
+    "u_extra": "kept"
+  }
+}

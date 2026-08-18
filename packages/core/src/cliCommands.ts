@@ -25,6 +25,7 @@ import {
   jiraLogoutCommand,
 } from "./jiraCommands.js";
 import { completionCommand } from "./completionCommand.js";
+import { mirrorCommand, MIRROR_ACTIONS } from "./mirrorCommand.js";
 import { LOG_LEVELS } from "./Logger.js";
 
 /**
@@ -593,5 +594,63 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     handler: typedHandler<Sync.SharedCmdArgs & { profile?: string; all?: boolean }>(
       (args) => jiraLogoutCommand(args)
     ),
+  },
+  {
+    // One registry entry for five subcommands, because they share one engine and
+    // one credential resolution; splitting them into five top-level commands
+    // would put `syncrona verify` next to `syncrona push` in `--help` and lose
+    // the fact that all five only ever mean something inside a mirror repo.
+    command: "mirror <action>",
+    describe:
+      "Full-instance git mirror (action: init, sync, status, verify, report); exits 2 on drift or findings",
+    positionals: {
+      action: {
+        type: "string",
+        describe: "mirror action",
+        choices: [...MIRROR_ACTIONS],
+      },
+    },
+    options: {
+      full: {
+        type: "boolean",
+        default: false,
+        describe: "sync: sweep every included table instead of only what changed",
+      },
+      verifyQuiescent: {
+        // Declared explicitly rather than left to yargs' camel-case expansion:
+        // the expansion parses `--verify-quiescent` but does not PRINT it, and
+        // the kebab spelling is the one the design and the README name.
+        alias: "verify-quiescent",
+        type: "boolean",
+        default: false,
+        describe: "sync: re-read row counts after the sweep and report tables that moved under it",
+      },
+      deep: {
+        type: "boolean",
+        default: false,
+        describe: "status/verify: also re-hash sampled records instead of comparing aggregates only",
+      },
+      json: {
+        type: "boolean",
+        default: false,
+        describe: "Emit the machine-readable result instead of the human rendering",
+      },
+    },
+    examples: [
+      ["$0 mirror init", "Provision the current repository for a million-file mirror"],
+      ["$0 mirror sync --full", "Run a complete baseline sweep of the instance"],
+      ["$0 mirror status", "Compare the mirrored tree against the live instance (exit 2 on drift)"],
+      ["$0 mirror verify --deep", "Check the tree against its own manifests, offline"],
+      ["$0 mirror report --json", "Re-print the last sweep's machine report and its exit code"],
+    ],
+    handler: typedHandler<
+      Sync.SharedCmdArgs & {
+        action: string;
+        full?: boolean;
+        verifyQuiescent?: boolean;
+        deep?: boolean;
+        json?: boolean;
+      }
+    >((args) => mirrorCommand(args)),
   },
 ];

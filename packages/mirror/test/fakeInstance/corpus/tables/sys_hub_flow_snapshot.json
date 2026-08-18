@@ -1,0 +1,83 @@
+{
+  "columns": [
+    {
+      "element": "snapshot",
+      "internalType": "string",
+      "maxLength": 65000,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "label_cache",
+      "internalType": "string",
+      "maxLength": 65000,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Flow Snapshot",
+  "name": "sys_hub_flow_snapshot",
+  "rows": [
+    {
+      "active": "true",
+      "description": "",
+      "internal_name": "broken_snapshot",
+      "label_cache": "{}",
+      "name": "Broken Snapshot",
+      "snapshot": "{\"version\":3,\"steps\":[{\"id\":\"trigger\",",
+      "sys_class_name": "sys_hub_flow_snapshot",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-07-14 00:44:19",
+      "sys_id": "0bad215aa1986826038991111516c788",
+      "sys_mod_count": "27",
+      "sys_name": "Broken Snapshot",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "admin",
+      "sys_updated_on": "2026-08-04 04:02:12"
+    },
+    {
+      "active": "true",
+      "description": "",
+      "internal_name": "incident_intake_v1",
+      "label_cache": "{\"trigger\":\"Record created\",\"a1\":\"Set Priority\"}",
+      "name": "Incident Intake v1",
+      "snapshot": "{\"version\":1,\"steps\":[{\"id\":\"trigger\",\"type\":\"record_created\",\"table\":\"incident\"},{\"id\":\"a1\",\"type\":\"action\",\"name\":\"Set Priority\"}]}",
+      "sys_class_name": "sys_hub_flow_snapshot",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-02-18 07:10:27",
+      "sys_id": "2daae1b5b1af6f202788a47a92e3bab6",
+      "sys_mod_count": "0",
+      "sys_name": "Incident Intake v1",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-03-19 12:10:20"
+    },
+    {
+      "active": "false",
+      "description": "",
+      "internal_name": "incident_intake_v2",
+      "label_cache": "{\"outputs\":\"Incident, Priority\"}",
+      "name": "Incident Intake v2",
+      "snapshot": "{\"version\":2,\"steps\":[],\"outputs\":{\"incident\":\"\",\"priority\":\"\"}}",
+      "sys_class_name": "sys_hub_flow_snapshot",
+      "sys_created_by": "mirror.svc",
+      "sys_created_on": "2026-07-04 16:25:50",
+      "sys_id": "b9e9c9222fb732b8d4d0ddf0c531aa30",
+      "sys_mod_count": "26",
+      "sys_name": "Incident Intake v2",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "system",
+      "sys_updated_on": "2026-08-01 09:45:15"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": "6a75e4b0b8bff4ffacd570ea58bc55e8",
+  "synthetic": null,
+  "sysId": "cb8d362601662674ea30b594c52794ef"
+}

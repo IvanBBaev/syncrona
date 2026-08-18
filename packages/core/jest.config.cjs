@@ -227,13 +227,18 @@ module.exports = {
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.57 / 71.79
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    // Shells out to `git` for the mirror's repack, and mints the Authorization
+    // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
+    // true of the engine — so it holds credential material for a whole sweep.
+    './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 88.88
     // Rewrites third-party MCP client config files, writes the secrets file that
     // points the server at an instance, and spawns the server. It had no named
     // floor while it was the weakest file in the tree; that is what let it fail
     // the tree-wide floor on Linux by a single line (77.77 lines / 52.27
     // branches) while macOS measured 83.33 / 68.18 and shipped green.
     './src/mcpCommand.ts': { lines: 97, branches: 93 }, // measured 100.00 / 98.27
-    // The CLI registry: 23 one-line delegations, so a floor on LINES is what
+    // The CLI registry: 24 entries, nearly all one-line delegations, so a floor
+    // on LINES is what
     // catches an entry that no longer routes anywhere (it declares no branches,
     // and a branch floor on 0/0 is reported as 100% and would gate nothing).
     './src/cliCommands.ts': { lines: 96 }, // measured 100.00 lines (0 branches)

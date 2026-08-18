@@ -133,6 +133,7 @@ const FIXTURE_PACKAGES = {
   "credential-store": "@syncrona/credential-store",
   "babel-plugin": "@syncrona/babel-plugin",
   redaction: "@syncrona/redaction",
+  mirror: "@syncrona/mirror",
 };
 
 /**
@@ -188,6 +189,8 @@ export function writeViolatingFixtures(root, { tsConfigFileName = "tsconfig.json
   // foundation package rather than a consumer, so this fixture keeps failing even
   // if the rule is ever relaxed to only the `foundation-no-consumers` shape.
   w("packages/redaction/src/violation.ts", "import '@syncrona/credential-store';\nexport const r = 1;\n");
+  // mirror-no-core: the mirror engine importing the core CLI it is delegated to from.
+  w("packages/mirror/src/violation.ts", "import 'syncrona';\nexport const g = 1;\n");
   // plugins-are-leaves: a build plugin importing a non-types @syncrona package.
   w("packages/babel-plugin/src/violation.ts", "import '@syncrona/credential-store';\nexport const c = 1;\n");
   // no-circular: a genuine runtime (value) cycle between two local modules.

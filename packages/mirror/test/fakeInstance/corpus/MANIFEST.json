@@ -1,0 +1,97 @@
+{
+  "attachmentCount": 2,
+  "formatVersion": 1,
+  "seed": 20260817,
+  "tables": [
+    {
+      "materialized": true,
+      "name": "sys_attachment",
+      "rowCount": 2,
+      "sha256": "40103b02246726df9f726144dff12a6626351b95702b926d71a9e21efb6e49da"
+    },
+    {
+      "materialized": true,
+      "name": "sys_choice",
+      "rowCount": 4,
+      "sha256": "22de202eb7f6c178e2b9b7e660b0ff44f8d1c4075b1127c2339e2f28a8f9766d"
+    },
+    {
+      "materialized": true,
+      "name": "sys_db_object",
+      "rowCount": 15,
+      "sha256": "0d7316e687b56f3d21cda18d712bc6738b321936b8e72b936fa8ed9088f46641"
+    },
+    {
+      "materialized": true,
+      "name": "sys_dictionary",
+      "rowCount": 120,
+      "sha256": "a969552fb31a1706e72cc1cfb96e86860e535604e3b3c7aaf8a8b034d4cd57c1"
+    },
+    {
+      "materialized": true,
+      "name": "sys_hub_flow_base",
+      "rowCount": 1,
+      "sha256": "3c2c9275f61359d24fc5f8e706d45d62bdb949b9092b944a02b596b841e9eea8"
+    },
+    {
+      "materialized": true,
+      "name": "sys_hub_flow_snapshot",
+      "rowCount": 3,
+      "sha256": "1593c95a4ebfbb94833e08bb508fdba0aeda6fba369b655b1d709247415ff9a8"
+    },
+    {
+      "materialized": true,
+      "name": "sys_metadata",
+      "rowCount": 0,
+      "sha256": "0bfd4620856340a78fb7bc269239aeedef5339ee938ca9ca8eccb68ce89ebb33"
+    },
+    {
+      "materialized": true,
+      "name": "sys_properties",
+      "rowCount": 4,
+      "sha256": "b2711a1e16a23233492f7ca3b350348e66cc7aab4aa0661b73cc15b56015b518"
+    },
+    {
+      "materialized": true,
+      "name": "sys_scope",
+      "rowCount": 3,
+      "sha256": "227a320e7761717d294f7ec1ddc0d87563f3906644d34ad074757f91f41aa77b"
+    },
+    {
+      "materialized": true,
+      "name": "sys_script",
+      "rowCount": 9,
+      "sha256": "64ba7629167decec34b22750a5abe7c908b0991d1c8fd82aed362c9e867f5f3a"
+    },
+    {
+      "materialized": true,
+      "name": "sys_ui_action",
+      "rowCount": 3,
+      "sha256": "2f225451b7b3af4710d094614bf238c31331c6ff8bfc423fe5a1200ad4720997"
+    },
+    {
+      "materialized": true,
+      "name": "sys_update_set_source",
+      "rowCount": 2,
+      "sha256": "b6f96e07a61d447f0a380a18efc999a1af5efaebb75550aa109cbb3935acb341"
+    },
+    {
+      "materialized": false,
+      "name": "x_syn_demo_bulk",
+      "rowCount": 24000,
+      "sha256": "0ae507c1160e3d2c56ea4b6698358d26c0d897372ff554b93aa1831b83782d06"
+    },
+    {
+      "materialized": true,
+      "name": "x_syn_demo_empty",
+      "rowCount": 0,
+      "sha256": "ca9fe9f6bfc5c0d7e096e1a4064399dd3fd8267384506414d416f95ca17a00b2"
+    },
+    {
+      "materialized": true,
+      "name": "x_syn_demo_orphan",
+      "rowCount": 2,
+      "sha256": "38e577bc65aeb519f2519a43e6e54618e43d7537b30673e30ef0d2467c11abb8"
+    }
+  ]
+}

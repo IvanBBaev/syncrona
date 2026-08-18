@@ -9,8 +9,10 @@ sized for independent implementation agents.
 
 Precedence: where this document refines the design document, this document wins;
 every such refinement is listed in [§14 Deltas](#14-deltas-vs-the-design-document).
-The design deltas D1–D14 from analyses §10 are binding here and are referenced
-inline.
+The design deltas **D1–D21** from analyses §10 are binding here and are referenced
+inline. D1–D14 came out of the analyses themselves; D15–D21 came out of the live
+probe against a 1M-row vendor instance (analyses §7) and therefore overrule any
+sizing or API assumption this document inherited from the design document.
 
 ---
 
@@ -85,11 +87,17 @@ type-check against unredacted input (§9).
 
 Dependency rules (enforced by review; a `package.json` cycle is a build failure):
 
-- `@syncrona/mirror` depends on `@syncrona/types`, `@syncrona/sn-transport`,
-  `@syncrona/credential-store`, `@syncrona/redaction`, `axios`,
-  `axios-rate-limit`. It MUST NOT depend on `syncrona` (core) — core depends on
-  mirror, and the mirror deliberately shares no code with the v1 manifest pipeline
-  (design §3.2 constraint #1).
+- `@syncrona/mirror` depends on `@syncrona/sn-transport`,
+  `@syncrona/credential-store` and `@syncrona/redaction` — and, as built, on
+  nothing else. `axios` and `axios-rate-limit` were planned here and are NOT
+  used: the client runs on Node 22's global `fetch` behind an injected
+  `MirrorFetch` seam, and the rate limiter is a promise chain with injected
+  `sleep`/`now`. That is not merely a smaller dependency tree — it is why the
+  limiter is asserted against exact spacing values rather than elapsed wall
+  time, which is the difference between a deterministic test and a flaky one.
+  It MUST NOT depend on `syncrona` (core) — core depends on mirror, and the
+  mirror deliberately shares no code with the v1 manifest pipeline (design §3.2
+  constraint #1).
 - `@syncrona/redaction` depends on nothing internal (leaf package).
 - The mirror builds its own thin HTTP client (§5.2) on sn-transport policies +
   credential-store auth. Core's `snClient.ts` is not reused and not modified —
@@ -190,6 +198,12 @@ export interface ShardManifest {
    *  and STICKY thereafter — changed only via `mirror migrate` (D16). */
   fanout: 0 | 1 | 2;
   complete: boolean;                   // INV-4: true only after a finished table sweep
+  /** The sweep that last CHANGED this shard — not the last sweep that ran. A flush
+   *  whose only difference from the file on disk is this field does not write, or an
+   *  unchanged instance would rewrite every shard in the repo and INV-1 would fail on
+   *  provenance rather than on data. Corollary: a `.shards/` directory whose files
+   *  carry different sweep ids is the normal steady state, not evidence of a torn
+   *  flush — `mirror verify` must read INV-4 off `complete`, never off this field. */
   sweepId: string;
   records: Record<string, RecordEntry>; // key = sys_id, validated INV-6
 }
@@ -355,16 +369,28 @@ rules. All modules are ESM TypeScript under `packages/mirror/src/` unless noted.
 
 ### 5.2 MirrorHttpClient — `src/http/client.ts` (WP-M3)
 
-Thin axios + axios-rate-limit client, auth via `@syncrona/credential-store` +
-sn-transport auth helpers, TLS via `resolveTlsPolicy`.
+Thin client over Node 22's global `fetch` behind an injected `MirrorFetch` seam
+(see the dependency note in §3 for why, not axios), auth via
+`@syncrona/credential-store` + sn-transport auth helpers, TLS via
+`resolveTlsPolicy`. Basic and inbound-API-key only — OAuth is relocated to the
+caller by INV-2 (§9).
 
 - `getPage(table, keysetCursor): Promise<FetchPage>` — GET Table API.
 - `getAggregate(table): Promise<{count: number; maxUpdatedOn: string | null} | null>`
   — GET `/api/now/stats/{table}` with `sysparm_count=true` +
-  `MAX(sys_updated_on)`; returns `null` (never throws) when the endpoint is
-  denied/absent — planner falls back to sweeping without counts.
-- `getAttachmentMeta(recordSysId)` / `getAttachmentBinary(attachmentSysId)` —
-  Attachment API; binary via `responseType: "arraybuffer"`.
+  `MAX(sys_updated_on)`; returns `null` when the endpoint is denied/absent —
+  planner falls back to sweeping without counts.
+  **"Never throws" is narrowed as built, deliberately.** `null` is returned for
+  `acl`, `schema-drift`, `transient` and `parse`; `auth`, `unreachable` and
+  `hibernating` are rethrown. Those three are not "no counts available", they are
+  "no instance available", and swallowing them would let a sweep run against a
+  dead or unauthenticated instance and report the resulting emptiness as fact —
+  which INV-5 would then accept as evidence for deleting records.
+- `getAttachmentMeta(table, recordSysId)` / `getAttachmentBinary(attachmentSysId)`
+  — Attachment API; binary via `responseType: "arraybuffer"`. The table is a
+  parameter because `sys_attachment` keys a row by the pair — `table_name` plus
+  `table_sys_id` — so a query on the sys_id alone is not a well-formed
+  attachment query, and the sweep already knows which table it is walking.
 - **INV-2**: this class exposes no state-changing verb. `POST`/`PUT`/`PATCH`/
   `DELETE` do not appear in `@syncrona/mirror` at all through Phase 3.
 - Rate limit from `MirrorConfig.sync.requestsPerSecond`, clamped to sn-transport's
@@ -451,8 +477,17 @@ sn-transport auth helpers, TLS via `resolveTlsPolicy`.
   `__SYNCRONA_REDACTED__<sha256-12>` (hash of the plaintext, so value *changes*
   still produce diffs); value-scan on remaining strings; scan-budget overflow →
   redact the whole value, reason `scan-overflow` (F7, fail closed).
+  The budget test runs **before** `looksLikeSecretValue`, not after: an
+  over-budget value was never fully scanned, so reporting it as `value-scan`
+  would claim a scan that did not happen, and F7's whole purpose is to make that
+  gap visible.
 - `sys_properties` values redacted by key pattern unless in
-  `redaction.propertyAllowlist`.
+  `redaction.propertyAllowlist`. The key handed to `isSensitiveKey` is the
+  **value of the row's `name` column**, not the literal column name `value` —
+  the property name is where the operator's intent lives. A row whose `name` is
+  missing or not a readable string fails closed. The allowlist exempts a property
+  from the **key** rule only; value-scan still applies to it, so allowlisting a
+  name cannot be used to smuggle a secret past the scanner.
 - Produces `RedactedRecord` — the brand symbol is created only in this module, so
   the Writer's signature `write(record: RedactedRecord)` makes a redaction bypass
   a compile error (INV-3).
@@ -490,8 +525,16 @@ sn-transport auth helpers, TLS via `resolveTlsPolicy`.
 - `mirror status`: Aggregate-only (`count` + `maxUpdatedOn` per table) vs shard
   contents; exit 0 = in sync, 2 = drift detected; `--deep` adds keyset row-hash
   sampling. Cheap enough for a CI cron (analyses §6).
-- `mirror verify`: per-table counts + deterministic spot-check (every Kth sys_id)
-  re-fetch → compare `contentHash`. Reports, never mutates.
+- `mirror verify`: checks the tree against its own manifests — every claimed
+  record directory exists and every existing one is claimed, then a deterministic
+  spot-check (every Kth sys_id in bytewise order) re-hashes `record.json` off
+  disk and compares it with `contentHash`. Reports, never mutates.
+  - It takes **no instance**, and that is the point of having two commands rather
+    than one. Comparing against ServiceNow is `status`'s job, `--deep` included;
+    what nothing else answers is whether a *checkout* is self-consistent, and a
+    CI job on a fresh clone has the tree but no credentials. An earlier draft of
+    this section had `verify` re-fetch the sampled rows, which made it `status
+    --deep` under a second name and unusable exactly where it is most wanted.
 
 ### 5.11 ReportGenerator — `src/report/` (WP-M8)
 
@@ -616,6 +659,19 @@ analyses §4).
   only (T4).
 - Credentials only via `@syncrona/credential-store`; the mirror never persists
   secrets, and redaction markers embed only a hash (T1/T3).
+- **OAuth cannot be performed inside `packages/mirror` (INV-2 consequence).**
+  Acquiring a token is a `POST` to `oauth_token.do`, so an OAuth grant in this
+  package would defeat the invariant *and* its enforcement: INV-2 is checked by
+  grepping the built output for state-changing verbs, and a single carve-out
+  turns a mechanical check into a judgement call. The client therefore builds
+  Basic and inbound-API-key auth itself and throws an actionable `auth` error for
+  all three stored `oauth-*` methods, naming INV-2 and pointing at the `headers`
+  option. The capability is not lost, only relocated: the caller mints the token
+  on the side of the boundary that is allowed to POST — `@syncrona/sn-transport`
+  already does this for the v1 CLI — and passes a ready `Authorization` header
+  in. **WP-M9 owns that wiring**; without it, an instance whose policy forbids
+  Basic auth cannot be mirrored at all, which would make Phase 0-3 unusable on a
+  large share of enterprise deployments.
 - `mirror init` scaffolds a `.gitignore` (checkpoint dir), a gitleaks CI stanza,
   and a README warning that the mirror repo is backup-equivalent and must be
   private (T1/T2).
@@ -762,11 +818,23 @@ suppressions enumeration (D7) asserted.
 
 **WP-M9 — CLI registration** (S)
 Files: `packages/core/src/mirrorCommand.ts`, `cliCommands.ts` (one entry),
-README + CLAUDE.md command tables.
-Implements: §5.13.
+README + CLAUDE.md command tables, `.github/workflows/ci.yml` (pack-install
+smoke).
+Implements: §5.13, the OAuth relocation in §9.
 Depends: M8.
 Acceptance: `syncrona mirror sync --full` runs against the fake server E2E from
 the CLI; docs-drift gate green; core suite untouched otherwise.
+Also required, because M9 is where each of these first becomes reachable:
+- **OAuth header handoff (§9).** `packages/mirror` cannot mint a token without
+  breaking INV-2, so `mirrorCommand.ts` must acquire it via
+  `@syncrona/sn-transport` and pass a ready `Authorization` header through the
+  client's `headers` option. Test with a stored `oauth-*` credential: the CLI
+  path must succeed where a direct `@syncrona/mirror` call throws `auth`.
+- **CI pack-install smoke.** Add `--workspace @syncrona/mirror` and
+  `--workspace @syncrona/redaction` to the `npm pack` list in `ci.yml`. Until M9
+  registers the command, core does not depend on either package and the smoke
+  test cannot see them; from M9 on, a missing entry means the published tarball
+  is installable in CI but broken for a real user.
 
 **WP-M10 — Reconciler + incremental + quiescence** (L)
 Files: `src/sync/reconciler.ts`, planner watermark strategy, quiescence wiring.

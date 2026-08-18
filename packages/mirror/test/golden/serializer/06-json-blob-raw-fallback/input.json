@@ -1,0 +1,16 @@
+{
+  "description": "F6. A JSON-blob column that will not parse is kept verbatim behind the 'raw:' marker and reported in parseFailures. It stays in the ENVELOPE even though the column is normally extracted, because writing it to snapshot.json would produce a .json file that is not JSON.",
+  "table": {
+    "name": "sys_hub_flow",
+    "fields": [
+      { "element": "name" },
+      { "element": "snapshot", "internalType": "string", "isJsonBlob": true, "extractAs": "json" },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "55ee66ff778899aabbccddeeff001122",
+    "name": "Broken flow",
+    "snapshot": "{\"steps\": [1,2,"
+  }
+}

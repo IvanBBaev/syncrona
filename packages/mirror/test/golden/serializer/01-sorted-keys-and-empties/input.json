@@ -1,0 +1,26 @@
+{
+  "description": "Keys are re-ordered by UTF-16 code unit and empty values are dropped. The row deliberately arrives in a different order than it is written, and 'u_flag' vs 'unique' pins that '_' (0x5F) sorts before a letter.",
+  "table": {
+    "name": "u_widget",
+    "fields": [
+      { "element": "name" },
+      { "element": "order", "internalType": "integer" },
+      { "element": "description" },
+      { "element": "sys_id", "internalType": "GUID" },
+      { "element": "sys_updated_on", "internalType": "glide_date_time" },
+      { "element": "u_flag", "internalType": "boolean" },
+      { "element": "u_note" },
+      { "element": "unique", "internalType": "boolean" }
+    ]
+  },
+  "row": {
+    "sys_updated_on": "2026-01-14 09:12:33",
+    "unique": "true",
+    "u_flag": "yes",
+    "name": "Widget",
+    "description": "",
+    "sys_id": "0b1c2d3e4f506172839a4b5c6d7e8f90",
+    "order": "50",
+    "u_note": ""
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "columns": [
+    {
+      "element": "sys_id",
+      "internalType": "GUID",
+      "maxLength": 32,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_mod_count",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_class_name",
+      "internalType": "sys_class_name",
+      "maxLength": 80,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_scope",
+      "internalType": "reference",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": "sys_scope"
+    },
+    {
+      "element": "sys_package",
+      "internalType": "reference",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": "sys_scope"
+    },
+    {
+      "element": "sys_policy",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Application File",
+  "name": "sys_metadata",
+  "rows": [],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": null,
+  "synthetic": null,
+  "sysId": "a393993bada71f0b99f6fb9661a11c99"
+}

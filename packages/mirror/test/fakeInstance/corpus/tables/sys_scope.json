@@ -1,0 +1,128 @@
+{
+  "columns": [
+    {
+      "element": "sys_id",
+      "internalType": "GUID",
+      "maxLength": 32,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_mod_count",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "scope",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "short_description",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "version",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "active",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Application",
+  "name": "sys_scope",
+  "rows": [
+    {
+      "active": "true",
+      "name": "SyncroNow Unicode",
+      "scope": "x_syn_uni",
+      "short_description": "Scope carrying the name-hazard fixtures",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-05-29 09:24:06",
+      "sys_id": "6f5395037c5043afb4bc1f268c69efe1",
+      "sys_mod_count": "31",
+      "sys_updated_by": "mirror.svc",
+      "sys_updated_on": "2026-06-02 03:40:56",
+      "version": "1.0.0"
+    },
+    {
+      "active": "true",
+      "name": "SyncroNow Demo",
+      "scope": "x_syn_demo",
+      "short_description": "Demo application used by the mirror fixtures",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-05-08 01:30:25",
+      "sys_id": "c50cdf59d855337e330f1ab84ea00f27",
+      "sys_mod_count": "5",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-05-09 06:24:36",
+      "version": "1.0.0"
+    },
+    {
+      "active": "true",
+      "name": "Global",
+      "scope": "global",
+      "short_description": "Global scope",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-07-02 17:13:19",
+      "sys_id": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_mod_count": "5",
+      "sys_updated_by": "mirror.svc",
+      "sys_updated_on": "2026-07-06 11:03:19",
+      "version": "1.0.0"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": null,
+  "synthetic": null,
+  "sysId": "67f188c137718c1b68199872dea2a415"
+}

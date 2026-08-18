@@ -40,6 +40,7 @@ const commandNames = [
   "jiraLoginCommand",
   "jiraLogoutCommand",
   "completionCommand",
+  "mirrorCommand",
 ] as const;
 
 type CommandName = (typeof commandNames)[number];
@@ -80,6 +81,13 @@ jest.unstable_mockModule("../jiraCommands.js", () => ({
 jest.unstable_mockModule("../completionCommand.js", () => ({
   ...pick("completionCommand"),
 }));
+// The registry also reads MIRROR_ACTIONS for the positional's `choices`, so the
+// mock has to carry it: a stubbed module that omits it would make the entry
+// declare `choices: undefined` and quietly stop rejecting a bad subcommand.
+jest.unstable_mockModule("../mirrorCommand.js", () => ({
+  ...pick("mirrorCommand"),
+  MIRROR_ACTIONS: ["init", "sync", "status", "verify", "report"] as const,
+}));
 
 // The registry is imported dynamically AFTER the module mocks are registered:
 // jest.unstable_mockModule does not hoist, so a static import would bind the real
@@ -118,6 +126,7 @@ const EXPECTED_WIRING: Array<[string, CommandName]> = [
   ["jira", "jiraCommand"],
   ["jira-login", "jiraLoginCommand"],
   ["jira-logout", "jiraLogoutCommand"],
+  ["mirror", "mirrorCommand"],
 ];
 
 describe("CLI command wiring", () => {

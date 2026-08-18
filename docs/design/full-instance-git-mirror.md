@@ -5,6 +5,22 @@ Scope: deep analysis of the ServiceNow metadata problem and a design for mirrori
 **entire instance** (not one scoped app) into a git-committable tree, as a major
 extension over syncrona v1.
 
+> **Precedence — read this before implementing from this document.** This is the
+> *why* document and it is frozen at its 2026-08-12 state. Two later documents
+> outrank it, in this order:
+>
+> 1. [mirror-architecture.md](mirror-architecture.md) — the build spec. Where it
+>    refines this document, it wins; every refinement is listed in its §14.
+> 2. [mirror-analyses.md](mirror-analyses.md) §10 — deltas **D1–D21**, binding.
+>    D1–D14 came from the analyses themselves; D15–D21 came from the live-instance
+>    probe (analyses §7) and overrule sizing and API assumptions made here.
+>
+> Concretely: §13.3 below still plans the transport work in terms of the v1 axios
+> client. `@syncrona/mirror` as built uses Node 22's global `fetch` behind an
+> injected seam and depends on neither `axios` nor `axios-rate-limit` — see the
+> dependency rules in architecture §3 for why that choice is load-bearing rather
+> than cosmetic.
+
 ---
 
 ## Table of contents

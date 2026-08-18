@@ -284,7 +284,13 @@ const MODULE_FLOORS = [
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
-  { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.04 / 77.27
+  // A single reading, not a declared pair: the move from 99.04 was a source edit,
+  // not range flicker. `wrapUntrustedData` gained seven comment lines explaining why
+  // its zero-width space is written as `\u200b`, tsc emits comments, and seven more
+  // covered lines under one unchanged uncovered line (17, `trimOutput`'s truncation
+  // arm) is exactly 103/104 -> 110/111. Branch coverage did not move at all, which is
+  // what a comment-only change should do.
+  { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.10 / 77.27
   // Anything that starts a process or a listener, plus the handlers that actually
   // mutate the instance.
   { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.08 / 91.89

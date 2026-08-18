@@ -153,6 +153,8 @@ jobs:
             --workspace @syncrona/credential-store \
             --workspace @syncrona/jira \
             --workspace @syncrona/sn-transport \
+            --workspace @syncrona/mirror \
+            --workspace @syncrona/redaction \
             --pack-destination "$PACK_DIR" > "$PACK_DIR/pack.json"
           # 2. Build a fresh consumer project OUTSIDE the checkout. npm `overrides`
           #    map every @syncrona/* name to its local tarball, so the (possibly
@@ -258,6 +260,17 @@ jobs:
           files: packages/redaction/coverage/lcov.info
           flags: redaction
           name: redaction
+          disable_search: true
+          fail_ci_if_error: false
+
+      - name: Upload mirror coverage to Codecov
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: packages/mirror/coverage/lcov.info
+          flags: mirror
+          name: mirror
           disable_search: true
           fail_ci_if_error: false
 
