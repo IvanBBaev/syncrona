@@ -31,7 +31,7 @@
     "@syncrona/jira": "^0.9.1",
     "@syncrona/redaction": "^0.9.1",
     "@syncrona/sn-transport": "^0.9.1",
-    "undici": "^6.21.0",
+    "undici": "^8.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
