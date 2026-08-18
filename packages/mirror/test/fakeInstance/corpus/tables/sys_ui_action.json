@@ -1,0 +1,118 @@
+{
+  "columns": [
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "table",
+      "internalType": "table_name",
+      "maxLength": 80,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "script",
+      "internalType": "script",
+      "maxLength": 8000,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "condition",
+      "internalType": "script_plain",
+      "maxLength": 8000,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "action_name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "active",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "hint",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": true,
+      "reference": null
+    }
+  ],
+  "label": "UI Action",
+  "name": "sys_ui_action",
+  "rows": [
+    {
+      "action_name": "escalate",
+      "active": "false",
+      "condition": "",
+      "name": "Escalate",
+      "script": "(function executeRule(current, previous /*null when async*/) {\n  // Escalate\n  var record138 = current.getValue('number');\n  gs.info('Escalate: ' + record138);\n})(current, previous);",
+      "sys_class_name": "sys_ui_action",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-04-04 06:02:15",
+      "sys_id": "31e2f370b1839e85436ad41bc3768086",
+      "sys_mod_count": "2",
+      "sys_name": "Escalate",
+      "sys_package": "c50cdf59d855337e330f1ab84ea00f27",
+      "sys_policy": "",
+      "sys_scope": "c50cdf59d855337e330f1ab84ea00f27",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-04-23 01:58:51",
+      "table": "incident"
+    },
+    {
+      "action_name": "resolve_incident",
+      "active": "true",
+      "condition": "",
+      "name": "Resolve Incident",
+      "script": "(function executeRule(current, previous /*null when async*/) {\n  // Resolve Incident\n  var record887 = current.getValue('number');\n  gs.info('Resolve Incident: ' + record887);\n})(current, previous);",
+      "sys_class_name": "sys_ui_action",
+      "sys_created_by": "mirror.svc",
+      "sys_created_on": "2026-07-08 06:28:53",
+      "sys_id": "624b13d175213723863ad69c36e595ed",
+      "sys_mod_count": "6",
+      "sys_name": "Resolve Incident",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "mirror.svc",
+      "sys_updated_on": "2026-07-13 09:22:30",
+      "table": "incident"
+    },
+    {
+      "action_name": "reopen_incident",
+      "active": "false",
+      "condition": "",
+      "name": "Reopen Incident",
+      "script": "(function executeRule(current, previous /*null when async*/) {\n  // Reopen Incident\n  var record934 = current.getValue('number');\n  gs.info('Reopen Incident: ' + record934);\n})(current, previous);",
+      "sys_class_name": "sys_ui_action",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-02-22 21:35:52",
+      "sys_id": "87c5d7f647e5d80e45049322a62a89b8",
+      "sys_mod_count": "21",
+      "sys_name": "Reopen Incident",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-02-25 15:25:26",
+      "table": "incident"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": "a393993bada71f0b99f6fb9661a11c99",
+  "synthetic": null,
+  "sysId": "e60909a9d48a9e43effd1e4bafa3a01f"
+}

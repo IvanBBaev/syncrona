@@ -62,7 +62,7 @@ tool contract is the most strictly guarded surface:
 
 ### CLI
 
-The CLI exposes **23 commands** (see the README
+The CLI exposes **24 commands** (see the README
 [command table](../README.md#commands)). Documentation-drift gates keep the
 README command table, `CLAUDE.md`, and the actual command registry aligned, so
 a command cannot be added, renamed, or removed without the change being

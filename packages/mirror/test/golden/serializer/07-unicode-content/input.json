@@ -1,0 +1,18 @@
+{
+  "description": "Non-ASCII survives untouched. JSON.stringify does not escape it, so the envelope holds literal UTF-8 (Cyrillic, CJK, an astral-plane emoji stored as a surrogate pair), and an extracted file is byte-identical UTF-8 with no BOM.",
+  "table": {
+    "name": "u_widget",
+    "fields": [
+      { "element": "script", "internalType": "script", "extractAs": "js" },
+      { "element": "short_description" },
+      { "element": "sys_id", "internalType": "GUID" },
+      { "element": "u_note" }
+    ]
+  },
+  "row": {
+    "sys_id": "66ff778899aabbccddeeff0011223344",
+    "short_description": "Заявка за достъп — 日本語 🎌",
+    "u_note": "naïve café résumé",
+    "script": "// коментар: не пипай\nvar π = Math.PI;\n"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "description": "Extracted fields become sibling files. 'script' has no trailing newline on the wire and gains exactly one; 'style' already ends with a newline and is left byte-identical. An extracted column that is empty produces no file at all.",
+  "table": {
+    "name": "sys_ui_page",
+    "fields": [
+      { "element": "api_name" },
+      { "element": "client_script", "internalType": "script", "extractAs": "js" },
+      { "element": "description" },
+      { "element": "script", "internalType": "script", "extractAs": "js" },
+      { "element": "style", "internalType": "css", "extractAs": "css" },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "22aa33bb44cc55dd66ee77ff8899aabb",
+    "api_name": "global.Widget",
+    "description": "Widget helper",
+    "script": "var Widget = Class.create();\nWidget.prototype = {\n  type: 'Widget'\n};",
+    "style": "body {\n  margin: 0;\n}\n",
+    "client_script": ""
+  }
+}

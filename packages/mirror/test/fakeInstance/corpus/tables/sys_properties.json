@@ -1,0 +1,119 @@
+{
+  "columns": [
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "value",
+      "internalType": "string",
+      "maxLength": 4000,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "description",
+      "internalType": "string",
+      "maxLength": 4000,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "type",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "is_private",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "System Property",
+  "name": "sys_properties",
+  "rows": [
+    {
+      "description": "",
+      "is_private": "true",
+      "name": "glide.email.smtp.password",
+      "sys_class_name": "sys_properties",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-02-01 09:56:29",
+      "sys_id": "310cd9e742596ac309053f1072124f11",
+      "sys_mod_count": "10",
+      "sys_name": "glide.email.smtp.password",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "admin",
+      "sys_updated_on": "2026-02-06 16:31:27",
+      "type": "string",
+      "value": "hunter2-smtp-N4h2f8"
+    },
+    {
+      "description": "",
+      "is_private": "true",
+      "name": "glide.servlet.uri",
+      "sys_class_name": "sys_properties",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-04-10 16:59:30",
+      "sys_id": "6152be9233ab3ff49005b5e2a0d7d467",
+      "sys_mod_count": "28",
+      "sys_name": "glide.servlet.uri",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "system",
+      "sys_updated_on": "2026-04-27 14:22:55",
+      "type": "string",
+      "value": "https://dev00001.service-now.com/"
+    },
+    {
+      "description": "",
+      "is_private": "true",
+      "name": "x_syn_demo.integration.api_key",
+      "sys_class_name": "sys_properties",
+      "sys_created_by": "mirror.svc",
+      "sys_created_on": "2026-01-15 18:55:32",
+      "sys_id": "86c2324f2284126a39a197dc374f5374",
+      "sys_mod_count": "20",
+      "sys_name": "x_syn_demo.integration.api_key",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "mirror.svc",
+      "sys_updated_on": "2026-02-08 09:07:39",
+      "type": "string",
+      "value": "FAKE-sk-live-9f2b7c1e4a6d8035bb1147ce"
+    },
+    {
+      "description": "",
+      "is_private": "true",
+      "name": "glide.ui.date_format",
+      "sys_class_name": "sys_properties",
+      "sys_created_by": "mirror.svc",
+      "sys_created_on": "2026-04-29 05:56:02",
+      "sys_id": "e8526d4a871a43528a2a16e8fc429456",
+      "sys_mod_count": "11",
+      "sys_name": "glide.ui.date_format",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-04-30 10:27:34",
+      "type": "string",
+      "value": "yyyy-MM-dd"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": "a393993bada71f0b99f6fb9661a11c99",
+  "synthetic": null,
+  "sysId": "3ed3d7290b5e5a959106b5157facfae2"
+}

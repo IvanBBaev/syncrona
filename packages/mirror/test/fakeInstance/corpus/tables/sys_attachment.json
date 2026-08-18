@@ -1,0 +1,142 @@
+{
+  "columns": [
+    {
+      "element": "sys_id",
+      "internalType": "GUID",
+      "maxLength": 32,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_mod_count",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "file_name",
+      "internalType": "string",
+      "maxLength": 255,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "content_type",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "size_bytes",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "size_compressed",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "table_name",
+      "internalType": "table_name",
+      "maxLength": 80,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "table_sys_id",
+      "internalType": "GUID",
+      "maxLength": 32,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "hash",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "compressed",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Attachment",
+  "name": "sys_attachment",
+  "rows": [
+    {
+      "compressed": "false",
+      "content_type": "image/png",
+      "file_name": "flow-diagram.png",
+      "hash": "fa124a62b6289827bc42d16f40332927f32c4456f0d241d5f95a1ff9430f13f9",
+      "size_bytes": "300000",
+      "size_compressed": "300000",
+      "sys_created_by": "system",
+      "sys_created_on": "2026-02-04 04:15:27",
+      "sys_id": "2d830f2e2b2b99d54551a358b2041491",
+      "sys_mod_count": "9",
+      "sys_updated_by": "admin",
+      "sys_updated_on": "2026-02-21 10:40:17",
+      "table_name": "sys_hub_flow_snapshot",
+      "table_sys_id": "0bad215aa1986826038991111516c788"
+    },
+    {
+      "compressed": "false",
+      "content_type": "text/plain",
+      "file_name": "runbook-notes.txt",
+      "hash": "62d936556a706a278b16bd4ce1baebdc341e47516a879838a5931aecd2d8f86f",
+      "size_bytes": "4096",
+      "size_compressed": "4096",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-07-01 11:34:43",
+      "sys_id": "307e7214170c73db6e09b79a89e623e4",
+      "sys_mod_count": "31",
+      "sys_updated_by": "system",
+      "sys_updated_on": "2026-07-08 14:39:13",
+      "table_name": "sys_script",
+      "table_sys_id": "008414b2aa1f471f75406a3d38f4ffcd"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": null,
+  "synthetic": null,
+  "sysId": "ff1eee461556fd9b33b6765dabe67f50"
+}

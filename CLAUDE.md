@@ -41,6 +41,11 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona jira` fetches rich context for a Jira issue (key argument or git branch fallback).
 - `npx syncrona jira-login` saves Jira credentials in the global credential store (Cloud or Server/Data Center).
 - `npx syncrona jira-logout` removes stored Jira credentials.
+- `npx syncrona mirror <action>` drives the full-instance git mirror: `init` provisions the
+  repository for scale, `sync` sweeps the instance into the tree (`--full`, `--verify-quiescent`),
+  `status` compares the tree against the live instance, `verify` checks it against its own
+  manifests offline, and `report` re-prints the last sweep's report (`--deep`, `--json`).
+  It exits 0 clean, 1 when the run could not finish, and 2 on drift or findings.
 
 ## Documentation Drift Policy
 - README command table and this document must stay aligned for core CLI commands.

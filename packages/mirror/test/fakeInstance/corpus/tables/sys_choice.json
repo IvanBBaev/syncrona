@@ -1,0 +1,163 @@
+{
+  "columns": [
+    {
+      "element": "sys_id",
+      "internalType": "GUID",
+      "maxLength": 32,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_created_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_by",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_updated_on",
+      "internalType": "glide_date_time",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sys_mod_count",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "name",
+      "internalType": "table_name",
+      "maxLength": 80,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "element",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "value",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "label",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sequence",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "inactive",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "language",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Choice",
+  "name": "sys_choice",
+  "rows": [
+    {
+      "element": "state",
+      "inactive": "false",
+      "label": "Нов",
+      "language": "bg",
+      "name": "incident",
+      "sequence": "417",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-07-02 21:42:12",
+      "sys_id": "322036f1bcb52ffef7ee8f742b14ac65",
+      "sys_mod_count": "26",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-07-30 20:33:37",
+      "value": "1"
+    },
+    {
+      "element": "priority",
+      "inactive": "false",
+      "label": "2 - Medium",
+      "language": "en",
+      "name": "incident",
+      "sequence": "32",
+      "sys_created_by": "admin",
+      "sys_created_on": "2026-02-01 16:29:10",
+      "sys_id": "381ae8dec7b8b0219c49c73d0d5c01c6",
+      "sys_mod_count": "7",
+      "sys_updated_by": "j.doe",
+      "sys_updated_on": "2026-02-15 05:39:29",
+      "value": "2"
+    },
+    {
+      "element": "priority",
+      "inactive": "false",
+      "label": "1 - High",
+      "language": "en",
+      "name": "incident",
+      "sequence": "122",
+      "sys_created_by": "mirror.svc",
+      "sys_created_on": "2026-07-10 02:07:54",
+      "sys_id": "bd5c3bff6a612f6144cf977bcffe8704",
+      "sys_mod_count": "12",
+      "sys_updated_by": "admin",
+      "sys_updated_on": "2026-07-21 15:31:33",
+      "value": "1"
+    },
+    {
+      "element": "priority",
+      "inactive": "true",
+      "label": "3 - Low",
+      "language": "en",
+      "name": "incident",
+      "sequence": "247",
+      "sys_created_by": "j.doe",
+      "sys_created_on": "2026-06-26 20:46:22",
+      "sys_id": "e83a30adbe5c6353e61fdf425bb7e56b",
+      "sys_mod_count": "38",
+      "sys_updated_by": "system",
+      "sys_updated_on": "2026-07-19 21:03:44",
+      "value": "3"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": null,
+  "synthetic": null,
+  "sysId": "fec4733876789351918c1e11fbc3dba7"
+}

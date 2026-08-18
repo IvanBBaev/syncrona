@@ -225,7 +225,7 @@ export function collectDependencyClosure(startDir, { root = repoRoot, workspaceD
   enqueue(startDir, readPackageJson(startDir));
   while (queue.length > 0) {
     const { name, fromDir } = queue.shift();
-    const key = `${name} ${fromDir}`;
+    const key = `${name}\u0000${fromDir}`;
     if (visited.has(key)) continue;
     visited.add(key);
 

@@ -1,6 +1,6 @@
 # SyncroNow AI — Product State
 
-> Last updated: 2026-08-17. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Last updated: 2026-08-18. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
 
 ## TL;DR
@@ -8,10 +8,10 @@
 | | |
 |---|---|
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
-| CLI | 23 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
+| CLI | 24 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
 | MCP server | 61 tools in 12 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | **3415 passing** — core **108 suites / 1162 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1691** (node:test, against `dist`); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-17) |
-| Coverage | core **97.61%** lines / 87.93% branches; mcp **97.85%** lines / 91.31% branches (both re-measured 2026-08-17) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92); historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
+| Tests | **4750 passing** — core **110 suites / 1202 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1696** (node:test, against `dist`); mirror **43 suites / 1290 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-18) |
+| Coverage | core **97.71%** lines / 88.00% branches; mcp **97.86%** lines / 91.41% branches; mirror **100%** on all four axes (re-measured 2026-08-18) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
 | Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
 | Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, DX backlog (DX1–DX24) |
@@ -123,6 +123,15 @@ companion scoped app via the Table-API fallback layer.
   `__SYNCRONA_REDACTED__<sha256-12>` marker. A leaf by acceptance criterion — it
   imports no other `@syncrona` package, `types` included — so the MCP audit trail
   and any future consumer cannot fork the detection rules.
+- `@syncrona/mirror` — the full-instance git mirror engine behind `syncrona mirror`
+  (design: [full-instance-git-mirror.md](design/full-instance-git-mirror.md),
+  [mirror-architecture.md](design/mirror-architecture.md)). Catalogs the instance
+  from `sys_dictionary`, sweeps every in-scope table over the Table API, and writes
+  a sharded, deterministically ordered tree whose re-sync is byte-identical (INV-1).
+  It is **GET-only by construction** (INV-2): the OAuth token exchange is the one
+  POST the design needs, and it lives in the CLI (`mirrorCommand.ts`), which hands
+  the engine a ready `Authorization` header. Ships CommonJS so the ESM CLI can reach
+  it through Node's interop.
 
 ## 2026-06-12 fix series — what changed (CR1–CR30)
 

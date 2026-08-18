@@ -1,0 +1,57 @@
+{
+  "columns": [
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "internal_name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "active",
+      "internalType": "boolean",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "description",
+      "internalType": "string",
+      "maxLength": 4000,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Flow Base",
+  "name": "sys_hub_flow_base",
+  "rows": [
+    {
+      "active": "false",
+      "description": "",
+      "internal_name": "incident_intake",
+      "name": "Incident Intake",
+      "sys_class_name": "sys_hub_flow_base",
+      "sys_created_by": "system",
+      "sys_created_on": "2026-01-19 23:21:01",
+      "sys_id": "a4134f3c76ef2e9dd9de7e1d77011b8c",
+      "sys_mod_count": "7",
+      "sys_name": "Incident Intake",
+      "sys_package": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_policy": "",
+      "sys_scope": "f558dac9e622ac23f4a7aa4c3be2cc46",
+      "sys_updated_by": "admin",
+      "sys_updated_on": "2026-02-01 07:36:00"
+    }
+  ],
+  "scopeSysId": "f558dac9e622ac23f4a7aa4c3be2cc46",
+  "superClass": "a393993bada71f0b99f6fb9661a11c99",
+  "synthetic": null,
+  "sysId": "6a75e4b0b8bff4ffacd570ea58bc55e8"
+}

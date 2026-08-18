@@ -1,0 +1,16 @@
+{
+  "description": "The degenerate render. Every column is empty, so the envelope is '{}' followed by exactly one newline — three bytes, still valid JSON, still byte-stable. The row also carries no usable sys_id, and the serializer reports '' rather than throwing: INV-6 constrains PATH segments, so rejecting a malformed id is the Planner's and Writer's job, and a throw here would take down a whole page for one bad row.",
+  "table": {
+    "name": "u_widget",
+    "fields": [
+      { "element": "description" },
+      { "element": "name" },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "",
+    "name": "",
+    "description": ""
+  }
+}
