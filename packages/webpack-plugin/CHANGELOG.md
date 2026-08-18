@@ -1,5 +1,11 @@
 # @syncrona/webpack-plugin
 
+## 0.9.3
+
+### Patch Changes
+
+- Piped stdin is honored, loaded resources are released, and a plugin that fails to load now says so instead of being skipped in silence.
+
 ## 0.9.1
 
 ### Patch Changes

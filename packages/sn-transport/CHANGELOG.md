@@ -1,5 +1,12 @@
 # @syncrona/sn-transport
 
+## 0.9.3
+
+### Minor Changes
+
+- Adds the mirror's error taxonomy and path-safety policy, so a sweep classifies a failure the same way whichever call site hit it.
+- Input that was silently ignored is now either honored or reported.
+
 ## 0.9.1
 
 ### Patch Changes

@@ -12,7 +12,7 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `0.9.1` (pre-release; latest published on npm: `0.9.0`)
+- **Current version:** `0.9.3` (pre-release; latest published on npm: `0.9.3`)
 - **Engineering readiness:** ~90% (9/10) — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
   a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
@@ -143,10 +143,12 @@ human-facing summary of them.
   regression suite (drive-letter-case fix in `isUnderPath`), and the release
   pipeline gained the git identity `changeset publish` needs to create its
   per-package tags (the silent failure that shipped 0.9.0/0.9.1 untagged).
-  0.9.1 is live on npm with provenance (14 packages). Suite totals after the
-  documentation pass (2026-08-17): **3415 tests** — core 1162 / 108 suites, mcp
-  1691, jira 126, credential-store 70, redaction 132, sn-transport 151, and 83
-  across the eight build plugins.
+  0.9.3 is live on npm with provenance (16 packages — `@syncrona/mirror` and
+  `@syncrona/redaction` join at this release; 0.9.2 was never published).
+  Suite totals as measured for the release (2026-08-18): **4750 tests** — core
+  1202 / 110 suites, mcp 1696, mirror 1290 / 43 suites, jira 126,
+  credential-store 70, redaction 132, sn-transport 151, and 83 across the eight
+  build plugins.
   The remaining distance to 1.0 is owner/live-gated (live-instance verification,
   native Windows CI host, Homebrew tap, business decisions), not
   engineering-completable offline.

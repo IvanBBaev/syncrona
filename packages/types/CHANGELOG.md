@@ -1,5 +1,11 @@
 # @syncrona/types
 
+## 0.9.3
+
+### Patch Changes
+
+- Contracts for the `.meta.json` sidecar: the discovered column list, the read-only columns withheld from a push, and the manifest fields that record both.
+
 ## 0.9.1
 
 ### Patch Changes

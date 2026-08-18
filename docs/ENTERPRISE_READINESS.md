@@ -60,12 +60,12 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 
 ## 2. Distribution & release (D5)
 - ✅ **npm publish** — DONE 2026-08-17: the `@syncrona` scope is claimed with 2FA
-  and an automation token, and **0.9.1 is live on npm** for the 14 packages that
-  existed at the time, released from the `Release` workflow (`changeset publish`,
-  exposed locally as `npm run release`). `@syncrona/redaction`, extracted after
-  that release, publishes with the next one — `.changeset/config.json` fixes
-  `syncrona` and `@syncrona/*` in one version group, so a new package joins the
-  lockstep without any config change.
+  and an automation token, released from the `Release` workflow
+  (`changeset publish`, exposed locally as `npm run release`). 0.9.1 covered the
+  14 packages that existed at the time; **0.9.3 is live for all 16**, with
+  `@syncrona/redaction` and `@syncrona/mirror` joining as first publishes —
+  `.changeset/config.json` fixes `syncrona` and `@syncrona/*` in one version
+  group, so a new package joins the lockstep without any config change.
 - 🔴 **Homebrew tap** — create `homebrew-tap` repo + Formula + release action.
 - 🔴 **Windows** — PowerShell install script + Windows Credential Manager (and
   native-Windows support beyond WSL).

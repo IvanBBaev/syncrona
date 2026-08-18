@@ -1,5 +1,15 @@
 # syncrona
 
+## 0.9.3
+
+### Minor Changes
+
+- New `syncrona mirror` command — a full-instance git mirror with `init`, `sync`, `status`, `verify` and `report` subcommands. Exit codes: 0 clean, 1 the run could not finish, 2 completed with drift or findings.
+- Record metadata now round-trips. Each record gets a `<record>~.meta.json` sidecar holding its non-file columns, and edits to the sidecar are pushed back by `push`, `dev` and `deploy` in the same request as the field files. `meta: false` opts out; `metaPush: false` keeps the sidecar read-only.
+- `deploy --ci` skips the overwrite confirmation so a deploy can run in a noninteractive pipeline, and `init --ci` is finally accepted — the flag was documented and read, but `init` registered no options, so yargs' `.strict()` rejected it before the command ran.
+- Data-safety and exit-code hardening across the CLI: writes are contained, fan-out is bounded, stale `dev` state no longer survives a restart, and `process.exitCode` resets to `undefined` rather than to a setup snapshot.
+- A tracked field resolves to whatever extension the workspace actually keeps, instead of assuming the one the manifest was written with.
+
 ## 0.9.1
 
 ### Patch Changes
