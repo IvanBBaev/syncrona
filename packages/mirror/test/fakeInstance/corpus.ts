@@ -641,7 +641,13 @@ export function formatSnDateTime(epochMs: number): string {
   );
 }
 
-const PASSWORD2_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// Not key material: this is the base64 alphabet itself. Every character occurs
+// exactly once, which is what pins its Shannon entropy at the ceiling a 64-symbol
+// string can reach — the same score `generic-api-key` reads as "high-entropy
+// secret", and the reason CI flagged this line. A scanner cannot tell a character
+// set apart from a value drawn out of it, so the line says what it is rather than
+// `.gitleaks.toml` exempting the path around it.
+const PASSWORD2_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; // gitleaks:allow
 
 /**
  * The first five characters of every generated ciphertext, and the reason the
