@@ -131,26 +131,78 @@ describe("metaFields module", () => {
     // Activity streams and binaries have no stable string form.
     expect(isMetaFieldCandidate("work_notes", "journal_input")).toBe(false);
     expect(isMetaFieldCandidate("photo", "user_image")).toBe(false);
-    // Platform plumbing, by name and by the blanket prefix rule.
+    // The identity of the update, and the five per-save audit stamps that would
+    // rewrite an untouched file on every pull. These six names are the WHOLE of
+    // the name-based exclusion.
     expect(isMetaFieldCandidate("sys_id", "GUID")).toBe(false);
-    expect(isMetaFieldCandidate("sys_overrides", "reference")).toBe(false);
+    expect(isMetaFieldCandidate("sys_updated_on", "glide_date_time")).toBe(false);
+    expect(isMetaFieldCandidate("sys_mod_count", "integer")).toBe(false);
     expect(isMetaFieldCandidate("", "string")).toBe(false);
     expect(isMetaFieldCandidate(undefined, "string")).toBe(false);
   });
 
+  // The rule used to be "reject every sys_ column". It threw away the answers to
+  // real questions — which scope owns this, is it protected, what does it
+  // override — for the sake of the six names pinned above, and left the
+  // workspace as uninformative as the pre-DX22 one it replaced.
+  it("carries the sys_ columns that describe the record, not the last save", () => {
+    for (const column of [
+      "sys_name",
+      "sys_scope",
+      "sys_package",
+      "sys_policy",
+      "sys_class_name",
+      "sys_overrides",
+      "sys_update_name",
+      "sys_domain",
+      "sys_customer_update",
+      "sys_replace_on_upgrade",
+    ]) {
+      expect(isMetaFieldCandidate(column, "string")).toBe(true);
+    }
+  });
+
   // The sidecar is rewritten on every pull, so anything unstable in it is a diff
   // the user did not cause.
-  it("serializes a stable body: sorted keys, empties dropped, trailing newline", () => {
+  it("serializes a stable body: sorted keys, empties kept, trailing newline", () => {
     const body = serializeMetaFields(
       { zeta: "z", alpha: "a", blank: "", absent_from_row: "x", nulled: null },
       ["zeta", "alpha", "blank", "nulled", "never_selected"]
     );
 
-    expect(body).toBe(`${JSON.stringify({ alpha: "a", zeta: "z" }, null, 2)}\n`);
+    expect(body).toBe(
+      `${JSON.stringify({ alpha: "a", blank: "", nulled: "", zeta: "z" }, null, 2)}\n`
+    );
     // Column order from the Table API is not guaranteed; the file must not care.
     expect(serializeMetaFields({ b: "1", a: "2" }, ["b", "a"])).toBe(
       serializeMetaFields({ a: "2", b: "1" }, ["a", "b"])
     );
+  });
+
+  // Measured on a live instance: sys_script_include.caller_access is tracked and
+  // writable, and was blank on all 17 records of the test scope — so the one
+  // column a reader most needed to discover was the one the file never showed.
+  it("shows a tracked column that is empty on the instance, so it can be set", () => {
+    const body = JSON.parse(
+      serializeMetaFields({ access: "public", caller_access: "" }, [
+        "access",
+        "caller_access",
+      ])
+    );
+
+    expect(body).toEqual({ access: "public", caller_access: "" });
+    expect("caller_access" in body).toBe(true);
+  });
+
+  // Different state, different answer: a column the response never carried was
+  // hidden by a read ACL, and claiming "" for it would invent a value.
+  it("stays silent about a column the response did not carry at all", () => {
+    const body = JSON.parse(
+      serializeMetaFields({ access: "public" }, ["access", "hidden_by_acl"])
+    );
+
+    expect(body).toEqual({ access: "public" });
+    expect("hidden_by_acl" in body).toBe(false);
   });
 
   // Reference columns arrive as { link, value } because the client does not send
@@ -167,7 +219,9 @@ describe("metaFields module", () => {
       )
     );
 
-    expect(body).toEqual({ ref: "abc" });
+    // A reference with no `value` has no sys_id to carry — it is empty, and now
+    // says so rather than vanishing.
+    expect(body).toEqual({ ref: "abc", broken: "" });
   });
 });
 
@@ -212,8 +266,8 @@ describe("resolveMetaUpdate", () => {
     ).toThrow(/descripton/);
   });
 
-  // Absent is not a clear: the serializer omits empty values, so every column
-  // that merely happened to be empty at pull time would be wiped.
+  // Absent is not a clear: the update is a merge, and a file trimmed by hand or
+  // written by an older version is missing keys for reasons unrelated to intent.
   it("sends only the keys the file holds", () => {
     const update = resolveMetaUpdate(JSON.stringify({ active: "true" }), known);
 
@@ -251,11 +305,21 @@ describe("resolveMetaUpdate", () => {
     );
   });
 
-  // A table with no declared columns can only reject: every key is unknown.
-  it("rejects everything when the table declares no columns", () => {
+  // A table with no declared columns can only reject — but the reason is never
+  // the file. It is a manifest that lost its metadata layer, and telling the
+  // user to fix their keys would send them to edit a correct file.
+  it("blames the manifest, not the file, when the table declares no columns", () => {
     expect(() => resolveMetaUpdate(JSON.stringify({ active: "x" }), {})).toThrow(
-      /active/
+      /syncrona refresh/
     );
+    expect(() => resolveMetaUpdate(JSON.stringify({ active: "x" }), {})).toThrow(
+      /records no metadata columns/
+    );
+    // The other message — the one that does blame the file — still fires when
+    // the table genuinely tracks columns and the key is not one of them.
+    expect(() =>
+      resolveMetaUpdate(JSON.stringify({ active: "x" }), { metaFields: ["access"] })
+    ).toThrow(/does not track/);
   });
 });
 

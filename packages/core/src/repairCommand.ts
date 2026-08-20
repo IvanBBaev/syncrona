@@ -141,12 +141,15 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   const orphans: string[] = [];
   const encodingMismatches: string[] = [];
   for (const file of allFiles) {
-    // DX22: a `.meta.json` sidecar is tracked but deliberately unmapped —
-    // getFileContextFromPath disowns it so push can never target it, which is
-    // exactly the signature this scan reads as "orphan". In the nested layout
-    // the shape filter already hides it (dot-prefixed segment); in the flat
-    // layout `<record>~.meta.json` is an ordinary file name, so without this
-    // `repair --apply --prune` would delete every sidecar it just downloaded.
+    // DX22: a `.meta.json` sidecar is never an orphan. Against a healthy
+    // manifest getFileContextFromPath resolves it and the check below would let
+    // it through anyway — but a manifest that lost its metadata layer is exactly
+    // the case that matters here, and `repair --apply --prune` would then delete
+    // every sidecar in the workspace on the strength of a failed dictionary
+    // read. The sidecar belongs to its record, and the record is in the
+    // manifest; that is enough to keep it. (In the nested layout the shape
+    // filter also hides it — a dot-prefixed segment — but in the flat layout
+    // `<record>~.meta.json` is an ordinary file name and this is the only guard.)
     if (isMetaSidecarPath(file)) {
       continue;
     }

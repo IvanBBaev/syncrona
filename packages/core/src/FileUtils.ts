@@ -6,7 +6,11 @@ import path from "path";
 import * as ConfigManager from "./config.js";
 import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout.js";
 import { isSafePathComponent } from "./genericUtils.js";
-import { META_FILE_NAME, isMetaSidecarPath } from "./metaFields.js";
+import {
+  META_FILE_NAME,
+  META_FILE_TYPE,
+  isMetaSidecarPath,
+} from "./metaFields.js";
 import { logger } from "./Logger.js";
 
 const sleep = (ms: number): Promise<void> =>
@@ -355,6 +359,16 @@ export const getBuildExt = (
   const files = manifest.tables[table].records[recordName].files;
   const file = files.find((f) => f.name === field);
   if (!file) {
+    // DX22: the sidecar's extension is a constant of the format, not a property
+    // of the record — `.meta.json` is `.meta.json` on every table. A manifest
+    // that lost its metadata layer (a refresh whose dictionary read failed) has
+    // no `.meta` entry to look it up in, and throwing here would mean the file
+    // on disk cannot be built and therefore cannot be pushed, which is exactly
+    // the silent-loss shape this feature exists to remove. Answer from the
+    // format instead, and let the push report what it could not resolve.
+    if (field === META_FILE_NAME) {
+      return META_FILE_TYPE;
+    }
     throw new Error("Unable to find file");
   }
   // REV-209: this value is interpolated into a filename and joined onto the build
@@ -436,11 +450,12 @@ export const getFileContextFromPath = (
   // instead of on the derived name keeps the sidecar independent of both layouts
   // and of every per-table special case.
   //
-  // ".meta" is a real entry in `record.files`, so the lookup below finds it and
-  // hands push and build a context for the pseudo-field. Nothing ever PATCHes a
+  // ".meta" is normally a real entry in `record.files`, put there by the
+  // manifest build or by attachMetaFieldsToManifest. Nothing ever PATCHes a
   // column literally named ".meta": pushPipeline expands that context into the
   // record's actual columns (see expandMetaSidecar).
-  if (isMetaSidecarPath(filePath)) {
+  const isSidecar = isMetaSidecarPath(filePath);
+  if (isSidecar) {
     targetField = META_FILE_NAME;
   }
   const manifest = ConfigManager.getManifest();
@@ -452,8 +467,19 @@ export const getFileContextFromPath = (
     const { records } = tables[tableName];
     const record = records[recordName];
     const { files, sys_id } = record;
-    const field = files.find((file) => file.name === targetField);
-    if (!field) {
+    // DX22: the sidecar is resolved from the RECORD, not from the record's file
+    // list. A `.meta.json` on disk belongs to the record whose directory it sits
+    // in — that is the whole of its identity — and requiring a matching `.meta`
+    // entry made a manifest written without a metadata layer disown a file the
+    // very same tool had written. The failure was total and silent: the context
+    // came back undefined, getAppFileList dropped it with the invalid paths, and
+    // `push` reported success over a sidecar it never sent. Proven live: a
+    // stripped manifest built 17/17 records with zero sidecars in the build tree
+    // and no error anywhere. Scripts are resolved from the record and its field;
+    // the sidecar is resolved from the record and its name, and from here on both
+    // travel the same path.
+    const field = files?.find((file) => file.name === targetField);
+    if (!field && !isSidecar) {
       return undefined;
     }
     return {

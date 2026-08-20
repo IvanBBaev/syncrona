@@ -201,14 +201,14 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.53 / 93.90
+    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.55 / 94.18
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.91
-    './src/pushPipeline.ts': { lines: 93, branches: 75 }, // measured 96.91 / 81.66
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 97.95 / 84.53
+    './src/pushPipeline.ts': { lines: 93, branches: 76 }, // measured 97.07 / 83.82
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.08 / 83.73
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.26 / 83.43
+    './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.56 / 83.62
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.66 / 93.82
     // Transport: auth headers, retries and the request surface every command uses.
@@ -220,7 +220,7 @@ module.exports = {
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
     './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 71.79
-    './src/commands.ts': { lines: 93, branches: 79 }, // measured 96.73 / 83.11
+    './src/commands.ts': { lines: 93, branches: 79 }, // measured 96.80 / 83.54
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 89.65
     './src/Watcher.ts': { lines: 91, branches: 68 }, // measured 94.49 / 75.00

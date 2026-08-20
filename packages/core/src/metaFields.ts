@@ -67,30 +67,33 @@ export const isMetaSidecarPath = (filePath: string): boolean => {
 /**
  * Columns never written into a sidecar, by name.
  *
- * Everything here is either instance-local bookkeeping that would rewrite the
- * file on every pull without describing the artifact (`sys_mod_count`, the
- * `sys_created_*`/`sys_updated_*` pairs), or an identifier the manifest already
- * owns (`sys_id`). Note the broader `sys_`-prefix rule in isMetaFieldCandidate:
- * this list is the readable core of it, kept explicit so the intent is testable.
+ * This list is now the ONLY name-based exclusion, and it is deliberately tiny:
+ * the sidecar's job is to carry everything about a record that the working tree
+ * would otherwise lose, so a column earns a place here only by being actively
+ * harmful to keep.
+ *
+ * Each of these is a per-save audit stamp the platform rewrites on its own. They
+ * describe the last write, not the artifact, so carrying them would make every
+ * pull produce a diff on records nobody touched — turning `git status` into
+ * noise and hiding the real metadata changes underneath it. `sys_id` is excluded
+ * for a different reason: the manifest already owns it, it is the key of the
+ * update rather than a value in it, and a hand-edited one would silently retarget
+ * the push at another record.
+ *
+ * Everything else the dictionary reports — including the rest of the `sys_`
+ * family (`sys_name`, `sys_policy`, `sys_scope`, `sys_package`, `sys_class_name`,
+ * `sys_domain`, `sys_overrides`, `sys_update_name`, …) — is carried. Most of it
+ * is read-only on the instance and is labelled as such rather than dropped: a
+ * value you cannot write is still a value you want to READ next to the script,
+ * and hiding it is what made the pre-DX22 workspace uninformative.
  */
 export const META_FIELD_DENYLIST: ReadonlySet<string> = new Set([
   "sys_id",
-  "sys_class_name",
   "sys_created_by",
   "sys_created_on",
   "sys_updated_by",
   "sys_updated_on",
   "sys_mod_count",
-  "sys_tags",
-  "sys_domain",
-  "sys_domain_path",
-  "sys_scope",
-  "sys_package",
-  "sys_update_name",
-  "sys_customer_update",
-  "sys_replace_on_upgrade",
-  "sys_name",
-  "sys_policy",
 ]);
 
 /**
@@ -117,17 +120,6 @@ export const NON_META_INTERNAL_TYPES: ReadonlySet<string> = new Set([
   "user_image",
 ]);
 
-/**
- * Whether a dictionary row describes a column worth putting in the sidecar.
- *
- * The `sys_` prefix rule is deliberately blunt: on a real table those columns
- * are platform plumbing (update-set bookkeeping, domain separation, package
- * ownership), they change without the artifact changing, and letting them
- * through would make every pull produce a diff. The few that are genuinely
- * interesting on a given table — `sys_overrides` on `sys_script`, say — are
- * recoverable through an explicit `tableOptions.<table>.metaFields` list, which
- * bypasses discovery entirely.
- */
 /**
  * The `sysparm_fields` list of the metadata discovery query.
  *
@@ -158,6 +150,27 @@ export const isReadOnlyDictionaryRow = (row: {
   virtual?: unknown;
 }): boolean => isTrueish(row?.read_only) || isTrueish(row?.virtual);
 
+/**
+ * Whether a dictionary row describes a column worth putting in the sidecar.
+ *
+ * The rule is "carry everything the instance will show us", narrowed by exactly
+ * three exclusions, each with a concrete cost behind it:
+ *
+ *  - META_FIELD_DENYLIST — the per-save audit stamps and `sys_id`. Carrying them
+ *    would rewrite untouched files on every pull.
+ *  - NON_META_INTERNAL_TYPES — the file-field types (already written as their own
+ *    files), credentials, journals and binaries. A password in the working tree
+ *    is a leak, and the rest have no round-trippable string form.
+ *  - the table's own file fields, removed by the caller, so no column has two
+ *    writers.
+ *
+ * An earlier revision also rejected every `sys_`-prefixed column outright. That
+ * blanket rule dropped real, useful, human-meaningful metadata — the scope and
+ * package a record belongs to, whether it is protected, what it overrides — for
+ * the sake of the six audit stamps that are now named individually. Anything the
+ * default still refuses can be forced back with an explicit
+ * `tableOptions.<table>.metaFields` list, which bypasses discovery entirely.
+ */
 export const isMetaFieldCandidate = (
   element: string | undefined,
   internalType: string | undefined
@@ -165,7 +178,7 @@ export const isMetaFieldCandidate = (
   if (!element) {
     return false;
   }
-  if (META_FIELD_DENYLIST.has(element) || element.startsWith("sys_")) {
+  if (META_FIELD_DENYLIST.has(element)) {
     return false;
   }
   return !NON_META_INTERNAL_TYPES.has(String(internalType ?? ""));
@@ -194,13 +207,23 @@ const metaValueText = (raw: unknown): string => {
 /**
  * The sidecar body for one row.
  *
- * Keys are sorted and empty values dropped so the file is a function of the
- * record and nothing else: the Table API gives no column ordering guarantee, so
- * without the sort a re-pull of an unchanged record would still produce a diff,
- * and a workspace that re-pulls on every refresh would never stop churning git.
- * A column the response omitted entirely (column-level read ACL) is likewise
- * absent rather than written as "", so the sidecar never claims a value it was
- * not shown.
+ * Every tracked column the instance returned is written, INCLUDING the ones that
+ * are currently empty — those are written as `""`. An earlier revision dropped
+ * empty values, which made the file smaller and the feature much worse: a column
+ * that happened to be blank at pull time was simply invisible, so the one thing
+ * a reader most needs from this file — "what can I set on this record?" — could
+ * not be answered from the file at all. Measured on a live instance:
+ * `sys_script_include.caller_access` is tracked and writable, and was missing
+ * from every sidecar for exactly this reason.
+ *
+ * A column the response omitted ENTIRELY is still absent rather than written as
+ * "". That is a different state — a column-level read ACL hid it — and the file
+ * must never claim a value it was not shown.
+ *
+ * Keys are sorted so the file is a function of the record and nothing else: the
+ * Table API gives no column ordering guarantee, so without the sort a re-pull of
+ * an unchanged record would still produce a diff and a workspace that re-pulls on
+ * every refresh would never stop churning git.
  */
 export const serializeMetaFields = (
   row: Record<string, unknown>,
@@ -211,11 +234,7 @@ export const serializeMetaFields = (
     if (!(field in row)) {
       continue;
     }
-    const text = metaValueText(row[field]);
-    if (text === "") {
-      continue;
-    }
-    body[field] = text;
+    body[field] = metaValueText(row[field]);
   }
   return `${JSON.stringify(body, null, 2)}\n`;
 };
@@ -241,12 +260,14 @@ export interface MetaUpdate {
  *  - a key the dictionary marks read-only or virtual is DROPPED, not rejected.
  *    We put it in the file; failing on it would fail every push of an untouched
  *    sidecar and make the feature unusable. The caller reports the drop.
- *  - a key that is ABSENT is not a request to clear the column. The serializer
- *    omits empty values, so "absent" and "empty on the instance" are the same
- *    state and treating absence as a clear would wipe every column that merely
- *    happened to be empty at pull time. Clearing is done by writing `""`, which
- *    is explicit and survives the round trip (the next pull drops the key again,
- *    because by then the instance really is empty).
+ *  - a key that is ABSENT is not a request to clear the column. The update is a
+ *    merge, not a replacement of the record: a sidecar written by an older
+ *    version, trimmed by hand, or produced under a column-level read ACL is
+ *    missing keys for reasons that have nothing to do with intent, and reading
+ *    absence as "clear it" would wipe columns nobody touched. Clearing is done by
+ *    writing `""`, which is explicit and round-trips — the serializer now writes
+ *    empty columns as `""`, so the next pull shows the cleared column still
+ *    there, still empty, still editable.
  */
 export const resolveMetaUpdate = (
   content: string,
@@ -297,6 +318,22 @@ export const resolveMetaUpdate = (
   }
 
   if (unknown.length > 0) {
+    // An empty `metaFields` is not "this table tracks other columns" — it is a
+    // manifest that never got a metadata layer, usually because the dictionary
+    // read failed during the refresh that wrote it. Telling the user to fix
+    // their file would send them to edit a file that is perfectly correct, so
+    // the degraded manifest is named instead.
+    if (writable.size === 0) {
+      throw new Error(
+        `${META_SIDECAR_FILE_NAME} cannot be pushed: the manifest records no ` +
+          "metadata columns for this table, so there is nothing to match its " +
+          `${unknown.length} key(s) against. The manifest was written without a ` +
+          "metadata layer — run `syncrona refresh` to rebuild it (watch for a " +
+          "warning about the dictionary being unreadable), or set " +
+          "`tableOptions.<table>.metaFields` explicitly if the dictionary is " +
+          "not readable for this user."
+      );
+    }
     throw new Error(
       `${META_SIDECAR_FILE_NAME} names ${unknown.length} column(s) this table ` +
         `does not track: ${unknown.sort().join(", ")}. ServiceNow silently ` +
