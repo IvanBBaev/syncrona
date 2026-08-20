@@ -31,7 +31,7 @@
     "@syncrona/mirror": "^0.9.4",
     "@syncrona/sn-transport": "^0.9.4",
     "@syncrona/types": "^0.9.4",
-    "axios": "^1.18.1",
+    "axios": "^1.19.0",
     "axios-rate-limit": "^1.9.0",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
@@ -39,7 +39,7 @@
     "inquirer": "^14.0.2",
     "lodash": "^4.17.21",
     "winston": "^3.19.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.1.0"
   },
   "bin": {
     "syncrona": "./dist/index.js"
