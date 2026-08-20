@@ -694,17 +694,35 @@ sys_script_include/MyUtil/.meta.json      <- and flat: MyUtil~.meta.json
   "access": "public",
   "active": "true",
   "api_name": "x_demo.MyUtil",
+  "caller_access": "",
   "client_callable": "false",
-  "description": "Shared helpers"
+  "description": "Shared helpers",
+  "sys_class_name": "sys_script_include",
+  "sys_policy": "",
+  "sys_scope": "5b1e53bc1b6624501aba63166e4bcb1c"
 }
 ```
 
-The columns are discovered from the dictionary, per table, and the manifest
-records the list it used. Excluded by default: every field field (it already has
-its own file), `password`/`password2` (credentials must never reach the working
-tree), journal fields and binaries (no stable string form), and the `sys_*`
-plumbing that changes without the artifact changing. Keys are sorted and empty
-values dropped, so re-downloading an unchanged record produces no diff.
+The columns are discovered from the dictionary, walking the table's parents so
+an inherited column counts, and the manifest records the list it used per table
+in `metaFields`.
+
+**What is excluded, and only that**: every file field (it already has its own
+file); `password`/`password2` and the other credential types (a secret must
+never reach the working tree); journal fields and binaries (no stable string
+form); and the six columns that describe the *last save* rather than the record —
+`sys_id`, `sys_created_by`, `sys_created_on`, `sys_updated_by`, `sys_updated_on`,
+`sys_mod_count`. Everything else is kept, including the `sys_*` columns that do
+describe the artifact: `sys_scope`, `sys_package`, `sys_name`, `sys_class_name`,
+`sys_policy`, `sys_overrides`, `sys_update_name`, `sys_domain`,
+`sys_customer_update`, `sys_replace_on_upgrade`.
+
+Keys are sorted and every tracked column is written **even when it is empty on
+the instance** — a blank `caller_access` you cannot see is a column you cannot
+set, and the point of the sidecar is that it is editable. A column the instance
+did not return at all (a read ACL hides it) is left out rather than claimed as
+`""`; that distinction is what keeps a push from clearing a field it never read.
+Re-downloading an unchanged record still produces no diff.
 
 **The sidecar is editable.** `push`, `dev` and `deploy` expand it back into an
 update of the record's real columns, in the same request that carries the field
@@ -719,9 +737,19 @@ files. Three rules, each there because the alternative loses an edit silently:
   next to the script, and skipped on the way back because the instance would
   discard it and still answer `200`. The push logs what it withheld. Those
   columns are recorded in the manifest as `metaReadOnlyFields`.
-- **A missing key is not a request to clear the column.** Empty values are
-  dropped when the file is written, so "absent" and "empty on the instance" are
-  the same state. To clear a column, write `""` explicitly.
+- **A missing key is not a request to clear the column.** A key that is absent
+  from the sidecar is almost always a merge artefact or a hand-trimmed file, not
+  an intent to blank the field, so it is left untouched. Clearing is spelled
+  `""` — which is also exactly what the file already shows you for a column that
+  is empty on the instance, so the edit is a one-character change either way.
+
+A fourth rule covers the case where the metadata layer itself failed to build:
+if the manifest records **no** columns for the table, the push does not report
+"unknown column" for every key in a perfectly good file. It says the manifest is
+the thing that is missing a metadata layer and sends you to `syncrona refresh`.
+Correspondingly, `refresh` warns — at `warn`, not `debug` — naming each table
+whose dictionary it could not read, the cause, and both ways out. A dictionary
+that cannot be read never fails the download: the scripts still land.
 
 Everything on the instance still applies on top: write ACLs, business rules and
 data policies can reject or rewrite a value the push sent.
@@ -730,7 +758,10 @@ Set `metaPush: false` in `sync.config.js` to keep the sidecar as read-only
 reference data — the field files still push, and each skipped record says so.
 Set `meta: false` to stop writing sidecars at all. To control which columns a
 given table records, list them explicitly — that replaces discovery for that
-table, so it can also re-add a column the default rules exclude:
+table, so it can also re-add a column the default rules exclude. It skips the
+dictionary read entirely (which is what makes it usable when `sys_dictionary` is
+not readable), so it skips every default exclusion with it: an explicit list that
+names a password column will write that password into the working tree.
 
 ```javascript
 // sync.config.js
@@ -743,6 +774,11 @@ module.exports = {
   },
 };
 ```
+
+The full design — the model, every discovery and serialization rule with its
+rationale, the push contract, how a degraded metadata layer behaves, the cost of
+building it, and the measurements taken against a live instance — is in
+[docs/design/record-metadata-layer.md](docs/design/record-metadata-layer.md).
 
 ### There are WAY too many files in here!
 
