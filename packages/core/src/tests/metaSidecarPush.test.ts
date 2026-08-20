@@ -191,6 +191,27 @@ describe("pushing an edited .meta.json sidecar (DX22)", () => {
     expect(forScript?.[1]).toBe(true);
   });
 
+  // A manifest whose metadata layer failed to build carries no metaFields, so
+  // every key in a perfectly good sidecar reads as "unknown column". The message
+  // has to send the user to the refresh that failed, not to the file that did
+  // not — and the record still fails rather than PATCHing a body it cannot trust.
+  it("blames the manifest when the table lost its metadata layer", async () => {
+    mockGetManifest.mockReturnValue({
+      scope: "x_demo",
+      tables: {
+        sys_script_include: {
+          records: { IncludeA: { sys_id: "rec-1", files: [{ name: "script", type: "js" }] } },
+        },
+      },
+    });
+
+    const results = await pushFiles([withSidecar()]);
+
+    expect(results[0].success).toBe(false);
+    expect(results[0].message).toMatch(/syncrona refresh/);
+    expect(updateRecord).not.toHaveBeenCalled();
+  });
+
   describe("metaPush: false", () => {
     beforeEach(() => {
       mockGetConfig.mockReturnValue({ pushConcurrency: 1, metaPush: false });
@@ -213,6 +234,33 @@ describe("pushing an edited .meta.json sidecar (DX22)", () => {
       expect(results[0].success).toBe(true);
       expect(results[0].message).toMatch(/nothing to push/);
       expect(updateRecord).not.toHaveBeenCalled();
+    });
+  });
+
+  // `meta: false` is a decision, not a fault. The manifest deliberately carries
+  // no metaFields under it, so a leftover sidecar must be skipped exactly like
+  // `metaPush: false` skips it — failing the record on the degraded-manifest
+  // error would break a push on a workspace configured as its owner intends.
+  describe("meta: false with a leftover sidecar on disk", () => {
+    beforeEach(() => {
+      mockGetConfig.mockReturnValue({ pushConcurrency: 1, meta: false });
+      mockGetManifest.mockReturnValue({
+        scope: "x_demo",
+        tables: {
+          sys_script_include: {
+            records: { IncludeA: { sys_id: "rec-1", files: [{ name: "script", type: "js" }] } },
+          },
+        },
+      });
+    });
+
+    it("pushes the field files and leaves the sidecar alone", async () => {
+      const results = await pushFiles([withSidecar()]);
+
+      expect(results[0].success).toBe(true);
+      expect(updateRecord).toHaveBeenCalledWith("sys_script_include", "rec-1", {
+        script: "gs.info('a');",
+      });
     });
   });
 });

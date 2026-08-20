@@ -640,12 +640,83 @@ async function getMetaFieldsForTable(
     // so the skippable-error rule would not have covered the common case anyway.)
     // Reporting onSkip is equally wrong: a "skipped" table is carried forward
     // wholesale from the previous manifest, discarding the records just built.
-    logger.debug(
-      `Table ${tableName}: metadata columns not enumerable ` +
-        `(${e instanceof Error ? e.message : String(e)}), ` +
-        `writing no .meta.json sidecar for it.`
+    //
+    // But it is reported at WARN, not debug. Swallowing the error is only half a
+    // decision — the other half is that the user must be able to tell the two
+    // outcomes apart, because they look identical afterwards: a scope with no
+    // metadata layer and a scope whose metadata layer failed to build both
+    // produce scripts on disk and a cheerful "Download complete". At debug level
+    // the difference was invisible at the default log level, and the workspace
+    // that resulted was the exact "where is my metadata?" state this feature was
+    // written to end. It names the table and the cause so the fix is a decision,
+    // not an investigation.
+    logger.warn(
+      `Table ${tableName}: could not read the dictionary, so no .meta.json ` +
+        `sidecar will be written for its records and existing ones will not be ` +
+        `pushable (${e instanceof Error ? e.message : String(e)}). The scripts ` +
+        `are unaffected. If this user cannot read sys_dictionary, set ` +
+        `\`tableOptions.${tableName}.metaFields\` explicitly; otherwise re-run ` +
+        `\`syncrona refresh\` once the instance answers again.`
     );
     return NO_META_FIELDS;
+  }
+}
+
+/**
+ * Per-run memo for the single-row `sys_db_object` parent lookup.
+ *
+ * The walk costs one request per level, and every table in a scope sits on the
+ * same two or three ancestors — `sys_metadata` above all. Unmemoized, that
+ * shared spine is re-queried once per table. Measured on a live 5-table scope:
+ * 15 Table-API requests, of which 10 were `sys_db_object` and only 5 were the
+ * dictionary reads the caller actually wanted. The ratio worsens with scope
+ * size, and `dev` re-runs the whole thing on an interval.
+ *
+ * Memoized at the LOOKUP and not at the walk: two tables in the same scope
+ * rarely have the same starting point, so caching whole hierarchies would
+ * almost never hit. What they share is their ancestors, and one row per
+ * ancestor is exactly what this map holds.
+ *
+ * Promises are cached, not results, so two tables reaching the same ancestor
+ * concurrently share one request instead of racing to issue two. The map lives
+ * for one manifest build (see resetTableHierarchyCache): a hierarchy does not
+ * change mid-run, but it can change between runs, and a long-lived `dev`
+ * session must not pin a stale answer forever.
+ */
+const tableParentCache = new Map<string, Promise<string | undefined>>();
+
+/** Drops the memo. Called at the start of every manifest build and enrichment. */
+export const resetTableHierarchyCache = (): void => {
+  tableParentCache.clear();
+};
+
+async function getTableParentName(
+  client: SNClient,
+  tableName: string
+): Promise<string | undefined> {
+  const cached = tableParentCache.get(tableName);
+  if (cached) {
+    return cached;
+  }
+  const pending = (async () => {
+    // Deliberately unpaged: `name` is unique in sys_db_object, so this is a
+    // single-row lookup of one table's parent, not an enumeration.
+    const res = await client.tableAPIGet(
+      "sys_db_object",
+      `name=${tableName}`,
+      "name,super_class.name",
+      1
+    );
+    return extractResult(res.data)[0]?.["super_class.name"];
+  })();
+  tableParentCache.set(tableName, pending);
+  try {
+    return await pending;
+  } catch (e) {
+    // A rejected promise must not be cached: the next table reaching the same
+    // ancestor would inherit a failure that may have been a one-off timeout.
+    tableParentCache.delete(tableName);
+    throw e;
   }
 }
 
@@ -667,16 +738,7 @@ async function getTableHierarchyTableNames(
     ordered.push(current);
 
     try {
-      // Deliberately unpaged: `name` is unique in sys_db_object, so this is a
-      // single-row lookup of one table's parent, not an enumeration.
-      const res = await client.tableAPIGet(
-        "sys_db_object",
-        `name=${current}`,
-        "name,super_class.name",
-        1
-      );
-      const rows = extractResult(res.data);
-      const parentName = rows[0]?.["super_class.name"];
+      const parentName = await getTableParentName(client, current);
       if (parentName && !visited.has(parentName)) {
         queue.push(parentName);
       }
@@ -1059,6 +1121,9 @@ export async function buildManifestFromTableAPI(
   // records is missing most of what defines them, and a default-off flag would
   // have left every existing project in that state indefinitely.
   const metaEnabled = config.meta !== false;
+  // One build is one run: every table in a scope shares most of its ancestry,
+  // and the walk is memoized for the duration rather than across the process.
+  resetTableHierarchyCache();
 
   const scopeId = await getScopeId(client, scopeName);
   if (!scopeId) {
@@ -1209,6 +1274,107 @@ function getPreviousManifest(scopeName: string): SN.AppManifest | undefined {
   } catch (_e) {
     return undefined;
   }
+}
+
+// ─── Public: attachMetaFieldsToManifest ──────────────────────────────────────
+
+/**
+ * DX22, second half: give a manifest the metadata layer it was built without.
+ *
+ * buildManifestFromTableAPI discovers the sidecar columns while it enumerates
+ * each table, so a locally-built manifest arrives complete. The companion
+ * Sincronia scoped app does not: `sinc/getManifest` predates DX22 and answers
+ * with records whose `files` list holds the file fields and nothing else. Every
+ * consumer downstream keys off `TableConfig.metaFields` and the `.meta`
+ * pseudo-file, so on exactly the instances that DO have the scoped app
+ * installed — the recommended setup — the whole metadata layer did nothing at
+ * all, silently and without a warning.
+ *
+ * Enriching here rather than in a new scoped-app release is what lets the fix
+ * reach instances as they already are: nothing has to be installed or upgraded
+ * on ServiceNow for `.meta.json` to start appearing.
+ *
+ * Mutates and returns `manifest`. Idempotent: a table that already carries
+ * `metaFields` — a Table-API build, or a second pass over the same object — is
+ * left exactly as it is, which is also what keeps this safe to call on the
+ * fallback path's output.
+ */
+export async function attachMetaFieldsToManifest(
+  manifest: SN.AppManifest,
+  client: SNClient,
+  config: Pick<Sync.Config, "tableOptions" | "meta">
+): Promise<SN.AppManifest> {
+  // Same opt-out as the builder: `meta: false` means a project has decided it
+  // wants the pre-DX22 workspace, and that decision must hold on both paths.
+  if (config.meta === false) {
+    return manifest;
+  }
+  const tableOptions = config.tableOptions || {};
+
+  const pending = Object.entries(manifest.tables || {}).filter(
+    ([, table]) => !Array.isArray(table.metaFields) || table.metaFields.length === 0
+  );
+  if (pending.length === 0) {
+    return manifest;
+  }
+  // One enrichment is one run: the tables about to be walked share their parents
+  // almost entirely, and this is the pass that pays for it.
+  resetTableHierarchyCache();
+
+  await mapWithConcurrency(
+    pending,
+    resolveManifestTableConcurrency(config),
+    async ([tableName, table]) => {
+      const records = Object.values(table.records || {});
+      if (records.length === 0) {
+        return;
+      }
+
+      // The file fields as this manifest actually lists them — the set the
+      // dictionary query has to exclude. Unioned across every record rather
+      // than read off the first: a column that is empty on one record yields no
+      // file for it, and taking that record alone would re-admit the column as
+      // metadata and write it twice.
+      const fileFieldNames = new Set<string>();
+      for (const record of records) {
+        for (const file of record.files || []) {
+          if (!isMetaFile(file)) {
+            fileFieldNames.add(file.name);
+          }
+        }
+      }
+
+      // Errors are already swallowed inside getMetaFieldsForTable: a table
+      // whose dictionary this user cannot read keeps its scripts and loses only
+      // the sidecar, which is the pre-DX22 result rather than a failed refresh.
+      const meta = await getMetaFieldsForTable(
+        client,
+        tableName,
+        [...fileFieldNames],
+        tableOptions[tableName]
+      );
+      if (meta.fields.length === 0) {
+        return;
+      }
+
+      for (const record of records) {
+        if (!Array.isArray(record.files)) {
+          record.files = [];
+        }
+        if (!record.files.some(isMetaFile)) {
+          record.files.push(metaFile());
+        }
+      }
+      table.metaFields = meta.fields;
+      // Omitted when empty for the same reason as in the builder: the manifest
+      // is committed and read by humans, so an always-present `[]` is noise.
+      if (meta.readOnly.length > 0) {
+        table.metaReadOnlyFields = meta.readOnly;
+      }
+    }
+  );
+
+  return manifest;
 }
 
 // ─── Public: buildBulkDownloadFromTableAPI ───────────────────────────────────

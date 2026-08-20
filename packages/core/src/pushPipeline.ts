@@ -101,9 +101,29 @@ export const getAppFileList = async (
     typeof paths === "object"
       ? paths
       : await fUtils.encodedPathsToFilePaths(paths);
-  const appFileCtxs = validPaths
-    .map(fUtils.getFileContextFromPath)
-    .filter((maybeCtx): maybeCtx is Sync.FileContext => !!maybeCtx);
+  const appFileCtxs: Sync.FileContext[] = [];
+  const unresolved: string[] = [];
+  for (const filePath of validPaths) {
+    const ctx = fUtils.getFileContextFromPath(filePath);
+    if (ctx) {
+      appFileCtxs.push(ctx);
+    } else {
+      unresolved.push(filePath);
+    }
+  }
+  if (unresolved.length > 0) {
+    // A path the manifest cannot place is dropped — the alternative, failing the
+    // whole push, would make one stray file block every good one. But it is said
+    // out loud: "N files to push" over a list the user handed in themselves,
+    // silently shortened, is indistinguishable from success and was how an
+    // unmapped sidecar used to disappear.
+    logger.warn(
+      `${unresolved.length} file(s) are not in the manifest and will not be ` +
+        `pushed:\n  ${unresolved.join("\n  ")}\n` +
+        "Run `syncrona refresh` if these are real records; otherwise they are " +
+        "leftovers from a scope or a layout this workspace no longer tracks."
+    );
+  }
   return groupAppFiles(appFileCtxs);
 };
 
@@ -182,13 +202,22 @@ export const expandMetaSidecar = (
     return { fields: builtRec, skipped: [] };
   }
   const { [META_FILE_NAME]: content, ...fileFields } = builtRec;
+  const config = ConfigManager.getConfig() as Sync.Config;
 
-  if ((ConfigManager.getConfig() as Sync.Config).metaPush === false) {
+  // `meta: false` turns the whole layer off, so a sidecar reaching this point is
+  // a leftover from before the opt-out. Treating it as `metaPush: false` is the
+  // only reading that is not user-hostile: the manifest deliberately carries no
+  // metaFields under that flag, so resolving the file would raise the
+  // degraded-manifest error on a workspace whose configuration is exactly as its
+  // owner intends. Still logged — a file that is not being pushed is worth a
+  // line either way.
+  if (config.meta === false || config.metaPush === false) {
     // Not silent: dropping an edit the user made and saying nothing is the exact
     // failure this feature exists to remove. The record still pushes its files.
+    const flag = config.meta === false ? "meta" : "metaPush";
     logger.info(
       `${summarizeRecord(rec.table, rec.fields[META_FILE_NAME].name)} : ` +
-        "metadata not pushed (`metaPush: false` in sync.config.js)."
+        `metadata not pushed (\`${flag}: false\` in sync.config.js).`
     );
     return { fields: fileFields, skipped: [] };
   }

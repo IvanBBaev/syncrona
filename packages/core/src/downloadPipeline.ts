@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { SN } from "@syncrona/types";
+import { SN, Sync } from "@syncrona/types";
 import { createHash } from "crypto";
 import path from "path";
 import * as fUtils from "./FileUtils.js";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
 import * as ConfigManager from "./config.js";
 import { defaultClient, unwrapSNResponse } from "./snClient.js";
+import type { SNClient } from "./snClient.js";
 import {
+  attachMetaFieldsToManifest,
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
   isScopedEndpointUnavailableError,
@@ -285,6 +287,10 @@ export const syncManifest = async (): Promise<boolean> => {
     const config = ConfigManager.getConfig();
 
     let newManifest: SN.AppManifest;
+    // Tracked rather than inferred from the result: only the scoped answer needs
+    // enriching, and running the dictionary sweep over a Table-API build would
+    // re-query every table it already decided has no metadata columns.
+    let fromScopedEndpoint = true;
     try {
       newManifest = await unwrapSNResponse(
         client.getManifest(curManifest.scope, config)
@@ -292,6 +298,7 @@ export const syncManifest = async (): Promise<boolean> => {
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
         logger.info("Custom scope not found — building manifest from Table API...");
+        fromScopedEndpoint = false;
         newManifest = await buildManifestFromTableAPI(
           curManifest.scope,
           client,
@@ -300,6 +307,12 @@ export const syncManifest = async (): Promise<boolean> => {
       } else {
         throw e;
       }
+    }
+    if (fromScopedEndpoint) {
+      // DX22: the companion scoped app answers without a metadata layer, so
+      // refresh used to write `.meta.json` only on the fallback path — that is,
+      // only on instances WITHOUT the app the docs tell you to install.
+      await attachMetaFieldsToManifest(newManifest, client, config);
     }
 
     logger.info("Writing new manifest file...");
@@ -541,10 +554,12 @@ export const buildManifestRecordNames = (
   return names;
 };
 
-// DX22: the manifest's sidecar columns per table (table -> metaFields). Only the
-// Table-API manifest builder records them, so a manifest produced by the scoped
-// endpoint yields an empty map — and with no `.meta` pseudo-file in its records
-// either, that path simply carries no metadata layer.
+// DX22: the manifest's sidecar columns per table (table -> metaFields). Read off
+// the manifest rather than re-derived, because the download side holds only the
+// missing subset and never queries the dictionary. A manifest from the scoped
+// endpoint arrives without them and is enriched by attachMetaFieldsToManifest
+// before it reaches here; an empty map therefore means the layer is genuinely
+// off (`meta: false`, or no metadata columns on any table), not merely unbuilt.
 export const buildManifestMetaFields = (
   manifest: SN.AppManifest
 ): ManifestMetaFields => {
@@ -557,6 +572,121 @@ export const buildManifestMetaFields = (
     }
   }
   return metaFields;
+};
+
+/**
+ * DX22: split a missing-file request into the half the scoped bulk endpoint can
+ * serve and the sidecar half it cannot.
+ *
+ * `.meta` names no column. The scoped app projects the requested names straight
+ * onto a GlideRecord, so asking it for the sidecar yields a record with no
+ * content for it — no file is written, and the next run finds the same record
+ * missing again. Only buildBulkDownloadFromTableAPI knows how to read the
+ * sidecar's columns and serialize them, so the two halves take different routes
+ * and are merged back together for the writer.
+ */
+const partitionMetaRequests = (
+  missing: SN.MissingFileTableMap
+): { files: SN.MissingFileTableMap; meta: SN.MissingFileTableMap } => {
+  // INJ-2: null-proto at both levels, as everywhere a table name or sys_id from
+  // the manifest becomes a key (see markFileMissing).
+  const files: SN.MissingFileTableMap = Object.create(null);
+  const meta: SN.MissingFileTableMap = Object.create(null);
+  for (const [tableName, recordMap] of Object.entries(missing)) {
+    for (const [sysId, requested] of Object.entries(recordMap || {})) {
+      const plain = (requested || []).filter((file) => !isMetaFile(file));
+      const sidecar = (requested || []).filter((file) => isMetaFile(file));
+      if (plain.length > 0) {
+        if (!files[tableName]) files[tableName] = Object.create(null);
+        files[tableName][sysId] = plain;
+      }
+      if (sidecar.length > 0) {
+        if (!meta[tableName]) meta[tableName] = Object.create(null);
+        meta[tableName][sysId] = sidecar;
+      }
+    }
+  }
+  return { files, meta };
+};
+
+const isEmptyMissingMap = (missing: SN.MissingFileTableMap): boolean =>
+  Object.keys(missing).length === 0;
+
+// Merge the two halves of one table's fetch. Records are keyed by name and both
+// halves describe the same records, so a collision is the expected case rather
+// than a conflict: keep one entry and concatenate its files. Record names stay
+// in parity because buildBulkDownloadFromTableAPI is given the manifest's own
+// names (see ManifestRecordNames).
+const mergeTableMaps = (base: SN.TableMap, extra: SN.TableMap): SN.TableMap => {
+  const merged: SN.TableMap = { ...base };
+  for (const [tableName, table] of Object.entries(extra)) {
+    const existing = merged[tableName];
+    if (!existing) {
+      merged[tableName] = table;
+      continue;
+    }
+    const records: SN.TableConfigRecords = { ...existing.records };
+    for (const [recordName, record] of Object.entries(table.records || {})) {
+      const prior = records[recordName];
+      records[recordName] = prior
+        ? { ...prior, files: [...(prior.files || []), ...(record.files || [])] }
+        : record;
+    }
+    merged[tableName] = { ...existing, records };
+  }
+  return merged;
+};
+
+/**
+ * The fetch strategy shared by refresh (processMissingFiles) and download
+ * (downloadAllFiles): scoped bulk endpoint for the file fields, Table API for
+ * the DX22 sidecar, behind a single "the scoped endpoint is gone" latch so a
+ * missing scoped app is probed once per run rather than once per table.
+ */
+const createTableFetcher = (
+  client: SNClient,
+  tableOptions: Sync.ITableOptionsMap,
+  recordNames: ManifestRecordNames,
+  metaFields: ManifestMetaFields,
+  onFallback: () => void
+) => {
+  let scopedEndpointUnavailable = false;
+  const viaTableAPI = (tableMissing: SN.MissingFileTableMap): Promise<SN.TableMap> =>
+    buildBulkDownloadFromTableAPI(
+      tableMissing,
+      client,
+      tableOptions,
+      recordNames,
+      metaFields
+    );
+
+  return async (tableMissing: SN.MissingFileTableMap): Promise<SN.TableMap> => {
+    if (scopedEndpointUnavailable) {
+      return viaTableAPI(tableMissing);
+    }
+
+    const { files, meta } = partitionMetaRequests(tableMissing);
+    // The sidecar half never goes to the scoped endpoint, even while it is
+    // perfectly healthy — see partitionMetaRequests.
+    const metaResult = isEmptyMissingMap(meta) ? {} : await viaTableAPI(meta);
+    if (isEmptyMissingMap(files)) {
+      return metaResult;
+    }
+
+    try {
+      const fileResult = await unwrapSNResponse(
+        client.getMissingFiles(files, tableOptions)
+      );
+      return mergeTableMaps(fileResult, metaResult);
+    } catch (e) {
+      if (isScopedEndpointUnavailableError(e)) {
+        onFallback();
+        scopedEndpointUnavailable = true;
+        return mergeTableMaps(await viaTableAPI(files), metaResult);
+      }
+      throw e;
+    }
+  };
 };
 
 // Returns the tables the instance could not fully supply, so refresh/repair can
@@ -580,41 +710,13 @@ export const processMissingFiles = async (
 
   // PERF-3 (REV-91): stream the fetch/write one table at a time instead of
   // materializing every missing file body for the whole scope in memory at once.
-  // Probe the scoped bulk endpoint once; after the first "unavailable" go
-  // straight to the Table API for the remaining tables — mirroring the fetchTable
-  // closure in downloadAllFiles so refresh keeps only one table's bodies live.
-  let scopedEndpointUnavailable = false;
-  const fetchTable = async (
-    tableMissing: SN.MissingFileTableMap
-  ): Promise<SN.TableMap> => {
-    if (scopedEndpointUnavailable) {
-      return buildBulkDownloadFromTableAPI(
-        tableMissing,
-        client,
-        tableOptions,
-        recordNames,
-        metaFields
-      );
-    }
-    try {
-      return await unwrapSNResponse(
-        client.getMissingFiles(tableMissing, tableOptions)
-      );
-    } catch (e) {
-      if (isScopedEndpointUnavailableError(e)) {
-        logger.info("Custom scope not found — fetching missing files from Table API...");
-        scopedEndpointUnavailable = true;
-        return buildBulkDownloadFromTableAPI(
-          tableMissing,
-          client,
-          tableOptions,
-          recordNames,
-          metaFields
-        );
-      }
-      throw e;
-    }
-  };
+  const fetchTable = createTableFetcher(
+    client,
+    tableOptions,
+    recordNames,
+    metaFields,
+    () => logger.info("Custom scope not found — fetching missing files from Table API...")
+  );
 
   const incompleteTables: string[] = [];
 
@@ -863,40 +965,13 @@ export const downloadAllFiles = async (
   const recordNames = buildManifestRecordNames(manifest);
   const metaFields = buildManifestMetaFields(manifest);
 
-  // Probe the scoped endpoint once; after the first "unavailable" go straight to
-  // the Table API for the remaining tables instead of re-probing each time.
-  let scopedEndpointUnavailable = false;
-  const fetchTable = async (
-    tableMissing: SN.MissingFileTableMap
-  ): Promise<SN.TableMap> => {
-    if (scopedEndpointUnavailable) {
-      return buildBulkDownloadFromTableAPI(
-        tableMissing,
-        client,
-        tableOptions,
-        recordNames,
-        metaFields
-      );
-    }
-    try {
-      return await unwrapSNResponse(
-        client.getMissingFiles(tableMissing, tableOptions)
-      );
-    } catch (e) {
-      if (isScopedEndpointUnavailableError(e)) {
-        logger.info("Custom scope not found — fetching files from Table API...");
-        scopedEndpointUnavailable = true;
-        return buildBulkDownloadFromTableAPI(
-          tableMissing,
-          client,
-          tableOptions,
-          recordNames,
-          metaFields
-        );
-      }
-      throw e;
-    }
-  };
+  const fetchTable = createTableFetcher(
+    client,
+    tableOptions,
+    recordNames,
+    metaFields,
+    () => logger.info("Custom scope not found — fetching files from Table API...")
+  );
 
   await downloadTablesWithResume(missing, manifest.scope, {
     fetchTable,

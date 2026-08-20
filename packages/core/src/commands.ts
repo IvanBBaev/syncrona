@@ -19,6 +19,7 @@ import inquirer from "inquirer";
 import { gitDiffToEncodedPaths } from "./gitUtils.js";
 import { encodedPathsToFilePaths } from "./FileUtils.js";
 import {
+  attachMetaFieldsToManifest,
   isScopedEndpointUnavailableError,
   buildManifestFromTableAPI,
   listAppsFromTableAPI,
@@ -229,15 +230,25 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   const config = ConfigManager.getConfig();
 
   let man: import("@syncrona/types").SN.AppManifest;
+  // See syncManifest: only the scoped answer needs the DX22 enrichment, and a
+  // Table-API build already carries it.
+  let fromScopedEndpoint = true;
   try {
     man = await unwrapSNResponse(client.getManifest(args.scope, config));
   } catch (e) {
     if (isScopedEndpointUnavailableError(e)) {
       logger.info("Custom scope not found — building manifest from Table API...");
+      fromScopedEndpoint = false;
       man = await buildManifestFromTableAPI(args.scope, client, config);
     } else {
       throw e;
     }
+  }
+  if (fromScopedEndpoint) {
+    // DX22: without this the scoped app's manifest lists only file fields, so a
+    // download against an instance that has the companion app produces scripts
+    // and no `.meta.json` at all.
+    await attachMetaFieldsToManifest(man, client, config);
   }
 
   logger.info("Creating local files from manifest...");
