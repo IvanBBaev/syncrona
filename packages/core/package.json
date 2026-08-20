@@ -1,6 +1,6 @@
 {
   "name": "syncrona",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "SyncroNow AI — next-gen CLI to sync ServiceNow scoped applications to local files.",
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -26,11 +26,11 @@
     "typescript": "~6.0.3"
   },
   "dependencies": {
-    "@syncrona/credential-store": "^0.9.3",
-    "@syncrona/jira": "^0.9.3",
-    "@syncrona/mirror": "^0.9.3",
-    "@syncrona/sn-transport": "^0.9.3",
-    "@syncrona/types": "^0.9.3",
+    "@syncrona/credential-store": "^0.9.4",
+    "@syncrona/jira": "^0.9.4",
+    "@syncrona/mirror": "^0.9.4",
+    "@syncrona/sn-transport": "^0.9.4",
+    "@syncrona/types": "^0.9.4",
     "axios": "^1.18.1",
     "axios-rate-limit": "^1.9.0",
     "chalk": "^5.6.2",

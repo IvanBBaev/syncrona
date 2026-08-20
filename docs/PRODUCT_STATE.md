@@ -171,8 +171,8 @@ mindmap
 
 ## What is NOT done
 
-1. **D5 distribution** — the npm half is **done**: 0.9.3 is live on npm with build
-   provenance, published from the `release` workflow (2026-08-18), so
+1. **D5 distribution** — the npm half is **done**: 0.9.4 is live on npm with build
+   provenance, published from the `release` workflow (2026-08-20), so
    `npx syncrona` works for anyone. macOS/Windows/libsecret keychain for the
    at-rest key shipped via AR2 (opt-in). Remaining: the `homebrew-tap` repo and a
    released formula to complete the "brew install syncrona" definition of done —
