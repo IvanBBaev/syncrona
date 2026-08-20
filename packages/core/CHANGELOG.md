@@ -1,5 +1,42 @@
 # syncrona
 
+## 0.9.4
+
+### Patch Changes
+
+- Record metadata now works on every instance, not just the ones without the
+  companion scoped app. `0.9.3` announced the `.meta.json` sidecar, but the scoped
+  manifest the companion app returns carries no metadata layer, so a `refresh` or
+  `download` against an instance that has the app installed produced scripts and no
+  sidecars at all. The scoped manifest is enriched before it is used, and the
+  sidecar half of a fetch goes over the Table API while the scoped endpoint keeps
+  serving the file half.
+
+  Three further corrections to the same layer:
+
+  - Every tracked column is captured. Discovery excluded anything named `sys_*`,
+    which dropped `sys_scope`, `sys_class_name`, `sys_policy` and their siblings;
+    the exclusion is now six named audit stamps (`sys_id`, `sys_created_by/on`,
+    `sys_updated_by/on`, `sys_mod_count`). On a five-table scope the tracked
+    columns per table went 29→40, 14→25, 9→17, 34→45 and 8→18.
+  - A column that is empty on the instance is written as `""` instead of being
+    omitted, so the sidecar answers "what can I set on this record?" rather than
+    only "what is set right now". A column the instance did not return at all — a
+    read ACL hides it — is still left out rather than claimed as empty.
+  - A sidecar whose manifest carries no metadata layer is no longer dropped in
+    silence: `push` resolves it from the record it sits under, an unreadable
+    dictionary is reported per table with its cause and both escape hatches, and a
+    metadata push against a degraded manifest names `syncrona refresh` instead of
+    reporting every key of a correct file as an unknown column.
+
+  Enrichment also stopped re-reading a scope's shared ancestor table once per
+  table: 15 requests down to 11 on the same scope.
+  - @syncrona/credential-store@0.9.4
+  - @syncrona/jira@0.9.4
+  - @syncrona/mirror@0.9.4
+  - @syncrona/sn-transport@0.9.4
+  - @syncrona/types@0.9.4
+
 ## 0.9.3
 
 ### Minor Changes

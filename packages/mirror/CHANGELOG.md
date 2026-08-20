@@ -1,5 +1,13 @@
 # @syncrona/mirror
 
+## 0.9.4
+
+### Patch Changes
+
+- @syncrona/credential-store@0.9.4
+- @syncrona/redaction@0.9.4
+- @syncrona/sn-transport@0.9.4
+
 ## 0.9.3
 
 ### Minor Changes

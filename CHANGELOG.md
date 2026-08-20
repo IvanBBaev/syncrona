@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-08-20
+
+`0.9.3` announced that record metadata round-trips. It did — on instances that do
+not have the companion scoped app installed, which is the opposite of the setup
+the documentation tells you to run. Everything below is that promise made true on
+the instance it was written for, verified against a live one.
+
+### Fixed
+
+- `refresh` and `download` write `.meta.json` sidecars on instances that have the
+  companion Sincronia app. The scoped manifest the app returns carries no
+  metadata layer at all, so the sidecar was silently absent on exactly those
+  instances; the scoped manifest is now enriched before it is used, and a fetch
+  is split — the scoped endpoint keeps serving the file half while the sidecar
+  half goes over the Table API.
+- Field discovery no longer drops a tracked column because its name starts with
+  `sys_`. That blanket exclusion took `sys_scope`, `sys_class_name`,
+  `sys_policy`, `sys_overrides` and their siblings with it; what is excluded is
+  now six named audit stamps (`sys_id`, `sys_created_by`, `sys_created_on`,
+  `sys_updated_by`, `sys_updated_on`, `sys_mod_count`). Measured against a live
+  five-table scope, the tracked columns per table went 29→40, 14→25, 9→17, 34→45
+  and 8→18.
+- A column that is empty on the instance is written as `""` rather than omitted,
+  so a sidecar answers "what can I set on this record?" instead of only "what is
+  set right now". A column the instance did not return at all — a read ACL hides
+  it — is still left out rather than claimed as empty.
+- A sidecar under a manifest with no metadata layer is no longer discarded in
+  silence. `push` resolves it from the record it sits under; an unreadable
+  dictionary is reported once per table with its cause and both escape hatches;
+  and a metadata push against a degraded manifest points at `syncrona refresh`
+  instead of reporting every key of a perfectly correct file as an unknown
+  column.
+
+### Changed
+
+- Manifest enrichment stops re-reading a scope's shared ancestor table once per
+  child table — 15 dictionary requests down to 11 on the same five-table scope,
+  with a regression test that pins the request count rather than the wall clock.
+
 ## [0.9.3] - 2026-08-18
 
 Everything below had accumulated on `main` since 0.9.1 without a release to carry
