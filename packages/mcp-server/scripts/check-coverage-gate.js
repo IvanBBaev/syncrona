@@ -194,12 +194,13 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Five entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Four entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
 // because V8 counted one extra range that was already being executed (226/244 vs 227/245;
-// 25/26 vs 26/27). No test can drive a range that is already covered, and both candidate
+// 25/26 vs 26/27). Those audit.js figures are the pre-WP-M1 file; the same file flickers
+// today between 200/217 and 201/218, which is the same shape over a smaller module. No test can drive a range that is already covered, and both candidate
 // V8 flags were A/B tested and refuted, so the second value is DECLARED rather than
 // tolerated: exactly those two readings pass the annotations gate and a third is drift.
 // The LOWER reading is written first on purpose — the headroom audit in
@@ -250,7 +251,15 @@ const MODULE_FLOORS = [
   // carried forward — it was evidence about a file that no longer exists, and a
   // stale declaration is just a tolerance. If the V8 flicker reappears on this
   // file, re-declare it from a fresh pair of readings.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.17
+  //
+  // It reappeared, and the fresh pair is declared below. Two full `npm run check`
+  // runs an hour apart on a byte-identical tree printed 92.17 and then 92.20, with
+  // the same uncovered-line list to the character. The raw V8 data behind the lower
+  // run is 200/217 branch ranges (re-measured with `--test-reporter=lcov` under the
+  // gate's own flags, which also renders the 96.74 as 861/890 lines), so the higher
+  // run is 201/218: one more range counted, and it was already executing. Same
+  // shape as the pre-WP-M1 flicker, new denominators.
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.17 (also 96.74 / 92.20: V8 range granularity, 200/217 vs 201/218 branches, same uncovered lines)
   // Preflight, dry-run and the mutating-tool wrappers.
   // The declared reading here runs the other way: 92.05 is what 61 of 62 runs print,
   // and the odd one is LOWER. An extra range appeared that was NOT executing, so the
