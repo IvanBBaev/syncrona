@@ -48,8 +48,12 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   longer than the 8 KiB scan budget is reported as a secret rather than scanned,
   and the redaction marker embeds a digest of the plaintext so a rotated secret
   still produces a visible diff.
-- ✅ **Dependency audit gate** — `npm audit --omit=dev --audit-level=high` = 0,
-  enforced in CI.
+- ✅ **Dependency audit gate** — both trees are 0 and both are enforced in CI:
+  `npm audit --omit=dev --audit-level=moderate` for shipped code, and
+  `npm audit --audit-level=high` for the full tree including dev tooling, plus a
+  non-blocking low+moderate report. See
+  [Dependency audit posture](../SECURITY.md#dependency-audit-posture) for why the
+  two thresholds differ.
 - ✅ **Jira integration (read-only)** — the `jira` CLI command and the
   `jira_get_issue` MCP tool fetch issue context over HTTPS only. Credentials
   (Cloud API token or Server/DC PAT) live in the same encrypted CredentialStore
@@ -89,6 +93,11 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
   HTTP 404, but a live instance without the scoped app answers `400`) and
   confirmed the documented CSRF limit — `sys.scripts.do` under Basic-only auth
   returns 200 but does not execute the script without a UI session token.
+- ✅ **Primary workflow live-verified 2026-08-21** on **Yokohama patch 13**
+  (Table API path, no companion app): byte-exact `download`, a `push` edit that
+  landed and was restored, `build --diff`, `deploy --ci`, `--json` and
+  `--dry-run`. Recorded in COMPATIBILITY.md. Still a **manual, dated** run — the
+  matrix row above stays 🔴 until G11 puts it in CI.
 
 ## 4. Quality, CI/CD, governance
 - ✅ **Gates** — `npm run check` green (381 tests: 206 core + 175 mcp); coverage ratchet

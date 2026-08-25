@@ -49,14 +49,16 @@ jobs:
         run: npm run check
 
       # Publish gate: fail the release on a known-vulnerable runtime dependency.
-      # Scoped to production deps so dev-only advisories never block a release.
-      # NOTE: this comment used to claim "ci.yml audits the full tree on
-      # pushes/PRs" — that was never true. ci.yml also runs `--omit=dev`, so DEV
-      # dependencies are audited by NO workflow. As of 2026-08-21 a full-tree
-      # `npm audit` reports 11 vulnerabilities (5 low, 3 moderate, 3 high), all of
-      # them dev-only and none shipped to users. Adding a non-blocking full-tree
-      # audit step is tracked as follow-up work; until then, treat dev-dependency
-      # advisories as unmonitored rather than absent.
+      # Scoped to production deps so dev-only advisories never block a release —
+      # nothing in the dev tree is inside the tarballs this job publishes, so a
+      # dev advisory is not a reason to withhold a fix from users.
+      # DEV COVERAGE LIVES IN ci.yml, NOT HERE. An earlier version of this
+      # comment claimed ci.yml audited the full tree; that was false, and for a
+      # while afterwards it truthfully recorded that dev dependencies were
+      # audited by NO workflow (11 findings: 5 low, 3 moderate, 3 high). Closed
+      # on 2026-08-25: ci.yml now runs a blocking `npm audit --audit-level=high`
+      # over the full tree on every push/PR, plus a non-blocking low+moderate
+      # report. Read the rationale for the two different thresholds there.
       # Threshold lowered high -> moderate on 2026-08-21, in lockstep with ci.yml,
       # after a moderate prod advisory (undici <=6.27.0) went undetected here.
       - name: Security audit (production dependencies)
@@ -105,6 +107,16 @@ jobs:
   # variable HOMEBREW_TAP_READY=true + secret HOMEBREW_TAP_TOKEN are set. Until
   # then it is skipped, exactly like the owner-gated publish above. Also
   # skipped in a dry-run rehearsal — there is no published tarball to fetch.
+  #
+  # KNOWN 24-HOUR WINDOW (verified against Homebrew 6.0.16 on 2026-08-25): the
+  # formula installs via `std_npm_args`, which passes npm's
+  # `--min-release-age=<Homebrew::RELEASE_COOLDOWN_DAYS>` (currently 1 DAY).
+  # `syncrona` depends on `@syncrona/* ^0.9.x`, whose only satisfying version is
+  # the one published seconds earlier by the job above, so `brew install
+  # syncrona` fails with `npm error code ETARGET / notarget No matching version
+  # found ... with a date before <today>` until the release is ~24h old. Nothing
+  # here can override that without defeating Homebrew's supply-chain cooldown —
+  # treat the tap as usable one day after the tag, not immediately.
   update-homebrew:
     needs: release
     runs-on: ubuntu-latest
@@ -124,11 +136,28 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Render formula from the template
+        env:
+          FORMULA_URL: ${{ steps.meta.outputs.url }}
+          FORMULA_SHA: ${{ steps.meta.outputs.sha }}
         run: |
           mkdir -p out
-          sed -e "s|url \".*\"|url \"${{ steps.meta.outputs.url }}\"|" \
-              -e "s|sha256 \".*\"|sha256 \"${{ steps.meta.outputs.sha }}\"|" \
+          # Anchored at the start of the line so only the formula's top-level
+          # `url`/`sha256` fields can match. The unanchored version matched any
+          # line containing `url "` anywhere, so a future `livecheck`/`resource`
+          # block (or a comment carrying an example URL) would have been
+          # rewritten too.
+          sed -e "s|^\( *\)url \".*\"|\1url \"${FORMULA_URL}\"|" \
+              -e "s|^\( *\)sha256 \".*\"|\1sha256 \"${FORMULA_SHA}\"|" \
               packaging/homebrew/syncrona.rb > out/syncrona.rb
+          # sed exits 0 when it matches nothing, so renaming or re-indenting the
+          # placeholders in the template would have silently shipped a tap
+          # formula still pointing at syncrona-0.0.0.tgz. Fail loudly instead.
+          if ! grep -qF "url \"${FORMULA_URL}\"" out/syncrona.rb ||
+             ! grep -qF "sha256 \"${FORMULA_SHA}\"" out/syncrona.rb; then
+            echo "::error::Homebrew formula substitution did not apply — refusing to publish a placeholder formula"
+            cat out/syncrona.rb
+            exit 1
+          fi
 
       - name: Commit the formula to the tap repo
         env:

@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is one of its build plugins: register it in the `rules` array of your `sync.config.js` and `syncrona build` runs it over every matching file.
+
 This plugin allows you to run [Sass](https://sass-lang.com/) on scss/sass files. This enables you to modularize your CSS and also adds some useful features that CSS doesn't normally support such as variables.
 
 ## Installation

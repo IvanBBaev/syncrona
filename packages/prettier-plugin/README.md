@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is one of its build plugins: register it in the `rules` array of your `sync.config.js` and `syncrona build` runs it over every matching file.
+
 This plugin allows you to run [Prettier](https://prettier.io/) on all supported file types. Supports `.prettierrc` files.
 
 ## Installation

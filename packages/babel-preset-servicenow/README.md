@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is not a `sync.config.js` build plugin: it is a plain Babel preset, listed last in the Babel options you pass to [`@syncrona/babel-plugin`](https://www.npmjs.com/package/@syncrona/babel-plugin).
+
 This [Babel](https://babeljs.io) preset is meant to run **absolutely last** of all plugins and presets. Its purpose is to remove or refactor any code that might break ServiceNow's serverside Rhino engine.
 Right now it is fairly simple, but it might be enhanced in the future if more issues are discovered.
 

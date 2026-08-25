@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is one of its build plugins: register it in the `rules` array of your `sync.config.js` and `syncrona build` runs it over every matching file.
+
 This plugin allows you to run [Babel](https://babeljs.io/) on your javascript and TypeScript files. This enables you to do all kinds of interesting things with your code structure. It also lets you use more modern javascript features in your ServiceNow development.
 
 Whatever Babel plugins and presets you use, you still need to `npm install` them like usual.

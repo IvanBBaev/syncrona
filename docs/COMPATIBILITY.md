@@ -28,13 +28,16 @@ core workflow largely **release-version-agnostic**.
 
 | ServiceNow release | Status | Notes |
 |---|---|---|
-| Current family (Xanadu / Yokohama / Zurich era) | 🟡 expected-compatible | Table API + scoped fallback are stable; the `sys.scripts.do` fallback path was **manually live-verified on a PDI 2026-07-03** (CR22), but the named-release matrix is **not yet covered by a CI live-instance test** |
+| **Yokohama** (`glide-yokohama-12-18-2024__patch13-hotfix5`) | ✅ manually live-verified 2026-08-21 | Full round trip on a vendor instance with **no companion app installed**, so the Table API path is the one that was exercised: `check-env`, `doctor`, `status`, `download` (byte-exact — the fetched `sys_script_include` script hashed identical to the instance value), `build`, `build --diff <ref>`, `push` (a reversible edit landed and was restored), `deploy --ci`, plus the `--json` and `--dry-run` contracts |
+| Other current-family releases (Xanadu / Zurich era) | 🟡 expected-compatible | Table API + scoped fallback are stable across these releases; the `sys.scripts.do` fallback path was separately live-verified 2026-07-03 (CR22) |
 | Earlier releases | 🟡 likely | Table API has been stable for many releases; same caveat |
 
-**Honest gap:** there is no live-instance compatibility test in CI yet (it needs
-real credentials). Behavior is validated against a **mock Table API** in the e2e
-network suite, not a real instance. Treat the ServiceNow rows as expected, not
-guaranteed, until a record-replay or live smoke test lands.
+**Honest gap:** the ✅ above is a **dated manual run by a maintainer**, not a
+test anyone else can re-run — there is no live-instance compatibility job in CI
+yet, because it needs real credentials. In CI, behavior is validated against a
+**mock Table API** in the e2e network suite. Treat every 🟡 row as expected, not
+guaranteed, and treat the ✅ row as true of that release on that date, until a
+record-replay or live smoke test lands.
 
 ## Authentication
 

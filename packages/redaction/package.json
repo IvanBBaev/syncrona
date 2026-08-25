@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/redaction",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "description": "Shared secret detection and redaction for SyncroNow AI (sensitive key names, secret-shaped values, stable redaction markers) used by the MCP server audit trail and the instance mirror.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

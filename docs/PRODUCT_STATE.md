@@ -12,7 +12,7 @@
 | MCP server | 61 tools in 12 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
 | Tests | **4942 passing** — core **116 suites / 1332 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1712** (node:test, against `dist`); mirror **46 suites / 1336 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-25) |
 | Coverage | core **97.85%** lines / 88.51% branches; mcp **97.87%** lines / 91.31% branches; mirror **100%** on all four axes (re-measured 2026-08-25) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
-| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). **Dev dependencies are audited by no workflow** — a full-tree `npm audit` reports 11 findings (5 low, 3 moderate, 3 high), all dev-only and none shipped |
+| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). Dev dependencies are audited too since 2026-08-25 — the full tree is also **0 vulnerabilities** (was 11: 5 low, 3 moderate, 3 high, all dev-only), gated in `ci.yml` by a blocking `npm audit --audit-level=high` plus a non-blocking low+moderate report; see [Dependency audit posture](../SECURITY.md#dependency-audit-posture) for why the two trees have different thresholds |
 | Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
 | Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, DX backlog (DX1–DX24) |
 
@@ -174,26 +174,47 @@ mindmap
 1. **D5 distribution** — the npm half is **done**: 0.9.4 is live on npm with build
    provenance, published from the `release` workflow (2026-08-20), so
    `npx syncrona` works for anyone. macOS/Windows/libsecret keychain for the
-   at-rest key shipped via AR2 (opt-in). Remaining: the `homebrew-tap` repo and a
-   released formula to complete the "brew install syncrona" definition of done —
-   [`packaging/`](../packaging/) holds the formula template and the Windows
-   `install.ps1`, whose `url`/`sha256` are still placeholders — plus native
-   Windows support beyond WSL.
+   at-rest key shipped via AR2 (opt-in). The **Homebrew formula body is
+   verified**: rendered with the real 0.9.4 registry URL and sha256, it passes
+   `brew style` and `brew audit --strict --online`, builds from source, installs,
+   passes `brew test`, and the installed binary prints its version — and the
+   `release.yml` substitution step was run for real against it (it is now
+   anchored and fails loudly if the placeholder ever moves). Remaining: the
+   `homebrew-tap` **repo does not exist**, so `brew tap IvanBBaev/tap` has never
+   run; the `update-homebrew` job is gated on an unset `HOMEBREW_TAP_READY` and
+   has never executed; no bottle exists; and Homebrew's 1-day
+   `--min-release-age` cooldown means `brew install syncrona` fails for roughly
+   the first 24 hours after each release (documented on the job). Plus native
+   Windows support beyond WSL — [`packaging/`](../packaging/) holds the Windows
+   `install.ps1`, still unverified for lack of a Windows host.
 2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2).
    CR22 is closed: the `sys.scripts.do` fallback was live-verified 2026-07-03
    (fixed a 404-only trigger that missed the real `400` response; confirmed it
-   stays non-executing under Basic-only auth, as documented).
+   stays non-executing under Basic-only auth, as documented). A second manual
+   pass on **2026-08-21** ran the primary workflow end to end against a live
+   **Yokohama patch 13** instance — `download` returned byte-exact content, a
+   `push` edit landed and was restored, and `build --diff`, `deploy --ci`,
+   `--json` and `--dry-run` behaved as their contracts state; see
+   [`COMPATIBILITY.md`](COMPATIBILITY.md). Both runs are **manual and dated**,
+   not reproducible by a third party: G11 (E2E against an instance in CI) is
+   still open and is what would turn either into evidence.
 3. **Engineering debt accepted knowingly** — mcp tests run against `dist/`
    (AR9, high-risk migration); module-level state pending a context object
    (AR11); coverage ratchet heading to 80 (CR26).
 4. **Gap backlog G1–G16** (triple analysis, 2026-06-12 — details and order in
    `TODO`). **Shipped since:** OAuth 2.0 (G1), config schema validation (G2),
    MCP rate limiting (G4), typed CLI args (G5), release automation via Changesets
-   (G6), machine-enforced module boundaries (G10), mcp branch coverage (G12), OS
-   matrix in CI (G15), security automation (G16). **Remaining:** download
-   resume/progress (G3), CLI telemetry (G7), plugin API contract (G8), proxy/TLS
-   support (G9), E2E tests against an instance (G11), mutation testing (G13),
-   performance baselines (G14).
+   (G6), corporate proxy + TLS support (G9 — `HTTPS_PROXY`/`NO_PROXY` and mTLS
+   in both clients), machine-enforced module boundaries (G10), mcp branch
+   coverage (G12), performance baselines (G14 — `scripts/bench.mjs`, enforced by
+   `bench:guard` in `npm run check` and in CI), OS matrix in CI (G15), security
+   automation (G16), download resume/progress (G3 — `downloadCheckpoint.ts`
+   records each completed table so an interrupted pull resumes). **Shipped but
+   not enforced:** mutation testing (G13) — Stryker is configured for `core`,
+   `mcp-server`, `credential-store` and `sn-transport` and runs on demand via
+   `npm run test:mutation`, but no workflow executes it, so no mutation score is
+   a gate. **Remaining:** CLI telemetry (G7), plugin API contract (G8), E2E
+   tests against an instance (G11).
 5. **DX backlog (DX1–DX24)** — onboarding (`check-env`, credential-source
    visibility), help examples, multi-instance guide, plugin-dev docs, error
    taxonomy, progress bars. Quick wins shortlisted in `TODO`.

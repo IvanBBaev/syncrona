@@ -1,5 +1,7 @@
 # @syncrona/babel-plugin-remove-modules
 
+## 1.0.0
+
 ## 0.9.4
 
 ## 0.9.3

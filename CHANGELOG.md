@@ -4,11 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Two passes over one failure signature: a command that does something other than
-what it says it does, and exits 0 about it. The first went after the CLI's own
-contracts — the flags it accepts, the manifests it documents, the cadence it
-promises. The second went after the values it reads from an instance, a
-workspace file or a hand-written `.env` and then trusts without looking.
+## [1.0.0] - 2026-08-25
+
+**First stable release.** 1.0.0 adds no features on top of 0.9.4. It draws a
+line under the surface 0.9.4 already had and commits to versioning it honestly:
+from here on the CLI command set, the shared `--dry-run` / `--json` / `--ci`
+option contracts, the `sync.config.js` schema, the plugin `rules` interface, the
+manifest formats (`sync.manifest.json`, `sync.diff.manifest.json`) and the MCP
+tool contract are public API, and a breaking change to any of them takes a major
+bump — the tool-contract and docs-drift gates fail the build when one happens by
+accident. What is verified and what is merely expected stays written down rather
+than implied: see [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md) for the open
+items and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for what has actually
+been run against a live instance.
+
+Three passes over one failure signature: something that does other than what it
+says it does, and exits 0 about it. The first went after the CLI's own contracts
+— the flags it accepts, the manifests it documents, the cadence it promises. The
+second went after the values it reads from an instance, a workspace file or a
+hand-written `.env` and then trusts without looking. The third went after the
+repository's claims about itself — an audit gate that covered half the
+dependency tree, a packaging formula nobody had ever built, and a product name
+that appeared in four spellings across the pages users read first.
 
 ### Added
 
@@ -117,14 +134,46 @@ workspace file or a hand-written `.env` and then trusts without looking.
   dependency of `@syncrona/mcp-server`, on the dispatcher path built for
   mTLS / custom-CA / proxy. The gate that should have caught it was set to
   `--audit-level=high`; CI and release now fail at `moderate`, which the
-  production tree clears with headroom. Dev dependencies remain audited by no
-  workflow — a full-tree audit reports 11 findings, all dev-only and none
-  shipped.
+  production tree clears with headroom.
+- Dev dependencies are audited. They previously were not — `--omit=dev` was the
+  only audit in any workflow, so the 11 findings the full tree carried (5 low,
+  3 moderate, 3 high, all confined to build tooling) were reported by nothing.
+  All 11 are now cleared and `ci.yml` gates the full tree on every push and PR:
+  - `brace-expansion` (GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895 — unbounded
+    expansion DoS) and `js-yaml` (GHSA-5p4m-2wfm-xmqj — quadratic CPU in `!!omap`)
+    were in-range lockfile-only bumps reached by `npm audit fix`. They came in
+    through eslint, typescript-eslint and jest.
+  - The remaining nine were one chain, all under `@stryker-mutator/*@8.7.1`,
+    which pins its dependencies too tightly to be fixed by a lockfile bump:
+    `ajv` at `~8.17.1` (GHSA-2g4f-4pwh-qvx6, ReDoS via `$data`; patched in
+    8.18.0), `@babel/core` at `~7.25.2` (GHSA-4x5r-pxfx-6jf8, arbitrary file read
+    via `sourceMappingURL`; patched in 7.29.6) and `tmp@0.0.33` via
+    `external-editor` (GHSA-ph9p-34f9-6g65 path traversal, GHSA-52f5-9888-hmc6
+    symlink write; patched in 0.2.6). npm's own remedy was
+    `@stryker-mutator/core@10`, two breaking majors of a tool that is not in CI
+    and whose four `stryker.conf.json` files carry the measurement rationale for
+    every threshold in them. Taken instead as three **scoped** `overrides` in the
+    root `package.json` — `@stryker-mutator/core > ajv`,
+    `@stryker-mutator/instrumenter > @babel/core`, `external-editor > tmp` — so
+    eslint's `ajv@6` and the build plugins' `@babel/core@8` are untouched.
+    Verified by running Stryker, not by re-reading the audit: all four configs
+    still validate against the schema under the new `ajv`, and a real
+    `stryker run --dryRunOnly` instrumented 832 mutants and passed its initial
+    test run under the new `@babel/core`.
+- `ci.yml` gates the dev tree at `--audit-level=high` while production stays at
+  `moderate`. Production dependencies execute on user machines with user
+  credentials, so that bar is set as low as the tree can hold; dev dependencies
+  execute only on maintainer machines over this repository's own source, where
+  the realistic threat is `high`-shaped. A `moderate` bar on a ~590-package dev
+  tree would stop unrelated PRs on advisories that do not warrant it. Everything
+  below the bar is still printed by a non-blocking low+moderate report step, so
+  sub-`high` findings stay visible rather than tolerated in silence.
 
 ### Changed
 
-- `release.yml` no longer claims that `ci.yml` audits the full dependency tree;
-  it never did.
+- `release.yml` no longer claims that `ci.yml` audits the full dependency tree.
+  It did not when the claim was written; it does now, and the comment says where
+  the dev coverage actually lives and why the release gate stays production-only.
 
 ## [0.9.4] - 2026-08-20
 

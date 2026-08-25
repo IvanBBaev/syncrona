@@ -278,8 +278,11 @@ that's a runner-resolution quirk, not a code error.
 - **Command tables drift-checked:** changing the CLI surface requires updating
   README and CLAUDE.md in the same change, or CI fails.
 - **Destructive CLI actions confirm first** and support `--dry-run`/`--ci`.
-- **Security:** never commit `.env` / credentials; `npm audit --omit=dev`
-  should stay at 0 vulnerabilities — fix or document exceptions.
+- **Security:** never commit `.env` / credentials. Both `npm audit --omit=dev`
+  and the full-tree `npm audit` should stay at 0 vulnerabilities — fix, or
+  document the exception in
+  [SECURITY.md](SECURITY.md#dependency-audit-posture). CI gates shipped code at
+  `--audit-level=moderate` and the dev tree at `--audit-level=high`.
 - Tests must be order-independent: restore `global.fetch`, close servers in
   `finally`, and reset module caches via the provided seams
   (`clearServiceNowSecretsCache`, `clearScopedApiPrefixCache`).

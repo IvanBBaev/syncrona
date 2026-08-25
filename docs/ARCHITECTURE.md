@@ -232,8 +232,10 @@ flowchart LR
   and always restore `global.fetch`/close servers in `finally`.
 - The docs-drift gates fail CI when the README/CLAUDE.md command tables
   diverge from the actual CLI surface.
-- Dependency hygiene: `npm audit --omit=dev` is kept at **0 vulnerabilities**
-  (adding it as a CI step is tracked as G16 in `TODO`).
+- Dependency hygiene: both `npm audit --omit=dev` and the full-tree `npm audit`
+  are kept at **0 vulnerabilities**, each enforced by its own CI step (G16) at
+  its own threshold — `moderate` for shipped code, `high` for the dev tree. See
+  [Dependency audit posture](../SECURITY.md#dependency-audit-posture).
 - Contributor workflow and conventions: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## 5. Module contract — plugging modules in and out

@@ -1,5 +1,11 @@
 # @syncrona/typescript-plugin
 
+## 1.0.0
+
+### Patch Changes
+
+- @syncrona/types@1.0.0
+
 ## 0.9.4
 
 ### Patch Changes
