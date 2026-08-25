@@ -212,7 +212,7 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 - `sync_diff_instance_vs_local`
   - Compares local scoped files against the instance records for a table/scope and reports changed, added (local-only) and removed (instance-only) records with diff summaries and race-condition warnings
 - `sync_status` / `sync_refresh` / `sync_build` / `sync_push`
-  - Wrapper tools for common SyncroNow workspace command flows
+  - Wrapper tools for common SyncroNow AI workspace command flows
 - `run_node_code`
   - Executes local Node snippets in a child process — **disabled by default**: the call needs `confirmDestructive: true` *and* the guardrail policy must enable `allowFullNodeAccess` (default `false`), because in-process sandboxing of arbitrary Node code is not a real security boundary
 - `run_workspace_command`

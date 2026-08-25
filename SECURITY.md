@@ -152,6 +152,50 @@ analysed*, never a command to obey.
   The fencing is advisory — the ultimate mitigation is the confirmation/audit
   gate on side-effecting tools and a least-privilege instance user.
 
+## Dependency audit posture
+
+Both dependency trees are audited on every push and pull request, at different
+thresholds, because they are exposed to different things.
+
+| Tree | Command | Threshold | Blocking | Last measured |
+| --- | --- | --- | --- | --- |
+| Production (shipped) | `npm audit --omit=dev` | `moderate` | yes | **0 vulnerabilities**, 2026-08-25 |
+| Full (production + dev) | `npm audit` | `high` | yes | **0 vulnerabilities**, 2026-08-25 |
+| Full, sub-threshold report | `npm audit --audit-level=low` | `low` | no — informational | **0 vulnerabilities**, 2026-08-25 |
+
+**Why production is gated more tightly than dev.** Production dependencies run on
+your machine, in the same process as your ServiceNow credentials, against your
+instance — so anything from `moderate` up is treated as a user-facing exposure
+and fails the build. Dev dependencies (eslint, jest, TypeScript, Stryker and
+their transitive tree) never reach a published tarball; they execute only on
+maintainer machines and CI runners, over this repository's own source. The
+realistic threat there is a build tool that can be coerced into executing or
+exfiltrating something, which is `high`/`critical` shaped, so that is where the
+dev gate bites. Pitching the dev gate at `moderate` would block unrelated pull
+requests on advisories that do not warrant it, and a gate that cries wolf gets
+removed. Findings below the dev threshold are not hidden: the third row above is
+a non-blocking step that prints them into every CI run.
+
+Verify either number yourself from a clean checkout:
+
+```bash
+npm ci
+npm audit --omit=dev --audit-level=moderate   # production gate
+npm audit --audit-level=high                  # dev + production gate
+```
+
+**Known residuals.** None as of 2026-08-25 — both trees are at zero. Three
+scoped `overrides` in the root `package.json` keep them there by lifting
+dependencies that `@stryker-mutator/*@8.7.1` pins below their patched versions
+(`ajv`, `@babel/core`, and `tmp` via `external-editor`). They are scoped to those
+parents specifically, so unrelated copies elsewhere in the tree — notably
+eslint's `ajv@6` and the build plugins' `@babel/core@8` — are not affected. If
+you upgrade Stryker past 8.7.1, re-check whether the overrides are still needed;
+`@stryker-mutator/core@10` resolves all three upstream.
+
+Advisories in a dependency we ship are handled through the reporting process at
+the top of this document, the same as a vulnerability in our own code.
+
 ## Hardening recommendations
 
 - Use a dedicated integration user with least-privilege roles.

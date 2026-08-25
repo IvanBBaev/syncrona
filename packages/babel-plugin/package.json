@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/babel-plugin",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "description": "SyncroNow AI build plugin that runs Babel on JavaScript/TypeScript files, enabling modern syntax in ServiceNow (Rhino) scoped-app code.",
   "main": "./dist/index.js",
   "scripts": {
@@ -19,7 +19,7 @@
   "dependencies": {
     "@babel/core": "^8.0.0",
     "@babel/types": "^8.0.0",
-    "@syncrona/types": "^0.9.4"
+    "@syncrona/types": "^1.0.0"
   },
   "engines": {
     "node": ">=22.0.0"

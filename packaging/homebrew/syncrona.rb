@@ -22,6 +22,6 @@ class Syncrona < Formula
   end
 
   test do
-    assert_match "syncrona", shell_output("#{bin}/syncrona --help 2>&1", 0)
+    assert_match "syncrona", shell_output("#{bin}/syncrona --help 2>&1")
   end
 end

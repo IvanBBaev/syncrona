@@ -12,7 +12,8 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `0.9.4` (pre-release; latest published on npm: `0.9.4`)
+- **Current version:** `1.0.0` — first stable release, cut 2026-08-25. Latest
+  published on npm is `0.9.4` until the `v1.0.0` tag runs the release workflow.
 - **Engineering readiness:** ~90% (9/10) — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
   a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
@@ -152,9 +153,21 @@ human-facing summary of them.
   1238 / 114 suites, mcp 1696, mirror 1290 / 43 suites, jira 126,
   credential-store 70, redaction 132, sn-transport 151, and 83 across the eight
   build plugins.
-  The remaining distance to 1.0 is owner/live-gated (live-instance verification,
-  native Windows CI host, Homebrew tap, business decisions), not
+  The remaining distance to 1.0 was owner/live-gated (live-instance
+  verification, native Windows CI host, Homebrew tap, business decisions), not
   engineering-completable offline.
+- **1.0.0 (2026-08-25).** Two of those gates closed. The primary workflow was
+  run end to end against a live **Yokohama patch 13** instance — byte-exact
+  `download`, a `push` edit that landed and was restored, `build --diff`,
+  `deploy --ci`, `--json` and `--dry-run` (recorded in
+  [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)) — and the Homebrew formula
+  was verified against the real registry tarball: `brew style`,
+  `brew audit --strict --online`, build-from-source, install, `brew test`, and
+  the installed binary printing its version. The dev-dependency tree, which no
+  workflow audited, is now gated in CI and at zero findings. **Still open past
+  1.0:** a native Windows CI host, the `homebrew-tap` repository itself (the
+  `update-homebrew` job has never run), a live-instance E2E job in CI (G11), and
+  the business decisions (BA1 external users, BA5 support tier).
 - **Shared foundation grew by one leaf (2026-08-17):** the credential detectors
   that had been hardened inside the MCP audit trail over five reviews moved out
   into **`@syncrona/redaction`**, a fifteenth workspace package that imports
@@ -170,7 +183,7 @@ human-facing summary of them.
   collision resolution). `@syncrona/redaction` is not on npm yet — it publishes
   with the next release, which the fixed changesets version group handles without
   configuration.
-- **Last updated:** 2026-08-17
+- **Last updated:** 2026-08-25
 
 ## Status legend
 

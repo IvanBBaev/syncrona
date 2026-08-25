@@ -46,12 +46,56 @@ jobs:
       # GHSA-v3r7-h72x-cjcm cookie attribute injection) shipped as a production
       # dependency of @syncrona/mcp-server, on the very dispatcher path
       # `servicenowCore.ts` builds for mTLS / custom-CA / proxy. Fixed by 6.28.0.
-      # `--omit=dev` scopes this to shipped code; dev-only advisories are NOT
-      # audited by any workflow (see the note in release.yml).
+      # `--omit=dev` scopes this to shipped code; the dev tree is covered by the
+      # separate gate below.
       # Production tree measured at 0 vulnerabilities on 2026-08-21 — it then
       # passed even at `--audit-level=low`, so `moderate` has real headroom.
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=moderate
+
+      # Dev-dependency gate. Until 2026-08-25 `--omit=dev` above was the ONLY
+      # audit in any workflow, so an advisory in eslint / jest / typescript-eslint
+      # / stryker was invisible to CI and to the release gate alike — the full
+      # tree carried 11 findings (5 low, 3 moderate, 3 high) that nothing
+      # reported. This step is what closes that hole. It is BLOCKING, not
+      # informational: a `continue-on-error` step is a warning nobody reads.
+      #
+      # WHY `high` HERE WHEN PRODUCTION IS GATED AT `moderate` — the two trees
+      # carry genuinely different risk, so they get different bars:
+      #   * Production deps run on USER machines, in-process with the user's
+      #     ServiceNow credentials, against the user's instance. A moderate there
+      #     is a user-facing exposure (exactly the undici trio above), so that
+      #     gate is set as low as the tree can sustain.
+      #   * Dev deps run only here — on maintainer machines and this runner, over
+      #     source we wrote ourselves. The realistic threat is a build tool that
+      #     can be coerced into executing or exfiltrating something, which is
+      #     `high`/`critical` shaped. A moderate ReDoS in a linter's glob parser,
+      #     fed only our own file paths, is not that.
+      # Setting this to `moderate` would turn every new advisory anywhere in the
+      # ~590-package dev tree into an instant hard stop on unrelated PRs. That
+      # noise does not get advisories fixed faster; it gets the gate deleted or
+      # `|| true`-ed, which is strictly worse than a gate pitched where it bites.
+      #
+      # This is NOT a threshold chosen to accommodate existing debt: on 2026-08-25
+      # the FULL tree was brought to 0 vulnerabilities (brace-expansion and js-yaml
+      # via in-range lockfile bumps; stryker's pinned ajv / @babel/core / tmp via
+      # the scoped `overrides` in the root package.json). So `high` has the same
+      # kind of headroom `moderate` has on the production side.
+      #
+      # Not a scheduled job that files an issue: this workflow deliberately runs
+      # under `permissions: contents: read`, and issue-filing needs `issues: write`.
+      # Widening the token to report on dev advisories is a bad trade.
+      - name: Security audit (dev + production dependencies)
+        run: npm audit --audit-level=high
+
+      # Visibility for what the gate above deliberately does not block on. Prints
+      # every low/moderate dev advisory and never fails the job — so sub-`high`
+      # findings are DOCUMENTED in the run log rather than silently tolerated.
+      # `if: always()` so the report still appears when the blocking gate reddens.
+      - name: Dev-dependency advisory report (low + moderate, non-blocking)
+        if: always()
+        continue-on-error: true
+        run: npm audit --audit-level=low
 
       # `npm run build` compiles every workspace with `tsc` (each package's
       # `prepack`), which type-checks the whole tree — so a separate `typecheck`

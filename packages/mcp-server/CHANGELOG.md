@@ -1,5 +1,14 @@
 # @syncrona/mcp-server
 
+## 1.0.0
+
+### Patch Changes
+
+- @syncrona/credential-store@1.0.0
+- @syncrona/jira@1.0.0
+- @syncrona/redaction@1.0.0
+- @syncrona/sn-transport@1.0.0
+
 ## 0.9.4
 
 ### Patch Changes

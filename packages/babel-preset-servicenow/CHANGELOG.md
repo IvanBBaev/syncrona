@@ -1,5 +1,7 @@
 # @syncrona/babel-preset-servicenow
 
+## 1.0.0
+
 ## 0.9.4
 
 ## 0.9.3

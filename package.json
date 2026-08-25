@@ -2,7 +2,7 @@
   "name": "syncrona-monorepo",
   "version": "0.9.0",
   "private": true,
-  "description": "AI-ready ServiceNow MCP server for metadata analysis, dependency graphs, impact analysis, and scoped application documentation.",
+  "description": "SyncroNow AI monorepo — the syncrona CLI, the @syncrona/mcp-server MCP runtime, and the @syncrona/* build plugins and shared libraries for ServiceNow scoped applications.",
   "engines": {
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
@@ -65,7 +65,16 @@
     "hono": "^4.12.34",
     "fast-uri": "^3.1.5",
     "ip-address": "^10.3.1",
-    "immutable": "^5.1.9"
+    "immutable": "^5.1.9",
+    "@stryker-mutator/core": {
+      "ajv": "~8.20.0"
+    },
+    "@stryker-mutator/instrumenter": {
+      "@babel/core": "~7.29.7"
+    },
+    "external-editor": {
+      "tmp": "^0.2.7"
+    }
   },
   "directories": {
     "doc": "docs"

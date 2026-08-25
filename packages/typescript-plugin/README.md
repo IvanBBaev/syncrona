@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is one of its build plugins: register it in the `rules` array of your `sync.config.js` and `syncrona build` runs it over every matching file.
+
 This plugin allows you to run the [TypeScript](https://www.typescriptlang.org/) compiler on `.ts` files. Supports `tsconfig.json` files.
 
 ## Installation

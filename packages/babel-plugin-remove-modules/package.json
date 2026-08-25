@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/babel-plugin-remove-modules",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "description": "Babel plugin for SyncroNow AI that strips ES import/export statements, letting ServiceNow source files reference each other without a module loader.",
   "main": "./dist/index.js",
   "scripts": {
@@ -15,7 +15,7 @@
     "@babel/types": "^8.0.0"
   },
   "devDependencies": {
-    "@syncrona/types": "^0.9.4"
+    "@syncrona/types": "^1.0.0"
   },
   "publishConfig": {
     "access": "public"

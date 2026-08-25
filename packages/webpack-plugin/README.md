@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is one of its build plugins: register it in the `rules` array of your `sync.config.js` and `syncrona build` runs it over every matching file.
+
 This plugin allows you to run [Webpack](https://webpack.js.org/) on your desired files. This allows you to build frontend bundles in a more modern way or even potentially bundle server side javascript files.
 
 ## Installation

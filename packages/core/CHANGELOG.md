@@ -1,5 +1,33 @@
 # syncrona
 
+## 1.0.0
+
+### Major Changes
+
+- First stable release.
+
+  1.0.0 does not add features on top of 0.9.4 — it declares that the surface
+  0.9.4 already had is one the project will now version honestly. From this
+  release on, the CLI command set, the shared `--dry-run` / `--json` / `--ci`
+  option contracts, the `sync.config.js` schema, the plugin `rules` interface, the
+  manifest formats (`sync.manifest.json`, `sync.diff.manifest.json`) and the MCP
+  tool contract are public API: a breaking change to any of them requires a major
+  bump, and the tool-contract and docs-drift gates in CI fail the build when one
+  happens by accident.
+
+  What backs that claim, and what does not, is written down rather than implied —
+  see `docs/PRODUCT_STATE.md` for the open items and `docs/COMPATIBILITY.md` for
+  what has actually been run against a live instance versus what is expected to
+  work.
+
+### Patch Changes
+
+- @syncrona/credential-store@1.0.0
+- @syncrona/jira@1.0.0
+- @syncrona/mirror@1.0.0
+- @syncrona/sn-transport@1.0.0
+- @syncrona/types@1.0.0
+
 ## 0.9.4
 
 ### Patch Changes

@@ -7,6 +7,8 @@
 
 ## Overview
 
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is not a `sync.config.js` build plugin: it is a plain Babel plugin, listed in the Babel options you pass to [`@syncrona/babel-plugin`](https://www.npmjs.com/package/@syncrona/babel-plugin).
+
 This [Babel](https://babeljs.io) plugin is for stripping import/export statements from code. It is useful for allowing your source code to reference other files without actually importing them.
 
 ## Installation
