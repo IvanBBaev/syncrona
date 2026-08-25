@@ -196,7 +196,7 @@ human-facing summary of them.
 
 ---
 
-## Where SyncroNow AI is today (v0.9.x pre-release)
+## Where SyncroNow AI is today (v1.0.0)
 
 The engineering foundation is in place and validated end-to-end against scoped
 applications. The following are **shipped**:

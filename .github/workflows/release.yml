@@ -111,7 +111,7 @@ jobs:
   # KNOWN 24-HOUR WINDOW (verified against Homebrew 6.0.16 on 2026-08-25): the
   # formula installs via `std_npm_args`, which passes npm's
   # `--min-release-age=<Homebrew::RELEASE_COOLDOWN_DAYS>` (currently 1 DAY).
-  # `syncrona` depends on `@syncrona/* ^0.9.x`, whose only satisfying version is
+  # `syncrona` depends on `@syncrona/* ^1.0.x`, whose only satisfying version is
   # the one published seconds earlier by the job above, so `brew install
   # syncrona` fails with `npm error code ETARGET / notarget No matching version
   # found ... with a date before <today>` until the release is ~24h old. Nothing
