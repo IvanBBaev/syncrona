@@ -2,7 +2,7 @@
 
 What it takes to take SyncroNow AI from "alpha-ready" to a **public 1.0** that an
 enterprise can adopt. Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md)
-(§10 enterprise gate) and the engineering `TODO`/`DONE`. Status as of 2026-08-17.
+(§10 enterprise gate) and the engineering `TODO`/`DONE`. Status as of 2026-08-25.
 
 Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 (needs an account, a credential, a live instance, or a decision).
@@ -66,10 +66,12 @@ Legend: ✅ done · 🟡 AI-completable (in-repo, scheduled) · 🔴 owner-gated
 - ✅ **npm publish** — DONE 2026-08-17: the `@syncrona` scope is claimed with 2FA
   and an automation token, released from the `Release` workflow
   (`changeset publish`, exposed locally as `npm run release`). 0.9.1 covered the
-  14 packages that existed at the time; **0.9.4 is live for all 16**
+  14 packages that existed at the time; **1.0.0 is live for all 16**
   (`@syncrona/redaction` and `@syncrona/mirror` joined as first publishes at
   0.9.3) — `.changeset/config.json` fixes `syncrona` and `@syncrona/*` in one
   version group, so a new package joins the lockstep without any config change.
+  The 1.0.0 run (2026-08-25) is also the first where the per-package git tags
+  were actually created and pushed.
 - 🔴 **Homebrew tap** — create `homebrew-tap` repo + Formula + release action.
 - 🔴 **Windows** — PowerShell install script + Windows Credential Manager (and
   native-Windows support beyond WSL).

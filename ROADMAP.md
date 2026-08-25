@@ -12,8 +12,10 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
-- **Current version:** `1.0.0` — first stable release, cut 2026-08-25. Latest
-  published on npm is `0.9.4` until the `v1.0.0` tag runs the release workflow.
+- **Current version:** `1.0.0` — first stable release, cut and **published on npm
+  2026-08-25**. All 16 packages are live with build provenance
+  (`predicateType: https://slsa.dev/provenance/v1`), published by the `Release`
+  workflow off the `v1.0.0` tag.
 - **Engineering readiness:** ~90% (9/10) — gate suite green, 0 production-dependency
   vulnerabilities, OAuth on CLI + MCP, CI hardened, and corporate proxy/TLS (G9),
   a perf baseline (G14), resumable download (G3), `config add-plugin` (DX8), an
@@ -164,10 +166,16 @@ human-facing summary of them.
   was verified against the real registry tarball: `brew style`,
   `brew audit --strict --online`, build-from-source, install, `brew test`, and
   the installed binary printing its version. The dev-dependency tree, which no
-  workflow audited, is now gated in CI and at zero findings. **Still open past
-  1.0:** a native Windows CI host, the `homebrew-tap` repository itself (the
-  `update-homebrew` job has never run), a live-instance E2E job in CI (G11), and
-  the business decisions (BA1 external users, BA5 support tier).
+  workflow audited, is now gated in CI and at zero findings.
+  **Published 2026-08-25** off the `v1.0.0` tag, after the dispatch dry-run
+  rehearsal passed on the same tree: all 16 packages live with SLSA provenance,
+  and — for the first time — `changeset publish` created and pushed all 16
+  per-package tags, the step that failed silently through 0.9.0/0.9.1.
+  **Still open past 1.0:** a native Windows CI host, the `homebrew-tap`
+  repository itself (the `update-homebrew` job is still gated on an unset
+  `HOMEBREW_TAP_READY` and was skipped again on this release), a live-instance
+  E2E job in CI (G11), and the business decisions (BA1 external users, BA5
+  support tier).
 - **Shared foundation grew by one leaf (2026-08-17):** the credential detectors
   that had been hardened inside the MCP audit trail over five reviews moved out
   into **`@syncrona/redaction`**, a fifteenth workspace package that imports
@@ -180,9 +188,9 @@ human-facing summary of them.
   hibernating-instance as three distinct operator actions) and `pathSafety.ts`
   (turning instance-supplied names into filenames legal on every supported
   filesystem: separator folding, a byte-rather-than-code-point cap, deterministic
-  collision resolution). `@syncrona/redaction` is not on npm yet — it publishes
-  with the next release, which the fixed changesets version group handles without
-  configuration.
+  collision resolution). `@syncrona/redaction` first published at 0.9.3 and is
+  live at 1.0.0 with the rest, which the fixed changesets version group handled
+  without any configuration change.
 - **Last updated:** 2026-08-25
 
 ## Status legend

@@ -171,9 +171,11 @@ mindmap
 
 ## What is NOT done
 
-1. **D5 distribution** — the npm half is **done**: 0.9.4 is live on npm with build
-   provenance, published from the `release` workflow (2026-08-20), so
-   `npx syncrona` works for anyone. macOS/Windows/libsecret keychain for the
+1. **D5 distribution** — the npm half is **done**: 1.0.0 is live on npm for all 16
+   packages with build provenance, published from the `release` workflow off the
+   `v1.0.0` tag (2026-08-25), so `npx syncrona` works for anyone. That release is
+   also the first where `changeset publish` created and pushed all 16 per-package
+   tags. macOS/Windows/libsecret keychain for the
    at-rest key shipped via AR2 (opt-in). The **Homebrew formula body is
    verified**: rendered with the real 0.9.4 registry URL and sha256, it passes
    `brew style` and `brew audit --strict --online`, builds from source, installs,
