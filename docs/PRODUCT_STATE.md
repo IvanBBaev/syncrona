@@ -1,6 +1,6 @@
 # SyncroNow AI — Product State
 
-> Last updated: 2026-08-18. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Last updated: 2026-08-25. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
 > Working journals: `TODO` (open work), `DONE` (completed work, chronological).
 
 ## TL;DR
@@ -10,9 +10,9 @@
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
 | CLI | 24 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
 | MCP server | 61 tools in 12 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
-| Tests | **4750 passing** — core **110 suites / 1202 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1696** (node:test, against `dist`); mirror **43 suites / 1290 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-18) |
-| Coverage | core **97.71%** lines / 88.00% branches; mcp **97.86%** lines / 91.41% branches; mirror **100%** on all four axes (re-measured 2026-08-18) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
-| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** |
+| Tests | **4942 passing** — core **116 suites / 1332 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1712** (node:test, against `dist`); mirror **46 suites / 1336 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-25) |
+| Coverage | core **97.85%** lines / 88.51% branches; mcp **97.87%** lines / 91.31% branches; mirror **100%** on all four axes (re-measured 2026-08-25) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
+| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). **Dev dependencies are audited by no workflow** — a full-tree `npm audit` reports 11 findings (5 low, 3 moderate, 3 high), all dev-only and none shipped |
 | Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
 | Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, DX backlog (DX1–DX24) |
 

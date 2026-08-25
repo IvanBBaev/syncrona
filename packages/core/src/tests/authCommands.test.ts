@@ -92,9 +92,14 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   getAppFileList: jest.fn(),
   pushFiles: jest.fn(),
   buildFiles: jest.fn(),
+  buildFilePaths: jest.fn(() => []),
   syncManifest: jest.fn(),
 }));
-jest.unstable_mockModule("../gitUtils.js", () => ({ gitDiffToEncodedPaths: jest.fn() }));
+jest.unstable_mockModule("../gitUtils.js", () => ({
+  gitDiffToEncodedPaths: jest.fn(),
+  writeDiff: jest.fn(),
+  clearDiff: jest.fn(),
+}));
 jest.unstable_mockModule("../FileUtils.js", () => ({ encodedPathsToFilePaths: jest.fn() }));
 jest.unstable_mockModule("../wizard.js", () => ({ startWizard: jest.fn() }));
 jest.unstable_mockModule("../logMessages.js", () => ({
@@ -189,6 +194,29 @@ describe("loginCommand", () => {
       "admin",
       "secret"
     );
+  });
+
+  // #20: the prompt asks for "the instance", and what a user has in the
+  // clipboard is what the address bar shows. login stripped the scheme and a
+  // trailing slash but kept the PATH, so `.../now/nav/ui/...` went into the
+  // credential store verbatim and every later request built
+  // `https://dev123.service-now.com/now/nav/.../api/now/table/...`, which
+  // answers with the login page instead of JSON.
+  it("stores the bare host when the instance is pasted whole from the address bar", async () => {
+    mockPrompt.mockResolvedValueOnce({ user: "admin", password: "secret" });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "https://dev123.service-now.com/now/nav/ui/classic/params/target/sys_script.do",
+      authMethod: "basic",
+    });
+
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "admin",
+      "secret"
+    );
+    expect(mockSetActiveInstance).toHaveBeenCalledWith("dev123.service-now.com");
   });
 
   it("creates default workspace config when sync.config.js is missing", async () => {

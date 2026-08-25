@@ -31,6 +31,17 @@ export const META_FILE_TYPE: SN.FileType = "json";
 /** On-disk file name in the nested layout: `<table>/<record>/.meta.json`. */
 export const META_SIDECAR_FILE_NAME = `${META_FILE_NAME}.${META_FILE_TYPE}`;
 
+/**
+ * The same text without a leading UTF-8 byte-order mark.
+ *
+ * Node decodes the three-byte BOM to a single U+FEFF and hands it to us as the
+ * first character of the string; every JSON parser refuses it. Exported because
+ * the sidecar is the one file in the workspace that is PARSED rather than
+ * transferred, so it is the one place the mark matters.
+ */
+export const stripBOM = (text: string): string =>
+  text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+
 /** A fresh sidecar pseudo-file entry for a manifest record. */
 export const metaFile = (): SN.File => ({
   name: META_FILE_NAME,
@@ -185,6 +196,24 @@ export const isMetaFieldCandidate = (
 };
 
 /**
+ * Own properties only.
+ *
+ * A column NAME here comes from `sys_dictionary.element` or from an operator's
+ * `tableOptions.<table>.metaFields`, so nothing in this process chooses it — and
+ * `constructor`, `toString`, `valueOf`, `hasOwnProperty` are all valid
+ * ServiceNow column-name shapes that are also members of `Object.prototype`. A
+ * bare `field in row` answers true for every one of them on a row that carries
+ * no such column, which is the exact opposite of what the caller asks it. Same
+ * guard, and the same reason, as `ownLookup` in fieldMap.
+ */
+const rowHasColumn = (row: Record<string, unknown>, field: string): boolean =>
+  Object.prototype.hasOwnProperty.call(row, field);
+
+/** A value with a single unambiguous column form. */
+const isColumnScalar = (raw: unknown): boolean =>
+  typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean";
+
+/**
  * The string form of one Table-API cell.
  *
  * Reference columns arrive as `{ link, value }` (the client does not pass
@@ -192,6 +221,13 @@ export const isMetaFieldCandidate = (
  * "[object Object]" — a value that looks like data, survives into the file, and
  * is wrong. Unwrap to the referenced sys_id, which is also the only form a
  * future push-back could send.
+ *
+ * The unwrap accepts any scalar `value`, not just a string. The wire form of a
+ * cell is the transport's choice, not ours — a client configured with
+ * `sysparm_display_value`, or a typed transport that preserves the column's own
+ * type, hands back `{ value: 100 }` or `{ value: false }` — and answering "" for
+ * those reported a column that HAS a value as empty. That is the same silent
+ * loss the empty-vs-absent rule below exists to prevent, one layer down.
  */
 const metaValueText = (raw: unknown): string => {
   if (raw === null || raw === undefined) {
@@ -199,9 +235,9 @@ const metaValueText = (raw: unknown): string => {
   }
   if (typeof raw === "object") {
     const value = (raw as { value?: unknown }).value;
-    return typeof value === "string" ? value : "";
+    return isColumnScalar(value) ? String(value) : "";
   }
-  return String(raw);
+  return isColumnScalar(raw) ? String(raw) : "";
 };
 
 /**
@@ -229,9 +265,14 @@ export const serializeMetaFields = (
   row: Record<string, unknown>,
   fields: string[]
 ): string => {
-  const body: Record<string, string> = {};
+  // Null-prototype: `body["__proto__"] = "x"` on a plain object hits the
+  // Object.prototype setter, which ignores a non-object — no own property, and
+  // the column vanishes from a file whose whole contract is "every tracked
+  // column is in here". Building the body without a prototype makes every column
+  // name an ordinary key.
+  const body: Record<string, string> = Object.create(null);
   for (const field of [...new Set(fields)].sort()) {
-    if (!(field in row)) {
+    if (!rowHasColumn(row, field)) {
       continue;
     }
     body[field] = metaValueText(row[field]);
@@ -275,7 +316,12 @@ export const resolveMetaUpdate = (
 ): MetaUpdate => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(content);
+    // A leading U+FEFF is what Notepad, PowerShell redirection and a VS Code
+    // workspace set to `utf8bom` all write, and this tool ships for Windows and
+    // WSL. JSON.parse rejects it outright, so a sidecar the user edited
+    // correctly failed the push with "not valid JSON" pointing at a file that
+    // looks perfectly valid in the editor that produced it.
+    parsed = JSON.parse(stripBOM(content));
   } catch (e) {
     throw new Error(
       `${META_SIDECAR_FILE_NAME} is not valid JSON: ${
@@ -291,7 +337,11 @@ export const resolveMetaUpdate = (
 
   const writable = new Set(known.metaFields ?? []);
   const readOnly = new Set(known.readOnlyFields ?? []);
-  const fields: Record<string, string> = {};
+  // Null-prototype for the same reason the serializer uses one: a column named
+  // `__proto__` was matched as writable, assigned, and then silently missing
+  // from the update body — a push that reports success and changes nothing,
+  // which is the one outcome this function exists to make impossible.
+  const fields: Record<string, string> = Object.create(null);
   const skipped: string[] = [];
   const unknown: string[] = [];
   const unusable: string[] = [];

@@ -276,7 +276,7 @@ describe("runMirrorCommand against the fixture instance", () => {
     const first = await runMirrorCommand(runOptions(root, { client: clientFor(server) }));
     expect(first.exitCode).toBe(0);
 
-    // Same root, `full: false`, sync #1 of 10 — an INCREMENTAL plan: every
+    // Same root, `full: false`, sync #2 of 10 — an INCREMENTAL plan: every
     // table with shard state from the first run is walked by watermark, and the
     // Writer is told so (its flush merges a slice instead of claiming the
     // whole table).

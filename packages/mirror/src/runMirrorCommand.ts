@@ -74,6 +74,15 @@
  *   a fresh sweep. On a fatal (exit 1) the sink is flushed instead, so the next
  *   run can skip every table this one completed.
  *
+ * - **The reconcile cadence is counted here, on the same condition.** §5.4 promotes
+ *   every Nth sync to `reconcile`, which is the routine path by which a DELETION on
+ *   the instance reaches the tree — INV-5 accepts nothing but a completed full sweep
+ *   as evidence of an absence. The Planner takes the ordinal as an input and stays
+ *   pure, so somebody has to keep the count; `syncCounter.ts` keeps it beside the
+ *   checkpoint, this module reads it before the first request and advances it in the
+ *   `fatal === null` branch below. A fatal run does NOT consume its slot, for the
+ *   resume reason spelled out at that branch.
+ *
  * - **Row-level parse failures are `notDecomposed`, not a downgrade** (D8/F6).
  *   The serializer stores an unparseable value whole under its `raw:` marker —
  *   the record is mirrored, wholly, just not decomposed — so the coverage row
@@ -133,10 +142,18 @@ import { serializeAndRedact } from "./pipeline";
 import { buildMirrorCommitMessage } from "./report/commitMetadata";
 import { buildCoverageReport, writeCoverageReport, writeMirrorReport } from "./report/coverageReport";
 import { listScopesWithShards, loadShardSet } from "./shards/shardStore";
+import {
+  advanceSyncCounter,
+  nextSyncOrdinal,
+  readSyncCounter,
+  syncCounterWarning,
+  type SyncCounterRead,
+} from "./syncCounter";
 import { fetchSweep, type FetchFatal, type FetchRowSink, type TableFetchOutcome } from "./sync/fetcher";
-import { loadShardStates, planSync, type PlanResult } from "./sync/planner";
+import { loadShardStates, planSync, type PlanResult, type SyncCadence } from "./sync/planner";
 import { reconcileSweep, type TableSweepEvidence } from "./sync/reconciler";
 import type { WriterFs } from "./write/fs";
+import { provisionMirrorGitIgnore } from "./write/gitIgnore";
 import { MirrorWriter, type TableSweepWriter } from "./write/writer";
 
 /**
@@ -191,12 +208,20 @@ export interface RunMirrorCommandOptions {
   transport?: MirrorTransportOptions;
   /** `--full` — force a sweep of every included table (§5.13). */
   full?: boolean;
+  /** `--reconcile` — promote this run to a reconcile whatever the count says. */
+  reconcile?: boolean;
   /** `--verify-quiescent` — D1's pre/post Aggregate readings and verdict. */
   verifyQuiescent?: boolean;
   /**
    * How many syncs have run against this mirror including this one, 1-based.
-   * Drives the §5.4 reconcile promotion. The count lives in the caller's state
-   * (WP-M9/M10); absent, this run counts as the first and never promotes.
+   * Drives the §5.4 reconcile promotion.
+   *
+   * An OVERRIDE, and normally absent: the count is kept by this module in
+   * `.mirror/state/sync-counter.json` and read at the top of every run, because a
+   * cadence whose state lived in the caller was a cadence no caller kept — the
+   * ordinal was always 1 and the promotion never fired. Passing a value changes what
+   * THIS run plans and nothing else; the persisted count still advances by exactly
+   * one from what was on disk, so an override cannot rewrite the mirror's history.
    */
   syncOrdinal?: number;
   /**
@@ -230,6 +255,19 @@ export interface RunMirrorResult {
   resumeDecision: ResumeDecision | null;
   /** Whether the checkpoint was cleared — true exactly when `fatal` is null. */
   checkpointCleared: boolean;
+  /**
+   * Where this run sat in the §5.4 reconcile cycle, straight from the plan.
+   *
+   * Always present, fatal runs included: a run that died in the catalog phase still
+   * occupied a position, and the operator asking "why has nothing been deleted for a
+   * month" is asking about exactly this number.
+   */
+  syncCadence: SyncCadence;
+  /**
+   * `null` on the ordinary path; an operator-facing sentence when the persisted
+   * count could not be read and the cadence therefore restarted (R3).
+   */
+  syncCounterWarning: string | null;
 }
 
 /** The failure classes that end a run rather than degrade a table (F2/F4/F8). */
@@ -460,6 +498,8 @@ interface RunFinish {
   scopes: readonly string[];
   resumeDecision: ResumeDecision | null;
   checkpointCleared: boolean;
+  cadence: SyncCadence;
+  counterWarning: string | null;
 }
 
 /** Build the report, write both files, assemble the result. One exit for all paths. */
@@ -489,6 +529,8 @@ async function finishRun(options: RunMirrorCommandOptions, finish: RunFinish): P
     fatal: finish.fatal,
     resumeDecision: finish.resumeDecision,
     checkpointCleared: finish.checkpointCleared,
+    syncCadence: finish.cadence,
+    syncCounterWarning: finish.counterWarning,
   };
 }
 
@@ -528,16 +570,25 @@ function resolveClient(options: RunMirrorCommandOptions): MirrorSweepClient {
   });
 }
 
-/** A fatal before any plan existed: report through the real Planner's empty plan. */
+/**
+ * A fatal before any plan existed: report through the real Planner's empty plan.
+ *
+ * The counter read is threaded in rather than re-performed, so a catalog-phase
+ * fatal reports the same ordinal the run would have used. It is still only a READ:
+ * the count advances at the end of a run that reached its own end, and this is not
+ * one — see `syncCounter.ts` on why a failed run keeps its place in the queue.
+ */
 async function finishBeforePlan(
   options: RunMirrorCommandOptions,
+  counter: SyncCounterRead,
   error: unknown
 ): Promise<RunMirrorResult> {
   const planned = planSync({
     catalog: [],
     config: options.config,
     full: options.full,
-    syncOrdinal: options.syncOrdinal,
+    reconcile: options.reconcile,
+    syncOrdinal: options.syncOrdinal ?? nextSyncOrdinal(counter),
     verifyQuiescent: options.verifyQuiescent,
     now: () => Date.parse(options.now()),
     newSweepId: options.newSweepId,
@@ -553,6 +604,8 @@ async function finishBeforePlan(
     scopes: [],
     resumeDecision: null,
     checkpointCleared: false,
+    cadence: planned.cadence,
+    counterWarning: syncCounterWarning(counter),
   });
 }
 
@@ -567,13 +620,25 @@ export async function runMirrorCommand(options: RunMirrorCommandOptions): Promis
   const root = options.root;
   const nowMs = (): number => Date.parse(options.now());
 
+  // — Local state first, before a single request. The ignore scaffold has to be in
+  // place before anything else writes into `.mirror/`: the counter below is a file
+  // that survives the run, and an unignored one would be swept into the operator's
+  // next `git add -A` and then show as modified on every sync after that (INV-1 is
+  // about the tree, and a state file inside it is part of the tree).
+  await provisionMirrorGitIgnore(fs, root);
+  const counter = await readSyncCounter(fs, root);
+  // §5.4: the run counts itself, so the Nth run is the one that reconciles. An
+  // explicit `syncOrdinal` overrides the position without touching the count.
+  const syncOrdinal = options.syncOrdinal ?? nextSyncOrdinal(counter);
+  const counterWarning = syncCounterWarning(counter);
+
   // — Catalog. auth/unreachable/hibernating escape the build by contract; a run
   // that cannot see the schema has nothing else to say (exit 1, reports written).
   let catalog: CatalogBuildResult;
   try {
     catalog = await new CatalogService({ source: client, config }).build();
   } catch (error) {
-    return finishBeforePlan(options, error);
+    return finishBeforePlan(options, counter, error);
   }
 
   // — Scope-name index. Fatal classes end the run like the catalog's would; any
@@ -584,7 +649,7 @@ export async function runMirrorCommand(options: RunMirrorCommandOptions): Promis
   } catch (error) {
     const failure = fatalFromError(null, error);
     if (RUN_FATAL_CLASSES.has(failure.failureClass)) {
-      return finishBeforePlan(options, error);
+      return finishBeforePlan(options, counter, error);
     }
     scopeIndex = new Map();
   }
@@ -616,7 +681,8 @@ export async function runMirrorCommand(options: RunMirrorCommandOptions): Promis
     config,
     shardState,
     full: options.full,
-    syncOrdinal: options.syncOrdinal,
+    reconcile: options.reconcile,
+    syncOrdinal,
     verifyQuiescent: options.verifyQuiescent,
     ...(quiescenceReadings === undefined ? {} : { quiescenceReadings }),
     ...(checkpointRead.present ? { resume: checkpointRead.state } : {}),
@@ -934,8 +1000,18 @@ export async function runMirrorCommand(options: RunMirrorCommandOptions): Promis
 
   // — Checkpoint: cleared by a run that reached its own end, persisted by one
   // that did not, so the next run can skip what this one proved.
+  //
+  // The sync counter moves on exactly the same condition, and the shared `if` is
+  // the point rather than a convenience: a run that leaves a checkpoint behind is a
+  // run the next one RESUMES, and `decideResume` refuses a resume across a mode
+  // change (INV-5). Advancing the count on a fatal would therefore plan the retry
+  // one ordinal further along, and a reconcile that died would be retried as an
+  // incremental — refusing its own checkpoint and throwing away every table it had
+  // already swept. Holding the count means the retry is the same ordinal, the same
+  // mode, and the promised reconcile still happens. See `syncCounter.ts`.
   if (fatal === null) {
     await clearCheckpoint(fs, root);
+    await advanceSyncCounter(fs, root, counter);
   } else {
     await sink.flush();
   }
@@ -953,5 +1029,7 @@ export async function runMirrorCommand(options: RunMirrorCommandOptions): Promis
     scopes: [...scopesCovered].sort(compareBytewise),
     resumeDecision: decision,
     checkpointCleared: fatal === null,
+    cadence: planned.cadence,
+    counterWarning,
   });
 }

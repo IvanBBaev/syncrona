@@ -404,6 +404,21 @@ const basenameAnySep = (filePath: string, ext: string): string => {
   return ext && last.endsWith(ext) ? last.slice(0, -ext.length) : last;
 };
 
+/**
+ * A manifest map entry, own properties only.
+ *
+ * The keys here are table and record names derived from a path on disk, so they
+ * are entirely outside this process's control. See `ownLookup` in fieldMap for
+ * the same guard on the same class of key.
+ */
+const ownEntry = <T>(
+  map: Record<string, T> | undefined,
+  key: string | undefined
+): T | undefined =>
+  map && key !== undefined && Object.prototype.hasOwnProperty.call(map, key)
+    ? map[key]
+    : undefined;
+
 const getTargetFieldFromPath = (
   filePath: string,
   table: string,
@@ -464,8 +479,19 @@ export const getFileContextFromPath = (
   }
   const { tables, scope } = manifest;
   try {
-    const { records } = tables[tableName];
-    const record = records[recordName];
+    // Own properties only. Both keys come off a filesystem path, so a stray
+    // directory named `constructor` or `__proto__` resolved to the inherited
+    // Object.prototype member instead of answering "not in the manifest".
+    // Destructuring that member yields `sys_id: undefined` and an empty file
+    // list — harmless for an ordinary field, which is rejected two lines below
+    // for having no matching entry, but NOT for the sidecar: it is deliberately
+    // resolved from the record rather than from the record's file list, so the
+    // context survived and push sent it at `/api/now/table/<table>/undefined`.
+    const table = ownEntry(tables, tableName);
+    const record = ownEntry(table?.records, recordName);
+    if (!record) {
+      return undefined;
+    }
     const { files, sys_id } = record;
     // DX22: the sidecar is resolved from the RECORD, not from the record's file
     // list. A `.meta.json` on disk belongs to the record whose directory it sits

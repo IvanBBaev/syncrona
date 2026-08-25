@@ -31,6 +31,7 @@ import {
   preloadStoredCredentials,
   clearStoredCredentialsCache,
 } from "./snClient.js";
+import { normalizeInstanceHost } from "./instanceHost.js";
 import { writeDotEnv, ensureGitignored } from "./envFile.js";
 import { setLogLevel, bootstrapWorkspaceOnLogin } from "./commandHelpers.js";
 
@@ -336,9 +337,14 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
 
   const { instance: instanceArg } = args;
 
+  // #20: one normalizer, shared with credential resolution. The local pair of
+  // replaces stripped a scheme and a trailing slash but kept the PATH — and a
+  // user who is told to paste "the instance URL" pastes what the address bar
+  // shows, `https://dev12345.service-now.com/now/nav/ui/...`, which then went
+  // into the credential store and every .env written from it.
   let normalizedInstance: string;
   if (instanceArg) {
-    normalizedInstance = instanceArg.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+    normalizedInstance = normalizeInstanceHost(instanceArg);
   } else {
     const { instance } = await inquirer.prompt<{ instance: string }>([
       {
@@ -346,10 +352,12 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
         name: "instance",
         message: "ServiceNow instance (e.g. dev12345.service-now.com):",
         validate: (v: string) =>
-          v.trim().length > 0 ? true : "Instance URL is required.",
+          normalizeInstanceHost(v).length > 0
+            ? true
+            : "Instance host is required (e.g. dev12345.service-now.com).",
       },
     ]);
-    normalizedInstance = instance.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+    normalizedInstance = normalizeInstanceHost(instance);
   }
 
   // Pick the authentication method: honour --auth-method when given (rejecting

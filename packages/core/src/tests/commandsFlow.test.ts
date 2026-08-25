@@ -78,10 +78,13 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
   buildFiles: (...args: unknown[]) => mockBuildFiles(...args),
+  buildFilePaths: jest.fn(() => []),
 }));
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
+  writeDiff: jest.fn(),
+  clearDiff: jest.fn(),
 }));
 
 jest.unstable_mockModule("../Logger.js", () => ({
@@ -194,7 +197,12 @@ describe("command flows", () => {
     mockCheckScope.mockResolvedValue({ match: true });
     mockGetSourcePath.mockReturnValue("/tmp/src");
     mockGetRefresh.mockReturnValue(0);
-    mockGetDiffFile.mockReturnValue({ changed: [] });
+    // No sync.diff.manifest.json on disk is what the real ConfigManager
+    // signals by throwing - an empty `changed` list means the opposite
+    // (a diff build ran and found nothing to ship).
+    mockGetDiffFile.mockImplementation(() => {
+      throw new Error("Error getting diff file");
+    });
     mockIsDiffFileCorrupt.mockReturnValue(false);
     mockGetConfig.mockReturnValue({});
     mockGetRootDir.mockReturnValue("/tmp/project");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import type { Argv, Arguments } from "yargs";
+import type { Argv, Arguments, Options } from "yargs";
 import { logger } from "./Logger.js";
 import { logErrorHint } from "./commandHelpers.js";
 import { isPromptAbort } from "./errorTaxonomy.js";
@@ -35,10 +35,53 @@ const runHandler =
       });
   };
 
+/** Primary name of a command, without its positional placeholders. */
+function commandName(mod: CliCommandModule): string {
+  const spec = Array.isArray(mod.command) ? mod.command[0] : mod.command;
+  return spec.trim().split(/\s+/)[0];
+}
+
+// `--dry-run` is shared, but only the commands that implement a preview honour
+// it. For the rest the flag used to parse fine and then do nothing: the user
+// asked for a preview, got a real run, and the output said nothing about it.
+// Declaring the option and refusing it is the honest contract.
+//
+// It stays DECLARED (just hidden and default-less) rather than being dropped,
+// for two reasons: .strict() would otherwise answer "Unknown argument: dry-run",
+// which reads as a typo instead of a deliberate limitation; and leaving the
+// default off is what lets the check tell "the user typed it" apart from "yargs
+// filled in false".
+function sharedOptionsFor(mod: CliCommandModule): Record<string, Options> {
+  if (mod.supportsDryRun !== false) return SHARED_CLI_OPTIONS;
+  return {
+    ...SHARED_CLI_OPTIONS,
+    dryRun: {
+      alias: SHARED_CLI_OPTIONS.dryRun.alias,
+      type: "boolean",
+      hidden: true,
+      describe: SHARED_CLI_OPTIONS.dryRun.describe,
+    },
+  };
+}
+
+// `--no-dry-run` (dryRun === false) asks for the behaviour the command already
+// has, so only the truthy spelling is refused.
+const rejectDryRun =
+  (mod: CliCommandModule) =>
+  (args: Arguments): true => {
+    if (args.dryRun !== true) return true;
+    throw new Error(
+      `\`syncrona ${commandName(mod)}\` has no preview mode, so --dry-run would run it for real. Re-run without --dry-run.`
+    );
+  };
+
 function buildCommandBuilder(mod: CliCommandModule) {
   return (cmdArgs: Argv) => {
     if (mod.includeSharedOptions !== false) {
-      cmdArgs.options({ ...SHARED_CLI_OPTIONS, ...(mod.options || {}) });
+      cmdArgs.options({ ...sharedOptionsFor(mod), ...(mod.options || {}) });
+      if (mod.supportsDryRun === false) {
+        cmdArgs.check(rejectDryRun(mod));
+      }
     } else if (mod.options) {
       cmdArgs.options(mod.options);
     }

@@ -50,8 +50,19 @@
  * rather than assumed. The two therefore share a format and a path but not a type,
  * and each reads the other's files in test.
  *
- * Three modules are deliberately absent, and each absence is an invariant rather
- * than an oversight:
+ * The four absences below are deliberate, and each is an invariant rather than an
+ * oversight:
+ *
+ * - `syncCounter` holds the §5.4 reconcile cadence — the count that decides which
+ *   sync is promoted to the mode that can delete. A consumer able to write it can
+ *   push the next reconcile arbitrarily far into the future, which is the same
+ *   authority INV-5 spends the reconciler refusing to grant, obtained without
+ *   producing any evidence at all. `runMirrorCommand` reads it, advances it and
+ *   reports the position it reached (`RunMirrorResult.syncCadence`), so a caller can
+ *   see the cadence and force a reconcile with an option — and cannot forge one.
+ *   `write/gitIgnore` travels with it for the same reason inverted: the scaffold is
+ *   what keeps that state out of git, and it is provisioned by every run rather than
+ *   left to a caller who might not.
  *
  * - `catalog/fieldPolicy` and `catalog/tiers` are the catalog's internal policy.
  *   `catalogService` re-exports the parts of them that are genuinely part of its

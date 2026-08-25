@@ -306,6 +306,65 @@ describe("Watcher queue behavior", () => {
     stopWatching();
   });
 
+  it("warns once when a CHANGED file resolves to no manifest record", async () => {
+    // #17: "add" already tells the user an untracked file will not be pushed,
+    // but "change" did not — drainQueue dropped every path the manifest does
+    // not claim without a word. Editing a file whose record was renamed away
+    // (or removed by a concurrent refresh) therefore looked exactly like a
+    // healthy save: no push, no error, no output at all, while `dev` kept
+    // reporting itself as watching.
+    mockGetFileContextFromPath.mockReturnValue(undefined);
+    mockGroupAppFiles.mockReturnValue([]);
+    mockPushFiles.mockResolvedValue([]);
+
+    const { startWatching, stopWatching } = await import("../Watcher.js");
+
+    startWatching("/tmp");
+    changeHandler("/tmp/untracked.js");
+    await flushDrain();
+
+    expect(mockPushFiles).toHaveBeenCalledWith([]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("/tmp/untracked.js")
+    );
+
+    // Editors save repeatedly; the warning is per-path-per-session so a file
+    // left open does not bury the log under one line per keystroke-save.
+    mockLoggerWarn.mockClear();
+    changeHandler("/tmp/untracked.js");
+    await flushDrain();
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+
+    stopWatching();
+  });
+
+  it("warns again after a stopped session is restarted", async () => {
+    // stopWatching resets the session's queue and backoff; the "already told
+    // you" set belongs to the same session state, or a restarted `dev` would
+    // stay silent about a file it never warned about in THIS run.
+    mockGetFileContextFromPath.mockReturnValue(undefined);
+    mockGroupAppFiles.mockReturnValue([]);
+    mockPushFiles.mockResolvedValue([]);
+
+    const { startWatching, stopWatching } = await import("../Watcher.js");
+
+    startWatching("/tmp");
+    changeHandler("/tmp/still-untracked.js");
+    await flushDrain();
+    await stopWatching();
+
+    mockLoggerWarn.mockClear();
+    startWatching("/tmp");
+    changeHandler("/tmp/still-untracked.js");
+    await flushDrain();
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("/tmp/still-untracked.js")
+    );
+
+    await stopWatching();
+  });
+
   it("self-drives a retry of a requeued batch with no further fs events (Finding 9)", async () => {
     // A push fails once, then recovers. Crucially, NO further change/add event
     // is fired after the failure — the drain must schedule its own retry, or

@@ -44,7 +44,6 @@ import {
   buildPreflightReport,
   checkSyncronaCapabilities,
   createAndSyncScriptInclude,
-  getSourceDirectory,
   isDeepAnalysisSatisfied,
   parseMetadataType,
   parseUnifiedTaskType,
@@ -52,6 +51,7 @@ import {
   safeGetSessionContext,
   writeFileWithStableBackup,
 } from "./toolService";
+import { readWorkspaceLayout } from "./workspaceLayout";
 
 /**
  * Per-request context handed to every tool handler module. Everything that is
@@ -285,7 +285,7 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
       handleDeveloperTool(ctx.toolName, ctx.args, {
         timeoutMs: ctx.timeoutMs,
         projectDir: PROJECT_DIR,
-        sourceDirectory: getSourceDirectory(PROJECT_DIR),
+        layout: readWorkspaceLayout(PROJECT_DIR),
         resolveScope: (preferredScope) => resolveScopeCode(preferredScope, ctx.timeoutMs),
         tableGet,
       }),

@@ -115,7 +115,9 @@ Mirror-repo layout produced at runtime (design §8.1–§8.2, unchanged):
   instance/<scope>/<table>/<record-name>/record.json [+ extracted files]
   instance/<scope>/<table>/.shards/<prefix>.json     # sharded manifests
   _derived/...                   # regenerable projections (INV-9)
-  .mirror/state/checkpoint.json  # gitignored observed-progress state
+  .mirror/.gitignore                 # bare `*` — nothing under .mirror/ is committed
+  .mirror/state/checkpoint.json      # observed-progress state
+  .mirror/state/sync-counter.json    # completed syncs; drives the reconcile cadence (§5.4)
 ```
 
 ## 4. Contracts (TypeScript, normative)
@@ -421,11 +423,31 @@ caller by INV-2 (§9).
 
 ### 5.4 Planner — `src/sync/planner.ts` (WP-M8)
 
-- Inputs: catalog, checkpoint, existing shards, config, CLI mode flags.
+- Inputs: catalog, checkpoint, existing shards, config, CLI mode flags,
+  `syncOrdinal` (the position of this run in the reconcile cycle).
 - `mode: full` → every included table, `strategy: "sweep"`. `incremental` →
   watermark from each table's shard max `sysUpdatedOn` minus a 5-minute overlap
   (design §9.2); tables without a complete shard get a sweep. Every Nth sync
-  (config `reconcileEveryNSyncs`) is promoted to `reconcile`.
+  (config `sync.reconcileEveryNSyncs`) is promoted to `reconcile`, as is any run
+  whose caller passes `reconcile: true`; `full` outranks both.
+- **The cadence needs state to be real.** Only a `sweep` mints full-sweep
+  evidence, and only that evidence lets the reconciler delete (INV-5), so a
+  cadence with no memory of previous runs means deletions never propagate. The
+  engine therefore keeps the count itself, in `.mirror/state/sync-counter.json`
+  (`{ formatVersion: 1, completedSyncs }`, atomic-rename write, defensive
+  all-or-nothing parse). A run's ordinal is `completedSyncs + 1` — the run counts
+  itself, so the Nth run is the one that reconciles. The count **advances only
+  when the run finished** (`fatal === null`): `decideResume` refuses to resume
+  across a mode change, so consuming the slot on a fatal run would demote its
+  retry to `incremental` and discard the tables it had already swept. A damaged
+  counter restarts the cadence at 1 and surfaces `syncCounterWarning` rather than
+  throwing (R3). An explicit `syncOrdinal` from the caller repositions the run
+  without rewriting the count.
+- `PlanResult.cadence` (`{ ordinal, everyN, syncsUntilReconcile, forced }`)
+  reports the position; `syncsUntilReconcile` is `null` when `everyN` is not a
+  positive integer, i.e. the cadence is disabled. It is surfaced on
+  `RunMirrorResult.syncCadence`, never written into the committed
+  `coverage.json` — a field that changes every run would violate INV-1.
 - Aggregate-first: `rowCount === 0` → `skipped-empty`, no row request (T6).
 - **Query-field validation (D20)**: every field named in a generated
   `sysparm_query` MUST exist in the catalog's effective field set for that table
@@ -558,7 +580,15 @@ caller by INV-2 (§9).
 
 - Appends one entry to `CLI_COMMANDS` (`cliCommands.ts:95`); subcommands
   `mirror init | sync | status | verify | report` (design §13.1), flags
-  `--full`, `--verify-quiescent`, `--deep`, `--json`.
+  `--full`, `--reconcile`, `--verify-quiescent`, `--deep`, `--json`.
+- `mirror sync` never supplies a `syncOrdinal`: the engine owns the run count
+  (§5.4), so no invocation can postpone a scheduled reconcile. `--reconcile` is
+  the sanctioned escape hatch in the other direction — it promotes this run only,
+  leaving the count's own schedule untouched — and it earns no repack, since it
+  re-fetches nothing that the watermark says is unchanged.
+- Every `sync` prints its cadence position and repeats the engine's
+  `syncCounterWarning` if the persisted count could not be read; `--json` carries
+  both as fields instead.
 - Delegates in-process to `@syncrona/mirror`'s exported `runMirrorCommand(argv)`;
   core contributes only argument wiring and credential resolution.
 - `mirror init` provisions the repo for scale (D17, analyses §9.4): git config
@@ -672,9 +702,12 @@ analyses §4).
   in. **WP-M9 owns that wiring**; without it, an instance whose policy forbids
   Basic auth cannot be mirrored at all, which would make Phase 0-3 unusable on a
   large share of enterprise deployments.
-- `mirror init` scaffolds a `.gitignore` (checkpoint dir), a gitleaks CI stanza,
-  and a README warning that the mirror repo is backup-equivalent and must be
-  private (T1/T2).
+- `mirror init` scaffolds a gitleaks CI stanza and a README warning that the
+  mirror repo is backup-equivalent and must be private (T1/T2). The `.mirror/`
+  ignore file is *not* `init`'s job: every run provisions it before it writes
+  any engine state, so a tree that was cloned, hand-cleaned, or created before
+  the file existed still cannot leak the checkpoint or the run counter into a
+  commit.
 
 ## 10. Error handling (normative)
 

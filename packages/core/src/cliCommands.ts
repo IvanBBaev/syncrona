@@ -46,6 +46,15 @@ export type CliCommandModule = {
   positionals?: Record<string, PositionalOptions>;
   /** Set false for commands that do not take the shared options. */
   includeSharedOptions?: boolean;
+  /**
+   * Set false for a command that takes the shared options but has no preview
+   * mode. `--dry-run` is then refused with an explanation instead of parsed and
+   * silently ignored — a silently-ignored `--dry-run` is the worst outcome
+   * available, because the user asked for a preview, got a real run, and the
+   * command reported nothing unusual. Omitted (the default) means the command
+   * honours the flag; `commander.ts` enforces the contract.
+   */
+  supportsDryRun?: boolean;
   /** Usage examples shown in `--help`: [command, description] pairs. */
   examples?: Array<[string, string]>;
   handler: (args: Arguments) => unknown;
@@ -97,6 +106,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: ["dev", "d"],
     describe: "Start Development Mode",
+    // A watcher that pushes every save has nothing to preview: the writes it
+    // makes are the ones the user has not typed yet.
+    supportsDryRun: false,
     options: {
       refreshInterval: {
         alias: "refresh-interval",
@@ -114,6 +126,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: ["refresh", "r"],
     describe: "Refresh Manifest and download new files since last refresh",
+    supportsDryRun: false,
     handler: typedHandler<Sync.SharedCmdArgs>((args) => refreshCommand(args)),
   },
   {
@@ -227,6 +240,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "docs",
     describe:
       "Generate or logically update Markdown documentation and diagrams for the local scope",
+    // scopeDocs writes the Markdown and the diagrams unconditionally; there is
+    // no plan-only path through the generator.
+    supportsDryRun: false,
     handler: typedHandler<Sync.SharedCmdArgs>((args) => docsCommand(args)),
   },
   {
@@ -262,6 +278,8 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "status",
     describe: "Get information about the connected instance",
+    // Read-only already, so a preview of it would be the command itself.
+    supportsDryRun: false,
     options: {
       debugCredentials: {
         alias: "debug-credentials",
@@ -280,22 +298,29 @@ export const CLI_COMMANDS: CliCommandModule[] = [
   {
     command: "check-env",
     describe: "Check OS, Node, WSL and Git prerequisites and print actionable fixes",
+    supportsDryRun: false,
     examples: [["$0 check-env", "Verify your machine meets SyncroNow AI's prerequisites before init"]],
     handler: typedHandler<Sync.SharedCmdArgs>((args) => checkEnvCommand(args)),
   },
   {
     command: "doctor",
     describe: "Run local and connectivity diagnostics for the current SyncroNow AI workspace",
+    supportsDryRun: false,
     handler: typedHandler<Sync.SharedCmdArgs>((args) => doctorCommand(args)),
   },
   {
     command: "plugins",
     describe: "Show configured plugin rules and installed/missing plugin packages",
+    supportsDryRun: false,
     handler: typedHandler<Sync.SharedCmdArgs>((args) => pluginsCommand(args)),
   },
   {
     command: "config <action>",
     describe: "Inspect or extend configuration (action: show-defaults, add-plugin)",
+    // Both actions only print (`add-plugin` emits the install command and a
+    // paste-ready snippet rather than editing sync.config.js), so there is
+    // nothing for a preview to withhold.
+    supportsDryRun: false,
     positionals: {
       action: {
         type: "string",
@@ -343,6 +368,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "mcp",
     describe:
       "Start standalone MCP server and optionally auto-configure local MCP client files",
+    // `--no-start` / `--no-auto-configure` are the real levers here; --dry-run
+    // would still write .vscode/mcp.json and the secrets file.
+    supportsDryRun: false,
     examples: [
       ["$0 mcp", "Auto-configure local MCP client files and start the MCP server"],
       ["$0 mcp --no-start", "Only write .vscode/mcp.json and secrets, do not start the server"],
@@ -603,6 +631,10 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     command: "mirror <action>",
     describe:
       "Full-instance git mirror (action: init, sync, status, verify, report); exits 2 on drift or findings",
+    // The read-only preview of a sweep is a first-class action here — `mirror
+    // status` compares the tree against the live instance and writes nothing —
+    // so --dry-run has no separate meaning and is refused rather than ignored.
+    supportsDryRun: false,
     positionals: {
       action: {
         type: "string",
@@ -615,6 +647,14 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         type: "boolean",
         default: false,
         describe: "sync: sweep every included table instead of only what changed",
+      },
+      reconcile: {
+        // The cheap half of `--full`. Deletions only reach the mirror on a sweep
+        // that observed a table whole (INV-5), which the cadence schedules every
+        // Nth sync; this forces one now without re-fetching unchanged rows.
+        type: "boolean",
+        default: false,
+        describe: "sync: force this sweep to reconcile deletions, without waiting for the cadence",
       },
       verifyQuiescent: {
         // Declared explicitly rather than left to yargs' camel-case expansion:
@@ -647,6 +687,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       Sync.SharedCmdArgs & {
         action: string;
         full?: boolean;
+        reconcile?: boolean;
         verifyQuiescent?: boolean;
         deep?: boolean;
         json?: boolean;

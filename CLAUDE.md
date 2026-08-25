@@ -22,7 +22,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona push` pushes local files to ServiceNow.
 - `npx syncrona download` downloads scoped application files.
 - `npx syncrona build` builds local artifacts.
-- `npx syncrona deploy` deploys built files (`--ci` skips the overwrite confirmation).
+- `npx syncrona deploy` deploys built files (`--ci` skips the interactive prompts: it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
 - `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files, and `--apply --prune` deletes orphan files no record claims.
 - `npx syncrona status` prints extended diagnostics.
@@ -42,10 +42,18 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona jira-login` saves Jira credentials in the global credential store (Cloud or Server/Data Center).
 - `npx syncrona jira-logout` removes stored Jira credentials.
 - `npx syncrona mirror <action>` drives the full-instance git mirror: `init` provisions the
-  repository for scale, `sync` sweeps the instance into the tree (`--full`, `--verify-quiescent`),
+  repository for scale, `sync` sweeps the instance into the tree (`--full`, `--reconcile`
+  to propagate instance-side deletions off-cadence, `--verify-quiescent`),
   `status` compares the tree against the live instance, `verify` checks it against its own
   manifests offline, and `report` re-prints the last sweep's report (`--deep`, `--json`).
   It exits 0 clean, 1 when the run could not finish, and 2 on drift or findings.
+
+### Shared option contracts
+- `--dry-run` is implemented by `push`, `deploy`, `download`, `build`, `init` and
+  `repair`. Every other command declares `supportsDryRun: false` in the CLI registry
+  and `commander.ts` refuses the flag with an explanation — a parsed-then-ignored
+  `--dry-run` would turn a request for a preview into a real run. A new command that
+  takes the shared options must state which side it is on; a registry test enforces it.
 
 ## Documentation Drift Policy
 - README command table and this document must stay aligned for core CLI commands.

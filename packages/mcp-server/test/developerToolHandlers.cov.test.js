@@ -13,7 +13,9 @@ function makeContext(overrides = {}) {
   return {
     timeoutMs: 1000,
     projectDir: '/tmp/does-not-exist',
-    sourceDirectory: 'src',
+    // DX17: the handler takes the resolved workspace layout, not a bare source
+    // directory — see test/flatLayoutAwareness.test.js for the flat variants.
+    layout: { sourceDirectory: 'src', flat: false },
     resolveScope: async () => 'unknown_scope',
     tableGet: async () => [],
     ...overrides,

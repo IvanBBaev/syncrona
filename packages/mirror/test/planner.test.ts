@@ -482,12 +482,116 @@ describe("mode selection (§5.4)", () => {
     }
   });
 
+  it("promotes a run the cadence would have left alone when asked to reconcile", () => {
+    // The escape hatch behind `syncrona mirror sync --reconcile`. Its reason to
+    // exist is that the cheap remedy for a suspected missed deletion used to be
+    // `--full` — a re-fetch of the entire instance to answer a question a sweep of
+    // sys_ids already answers.
+    const config = configWith({
+      sync: { reconcileEveryNSyncs: 5, requestsPerSecond: 4, pageSize: 1000 },
+    });
+    const result = planSync(
+      inputFor([entryFor("incident")], {
+        config,
+        syncOrdinal: 2,
+        reconcile: true,
+        // Shard state complete and watermarkable, so the table WOULD have gone by
+        // watermark: without the promotion this plan has no sweep in it at all.
+        shardState: shardStates({
+          incident: { complete: true, maxSysUpdatedOn: "2026-08-01 00:00:00" },
+        }),
+      })
+    );
+    expect(result.plan.mode).toBe("reconcile");
+    expect(result.plan.tables[0].strategy).toBe("sweep");
+    expect(decisionFor(result.decisions, "incident").watermark).toBeNull();
+  });
+
+  it("lets `full` outrank an explicit reconcile", () => {
+    // A full sweep is strictly stronger — it re-fetches every row as well as
+    // observing the table whole — so resolving the pair the other way would do the
+    // greater work and report the lesser mode.
+    const result = planSync(
+      inputFor([entryFor("incident")], { full: true, reconcile: true })
+    );
+    expect(result.plan.mode).toBe("full");
+  });
+
   it("mints the sweep id and start instant from the injected seams", () => {
     const result = planSync(
       inputFor([entryFor("incident")], { newSweepId: () => "sweep-abc", now: () => NOW_MS })
     );
     expect(result.plan.sweepId).toBe("sweep-abc");
     expect(result.startedAt).toBe("2026-08-18T09:00:00.000Z");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cadence reporting
+// ---------------------------------------------------------------------------
+
+/**
+ * `PlanResult.cadence` is what lets an operator see the cycle instead of inferring
+ * it. "Why has nothing been deleted for a month" is a question about a number that
+ * used to exist nowhere: the mode alone says `incremental` on nine runs out of ten
+ * and never says how far away the tenth is.
+ */
+describe("reported cadence (§5.4)", () => {
+  const cadenceOf = (overrides: Partial<PlannerInput>, everyN = 5) =>
+    planSync(
+      inputFor([entryFor("incident")], {
+        config: configWith({
+          sync: { reconcileEveryNSyncs: everyN, requestsPerSecond: 4, pageSize: 1000 },
+        }),
+        ...overrides,
+      })
+    ).cadence;
+
+  it("counts down to the reconcile, reaching zero on the run that performs it", () => {
+    expect(cadenceOf({ syncOrdinal: 6 })).toEqual({
+      ordinal: 6,
+      everyN: 5,
+      syncsUntilReconcile: 4,
+      forced: false,
+    });
+    expect(cadenceOf({ syncOrdinal: 9 }).syncsUntilReconcile).toBe(1);
+    expect(cadenceOf({ syncOrdinal: 10 }).syncsUntilReconcile).toBe(0);
+    // And the countdown restarts rather than going negative or sticking at zero.
+    expect(cadenceOf({ syncOrdinal: 11 }).syncsUntilReconcile).toBe(4);
+  });
+
+  it("reports the count's own position even when the run was forced", () => {
+    // Deliberately NOT zero: the operator forcing today's reconcile still needs to
+    // know the automatic one is a run away, and a forced run does not reset the
+    // cycle. Reporting zero here would make `--reconcile` look like it had.
+    expect(cadenceOf({ syncOrdinal: 9, reconcile: true })).toEqual({
+      ordinal: 9,
+      everyN: 5,
+      syncsUntilReconcile: 1,
+      forced: true,
+    });
+    expect(cadenceOf({ syncOrdinal: 9, full: true }).forced).toBe(true);
+  });
+
+  it("says the countdown is unknown rather than inventing one", () => {
+    // The same inputs the promotion guard refuses. A number would have to be a
+    // lie in both directions here — there is no next reconcile to count down to —
+    // and `null` is what a reader can render as "never" instead of "soon".
+    expect(cadenceOf({ syncOrdinal: 4 }, 0).syncsUntilReconcile).toBeNull();
+    expect(cadenceOf({ syncOrdinal: 4 }, 2.5).syncsUntilReconcile).toBeNull();
+    expect(cadenceOf({ syncOrdinal: 4.5 }).syncsUntilReconcile).toBeNull();
+    expect(cadenceOf({ syncOrdinal: 0 }).syncsUntilReconcile).toBeNull();
+    // Unknown position, no promotion — the run is still ordinary work.
+    expect(cadenceOf({ syncOrdinal: 0 }).ordinal).toBe(0);
+  });
+
+  it("defaults to ordinal 1 when no caller supplies one", () => {
+    expect(cadenceOf({})).toEqual({
+      ordinal: 1,
+      everyN: 5,
+      syncsUntilReconcile: 4,
+      forced: false,
+    });
   });
 });
 

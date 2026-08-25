@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import { PATH_DELIMITER } from "../constants.js";
 export {};
 
 // Targets the command branches commandsFlow.test.ts does not exercise:
@@ -8,6 +9,7 @@ export {};
 // confirmation decline, and downloadCommand cancel / Table-API fallback.
 
 const mockSetLogLevel = jest.fn();
+const mockLoggerInfo = jest.fn();
 const mockLoggerError = jest.fn();
 const mockLoggerWarn = jest.fn();
 const mockLoggerSuccess = jest.fn();
@@ -28,6 +30,9 @@ const mockPushFiles = jest.fn();
 
 const mockGenerateScopeDocs = jest.fn();
 const mockGitDiffToEncodedPaths = jest.fn();
+const mockWriteDiff = jest.fn();
+const mockClearDiff = jest.fn();
+const mockBuildFilePaths = jest.fn();
 const mockEncodedPathsToFilePaths = jest.fn();
 
 const mockCheckConnection = jest.fn();
@@ -41,7 +46,7 @@ const mockPrompt = jest.fn();
 
 jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
-    info: jest.fn(),
+    info: (...a: unknown[]) => mockLoggerInfo(...a),
     success: (...a: unknown[]) => mockLoggerSuccess(...a),
     error: (...a: unknown[]) => mockLoggerError(...a),
     warn: (...a: unknown[]) => mockLoggerWarn(...a),
@@ -74,6 +79,7 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   downloadAllFiles: (...a: unknown[]) => mockDownloadAllFiles(...a),
   getAppFileList: (...a: unknown[]) => mockGetAppFileList(...a),
   buildFiles: (...a: unknown[]) => mockBuildFiles(...a),
+  buildFilePaths: (...a: unknown[]) => mockBuildFilePaths(...a),
   pushFiles: (...a: unknown[]) => mockPushFiles(...a),
 }));
 
@@ -83,6 +89,8 @@ jest.unstable_mockModule("../scopeDocs.js", () => ({
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...a: unknown[]) => mockGitDiffToEncodedPaths(...a),
+  writeDiff: (...a: unknown[]) => mockWriteDiff(...a),
+  clearDiff: (...a: unknown[]) => mockClearDiff(...a),
 }));
 
 jest.unstable_mockModule("../FileUtils.js", () => ({
@@ -128,13 +136,21 @@ jest.unstable_mockModule("inquirer", () => ({
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetConfig.mockReturnValue({});
-  mockGetDiffFile.mockReturnValue({ changed: [] });
+  // The ordinary case is no sync.diff.manifest.json at all, and the real
+  // ConfigManager reports that by THROWING — not by handing back an empty
+  // `changed` list, which is a different situation with a different outcome.
+  mockGetDiffFile.mockImplementation(() => {
+    throw new Error("Error getting diff file");
+  });
   mockIsDiffFileCorrupt.mockReturnValue(false);
   mockGetBuildPath.mockReturnValue("encoded-build-path");
   mockProcessManifest.mockResolvedValue(undefined);
   mockDownloadAllFiles.mockResolvedValue(undefined);
   mockGetAppFileList.mockResolvedValue([]);
   mockBuildFiles.mockResolvedValue([]);
+  mockBuildFilePaths.mockReturnValue([]);
+  mockWriteDiff.mockResolvedValue(undefined);
+  mockClearDiff.mockResolvedValue(undefined);
   mockPushFiles.mockResolvedValue([]);
   mockGenerateScopeDocs.mockResolvedValue("/docs/scope.md");
   mockGitDiffToEncodedPaths.mockResolvedValue([]);
@@ -212,6 +228,89 @@ describe("buildCommand --check-config", () => {
     expect(mockLoggerWarn).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
     process.exitCode = oldExit;
+  });
+});
+
+// `build --diff <target>` is documented — in the CLI help, in README and in
+// CLAUDE.md — to RECORD what it built, and getDeployPaths reads exactly that
+// file back. Nothing ever wrote it: writeDiff existed, was exported and was
+// unit-tested, but no command called it. So sync.diff.manifest.json never
+// appeared, every deploy after a diff build fell through to the full build
+// scope, and `deploy --ci` did it without a prompt — the precise escalation the
+// comment in getDeployPaths warns about, overwriting instance records the diff
+// never touched. Its mirror image is just as bad: a diff manifest left behind by
+// an earlier run silently narrows the next FULL build's deploy to a stale
+// subset, so a build without --diff has to clear it.
+describe("buildCommand diff manifest", () => {
+  it("records the artifacts it built when --diff is given", async () => {
+    mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "s1", fields: {} }]);
+    mockBuildFiles.mockResolvedValue([{ success: true, message: "built" }]);
+    mockBuildFilePaths.mockReturnValue(["/build/sys_script/rec/script.js"]);
+
+    const { buildCommand } = await import("../commands.js");
+    await buildCommand({ logLevel: "info", diff: "main" });
+
+    expect(mockWriteDiff).toHaveBeenCalledWith("/build/sys_script/rec/script.js");
+    expect(mockClearDiff).not.toHaveBeenCalled();
+  });
+
+  it("leaves a failed record out of the diff manifest", async () => {
+    const oldExit = process.exitCode;
+    const ok = { table: "sys_script", sysId: "s1", fields: {} };
+    const bad = { table: "sys_script", sysId: "s2", fields: {} };
+    mockGetAppFileList.mockResolvedValue([ok, bad]);
+    // buildFiles returns results in fileList order, which is what lets the
+    // successes be selected positionally.
+    mockBuildFiles.mockResolvedValue([
+      { success: true, message: "built" },
+      { success: false, message: "plugin blew up" },
+    ]);
+    mockBuildFilePaths.mockReturnValue(["/build/a.js"]);
+
+    const { buildCommand } = await import("../commands.js");
+    await buildCommand({ logLevel: "info", diff: "main" });
+
+    // A record whose artifact was never written must not be deployed: the file
+    // at that path is either absent or stale from an earlier build.
+    expect(mockBuildFilePaths).toHaveBeenCalledWith([ok]);
+    expect(mockWriteDiff).toHaveBeenCalledWith("/build/a.js");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
+  });
+
+  it("joins several artifacts with the shared path delimiter", async () => {
+    mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "s1", fields: {} }]);
+    mockBuildFiles.mockResolvedValue([{ success: true, message: "built" }]);
+    mockBuildFilePaths.mockReturnValue(["/build/a.js", "/build/b.js"]);
+
+    const { buildCommand } = await import("../commands.js");
+    await buildCommand({ logLevel: "info", diff: "main" });
+
+    expect(mockWriteDiff).toHaveBeenCalledWith(
+      ["/build/a.js", "/build/b.js"].join(PATH_DELIMITER)
+    );
+  });
+
+  it("clears a stale diff manifest on a full build", async () => {
+    mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "s1", fields: {} }]);
+    mockBuildFiles.mockResolvedValue([{ success: true, message: "built" }]);
+
+    const { buildCommand } = await import("../commands.js");
+    await buildCommand({ logLevel: "info", diff: "" });
+
+    expect(mockClearDiff).toHaveBeenCalled();
+    expect(mockWriteDiff).not.toHaveBeenCalled();
+  });
+
+  it("touches neither file on a dry run", async () => {
+    mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "s1", fields: {} }]);
+
+    const { buildCommand } = await import("../commands.js");
+    await buildCommand({ logLevel: "info", diff: "main", dryRun: true });
+
+    expect(mockBuildFiles).not.toHaveBeenCalled();
+    expect(mockWriteDiff).not.toHaveBeenCalled();
+    expect(mockClearDiff).not.toHaveBeenCalled();
   });
 });
 
@@ -314,6 +413,120 @@ describe("deployCommand", () => {
     expect(mockLogErrorHint).toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
     expect(mockCheckConnection).not.toHaveBeenCalled();
+    process.exitCode = oldExit;
+  });
+
+  it("--ci deploys the diff manifest instead of escalating to a full scope", async () => {
+    // Without a TTY the diff-only prompt resolves to its `false` default, so a
+    // `build --diff <branch> && deploy --ci` pipeline used to overwrite every
+    // record in the scope and still exit 0. --ci must never prompt: the diff
+    // manifest exists only because someone asked for a diff build.
+    mockGetDiffFile.mockReturnValue({ changed: ["/build/changed.js"] });
+    mockGetAppFileList.mockResolvedValue([{ table: "sys_script", sysId: "1", fields: {} }]);
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockGetAppFileList).toHaveBeenCalledWith(["/build/changed.js"]);
+    expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
+    // The narrowed scope is recorded so a CI log shows what was deployed.
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("1 file(s) from the diff manifest")
+    );
+  });
+
+  it("--ci still deploys the full build scope when no diff manifest exists", async () => {
+    // Absence is what the default mock models: getDiffFile() throws. Nobody
+    // asked for a subset, so the whole build scope is the right answer.
+    mockGetAppFileList.mockResolvedValue([
+      { table: "sys_script", sysId: "1", fields: {} },
+    ]);
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockEncodedPathsToFilePaths).toHaveBeenCalledWith("encoded-build-path");
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("full build scope")
+    );
+  });
+
+  it("deploys nothing - not everything - when the diff manifest is empty", async () => {
+    // `build --diff main` with no changes on the branch still writes the
+    // manifest, with `{"changed": []}` inside it. Read as "no manifest", that
+    // empty list escalates the next `deploy --ci` to the entire build scope -
+    // the loudest possible outcome from the quietest possible build, with no
+    // prompt in the way. An empty diff means there is nothing to deploy.
+    mockGetDiffFile.mockReturnValue({ changed: [] });
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
+    expect(mockGetAppFileList).toHaveBeenCalledWith([]);
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringContaining("no changed files")
+    );
+  });
+
+  it("does not offer the diff-only prompt for an empty diff manifest", async () => {
+    // Interactively the escalation hid behind a question with no content:
+    // "deploy only files changed in your diff file?" was never asked for an
+    // empty list, so the run fell through to the full scope on a default the
+    // user never saw. There is nothing to narrow and nothing to ask.
+    mockGetDiffFile.mockReturnValue({ changed: [] });
+    mockPrompt.mockResolvedValueOnce({ confirmed: true }); // deploy confirm
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info" });
+    expect(mockPrompt).toHaveBeenCalledTimes(1);
+    expect(mockEncodedPathsToFilePaths).not.toHaveBeenCalled();
+    expect(mockGetAppFileList).toHaveBeenCalledWith([]);
+  });
+
+  it("fails the shell when there is nothing built to deploy", async () => {
+    // `deploy` before `build` (or after a `clean`) resolved the build directory
+    // to zero files and then pushed zero records - no output, exit 0. In CI that
+    // is a green deploy stage that deployed nothing, which is the one outcome a
+    // deploy must never report.
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockEncodedPathsToFilePaths.mockResolvedValue([]);
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Nothing to deploy")
+    );
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
+  });
+
+  it("fails the shell when none of the selected files map to a record", async () => {
+    // The diff manifest stores absolute paths, so a manifest carried into a
+    // different checkout root - or written before a `refresh` dropped the
+    // records - names files no manifest record claims. getAppFileList warns and
+    // drops them, and the deploy used to push the empty remainder and exit 0.
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockGetDiffFile.mockReturnValue({ changed: ["/elsewhere/build/gone.js"] });
+    mockGetAppFileList.mockResolvedValue([]);
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Nothing to deploy")
+    );
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    process.exitCode = oldExit;
+  });
+
+  it("keeps the shell clean for a diff manifest that deliberately lists nothing", async () => {
+    // The one legitimate zero-record deploy: a diff build that found no
+    // changes. Nothing is wrong, so nothing may fail.
+    const oldExit = process.exitCode;
+    process.exitCode = 0;
+    mockGetDiffFile.mockReturnValue({ changed: [] });
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info", ci: true });
+    expect(mockLoggerError).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
     process.exitCode = oldExit;
   });
 

@@ -46,7 +46,12 @@ jest.unstable_mockModule("../config.js", () => ({
   getManifest: jest.fn(),
   getConfig: jest.fn(() => ({})),
   checkRuleOrder: jest.fn(() => []),
-  getDiffFile: jest.fn(() => ({ changed: [] })),
+  // Absence, the way ConfigManager reports it. No test here deploys, but an
+  // empty `changed` would model a diff build that shipped nothing - a
+  // different situation with a different outcome.
+  getDiffFile: jest.fn(() => {
+    throw new Error("Error getting diff file");
+  }),
   isDiffFileCorrupt: jest.fn(() => false),
   getBuildPath: jest.fn(() => "encoded-build-path"),
   getDefaultConfigFile: () => "module.exports = {};",
@@ -59,6 +64,7 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   downloadAllFiles: jest.fn(),
   getAppFileList: (...a: unknown[]) => mockGetAppFileList(...a),
   buildFiles: (...a: unknown[]) => mockBuildFiles(...a),
+  buildFilePaths: jest.fn(() => []),
   pushFiles: jest.fn(),
 }));
 
@@ -68,6 +74,8 @@ jest.unstable_mockModule("../scopeDocs.js", () => ({
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...a: unknown[]) => mockGitDiffToEncodedPaths(...a),
+  writeDiff: jest.fn(),
+  clearDiff: jest.fn(),
 }));
 
 jest.unstable_mockModule("../FileUtils.js", () => ({
@@ -207,5 +215,19 @@ describe("REV-161 initCommand honours the wizard outcome", () => {
     expect(mockMcpCommand).toHaveBeenCalledWith(
       expect.objectContaining({ autoConfigure: true, start: false })
     );
+  });
+
+  it("refuses the wizard under --dry-run instead of provisioning for real", async () => {
+    // The wizard writes the config, the manifest and the source tree and has no
+    // preview mode, so running it under --dry-run created exactly the project
+    // the user asked us not to create — and reported nothing unusual.
+    mockStartWizard.mockResolvedValue(true);
+
+    const { initCommand } = await import("../commands.js");
+    await initCommand({ logLevel: "info", dryRun: true });
+
+    expect(mockStartWizard).not.toHaveBeenCalled();
+    expect(mockMcpCommand).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
   });
 });

@@ -53,6 +53,31 @@ export const writeDiff = async (files: string) => {
   );
 };
 
+/**
+ * Removes the diff manifest, if there is one.
+ *
+ * deploy treats the file's PRESENCE as the intent to ship a subset — under --ci
+ * it does so without a prompt — so a manifest left behind by an earlier
+ * `build --diff` silently narrows the deploy that follows a FULL rebuild to a
+ * stale list of paths. An absent file is the normal state, so ENOENT is not an
+ * error; anything else is reported and left in place rather than swallowed,
+ * because the next deploy would act on it.
+ */
+export const clearDiff = async () => {
+  try {
+    await fs.promises.unlink(ConfigManager.getDiffPath());
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return;
+    }
+    logger.warn(
+      `Could not remove the stale diff manifest at ${ConfigManager.getDiffPath()}: ` +
+        `${e instanceof Error ? e.message : String(e)}. ` +
+        "Delete it before deploying, or the deploy will ship only the paths it lists."
+    );
+  }
+};
+
 const formatGitFiles = async (gitFiles: string) => {
   const baseRepoPath = await getRepoRootDir();
   const workspaceDir = process.cwd();

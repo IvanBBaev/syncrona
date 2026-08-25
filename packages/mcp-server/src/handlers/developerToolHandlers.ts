@@ -7,13 +7,17 @@ import {
   type DiffRecordInput,
 } from "../analysis";
 import { escapeQueryValue, toJsonText } from "../runtimeUtils";
+import { recordFieldFilePath, type WorkspaceLayout } from "../workspaceLayout";
 
 import type { ToolResponse } from "../toolResponse";
 
 export type DeveloperToolContext = {
   timeoutMs: number;
   projectDir: string;
-  sourceDirectory: string;
+  // DX17: the on-disk layout, not just the source directory — under `flat: true`
+  // a record's field files live at `<table>/<record>~<field>.<ext>`, and probing
+  // the record-folder path instead makes every existsSync below miss silently.
+  layout: WorkspaceLayout;
   resolveScope: (preferredScope: string) => Promise<string>;
   tableGet: (
     table: string,
@@ -65,7 +69,7 @@ function errorResponse(message: string): ToolResponse {
 
 function readLocalRecordsFromManifest(
   projectDir: string,
-  sourceDirectory: string,
+  layout: WorkspaceLayout,
   table: string,
   recordName?: string
 ): DiffRecordInput[] {
@@ -103,7 +107,14 @@ function readLocalRecordsFromManifest(
       const file = asRecord(fileRaw);
       const fileName = toStringField(file.name) || "script";
       const fileType = toStringField(file.type) || "js";
-      const filePath = path.join(projectDir, sourceDirectory, table, recName, `${fileName}.${fileType}`);
+      const filePath = recordFieldFilePath(
+        projectDir,
+        layout,
+        table,
+        recName,
+        fileName,
+        fileType
+      );
       if (existsSync(filePath)) {
         try {
           parts.push(readFileSync(filePath, "utf-8"));
@@ -202,7 +213,7 @@ async function handleDiffInstanceVsLocal(
 
   const local = readLocalRecordsFromManifest(
     context.projectDir,
-    context.sourceDirectory,
+    context.layout,
     table,
     recordName
   );

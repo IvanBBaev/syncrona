@@ -261,13 +261,25 @@ const MODULE_FLOORS = [
   // shape as the pre-WP-M1 flicker, new denominators.
   { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.17 (also 96.74 / 92.20: V8 range granularity, 200/217 vs 201/218 branches, same uncovered lines)
   // Preflight, dry-run and the mutating-tool wrappers.
-  // The declared reading here runs the other way: 92.05 is what 61 of 62 runs print,
-  // and the odd one is LOWER. An extra range appeared that was NOT executing, so the
-  // denominator grew alone. The grammar still wants the lower value first, which is
-  // why the number you will almost always measure is the one in parentheses.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.60 / 91.53 (also 92.60 / 92.05: V8 range granularity, 162/177 vs 162/176 branches, same uncovered lines; 162/176 measured from raw V8 data, the 177 denominator is the only pair within +-12 on both counters that renders 91.53)
+  // DX17 moved this file's sync.config.js parsing out to `workspaceLayout.js` (the
+  // flat/record-folder layout seam), so `getSourceDirectory` is now a one-line
+  // delegation and `findScriptIncludeLocalPaths` builds its paths through the seam.
+  // That re-based both denominators — the module lost fully covered lines and the
+  // config-parsing fallback branches at once — and both readings moved with it
+  // (92.60 -> 92.44 line, 91.53 -> 91.62 branch).
+  //
+  // The declared second reading that used to sit here (92.60 / 92.05, 162/177 vs
+  // 162/176 ranges) is deliberately NOT carried forward: it was evidence about a
+  // file with different branch counts, and a declaration that no longer describes
+  // the measured tree is just a tolerance. That flicker ran the unusual way round —
+  // 92.05 was what 61 of 62 runs printed and the odd one out was LOWER, an extra
+  // range that was not executing, so the denominator grew alone. If it reappears on
+  // the new counters, re-declare it from a fresh pair of readings.
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.44 / 91.62
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
-  { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.22 / 95.65
+  // DX17: +1 covered line (the developer context now resolves the workspace layout
+  // instead of just the source directory), which is the whole of 90.22 -> 90.27.
+  { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.27 / 95.65
   // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
   // local filesystem path.
   // Both readings moved UP together (98.50 -> 99.05 line, 91.64 -> 93.49 branch):

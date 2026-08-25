@@ -12,7 +12,20 @@ import { runUpdateNotifier } from "./updateNotifier.js";
 // loadConfigs() can emit (e.g. the `flat: true` layout notice) — must go to
 // stderr so stdout stays byte-clean. Detected here because loadConfigs() below
 // is the first thing that can log, long before yargs resolves the command.
+//
+// `--json` joins them for the same reason: `jira` and `mirror` promise a
+// pipeable JSON document on stdout, but every logger level except warn/error
+// defaults to stdout, so a bootstrap notice, a capability line, or the `→ hint`
+// that follows a failure would be interleaved with (or emitted instead of) the
+// document and break `| jq`. The JSON payloads themselves are written with
+// process.stdout.write, not the logger, so nothing that belongs on stdout moves.
 function stdoutIsProtocolChannel(argv: string[]): boolean {
+  // `--json` can appear anywhere after the command, so it is scanned for over
+  // the whole argv rather than in the leading-options walk below. Only the
+  // truthy spellings engage; `--no-json` / `--json=false` ask for text output.
+  if (argv.some((tok) => tok === "--json" || tok === "--json=true")) {
+    return true;
+  }
   // The yargs command is the first positional token. Skip any leading global
   // options first; the only value-taking ones are string options whose value
   // could otherwise be mistaken for the command (booleans consume no value).

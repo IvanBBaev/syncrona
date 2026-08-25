@@ -32,6 +32,11 @@ let processing = false;
 // keep firing retries or carry a stale backoff into the next failure.
 let retryTimer: NodeJS.Timeout | undefined = undefined;
 let retryAttempt = 0;
+// #17: paths already reported as untracked in this session. Editors save the
+// same file over and over, and the warning is guidance ("run refresh"), not an
+// event log — one line per save would bury everything else in the dev output.
+// Cleared by stopWatching along with the rest of the session state.
+let warnedUntracked = new Set<string>();
 
 // Arms the self-driving retry on the capped exponential backoff. Guarded
 // against stacking so overlapping failures schedule at most one pending retry.
@@ -83,6 +88,21 @@ const drainQueue = async (): Promise<void> => {
         const ctx = getFileContextFromPath(queuedPath);
         if (ctx) {
           pathContexts.push({ queuedPath, ctx });
+          // Resolvable again — a later `refresh` may have registered it, so the
+          // next time it goes missing the user hears about it afresh.
+          warnedUntracked.delete(queuedPath);
+          continue;
+        }
+        // #17: "add" already reports an untracked file; "change" dropped it
+        // without a word. Editing a file the manifest does not claim — renamed
+        // away, removed by a concurrent refresh, or never registered — then
+        // looked exactly like a healthy save: no push, no error, no output,
+        // while `dev` kept reporting itself as watching.
+        if (!warnedUntracked.has(queuedPath)) {
+          warnedUntracked.add(queuedPath);
+          logger.warn(
+            `Change ignored: ${queuedPath} — it is not tracked by the manifest, so it will not be pushed. Run "syncrona refresh" (or "syncrona repair") to register it.`
+          );
         }
       }
       const fileContexts = pathContexts.map((pc) => pc.ctx);
@@ -251,6 +271,9 @@ export async function stopWatching(): Promise<void> {
   // Drop queued/requeued paths as well: a watcher restarted in the same
   // process must not push stale changes from the previous session.
   pushQueue = [];
+  // The "already told you" set is session state too: a restarted `dev` must
+  // warn again about a file it never warned about in THIS run.
+  warnedUntracked = new Set<string>();
   if (watcher) {
     const current = watcher;
     watcher = undefined;
