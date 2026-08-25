@@ -219,8 +219,12 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // declared below exactly like the run-to-run flickers. `servicenowCore.js` is the
 // second, and it split on a commit that touched neither the module nor its tests: the
 // same +2/+2 shape (265/289 against 263/287), the same byte-identical uncovered-line
-// list, and one extra function range on top (62/64 against 61/64). Two entries is no
-// longer an outlier — assume any entry can split. Agreement observed is not
+// list, and one extra function range on top (62/64 against 61/64). Those four counters
+// are the ORIGINAL split, kept because they are what the shape was first read from;
+// the module has since gained coverage and re-based them (the branch pair now reads
+// 289/309 against 287/307 and functions 65/66 against 64/66), so do not treat them as
+// the current measurement — the entry's own comment below carries that. Two entries is
+// no longer an outlier — assume any entry can split. Agreement observed is not
 // agreement guaranteed, and a floor set flush turns the first one-branch difference
 // into a red build on a platform the author never ran. Three points is roughly one
 // branch in a 30-branch module: enough to absorb a granularity difference, far too
@@ -294,14 +298,23 @@ const MODULE_FLOORS = [
   // 265/289 — same uncovered-line list, plus one extra covered function range.
   // Nothing here fixed that; the module simply gained coverage, which re-based both
   // counters and made the ubuntu pair evidence about ranges that no longer exist.
-  // Expect the ubuntu leg to land one notch above 93.49 again. That is the known
-  // split, NOT drift: re-declare it from that leg's own report in this table's
-  // grammar (`(also <line> / <branch>: cause)`, lower reading first) rather than
-  // loosening the floor. The value is deliberately left unpredicted — every other
-  // declared pair here was measured on the runner that printed it, and a computed
-  // guess wearing the word `measured` is the single thing these annotations exist
-  // to prevent.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.49
+  //
+  // The ubuntu leg landed on 2026-08-25, one notch above 93.49 exactly as that
+  // paragraph expected, and the pair below is re-declared from a fresh pair of
+  // readings rather than carried: CI run 32853329166 printed 99.05 / 93.53 / 98.48
+  // with the uncovered-line column `432-436 441-442 832 1032-1033`, byte-identical
+  // to darwin's. Same lines, same line percentage, one more covered function range
+  // — the split is still on functions, and the branch denominator follows it.
+  //
+  // Neither report prints branch counters, so the lower pair was re-measured the
+  // way audit.js's was: `--test-reporter=lcov` under the gate's own flags, which
+  // renders darwin as 287/307 branches, 1040/1050 lines and 64/66 functions. The
+  // higher pair is then forced, not guessed. Ubuntu's 98.48 is 65/66 — exactly one
+  // more covered function range, the same +1 shape this file recorded the last two
+  // times this module split — and 289/309 is the only pair that both renders 93.53
+  // and moves numerator and denominator together the way an extra counted range
+  // does (288/308 renders 93.51, 290/310 renders 93.55).
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.49 (also 99.05 / 93.53: V8 range granularity on ubuntu, 287/307 vs 289/309 branches, same uncovered lines 432-436 441-442 832 1032-1033, one extra covered function range at 98.48 against darwin's 96.97)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
