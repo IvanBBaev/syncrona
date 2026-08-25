@@ -13,6 +13,7 @@ export {};
 // empty lines, deletions, rename/copy columns and scope filtering.
 const mockExecFile = jest.fn();
 const mockWriteFile = jest.fn();
+const mockUnlink = jest.fn();
 const mockGetSourcePath = jest.fn();
 const mockGetDiffPath = jest.fn();
 const mockEncodedPathsToFilePaths = jest.fn();
@@ -23,8 +24,16 @@ jest.unstable_mockModule("child_process", () => ({
 
 jest.unstable_mockModule("fs", () => ({
   __esModule: true,
-  default: { promises: { writeFile: (...args: unknown[]) => mockWriteFile(...args) } },
-  promises: { writeFile: (...args: unknown[]) => mockWriteFile(...args) },
+  default: {
+    promises: {
+      writeFile: (...args: unknown[]) => mockWriteFile(...args),
+      unlink: (...args: unknown[]) => mockUnlink(...args),
+    },
+  },
+  promises: {
+    writeFile: (...args: unknown[]) => mockWriteFile(...args),
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+  },
 }));
 
 jest.unstable_mockModule("../config.js", () => ({
@@ -36,8 +45,10 @@ jest.unstable_mockModule("../FileUtils.js", () => ({
   encodedPathsToFilePaths: (...args: unknown[]) => mockEncodedPathsToFilePaths(...args),
 }));
 
+const mockWarn = jest.fn();
+
 jest.unstable_mockModule("../Logger.js", () => ({
-  logger: { info: jest.fn(), silly: jest.fn() },
+  logger: { info: jest.fn(), silly: jest.fn(), warn: (...a: unknown[]) => mockWarn(...a) },
 }));
 
 // The SUT is imported dynamically AFTER the module mocks are registered:
@@ -45,6 +56,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
 // real config/FileUtils before the mocks take effect.
 let gitDiffToEncodedPaths: typeof import("../gitUtils.js").gitDiffToEncodedPaths;
 let writeDiff: typeof import("../gitUtils.js").writeDiff;
+let clearDiff: typeof import("../gitUtils.js").clearDiff;
 let getCurrentBranch: typeof import("../gitUtils.js").getCurrentBranch;
 
 describe("gitUtils", () => {
@@ -52,9 +64,8 @@ describe("gitUtils", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    ({ gitDiffToEncodedPaths, writeDiff, getCurrentBranch } = await import(
-      "../gitUtils.js"
-    ));
+    ({ gitDiffToEncodedPaths, writeDiff, clearDiff, getCurrentBranch } =
+      await import("../gitUtils.js"));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.
@@ -287,5 +298,56 @@ describe("gitUtils", () => {
       "/repo/.syncrona/diff.json",
       JSON.stringify({ changed: ["/a/b.js", "/a/c.js"] })
     );
+  });
+
+  // deploy reads the diff manifest's PRESENCE as "ship exactly these paths" — and
+  // under --ci it does so without a prompt. So a manifest left behind by an
+  // earlier `build --diff` would silently narrow the deploy that follows a FULL
+  // rebuild to a stale subset; clearing it is what makes a plain `build` mean
+  // "the whole scope" again.
+  describe("clearDiff", () => {
+    beforeEach(() => {
+      mockGetDiffPath.mockReturnValue("/repo/.syncrona/diff.json");
+    });
+
+    it("removes the diff manifest", async () => {
+      mockUnlink.mockResolvedValue(undefined);
+
+      await clearDiff();
+
+      expect(mockUnlink).toHaveBeenCalledWith("/repo/.syncrona/diff.json");
+      expect(mockWarn).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet when there is no manifest to remove", async () => {
+      // Absent is the normal state — every build that never ran --diff — so
+      // ENOENT must not warn, or a plain build would nag on every run.
+      const enoent = Object.assign(new Error("no such file"), { code: "ENOENT" });
+      mockUnlink.mockRejectedValue(enoent);
+
+      await expect(clearDiff()).resolves.toBeUndefined();
+      expect(mockWarn).not.toHaveBeenCalled();
+    });
+
+    it("warns instead of swallowing any other removal failure", async () => {
+      // The file is still there, so the next deploy will act on it: the user has
+      // to hear about it rather than discover a truncated deploy later.
+      mockUnlink.mockRejectedValue(
+        Object.assign(new Error("permission denied"), { code: "EACCES" })
+      );
+
+      await expect(clearDiff()).resolves.toBeUndefined();
+      expect(mockWarn).toHaveBeenCalledTimes(1);
+      expect(mockWarn.mock.calls[0][0]).toContain("/repo/.syncrona/diff.json");
+      expect(mockWarn.mock.calls[0][0]).toContain("permission denied");
+    });
+
+    it("reports a non-Error rejection too", async () => {
+      mockUnlink.mockRejectedValue("disk gone");
+
+      await clearDiff();
+
+      expect(mockWarn.mock.calls[0][0]).toContain("disk gone");
+    });
   });
 });

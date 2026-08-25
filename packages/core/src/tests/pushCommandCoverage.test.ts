@@ -54,6 +54,8 @@ jest.unstable_mockModule("../appUtils.js", () => ({
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
+  writeDiff: jest.fn(),
+  clearDiff: jest.fn(),
 }));
 
 jest.unstable_mockModule("../Logger.js", () => ({
@@ -847,5 +849,53 @@ describe("pushCommand orchestration branches (mocked fs)", () => {
 
     expect(process.exitCode).toBe(1);
     expect(mockInternalError).toHaveBeenCalledWith("boom: table not found");
+  });
+
+  // #15: `syncrona push <path>` names the scope itself. A typo, a path outside
+  // the source tree and a file no manifest record claims all resolve to an empty
+  // record list, and the run logged "0 files to push.", pushed nothing and
+  // exited 0 — a green `push --ci` (and a successful MCP push tool result) for a
+  // push that never happened.
+  it("fails the shell when an explicit push target matches no tracked record", async () => {
+    mockGetAppFileList.mockResolvedValue([]);
+
+    await runPush();
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Nothing to push")
+    );
+    expect(process.exitCode).toBe(1);
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    // Aborts before taking the collaboration lock or writing a checkpoint:
+    // there is no work to protect.
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("fails an explicit-target dry run that would preview nothing", async () => {
+    // A preview exists to tell the user what a real push would do. "0 files to
+    // push." for a path they typed themselves is the answer they most need to
+    // notice, so it fails here exactly as the real push would.
+    mockGetAppFileList.mockResolvedValue([]);
+
+    await runPush({ dryRun: true });
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Nothing to push")
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("keeps an empty diff-driven push a successful no-op", async () => {
+    // Nobody named these paths: `push --diff main` with no changes since main is
+    // a legitimate "nothing to do", and failing it would break every pipeline
+    // that pushes on every commit.
+    mockGetAppFileList.mockResolvedValue([]);
+    mockPushFiles.mockResolvedValue([]);
+
+    await runPush({ target: "", diff: "main" });
+
+    expect(mockLoggerError).not.toHaveBeenCalled();
+    expect(process.exitCode).not.toBe(1);
+    expect(mockPushFiles).toHaveBeenCalledWith([], undefined);
   });
 });

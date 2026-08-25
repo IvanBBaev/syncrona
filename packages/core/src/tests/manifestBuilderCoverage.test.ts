@@ -796,6 +796,44 @@ describe("manifestBuilder coverage", () => {
     );
   });
 
+  // INJ-2 at the table level. The record level has been hardened for a while
+  // (setRecord stores names through defineProperty for exactly this reason), but
+  // the map those records are stored INTO was still an object literal, so the one
+  // table key `__proto__` invoked the inherited setter: no own property was
+  // created, and because the value is an object the assignment silently
+  // reparented `result` instead. mergeTableMaps then iterated own keys and found
+  // nothing, so the table — every record in it, scripts and sidecars alike —
+  // vanished between the fetch and the writer while the run reported success.
+  // The next refresh found the same files missing and did it all again.
+  //
+  // The keys here come from the missing-file map, which is derived from
+  // sync.manifest.json — a file people hand-edit and git-merge, and one where
+  // JSON.parse turns "__proto__" into an ordinary own property that flows
+  // straight through.
+  it("buildBulkDownloadFromTableAPI keeps a table named after a prototype member", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async () => ({
+      data: { result: [{ sys_id: "rec-1", name: "OK A", script: "gs.info('ok');" }] },
+    }));
+
+    // Built by JSON.parse rather than as a literal on purpose: `{ __proto__: x }`
+    // in source sets the prototype instead of creating the own key the manifest
+    // on disk actually carries, so a literal would test the wrong object.
+    const missing: SN.MissingFileTableMap = JSON.parse(
+      '{"__proto__":{"rec-1":[{"name":"script","type":"js"}]}}'
+    );
+
+    const result = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {});
+
+    expect(Object.keys(result)).toEqual(["__proto__"]);
+    expect(result["__proto__"].records["OK A"].files).toEqual([
+      { name: "script", type: "js", content: "gs.info('ok');" },
+    ]);
+    // The map itself must not have been reparented by the assignment — the
+    // failing shape put the table's own `{ records }` object there.
+    expect(Object.getPrototypeOf(result)).toBeNull();
+  });
+
   it("buildBulkDownloadFromTableAPI propagates a non-skippable error", async () => {
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockImplementation(async () => {

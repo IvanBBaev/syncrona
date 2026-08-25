@@ -656,11 +656,34 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       }
 
       const { updateSet, ci: skipPrompt, target, diff } = args;
+      // Did the caller name the scope, or did we derive it? The two answers make
+      // an empty result mean opposite things, so the distinction is kept.
+      const explicitTarget = target !== undefined && target !== "";
       let encodedPaths;
-      if (target !== undefined && target !== "") encodedPaths = target;
+      if (explicitTarget) encodedPaths = target as string;
       else encodedPaths = await gitDiffToEncodedPaths(diff);
 
       let fileList = await AppUtils.getAppFileList(encodedPaths);
+
+      // #15: `syncrona push <path>` names its own scope, and three ordinary
+      // mistakes empty it out — a typo (encodedPathsToFilePaths drops paths that
+      // do not exist, silently), a path outside the source tree, and a file no
+      // manifest record claims (getAppFileList warns, then drops it). All three
+      // used to log "0 files to push.", push nothing and exit 0: a green
+      // `push --ci`, and a successful MCP push tool result, for a push that never
+      // happened.
+      //
+      // A derived scope is the opposite case and stays a no-op: `push --diff main`
+      // with nothing changed since main is a legitimate success, and so is a push
+      // over a source tree that holds no tracked record yet.
+      if (explicitTarget && fileList.length === 0) {
+        logger.error(
+          `Nothing to push: "${target}" matched no record this workspace tracks. ` +
+            "Check the path, or run `syncrona refresh` if it is a real record that is not in the manifest yet."
+        );
+        process.exitCode = 1;
+        return;
+      }
 
       // A dry run is a read-only preview, so it returns before any checkpoint
       // state is read, resumed or cleared: previewing must never consume or

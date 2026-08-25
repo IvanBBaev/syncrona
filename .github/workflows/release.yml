@@ -49,10 +49,18 @@ jobs:
         run: npm run check
 
       # Publish gate: fail the release on a known-vulnerable runtime dependency.
-      # Scoped to production deps so dev-only advisories never block a release;
-      # ci.yml audits the full tree on pushes/PRs.
+      # Scoped to production deps so dev-only advisories never block a release.
+      # NOTE: this comment used to claim "ci.yml audits the full tree on
+      # pushes/PRs" — that was never true. ci.yml also runs `--omit=dev`, so DEV
+      # dependencies are audited by NO workflow. As of 2026-08-21 a full-tree
+      # `npm audit` reports 11 vulnerabilities (5 low, 3 moderate, 3 high), all of
+      # them dev-only and none shipped to users. Adding a non-blocking full-tree
+      # audit step is tracked as follow-up work; until then, treat dev-dependency
+      # advisories as unmonitored rather than absent.
+      # Threshold lowered high -> moderate on 2026-08-21, in lockstep with ci.yml,
+      # after a moderate prod advisory (undici <=6.27.0) went undetected here.
       - name: Security audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=moderate
 
       # `changeset publish` creates ANNOTATED tags (`git tag -m`), which need a
       # committer identity. Runners have none, so the tag call fails inside

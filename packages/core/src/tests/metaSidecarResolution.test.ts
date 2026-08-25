@@ -115,6 +115,57 @@ describe("resolving a .meta.json against a manifest that lost its metadata layer
     ).toBeUndefined();
   });
 
+  // Same rule, and the one directory name that used to slip past it. The lookup
+  // was `tables[table]` then `records[record]` on plain objects, so a stray
+  // directory named after an Object.prototype member resolved to the inherited
+  // member instead of answering "no such record". Destructuring it yielded
+  // `sys_id: undefined`, and because the sidecar is deliberately resolved from
+  // the record rather than from its file list, nothing downstream rejected it —
+  // push built a context for a record that does not exist and sent it at
+  // `/api/now/table/<table>/undefined`.
+  it("refuses a sidecar under a directory named after a prototype member", () => {
+    getManifest.mockReturnValue(degradedManifest());
+
+    for (const stray of [
+      "constructor",
+      "toString",
+      "valueOf",
+      "hasOwnProperty",
+      "__proto__",
+    ]) {
+      expect(
+        getFileContextFromPath(`/proj/src/sys_script_include/${stray}/.meta.json`)
+      ).toBeUndefined();
+      expect(
+        getFileContextFromPath(`/proj/src/sys_script_include/${stray}~.meta.json`)
+      ).toBeUndefined();
+      expect(
+        getFileContextFromPath(`/proj/src/${stray}/IncludeA/.meta.json`)
+      ).toBeUndefined();
+    }
+  });
+
+  // manifest.json is a file on disk that people hand-edit and git-merge, so a
+  // record whose `files` is not a list is a shape this has to survive. Both the
+  // ordinary field and the sidecar must come back unmapped — a record we cannot
+  // read is a record push must not touch — rather than throwing a TypeError out
+  // of path resolution and taking the whole run with it.
+  it("leaves a record with a malformed file list unresolved", () => {
+    getManifest.mockReturnValue({
+      scope: "x_demo",
+      tables: {
+        sys_script_include: {
+          records: { IncludeA: { sys_id: "rec-1", files: "script" } },
+        },
+      },
+    });
+
+    expect(
+      getFileContextFromPath("/proj/src/sys_script_include/IncludeA/script.js")
+    ).toBeUndefined();
+    expect(getFileContextFromPath(NESTED)).toBeUndefined();
+  });
+
   // An ordinary field file gets no such leniency: it names a column, and a
   // column the manifest does not list is a column push must not invent.
   it("leaves an unmapped ordinary field unresolved", () => {

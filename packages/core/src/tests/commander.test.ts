@@ -133,3 +133,125 @@ describe("commander runHandler failure sink (#17)", () => {
     expect(process.exitCode).toBe(130);
   });
 });
+
+// `--dry-run` is one of the three shared options, so every command that takes
+// the shared set used to ACCEPT it — including the ten that have no preview
+// path at all. `syncrona docs --dry-run` regenerated the docs for real,
+// `syncrona mcp --dry-run` wrote .vscode/mcp.json for real, and neither said a
+// word about it. commander.ts now refuses the flag on those commands.
+describe("commander --dry-run contract", () => {
+  const registered: CliCommandModule[] = [];
+  const handlerSpy = jest.fn();
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ CLI_COMMANDS } = await import("../cliCommands.js"));
+    ({ initCommands } = await import("../commander.js"));
+  });
+
+  afterEach(() => {
+    for (const mod of registered) {
+      const idx = CLI_COMMANDS.indexOf(mod);
+      if (idx >= 0) CLI_COMMANDS.splice(idx, 1);
+    }
+    registered.length = 0;
+  });
+
+  const register = (name: string, supportsDryRun?: boolean): void => {
+    const mod: CliCommandModule = {
+      command: name,
+      describe: `synthetic ${name}`,
+      supportsDryRun,
+      handler: (args) => handlerSpy(args),
+    };
+    CLI_COMMANDS.push(mod);
+    registered.push(mod);
+  };
+
+  it("refuses --dry-run on a command that has no preview mode", async () => {
+    register("nopreview", false);
+
+    // exitProcess(false) turns a validation failure into a thrown error rather
+    // than killing the runner, so the refusal is observable here.
+    await expect(runArgv(["nopreview", "--dry-run"])).rejects.toThrow(
+      /`syncrona nopreview` has no preview mode/
+    );
+    await flush();
+    expect(handlerSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the option out of --help rather than advertising a flag that always fails", async () => {
+    register("nopreview", false);
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runArgv(["nopreview", "--help"]);
+
+    const help = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    logSpy.mockRestore();
+    // The other two shared options are still offered — only dry-run is hidden.
+    expect(help).toContain("--logLevel");
+    expect(help).not.toContain("dry-run");
+  });
+
+  it("still accepts --no-dry-run, which asks for the behaviour the command already has", async () => {
+    register("nopreview", false);
+
+    await runArgv(["nopreview", "--no-dry-run"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves --dry-run working for a command that does preview", async () => {
+    register("canpreview");
+
+    await runArgv(["canpreview", "--dry-run"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: true })
+    );
+  });
+
+  it("runs a no-preview command normally when the flag is absent", async () => {
+    register("nopreview", false);
+
+    await runArgv(["nopreview"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+    // No default is declared for the refused option, so the key is absent from
+    // argv entirely and nothing downstream can mistake a missing flag for an
+    // explicit `--dry-run=false`.
+    expect(handlerSpy.mock.calls[0][0]).not.toHaveProperty("dryRun");
+  });
+});
+
+// Companion drift guard for the registry itself: a new command that takes the
+// shared options must state which side of the contract it is on, or this fails.
+// Membership here is decided by whether the implementation actually branches on
+// args.dryRun — grep for `dryRun` in the handler's module before editing it.
+describe("CLI registry dry-run declarations", () => {
+  const PREVIEWS = new Set([
+    "push", // pushCommand.ts
+    "download", // commands.ts
+    "init", // commands.ts (both the .env path and the wizard refusal)
+    "build", // commands.ts
+    "deploy", // commands.ts
+    "repair", // repairCommand.ts
+  ]);
+
+  it("marks every shared-option command as previewing or not", async () => {
+    ({ CLI_COMMANDS } = await import("../cliCommands.js"));
+
+    for (const mod of CLI_COMMANDS) {
+      if (mod.includeSharedOptions === false) continue;
+      const spec = Array.isArray(mod.command) ? mod.command[0] : mod.command;
+      const name = spec.trim().split(/\s+/)[0];
+      expect({ name, previews: mod.supportsDryRun !== false }).toEqual({
+        name,
+        previews: PREVIEWS.has(name),
+      });
+    }
+  });
+});

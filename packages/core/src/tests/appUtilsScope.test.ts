@@ -315,6 +315,22 @@ describe("buildFiles", () => {
     expect(res.success).toBe(false);
     expect(res.message).toContain("disk full");
   });
+
+  // `build --diff` records buildFilePaths() in the diff manifest and deploy reads
+  // that list back, so the two have to name the SAME file. They share one helper
+  // for exactly that reason; this pins the contract, because a second copy of the
+  // arithmetic would drift the moment a layout or getBuildExt rule changed — the
+  // build would write `<record>/script.js` while the manifest pointed elsewhere,
+  // and the deploy would report "0 files" for a record it had just built.
+  it("predicts the exact paths the build writes", async () => {
+    const { buildFiles, buildFilePaths } = await import("../appUtils.js");
+    const recs = [buildableRecord("s1"), buildableRecord("s2")];
+    await buildFiles(recs);
+
+    const written = writeFileForce.mock.calls.map((call) => call[0]);
+    expect(written).toHaveLength(2);
+    expect(buildFilePaths(recs)).toEqual(written);
+  });
 });
 
 describe("downloadAllFiles scoped-endpoint probe", () => {

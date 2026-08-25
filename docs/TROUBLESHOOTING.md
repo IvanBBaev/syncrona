@@ -18,7 +18,7 @@ Run these before anything else — most issues identify themselves here:
 | `syncrona doctor` | Connectivity and instance-side diagnostics. |
 | `syncrona check-env` | OS/WSL, Node.js, and Git prerequisites — no instance needed. |
 | `<command> --log-level debug` | Full request/response detail for any command. |
-| `<command> --dry-run` | Shows what a command *would* do without writing anything. |
+| `<command> --dry-run` | Shows what a command *would* do without writing anything. Implemented by `push`, `deploy`, `download`, `build`, `init` and `repair`; every other command refuses the flag instead of ignoring it. |
 
 Errors are classified into categories (`network`, `auth`, `config`, `data`)
 and printed with an actionable hint — the hint usually names the exact
@@ -42,6 +42,7 @@ as network problems.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `ENOTFOUND` / `EAI_AGAIN` | DNS cannot resolve the instance host — typo in the instance name, or DNS only works through a corporate proxy/VPN. | Verify the host in `syncrona status`; connect the VPN; configure the proxy (next section). |
+| `getaddrinfo ENOTFOUND https` (the hostname is literally `https`) | The instance value is a **URL**, not a host. Every request is built as `https://<instance>/`, so `SN_INSTANCE=https://dev12345.service-now.com` becomes `https://https://dev12345.service-now.com//`. | The CLI now strips the scheme and any path and warns once (`Instance "..." is a URL, not a host`). Fix the source anyway — store the bare host: `SN_INSTANCE=dev12345.service-now.com`. |
 | `ECONNREFUSED` / `EHOSTUNREACH` / `ETIMEDOUT` | Firewall, VPN, or proxy blocking the connection. | `syncrona doctor` from the same shell; confirm the instance is reachable in a browser; configure `HTTPS_PROXY` if your network requires it. |
 | `429` or `5xx` mid-run | Instance throttling or transient server errors — classified as network problems, and long operations checkpoint their progress. | Re-run the command: `download` resumes from `sync.download.checkpoint.json`, `push` offers to resume only the failed records. Throttle with `--concurrency 5` on push. |
 | `Custom scope not found — building manifest from Table API...` | Informational, not an error: the Sincronia/SyncroNow companion scoped app is not installed, so the CLI uses Table API compatibility mode. | Nothing to fix — everything works without the companion app. If your instance hosts the scoped API under a custom prefix, set `SYNCRONA_SCOPED_API_PREFIXES` (comma-separated; default `x_nuvo_sinc,x_nuvo_sync`). |
@@ -71,10 +72,24 @@ as network problems.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Saving a **new** file does nothing | The file is not tracked by the manifest — the watcher says so: `New file detected: ... it is not tracked by the manifest, so it will not be pushed.` Records must exist on the instance first. | Create the record on the instance, then run `syncrona refresh` (or `syncrona repair`) to register it. |
-| Saving an existing file does nothing | The file is outside `sourceDirectory`, or an exclude rule filters its table/field. | Check `sourceDirectory` in `sync.config.js` and the effective excludes via `syncrona config show-defaults`; run with `--log-level debug` to see what the watcher sees. |
+| Saving an existing file does nothing, and the watcher says `Change ignored: ... not tracked by the manifest` | The manifest no longer claims that path — the record was renamed or deleted on the instance, or a concurrent `refresh` rewrote the entry. | Run `syncrona refresh` (or `syncrona repair`) to re-register it. The warning is printed once per path per `dev` session. |
+| Saving an existing file does nothing, silently | The file is outside `sourceDirectory`, or an exclude rule filters its table/field. | Check `sourceDirectory` in `sync.config.js` and the effective excludes via `syncrona config show-defaults`; run with `--log-level debug` to see what the watcher sees. |
 | Saves push, but the built output is wrong | The wrong rule matches — the **first** matching rule in `rules` wins, so a broad pattern can shadow a specific one. | Run `syncrona build --check-config` to detect shadowed rules; reorder `rules`. |
 | New instance records take long to appear during dev | Manifest polling runs on `refreshInterval` (default 30 s). | Lower `refreshInterval`, pass `--refresh-interval <s>`, or set `0` to disable polling and refresh manually. Overlapping refreshes are skipped by design — slow instances just refresh less often. |
 | Push rejected due to scope mismatch | Your session's current application scope on the instance differs from the file's scope. | Push with `--scope-swap` to switch the session scope automatically, or fix the scope in the instance UI. |
+
+## Build rules (`rules` in `sync.config.js`)
+
+`sync.config.js` is hand-written JavaScript that nothing type-checks, so a malformed
+rule is a runtime surprise. A rule that cannot be used is skipped with a warning and
+the rest of the list still applies — the build no longer aborts over one bad entry.
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `Skipping plugin rule with a non-RegExp 'match'` | `match` is a string (or missing). A regex **literal** is required — quotes make it a string. | Write `match: /\.ts$/`, not `match: "\\.ts$"`. |
+| `Skipping plugin rule matching <file>: its 'plugins' must be an array` | The rule has a `match` but no usable `plugins` list. Previously this aborted the whole build with `Cannot read properties of undefined (reading 'length')`. | Add `plugins: [{ name: "@syncrona/plugin-js" }]`, or `plugins: []` to match those files and copy them as-is. |
+| A rule matches only every second file | The pattern carries the `/g` or `/y` flag, which makes `.test()` stateful. | Drop the flag. Rule matching ignores it, but any other tool reading the config will not. |
+| `build --check-config` reports nothing on an obviously shadowed rule | Fixed: the checker used to crash on the first malformed rule in the list, before reaching the real shadow. | Re-run `syncrona build --check-config` — malformed rules are now skipped and reported separately. |
 
 ## MCP server
 

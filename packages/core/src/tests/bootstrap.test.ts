@@ -211,6 +211,32 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
     expect(mockRouteAllToStderr).not.toHaveBeenCalled();
   });
 
+  // `--json` is the third protocol channel: `jira --json` and `mirror ... --json`
+  // promise a pipeable document on stdout, and every logger level below `warn`
+  // lands there by default — so a capability notice or a `→ hint` would be
+  // interleaved with the document and break `| jq`.
+  it("routes to stderr for `jira --json` so the document is the only thing on stdout", async () => {
+    process.argv = ["node", "syncrona", "jira", "PROJ-1", "--json"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes to stderr for the `--json=true` spelling as well", async () => {
+    process.argv = ["node", "syncrona", "mirror", "status", "--json=true"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT route for `--no-json` / `--json=false`, which ask for text output", async () => {
+    process.argv = ["node", "syncrona", "mirror", "report", "--no-json"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+    jest.clearAllMocks();
+    process.argv = ["node", "syncrona", "mirror", "report", "--json=false"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
   it("does not route when a trailing global option swallows a token named `mcp`", async () => {
     // `mcp` here is the VALUE of --log-level, not a command, and it is also the
     // last token — so the option-skip has to run off the end of argv rather than

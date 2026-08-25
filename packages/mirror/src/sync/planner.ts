@@ -397,10 +397,24 @@ export interface PlannerInput {
    * How many syncs have run against this mirror including this one, 1-based.
    *
    * Supplied rather than counted internally because the count lives in the mirror's
-   * own state and the planner must stay pure; the promotion rule is then a function
-   * of two numbers that can be tested at every boundary.
+   * own state (`syncCounter.ts`) and the planner must stay pure; the promotion rule
+   * is then a function of two numbers that can be tested at every boundary. Absent,
+   * this run counts as the first of a cycle.
    */
   syncOrdinal?: number;
+  /**
+   * `--reconcile` — promote this run to a reconcile whatever the count says.
+   *
+   * The cadence is the routine path and this is the operator's override for the day
+   * the routine is not enough: a deletion known to have happened, a mirror whose
+   * counter was lost, an audit. It is deliberately weaker than `--full`, which still
+   * wins: both sweep every table, but `full` also refuses to inherit an incremental
+   * checkpoint, and an operator who asked for the stronger thing should get it.
+   *
+   * It does NOT reset the count. A forced reconcile answers a question about today;
+   * moving the cadence would silently change when the next automatic one lands.
+   */
+  reconcile?: boolean;
   /** `--verify-quiescent` — record D1's pre-sweep readings on the plan. */
   verifyQuiescent?: boolean;
   /** Pre-sweep Aggregate readings by table, gathered by the caller before planning. */
@@ -413,6 +427,30 @@ export interface PlannerInput {
   newSweepId: () => string;
 }
 
+/**
+ * Where this run sits in the §5.4 reconcile cycle.
+ *
+ * Reported rather than left implicit because the cadence is the mirror's answer to
+ * "when do deletions arrive?", and an operator staring at an `incremental` run has
+ * no other way to tell whether the reconcile is one sync away or nine. It is also
+ * the cheapest possible regression detector for the defect this type was added
+ * alongside: a cadence that never advances is visible in one line of output.
+ */
+export interface SyncCadence {
+  /** 1-based position of this run, as supplied by the caller's counter. */
+  ordinal: number;
+  /** `sync.reconcileEveryNSyncs` as it applied to this run. */
+  everyN: number;
+  /**
+   * Runs still to go before the next automatic reconcile — `0` when this run IS
+   * one. `null` when the numbers cannot express a cadence (a non-integer ordinal or
+   * an `everyN` below 1), which is the same input on which promotion is refused.
+   */
+  syncsUntilReconcile: number | null;
+  /** Whether `reconcile` (or `full`) promoted this run irrespective of the count. */
+  forced: boolean;
+}
+
 /** The plan plus the facts the coverage report and the checkpoint need. */
 export interface PlanResult {
   /** The normative §4.7 plan handed to the Fetcher. */
@@ -423,6 +461,8 @@ export interface PlanResult {
   decisions: TablePlanDecision[];
   /** Duplicate catalog names that were dropped, keeping the first occurrence. */
   duplicateTables: string[];
+  /** This run's position in the reconcile cycle (§5.4). */
+  cadence: SyncCadence;
 }
 
 /** Coverage reason for each non-planned outcome. */
@@ -437,21 +477,28 @@ const REASON_BY_OUTCOME: Record<PlanOutcome, CoverageReason | null> = {
 };
 
 /**
- * Whether this sync is the periodic reconcile (§5.4).
+ * How many syncs remain before the periodic reconcile — `0` on the reconcile
+ * itself, `null` when the pair does not describe a cadence at all (§5.4).
  *
  * Both guards reject rather than coerce. A zero or negative `reconcileEveryNSyncs`
  * would make `ordinal % n` throw or match everything, and "every sync is a reconcile"
  * is a materially different and far more expensive mirror than the operator asked
  * for — so a nonsensical setting disables promotion instead of maximising it.
+ *
+ * The countdown and the promotion are one function rather than two because they are
+ * one question asked twice. Two implementations of "every Nth" would be two things
+ * to keep in step, and the failure mode of them drifting is a report that promises a
+ * reconcile on a run that plans an incremental — the mirror lying about exactly the
+ * property this cadence exists to provide.
  */
-function isReconcileSync(ordinal: number, everyN: number): boolean {
+function cadencePosition(ordinal: number, everyN: number): number | null {
   if (!Number.isInteger(ordinal) || ordinal < 1) {
-    return false;
+    return null;
   }
   if (!Number.isInteger(everyN) || everyN < 1) {
-    return false;
+    return null;
   }
-  return ordinal % everyN === 0;
+  return (everyN - (ordinal % everyN)) % everyN;
 }
 
 /**
@@ -548,12 +595,17 @@ function chooseStrategy(
  */
 export function planSync(input: PlannerInput): PlanResult {
   const { config } = input;
+  const ordinal = input.syncOrdinal ?? 1;
+  const everyN = config.sync.reconcileEveryNSyncs;
+  const syncsUntilReconcile = cadencePosition(ordinal, everyN);
+  const forced = input.full === true || input.reconcile === true;
   const mode: SyncMode =
     input.full === true
       ? "full"
-      : isReconcileSync(input.syncOrdinal ?? 1, config.sync.reconcileEveryNSyncs)
+      : input.reconcile === true || syncsUntilReconcile === 0
         ? "reconcile"
         : "incremental";
+  const cadence: SyncCadence = { ordinal, everyN, syncsUntilReconcile, forced };
 
   // A resumed checkpoint keeps its sweep identity only while the mode still matches.
   // On a mismatch the planner mints a fresh identity, which is what makes
@@ -635,7 +687,7 @@ export function planSync(input: PlannerInput): PlanResult {
       : {}),
   };
 
-  return { plan, startedAt, decisions, duplicateTables };
+  return { plan, startedAt, decisions, duplicateTables, cadence };
 }
 
 /**

@@ -1143,7 +1143,15 @@ export async function buildManifestFromTableAPI(
     );
   }
 
-  const manifest: SN.AppManifest = { scope: scopeName, tables: {} };
+  // INJ-2, same reason as buildBulkDownloadFromTableAPI's result map: the table
+  // key is instance data, `tables["__proto__"] = …` on a literal creates no own
+  // property, and a table that vanishes from the manifest takes every one of its
+  // local files out of the push with it. The carry-forward below assigns into
+  // this map too, from a manifest read off disk.
+  const manifest: SN.AppManifest = {
+    scope: scopeName,
+    tables: Object.create(null),
+  };
   const failedTables: string[] = [];
   // Tables whose enumeration was cut short by a skippable 400/403/404. They are
   // NOT "empty" — see the carry-forward below.
@@ -1402,7 +1410,17 @@ export async function buildBulkDownloadFromTableAPI(
   recordNames?: ManifestRecordNames,
   metaFieldsByTable?: ManifestMetaFields
 ): Promise<SN.TableMap> {
-  const result: SN.TableMap = {};
+  // INJ-2 one level above setRecord, which has stored record NAMES safely for a
+  // while. The table key comes from the missing-file map, i.e. from
+  // sync.manifest.json — a file people hand-edit and git-merge, and one where
+  // JSON.parse turns "__proto__" into an ordinary own property. Assigning that
+  // key on an object literal invokes the inherited setter: no own property is
+  // created, and because the value is an object the assignment reparents
+  // `result` instead. mergeTableMaps iterates own keys, so the whole table —
+  // every record in it, scripts and sidecars alike — disappeared between the
+  // fetch and the writer while the run reported success, and the next refresh
+  // found the same files missing and fetched them again.
+  const result: SN.TableMap = Object.create(null);
 
   await Promise.all(
     Object.entries(missingFiles).map(async ([tableName, recordMap]) => {
@@ -1510,7 +1528,13 @@ export async function buildBulkDownloadFromTableAPI(
             // string overwrote the local file: silent data loss on every
             // download of a read-restricted field. Omit the file instead, so
             // the existing content is left untouched.
-            if (!(fieldName in row)) {
+            //
+            // Own properties only. `fieldName` is a `sys_dictionary.element`,
+            // and `constructor`/`toString`/`valueOf` are valid ServiceNow
+            // column names that a bare `in` finds on Object.prototype — so a
+            // field the row never carried walked past this guard and was
+            // written to disk with a native function body as its content.
+            if (!Object.prototype.hasOwnProperty.call(row, fieldName)) {
               unreturnedFields.add(fieldName);
               continue;
             }

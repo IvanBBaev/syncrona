@@ -99,11 +99,60 @@ describe("config coverage", () => {
   it("loadManifest parses an existing sync.manifest.json and getManifest returns it", async () => {
     const { store } = await loadStoreFrom(
       "module.exports = { sourceDirectory: 'src' };\n",
-      { "sync.manifest.json": JSON.stringify({ scope: "x_test_app" }) }
+      { "sync.manifest.json": JSON.stringify({ scope: "x_test_app", tables: {} }) }
     );
 
     const manifest = store.getManifest() as { scope?: string };
     expect(manifest.scope).toBe("x_test_app");
+  });
+
+  // ---- #16: a parsed manifest is not automatically an understood one ------
+  //
+  // The same defect #46 closed for sync.diff.manifest.json, on the file with the
+  // bigger blast radius: `{}`, `[]`, `null` and `{"scope":"x"}` are all valid
+  // JSON, and every one of them used to load as a healthy manifest. Downstream,
+  // `manifest.tables ?? {}` then claims NOTHING on disk — so `repair --apply
+  // --prune` reads the whole downloaded tree as orphans and deletes it, and a
+  // push resolves no record at all. A present file whose shape we cannot read is
+  // corrupt, not empty.
+  it.each([
+    ["an empty object", "{}"],
+    ["an array", "[]"],
+    ["a JSON null", "null"],
+    ["a scalar", '"x_app"'],
+    ["a manifest that lost its tables", JSON.stringify({ scope: "x_app" })],
+    ["a manifest whose tables is an array", '{"scope":"x_app","tables":[]}'],
+    ["a manifest that lost its scope", '{"tables":{}}'],
+  ])("refuses %s as a manifest instead of reading it as an empty one", async (_label, body) => {
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src' };\n",
+      { "sync.manifest.json": body }
+    );
+
+    expect(() => store.getManifest()).toThrow(/is not a manifest/);
+    // Setup mode still answers "no usable manifest" rather than throwing, so
+    // `init`/`refresh` can rebuild the file instead of being locked out by it.
+    expect(store.getManifest(true)).toBeUndefined();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("is not a manifest")
+    );
+  });
+
+  it("keeps a good in-memory manifest when a reload reads a shape-invalid file", async () => {
+    // REV-110 already refuses to clobber the in-memory manifest on a transient
+    // read/parse failure. A file that parses into the wrong shape is the same
+    // situation with a different symptom, and `dev` keeping the manifest it
+    // already trusts is what stops a mid-session partial write from turning the
+    // next watch push into a no-op.
+    const { store, project } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src' };\n",
+      { "sync.manifest.json": JSON.stringify({ scope: "x_good", tables: {} }) }
+    );
+
+    fs.writeFileSync(path.join(project, "sync.manifest.json"), "{}");
+    await store.reloadManifest();
+
+    expect((store.getManifest() as { scope?: string }).scope).toBe("x_good");
   });
 
   it("updateManifest replaces the in-memory manifest", async () => {
@@ -159,12 +208,52 @@ describe("config coverage", () => {
   it("parses a valid diff file and getDiffFile returns it", async () => {
     const { store } = await loadStoreFrom(
       "module.exports = { sourceDirectory: 'src' };\n",
-      { "sync.diff.manifest.json": JSON.stringify({ tables: { incident: [] } }) }
+      {
+        "sync.diff.manifest.json": JSON.stringify({
+          changed: ["/build/a.js", "/build/b.js"],
+        }),
+      }
     );
 
     expect(store.isDiffFileCorrupt()).toBe(false);
-    const diff = store.getDiffFile() as { tables?: Record<string, unknown> };
-    expect(diff.tables).toBeDefined();
+    expect(store.getDiffFile().changed).toEqual(["/build/a.js", "/build/b.js"]);
+  });
+
+  it("accepts a diff manifest that legitimately lists nothing", async () => {
+    // A diff build that found no changes writes `{"changed": []}`. That is a
+    // well-formed manifest with a real meaning - "deploy nothing" - so it must
+    // load as healthy and be handed to the caller as the empty list it is.
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src' };\n",
+      { "sync.diff.manifest.json": JSON.stringify({ changed: [] }) }
+    );
+
+    expect(store.isDiffFileCorrupt()).toBe(false);
+    expect(store.getDiffFile().changed).toEqual([]);
+  });
+
+  // Valid JSON of the wrong shape is the dangerous case: `changed` reads as
+  // undefined, the caller's `|| []` turns that into an empty list, and deploy
+  // used to take the empty list for "no diff at all" and ship the FULL scope.
+  // Refusing the file is what keeps a hand-edited or half-written manifest from
+  // quietly widening a deploy.
+  it.each([
+    ["an object with no changed key", "{}"],
+    ["a changed key that is not a list", '{"changed":"everything"}'],
+    ["a list of non-strings", '{"changed":[1,2,3]}'],
+    ["a top-level array", "[1,2,3]"],
+    ["a bare scalar", '"nothing here"'],
+    ["null", "null"],
+  ])("flags %s as corrupt rather than as an empty diff", async (_label, body) => {
+    const cfg = await import("../config.js");
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src' };\n",
+      { "sync.diff.manifest.json": body }
+    );
+
+    expect(store.isDiffFileCorrupt()).toBe(true);
+    expect(() => store.getDiffFile()).toThrow(cfg.DiffFileCorruptError);
+    expect(() => store.getDiffFile()).toThrow(/is not a diff manifest/);
   });
 
   it("treats an absent diff file as no-diff, not corrupt", async () => {
@@ -251,7 +340,7 @@ describe("config coverage", () => {
   it("module-level exported wrappers proxy the default store", async () => {
     const { cfg, project } = await loadStoreFrom(
       "module.exports = { flat: true, sourceDirectory: 'src', refreshInterval: 7 };\n",
-      { "sync.manifest.json": JSON.stringify({ scope: "x_mod" }) }
+      { "sync.manifest.json": JSON.stringify({ scope: "x_mod", tables: {} }) }
     );
 
     // Load into the DEFAULT (singleton) store used by the free functions.

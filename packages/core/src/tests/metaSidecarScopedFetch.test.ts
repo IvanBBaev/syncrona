@@ -337,6 +337,114 @@ describe("the sidecar half never reaches the scoped bulk endpoint", () => {
   });
 });
 
+describe("merging the two halves under instance-supplied record names", () => {
+  // A record's name is instance data — the display value of a row somebody
+  // created — so `__proto__` and `constructor` are both names a person can type
+  // into a Script Include. The two halves of a DX22 fetch are merged by keying
+  // records on that name, and the merge both looked the key up and assigned it
+  // through the prototype chain. The two neighbouring functions in this file
+  // (partitionMetaRequests, buildManifestRecordNames) each carry an INJ-2 note
+  // saying exactly why they must not; the merge between them did not.
+  //
+  // This is the steady state of an upgrade, not an exotic one: the scripts are
+  // already on disk and only the sidecars are missing, so the scoped half
+  // answers for one record and the Table-API half answers for all of them.
+  const strayManifest = (): SN.AppManifest =>
+    JSON.parse(`{
+      "scope": "x_demo",
+      "tables": {
+        "sys_script_include": {
+          "metaFields": ["access"],
+          "records": {
+            "IncludeA": { "name": "IncludeA", "sys_id": "rec-1", "files": [
+              { "name": "script", "type": "js" },
+              { "name": "${META_FILE_NAME}", "type": "json" }] },
+            "__proto__": { "name": "__proto__", "sys_id": "rec-2", "files": [
+              { "name": "script", "type": "js" },
+              { "name": "${META_FILE_NAME}", "type": "json" }] },
+            "constructor": { "name": "constructor", "sys_id": "rec-3", "files": [
+              { "name": "script", "type": "js" },
+              { "name": "${META_FILE_NAME}", "type": "json" }] }
+          }
+        }
+      }
+    }`);
+
+  // Built by JSON.parse rather than as a literal on purpose: `{ __proto__: x }`
+  // in source sets the prototype instead of creating the own property the
+  // instance's answer would actually carry, so a literal would test the wrong
+  // object.
+  const sidecarHalf = () =>
+    JSON.parse(`{
+      "sys_script_include": { "records": {
+        "IncludeA": { "name": "IncludeA", "sys_id": "rec-1", "files": [
+          { "name": "${META_FILE_NAME}", "type": "json", "content": "{}" }] },
+        "__proto__": { "name": "__proto__", "sys_id": "rec-2", "files": [
+          { "name": "${META_FILE_NAME}", "type": "json", "content": "{}" }] },
+        "constructor": { "name": "constructor", "sys_id": "rec-3", "files": [
+          { "name": "${META_FILE_NAME}", "type": "json", "content": "{}" }] }
+      } }
+    }`);
+
+  beforeEach(() => {
+    pathExists.mockImplementation(async () => true);
+    // Only IncludeA is new; the other two already have their script on disk and
+    // are missing nothing but the sidecar.
+    SNFileExists.mockImplementation(
+      (parentPath: string) => async (file: SN.File) =>
+        !parentPath.endsWith("/IncludeA") && file.name !== META_FILE_NAME
+    );
+    getMissingFilesApi.mockImplementation(async () => ({
+      data: {
+        result: {
+          sys_script_include: {
+            records: {
+              IncludeA: {
+                name: "IncludeA",
+                sys_id: "rec-1",
+                files: [{ name: "script", type: "js", content: "gs.info('a');" }],
+              },
+            },
+          },
+        },
+      },
+    }));
+    mockBuildBulkDownloadFromTableAPI.mockImplementation(async () => sidecarHalf());
+  });
+
+  it("writes the sidecar of a record the scoped half did not return, whatever it is named", async () => {
+    const { processMissingFiles } = await import("../downloadPipeline.js");
+    await processMissingFiles(strayManifest());
+
+    expect(
+      writtenFiles
+        .filter((w) => w.file === META_FILE_NAME)
+        .map((w) => w.record)
+        .sort()
+    ).toEqual(["IncludeA", "__proto__", "constructor"]);
+  });
+
+  it("keeps the record's own identity instead of merging it into a prototype member", async () => {
+    // The `constructor` half of the same bug fails the other way: the lookup
+    // found Object itself, so the merge produced `{ files: [...] }` with no
+    // sys_id and no name — a record the writer cannot place and the manifest
+    // cannot address.
+    const { processMissingFiles } = await import("../downloadPipeline.js");
+    await processMissingFiles(strayManifest());
+
+    expect(writtenFiles).toContainEqual({
+      table: "sys_script_include",
+      record: "constructor",
+      file: META_FILE_NAME,
+    });
+    // …and IncludeA still gets both halves concatenated, which is the merge's
+    // actual job.
+    expect(
+      writtenFiles.filter((w) => w.record === "IncludeA").map((w) => w.file).sort()
+    ).toEqual([META_FILE_NAME, "script"]);
+  });
+});
+
 describe("refresh enriches the scoped manifest", () => {
   it("calls attachMetaFieldsToManifest on the manifest the scoped app returned", async () => {
     const scoped: SN.AppManifest = {

@@ -38,10 +38,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # G16: supply-chain gate — fail on any high/critical advisory in
-      # production dependencies (kept at 0 vulnerabilities as of 2026-06-12).
+      # G16: supply-chain gate — fail on any moderate-or-worse advisory in
+      # production dependencies. The threshold was `high` until 2026-08-21, which
+      # let a MODERATE prod advisory sit in the tree unflagged for as long as it
+      # existed: undici <=6.27.0 (GHSA-8xcm-r25x-g524 response desync via the retry
+      # interceptor, GHSA-m8rv-5g2x-5cg5 CRLF injection via blob body `type`,
+      # GHSA-v3r7-h72x-cjcm cookie attribute injection) shipped as a production
+      # dependency of @syncrona/mcp-server, on the very dispatcher path
+      # `servicenowCore.ts` builds for mTLS / custom-CA / proxy. Fixed by 6.28.0.
+      # `--omit=dev` scopes this to shipped code; dev-only advisories are NOT
+      # audited by any workflow (see the note in release.yml).
+      # Production tree measured at 0 vulnerabilities on 2026-08-21 — it then
+      # passed even at `--audit-level=low`, so `moderate` has real headroom.
       - name: Security audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=moderate
 
       # `npm run build` compiles every workspace with `tsc` (each package's
       # `prepack`), which type-checks the whole tree — so a separate `typecheck`

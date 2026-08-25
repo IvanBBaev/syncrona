@@ -201,36 +201,38 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.55 / 94.18
+    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.58 / 94.62
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
-    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 93.91
+    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 94.07
     './src/pushPipeline.ts': { lines: 93, branches: 76 }, // measured 97.07 / 83.82
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.08 / 83.73
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.08 / 85.36
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.56 / 83.62
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.66 / 93.82
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 100.00 / 94.13
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.67 / 94.25
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.62 / 75.89
-    './src/config.ts': { lines: 96, branches: 85 }, // measured 99.46 / 89.92
+    // The instance-host normalizer both of the above go through (#20).
+    './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    './src/config.ts': { lines: 96, branches: 85 }, // measured 99.54 / 91.41
     './src/envFile.ts': { lines: 96, branches: 80 }, // measured 100.00 / 85.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
     './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 71.79
-    './src/commands.ts': { lines: 93, branches: 79 }, // measured 96.80 / 83.54
+    './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.16 / 87.36
     // Spawns plugin processes / watches the tree / drives the interactive setup.
-    './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 89.65
-    './src/Watcher.ts': { lines: 91, branches: 68 }, // measured 94.49 / 75.00
+    './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.90
+    './src/Watcher.ts': { lines: 91, branches: 72 }, // measured 94.82 / 78.94
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.57 / 71.79
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
     // true of the engine — so it holds credential material for a whole sweep.
-    './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 88.88
+    './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.10
     // Rewrites third-party MCP client config files, writes the secrets file that
     // points the server at an instance, and spawns the server. It had no named
     // floor while it was the weakest file in the tree; that is what let it fail

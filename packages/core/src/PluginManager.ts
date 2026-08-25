@@ -75,7 +75,24 @@ class PluginManager {
         continue;
       }
       if (matchesFilePath(reg, context.filePath)) {
-        plugins = rule.plugins;
+        // #19: `match` used to be the only guarded property. A rule that
+        // matched but carried no usable `plugins` list handed `undefined` on to
+        // processFile, which died on `plugins.length` — aborting the entire
+        // build over one incomplete rule, with a message naming our internals
+        // instead of the user's config. An explicitly empty array stays
+        // legitimate ("these files match, and are copied as-is"); anything that
+        // is not an array is skipped like a malformed `match`, so the rest of
+        // the rule list still applies to the file.
+        const rulePlugins: unknown = rule.plugins;
+        if (!Array.isArray(rulePlugins)) {
+          logger.warn(
+            `Skipping plugin rule matching ${context.filePath}: its 'plugins' must be an array (got ${
+              rulePlugins === null ? "null" : typeof rulePlugins
+            }). Use e.g. plugins: [{ name: "@syncrona/plugin-js" }], or [] to copy matched files as-is.`
+          );
+          continue;
+        }
+        plugins = rulePlugins as Sync.PluginConfig[];
         //only match first rule
         break;
       }

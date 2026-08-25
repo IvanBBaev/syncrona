@@ -341,13 +341,12 @@ cross-platform safety.
   mirror.config.js                  # mirror project config (see §13.2)
   .gitattributes                    # eol=lf, LFS patterns, linguist-generated
   MIRROR-REPORT.md                  # human coverage report — committed (§11)
-  .mirror/                          # non-instance state, mostly committed
-    manifest/
-      <table>.json                  # sharded per-table manifest (§8.2)
+  coverage.json                     # machine-readable coverage — committed (§11)
+  .mirror/                          # engine-local state — gitignored wholesale
+    .gitignore                      # a single `*`; no self-exception, nothing here is committed
     state/
-      watermarks.json               # per-table sys_updated_on + last reconcile
-      coverage.json                 # machine-readable coverage (§11)
-    checkpoint.json                 # resume state — gitignored
+      checkpoint.json               # resume state (§9.1)
+      sync-counter.json             # completed syncs; drives the §9.3 reconcile cadence
   instance/
     global/
       sys_script/
@@ -355,6 +354,7 @@ cross-platform safety.
           record.json
           script.js
           condition.js
+        .shards/<prefix>.json       # sharded per-table manifest (§8.2) — committed
       sys_security_acl/...
       sys_properties/...            # T2, redaction-gated
     x_acme_cs/
@@ -372,6 +372,13 @@ cross-platform safety.
 Scope is a **directory level**, not a project root — one repo, one config, one
 lock, one checkpoint for the whole instance (resolving constraint #4). `src/`
 naming is deliberately avoided: a mirror is not a push workspace.
+
+Everything the engine needs *between* runs — and nothing a reviewer should ever
+diff — lives under `.mirror/`, which the engine provisions with its own
+`.gitignore` containing a bare `*` before it writes anything else. The ignore
+file has no `!.gitignore` exception on purpose: a run counter that changed on
+every sync would break INV-1's byte-stable-re-run guarantee if it were tracked.
+The as-built normative layout is `mirror-architecture.md` §3.
 
 ### 8.2 Sharded manifests
 
@@ -444,6 +451,37 @@ Two mechanisms, deliberately redundant:
 - **Authoritative**: periodic full reconciliation — keyset sweep of
   `sysparm_fields=sys_id` per table (cheap: ~40 bytes/row), diff against the
   shard, delete what the instance no longer has.
+
+#### Reconcile cadence
+
+The authoritative mechanism is the only routine one, so the cadence that
+schedules it is load-bearing: an incremental plan observes no table whole, mints
+watermark evidence rather than full-sweep evidence, and therefore cannot delete
+anything. If the cadence never fires, deletions never propagate.
+
+The cadence is driven by a **persisted count of completed syncs**, kept at
+`.mirror/state/sync-counter.json` (`{ formatVersion, completedSyncs }`, written
+with the same atomic-rename discipline as the checkpoint). A run's ordinal is
+`completedSyncs + 1` — the run counts itself, so with `reconcileEveryNSyncs: 10`
+the tenth run is the one promoted to `reconcile`. The count cannot live in the
+checkpoint: a clean run deletes that file.
+
+- **It advances only on a run that finished** (no fatal). A fatal run keeps its
+  slot, because `decideResume` refuses to resume across a mode change — consuming
+  the slot would make the retry of a dead reconcile plan incremental and throw
+  away every table the dead run had already swept.
+- **A damaged or unreadable counter degrades, never throws** (R3): the run
+  proceeds at ordinal 1 and the report carries an operator-facing warning saying
+  the cadence restarted and naming `--reconcile` as the manual remedy.
+- **`mirror sync --reconcile`** forces the promotion without waiting for the
+  count, and without the cost of `--full` (it observes every table whole but
+  still skips rows the watermark says are unchanged). `--full` outranks it. A
+  forced run does *not* reset the cadence — the scheduled reconcile stays where
+  the count put it.
+- Every sync reports its position ("sync 4 of the 10-sync reconcile cycle; 6 more
+  before deletions are reconciled"), and `--json` carries it as a `syncCadence`
+  field. It is deliberately absent from the committed `coverage.json`, which
+  INV-1 requires to be byte-stable across an unchanged re-run.
 
 **Prune is gated on completeness** (resolving constraint #5): a table whose shard
 says `partial` (skipped via 400/403/404, count mismatch, redaction failure) is
@@ -529,7 +567,8 @@ mirror's fidelity accounting has proven itself in production use.
 Registered by appending to `CLI_COMMANDS` (`packages/core/src/cliCommands.ts:95`,
 module type at `:38`, shared options at `:62`) — commander wiring untouched.
 Subcommands: `mirror init` (scaffold repo + config + .gitattributes), `mirror
-sync` (incremental; `--full` forces sweep), `mirror status` (drift; `--deep`),
+sync` (incremental; `--full` forces a sweep, `--reconcile` forces the deletion
+pass off-cadence — §9.3), `mirror status` (drift; `--deep`),
 `mirror verify` (counts + spot hashes), `mirror report` (regenerate coverage).
 README + CLAUDE.md command tables update in the same change (docs-drift gate).
 
@@ -554,7 +593,7 @@ module.exports = {
   attachments: { enabled: true, lfsThresholdBytes: 262144 },
   redaction: { propertyAllowlist: [] },
   derived: { forms: true, workflows: true, refs: true },
-  reconcileEveryNSyncs: 10,
+  sync: { reconcileEveryNSyncs: 10, requestsPerSecond: 4, pageSize: 1000 },
 };
 ```
 
@@ -604,7 +643,11 @@ git, global scope included* — which is the largest single gap in v1.
    stress the 20 rps cap. Keyset + Aggregate planning keeps it linear; Batch API
    is the pressure valve. Full sweeps are schedulable off-hours.
 3. **`sys_audit_delete` retention** varies per instance — reconciliation cadence
-   (`reconcileEveryNSyncs`) must default conservatively (every 10th sync).
+   (`sync.reconcileEveryNSyncs`) must default conservatively (every 10th sync).
+   The cadence is only as good as the count behind it: it is persisted per mirror
+   (§9.3), it advances only on runs that finished, and a lost counter silently
+   restarting at 1 would postpone deletions indefinitely — hence the loud warning
+   and the `--reconcile` escape hatch.
 4. **Table API blind spots**: a small set of fields serialize differently via XML
    unload vs JSON API. `mirror verify` spot-checks with XML export on sampled
    records; discrepancies get catalogued per-field in the coverage report.

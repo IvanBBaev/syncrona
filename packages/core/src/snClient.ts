@@ -37,6 +37,7 @@ import { wait } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 import { createTokenManager, OAuthConfig, TokenPoster } from "./oauth.js";
 import { resolveCredentialsFromStore, type StoredCredentials } from "./auth.js";
+import { normalizeInstanceHost } from "./instanceHost.js";
 
 // REV-170: default socket/response timeout for every request this client makes.
 // axios defaults to NO timeout, so a request to a hung or silently dropped instance
@@ -664,6 +665,37 @@ export function resetProfileFallbackWarnings(): void {
   warnedProfileFallbacks.clear();
 }
 
+// Re-exported so the existing `snClient` import surface keeps working; the
+// implementation lives in its own module (see instanceHost.ts).
+export { normalizeInstanceHost };
+
+// The correction is reported, not silently applied: the value in the user's
+// .env or store is still wrong, and anything else reading it — a sibling tool,
+// a CI variable copied elsewhere — will fail the same way. Deduped for the same
+// reason as the other credential warnings: resolution runs several times per
+// command with no memoization.
+const warnedInstanceHosts = new Set<string>();
+
+function normalizeInstanceHostWithNotice(raw: string, origin: string): string {
+  const host = normalizeInstanceHost(raw);
+  if (!raw || host === raw) {
+    return host;
+  }
+  const line =
+    `Instance "${raw}" (${origin}) is a URL, not a host — using "${host}". ` +
+    "Store the bare host name (e.g. dev12345.service-now.com) to silence this warning.";
+  if (!warnedInstanceHosts.has(line)) {
+    warnedInstanceHosts.add(line);
+    logger.warn(line);
+  }
+  return host;
+}
+
+/** Test seam: the dedupe cache would otherwise leak between cases. */
+export function resetInstanceHostWarnings(): void {
+  warnedInstanceHosts.clear();
+}
+
 // Single source of truth for both the credentials and where they came from, so
 // the precedence logic is never duplicated between resolution and reporting.
 function resolveCredentialsInternal(profile?: string): {
@@ -719,7 +751,10 @@ function resolveCredentialsInternal(profile?: string): {
       creds: {
         user: stored.user,
         password: stored.password,
-        instance: stored.instance,
+        instance: normalizeInstanceHostWithNotice(
+          stored.instance,
+          "credential store"
+        ),
         profile: undefined,
         clientId: stored.clientId || undefined,
         clientSecret: stored.clientSecret || undefined,
@@ -756,7 +791,12 @@ function resolveCredentialsInternal(profile?: string): {
   const creds: SNCredentials = {
     user: userFromProfile || SN_USER,
     password,
-    instance: instanceFromProfile || SN_INSTANCE,
+    instance: instanceFromProfile
+      ? normalizeInstanceHostWithNotice(
+          instanceFromProfile,
+          profileEnvVar("SN_INSTANCE", normalizedProfile)
+        )
+      : normalizeInstanceHostWithNotice(SN_INSTANCE, "SN_INSTANCE"),
     profile: normalizedProfile,
     clientId: clientId || undefined,
     clientSecret: clientSecret || undefined,

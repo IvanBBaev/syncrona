@@ -617,15 +617,29 @@ const isEmptyMissingMap = (missing: SN.MissingFileTableMap): boolean =>
 // than a conflict: keep one entry and concatenate its files. Record names stay
 // in parity because buildBulkDownloadFromTableAPI is given the manifest's own
 // names (see ManifestRecordNames).
+// INJ-2: null-proto at both levels, matching partitionMetaRequests above and
+// buildManifestRecordNames. Table and record names are instance data — a record
+// name is the display value of a row somebody created — and both the lookup and
+// the assignment here went through the prototype chain. A record present only in
+// `extra` (the ordinary upgrade shape: the script is already on disk, so only
+// the sidecar is missing) whose name is `constructor` found Object itself as its
+// `prior` and was merged into it, producing an entry with no sys_id and no name;
+// one named `__proto__` hit the setter, so the assignment created no own slot
+// and the record vanished from the merge entirely. Either way the sidecar was
+// never written while refresh reported a clean run, and the next run found the
+// same record missing again — a workspace that cannot converge.
 const mergeTableMaps = (base: SN.TableMap, extra: SN.TableMap): SN.TableMap => {
-  const merged: SN.TableMap = { ...base };
+  const merged: SN.TableMap = Object.assign(Object.create(null), base);
   for (const [tableName, table] of Object.entries(extra)) {
     const existing = merged[tableName];
     if (!existing) {
       merged[tableName] = table;
       continue;
     }
-    const records: SN.TableConfigRecords = { ...existing.records };
+    const records: SN.TableConfigRecords = Object.assign(
+      Object.create(null),
+      existing.records
+    );
     for (const [recordName, record] of Object.entries(table.records || {})) {
       const prior = records[recordName];
       records[recordName] = prior

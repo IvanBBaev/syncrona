@@ -230,6 +230,55 @@ describe("PluginManager malformed configuration", () => {
     expect(warnings[1]).toContain("string");
   });
 
+  // #19: `match` was the only property guarded. A rule that matches but carries
+  // no usable `plugins` list handed `undefined` back to processFile, which then
+  // died on `plugins.length` — "Cannot read properties of undefined (reading
+  // 'length')" — aborting the entire build over one incomplete rule, with a
+  // message that names our internals instead of the user's config. Skipping it
+  // the way a malformed `match` is skipped keeps the rest of the rule list, and
+  // the rest of the build, alive.
+  it.each([
+    ["no plugins key at all", {}],
+    ["a plugins list that is not an array", { plugins: "okplugin" }],
+    ["a null plugins list", { plugins: null }],
+  ])("skips a matching rule with %s and falls through to the next", async (_label, extra) => {
+    getConfig.mockReturnValue({
+      rules: [
+        { match: /\.js$/, ...extra },
+        { match: /\.js$/, plugins },
+      ],
+    });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    await PluginManager.loadPluginConfig();
+
+    expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual(plugins);
+    const warnings = loggerWarn.mock.calls.map((c) => String(c[0]));
+    expect(warnings.some((w) => w.includes("plugins"))).toBe(true);
+  });
+
+  // The build itself must complete, not just the rule lookup: this is the path
+  // that used to throw before any plugin ran.
+  it("builds a file whose only matching rule has no plugins list", async () => {
+    getConfig.mockReturnValue({ rules: [{ match: /\.js$/ }] });
+    const PluginManager = (await import("../PluginManager.js")).default;
+
+    await expect(
+      PluginManager.getFinalFileContents(context(SOURCE_FILE))
+    ).resolves.toBe('gs.info("hello");\n');
+  });
+
+  // An explicitly empty list is a legitimate rule — "these files match, and are
+  // copied as-is" — and must stay silent, or the warning fires on healthy
+  // configs and stops meaning anything.
+  it("accepts an explicitly empty plugins list without warning", async () => {
+    getConfig.mockReturnValue({ rules: [{ match: /\.js$/, plugins: [] }] });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    await PluginManager.loadPluginConfig();
+
+    expect(PluginManager.determinePlugins(context(SOURCE_FILE))).toEqual([]);
+    expect(loggerWarn).not.toHaveBeenCalled();
+  });
+
   it("reports a plugin package that exports no run() instead of crashing on it", async () => {
     getConfig.mockReturnValue({
       rules: [{ match: /\.js$/, plugins: [{ name: "norunplugin", options: {} }] }],

@@ -16,7 +16,7 @@ import {
   unwrapSNResponse,
 } from "./snClient.js";
 import inquirer from "inquirer";
-import { gitDiffToEncodedPaths } from "./gitUtils.js";
+import { clearDiff, gitDiffToEncodedPaths, writeDiff } from "./gitUtils.js";
 import { encodedPathsToFilePaths } from "./FileUtils.js";
 import {
   attachMetaFieldsToManifest,
@@ -25,6 +25,7 @@ import {
   listAppsFromTableAPI,
 } from "./manifestBuilder.js";
 import { generateScopeDocs } from "./scopeDocs.js";
+import { PATH_DELIMITER } from "./constants.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
   LOGIN_DEFAULT_SOURCE_DIRECTORY,
@@ -314,6 +315,22 @@ export async function initCommand(args: Sync.SharedCmdArgs) {
     return;
   }
 
+  // The .env branch above threads --dry-run all the way down (DX4), but the
+  // wizard branch cannot: startWizard() prompts for answers and then writes the
+  // config, the manifest and the source tree with no preview mode of its own.
+  // Honouring the flag by REFUSING is the only honest option — silently running
+  // the real wizard under --dry-run provisions a project the user asked us not
+  // to create.
+  if (args.dryRun === true) {
+    logger.info(
+      "Dry run: no .env found in this directory, so init would run the interactive setup wizard, which has no preview mode."
+    );
+    logger.info(
+      "Nothing was created. Add a .env with SN_INSTANCE/SN_USER/SN_PASSWORD to preview an all-scope init, or re-run without --dry-run."
+    );
+    return;
+  }
+
   // REV-161: only wire up the MCP server once the workspace actually exists. The
   // wizard used to return the same way whether it finished, failed or was
   // cancelled with Ctrl-C, so init went on to write an MCP configuration pointing
@@ -356,6 +373,29 @@ export async function buildCommand(args: Sync.BuildCmdArgs) {
     }
     const results = await AppUtils.buildFiles(fileList);
     logBuildResults(results);
+    // `build --diff <target>` is documented — CLI help, README, CLAUDE.md — to
+    // RECORD what it built, and getDeployPaths reads exactly that file back.
+    // Nothing wrote it: writeDiff existed, was exported and was unit-tested, but
+    // no command ever called it. sync.diff.manifest.json therefore never
+    // appeared, so every deploy after a diff build fell through to the full
+    // build scope — under --ci without even a prompt, the exact escalation the
+    // comment in getDeployPaths warns about, overwriting instance records the
+    // diff never touched.
+    //
+    // Only the records that actually built are recorded: the artifact of a
+    // failed one is absent, or stale from an earlier build, and deploying it
+    // would ship yesterday's code as if it were fresh. buildFiles returns its
+    // results in fileList order, which is what lets them be selected here.
+    //
+    // A full build CLEARS the file for the mirror-image reason: one left behind
+    // by an earlier diff build narrows the next deploy to a stale subset of a
+    // scope the user just rebuilt whole.
+    if (args.diff !== "") {
+      const built = fileList.filter((_, index) => results[index]?.success);
+      await writeDiff(AppUtils.buildFilePaths(built).join(PATH_DELIMITER));
+    } else {
+      await clearDiff();
+    }
     // REV-160: buildFiles never throws — pushPipeline folds per-record failures
     // into `{ success: false }` results and logBuildResults only prints them, so
     // the catch below could not fire and a failed build still exited 0. A CI step
@@ -371,7 +411,17 @@ export async function buildCommand(args: Sync.BuildCmdArgs) {
   }
 }
 
-async function getDeployPaths(): Promise<string[]> {
+/**
+ * What a deploy was asked to ship, and on whose authority.
+ *
+ * `fromDiff` is not cosmetic: an empty list means "the diff build found no
+ * changes" when it comes from a manifest, and "there is nothing built here" when
+ * it comes from the build directory. The first is a successful no-op; the second
+ * is a deploy that should never have reported success.
+ */
+type DeployScope = { paths: string[]; fromDiff: boolean };
+
+async function getDeployPaths(ci: boolean): Promise<DeployScope> {
   // #46: a corrupt sync.diff.manifest.json must ABORT, not silently fall through
   // to a full-scope deploy. getDiffFile() throws DiffFileCorruptError only when
   // the file is present-but-unreadable; a genuinely absent diff file leaves
@@ -379,14 +429,38 @@ async function getDeployPaths(): Promise<string[]> {
   if (ConfigManager.isDiffFileCorrupt()) {
     ConfigManager.getDiffFile(); // throws DiffFileCorruptError with the reason
   }
-  let changedPaths: string[] = [];
+  let diffFile: Sync.DiffFile | undefined;
   try {
-    changedPaths = ConfigManager.getDiffFile().changed || [];
+    diffFile = ConfigManager.getDiffFile();
   } catch (_e) {
     // Only "no diff file present" reaches here (the corrupt case threw above);
     // fall back to a full-scope deploy.
   }
-  if (changedPaths.length > 0) {
+  if (diffFile) {
+    const changedPaths = diffFile.changed;
+    // An empty list is a STATEMENT — "the diff build found nothing to ship" —
+    // and not at all the same thing as having no manifest. Treating the two
+    // alike is how the quietest possible build turns into the loudest possible
+    // deploy: `build --diff main` with nothing changed, then `deploy --ci`
+    // overwriting every record in the scope with no prompt in the way. Deploy
+    // exactly what the manifest names, even when that is nothing.
+    if (changedPaths.length === 0) {
+      logger.info(
+        "The diff manifest lists no changed files - nothing to deploy. Run `build` without --diff for a full-scope deploy."
+      );
+      return { paths: [], fromDiff: true };
+    }
+    // Under --ci there is no TTY: the prompt would resolve to its `false`
+    // default and silently escalate a `build --diff` into a full-scope deploy
+    // that overwrites untouched instance records — and still exit 0. The diff
+    // manifest only exists because someone ran `build --diff`, so its presence
+    // IS the intent; honour it and record the decision in the CI log.
+    if (ci) {
+      logger.info(
+        `Deploying ${changedPaths.length} file(s) from the diff manifest (--ci; build without --diff for a full-scope deploy).`
+      );
+      return { paths: changedPaths, fromDiff: true };
+    }
     const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
       {
         type: "confirm",
@@ -396,9 +470,15 @@ async function getDeployPaths(): Promise<string[]> {
         default: false,
       },
     ]);
-    if (confirmed) return changedPaths;
+    if (confirmed) return { paths: changedPaths, fromDiff: true };
   }
-  return encodedPathsToFilePaths(ConfigManager.getBuildPath());
+  if (ci) {
+    logger.info("Deploying the full build scope (no diff manifest present).");
+  }
+  return {
+    paths: await encodedPathsToFilePaths(ConfigManager.getBuildPath()),
+    fromDiff: false,
+  };
 }
 
 export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
@@ -448,10 +528,36 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
         return;
       }
     }
-    const paths = await getDeployPaths();
+    const { paths, fromDiff } = await getDeployPaths(args.ci === true);
     logger.silly(`${paths.length} paths found...`);
     logger.silly(JSON.stringify(paths, null, 2));
+    // A deploy that ships nothing must say so and fail, unless a diff manifest
+    // deliberately asked for nothing. `deploy` before `build`, or after the
+    // build directory was cleaned, resolved to zero files and pushed zero
+    // records without a word — a CI deploy stage that goes green having
+    // deployed nothing is indistinguishable from one that worked.
+    if (paths.length === 0 && !fromDiff) {
+      logger.error(
+        `Nothing to deploy: no built files under ${ConfigManager.getBuildPath()}. ` +
+          "Run `syncrona build` first."
+      );
+      process.exitCode = 1;
+      return;
+    }
     const appFileList = await AppUtils.getAppFileList(paths);
+    // getAppFileList drops paths no manifest record claims — right for a stray
+    // file among good ones, but when it drops EVERY file there is nothing left
+    // to push and the run would still exit 0. This is what a diff manifest
+    // carried into a different checkout root looks like: its absolute paths
+    // name files that do not exist here.
+    if (paths.length > 0 && appFileList.length === 0) {
+      logger.error(
+        `Nothing to deploy: none of the ${paths.length} selected file(s) belong to a record in the manifest. ` +
+          "Run `syncrona refresh` if these are real records, or rebuild before deploying."
+      );
+      process.exitCode = 1;
+      return;
+    }
     if (dryRun) {
       logger.info(
         `Dry run: would deploy ${appFileList.length} records to ${targetServer}, skipping remote push.`

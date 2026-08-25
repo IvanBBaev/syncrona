@@ -112,6 +112,10 @@ const fakeEngine = () => {
         fatal: null,
         resumeDecision: null,
         checkpointCleared: true,
+        // §5.4: the engine owns the run counter, so a fake engine has to report a
+        // position too — `sync` renders one on every run.
+        syncCadence: { ordinal: 1, everyN: 10, syncsUntilReconcile: 9, forced: false },
+        syncCounterWarning: null,
       };
     },
     detectDrift: async () => ({ verdicts: [], driftDetected: false, exitCode: 0 }),

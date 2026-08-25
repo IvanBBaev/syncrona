@@ -4,6 +4,128 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Two passes over one failure signature: a command that does something other than
+what it says it does, and exits 0 about it. The first went after the CLI's own
+contracts — the flags it accepts, the manifests it documents, the cadence it
+promises. The second went after the values it reads from an instance, a
+workspace file or a hand-written `.env` and then trusts without looking.
+
+### Added
+
+- `syncrona mirror sync --reconcile` runs a reconciling sweep on demand: the same
+  deletion authority as `--full`, without re-fetching rows that have not changed.
+  It is deliberately outranked by `--full` and does not reset the schedule. Every
+  sync now prints its position in the reconcile cycle, and `--json` carries it as
+  `syncCadence`.
+- A root `.gitattributes` pins every tracked text file to LF. This repository
+  decides what changed by comparing bytes — `build --diff`, the mirror's
+  serializer and its manifest hashes — and asserts against byte-exact fixtures,
+  so a checkout under Git for Windows' default `core.autocrlf=true` read as a
+  fully-modified tree. `.editorconfig` already declared `end_of_line = lf`, but
+  that governs editors, not git.
+- `syncrona build --diff <target>` writes `sync.diff.manifest.json`, the file the
+  CLI help, README and CLAUDE.md all say it records. `writeDiff` existed, was
+  exported and was unit-tested, but no command ever called it, so the manifest
+  never appeared and every deploy after a diff build fell through to the full
+  build scope. Only records that actually built are listed, and a full `build`
+  now clears a stale manifest rather than leaving it to narrow the next deploy.
+
+### Fixed
+
+- `deploy --ci` no longer escalates a diff-only deploy into a full-scope one.
+  With a diff manifest present, the confirmation prompt had no TTY to answer it,
+  resolved to its `false` default, and overwrote every untouched record in the
+  scope while exiting 0. The manifest exists only because someone ran
+  `build --diff`, so its presence is the intent; `--ci` deploys it and logs which
+  scope it chose. An empty manifest is now honoured as "nothing changed" instead
+  of being read as "no manifest at all".
+- `deploy` with nothing built, and `deploy` whose selected files match no record
+  in the manifest, both report the reason and exit 1. Either one used to push
+  zero records and go green — a CI deploy stage indistinguishable from one that
+  worked.
+- `push <path>` that matches no tracked record fails instead of logging
+  "0 files to push." and exiting 0. A typo, a path outside the source tree and a
+  file no manifest record claims all took that route. A derived scope
+  (`push --diff main` with nothing changed) stays a legitimate no-op.
+- `--dry-run` is refused by the ten commands that have no preview mode, rather
+  than being parsed and ignored. `syncrona docs --dry-run` regenerated the docs
+  for real and `syncrona mcp --dry-run` wrote `.vscode/mcp.json` and the secrets
+  file for real, neither saying a word. It is a registry contract
+  (`supportsDryRun`) plus one check in the parser, so it cannot drift, and a test
+  forces every future shared-option command to declare which side it is on.
+- `--json` output is machine-readable. `jira` and `mirror` promise a pipeable
+  document on stdout, but every log level except warn/error also writes there, so
+  a bootstrap notice or a hint line interleaved with the payload and broke `jq`.
+  Fixed in the bootstrap layer that already did this for `mcp`, so it covers both
+  commands and any future `--json` one.
+- The mirror's reconcile cadence fires. The planner took its mode from an
+  ordinal nothing ever supplied, so it was always 1, `1 % 10` was never 0, and
+  every `mirror sync` in the product's history planned an incremental run. INV-5
+  then correctly refused every deletion, and a record deleted on the instance
+  stayed in the mirror indefinitely unless an operator remembered `--full`. The
+  count now lives in `.mirror/state/sync-counter.json`, advances only on a run
+  that finished, and degrades to ordinal 1 with a warning if damaged.
+- The MCP server resolves flat-layout workspaces. Under `flat: true` a record's
+  field files live at `<table>/<record>~<field>.<ext>`, but
+  `sync_diff_instance_vs_local` and `createAndSyncScriptInclude` both built the
+  record-folder path — the first reported a clean file as a diff, the second
+  handed the agent a path that does not exist. Both now go through one seam.
+- An instance written as a URL is accepted. Every request URL is built as
+  `https://${instance}/`, so the instance is a host; a user told to paste "the
+  instance URL" pastes what the address bar shows, and
+  `https://https://dev12345.service-now.com//` failed with
+  `getaddrinfo ENOTFOUND https`. `login` and credential resolution now share one
+  normalizer, and the correction is reported rather than applied in silence.
+- A `sync.manifest.json` or `sync.diff.manifest.json` that parses but is not a
+  manifest is reported as corrupt instead of read as an empty one. `{}`, `[]`,
+  `null` and `{"scope":"x_app"}` are all valid JSON and every one of them loaded
+  as healthy, after which the manifest claimed no records at all — which reads
+  identically to a manifest for an empty scope, and leads to the opposite
+  outcome: `repair --apply --prune` took the whole downloaded tree for orphans.
+- `build --check-config` diagnoses the rule list it exists to diagnose. A rule
+  whose `match` was missing or was not a RegExp crashed the checker outright, and
+  a `/g` or `/y` pattern silently reported only the first file it shadowed,
+  because `.test()` resumes from the RegExp's own `lastIndex`.
+- A plugin rule whose `plugins` is not an array is skipped with a warning naming
+  the rule, instead of aborting the whole build on `plugins.length` with a
+  message about our internals. An explicitly empty array stays legitimate.
+- `dev` reports a change to a file the manifest does not track. "add" already
+  did; "change" dropped it without a word, so editing a renamed or unregistered
+  file looked exactly like a healthy save — no push, no error, no output. Warned
+  once per path per session.
+- Table, record and column names coming off an instance or a path on disk are
+  read and written as own properties only. Names like `constructor`,
+  `__proto__`, `toString` and `valueOf` are all valid in their respective
+  namespaces, and each one had a way to make a record disappear between fetch and
+  writer, resolve to `Object.prototype`, or push to
+  `/api/now/table/<table>/undefined` — in every case while the run reported
+  success. Covers manifest and bulk-download maps, the download merge, the
+  sidecar serializer and its update resolver, and file-context lookup.
+- A `.meta.json` sidecar saved with a UTF-8 byte-order mark parses. Notepad,
+  PowerShell redirection and a VS Code workspace set to `utf8bom` all write one,
+  and this tool ships for Windows and WSL; `JSON.parse` rejected it, failing the
+  push with "not valid JSON" against a file that looks perfectly valid in the
+  editor that produced it.
+- A metadata column whose wire form is a non-string scalar — `{ "value": 100 }`,
+  `{ "value": false }` — is written with its value instead of as empty.
+
+### Security
+
+- `undici` 6.27.0 → 6.28.0, a lockfile-only bump clearing GHSA-8xcm-r25x-g524
+  (response desync), GHSA-m8rv-5g2x-5cg5 (CRLF injection) and
+  GHSA-v3r7-h72x-cjcm (cookie-attribute injection). It was a production
+  dependency of `@syncrona/mcp-server`, on the dispatcher path built for
+  mTLS / custom-CA / proxy. The gate that should have caught it was set to
+  `--audit-level=high`; CI and release now fail at `moderate`, which the
+  production tree clears with headroom. Dev dependencies remain audited by no
+  workflow — a full-tree audit reports 11 findings, all dev-only and none
+  shipped.
+
+### Changed
+
+- `release.yml` no longer claims that `ci.yml` audits the full dependency tree;
+  it never did.
+
 ## [0.9.4] - 2026-08-20
 
 `0.9.3` announced that record metadata round-trips. It did — on instances that do

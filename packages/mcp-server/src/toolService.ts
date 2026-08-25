@@ -53,6 +53,7 @@ import {
   SERVER_VERSION,
 } from "./runtimeConfig";
 import { asRecord, toStringField } from "./recordUtils";
+import { readWorkspaceLayout, recordFieldFilePath } from "./workspaceLayout";
 import {
   runSyncroCliCommand,
   type CmdResult,
@@ -634,29 +635,12 @@ export async function createAndSyncScriptInclude(
   };
 }
 
+// DX17: kept as the narrow "which directory?" question for callers that only need
+// that. The sync.config.js parsing itself lives in workspaceLayout.ts, which reads
+// the `flat` flag in the same pass — anything that builds a record FILE path must
+// go through that seam instead, or it will silently guess the wrong layout.
 export function getSourceDirectory(projectDir: string = PROJECT_DIR): string {
-  const configPath = path.join(projectDir, "sync.config.js");
-  if (!existsSync(configPath)) {
-    return "src";
-  }
-
-  try {
-    // sync.config.js is user-authored CJS; require is the only loader for it here.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const loaded = require(configPath);
-    const cfg = loaded?.default || loaded;
-    if (
-      cfg &&
-      typeof cfg === "object" &&
-      typeof cfg.sourceDirectory === "string" &&
-      cfg.sourceDirectory.trim().length > 0
-    ) {
-      return cfg.sourceDirectory;
-    }
-    return "src";
-  } catch (_) {
-    return "src";
-  }
+  return readWorkspaceLayout(projectDir).sourceDirectory;
 }
 
 export function findScriptIncludeLocalPaths(
@@ -679,7 +663,7 @@ export function findScriptIncludeLocalPaths(
   const tables = asRecord(root.tables);
   const sysScriptInclude = asRecord(tables.sys_script_include);
   const records = asRecord(sysScriptInclude.records);
-  const sourceDir = getSourceDirectory(projectDir);
+  const layout = readWorkspaceLayout(projectDir);
 
   const paths: string[] = [];
   for (const key of Object.keys(records)) {
@@ -694,14 +678,16 @@ export function findScriptIncludeLocalPaths(
       const file = asRecord(fileRaw);
       const fileName = typeof file.name === "string" ? file.name : "script";
       const fileType = typeof file.type === "string" ? file.type : "js";
-      const filePath = path.join(
-        projectDir,
-        sourceDir,
-        "sys_script_include",
-        recName,
-        `${fileName}.${fileType}`
+      paths.push(
+        recordFieldFilePath(
+          projectDir,
+          layout,
+          "sys_script_include",
+          recName,
+          fileName,
+          fileType
+        )
       );
-      paths.push(filePath);
     }
   }
 

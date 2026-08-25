@@ -257,7 +257,7 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file. Takes an optional path argument (`push src/sys_script/MyBusinessRule`, absolute or relative to the current directory) to push just that file or folder; the path must resolve inside the configured source or build directory, otherwise the push is refused with a warning. | `npx syncrona push`                 |
 | `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncrona download my_test_app` |
 | `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncrona build`                |
-| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance. Use `--ci` to skip the overwrite confirmation in noninteractive runs.                     | `npx syncrona deploy`               |
+| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance. Use `--ci` to skip the interactive prompts in noninteractive runs — it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise. | `npx syncrona deploy`               |
 | `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncrona docs`                 |
 | `repair`           | **none** | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files — files under the source directory that carry the manifest's `<table>/<record>/<field>.<ext>` layout (or its flat `<table>/<record>~<field>.<ext>` form) but that no manifest record claims. Hand-written sources, dot-directories and anything of another shape are never orphans. Use `--apply` to re-download missing files, `--prune` (with `--apply`) to delete orphans, and `--ci` for non-interactive runs; pruning is refused outright when `sourceDirectory` resolves to the project root. | `npx syncrona repair`               |
 | `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics.                                           | `npx syncrona status`               |
@@ -274,7 +274,7 @@ SyncroNow AI has a few basic commands to help you get the job done
 | `jira [key]`       | `--profile`, `--comments`, `--json` | Fetches rich context for a Jira issue (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, links, fix versions, recent comments). Resolves the key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center. | `npx syncrona jira SCRUM-123` |
 | `jira-login`       | `--profile` | Saves Jira credentials in the encrypted global CredentialStore. Auto-detects Cloud vs Server/Data Center from the base URL and verifies the connection. | `npx syncrona jira-login` |
 | `jira-logout`      | `--profile`, `--all` | Removes stored Jira credentials for one profile (or all with `--all`) from the global CredentialStore. | `npx syncrona jira-logout` |
-| `mirror <action>`  | `--full`, `--verify-quiescent`, `--deep`, `--json` | Full-instance git mirror. `mirror init` provisions the current repository for a mirror-sized checkout (`feature.manyFiles`, `core.fsmonitor`, `core.precomposeunicode`, scheduled `git maintenance`, `.gitattributes`); `mirror sync` sweeps the instance into the tree (`--full` for a complete baseline, `--verify-quiescent` to report tables that changed under the sweep) and prints a suggested commit message without ever committing; `mirror status` compares the tree against the live instance; `mirror verify` checks the tree against its own manifests with no network access; `mirror report` re-prints the last sweep's report. `status` and `verify` take `--deep` to re-hash sampled records instead of comparing aggregates alone. Exit codes: 0 clean, 1 the run could not finish, 2 completed with drift or findings. | `npx syncrona mirror sync --full` |
+| `mirror <action>`  | `--full`, `--reconcile`, `--verify-quiescent`, `--deep`, `--json` | Full-instance git mirror. `mirror init` provisions the current repository for a mirror-sized checkout (`feature.manyFiles`, `core.fsmonitor`, `core.precomposeunicode`, scheduled `git maintenance`, `.gitattributes`); `mirror sync` sweeps the instance into the tree (`--full` for a complete baseline, `--reconcile` to propagate instance-side deletions now instead of waiting for the every-Nth-sync cadence, `--verify-quiescent` to report tables that changed under the sweep) and prints a suggested commit message without ever committing; `mirror status` compares the tree against the live instance; `mirror verify` checks the tree against its own manifests with no network access; `mirror report` re-prints the last sweep's report. `status` and `verify` take `--deep` to re-hash sampled records instead of comparing aggregates alone. Exit codes: 0 clean, 1 the run could not finish, 2 completed with drift or findings. | `npx syncrona mirror sync --full` |
 
 `init` wizard behavior notes:
 
@@ -371,11 +371,26 @@ npx syncrona push --ci --concurrency 5
 
 #### Using dry-run mode
 
-For commands that can change remote or local artifacts (`push`, `deploy`, `download`, and `build`), you can preview effects without applying writes by adding `--dry-run`.
+Six commands implement a preview and accept `--dry-run`: `push`, `deploy`,
+`download`, `build`, `init` and `repair`. They report exactly what they would do
+and write nothing — locally or on the instance.
 
 ```bash
 npx syncrona push --dry-run
 ```
+
+Every other command **refuses** `--dry-run` rather than accepting and ignoring
+it, because a flag that is parsed and then does nothing turns a request for a
+preview into a real run that reports nothing unusual:
+
+```console
+$ npx syncrona docs --dry-run
+`syncrona docs` has no preview mode, so --dry-run would run it for real. Re-run without --dry-run.
+```
+
+`init --dry-run` previews only the `.env`-driven path. With no `.env` in the
+directory, `init` would fall back to the interactive setup wizard, which has no
+preview mode — so it stops and tells you instead of provisioning the project.
 
 #### Using instance profiles
 

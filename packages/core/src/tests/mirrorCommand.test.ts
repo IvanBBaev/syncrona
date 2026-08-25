@@ -5,6 +5,7 @@ import type {
   MirrorStatusResult,
   MirrorVerifyResult,
   RunMirrorResult,
+  SyncCadence,
   TableCatalogEntry,
   WriterFs,
 } from "@syncrona/mirror";
@@ -66,6 +67,15 @@ const tableEntry = (name: string, status: TableCatalogEntry["status"]): TableCat
 const coverageReport = (exitCode: 0 | 1 | 2): RunMirrorResult["report"] =>
   ({ exitCode, sweepId: "sweep-1", tables: [] }) as unknown as RunMirrorResult["report"];
 
+/** The §5.4 cadence position the engine reports, defaulting to a mid-cycle run. */
+const cadence = (overrides: Partial<SyncCadence> = {}): SyncCadence => ({
+  ordinal: 4,
+  everyN: 10,
+  syncsUntilReconcile: 6,
+  forced: false,
+  ...overrides,
+});
+
 const runResult = (exitCode: 0 | 1 | 2): RunMirrorResult => ({
   exitCode,
   report: coverageReport(exitCode),
@@ -73,6 +83,8 @@ const runResult = (exitCode: 0 | 1 | 2): RunMirrorResult => ({
   fatal: null,
   resumeDecision: null,
   checkpointCleared: true,
+  syncCadence: cadence(),
+  syncCounterWarning: null,
 });
 
 const statusResult = (exitCode: 0 | 2): MirrorStatusResult => ({
@@ -200,13 +212,17 @@ beforeAll(async () => {
 });
 
 /** What the human-readable (non-`--json`) output actually said, per level. */
+let infos: string[];
 let warnings: string[];
 let errors: string[];
 
 beforeEach(() => {
+  infos = [];
   warnings = [];
   errors = [];
-  jest.spyOn(logger, "info").mockImplementation(() => {});
+  jest.spyOn(logger, "info").mockImplementation((message: unknown) => {
+    infos.push(String(message));
+  });
   jest.spyOn(logger, "success").mockImplementation(() => {});
   jest.spyOn(logger, "warn").mockImplementation((message: unknown) => {
     warnings.push(String(message));
@@ -352,6 +368,145 @@ describe("mirror sync (§5.13, R1)", () => {
     await run(h, "sync");
     expect(h.gitCalls.flat()).not.toContain("commit");
     expect(h.written.join("\n") + JSON.stringify(h.written)).toContain("mirror: sweep");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The reconcile cadence (§5.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * `--reconcile` and the cadence line.
+ *
+ * The count itself belongs to the engine — it persists it, advances it and refuses
+ * to let a caller set it, because a caller that could would be able to postpone
+ * every deletion indefinitely. Core owns exactly two things here: forwarding the
+ * operator's override, and rendering the position the engine reports. Both are
+ * asserted, and so is the negative: core never supplies an ordinal.
+ */
+describe("mirror sync — reconcile cadence (§5.4)", () => {
+  it("forwards --reconcile and supplies no ordinal of its own", async () => {
+    const h = harness();
+    expect(await run(h, "sync", { reconcile: true })).toBe(0);
+
+    const options = h.engine.runMirrorCommand.mock.calls[0][0] as Record<string, unknown>;
+    expect(options.reconcile).toBe(true);
+    // The count stays the engine's. Passing one from here would be a supported way
+    // to move the next reconcile out of reach without producing any evidence.
+    expect(options).not.toHaveProperty("syncOrdinal");
+  });
+
+  it("omits the flag entirely when the operator did not use it", async () => {
+    // Rather than sending `reconcile: false`: the engine's option is optional and
+    // an absent key and an explicit false must not be two ways of saying the same
+    // thing when only one of them is exercised anywhere.
+    const h = harness();
+    await run(h, "sync");
+    const options = h.engine.runMirrorCommand.mock.calls[0][0] as Record<string, unknown>;
+    expect(options).not.toHaveProperty("reconcile");
+  });
+
+  it("does not repack a forced reconcile — only --full earns one", async () => {
+    // A reconcile re-fetches nothing it does not have to, so it leaves nowhere
+    // near the loose-object churn a baseline sweep does.
+    const h = harness();
+    await run(h, "sync", { reconcile: true });
+    expect(h.gitCalls).toEqual([]);
+  });
+
+  it("tells the operator how far the next reconcile is", async () => {
+    // The cycle is otherwise invisible and its consequence is not: between
+    // reconciles a deleted record keeps its directory, and "why is this still
+    // here" is a question this line answers without opening the design document.
+    const h = harness();
+    await run(h, "sync");
+    const line = infos.join("\n");
+    expect(line).toContain("Sync 4 of the 10-sync reconcile cycle");
+    expect(line).toContain("6 more before deletions are reconciled");
+  });
+
+  it("says which run is the scheduled reconcile", async () => {
+    const h = harness({
+      engine: {
+        runMirrorCommand: jest.fn(async () => ({
+          ...runResult(0),
+          syncCadence: cadence({ ordinal: 10, syncsUntilReconcile: 0 }),
+        })),
+      },
+    });
+    await run(h, "sync");
+    expect(infos.join("\n")).toContain("this is the scheduled reconcile");
+  });
+
+  it("keeps reporting the automatic position when the run was forced", async () => {
+    // A forced reconcile does not reset the cycle, so the countdown it prints is
+    // the count's — printing zero here would make `--reconcile` look like it had.
+    const h = harness({
+      engine: {
+        runMirrorCommand: jest.fn(async () => ({
+          ...runResult(0),
+          syncCadence: cadence({ ordinal: 9, syncsUntilReconcile: 1, forced: true }),
+        })),
+      },
+    });
+    await run(h, "sync", { reconcile: true });
+    const line = infos.join("\n");
+    expect(line).toContain("reconciling because it was asked for");
+    expect(line).toContain("1 sync(s) away");
+  });
+
+  it("names a disabled cadence instead of printing a countdown that never ends", async () => {
+    const h = harness({
+      engine: {
+        runMirrorCommand: jest.fn(async () => ({
+          ...runResult(0),
+          syncCadence: cadence({ everyN: 0, syncsUntilReconcile: null }),
+        })),
+      },
+    });
+    await run(h, "sync");
+    expect(infos.join("\n")).toContain("reconcile cadence is disabled");
+  });
+
+  it("R3: repeats the engine's warning when the persisted count could not be read", async () => {
+    const h = harness({
+      engine: {
+        runMirrorCommand: jest.fn(async () => ({
+          ...runResult(0),
+          syncCadence: cadence({ ordinal: 1, syncsUntilReconcile: 9 }),
+          syncCounterWarning: "The sync counter file is not valid JSON. The cadence restarts.",
+        })),
+      },
+    });
+
+    // Exit 0 — the sweep was fine, and refusing to mirror an instance over a
+    // damaged bookkeeping file would turn a cosmetic problem into an outage. But
+    // silence would hide a reconcile that just moved up to ten runs away.
+    expect(await run(h, "sync")).toBe(0);
+    expect(warnings.join("\n")).toContain("not valid JSON");
+  });
+
+  it("--json carries the cadence and the warning as fields, not as log lines", async () => {
+    const h = harness({
+      engine: {
+        runMirrorCommand: jest.fn(async () => ({
+          ...runResult(0),
+          syncCounterWarning: "counter unreadable",
+        })),
+      },
+    });
+    await run(h, "sync", { json: true });
+
+    const parsed = JSON.parse(h.written.join("\n")) as {
+      syncCadence: SyncCadence;
+      syncCounterWarning: string | null;
+    };
+    expect(parsed.syncCadence).toEqual(cadence());
+    expect(parsed.syncCounterWarning).toBe("counter unreadable");
+    // A machine consumer parses stdout; a human sentence duplicated onto the log
+    // would be noise in the same stream on a CI runner.
+    expect(infos.join("\n")).not.toContain("reconcile cycle");
+    expect(warnings.join("\n")).not.toContain("counter unreadable");
   });
 });
 

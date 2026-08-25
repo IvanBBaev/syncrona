@@ -383,6 +383,37 @@ export const pushFiles = async (
 export const summarizeRecord = (table: string, recDescriptor: string): string =>
   `${table} > ${recDescriptor}`;
 
+// Where one field's artifact lands in the build tree. Extracted so the diff
+// manifest `build --diff` records lists the exact paths the build wrote: deploy
+// re-reads that list, and a second copy of this arithmetic would drift the
+// moment either on-disk layout or getBuildExt changed — the build would write
+// `<record>/.meta.json` while the manifest pointed at `<record>/.meta.js`, and
+// deploy would report "0 files" for a record it had just built.
+const buildFilePathFor = (fieldCtx: Sync.FileContext): string => {
+  const relativePath = path.relative(
+    ConfigManager.getSourcePath(),
+    fieldCtx.filePath
+  );
+  const relExt = path.extname(relativePath);
+  const relPathNoExt = relExt
+    ? relativePath.slice(0, relativePath.length - relExt.length)
+    : relativePath;
+  const buildExt = fUtils.getBuildExt(
+    fieldCtx.tableName,
+    fieldCtx.name,
+    fieldCtx.targetField
+  );
+  return path.join(
+    ConfigManager.getBuildPath(),
+    `${relPathNoExt}.${buildExt}`
+  );
+};
+
+// Every build-tree path the given records own, in field order — what buildFiles
+// wrote for them, and what a deploy driven by the diff manifest must read.
+export const buildFilePaths = (recs: Sync.BuildableRecord[]): string[] =>
+  recs.flatMap((rec) => Object.values(rec.fields).map(buildFilePathFor));
+
 const writeBuildFile = async (
   preBuild: Sync.BuildableRecord,
   buildRes: Sync.RecBuildSuccess,
@@ -390,24 +421,10 @@ const writeBuildFile = async (
 ): Promise<Sync.BuildResult> => {
   const { fields, table, sysId } = preBuild;
   const recSummary = summary ?? `${table} > ${sysId}`;
-  const sourcePath = ConfigManager.getSourcePath();
-  const buildPath = ConfigManager.getBuildPath();
   const fieldNames = Object.keys(fields);
   const writePromises = fieldNames.map(async (field) => {
     const fieldCtx = fields[field];
-    const srcFilePath = fieldCtx.filePath;
-    const relativePath = path.relative(sourcePath, srcFilePath);
-    const relExt = path.extname(relativePath);
-    const relPathNoExt = relExt
-      ? relativePath.slice(0, relativePath.length - relExt.length)
-      : relativePath;
-    const buildExt = fUtils.getBuildExt(
-      fieldCtx.tableName,
-      fieldCtx.name,
-      fieldCtx.targetField
-    );
-    const relPathNewExt = `${relPathNoExt}.${buildExt}`;
-    const buildFilePath = path.join(buildPath, relPathNewExt);
+    const buildFilePath = buildFilePathFor(fieldCtx);
     await fUtils.createDirRecursively(path.dirname(buildFilePath));
     const writeResult = await fUtils.writeFileForce(
       buildFilePath,

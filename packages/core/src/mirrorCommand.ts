@@ -53,6 +53,7 @@ import type {
   CoverageReport,
   MirrorAuthorization,
   MirrorConfig,
+  SyncCadence,
   TableCatalogEntry,
   WriterFs,
 } from "@syncrona/mirror";
@@ -68,6 +69,13 @@ export type MirrorAction = (typeof MIRROR_ACTIONS)[number];
 export type MirrorCmdArgs = Sync.SharedCmdArgs & {
   action?: string;
   full?: boolean;
+  /**
+   * §5.4's escape hatch: plan this sweep as a `reconcile` without waiting for the
+   * cadence. Weaker than `full` — it observes every table whole (which is what
+   * INV-5 needs before it will delete anything) but does not re-fetch rows the
+   * watermark says are unchanged. `full` wins when both are given.
+   */
+  reconcile?: boolean;
   verifyQuiescent?: boolean;
   deep?: boolean;
   json?: boolean;
@@ -359,6 +367,35 @@ async function runInit(
   return 0;
 }
 
+/**
+ * Where this sweep sat in the §5.4 reconcile cycle, in one sentence.
+ *
+ * Worth a line of output because the cycle is otherwise invisible and its
+ * consequence is not: between reconciles the mirror grows monotonically —
+ * a record deleted on the instance keeps its directory, because INV-5 will not
+ * remove anything without a completed full sweep to point at. An operator who can
+ * see "4 syncs until the next reconcile" can answer "why is this record still
+ * here" without reading the design document.
+ */
+function describeCadence(cadence: SyncCadence): string {
+  const { ordinal, everyN, syncsUntilReconcile, forced } = cadence;
+  if (syncsUntilReconcile === null) {
+    // `reconcileEveryNSyncs` is 0, negative or fractional, so the planner refused
+    // to promote anything. Silence here would look identical to a healthy cycle.
+    return `Sync ${ordinal}: the reconcile cadence is disabled (reconcileEveryNSyncs = ${everyN}), so deletions reach the mirror only with --reconcile or --full.`;
+  }
+  const position = `Sync ${ordinal} of the ${everyN}-sync reconcile cycle`;
+  if (forced) {
+    // The count still governs the automatic one, so it is reported alongside
+    // rather than replaced — a forced reconcile does not reset the cycle.
+    return `${position} — reconciling because it was asked for; the scheduled one is ${syncsUntilReconcile} sync(s) away.`;
+  }
+  if (syncsUntilReconcile === 0) {
+    return `${position} — this is the scheduled reconcile, so deletions on the instance are propagated.`;
+  }
+  return `${position}; ${syncsUntilReconcile} more before deletions are reconciled (--reconcile forces one now).`;
+}
+
 /** One sweep, then the D10 commit message the operator (not this CLI) applies. */
 async function runSync(
   deps: MirrorCommandDeps,
@@ -376,8 +413,12 @@ async function runSync(
     newSweepId: deps.newSweepId,
     client,
     ...(args.full === undefined ? {} : { full: args.full }),
+    ...(args.reconcile === undefined ? {} : { reconcile: args.reconcile }),
     ...(args.verifyQuiescent === undefined ? {} : { verifyQuiescent: args.verifyQuiescent }),
   });
+  // The ordinal is deliberately NOT passed: the engine owns the count, persists it
+  // under `.mirror/state/` and advances it only on a run that finished. A CLI that
+  // supplied one would be a CLI that could postpone a reconcile indefinitely.
 
   // A baseline sweep writes the whole instance in one pass, which leaves a repo
   // full of loose objects; a plain full repack is the measured-cheap way to fold
@@ -397,6 +438,8 @@ async function runSync(
           fatal: result.fatal,
           resumeDecision: result.resumeDecision,
           checkpointCleared: result.checkpointCleared,
+          syncCadence: result.syncCadence,
+          syncCounterWarning: result.syncCounterWarning,
         },
         null,
         2
@@ -406,6 +449,10 @@ async function runSync(
     // Phase 1 never runs `git commit`: the sweep's evidence is printed and the
     // decision to record it stays with whoever owns the repo's history.
     deps.write(result.commitMessage);
+    logger.info(describeCadence(result.syncCadence));
+    if (result.syncCounterWarning !== null) {
+      logger.warn(result.syncCounterWarning);
+    }
     if (result.fatal) {
       logger.error(`Sweep ended incomplete: ${result.fatal.failureClass}.`);
     } else if (result.exitCode === 2) {

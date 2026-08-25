@@ -4,6 +4,7 @@ import path from "path";
 import { promises as fsp } from "fs";
 import vm from "vm";
 import { createRequire } from "module";
+import { types } from "node:util";
 import { logger } from "./Logger.js";
 import { includes, excludes, tableOptions } from "./defaultOptions.js";
 
@@ -15,6 +16,40 @@ export class DiffFileCorruptError extends Error {
     this.name = "DiffFileCorruptError";
   }
 }
+
+// The one shape deploy knows how to act on. Anything else parsed from
+// sync.diff.manifest.json is reported as corrupt rather than read as an empty
+// diff, because "empty" and "unintelligible" lead to opposite deploys.
+const isDiffFileShape = (value: unknown): value is Sync.DiffFile => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const { changed } = value as { changed?: unknown };
+  return (
+    Array.isArray(changed) && changed.every((p) => typeof p === "string")
+  );
+};
+
+// #16: the one shape the rest of the CLI knows how to act on. `{}`, `[]`,
+// `null` and `{"scope":"x_app"}` are all valid JSON, and every one of them used
+// to load as a healthy manifest — after which `manifest.tables ?? {}` claims
+// nothing at all. That reads identically to a manifest for an empty scope, and
+// the two lead to opposite outcomes: `repair --apply --prune` takes the entire
+// downloaded tree for orphans and deletes it, and a push resolves no record.
+// Both `scope` and `tables` are required because both are load-bearing — the
+// scope names the application every remote call is filtered by.
+const isAppManifestShape = (value: unknown): value is SN.AppManifest => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const { scope, tables } = value as { scope?: unknown; tables?: unknown };
+  return (
+    typeof scope === "string" &&
+    typeof tables === "object" &&
+    tables !== null &&
+    !Array.isArray(tables)
+  );
+};
 
 const DEFAULT_CONFIG: Sync.Config = {
   sourceDirectory: "src",
@@ -48,6 +83,10 @@ type ConfigState = {
   // (parse error / read error). Absent-file is left as undefined on both, so
   // callers can tell "no diff" (full scope) apart from "corrupt diff" (abort).
   diff_file_error?: string;
+  // #16: set only when sync.manifest.json is PRESENT but does not parse into a
+  // manifest. Same distinction as diff_file_error: "no manifest yet" and
+  // "manifest we cannot read" must not collapse into each other.
+  manifest_error?: string;
   refresh_interval?: number;
 };
 
@@ -149,14 +188,45 @@ export function synthesizeFilename(pattern: RegExp): string | null {
 // also matches it, report the shadow — a real file with that name would be
 // claimed by the earlier rule. Zero false positives by construction.
 export function checkRuleOrder(rules: Array<{ match: RegExp }>): RuleOrderIssue[] {
+  // #18: normalize the whole list once, for two reasons the raw list gets wrong.
+  //
+  // A rule whose `match` is missing or is not a RegExp is SKIPPED, not fatal.
+  // sync.config.js is hand-written JS that nothing type-checks, and
+  // PluginManager.determinePlugins already survives such a rule by warning and
+  // moving on; the checker instead died on `pattern.source` of a non-RegExp —
+  // so `build --check-config`, the one command whose whole job is to diagnose
+  // these rules, crashed on the configs that needed it and reported nothing
+  // about the real shadowing further down the list. isRegExp rather than
+  // instanceof: the config is loaded through vm.runInNewContext, so its regex
+  // literals belong to another realm (see PluginManager).
+  //
+  // Each usable pattern is also cloned without /g and /y. `.test()` on those
+  // resumes from the RegExp's own lastIndex, and this function calls .test()
+  // repeatedly with the SAME earlier pattern against different samples — so a
+  // single `/\.ts$/g` rule would report the first file it shadows and then
+  // silently miss every later one. It would mutate the user's own RegExp too.
+  const patterns = rules.map((rule) => {
+    const reg = (rule as { match?: unknown } | null | undefined)?.match;
+    if (!types.isRegExp(reg)) {
+      return null;
+    }
+    return reg.global || reg.sticky
+      ? new RegExp(reg.source, reg.flags.replace(/[gy]/g, ""))
+      : reg;
+  });
+
   const issues: RuleOrderIssue[] = [];
   for (let j = 0; j < rules.length; j++) {
-    const sample = synthesizeFilename(rules[j].match);
-    if (sample === null || !rules[j].match.test(sample)) {
+    const later = patterns[j];
+    if (!later) {
+      continue;
+    }
+    const sample = synthesizeFilename(later);
+    if (sample === null || !later.test(sample)) {
       continue;
     }
     for (let i = 0; i < j; i++) {
-      if (rules[i].match.test(sample)) {
+      if (patterns[i]?.test(sample)) {
         issues.push({ laterIndex: j, earlierIndex: i, sample });
         break;
       }
@@ -237,6 +307,14 @@ export class ConfigStore {
 
   getManifest(setup = false): SN.AppManifest | undefined {
     if (this.state.manifest) return this.state.manifest;
+    // #16: a present-but-unreadable manifest says WHY, so the caller does not
+    // act on "no manifest" when the truth is "a manifest we refuse to trust".
+    // Setup mode keeps answering undefined either way: `init`/`refresh` exist
+    // to rebuild the file, and throwing would lock the user out of the one
+    // command that repairs it.
+    if (!setup && this.state.manifest_error) {
+      throw new Error(this.state.manifest_error);
+    }
     if (!setup) throw new Error("Error getting manifest");
     return undefined;
   }
@@ -306,7 +384,13 @@ export class ConfigStore {
     if (!this.state.manifest_path) return;
     try {
       const manifestString = await fsp.readFile(this.state.manifest_path, "utf-8");
-      this.state.manifest = JSON.parse(manifestString);
+      const parsed: unknown = JSON.parse(manifestString);
+      // #16: a file that parses into the wrong shape is the same situation as
+      // an unreadable one — keep the manifest already in memory rather than
+      // replacing a known-good one with something we cannot act on.
+      if (isAppManifestShape(parsed)) {
+        this.state.manifest = parsed;
+      }
     } catch (_) {
       // Keep the existing in-memory manifest; a transient unreadable/partial
       // write on disk should not blow away a known-good manifest mid-session.
@@ -372,12 +456,30 @@ export class ConfigStore {
   }
 
   private async loadManifest(): Promise<void> {
+    this.state.manifest_error = undefined;
+    let parsed: unknown;
     try {
       const manifestString = await fsp.readFile(this.getManifestPath(), "utf-8");
-      this.state.manifest = JSON.parse(manifestString);
+      parsed = JSON.parse(manifestString);
     } catch (_) {
+      // Absent or unparseable: there is simply no manifest to work from, which
+      // every caller already handles by telling the user to refresh.
       this.state.manifest = undefined;
+      return;
     }
+    if (!isAppManifestShape(parsed)) {
+      this.state.manifest = undefined;
+      this.state.manifest_error =
+        `${this.getManifestPath()} is present but is not a manifest: ` +
+        `expected {"scope": "<scope>", "tables": {…}}. ` +
+        "Run `syncrona refresh` to rebuild it.";
+      // Warned as well as recorded: the commands that read the manifest in
+      // setup mode never see the error above, and a silently ignored manifest
+      // is the thing this whole guard exists to prevent.
+      logger.warn(this.state.manifest_error);
+      return;
+    }
+    this.state.manifest = parsed;
   }
 
   private async loadConfigPath(pth?: string): Promise<string | false> {
@@ -448,15 +550,29 @@ export class ConfigStore {
       }`;
       return;
     }
+    let parsed: unknown;
     try {
-      this.state.diff_file = JSON.parse(diffString) as Sync.DiffFile;
+      parsed = JSON.parse(diffString);
     } catch (e) {
       // Present but not valid JSON → corrupt. Record it so getDiffFile() can
       // refuse to silently fall back to a FULL deploy.
       this.state.diff_file_error = `${this.getDiffPath()} is present but not valid JSON: ${
         e instanceof Error ? e.message : String(e)
       }`;
+      return;
     }
+    // Parsing is not the same as understanding: `{}`, `{"changed":"all"}` and
+    // `[1,2,3]` are all valid JSON, and every one of them used to load as a
+    // healthy manifest whose `changed` read as an empty list — which deploy
+    // then took for "no diff at all" and promoted to a full-scope deploy. A
+    // present file whose shape we cannot read is corrupt, not absent.
+    if (!isDiffFileShape(parsed)) {
+      this.state.diff_file_error =
+        `${this.getDiffPath()} is present but is not a diff manifest: ` +
+        `expected {"changed": ["<path>", ...]}. Delete it and re-run \`build --diff <target>\`.`;
+      return;
+    }
+    this.state.diff_file = parsed;
   }
 
   private async loadRootDir(skip?: boolean): Promise<void> {
