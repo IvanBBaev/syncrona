@@ -1,7 +1,7 @@
 # SyncroNow AI
 
 <!-- badges:start -->
-| ![status: pre-release](https://img.shields.io/badge/status-pre--release-orange?style=flat-square) | [![npm](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona) | [![downloads](https://img.shields.io/npm/dm/syncrona?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/syncrona) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) |
+| ![status: stable](https://img.shields.io/badge/status-stable-brightgreen?style=flat-square) | [![npm](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona) | [![downloads](https://img.shields.io/npm/dm/syncrona?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/syncrona) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) |
 |:--:|:--:|:--:|:--:|
 | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) | [![platform: ServiceNow](https://img.shields.io/badge/platform-ServiceNow-62D84E?style=flat-square)](https://www.servicenow.com/) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
 | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) |
@@ -54,8 +54,8 @@ Because your scoped-app code is downloaded as plain, editable files in a project
   conversion, and the first-day path.
 - [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
   for a public 1.0 / enterprise release (done / scheduled / owner-gated).
-- [ROADMAP.md](ROADMAP.md) — shipped capabilities and the path to v0.5 beta and
-  v1.0 (with owner-gated items called out).
+- [ROADMAP.md](ROADMAP.md) — shipped capabilities, what 1.0 closed, and what is
+  still open past it (with owner-gated items called out).
 - [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
 - [SUPPORT.md](SUPPORT.md) — getting help, diagnostics, support scope.
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — symptom → cause → fix
@@ -111,13 +111,22 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 
 ## Installation
 
-> ⚠️ **Not yet published to npm.** The `@syncrona/*` packages are
-> pre-release and are **not on the npm registry yet**, so `npm i -g` /
-> `npx syncrona` will not resolve. Until the first publish, install
-> **from source** (below). The published-install snippet is shown for when the
-> packages go live.
+`syncrona` and all fifteen `@syncrona/*` packages are published on npm with build
+provenance, so no build step is needed to use the CLI.
 
-### Install from source (works today)
+### Global CLI quick start
+
+```bash
+npm i -g syncrona
+syncrona login
+syncrona init
+```
+
+Or without installing anything: `npx syncrona init`.
+
+### Install from source
+
+For contributing, or to run an unreleased commit:
 
 ```bash
 git clone https://github.com/IvanBBaev/syncrona
@@ -132,14 +141,6 @@ syncrona init
 
 Prefer not to link globally? Run the built CLI directly from the repo with
 `node packages/core/dist/index.js <command>`.
-
-### Global CLI quick start (once published to npm)
-
-```bash
-npm i -g syncrona
-syncrona login
-syncrona init
-```
 
 ### Requirements
 

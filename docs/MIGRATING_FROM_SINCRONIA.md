@@ -17,10 +17,8 @@ the shortest path to a working setup.
 ## The first day
 
 ```bash
-# 1. Install (not yet on npm — install from source, see README "Installation")
-git clone https://github.com/IvanBBaev/syncrona
-cd syncrona && npm ci && npm run build
-npm link --workspace syncrona
+# 1. Install (see README "Installation" for the from-source path)
+npm i -g syncrona
 
 # 2. Store credentials once, globally (replaces per-project .env secrets)
 syncrona login
