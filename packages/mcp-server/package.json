@@ -35,7 +35,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@stryker-mutator/core": "^8.7.1",
+    "@stryker-mutator/core": "^9.6.1",
     "@types/node": "^26.1.0",
     "fast-check": "^3.23.2",
     "typescript": "~6.0.3"
