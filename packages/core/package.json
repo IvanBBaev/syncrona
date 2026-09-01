@@ -31,15 +31,15 @@
     "@syncrona/mirror": "^1.0.0",
     "@syncrona/sn-transport": "^1.0.0",
     "@syncrona/types": "^1.0.0",
-    "axios": "^1.18.1",
+    "axios": "^1.20.0",
     "axios-rate-limit": "^1.9.0",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "dotenv": "^17.4.2",
-    "inquirer": "^14.0.2",
+    "inquirer": "^14.2.0",
     "lodash": "^4.17.21",
     "winston": "^3.19.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.1.0"
   },
   "bin": {
     "syncrona": "./dist/index.js"

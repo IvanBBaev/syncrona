@@ -18,8 +18,8 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "@syncrona/types": "^1.0.0",
-    "memfs": "^4.6.0",
-    "webpack": "^5.108.3"
+    "memfs": "^4.68.1",
+    "webpack": "^5.110.1"
   },
   "devDependencies": {
     "@types/webpack": "^5.28.3"
