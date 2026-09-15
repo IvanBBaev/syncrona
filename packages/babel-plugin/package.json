@@ -17,7 +17,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@babel/core": "^8.0.0",
+    "@babel/core": "^8.0.5",
     "@babel/types": "^8.0.0",
     "@syncrona/types": "^1.0.0"
   },

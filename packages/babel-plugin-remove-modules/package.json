@@ -11,7 +11,7 @@
   "author": "Ivan Baev",
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@babel/core": "^8.0.0",
+    "@babel/core": "^8.0.5",
     "@babel/types": "^8.0.0"
   },
   "devDependencies": {
