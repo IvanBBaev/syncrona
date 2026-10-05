@@ -42,9 +42,20 @@
  * build that already finished, and no symlink is followed, so the listing never
  * leaves the project's output directory.
  *
- * A build writes only the project's own output directory and never reaches the
- * instance, so the tool is not a mutating tool (the `sync_build` and scope-docs
- * precedent); it honours `dryRun` and is audited like every other call.
+ * A build never reaches the instance, but it is still a mutating tool: it
+ * overwrites the project's output directory, and it executes code from the
+ * workspace — the project's installed adapter and SDK, and any build-time code
+ * the project's source pulls in — inside the server process, with the server's
+ * full environment (including any instance credentials it holds). So it goes
+ * through the same policy, preflight and mutating-audit gates as any other write,
+ * and it honours `dryRun`: a dry run returns the plan without loading the adapter.
+ *
+ * Trust boundary: an adapter resolved from the project must really live inside
+ * the workspace — its real path, after following symlinks, must not leave it —
+ * or the call is refused. That keeps a symlinked `node_modules` from pulling in
+ * code from elsewhere on disk; it does not sandbox the code that is inside the
+ * workspace. There is no process isolation: building a project means trusting it
+ * as much as running `npm run build` in it with the server's environment.
  */
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "fs";
 import { createRequire } from "module";
@@ -128,6 +139,15 @@ export class FluentProjectError extends Error {
   }
 }
 
+/** Raised when the adapter resolved from the project lives outside the workspace. */
+export class FluentAdapterOutsideWorkspaceError extends Error {
+  readonly code = "FLUENT_ADAPTER_OUTSIDE_WORKSPACE";
+  constructor(message: string) {
+    super(message);
+    this.name = "FluentAdapterOutsideWorkspaceError";
+  }
+}
+
 class FluentBuildTimeout extends Error {
   constructor(timeoutMs: number) {
     super(
@@ -160,10 +180,22 @@ function isSdkMissing(e: unknown): boolean {
  * Resolves the Fluent adapter from the project first, then from the server's own
  * install — core's `loadFluentModule` order. `specifier` is a parameter only so
  * tests can point it at a fixture package.
+ *
+ * An adapter found from the project is loaded only when its real path is inside
+ * `workspaceDir` (default: the project itself), so a symlink cannot make the
+ * server execute code from outside the workspace. The server's own install is
+ * trusted as it is the server's code.
  */
-export function loadFluentModule(projectDir: string, specifier: string = FLUENT_PACKAGE): FluentBuildModule {
-  const requirers = [createRequire(path.join(projectDir, "package.json")), createRequire(__filename)];
-  for (const requireFrom of requirers) {
+export function loadFluentModule(
+  projectDir: string,
+  specifier: string = FLUENT_PACKAGE,
+  workspaceDir: string = projectDir
+): FluentBuildModule {
+  const requirers = [
+    { requireFrom: createRequire(path.join(projectDir, "package.json")), confined: true },
+    { requireFrom: createRequire(__filename), confined: false },
+  ];
+  for (const { requireFrom, confined } of requirers) {
     let resolved: string;
     try {
       resolved = requireFrom.resolve(specifier);
@@ -171,6 +203,7 @@ export function loadFluentModule(projectDir: string, specifier: string = FLUENT_
       if (isModuleNotFound(e, specifier)) continue;
       throw e;
     }
+    if (confined) assertAdapterInWorkspace(workspaceDir, specifier, resolved);
     const mod = requireFrom(resolved) as Partial<FluentBuildModule> & { default?: FluentBuildModule };
     return typeof mod.createFluentEngine === "function" ? (mod as FluentBuildModule) : (mod.default as FluentBuildModule);
   }
@@ -179,6 +212,24 @@ export function loadFluentModule(projectDir: string, specifier: string = FLUENT_
 
 function isWithin(base: string, target: string): boolean {
   return target === base || target.startsWith(base + path.sep);
+}
+
+/**
+ * Refuses an adapter resolved from the project whose real path leaves the
+ * workspace — a symlinked package, or a `node_modules` that is itself a link.
+ * Node resolves symlinks by default, so `resolved` is normally real already; the
+ * check re-reads it so the refusal does not depend on `--preserve-symlinks`.
+ */
+function assertAdapterInWorkspace(workspaceDir: string, specifier: string, resolved: string): void {
+  // A builtin or other non-path resolution has no file to confine.
+  if (!path.isAbsolute(resolved)) return;
+  const base = realpathSync(path.resolve(workspaceDir));
+  const real = realpathSync(resolved);
+  if (!isWithin(base, real)) {
+    throw new FluentAdapterOutsideWorkspaceError(
+      `Refusing to load ${specifier} from outside the workspace: it resolves to ${JSON.stringify(real)}. Install it in the project rather than linking it in.`
+    );
+  }
 }
 
 /**
@@ -399,7 +450,9 @@ export async function handleFluentBuild(
   // timed-out build keeps running.
   const releaseConsoleGuard = acquireConsoleGuard();
   try {
-    const fluent = await (context.loadFluent ?? loadFluentModule)(projectDir);
+    const load: FluentModuleLoader =
+      context.loadFluent ?? ((dir) => loadFluentModule(dir, FLUENT_PACKAGE, context.workspaceDir));
+    const fluent = await load(projectDir);
     if (!fluent || typeof fluent.createFluentEngine !== "function") {
       throw new Error(`${FLUENT_PACKAGE} does not export createFluentEngine; reinstall it.`);
     }
@@ -421,7 +474,12 @@ export async function handleFluentBuild(
       code = "FLUENT_SDK_MISSING";
       message = FLUENT_INSTALL_HINT;
     } else {
-      code = e instanceof FluentBuildTimeout ? "FLUENT_BUILD_TIMEOUT" : undefined;
+      code =
+        e instanceof FluentBuildTimeout
+          ? "FLUENT_BUILD_TIMEOUT"
+          : e instanceof FluentAdapterOutsideWorkspaceError
+            ? e.code
+            : undefined;
       message = clipLine(e instanceof Error ? e.message : String(e));
     }
   } finally {
@@ -432,6 +490,24 @@ export async function handleFluentBuild(
   const outputs = result ? listOutputFiles(outputDir) : undefined;
   const errors = capList(result?.errors ?? [], MAX_LISTED_DIAGNOSTICS);
   const warnings = capList(result?.warnings ?? [], MAX_LISTED_DIAGNOSTICS);
+
+  // Every real run is recorded, whatever its outcome: once the adapter has been
+  // looked up, project code may have run and the output directory may have changed.
+  context.auditMutatingTool(
+    TOOL_NAME,
+    args,
+    {
+      outcome,
+      exitCode,
+      project,
+      options,
+      errorCount: result?.errors.length ?? 0,
+      warningCount: result?.warnings.length ?? 0,
+      ...(budgetExceeded ? { budgetExceeded: true } : {}),
+      ...(code ? { code } : {}),
+    },
+    Date.now() - context.startedAt
+  );
 
   return textResponse(
     {

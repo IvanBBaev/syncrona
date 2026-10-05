@@ -568,6 +568,38 @@ describe("fluentCommand: types --native", () => {
     expect(rec.generated).toEqual([]);
   });
 
+  it("--dry-run fails where the real run would: no scope, or no project", async () => {
+    const noScope = harness({ files: { [CONFIG_FILE]: "{}" } });
+    expect(await run({ action: "types", native: true, dryRun: true }, noScope.deps)).toBe(1);
+    expect(errors[0]).toContain("needs a scope");
+    expect(noScope.rec.written).toEqual([]);
+
+    const noProject = harness({ files: {}, cwd: path.resolve("/elsewhere") });
+    expect(await run({ action: "types", native: true, out: "t.d.ts", dryRun: true, json: true }, noProject.deps)).toBe(1);
+    expect(errors[1]).toContain("No now.config.json found");
+    expect(noProject.rec.written).toEqual([]);
+
+    // The real run's own exemption holds too: --out plus --table needs no project.
+    expect(
+      await run({ action: "types", native: true, table: "incident", out: "t.d.ts", dryRun: true }, noProject.deps)
+    ).toBe(0);
+    expect(noProject.rec.generated).toEqual([]);
+    expect(noProject.rec.outputs).toEqual({});
+  });
+
+  it("--dry-run --json prints the native plan as JSON", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", native: true, table: "incident", dryRun: true, json: true }, deps)).toBe(0);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent types",
+      exitCode: 0,
+      dryRun: true,
+      method: "nativeTypes",
+      options: { tables: ["incident"] },
+      instance: true,
+    });
+  });
+
   it("refuses --native with --scripts as a usage error", async () => {
     const { rec, deps } = harness();
     expect(await run({ action: "types", native: true, scripts: true }, deps)).toBe(1);
@@ -727,6 +759,26 @@ describe("fluentCommand: install without a terminal", () => {
     expect(rec.written).toEqual([]);
     expect(errors[0]).toContain(reason);
     expect(errors[0]).toContain("Pass --ci to install without asking.");
+  });
+
+  it.each([
+    ["no terminal", { interactive: () => false }, {}, "this session has no terminal"],
+    ["--json", {}, { json: true }, "--json output"],
+  ])("--dry-run refuses with %s too, as the real run would", async (_label, extraDeps, extraArgs, reason) => {
+    const { rec, deps } = harness();
+    const loadFluent = jest.fn(deps.loadFluent!);
+    expect(await run({ action: "install", dryRun: true, ...extraArgs }, { ...deps, ...extraDeps, loadFluent })).toBe(1);
+    expect(errors[0]).toContain(reason);
+    expect(rec.written).toEqual([]);
+    expect(loadFluent).not.toHaveBeenCalled();
+  });
+
+  it("--dry-run --ci --json prints the install plan as JSON without a terminal", async () => {
+    const { rec, deps } = harness();
+    expect(
+      await run({ action: "install", dryRun: true, ci: true, json: true }, { ...deps, interactive: () => false })
+    ).toBe(0);
+    expect(JSON.parse(rec.written[0])).toMatchObject({ command: "fluent install", dryRun: true, method: "install" });
   });
 
   it("installs under --ci without a terminal, and --json prints only the result", async () => {
@@ -1299,9 +1351,35 @@ describe("fluentCommand: move-to-app", () => {
     expect(rec.written).toEqual([]);
   });
 
-  it("--dry-run --json prints the plan as JSON", async () => {
+  it("--dry-run --json without --ci is refused, as the real run would be", async () => {
     const { rec, deps } = harness({ files: GLOBAL_CONFIG });
-    expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true, json: true }, deps)).toBe(0);
+    expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true, json: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("--json output");
+    expect(errors[0]).toContain("Pass --ci to move the records without asking.");
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run validates and folds --ids exactly like the real run", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: `${ID_A},bogus`, dryRun: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("not one: bogus");
+    expect(rec.written).toEqual([]);
+    expect(await run({ action: "move-to-app", ids: `${ID_A},${ID_A.toUpperCase()}`, dryRun: true }, deps)).toBe(0);
+    expect(rec.written[0]).toContain(`{"sysIds":["${ID_A}"]}`);
+  });
+
+  it("--dry-run refuses a stray positional like the real run", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, topic: "prod", dryRun: true }, deps)).toBe(1);
+    expect(errors[0]).toBe('fluent move-to-app takes no positional argument (got "prod"); only `fluent explain <topic>` does.');
+    expect(await run({ action: "build", topic: "src", dryRun: true, json: true }, deps)).toBe(1);
+    expect(errors[1]).toContain("fluent build takes no positional argument");
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run --ci --json prints the plan as JSON", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true, ci: true, json: true }, deps)).toBe(0);
     expect(JSON.parse(rec.written[0])).toEqual({
       command: "fluent move-to-app",
       exitCode: 0,

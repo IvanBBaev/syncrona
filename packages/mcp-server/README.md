@@ -205,7 +205,7 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 - `sync_cicd_run`
   - Runs an ATF suite or test, or installs, publishes or rolls back an application, through the CI/CD REST API (`sn_cicd`) — the same requests as `syncrona cicd`; polls the progress tracker and returns `succeeded` / `failed` / `incomplete` with the CLI exit code (gated by `confirmDestructive`, supports `dryRun`); a `progressId` from an `incomplete` run resumes polling that tracker without dispatching new work
 - `sync_fluent_build`
-  - Builds a Fluent project (a directory with `now.config.json`, confined to the workspace) through the optional `@syncrona/fluent` package — the same build as `syncrona fluent build`, with `frozenKeys` / `errorOnConflict` / `skipClean`; returns errors, warnings, `dist/` output paths and the CLI exit code (0 succeeded, 2 failed, 1 incomplete), or `FLUENT_NOT_INSTALLED` / `FLUENT_SDK_MISSING` with an install hint (local-only, supports `dryRun`)
+  - Builds a Fluent project (a directory with `now.config.json`, confined to the workspace) through the optional `@syncrona/fluent` package — the same build as `syncrona fluent build`, with `frozenKeys` / `errorOnConflict` / `skipClean`; returns errors, warnings, `dist/` output paths and the CLI exit code (0 succeeded, 2 failed, 1 incomplete), or `FLUENT_NOT_INSTALLED` / `FLUENT_SDK_MISSING` with an install hint (local build — mutating: writes `dist/` and runs the project's build code in-process; supports `dryRun`)
 - `sync_validate_before_push`
   - Pre-push validation: runs security/architecture analysis on a scope's scripts, checks recent conflicting changes, reports ready or blocked per record
 - `sync_compare_instances`

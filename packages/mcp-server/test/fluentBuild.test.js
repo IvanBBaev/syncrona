@@ -11,6 +11,7 @@ const path = require('node:path');
 const {
   FLUENT_BUILD_OUTCOMES,
   FLUENT_INSTALL_HINT,
+  FluentAdapterOutsideWorkspaceError,
   FluentNotInstalledError,
   FluentProjectError,
   MAX_LINE_CHARS,
@@ -82,7 +83,7 @@ function payloadOf(response) {
 
 // --- Contract -------------------------------------------------------------------
 
-test('sync_fluent_build is declared, validated, dryRun-aware and not mutating', () => {
+test('sync_fluent_build is declared, validated, dryRun-aware and mutating', () => {
   const tool = MCP_TOOLS.find((t) => t.name === 'sync_fluent_build');
   assert.ok(tool, 'tool is declared');
   const props = tool.inputSchema.properties;
@@ -90,8 +91,15 @@ test('sync_fluent_build is declared, validated, dryRun-aware and not mutating', 
     assert.ok(props[key], `declares ${key}`);
   }
   assert.equal(props.confirmDestructive, undefined, 'a local build needs no confirmation');
-  assert.equal(isMutatingTool('sync_fluent_build'), false);
+  // It writes dist/ and executes project code in-process, so the mutating gates apply.
+  assert.equal(isMutatingTool('sync_fluent_build'), true);
+  assert.equal(isMutatingTool('sync_fluent_build', { dryRun: true }), true);
   assert.equal(toolImplementsDryRun('sync_fluent_build'), true);
+  assert.match(tool.description, /mutating tool/);
+  assert.match(tool.description, /inside the server process, with the server's full environment/);
+  assert.match(tool.description, /FLUENT_ADAPTER_OUTSIDE_WORKSPACE/);
+  assert.match(props.timeoutMs.description, /not a hard limit/);
+  assert.match(props.timeoutMs.description, /delays the timeout/);
 
   assert.equal(validateToolArguments('sync_fluent_build', {}).valid, true);
   assert.equal(
@@ -227,7 +235,54 @@ test('a successful build returns exit code 0, diagnostics, output paths and the 
   assert.equal(fluent.seen.engineOptions[0].projectDir, projectDir);
   assert.equal(fluent.seen.engineOptions[0].loaderProjectDir, projectDir);
   assert.deepEqual(fluent.seen.buildOptions, [{ skipClean: true }]);
-  // Not a mutating tool: the generic per-call audit in index.ts records it.
+  // A mutating tool: every real run leaves a mutating audit entry.
+  assert.equal(calls.audit.length, 1);
+  const [toolName, auditedArgs, outcome, durationMs] = calls.audit[0];
+  assert.equal(toolName, 'sync_fluent_build');
+  assert.deepEqual(auditedArgs, { project: 'app', skipClean: true });
+  assert.deepEqual(outcome, {
+    outcome: 'succeeded',
+    exitCode: 0,
+    project: 'app',
+    options: { skipClean: true },
+    errorCount: 0,
+    warningCount: 1,
+  });
+  assert.equal(typeof durationMs, 'number');
+});
+
+test('a run that could not finish is audited too, with its code', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const { context, calls } = makeContext(ws, {
+    loadFluent: () => {
+      throw new FluentNotInstalledError();
+    },
+  });
+  const response = await handleFluentBuild({}, context);
+  assert.equal(response.isError, true);
+  assert.equal(calls.audit.length, 1);
+  assert.deepEqual(calls.audit[0][2], {
+    outcome: 'incomplete',
+    exitCode: 1,
+    project: '.',
+    options: {},
+    errorCount: 0,
+    warningCount: 0,
+    code: 'FLUENT_NOT_INSTALLED',
+  });
+});
+
+test('a dry run writes no mutating audit entry of its own and loads nothing', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const { context, calls } = makeContext(ws, {
+    dryRun: true,
+    loadFluent: () => assert.fail('a dry run must not load the adapter'),
+  });
+  await handleFluentBuild({ dryRun: true }, context);
+  // makeDryRunAuditResponse records the plan; the handler adds nothing else.
+  assert.equal(calls.dryRun.length, 1);
   assert.equal(calls.audit.length, 0);
 });
 
@@ -567,6 +622,80 @@ test('loadFluentModule rethrows a missing dependency of an installed adapter as 
       e.code === 'MODULE_NOT_FOUND' &&
       e.message.includes("'@fixture/absent-dependency'")
   );
+});
+
+test('loadFluentModule refuses a project adapter that is a symlink out of the workspace', () => {
+  const ws = mkWorkspace();
+  const outside = mkWorkspace();
+  writeFixturePackage(outside, '@fixture/fluent-link', 'globalThis.__fluentLinkLoaded = true; exports.createFluentEngine = () => "outside";');
+  fs.mkdirSync(path.join(ws, 'node_modules', '@fixture'), { recursive: true });
+  fs.symlinkSync(
+    path.join(outside, 'node_modules', '@fixture', 'fluent-link'),
+    path.join(ws, 'node_modules', '@fixture', 'fluent-link'),
+    'dir'
+  );
+  assert.throws(
+    () => loadFluentModule(ws, '@fixture/fluent-link'),
+    (e) =>
+      e instanceof FluentAdapterOutsideWorkspaceError &&
+      e.code === 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE' &&
+      e.message.includes('outside the workspace')
+  );
+  assert.equal(globalThis.__fluentLinkLoaded, undefined, 'the linked code never ran');
+});
+
+test('loadFluentModule refuses a node_modules that is itself a symlink out of the workspace', () => {
+  const ws = mkWorkspace();
+  const outside = mkWorkspace();
+  writeFixturePackage(outside, '@fixture/fluent-nm', 'exports.createFluentEngine = () => "outside";');
+  fs.symlinkSync(path.join(outside, 'node_modules'), path.join(ws, 'node_modules'), 'dir');
+  assert.throws(() => loadFluentModule(ws, '@fixture/fluent-nm'), FluentAdapterOutsideWorkspaceError);
+});
+
+test('loadFluentModule confines to the workspace, not just the project', () => {
+  const ws = mkWorkspace();
+  const projectDir = mkProject(ws, 'apps/one');
+  // Hoisted to the workspace root: outside the project, still inside the workspace.
+  writeFixturePackage(ws, '@fixture/fluent-hoisted', 'exports.createFluentEngine = () => "hoisted";');
+  assert.equal(loadFluentModule(projectDir, '@fixture/fluent-hoisted', ws).createFluentEngine(), 'hoisted');
+  // The same package seen from a project whose workspace is the project alone is refused.
+  assert.throws(() => loadFluentModule(projectDir, '@fixture/fluent-hoisted'), FluentAdapterOutsideWorkspaceError);
+});
+
+test('a refused adapter surfaces as an incomplete run with its code', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const { context, calls } = makeContext(ws, {
+    loadFluent: () => {
+      throw new FluentAdapterOutsideWorkspaceError('Refusing to load @syncrona/fluent from outside the workspace.');
+    },
+  });
+  const payload = payloadOf(await handleFluentBuild({}, context));
+  assert.equal(payload.outcome, 'incomplete');
+  assert.equal(payload.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+  assert.match(payload.message, /outside the workspace/);
+  assert.equal(calls.audit[0][2].code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+});
+
+test('the default loader loads a hoisted adapter in the workspace and refuses a linked one', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws, 'apps/one');
+  writeFixturePackage(
+    ws,
+    '@syncrona/fluent',
+    'exports.createFluentEngine = () => ({ build: async () => ({ success: true, errors: [], warnings: [] }) });'
+  );
+  const hoisted = makeContext(ws);
+  const ok = payloadOf(await handleFluentBuild({ project: 'apps/one' }, hoisted.context));
+  assert.equal(ok.outcome, 'succeeded');
+
+  const linkedWs = mkWorkspace();
+  mkProject(linkedWs);
+  fs.symlinkSync(path.join(ws, 'node_modules'), path.join(linkedWs, 'node_modules'), 'dir');
+  const linked = makeContext(linkedWs);
+  const refused = payloadOf(await handleFluentBuild({}, linked.context));
+  assert.equal(refused.outcome, 'incomplete');
+  assert.equal(refused.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
 });
 
 test('loadFluentModule falls back to the server install and rethrows other resolution errors', () => {
