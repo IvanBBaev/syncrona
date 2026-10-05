@@ -462,6 +462,62 @@ test('the console guard writes to stderr while a build runs', async () => {
   assert.deepEqual(seen, ['from the sdk', 'info line', 'debug line']);
 });
 
+test('the console guard also covers the adapter load and engine creation', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  // The real loadFluentModule path: an installed @syncrona/fluent whose module
+  // top-level and engine constructor both print to stdout.
+  writeFixturePackage(
+    ws,
+    '@syncrona/fluent',
+    [
+      "console.log('module top-level');",
+      'exports.createFluentEngine = () => {',
+      "  console.info('engine created');",
+      '  return { build: async () => ({ success: true, errors: [], warnings: [] }) };',
+      '};',
+    ].join('\n')
+  );
+  const realLog = console.log;
+  const realError = console.error;
+  const seen = [];
+  console.error = (...parts) => seen.push(parts.join(' '));
+  let response;
+  try {
+    const { context } = makeContext(ws);
+    response = await handleFluentBuild({}, context);
+  } finally {
+    console.error = realError;
+  }
+  assert.equal(payloadOf(response).outcome, 'succeeded');
+  assert.deepEqual(seen, ['module top-level', 'engine created']);
+  assert.equal(console.log, realLog, 'console is restored after the build');
+});
+
+test('a load failure that logs first is guarded, and the guard is released', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const realLog = console.log;
+  const realError = console.error;
+  const seen = [];
+  console.error = (...parts) => seen.push(parts.join(' '));
+  let response;
+  try {
+    const { context } = makeContext(ws, {
+      loadFluent: async () => {
+        console.log('loading the adapter');
+        throw new Error('adapter exploded');
+      },
+    });
+    response = await handleFluentBuild({}, context);
+  } finally {
+    console.error = realError;
+  }
+  assert.equal(payloadOf(response).outcome, 'incomplete');
+  assert.deepEqual(seen, ['loading the adapter']);
+  assert.equal(console.log, realLog, 'console is restored after a failed load');
+});
+
 test('handleFluentTool owns only sync_fluent_build', async () => {
   const ws = mkWorkspace();
   mkProject(ws);

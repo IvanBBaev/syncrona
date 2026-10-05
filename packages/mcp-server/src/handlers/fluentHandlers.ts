@@ -393,6 +393,11 @@ export async function handleFluentBuild(
   let code: string | undefined;
   let budgetExceeded = false;
 
+  // Loading the adapter and creating the engine run SDK code as well (module
+  // top-level, engine constructor), so the guard covers them too, not only the
+  // build. runBounded takes its own counted hold, which outlives this one when a
+  // timed-out build keeps running.
+  const releaseConsoleGuard = acquireConsoleGuard();
   try {
     const fluent = await (context.loadFluent ?? loadFluentModule)(projectDir);
     if (!fluent || typeof fluent.createFluentEngine !== "function") {
@@ -419,6 +424,8 @@ export async function handleFluentBuild(
       code = e instanceof FluentBuildTimeout ? "FLUENT_BUILD_TIMEOUT" : undefined;
       message = clipLine(e instanceof Error ? e.message : String(e));
     }
+  } finally {
+    releaseConsoleGuard();
   }
 
   const exitCode = FLUENT_BUILD_OUTCOMES[outcome];
