@@ -465,6 +465,7 @@ test('isMutatingTool: every tool the policy declares mutating is classified as m
     'sync_unified_change_workflow',
     'sync_run_atf_tests',
     'sync_cicd_run',
+    'sync_fluent_build',
   ];
   for (const toolName of declaredMutatingTools) {
     assert.equal(

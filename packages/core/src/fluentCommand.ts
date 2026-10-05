@@ -551,12 +551,18 @@ function fallBackToNative(deps: FluentCommandDeps, args: FluentCmdArgs, profile:
  * `.d.ts`. A project is needed only for what it supplies: the default scope
  * (`now.config.json`) and the default output location.
  */
-async function executeNativeTypes(
+type NativeTypesFlags = { scope?: string; tables?: string[]; out?: string };
+
+/**
+ * The local half of `fluent types --native`: the project (when one is needed),
+ * the scope and the output file. Shared by the real run and `--dry-run`, so a
+ * preview fails exactly where the run would.
+ */
+async function resolveNativeTypesTarget(
   deps: FluentCommandDeps,
   args: FluentCmdArgs,
-  profile: string | undefined,
-  options: { scope?: string; tables?: string[]; out?: string }
-): Promise<number> {
+  options: NativeTypesFlags
+): Promise<{ scope?: string; file: string }> {
   const needsProject = !!args.project || !options.out || (!options.scope && !options.tables);
   const projectDir = needsProject
     ? await resolveProjectDir(deps, "types", args)
@@ -570,6 +576,16 @@ async function executeNativeTypes(
   const file = options.out
     ? path.resolve(deps.cwd, options.out)
     : path.join(projectDir as string, NATIVE_TYPES_DEFAULT_OUT);
+  return { scope, file };
+}
+
+async function executeNativeTypes(
+  deps: FluentCommandDeps,
+  args: FluentCmdArgs,
+  profile: string | undefined,
+  options: NativeTypesFlags
+): Promise<number> {
+  const { scope, file } = await resolveNativeTypesTarget(deps, args, options);
 
   const result = await deps.generateTypes(deps.getClient(profile), {
     ...(scope ? { scope } : {}),
@@ -607,8 +623,10 @@ function canFallBackToNative(action: FluentAction, args: FluentCmdArgs): boolean
 
 /**
  * The local checks a real run makes before it touches credentials or the SDK:
- * the project directory resolves and, for move-to-app, the project is global.
- * `--dry-run` runs them too, so a preview never passes where the run would fail.
+ * the project directory resolves, for move-to-app the project is global, and an
+ * action that asks for consent has a way to get it. `--dry-run` runs them too, so
+ * a preview never passes where the run would fail. The credential check is not
+ * here: it reads the credential store, which `--dry-run` deliberately leaves alone.
  */
 async function checkLocalPreconditions(
   deps: FluentCommandDeps,
@@ -616,16 +634,29 @@ async function checkLocalPreconditions(
   args: FluentCmdArgs
 ): Promise<{ projectDir: string; moveScope?: string }> {
   const projectDir = await resolveProjectDir(deps, action, args);
-  if (action !== "move-to-app") {
-    return { projectDir };
+  let moveScope: string | undefined;
+  if (action === "move-to-app") {
+    moveScope = await configuredScope(deps, projectDir);
+    if (moveScope !== undefined && moveScope !== "global") {
+      throw new FluentCliError(
+        `fluent move-to-app works on global applications only; ${projectDir} is scoped to ${moveScope}.`
+      );
+    }
   }
-  const moveScope = await configuredScope(deps, projectDir);
-  if (moveScope !== undefined && moveScope !== "global") {
-    throw new FluentCliError(
-      `fluent move-to-app works on global applications only; ${projectDir} is scoped to ${moveScope}.`
-    );
-  }
-  return { projectDir, moveScope };
+  assertConsentReachable(deps, action, args);
+  return moveScope === undefined ? { projectDir } : { projectDir, moveScope };
+}
+
+/** install and move-to-app ask first; without --ci there must be a terminal to answer. */
+function assertConsentReachable(deps: FluentCommandDeps, action: FluentAction, args: FluentCmdArgs): void {
+  if (action !== "install" && action !== "move-to-app") return;
+  if (args.ci === true) return;
+  const json = args.json === true;
+  if (!json && deps.interactive()) return;
+  throw new FluentCliError(
+    `fluent ${action} asks for confirmation, and ${json ? "--json output" : "this session has no terminal"} ` +
+      `cannot answer it. Pass --ci to ${action === "install" ? "install" : "move the records"} without asking.`
+  );
 }
 
 function writeDryRun(deps: FluentCommandDeps, action: FluentAction, plan: FluentPlan, args: FluentCmdArgs, line: string): void {
@@ -675,13 +706,6 @@ async function execute(
             : ".")
       );
     }
-  }
-
-  if ((action === "install" || action === "move-to-app") && args.ci !== true && (json || !deps.interactive())) {
-    throw new FluentCliError(
-      `fluent ${action} asks for confirmation, and ${json ? "--json output" : "this session has no terminal"} ` +
-        `cannot answer it. Pass --ci to ${action === "install" ? "install" : "move the records"} without asking.`
-    );
   }
 
   let fluent: SN.FluentModule;
@@ -929,6 +953,7 @@ export async function fluentCommand(
   try {
     const plan = planFluentAction(action, args);
     if (args.dryRun === true && plan.method === "nativeTypes") {
+      await resolveNativeTypesTarget(deps, args, plan.options);
       writeDryRun(
         deps,
         action,

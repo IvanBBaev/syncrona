@@ -106,6 +106,11 @@ const MUTATING_TOOLS = new Set([
   // WP-8: dispatches sn_cicd work — application install/publish/rollback or an
   // ATF run — so it takes the same preflight/audit/confirm gates.
   "sync_cicd_run",
+  // SDK-F6 review: never reaches the instance, but it overwrites the project's
+  // dist/ and executes the project's installed adapter and build-time code
+  // in-process with the server's full environment — so it takes the same
+  // policy, preflight and mutating-audit gates as any other write.
+  "sync_fluent_build",
 ]);
 
 // SEC-6 follow-up (REV-151): tools whose handler actually BRANCHES on `dryRun` and returns
@@ -143,8 +148,8 @@ const DRY_RUN_AWARE_TOOLS = new Set([
   "sync_generate_scope_docs",
   "sync_scope_knowledge_auto_update",
   "sync_generate_table_dependency_report",
-  // SDK-F6: a local build — not mutating (it never reaches the instance), but its
-  // dryRun really does skip the write to the project's dist/.
+  // SDK-F6: its dryRun really does skip the build, the adapter load and the
+  // write to the project's dist/ (it is in MUTATING_TOOLS too — REV-197).
   "sync_fluent_build",
 ]);
 

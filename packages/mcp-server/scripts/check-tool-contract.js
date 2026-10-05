@@ -45,6 +45,7 @@ const REQUIRED_TOOLS = [
   'sync_create_script_include_and_sync',
   'sync_run_atf_tests',
   'sync_cicd_run',
+  'sync_fluent_build',
   'run_node_code',
   'run_workspace_command',
   // Full-surface floor: the entries above pinned only part of the manifest, so a
@@ -65,7 +66,6 @@ const REQUIRED_TOOLS = [
   'sync_compare_instances',
   'sync_diff_instance_vs_local',
   'sync_export_update_set',
-  'sync_fluent_build',
   'sync_generate_release_notes',
   'sync_get_session_context',
   'sync_list_recent_changes',

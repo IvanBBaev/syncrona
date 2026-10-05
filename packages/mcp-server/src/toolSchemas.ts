@@ -1890,7 +1890,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_fluent_build",
     description:
-      "Build a ServiceNow Fluent project (a directory holding now.config.json) through the optional @syncrona/fluent package and the ServiceNow SDK — the same build as `syncrona fluent build`. Local only: writes the project's dist/ output and never calls the instance. Returns the build errors and warnings, the output paths, and outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. When @syncrona/fluent or @servicenow/sdk is not installed, returns outcome incomplete with code FLUENT_NOT_INSTALLED or FLUENT_SDK_MISSING and an install hint. Errors and warnings are capped at 200 each (errorCount and warningCount give the totals, errorsTruncated and warningsTruncated mark a cut); symlinks in the output are not followed, and an output directory that cannot be listed is reported in outputWarnings without failing the build.",
+      "Build a ServiceNow Fluent project (a directory holding now.config.json) through the optional @syncrona/fluent package and the ServiceNow SDK — the same build as `syncrona fluent build`. It never calls the instance, but it is a mutating tool (policy, preflight and the mutating audit apply): it overwrites the project's dist/ output, and it executes the project's installed @syncrona/fluent and @servicenow/sdk and any build-time code the project pulls in inside the server process, with the server's full environment (including instance credentials) and no sandbox — run it only on a project you trust as much as running its build yourself. An adapter resolved from the project whose real path leaves the workspace (a symlinked package or node_modules) is refused with code FLUENT_ADAPTER_OUTSIDE_WORKSPACE. Returns the build errors and warnings, the output paths, and outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. When @syncrona/fluent or @servicenow/sdk is not installed, returns outcome incomplete with code FLUENT_NOT_INSTALLED or FLUENT_SDK_MISSING and an install hint. Errors and warnings are capped at 200 each (errorCount and warningCount give the totals, errorsTruncated and warningsTruncated mark a cut); symlinks in the output are not followed, and an output directory that cannot be listed is reported in outputWarnings without failing the build.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1919,14 +1919,14 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           type: "boolean",
           default: false,
           description:
-            "Plan the run and record an audit entry without writing any file to the workspace.",
+            "Plan the run and record an audit entry without loading the adapter, running any project code or writing any file to the workspace.",
         },
         timeoutMs: {
           type: "number",
           minimum: 1000,
           maximum: 900000,
           description:
-            "Budget for the build. The build runs in-process and cannot be cancelled: when the budget runs out the outcome is incomplete and the build may still write its output. A build that blocks the event loop (synchronous compile work) delays the timeout, and the server, until it returns; such a run returns its real result with budgetExceeded: true.",
+            "Budget for the build — best-effort, not a hard limit. The build runs in-process and cannot be cancelled: when the budget runs out the outcome is incomplete and the build may still write its output. A build that blocks the event loop (synchronous compile work) delays the timeout, and the server, until it returns; such a run returns its real result with budgetExceeded: true.",
         },
       },
     },

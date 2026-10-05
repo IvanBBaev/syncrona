@@ -110,7 +110,12 @@ credential/transport story above:
     `sync_set_scope`, `sync_set_update_set` (which can also create a missing
     update set) and `sync_prepare_session` change the integration user's current
     scope/update set on the instance with no confirmation flag, so an assistant
-    can re-point the session unprompted; `sn_autonomous_remediation_workflow`
+    can re-point the session unprompted; `sync_fluent_build` builds a local
+    Fluent project with no confirmation flag — it never calls the instance, but
+    it overwrites the project's `dist/` and executes the project's installed
+    adapter, SDK and build-time code in the server process with the server's
+    environment (`dryRun` returns the plan without loading anything);
+    `sn_autonomous_remediation_workflow`
     and `sync_unified_change_workflow` take the flag as optional and enforce it
     only when they switch from planning to `apply=true`. Every mutating call,
     confirmed or not, is recorded in the append-only audit log under
