@@ -23,6 +23,7 @@ import {
   isMetaSidecarPath,
   isReadOnlyDictionaryRow,
   metaFile,
+  metaSecretClassifierFields,
   resolveMetaUpdate,
   serializeMetaFields,
 } from "../metaFields.js";
@@ -255,6 +256,27 @@ describe("resolveMetaUpdate", () => {
 
     expect(update.fields).toEqual({ active: "false" });
     expect(update.skipped).toEqual(["api_name"]);
+  });
+
+  // The dictionary does not mark these read-only, yet writing them would move the
+  // record to another application or rename its update-set identity.
+  it("never pushes the platform-owned scope, package, policy and update-name columns", () => {
+    const update = resolveMetaUpdate(
+      JSON.stringify({
+        sys_scope: "other-scope",
+        sys_package: "other-package",
+        sys_policy: "protected",
+        sys_update_name: "sys_script_include_x",
+        active: "true",
+      }),
+      {
+        metaFields: [...known.metaFields, "sys_scope", "sys_package", "sys_policy", "sys_update_name"],
+        readOnlyFields: known.readOnlyFields,
+      }
+    );
+
+    expect(update.fields).toEqual({ active: "true" });
+    expect([...update.skipped].sort()).toEqual(["sys_package", "sys_policy", "sys_scope", "sys_update_name"]);
   });
 
   // The whole point of the feature: ServiceNow answers 200 to an update naming a
@@ -604,5 +626,85 @@ describe("bulk download of the sidecar", () => {
 
     const files = tableMap.sys_script_include.records["Include A"].files;
     expect(files.some(isMetaFile)).toBe(false);
+  });
+});
+
+// A password property's secret lives in `sys_properties.value`, a plain string
+// column, so the dictionary type filter cannot catch it: the record's `type`
+// decides. The value must never reach the working tree.
+describe("password-type system properties", () => {
+  const FIELDS = ["description", "name", "type", "value"];
+
+  it.each(["password", "password2", "Password2"])(
+    "leaves value out of the sidecar of a %s property",
+    (type) => {
+      const body = JSON.parse(
+        serializeMetaFields(
+          { name: "x_demo.api.key", type, value: "s3cr3t", description: "API key" },
+          FIELDS,
+          "sys_properties"
+        )
+      );
+      expect(body).toEqual({ description: "API key", name: "x_demo.api.key", type });
+      expect(JSON.stringify(body)).not.toContain("s3cr3t");
+    }
+  );
+
+  it("fails closed when the property type is missing or unreadable", () => {
+    for (const row of [
+      { name: "x_demo.p", value: "s3cr3t" },
+      { name: "x_demo.p", type: "", value: "s3cr3t" },
+      { name: "x_demo.p", type: { link: "x" }, value: "s3cr3t" },
+    ]) {
+      expect(serializeMetaFields(row, FIELDS, "sys_properties")).not.toContain("s3cr3t");
+    }
+  });
+
+  it("keeps value for a non-secret property and for other tables", () => {
+    expect(
+      JSON.parse(
+        serializeMetaFields({ name: "x_demo.p", type: "string", value: "10" }, FIELDS, "sys_properties")
+      ).value
+    ).toBe("10");
+    expect(
+      JSON.parse(serializeMetaFields({ name: "n", type: "password", value: "v" }, FIELDS, "x_other"))
+        .value
+    ).toBe("v");
+    expect(JSON.parse(serializeMetaFields({ value: "v" }, ["value"])).value).toBe("v");
+  });
+
+  it("reports the classifier column a sidecar read must fetch", () => {
+    expect(metaSecretClassifierFields("sys_properties")).toEqual(["type"]);
+    expect(metaSecretClassifierFields("sys_script_include")).toEqual([]);
+    expect(metaSecretClassifierFields(undefined)).toEqual([]);
+  });
+
+  it("fetches type and redacts value on a bulk download even when metaFields omit type", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) =>
+      table === "sys_properties"
+        ? {
+            data: {
+              result: [
+                { sys_id: "p-1", name: "x_demo.api.key", type: "password2", value: "s3cr3t" },
+              ],
+            },
+          }
+        : { data: { result: [] } }
+    );
+
+    const tableMap = await buildBulkDownloadFromTableAPI(
+      { sys_properties: { "p-1": [metaFile()] } },
+      createClient(tableAPIGet),
+      {},
+      undefined,
+      { sys_properties: ["name", "value"] }
+    );
+
+    const record = Object.values(tableMap.sys_properties.records)[0];
+    const sidecar = record.files.find(isMetaFile);
+    expect(JSON.parse(String(sidecar?.content))).toEqual({ name: "x_demo.api.key" });
+    const call = tableAPIGet.mock.calls.find((c) => c[0] === "sys_properties");
+    expect(String(call?.[2]).split(",")).toEqual(expect.arrayContaining(["name", "type", "value"]));
   });
 });

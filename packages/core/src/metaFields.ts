@@ -94,7 +94,9 @@ export const isMetaSidecarPath = (filePath: string): boolean => {
  * Everything else the dictionary reports — including the rest of the `sys_`
  * family (`sys_name`, `sys_policy`, `sys_scope`, `sys_package`, `sys_class_name`,
  * `sys_domain`, `sys_overrides`, `sys_update_name`, …) — is carried. Most of it
- * is read-only on the instance and is labelled as such rather than dropped: a
+ * is read-only on the instance and is labelled as such rather than dropped (and
+ * the few the dictionary does not mark read-only are never pushed: see
+ * META_PUSH_PROTECTED_FIELDS): a
  * value you cannot write is still a value you want to READ next to the script,
  * and hiding it is what made the pre-DX22 workspace uninformative.
  */
@@ -105,6 +107,23 @@ export const META_FIELD_DENYLIST: ReadonlySet<string> = new Set([
   "sys_updated_by",
   "sys_updated_on",
   "sys_mod_count",
+]);
+
+/**
+ * System columns carried in the sidecar for reading but never written back.
+ *
+ * The dictionary does not mark them read-only, so without this list an edited
+ * (or stale) sidecar would PATCH them: `sys_scope` and `sys_package` would move
+ * the record into another application, `sys_policy` would change its protection
+ * policy, and `sys_update_name` would rename its update-set identity. None of
+ * that is an edit of the record; the platform owns those columns. A key named
+ * here is dropped from the update and reported like a read-only one.
+ */
+export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
+  "sys_scope",
+  "sys_package",
+  "sys_policy",
+  "sys_update_name",
 ]);
 
 /**
@@ -209,6 +228,50 @@ export const isMetaFieldCandidate = (
 const rowHasColumn = (row: Record<string, unknown>, field: string): boolean =>
   Object.prototype.hasOwnProperty.call(row, field);
 
+/**
+ * Columns whose secrecy is decided by a sibling column, not by their own type.
+ *
+ * NON_META_INTERNAL_TYPES catches a column whose dictionary type is `password`,
+ * but `sys_properties.value` is a plain string column: a property is a secret
+ * when its record's `type` is `password` or `password2`. The dictionary cannot
+ * say that, so the rule is per table. `classifier` is the column that decides
+ * and must be fetched alongside the sidecar columns.
+ */
+export const META_RECORD_SECRET_RULES: Readonly<
+  Record<string, { classifier: string; secretValues: readonly string[]; columns: readonly string[] }>
+> = Object.freeze({
+  sys_properties: { classifier: "type", secretValues: ["password", "password2"], columns: ["value"] },
+});
+
+/** The classifier columns a sidecar read of `table` must also fetch. */
+export const metaSecretClassifierFields = (table: string | undefined): string[] => {
+  const rule = table ? META_RECORD_SECRET_RULES[table] : undefined;
+  return rule ? [rule.classifier] : [];
+};
+
+/**
+ * Columns of `row` that must not be written to its sidecar.
+ *
+ * Fails closed: a row whose classifier column is missing or unreadable (a
+ * column-level read ACL, or a `metaFields` override that left it out) is
+ * treated as a secret, because writing a credential to the working tree cannot
+ * be undone by a later push. An omitted column is never cleared on push (see
+ * resolveMetaUpdate), so redaction does not touch the instance value.
+ */
+export const metaSecretColumns = (
+  table: string | undefined,
+  row: Record<string, unknown>
+): string[] => {
+  const rule = table ? META_RECORD_SECRET_RULES[table] : undefined;
+  if (!rule) {
+    return [];
+  }
+  const kind = rowHasColumn(row, rule.classifier)
+    ? metaValueText(row[rule.classifier]).trim().toLowerCase()
+    : "";
+  return kind !== "" && !rule.secretValues.includes(kind) ? [] : [...rule.columns];
+};
+
 /** A value with a single unambiguous column form. */
 const isColumnScalar = (raw: unknown): boolean =>
   typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean";
@@ -263,8 +326,10 @@ export const metaValueText = (raw: unknown): string => {
  */
 export const serializeMetaFields = (
   row: Record<string, unknown>,
-  fields: string[]
+  fields: string[],
+  table?: string
 ): string => {
+  const secret = new Set(metaSecretColumns(table, row));
   // Null-prototype: `body["__proto__"] = "x"` on a plain object hits the
   // Object.prototype setter, which ignores a non-object — no own property, and
   // the column vanishes from a file whose whole contract is "every tracked
@@ -272,7 +337,7 @@ export const serializeMetaFields = (
   // name an ordinary key.
   const body: Record<string, string> = Object.create(null);
   for (const field of [...new Set(fields)].sort()) {
-    if (!rowHasColumn(row, field)) {
+    if (!rowHasColumn(row, field) || secret.has(field)) {
       continue;
     }
     body[field] = metaValueText(row[field]);
@@ -351,7 +416,7 @@ export const resolveMetaUpdate = (
       unknown.push(key);
       continue;
     }
-    if (readOnly.has(key)) {
+    if (readOnly.has(key) || META_PUSH_PROTECTED_FIELDS.has(key)) {
       skipped.push(key);
       continue;
     }
