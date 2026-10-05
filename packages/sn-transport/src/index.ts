@@ -100,6 +100,31 @@ export function escapeQueryValue(value: string): string {
  */
 export const MAX_REQUESTS_PER_SECOND = 20;
 
+/** Environment variable that lowers the per-client request-rate cap. */
+export const MAX_RPS_ENV = "SN_MAX_RPS";
+
+/**
+ * Resolve the effective request-rate cap from a raw `SN_MAX_RPS` value.
+ *
+ * An absent or blank value yields {@link MAX_REQUESTS_PER_SECOND}. The knob can
+ * only lower the cap: anything that is not a whole number from 1 to
+ * MAX_REQUESTS_PER_SECOND throws, because silently falling back to the full
+ * rate would defeat an operator who set the limit to protect an instance.
+ */
+export function resolveMaxRequestsPerSecond(rawEnvValue: string | undefined): number {
+  const raw = String(rawEnvValue ?? "").trim();
+  if (raw === "") {
+    return MAX_REQUESTS_PER_SECOND;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_REQUESTS_PER_SECOND) {
+    throw new Error(
+      `${MAX_RPS_ENV} must be a whole number from 1 to ${MAX_REQUESTS_PER_SECOND} (got "${raw}"); it can only lower the request-rate cap.`
+    );
+  }
+  return parsed;
+}
+
 /**
  * HTTP status codes that mean "the scoped SyncroNow AI endpoint is not available
  * on this instance" (custom scope not installed, blocked by ACL, or the

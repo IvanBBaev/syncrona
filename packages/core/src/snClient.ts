@@ -7,6 +7,7 @@ import rateLimit from "axios-rate-limit";
 import {
   CA_BUNDLE_ENV,
   SCOPED_API_PREFIXES_ENV,
+  MAX_RPS_ENV,
   TLS_REJECT_UNAUTHORIZED_ENV,
   CLIENT_CERT_ENV,
   CLIENT_KEY_ENV,
@@ -26,6 +27,7 @@ import {
   orderScopedApiPrefixes,
   parseConfiguredScopedApiPrefixes,
   resolveTlsPolicy,
+  resolveMaxRequestsPerSecond,
   resolveAuthMethod,
   apiKeyHeaderName,
   buildJwtClaims,
@@ -282,7 +284,9 @@ export const snClient = (
     });
   }
 
-  const client = rateLimit(base, { maxRPS: 20 });
+  const client = rateLimit(base, {
+    maxRPS: resolveMaxRequestsPerSecond(process.env[MAX_RPS_ENV]),
+  });
 
   const requestScopedEndpoint = async <T>(
     method: "get" | "post",
