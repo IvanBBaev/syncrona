@@ -10,6 +10,7 @@ const EXPECTED_MODULE_NAMES = [
   'workspace',
   'servicenow-crud',
   'insight',
+  'fluent',
   'metadata-analysis',
   'script-analysis',
   'health-planning',

@@ -65,6 +65,7 @@ const REQUIRED_TOOLS = [
   'sync_compare_instances',
   'sync_diff_instance_vs_local',
   'sync_export_update_set',
+  'sync_fluent_build',
   'sync_generate_release_notes',
   'sync_get_session_context',
   'sync_list_recent_changes',

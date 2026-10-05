@@ -404,6 +404,41 @@ test('sync_push: each valid logLevel enum value passes', () => {
   }
 });
 
+test('sync_push: target "--prune" is rejected as an option-like CLI token', () => {
+  const result = validateToolArguments('sync_push', { confirmDestructive: true, target: '--prune' });
+  assert.equal(result.valid, false);
+  assert.match(result.error, /^target: .*must not start with "-"/);
+});
+
+test('sync_push/sync_build: diff and updateSet refuse a "-"-leading value, even after whitespace', () => {
+  for (const [tool, field] of [
+    ['sync_push', 'diff'],
+    ['sync_push', 'updateSet'],
+    ['sync_build', 'diff'],
+  ]) {
+    const result = validateToolArguments(tool, { confirmDestructive: true, [field]: '  --create' });
+    assert.equal(result.valid, false, `${tool}.${field}`);
+    assert.match(result.error, new RegExp(`^${field}: `));
+  }
+});
+
+test('sync_push: ordinary target, diff and updateSet values still pass', () => {
+  const result = validateToolArguments('sync_push', {
+    confirmDestructive: true,
+    target: 'src/x_app/script_include/Util/script.js',
+    diff: 'main',
+    updateSet: 'US-001 hotfix',
+  });
+  assert.equal(result.valid, true);
+});
+
+test('sync_status/sync_refresh/sync_build: logLevel is restricted to the enum', () => {
+  for (const tool of ['sync_status', 'sync_refresh', 'sync_build']) {
+    assert.equal(validateToolArguments(tool, { logLevel: '--prune' }).valid, false, tool);
+    assert.equal(validateToolArguments(tool, { logLevel: 'debug' }).valid, true, tool);
+  }
+});
+
 test('sn_execute_background_script: happy path', () => {
   const result = validateToolArguments('sn_execute_background_script', {
     script: 'gs.info("hi");',
