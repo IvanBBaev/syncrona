@@ -106,19 +106,27 @@ every sidecar: system columns, file fields, passwords and other secrets,
 journals, collections and images. Field files are written for script-typed
 columns (a dictionary entry's `calculation`, for example) and for any column you
 list in `includes`. An `includes` entry cannot lift the password, journal,
-collection and image filter: such a column is dropped with a warning. If its
-dictionary type cannot be read, it is kept and a warning says so. `tableOptions.<table>.metaFields` replaces discovery for a
+collection and image filter: such a column is dropped with a warning, whether
+the manifest comes from the scoped endpoint or the Table API fallback, on
+`init`, `refresh` and `download` alike — its value is never written and never
+requested. If its dictionary type cannot be read (no dictionary row, an empty
+`internal_type`, or a failed lookup), it is kept and a warning names it once per
+build; a column that does not exist then leaves the table reported incomplete on
+`refresh` and `download`. `tableOptions.<table>.metaFields` replaces discovery for a
 table, just as it does for any other sidecar.
 
 A `sys_properties` record of type `password` or `password2` keeps its secret in
 `value`, a plain string column, so the type filter cannot see it. Neither its
 sidecar nor a `value` field file (from `includes` or the data-field fallback)
-carries it: the manifest does not list `value` for that record, and a download
-withholds it and reports the count at info level. A property whose `type` cannot
+carries it: the Table API build does not list `value` for that record, the
+scoped manifest lists it but the fetch withholds it, and a download reports the
+withheld count at info level. A property whose `type` cannot
 be read is treated the same way. The rule applies on every write path, `init`
 included: there the scoped endpoint's answer for `value` is discarded and
-re-read by sys_id through the Table API. `repair` does not report a withheld
-value as a missing file. Pushing that
+re-read by sys_id through the Table API; records that re-read does not return
+get no value and a warning gives their count (`refresh` retries them). `repair`
+does not report a withheld value as a missing file, and `repair --apply`
+re-fetches governed values, restoring a non-secret one. Pushing that
 sidecar does not clear the value on the instance, because a missing key is never
 a request to clear a column. To change such a value, set it on the instance.
 
