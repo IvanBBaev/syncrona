@@ -369,7 +369,7 @@ describe("planRecordPrune", () => {
     expect(plan.plans[0].message).toContain('scope "unknown"');
   });
 
-  it("plans gone for a 404, error for a failed GET, a denied table or a malformed sys_id", async () => {
+  it("plans unverified for a 404, error for a failed GET, a denied table or a malformed sys_id", async () => {
     const client = makeClient({
       [SYS_A]: undefined,
       [SYS_B]: new Error("HTTP 403"),
@@ -389,7 +389,14 @@ describe("planRecordPrune", () => {
       [candidate("sys_script_include", "Thrown", "e".repeat(32))],
       { persistScopeId: false, client: asClient(client) }
     );
-    expect(plan.plans.map((p) => p.action)).toEqual(["gone", "error", "error", "error", "delete"]);
+    expect(plan.plans.map((p) => p.action)).toEqual([
+      "unverified",
+      "error",
+      "error",
+      "error",
+      "delete",
+    ]);
+    expect(plan.plans[0].message).toMatch(/404[\s\S]*read ACL[\s\S]*manifest entry is kept/);
     expect(plan.plans[1].message).toContain("HTTP 403");
     expect(plan.plans[2].message).toContain("deny list");
     expect(plan.plans[3].message).toContain("is not a sys_id");
@@ -476,18 +483,31 @@ describe("pruneRecords", () => {
     expect(mockWriteManifestFile).toHaveBeenCalledTimes(1);
   });
 
-  it("drops a gone record from the manifest without sending a DELETE", async () => {
+  // A 404 on the scope GET is also what a read ACL hiding the record looks
+  // like, so it proves nothing: the record is reported, nothing is sent, and
+  // the manifest keeps its entry.
+  it("skips an unverified record: no DELETE, and the manifest keeps it", async () => {
     const client = makeClient();
     const results = await Pipeline.pruneRecords(
-      { scopeId: SCOPE, plans: [{ candidate: candidate("sys_ui_script", "Ui", SYS_C), action: "gone" }] },
+      {
+        scopeId: SCOPE,
+        plans: [
+          {
+            candidate: candidate("sys_ui_script", "Ui", SYS_C),
+            action: "unverified",
+            message: "skipped: the instance answers 404",
+          },
+        ],
+      },
       { client: asClient(client) }
     );
     expect(results[0]).toEqual({
       success: true,
-      message: "sys_ui_script > Ui : already deleted on the instance; removed from the manifest.",
+      message: "sys_ui_script > Ui : skipped: the instance answers 404",
     });
     expect(client.deleteRecord).not.toHaveBeenCalled();
-    expect(manifest.tables.sys_ui_script.records.Ui).toBeUndefined();
+    expect(manifest.tables.sys_ui_script.records.Ui).toBeDefined();
+    expect(mockWriteManifestFile).not.toHaveBeenCalled();
   });
 
   it("retries a transient DELETE failure and treats a 404 on retry as landed", async () => {
@@ -535,13 +555,66 @@ describe("pruneRecords", () => {
       {
         scopeId: SCOPE,
         plans: [
-          { candidate: candidate("no_such_table", "X", SYS_A), action: "gone" },
-          { candidate: candidate("sys_ui_script", "Missing", SYS_C), action: "gone" },
+          { candidate: candidate("no_such_table", "X", SYS_A), action: "delete" },
+          { candidate: candidate("sys_ui_script", "Missing", SYS_C), action: "delete" },
         ],
       },
       { client: asClient(client) }
     );
     expect(results.map((r) => r.success)).toEqual([true, true]);
     expect(mockWriteManifestFile).not.toHaveBeenCalled();
+  });
+});
+
+// The mass-delete guard: the baseline manifest tracks three records.
+describe("pruneVolumeRefusal", () => {
+  const manyRecords = (count: number) => {
+    const records: Record<string, unknown> = {};
+    for (let i = 0; i < count; i += 1) {
+      records[`R${i}`] = { name: `R${i}`, sys_id: String(i).padStart(32, "0"), files: [] };
+    }
+    manifest = { scope: "x_app", tables: { sys_script_include: { records } } } as never;
+  };
+
+  it("lets a handful of deletions through however large their share", () => {
+    expect(Pipeline.pruneVolumeRefusal(3)).toBeUndefined();
+    manyRecords(6);
+    expect(Pipeline.pruneVolumeRefusal(5)).toBeUndefined();
+  });
+
+  it("refuses more than the share limit of the manifest above the floor", () => {
+    manyRecords(20);
+    expect(Pipeline.pruneVolumeRefusal(6)).toMatch(
+      /^6 of the 20 record\(s\) the manifest tracks would be deleted \(30%\)[\s\S]*--allow-mass-delete/
+    );
+    manyRecords(40);
+    expect(Pipeline.pruneVolumeRefusal(6)).toBeUndefined();
+    expect(Pipeline.pruneVolumeRefusal(9)).toMatch(/9 of the 40/);
+  });
+
+  it("refuses more than the absolute limit even in a large manifest", () => {
+    manyRecords(1000);
+    expect(Pipeline.pruneVolumeRefusal(Pipeline.PRUNE_MASS_DELETE_COUNT)).toBeUndefined();
+    expect(Pipeline.pruneVolumeRefusal(Pipeline.PRUNE_MASS_DELETE_COUNT + 1)).toMatch(
+      /26 of the 1000 record\(s\)/
+    );
+  });
+
+  it("treats an empty manifest as a full share", () => {
+    manifest = { scope: "x_app", tables: {} } as never;
+    expect(Pipeline.pruneVolumeRefusal(6)).toMatch(/6 of the 0 record\(s\).*\(100%\)/);
+  });
+});
+
+describe("persistScopeId", () => {
+  it("stores a resolved scope sys_id only when the manifest lacks one", async () => {
+    await Pipeline.persistScopeId("other");
+    expect(mockWriteManifestFile).not.toHaveBeenCalled();
+    delete (manifest as { scopeId?: string }).scopeId;
+    await Pipeline.persistScopeId("");
+    expect(mockWriteManifestFile).not.toHaveBeenCalled();
+    await Pipeline.persistScopeId("scope-9");
+    expect(manifest.scopeId).toBe("scope-9");
+    expect(mockWriteManifestFile).toHaveBeenCalledTimes(1);
   });
 });

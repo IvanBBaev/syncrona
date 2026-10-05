@@ -110,7 +110,16 @@ const makeClient = () => {
       sys_id: "new-1",
     })
   );
-  return { tableAPIGet, getScopeId, findRecordByName, createRecord };
+  const getRecordScope = jest.fn(
+    async (
+      _t: string,
+      sysId: string
+    ): Promise<{ sys_id: string; sys_scope: string } | undefined> => ({
+      sys_id: sysId,
+      sys_scope: "scope-1",
+    })
+  );
+  return { tableAPIGet, getScopeId, findRecordByName, createRecord, getRecordScope };
 };
 type FakeClient = ReturnType<typeof makeClient>;
 const asClient = (c: FakeClient) =>
@@ -380,14 +389,63 @@ describe("planRecordCreation", () => {
     expect(plan.plans[0]).toMatchObject({ nameField: "u_label", nameValue: "A/B" });
   });
 
-  it("adopts a record an interrupted run created, without a lookup", async () => {
+  const PREV = "a".repeat(32);
+
+  it("adopts a record an interrupted run created once a GET confirms it, without a lookup", async () => {
     const client = makeClient();
     const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
       persistScopeId: true,
-      known: { "sys_script_include:New": "prev-1" },
+      known: { "sys_script_include:New": PREV },
       client: asClient(client),
     });
-    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "prev-1" });
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: PREV });
+    expect(client.getRecordScope).toHaveBeenCalledWith("sys_script_include", PREV);
+    expect(client.findRecordByName).not.toHaveBeenCalled();
+  });
+
+  // The checkpoint is a local file: a sys_id from it is a claim, not a fact.
+  it("falls back to the ordinary lookup when the checkpoint's record is gone", async () => {
+    const client = makeClient();
+    client.getRecordScope.mockResolvedValueOnce(undefined);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      known: { "sys_script_include:New": PREV },
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("create");
+    expect(client.findRecordByName).toHaveBeenCalledTimes(1);
+  });
+
+  it("adopts a checkpoint record of a table with no scope column", async () => {
+    const client = makeClient();
+    client.getRecordScope.mockResolvedValueOnce({ sys_id: PREV, sys_scope: "" });
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      known: { "sys_script_include:New": PREV },
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: PREV });
+  });
+
+  it.each([
+    ["another scope", { sys_id: PREV, sys_scope: "global" }, PREV, /belongs to scope "global"/],
+    ["a failed GET", new Error("HTTP 500"), PREV, /could not verify the record .*HTTP 500/],
+    ["a non-Error failure", "raw", PREV, /could not verify the record .*raw/],
+    ["a malformed sys_id", undefined, "../x", /not a sys_id/],
+  ])("refuses a checkpoint record on %s", async (_label, reply, sysId, message) => {
+    const client = makeClient();
+    if (reply instanceof Error || typeof reply === "string") {
+      client.getRecordScope.mockRejectedValueOnce(reply);
+    } else if (reply) {
+      client.getRecordScope.mockResolvedValueOnce(reply);
+    }
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      known: { "sys_script_include:New": sysId },
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(message);
     expect(client.findRecordByName).not.toHaveBeenCalled();
   });
 
@@ -423,6 +481,7 @@ describe("createRecords", () => {
     await expect(Pipeline.createRecords({ scopeId: "", plans: [] })).resolves.toEqual({
       results: [],
       records: [],
+      failedTables: [],
     });
   });
 
@@ -506,6 +565,7 @@ describe("createRecords", () => {
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client) });
     expect(outcome.results[0].success).toBe(false);
     expect(outcome.results[0].message).toContain("more than one");
+    expect(outcome.failedTables).toEqual(["sys_script_include"]);
     expect(client.createRecord).not.toHaveBeenCalled();
   });
 
@@ -548,6 +608,8 @@ describe("createRecords", () => {
     client.createRecord.mockRejectedValueOnce({ response: { status: 400 } });
     const rejected = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
     expect(rejected.results[0].success).toBe(false);
+    // A failed POST names its table, so `push --prune` holds deletions there.
+    expect(rejected.failedTables).toEqual(["sys_script_include"]);
     expect(client.createRecord).toHaveBeenCalledTimes(1);
 
     client.createRecord.mockRejectedValueOnce(new Error("ETIMEDOUT"));

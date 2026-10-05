@@ -32,6 +32,11 @@ const mockGitDiffToEncodedPaths = jest.fn();
 const mockFindPruneCandidates = jest.fn();
 const mockPlanRecordPrune = jest.fn();
 const mockPruneRecords = jest.fn();
+const mockGitWorkingTreeDeletions = jest.fn();
+const mockPruneVolumeRefusal = jest.fn();
+const mockPersistScopeId = jest.fn();
+const mockReaddir = jest.fn();
+const mockAccess = jest.fn();
 
 jest.unstable_mockModule("../appUtils.js", () => ({
   checkScope: (...args: unknown[]) => mockCheckScope(...args),
@@ -44,11 +49,14 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   findPruneCandidates: (...args: unknown[]) => mockFindPruneCandidates(...args),
   planRecordPrune: (...args: unknown[]) => mockPlanRecordPrune(...args),
   pruneRecords: (...args: unknown[]) => mockPruneRecords(...args),
+  pruneVolumeRefusal: (...args: unknown[]) => mockPruneVolumeRefusal(...args),
+  persistScopeId: (...args: unknown[]) => mockPersistScopeId(...args),
 }));
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
   gitDiffToChanges: (...args: unknown[]) => mockGitDiffToChanges(...args),
+  gitWorkingTreeDeletions: (...args: unknown[]) => mockGitWorkingTreeDeletions(...args),
   writeDiff: jest.fn(),
   clearDiff: jest.fn(),
 }));
@@ -99,7 +107,8 @@ jest.unstable_mockModule("fs", () => {
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     unlink: (...args: unknown[]) => mockUnlink(...args),
     link: async () => undefined,
-    readdir: async () => [],
+    readdir: (...args: unknown[]) => mockReaddir(...args),
+    access: (...args: unknown[]) => mockAccess(...args),
     stat: async () => {
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
     },
@@ -117,6 +126,9 @@ let pushCommand: typeof import("../pushCommand.js").pushCommand;
 beforeAll(async () => {
   ({ pushCommand } = await import("../pushCommand.js"));
 });
+
+const CHECKPOINT = "/tmp/project/sync.download.checkpoint.json";
+const WT_DELETED = ["/tmp/project/src/sys_script_include/Gone/script.js"];
 
 const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });
 const SYS_GONE = "a".repeat(32);
@@ -196,6 +208,13 @@ describe("pushCommand --prune", () => {
     mockReadFile.mockRejectedValue(enoent());
     mockWriteFile.mockResolvedValue(undefined);
     mockUnlink.mockResolvedValue(undefined);
+    mockGitWorkingTreeDeletions.mockResolvedValue(WT_DELETED);
+    mockPruneVolumeRefusal.mockReturnValue(undefined);
+    mockPersistScopeId.mockResolvedValue(undefined);
+    mockReaddir.mockImplementation(async (dir: unknown) =>
+      dir === "/tmp/project/src" ? ["sys_script_include"] : []
+    );
+    mockAccess.mockRejectedValue(enoent());
   });
 
   afterEach(() => {
@@ -232,25 +251,169 @@ describe("pushCommand --prune", () => {
     });
   });
 
-  it("without --diff, every record of the tree is considered", async () => {
-    await runPush();
+  it("without --diff, only files git tracked in HEAD and now misses are evidence", async () => {
+    await runPush({ allowMassDelete: true });
     expect(mockGitDiffToChanges).not.toHaveBeenCalled();
+    expect(mockGitWorkingTreeDeletions).toHaveBeenCalledTimes(1);
     expect(mockFindPruneCandidates).toHaveBeenCalledWith({
-      diffDeleted: undefined,
+      diffDeleted: WT_DELETED,
       targets: undefined,
     });
+  });
+
+  it("--diff evidence is the diff's deleted set, not the working tree", async () => {
+    await runPush({ diff: "main" });
+    expect(mockGitWorkingTreeDeletions).not.toHaveBeenCalled();
+  });
+
+  it("refuses to prune when git cannot list the deleted files", async () => {
+    mockGitWorkingTreeDeletions.mockRejectedValue(new Error("not a git repository"));
+    await runPush({ ci: false });
+    expect(process.exitCode).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Refusing to prune: git cannot list the deleted files (not a git repository)")
+    );
+    expect(mockFindPruneCandidates).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("refuses to prune while a download is unfinished", async () => {
+    mockAccess.mockImplementation(async (p: unknown) => {
+      if (p !== CHECKPOINT) throw enoent();
+    });
+    await runPush({ diff: "main" });
+    expect(process.exitCode).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining(`Refusing to prune: a download is unfinished (${CHECKPOINT} exists)`)
+    );
+    expect(mockFindPruneCandidates).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("refuses to prune when the download checkpoint cannot be checked", async () => {
+    mockAccess.mockRejectedValue(Object.assign(new Error("denied"), { code: "EACCES" }));
+    await runPush({ diff: "main" });
+    expect(process.exitCode).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("cannot tell whether a download is unfinished")
+    );
+  });
+
+  it.each([
+    ["a blank sourceDirectory", () => mockGetConfig.mockReturnValue({ sourceDirectory: "  " }), /`sourceDirectory` in sync\.config\.js is blank/],
+    ["a missing source directory", () => mockReaddir.mockRejectedValue(enoent()), /source directory \/tmp\/project\/src does not exist/],
+    ["an empty source directory", () => mockReaddir.mockResolvedValue([]), /source directory \/tmp\/project\/src is empty/],
+  ])("refuses to prune with %s", async (_label, arrange, pattern) => {
+    arrange();
+    await runPush({ diff: "main" });
+    expect(process.exitCode).toBe(1);
+    expect(String(mockLoggerError.mock.calls[0][0])).toMatch(pattern);
+    expect(mockFindPruneCandidates).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("a config that cannot be read falls through to the directory check", async () => {
+    mockGetConfig.mockImplementation(() => {
+      throw new Error("no config");
+    });
+    await runPush({ diff: "main" });
+    expect(mockFindPruneCandidates).toHaveBeenCalled();
+  });
+
+  it("under --ci, refuses to prune without --diff, a target, or --allow-mass-delete", async () => {
+    await runPush();
+    expect(process.exitCode).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Refusing to prune under --ci without a scope")
+    );
+    expect(mockFindPruneCandidates).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("refuses a mass delete without --allow-mass-delete", async () => {
+    mockPruneVolumeRefusal.mockReturnValue("30 of the 40 record(s) would be deleted.");
+    await runPush({ diff: "main" });
+    expect(mockPruneVolumeRefusal).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "Refusing to prune: 30 of the 40 record(s) would be deleted."
+    );
+    expect(mockPlanRecordPrune).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+  });
+
+  it("--allow-mass-delete lets a mass delete through", async () => {
+    mockPruneVolumeRefusal.mockReturnValue("30 of the 40 record(s) would be deleted.");
+    await runPush({ diff: "main", allowMassDelete: true });
+    expect(process.exitCode).toBeUndefined();
+    expect(mockPruneRecords).toHaveBeenCalled();
+  });
+
+  it("a dry run only warns about a mass delete", async () => {
+    mockPruneVolumeRefusal.mockReturnValue("30 of the 40 record(s) would be deleted.");
+    await runPush({ diff: "main", dryRun: true });
+    expect(process.exitCode).toBeUndefined();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "30 of the 40 record(s) would be deleted. A real run refuses it."
+    );
+    expect(mockPruneRecords).not.toHaveBeenCalled();
+  });
+
+  it("warns that a rename under --create gets a new sys_id", async () => {
+    mockGetAppFileListWithCandidates.mockResolvedValue({
+      records: [],
+      candidates: [{ table: "sys_script_include", recordName: "Renamed", files: [] }],
+    });
+    mockPlanRecordCreation.mockResolvedValue({ scopeId: "scope-1", plans: [] });
+    mockCreateRecords.mockResolvedValue({ results: [], records: [] });
+    await runPush({ diff: "main", create: true, dryRun: true });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "sys_script_include: this push both deletes and creates records. If one is a rename"
+      )
+    );
+  });
+
+  it("no rename warning when creates and deletes touch different tables", async () => {
+    mockGetAppFileListWithCandidates.mockResolvedValue({
+      records: [],
+      candidates: [{ table: "sys_script", recordName: "New", files: [] }],
+    });
+    mockPlanRecordCreation.mockResolvedValue({ scopeId: "scope-1", plans: [] });
+    await runPush({ diff: "main", create: true, dryRun: true });
+    expect(mockLoggerWarn).not.toHaveBeenCalledWith(expect.stringContaining("new sys_id"));
+  });
+
+  it("logs an unverified record before the delete prompt", async () => {
+    mockPlanRecordPrune.mockResolvedValue(
+      prunePlan([{ name: "Hidden", sysId: SYS_GONE, action: "unverified", message: "skipped: 404" }])
+    );
+    await runPush({ diff: "main" });
+    expect(mockLoggerWarn).toHaveBeenCalledWith("sys_script_include > Hidden : skipped: 404");
   });
 
   it("an explicit target narrows candidates and is not an error when only prune matches", async () => {
     mockGetAppFileList.mockResolvedValue([]);
     await runPush({ target: "/tmp/project/src/sys_script_include/Gone" });
     expect(mockFindPruneCandidates).toHaveBeenCalledWith({
-      diffDeleted: undefined,
+      diffDeleted: WT_DELETED,
       targets: "/tmp/project/src/sys_script_include/Gone",
     });
     expect(mockLoggerError).not.toHaveBeenCalled();
     expect(mockPruneRecords).toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("an explicit target with --diff takes its evidence from the diff, and pushes the target", async () => {
+    await runPush({ target: "/tmp/project/src/sys_script_include/Gone", diff: "main" });
+    expect(mockGitDiffToChanges).toHaveBeenCalledWith("main");
+    expect(mockGitWorkingTreeDeletions).not.toHaveBeenCalled();
+    expect(mockGitDiffToEncodedPaths).not.toHaveBeenCalled();
+    expect(mockGetAppFileList).toHaveBeenCalledWith("/tmp/project/src/sys_script_include/Gone");
+    expect(mockFindPruneCandidates).toHaveBeenCalledWith({
+      diffDeleted: ["/tmp/project/src/sys_script_include/Gone/script.js"],
+      targets: "/tmp/project/src/sys_script_include/Gone",
+    });
   });
 
   it("an explicit target matching nothing at all is still an error", async () => {
@@ -273,8 +436,9 @@ describe("pushCommand --prune", () => {
         },
       ])
     );
-    await runPush({ dryRun: true });
+    await runPush({ dryRun: true, diff: "main" });
     expect(mockPlanRecordPrune).toHaveBeenCalledWith(expect.any(Array), { persistScopeId: false });
+    expect(mockPersistScopeId).not.toHaveBeenCalled();
     expect(mockPruneRecords).not.toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
     expect(mockPrompt).not.toHaveBeenCalled();
@@ -307,6 +471,7 @@ describe("pushCommand --prune", () => {
     );
     expect(deletePrompt.default).toBe(false);
     expect(process.exitCode).toBe(130);
+    expect(mockPersistScopeId).not.toHaveBeenCalled();
     expect(mockPruneRecords).not.toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
   });
@@ -323,6 +488,7 @@ describe("pushCommand --prune", () => {
     });
     await runPush({ ci: false });
     expect(mockPrompt).toHaveBeenCalledTimes(2);
+    expect(mockPersistScopeId).toHaveBeenCalledWith("scope-1");
     expect(order).toEqual(["prune", "push"]);
     expect(process.exitCode).toBeUndefined();
   });
@@ -339,9 +505,10 @@ describe("pushCommand --prune", () => {
   });
 
   it("--ci skips the delete prompt, persists the scope, and logs prune results with the push", async () => {
-    await runPush();
+    await runPush({ diff: "main" });
     expect(mockPrompt).not.toHaveBeenCalled();
-    expect(mockPlanRecordPrune).toHaveBeenCalledWith(expect.any(Array), { persistScopeId: true });
+    expect(mockPlanRecordPrune).toHaveBeenCalledWith(expect.any(Array), { persistScopeId: false });
+    expect(mockPersistScopeId).toHaveBeenCalledWith("scope-1");
     expect(mockPruneRecords).toHaveBeenCalledTimes(1);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "1 record(s) with every local file deleted to prune."
@@ -355,9 +522,49 @@ describe("pushCommand --prune", () => {
 
   it("a failed delete fails the shell", async () => {
     mockPruneRecords.mockResolvedValue([{ success: false, message: "ACL denied" }]);
-    await runPush();
+    await runPush({ diff: "main" });
     expect(process.exitCode).toBe(1);
     expect(mockPushFiles).toHaveBeenCalled();
+  });
+
+  // Batch 4 item 3: a rename is a delete plus a create. When the create fails,
+  // deleting the renamed-from record would lose it, so the delete is held.
+  const renameRun = async (failedTables: string[] | undefined, createdOk = false) => {
+    mockGetAppFileListWithCandidates.mockResolvedValue({
+      records: [rec("1")],
+      candidates: [{ table: "sys_script_include", recordName: "Renamed", files: [] }],
+    });
+    mockPlanRecordCreation.mockResolvedValue({ scopeId: "scope-1", plans: [{}] });
+    mockCreateRecords.mockResolvedValue({
+      results: [{ success: createdOk, message: "sys_script_include > Renamed : boom" }],
+      records: [],
+      ...(failedTables ? { failedTables } : {}),
+    });
+    await runPush({ diff: "main", create: true });
+    return mockPruneRecords.mock.calls[0][0] as { plans: { action: string; message?: string }[] };
+  };
+
+  it("holds the delete of a record whose replacement create failed in the same push", async () => {
+    const sent = await renameRun(["sys_script_include"]);
+    expect(sent.plans).toHaveLength(1);
+    expect(sent.plans[0].action).toBe("error");
+    expect(sent.plans[0].message).toContain("a rename is a delete plus a create");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("still deletes when the failed create was on another table", async () => {
+    const sent = await renameRun(["sys_script"]);
+    expect(sent.plans[0].action).toBe("delete");
+  });
+
+  it("holds every delete when the outcome does not say which table failed", async () => {
+    const sent = await renameRun(undefined);
+    expect(sent.plans[0].action).toBe("error");
+  });
+
+  it("deletes as planned when every create succeeded", async () => {
+    const sent = await renameRun(undefined, true);
+    expect(sent.plans[0].action).toBe("delete");
   });
 
   it("no candidates means no plan and no prompt", async () => {
