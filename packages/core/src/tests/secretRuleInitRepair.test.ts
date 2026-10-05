@@ -188,6 +188,48 @@ describe("sys_properties record secret rule on init and repair", () => {
     expect(error).not.toHaveBeenCalled();
     expect(written().holding(SECRET)).toEqual([]);
   });
+
+  it("repair --apply restores a deleted non-secret value while the password one stays absent", async () => {
+    fs.writeFileSync(path.join(tmp, "sync.manifest.json"), JSON.stringify({ scope: "x_demo", tables: {} }));
+    await ConfigManager.loadConfigs();
+    await syncManifest();
+    const [endpointFile] = written().holding(ENDPOINT);
+    expect(endpointFile).toBeDefined();
+    fs.rmSync(path.join(tmp, endpointFile));
+
+    const infoLines = () => info.mock.calls.map((c) => String(c[0]));
+    const report = () => infoLines().find((m) => m.startsWith("Repair report"));
+
+    // Report only: the count is unchanged (governed columns are not counted),
+    // and the "Not counted" line points at `--apply`.
+    info.mockClear();
+    await repairCommand({ logLevel: "info", ci: true } as never);
+    expect(report()).toContain("0 missing file(s)");
+    expect(infoLines().find((m) => m.startsWith("Not counted: 2 field file(s)"))).toContain(
+      "`--apply`"
+    );
+    expect(fs.existsSync(path.join(tmp, endpointFile))).toBe(false);
+
+    info.mockClear();
+    success.mockClear();
+    await repairCommand({ logLevel: "info", ci: true, apply: true } as never);
+    expect(fs.readFileSync(path.join(tmp, endpointFile), "utf8")).toBe(ENDPOINT);
+    expect(written().holding(SECRET)).toEqual([]);
+    expect(infoLines()).toContain(
+      "Restored 1 of 2 field file(s) a record secret rule governs (non-secret values)."
+    );
+    expect(success.mock.calls.map((c) => String(c[0]))).toEqual(["Repair complete. ✅"]);
+    expect(process.exitCode).toBeUndefined();
+    expect(error).not.toHaveBeenCalled();
+
+    // The next run converges: only the withheld secret is left uncounted.
+    info.mockClear();
+    success.mockClear();
+    await repairCommand({ logLevel: "info", ci: true, apply: true } as never);
+    expect(infoLines().find((m) => m.startsWith("Not counted:"))).toMatch(/^Not counted: 1 field file/);
+    expect(success.mock.calls.map((c) => String(c[0])).join("\n")).toContain("Nothing to repair");
+    expect(written().holding(SECRET)).toEqual([]);
+  });
 });
 
 describe("applyRecordSecretRulesToContent", () => {

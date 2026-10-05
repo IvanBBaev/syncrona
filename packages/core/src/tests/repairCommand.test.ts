@@ -18,10 +18,11 @@ jest.unstable_mockModule("../FileUtils.js", () => ({
   getFileContextFromPath: jest.fn(),
 }));
 
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, promises as fsp } from "fs";
 import os from "os";
 import path from "path";
 import type { SN } from "@syncrona/types";
+import { initRepo } from "./helpers/gitFixture.js";
 
 // R1: the mocks do not hoist, so the mocked namespaces and the SUT are imported
 // dynamically after the mocks register.
@@ -71,7 +72,13 @@ beforeAll(async () => {
   >;
 });
 
-const MANIFEST = { scope: "x_app", tables: {} } as unknown as SN.AppManifest;
+// The tables the orphan fixtures below live in are listed: a file of a table
+// the manifest does not list is never an orphan (it may be new work for
+// `push --create`), so an empty table map would hide every one of them.
+const MANIFEST = {
+  scope: "x_app",
+  tables: { sys_script: { records: {} }, sys_ui_action: { records: {} } },
+} as unknown as SN.AppManifest;
 
 // `repair` is a report-first command: what it PRINTS is its product (which
 // records to look at, which flag to pass next), so several invariants below can
@@ -504,6 +511,8 @@ describe("--prune deletion (real fs)", () => {
     getRootDir.mockReturnValue(tmp);
     findMissingFiles.mockResolvedValue({} as SN.MissingFileTableMap);
     getPathsInPath.mockResolvedValue([orphan]);
+    // --prune deletes only what git holds committed and unchanged; each test
+    // commits the files it adds before it runs the command.
     getFileContextFromPath.mockReturnValue(undefined); // orphan
     captureLogs();
   });
@@ -514,6 +523,7 @@ describe("--prune deletion (real fs)", () => {
   });
 
   test("--apply --prune --ci deletes the orphan", async () => {
+    initRepo(tmp);
     await repairCommand({ logLevel: "info", apply: true, prune: true, ci: true } as never);
     expect(existsSync(orphan)).toBe(false);
     // The reported count is the audit trail of an irreversible operation, so it
@@ -536,6 +546,7 @@ describe("--prune deletion (real fs)", () => {
       file === tracked ? ({ tableName: "sys_script" } as never) : undefined
     );
 
+    initRepo(tmp);
     await repairCommand({ logLevel: "info", apply: true, prune: true, ci: true } as never);
 
     expect(existsSync(tracked)).toBe(true);
@@ -560,6 +571,7 @@ describe("--prune deletion (real fs)", () => {
     } as never);
     getPathsInPath.mockResolvedValue([gone, kept, unlisted]);
 
+    initRepo(tmp);
     await repairCommand({ logLevel: "info", apply: true, prune: true, ci: true } as never);
 
     expect(existsSync(gone)).toBe(false);
@@ -601,6 +613,7 @@ describe("--prune deletion (real fs)", () => {
     }
     getPathsInPath.mockResolvedValue(files);
 
+    initRepo(tmp);
     await repairCommand({
       logLevel: "info",
       apply: true,
@@ -622,6 +635,7 @@ describe("--prune deletion (real fs)", () => {
     writeFileSync(flatOrphan, "stray");
     getPathsInPath.mockResolvedValue([flatOrphan]);
 
+    initRepo(tmp);
     await repairCommand({
       logLevel: "info",
       apply: true,
@@ -642,6 +656,7 @@ describe("--prune deletion (real fs)", () => {
     writeFileSync(rootOrphan, "stray");
     getPathsInPath.mockResolvedValue([rootOrphan]);
 
+    initRepo(tmp);
     await repairCommand({
       logLevel: "info",
       apply: true,
@@ -657,9 +672,13 @@ describe("--prune deletion (real fs)", () => {
   // "Pruned N orphan file(s)" while nothing was actually removed, so a repair
   // that changed nothing looked like a success and exited 0.
   test("reports a failed deletion instead of claiming success", async () => {
-    const missingOrphan = path.join(sourceDir, "sys_script", "Gone", "script.js");
-    getPathsInPath.mockResolvedValue([missingOrphan]); // never created on disk
+    // A failing unlink (permissions, a read-only mount, EBUSY) on an orphan git
+    // could restore, so the deletion is attempted and has to be reported.
+    const unlinkSpy = jest
+      .spyOn(fsp, "unlink")
+      .mockRejectedValueOnce(new Error("EACCES: permission denied"));
 
+    initRepo(tmp);
     await repairCommand({
       logLevel: "info",
       apply: true,
@@ -672,5 +691,6 @@ describe("--prune deletion (real fs)", () => {
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("Failed to delete 1 orphan file(s)")
     );
+    unlinkSpy.mockRestore();
   });
 });
