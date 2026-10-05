@@ -49,7 +49,7 @@ test('sync_status: happy path uses default logLevel and reports success', async 
   });
   const res = await handleWorkspaceTool('sync_status', {}, ctx);
   assert.equal(res.isError, false);
-  assert.deepEqual(captured, { subcommand: 'status', args: ['--logLevel', 'info'], timeoutMs: 1000 });
+  assert.deepEqual(captured, { subcommand: 'status', args: ['--logLevel=info'], timeoutMs: 1000 });
   assert.match(res.content[0].text, /status ok/);
 });
 
@@ -63,7 +63,7 @@ test('sync_status: honors custom logLevel and surfaces non-zero exit as error', 
   });
   const res = await handleWorkspaceTool('sync_status', { logLevel: 'debug' }, ctx);
   assert.equal(res.isError, true);
-  assert.deepEqual(captured, ['--logLevel', 'debug']);
+  assert.deepEqual(captured, ['--logLevel=debug']);
   assert.match(res.content[0].text, /boom/);
 });
 
@@ -79,7 +79,7 @@ test('sync_refresh: happy path with default logLevel', async () => {
   });
   const res = await handleWorkspaceTool('sync_refresh', {}, ctx);
   assert.equal(res.isError, false);
-  assert.deepEqual(captured, { subcommand: 'refresh', args: ['--logLevel', 'info'] });
+  assert.deepEqual(captured, { subcommand: 'refresh', args: ['--logLevel=info'] });
 });
 
 test('sync_refresh: non-string logLevel falls back to info', async () => {
@@ -91,7 +91,7 @@ test('sync_refresh: non-string logLevel falls back to info', async () => {
     },
   });
   await handleWorkspaceTool('sync_refresh', { logLevel: 42 }, ctx);
-  assert.deepEqual(captured, ['--logLevel', 'info']);
+  assert.deepEqual(captured, ['--logLevel=info']);
 });
 
 // --- sync_build ---
@@ -106,7 +106,7 @@ test('sync_build: without diff omits --diff flag', async () => {
   });
   const res = await handleWorkspaceTool('sync_build', {}, ctx);
   assert.equal(res.isError, false);
-  assert.deepEqual(captured, { subcommand: 'build', args: ['--logLevel', 'info'] });
+  assert.deepEqual(captured, { subcommand: 'build', args: ['--logLevel=info'] });
 });
 
 test('sync_build: with diff appends --diff flag, trims whitespace', async () => {
@@ -118,7 +118,7 @@ test('sync_build: with diff appends --diff flag, trims whitespace', async () => 
     },
   });
   await handleWorkspaceTool('sync_build', { logLevel: 'warn', diff: '  HEAD~1  ' }, ctx);
-  assert.deepEqual(captured, ['--logLevel', 'warn', '--diff', 'HEAD~1']);
+  assert.deepEqual(captured, ['--logLevel=warn', '--diff=HEAD~1']);
 });
 
 test('sync_build: blank diff string is treated as absent', async () => {
@@ -130,7 +130,7 @@ test('sync_build: blank diff string is treated as absent', async () => {
     },
   });
   await handleWorkspaceTool('sync_build', { diff: '   ' }, ctx);
-  assert.deepEqual(captured, ['--logLevel', 'info']);
+  assert.deepEqual(captured, ['--logLevel=info']);
 });
 
 // --- sync_push ---
@@ -208,14 +208,12 @@ test('sync_push: full happy path builds all cli flags and audits mutation', asyn
     subcommand: 'push',
     args: [
       '--ci',
-      '--logLevel',
-      'trace',
+      // An off-enum level never reaches the CLI as a token.
+      '--logLevel=info',
       'x_app_util',
-      '--diff',
-      'main..HEAD',
+      '--diff=main..HEAD',
       '--scopeSwap',
-      '--updateSet',
-      'US001',
+      '--updateSet=US001',
     ],
   });
   assert.equal(auditCall.toolName, 'sync_push');
@@ -233,7 +231,38 @@ test('sync_push: minimal confirmed push omits optional flags and reports failure
   });
   const res = await handleWorkspaceTool('sync_push', { confirmDestructive: true }, ctx);
   assert.equal(res.isError, true);
-  assert.deepEqual(captured, ['--ci', '--logLevel', 'info']);
+  assert.deepEqual(captured, ['--ci', '--logLevel=info']);
+});
+
+// Batch 4 item 1: a value forwarded as a CLI token must never be parsed as an
+// option, or `target: "--prune"` would turn a plain push into a pruning one.
+for (const field of ['target', 'diff', 'updateSet']) {
+  test(`sync_push: a "-"-leading ${field} is refused before the CLI runs`, async () => {
+    let ran = false;
+    const ctx = makeContext({
+      runSyncroCliCommand: async () => {
+        ran = true;
+        return makeCmdResult();
+      },
+    });
+    const res = await handleWorkspaceTool('sync_push', { confirmDestructive: true, [field]: ' --prune' }, ctx);
+    assert.equal(res.isError, true);
+    assert.equal(ran, false);
+    assert.match(res.content[0].text, new RegExp(`Invalid ${field}`));
+  });
+}
+
+test('sync_build: a "-"-leading diff is refused before the CLI runs', async () => {
+  let ran = false;
+  const ctx = makeContext({
+    runSyncroCliCommand: async () => {
+      ran = true;
+      return makeCmdResult();
+    },
+  });
+  const res = await handleWorkspaceTool('sync_build', { diff: '--create' }, ctx);
+  assert.equal(res.isError, true);
+  assert.equal(ran, false);
 });
 
 // --- run_workspace_command ---

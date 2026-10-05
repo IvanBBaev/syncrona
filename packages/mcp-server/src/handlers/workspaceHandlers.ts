@@ -161,6 +161,33 @@ function runFullNodeAccessCode(
   );
 }
 
+const CLI_LOG_LEVELS = new Set(["error", "warn", "info", "debug", "silly"]);
+
+// The schema already restricts logLevel to the enum; this keeps an
+// unvalidated caller from forwarding anything else as a CLI token.
+function cliLogLevel(value: unknown): string {
+  return typeof value === "string" && CLI_LOG_LEVELS.has(value) ? value : "info";
+}
+
+// Defence in depth behind the Zod schema: a value forwarded as a CLI token must
+// not start with "-", or the CLI would parse it as an option (`--prune`).
+function refuseOptionLikeTokens(values: Record<string, string>): ToolResponse | null {
+  for (const [field, value] of Object.entries(values)) {
+    if (value.startsWith("-")) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Invalid ${field}: a value must not start with "-" (it would be read as a CLI option).`,
+          },
+        ],
+      };
+    }
+  }
+  return null;
+}
+
 export async function handleWorkspaceTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -170,23 +197,25 @@ export async function handleWorkspaceTool(
 
   switch (toolName) {
     case "sync_status": {
-      const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
-      const result = await context.runSyncroCliCommand("status", ["--logLevel", logLevel], timeoutMs);
+      const logLevel = cliLogLevel(args.logLevel);
+      const result = await context.runSyncroCliCommand("status", [`--logLevel=${logLevel}`], timeoutMs);
       return commandJsonResponse(result);
     }
 
     case "sync_refresh": {
-      const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
-      const result = await context.runSyncroCliCommand("refresh", ["--logLevel", logLevel], timeoutMs);
+      const logLevel = cliLogLevel(args.logLevel);
+      const result = await context.runSyncroCliCommand("refresh", [`--logLevel=${logLevel}`], timeoutMs);
       return commandJsonResponse(result);
     }
 
     case "sync_build": {
-      const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
+      const logLevel = cliLogLevel(args.logLevel);
       const diff = typeof args.diff === "string" ? args.diff.trim() : "";
-      const cmdArgs = ["--logLevel", logLevel];
+      const refused = refuseOptionLikeTokens({ diff });
+      if (refused) return refused;
+      const cmdArgs = [`--logLevel=${logLevel}`];
       if (diff.length > 0) {
-        cmdArgs.push("--diff", diff);
+        cmdArgs.push(`--diff=${diff}`);
       }
       const result = await context.runSyncroCliCommand("build", cmdArgs, timeoutMs);
       return {
@@ -218,24 +247,29 @@ export async function handleWorkspaceTool(
         });
       }
 
-      const logLevel = typeof args.logLevel === "string" ? args.logLevel : "info";
+      const logLevel = cliLogLevel(args.logLevel);
       const target = typeof args.target === "string" ? args.target.trim() : "";
       const diff = typeof args.diff === "string" ? args.diff.trim() : "";
       const updateSet = typeof args.updateSet === "string" ? args.updateSet.trim() : "";
       const scopeSwap = args.scopeSwap === true;
+      const refused = refuseOptionLikeTokens({ target, diff, updateSet });
+      if (refused) return refused;
 
-      const cmdArgs = ["--ci", "--logLevel", logLevel];
+      // Option values go in `--opt=value` form so a value can never be read as
+      // an option of its own. `target` is a positional, which yargs cannot take
+      // after a `--` separator, so the guard above is what protects it.
+      const cmdArgs = ["--ci", `--logLevel=${logLevel}`];
       if (target.length > 0) {
         cmdArgs.push(target);
       }
       if (diff.length > 0) {
-        cmdArgs.push("--diff", diff);
+        cmdArgs.push(`--diff=${diff}`);
       }
       if (scopeSwap) {
         cmdArgs.push("--scopeSwap");
       }
       if (updateSet.length > 0) {
-        cmdArgs.push("--updateSet", updateSet);
+        cmdArgs.push(`--updateSet=${updateSet}`);
       }
 
       const result = await context.runSyncroCliCommand("push", cmdArgs, timeoutMs);
