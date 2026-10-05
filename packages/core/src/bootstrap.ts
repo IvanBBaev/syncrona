@@ -23,8 +23,14 @@ import { runUpdateNotifier } from "./updateNotifier.js";
 // `query -o json|raw` (`--output`) is the same contract: queryCommand routes
 // the logger to stderr itself, but only once yargs has dispatched it, which is
 // after loadConfigs() could already have printed a notice onto stdout.
+// yargs resolves `-o` and `--o` to the same `o` key (the `output` alias), so
+// every spelling it accepts counts: `-o x`, `-o=x`, `--o x`, `--o=x`,
+// `--output x` and `--output=x`. yargs does no unique-prefix matching, so
+// `--out` is an unknown argument (strict mode rejects it) and is not covered.
+// The attached `-ojson` form is kept as well: yargs rejects it, and routing a
+// run that is about to fail to stderr costs nothing.
 function isOutputOption(tok: string): boolean {
-  return tok === "-o" || tok === "--output" || /^(?:-o|--output)=/.test(tok) || /^-o[a-z]+$/i.test(tok);
+  return /^(?:-o|--o|--output)(?:=|$)/.test(tok) || /^-o[a-z]+$/i.test(tok);
 }
 
 function queryOutputRequested(rest: string[]): boolean {
@@ -39,6 +45,25 @@ function queryOutputRequested(rest: string[]): boolean {
   return false;
 }
 
+// yargs finds the command with a first parse that knows only the top-level
+// options (`--help`, `--version`); command options such as `-q`, `--limit` or
+// even the boolean `--dry-run` are unknown there. yargs-parser lets an unknown
+// option consume the following token as its value unless that token is itself
+// an option, so `-q active=true query incident` dispatches `query` while
+// `--dry-run query` does not dispatch anything. The walk below mirrors that.
+const VALUELESS_LEADING_OPTIONS = new Set(["--help", "--version"]);
+
+function consumesNextToken(tok: string, next: string | undefined): boolean {
+  if (next === undefined || next.startsWith("-")) {
+    return false;
+  }
+  // `--flag=value` / `-o=x` is self-contained; `--no-flag` is a negation.
+  if (tok.includes("=") || tok.startsWith("--no-")) {
+    return false;
+  }
+  return !VALUELESS_LEADING_OPTIONS.has(tok);
+}
+
 function stdoutIsProtocolChannel(argv: string[]): boolean {
   // `--json` can appear anywhere after the command, so it is scanned for over
   // the whole argv rather than in the leading-options walk below. Only the
@@ -46,22 +71,16 @@ function stdoutIsProtocolChannel(argv: string[]): boolean {
   if (argv.some((tok) => tok === "--json" || tok === "--json=true")) {
     return true;
   }
-  // The yargs command is the first positional token. Skip any leading global
-  // options first; the only value-taking ones are string options whose value
-  // could otherwise be mistaken for the command (booleans consume no value).
-  const valueTakingGlobals = new Set([
-    "--log-level",
-    "--logLevel",
-    "--instance-profile",
-    "--instanceProfile",
-    // yargs accepts `-o` / `--output` before the command too (`syncrona -o
-    // json query ...`); its value must not be mistaken for the command.
-    "-o",
-    "--output",
-  ]);
+  // The yargs command is the first positional token once every leading option
+  // and the value it consumes are skipped (see consumesNextToken). yargs also
+  // accepts `-o` / `--output` before the command (`syncrona -o json query`).
   let leadingOutput = false;
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
+    if (tok === "--") {
+      // Everything past the separator is positional data, not a command.
+      return false;
+    }
     if (!tok.startsWith("-")) {
       if (tok === "query") {
         return leadingOutput || queryOutputRequested(argv.slice(i + 1));
@@ -71,9 +90,7 @@ function stdoutIsProtocolChannel(argv: string[]): boolean {
     if (isOutputOption(tok)) {
       leadingOutput = true;
     }
-    // `--flag=value` is self-contained; `--flag value` consumes the next token
-    // only for the known value-taking globals.
-    if (!tok.includes("=") && valueTakingGlobals.has(tok)) {
+    if (consumesNextToken(tok, argv[i + 1])) {
       i++;
     }
   }
