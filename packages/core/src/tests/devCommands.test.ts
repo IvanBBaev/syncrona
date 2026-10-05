@@ -65,6 +65,9 @@ describe("devCommands", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // process.exitCode is shared by every test file in this jest worker, so a
+    // value captured at collection time can be stale by the time a test runs.
+    process.exitCode = undefined;
     ({ devCommand, refreshCommand } = await import("../devCommands.js"));
   });
   afterEach(() => {
@@ -78,7 +81,7 @@ describe("devCommands", () => {
       mockSyncManifest.mockResolvedValue(true);
       await refreshCommand({ logLevel: "info" } as never);
       expect(mockLoggerSuccess).toHaveBeenCalled();
-      expect(process.exitCode).toBe(prevExit);
+      expect(process.exitCode).toBeUndefined();
     });
 
     it("sets exitCode=1 on an interactive failure", async () => {
