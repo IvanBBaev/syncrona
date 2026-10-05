@@ -24,8 +24,18 @@ const clientFor = (rows: Row[]) =>
       const q = String(query);
       if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
       if (table === "sys_metadata") return { data: { result: [{ sys_class_name: TABLE }] } };
-      if (table === "sys_db_object") return { data: { result: [{ name: TABLE }] } };
+      if (table === "sys_db_object") {
+        // sys_choice has no sys_scope column, so the builder attributes a choice
+        // to the scope through the table it belongs to. Both tables of the
+        // generator below are the scope's own.
+        if (q.startsWith("sys_scope=")) {
+          return { data: { result: [{ name: "incident" }, { name: "x_demo_task" }] } };
+        }
+        return { data: { result: [{ name: TABLE }] } };
+      }
       if (table === "sys_dictionary") {
+        // The scope owns no column on another scope's table.
+        if (q.startsWith("sys_scope=")) return { data: { result: [] } };
         if (q.includes("internal_type=")) return { data: { result: [] } };
         return {
           data: {
@@ -38,7 +48,7 @@ const clientFor = (rows: Row[]) =>
           },
         };
       }
-      if (table === TABLE && q.startsWith("sys_scope=")) return { data: { result: rows } };
+      if (table === TABLE && q.startsWith("nameIN")) return { data: { result: rows } };
       return { data: { result: [] } };
     },
   }) as unknown as import("../snClient").SNClient;

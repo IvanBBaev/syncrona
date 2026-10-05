@@ -427,3 +427,135 @@ describe("push --create for data-model records (R4)", () => {
     expect(outcome.results[0].success).toBe(false);
   });
 });
+
+// A table outside the sys_metadata hierarchy has no sys_scope column. The
+// instance ignores a query term or a body column it does not know, so a
+// `sys_scope=<id>` lookup term would match records across the whole instance.
+describe("push --create on a table whose records carry no scope", () => {
+  const CHOICE_ROW = { name: "x_demo_task", element: "u_foo", value: "1", label: "One" };
+  const queriesOf = (client: FakeClient, table: string) =>
+    client.tableAPIGet.mock.calls.filter(([t]) => t === table).map(([, q]) => q);
+
+  beforeEach(() => {
+    HIERARCHY.sys_choice = "";
+    HIERARCHY.u_plain = "";
+    mockGetConfig.mockReturnValue({
+      pushConcurrency: 1,
+      dataModelTables: ["sys_choice"],
+      createTables: ["sys_choice", "u_plain"],
+    });
+    mockDiscover.mockImplementation(async () => ({
+      fields: ["element", "label", "language", "name", "value"],
+      readOnly: [],
+    }));
+  });
+
+  afterEach(() => {
+    HIERARCHY.sys_choice = "sys_metadata";
+    delete HIERARCHY.u_plain;
+  });
+
+  it("matches a choice on its natural key, without a sys_scope term, and posts no sys_scope", async () => {
+    const client = makeClient();
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
+    ]);
+    expect(plan.plans[0]).toMatchObject({
+      action: "create",
+      scoped: false,
+      lookup: { name: "x_demo_task", element: "u_foo", value: "1", language: "en" },
+    });
+    expect(queriesOf(client, "sys_choice")).toEqual([
+      "name=x_demo_task^element=u_foo^value=1^language=en",
+    ]);
+    const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    expect(outcome.results[0].success).toBe(true);
+    const body = client.createRecord.mock.calls[0][1];
+    expect(body).toEqual(CHOICE_ROW);
+    expect(body).not.toHaveProperty("sys_scope");
+  });
+
+  it("keys on the sidecar's language and adopts the one record that matches", async () => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation((table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.slice("name=".length);
+        return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
+      }
+      return ok(query.endsWith("^language=de") ? [{ sys_id: "choice-de" }] : []);
+    });
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", { ...CHOICE_ROW, language: "de" }),
+    ]);
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "choice-de", scoped: false });
+  });
+
+  it("refuses two matches on the instance instead of guessing", async () => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation((table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.slice("name=".length);
+        return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
+      }
+      return ok([{ sys_id: "a" }, { sys_id: "b" }]);
+    });
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
+    ]);
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/exists on the instance; refusing to guess/);
+  });
+
+  it("refuses a choice whose sidecar leaves a natural-key column empty", async () => {
+    const client = makeClient();
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", { name: "x_demo_task", element: "u_foo" }),
+    ]);
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/missing: value/);
+    expect(queriesOf(client, "sys_choice")).toEqual([]);
+  });
+
+  it("matches another unscoped table on its name column alone", async () => {
+    const client = makeClient();
+    const plan = await planFor(client, [
+      {
+        table: "u_plain",
+        recordName: "Thing",
+        files: [{ filePath: path.join(tmpDir, "x.js"), field: "script", ext: ".js", isSidecar: false }],
+      },
+    ]);
+    expect(plan.plans[0]).toMatchObject({ action: "create", scoped: false });
+    expect(client.findRecordByName).not.toHaveBeenCalled();
+    expect(queriesOf(client, "u_plain")).toEqual(["name=Thing"]);
+  });
+
+  it("re-checks a timed-out POST with the same scope-less lookup", async () => {
+    const client = makeClient();
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
+    ]);
+    client.createRecord.mockRejectedValueOnce(new Error("socket hang up"));
+    client.tableAPIGet.mockImplementation(() => ok([{ sys_id: "landed-1" }]));
+    const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    expect(outcome.results[0]).toMatchObject({ success: true });
+    expect(outcome.results[0].message).toContain("landed-1");
+    expect(client.createRecord).toHaveBeenCalledTimes(1);
+    const retryQuery = client.tableAPIGet.mock.calls.at(-1)?.[1];
+    expect(retryQuery).toBe("name=x_demo_task^element=u_foo^value=1^language=en");
+  });
+
+  it("keeps the scope term and the sys_scope column for a sys_metadata table", async () => {
+    HIERARCHY.sys_choice = "sys_metadata";
+    const client = makeClient();
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
+    ]);
+    expect(plan.plans[0].scoped).toBeUndefined();
+    expect(queriesOf(client, "sys_choice")).toEqual([
+      "name=x_demo_task^element=u_foo^value=1^sys_scope=scope-1",
+    ]);
+    await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    expect(client.createRecord.mock.calls[0][1]).toEqual({ ...CHOICE_ROW, sys_scope: "scope-1" });
+  });
+});

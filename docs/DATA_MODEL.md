@@ -36,7 +36,9 @@ Listing a table:
   explicit `includes.<table>: false` still wins, so a team can share one list
   and switch a single table off.
 - **tracks records with no file field.** Each one is written as
-  `<table>/<record>/.meta.json` and nothing else.
+  `<table>/<record>/.meta.json`. A record also gets a field file where its
+  table has a script-typed column (a dictionary entry's `calculation`, see
+  [What a record contains](#what-a-record-contains)).
 - **gives it a stable naming rule** where its display value is not unique (see
   below).
 
@@ -62,7 +64,39 @@ The documented tables are:
 | `sys_ui_policy_action` | UI policy actions | `<ui_policy.short_description>.<field>` |
 
 Any other table name is accepted too. It is tracked the same way, but it is
-named by its display value.
+named by its display value. Such a table needs a `sys_scope` column, its own or
+an inherited one; see the next section for a table that has none.
+
+## Which records belong to the scope
+
+A record belongs to the scope when its `sys_scope` column says so. That holds
+for every documented table except `sys_choice`, and for any other table that
+extends `sys_metadata`.
+
+`sys_choice` has no `sys_scope` column. The Table API ignores a query term on a
+column a table does not have, so filtering it by scope would return every choice
+on the instance. A choice is attributed through what it belongs to instead. It
+is tracked when one of these is true:
+
+- its table (`name`) is defined by the scope;
+- its column (`name` and `element`) is defined by the scope on a table of
+  another scope;
+- its choice list (the `sys_choice_set` record for `name` and `element`) is
+  owned by the scope.
+
+Building the manifest reads `sys_db_object`, `sys_dictionary` and
+`sys_choice_set` once for this, whether or not those tables are listed
+themselves. A scope that owns no table, column or choice list has no choices,
+and `sys_choice` is not queried at all. `tableOptions.sys_choice.query` is
+appended to that selection with `^`. Write it as an AND filter: a query
+containing `^NQ` starts a new OR group that the ownership rule does not bound.
+
+A table you add yourself is checked for a `sys_scope` column before it is read.
+If it has none, its records cannot be attributed to a scope:
+
+- with `tableOptions.<table>.query` set, the table is read by that query alone,
+  and you are responsible for what it selects;
+- without it, the table is left out and a warning names it.
 
 ## What a record contains
 
@@ -72,6 +106,12 @@ every sidecar: system columns, passwords and other secrets, and file fields. A
 field file is only written where the table has a script-typed column (a
 dictionary entry's `calculation`, for example). `tableOptions.<table>.metaFields`
 replaces discovery for a table, just as it does for any other sidecar.
+
+A `sys_properties` record of type `password` or `password2` keeps its secret in
+`value`, a plain string column, so the type filter cannot see it. Its sidecar
+leaves `value` out. So does a property whose `type` cannot be read. Pushing that
+sidecar does not clear the value on the instance, because a missing key is never
+a request to clear a column. To change such a value, set it on the instance.
 
 If the dictionary cannot be read and the table has no explicit `metaFields`, its
 sidecar-only records are skipped with a warning. The rest of the refresh goes on.
@@ -111,11 +151,17 @@ Each child table has its own folder, its own records, and its own entry in
 
 Edit a sidecar and run `syncrona push`, as for any record. For an opted-in
 table the push first reads the record's current values (one GET of the sidecar
-columns). It then PATCHes **only the columns that differ**. Re-sending an
-unchanged `internal_type` or `max_length` would re-run the dictionary business
-rules, and it would overwrite a column someone else changed on the instance
-since the last pull. If that read fails, the record fails and nothing is sent.
-Field files are always sent.
+columns). It then PATCHes **only the columns whose local value differs from the
+current instance value**. Re-sending an unchanged `internal_type` or
+`max_length` would re-run the dictionary business rules. If that read fails,
+the record fails and nothing is sent. Field files are always sent.
+
+The compare is two-way (local sidecar against the current instance row), not
+a three-way merge: syncrona keeps no pulled baseline. A column someone changed
+on the instance since your last pull still differs from your sidecar, so it is
+sent and overwrites that change. `refresh` does not overwrite existing files,
+so re-download a data-model record that others may have changed before you
+edit it.
 
 An unknown key in a sidecar is a hard error, as for every sidecar. Nothing is
 sent for that record.
@@ -137,6 +183,17 @@ Create stays **denied** for `sys_properties` and `sys_user_role`, as it is for
 every table on the always-deny list. Existing records on those tables can still
 be updated.
 
+`sys_choice` does not extend `sys_metadata`, so `push --create` does not allow
+it by default the way it allows application files. Creating a choice needs
+`sys_choice` in the `createTables` config list or in the `SYNCRONA_CREATE_TABLE_ALLOWLIST` environment allowlist
+(the same opt-in as any other non-metadata table). Without it the record is
+refused and nothing is posted.
+
+The idempotency lookup of a `sys_choice` create matches its natural key
+(`name`, `element`, `value` and `language`) **across scopes**: `sys_choice`
+has no `sys_scope` column to bound it. A choice with the same key that another
+scope added is therefore adopted instead of created.
+
 ## Deleting records
 
 Pruning (deleting instance records whose local files are gone) is **never
@@ -145,6 +202,90 @@ them in: `push --prune` refuses those records and sends no DELETE. Deleting a di
 access on the instance. Delete these records on the instance on purpose, then
 refresh. (`repair --prune` only deletes local orphan files and is unaffected.)
 
+After such a refresh the record's local `.meta.json` is left behind. `repair`
+reports it as an orphan when the manifest still lists the table but no longer
+holds the record, and `repair --apply --prune` deletes that local file, so a
+later `push --create` does not POST the deleted record back. A sidecar of a
+table the manifest does not list at all (a new record waiting for
+`push --create`, or a table the last refresh could not read) is reported with
+a warning and never pruned.
+
+## Composite documents
+
+By default every data-model record is its own sidecar, so one table with ten
+columns and thirty choices is forty-one `.meta.json` files in three folders.
+`dataModelLayout: "composite"` keeps the same records as one document per table:
+
+```javascript
+module.exports = {
+  // ...
+  dataModelTables: ["sys_db_object", "sys_dictionary", "sys_choice"],
+  dataModelLayout: "composite", // default: "records"
+};
+```
+
+The layout covers `sys_db_object`, `sys_dictionary` and `sys_choice`, and only
+those of them listed in `dataModelTables`. Every other data-model table keeps its
+per-record sidecars. A download writes `<sourceDirectory>/data-model/<table>.json`:
+
+```json
+{
+  "format": "syncrona.data-model/1",
+  "table": "x_demo_task",
+  "sys_db_object": {
+    "x_demo_task": { "label": "Task", "name": "x_demo_task", "super_class": "task" }
+  },
+  "sys_dictionary": {
+    "x_demo_task.u_foo": { "column_label": "Foo", "element": "u_foo", "name": "x_demo_task" }
+  },
+  "sys_choice": {
+    "x_demo_task.u_foo.1": { "element": "u_foo", "label": "One", "name": "x_demo_task", "value": "1" }
+  }
+}
+```
+
+- **One document per table.** A record is grouped by its `name` column (the
+  table it belongs to). Each section maps the record name (the same stable name
+  the per-record layout uses) to exactly the columns its sidecar would hold.
+  A key is one path segment: an empty key, `.` or `..`, or a key containing
+  `/`, `\` or a NUL character is refused, and so is a downloaded record whose
+  name is one of those.
+- **Byte-stable.** Sections, records and columns are written in a fixed order,
+  and a document whose content did not change is not rewritten. A refresh or
+  download of an unchanged scope leaves no diff, and a document whose entries
+  are unchanged keeps its own formatting (line endings, indentation).
+- **Download and refresh** follow the sidecar rules: `download` overwrites an
+  entry with the instance's values, `refresh` only adds entries a document lacks.
+  A record whose only file is its sidecar gets no folder. A field file (a
+  dictionary entry's `calculation`) is still written per record.
+- **Push** expands a changed document into one sidecar per entry, then pushes
+  each exactly as in the per-record layout: one GET, and a PATCH of only the
+  columns that differ. An unchanged entry sends nothing. The table definition
+  is pushed before any column, and a column before any choice. An entry is
+  pushed only to the record its section and key name; push refuses an entry
+  that resolves to any other record.
+- **Create** (`push --create`) treats an entry no manifest record claims as a
+  new record. It creates tables, then columns, then choices, with the same
+  create-or-adopt lookup as a per-record sidecar.
+- **Prune** is unchanged. Removing an entry does not delete the record: the
+  documented data-model tables are never pruned (see
+  [Deleting records](#deleting-records)).
+
+The two layouts are never mixed for a record. `download`, `refresh`, `push`,
+`repair` and `status` all refuse (or, for `status`, report) a workspace where:
+
+- a record has both a document entry and a per-record `.meta.json`;
+- `dataModelLayout` is `"composite"` and a covered table still has per-record
+  sidecars;
+- `dataModelLayout` is `"records"` and `data-model/` holds documents;
+- a document has a section for a table that is not in `dataModelTables`.
+
+Nothing is written or sent while the conflict stands. To switch layouts,
+delete the files of the old layout (the per-record `.meta.json` files of the
+three tables, or the `data-model/` folder), change `dataModelLayout`, and run
+`syncrona refresh`. `repair` also lists document entries that no manifest
+record claims. `status` prints the active layout and the number of documents.
+
 ## Limitations
 
 - The naming rules for dot-walked columns (`operation.name`, `role.name`, and
@@ -152,6 +293,17 @@ refresh. (`repair --prune` only deletes local orphan files and is unaffected.)
   yet been verified against every instance release.
 - The live round-trip acceptance test (pull, edit a dictionary entry, push, pull
   again, no diff) has not been run against a live instance as part of this
-  change. It is covered by mocked tests only.
+  change. It is covered by mocked tests only. Its "prune it" step cannot pass
+  for `sys_dictionary`: `push --prune` refuses every data-model table by design
+  (see [Deleting records](#deleting-records)). The expected result of that step
+  is the refusal, with no DELETE sent.
+- Choices are attributed per choice list, not per choice. A single choice your
+  scope adds to a choice list that another scope owns is not tracked.
 - The `syncrona init` wizard does not ask about data-model tables. Add
   `dataModelTables` to `sync.config.js` by hand.
+- `syncrona dev` (watch mode) pushes per-record sidecars only. It does not
+  expand a data-model document; use `syncrona push` after editing one. Under
+  the composite layout it skips a stray per-record sidecar of a covered table,
+  with one warning per file, just as `push` refuses it.
+- Each entry of a changed document is compared with the instance by its own
+  GET, so a push of a large document makes one request per record.

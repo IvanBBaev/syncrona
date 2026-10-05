@@ -169,7 +169,13 @@ class PluginManager {
 
   async getFinalFileContents(context: Sync.FileContext, processFile = true) {
     const { filePath } = context;
-    const contents = await fsp.readFile(filePath, "utf-8");
+    // SDK-F2: a context expanded from a data-model document carries its text
+    // in memory — its filePath names the per-record sidecar it stands for,
+    // which is deliberately absent on disk.
+    const contents =
+      typeof context.fileContents === "string"
+        ? context.fileContents
+        : await fsp.readFile(filePath, "utf-8");
     if (processFile) {
       await this.loadPluginConfig();
       return await this.processFile(context, contents);

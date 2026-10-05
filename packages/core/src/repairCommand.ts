@@ -7,7 +7,8 @@ import * as ConfigManager from "./config.js";
 import * as AppUtils from "./appUtils.js";
 import * as FileUtils from "./FileUtils.js";
 import { isFlatEncoded, FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
-import { isMetaSidecarPath } from "./metaFields.js";
+import { META_SIDECAR_FILE_NAME, isMetaSidecarPath } from "./metaFields.js";
+import { inspectCompositeLayout } from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
 import { formatTable } from "./genericUtils.js";
 import { setLogLevel, logErrorHint } from "./commandHelpers.js";
@@ -127,6 +128,56 @@ function isClaimedUnderAnotherEncoding(
   return Object.keys(records).some((name) => canonicalName(name) === canonical);
 }
 
+// Batch 4b R3: what a `.meta.json` sidecar is to repair. A sidecar is kept when
+// the manifest holds its record (under any encoding of the name: the sidecar
+// belongs to the record, even when the manifest lost its metadata layer). It is
+// an orphan when the manifest lists its table but no record of that name, which
+// is what a record deleted on the instance leaves behind after a refresh; left
+// in place, a later `push --create` would POST it back. A sidecar of a table
+// the manifest does not list at all is neither: it may be a new record for
+// `push --create` on a table never pulled, or a table a refused read left out,
+// so it is reported and never pruned.
+type SidecarVerdict = "tracked" | "orphan" | "untracked-table";
+
+function classifySidecar(
+  manifest: SN.AppManifest,
+  sourcePath: string,
+  filePath: string
+): SidecarVerdict {
+  const rel = path.relative(sourcePath, filePath);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return "tracked";
+  }
+  const segments = rel.split(/[/\\]/).filter((seg) => seg.length > 0);
+  // The two shapes a download writes: `<table>/<record>/.meta.json` and the
+  // flat `<table>/<record>~.meta.json`. Anything else is not repair's to judge.
+  const shaped =
+    (segments.length === 3 && segments[2] === META_SIDECAR_FILE_NAME) ||
+    (segments.length === 2 && isFlatEncoded(segments[1]));
+  if (!shaped || segments.slice(0, 2).some((seg) => seg.startsWith("."))) {
+    return "tracked";
+  }
+  const key = recordKeyFromPath(sourcePath, filePath);
+  if (!key || key.record === "") {
+    return "tracked";
+  }
+  const tables = manifest.tables ?? {};
+  const table =
+    tables[key.table] ??
+    Object.entries(tables).find(([name]) => canonicalName(name) === canonicalName(key.table))?.[1];
+  if (!table) {
+    return "untracked-table";
+  }
+  const records = table.records ?? {};
+  if (Object.prototype.hasOwnProperty.call(records, key.record)) {
+    return "tracked";
+  }
+  const canonical = canonicalName(key.record);
+  return Object.keys(records).some((name) => canonicalName(name) === canonical)
+    ? "tracked"
+    : "orphan";
+}
+
 // Files present on disk under the source directory that do not map back to a
 // manifest record/field. Best-effort: getFileContextFromPath returns undefined
 // for a path that no manifest record claims, which is exactly an orphan.
@@ -140,6 +191,7 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   const allFiles = await FileUtils.getPathsInPath(sourcePath);
   const orphans: string[] = [];
   const encodingMismatches: string[] = [];
+  const untrackedSidecars: string[] = [];
   for (const file of allFiles) {
     // DX22: a `.meta.json` sidecar is never an orphan. Against a healthy
     // manifest getFileContextFromPath resolves it and the check below would let
@@ -150,7 +202,16 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
     // manifest; that is enough to keep it. (In the nested layout the shape
     // filter also hides it — a dot-prefixed segment — but in the flat layout
     // `<record>~.meta.json` is an ordinary file name and this is the only guard.)
+    //
+    // R3: "belongs to its record" holds only while the manifest has that
+    // record. See classifySidecar for the sidecar whose record is gone.
     if (isMetaSidecarPath(file)) {
+      const verdict = classifySidecar(manifest, sourcePath, file);
+      if (verdict === "orphan") {
+        orphans.push(file);
+      } else if (verdict === "untracked-table") {
+        untrackedSidecars.push(file);
+      }
       continue;
     }
     if (
@@ -164,6 +225,14 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
       continue;
     }
     orphans.push(file);
+  }
+  if (untrackedSidecars.length > 0) {
+    logger.warn(
+      `Kept ${untrackedSidecars.length} metadata sidecar(s) of table(s) the manifest does not list ` +
+        "(new records for `push --create`, or a table the last refresh could not read). " +
+        "They are never pruned:\n" +
+        untrackedSidecars.map((f) => `  ${f}`).join("\n")
+    );
   }
   if (encodingMismatches.length > 0) {
     logger.warn(
@@ -198,6 +267,35 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
   }
 
   try {
+    // SDK-F2: a workspace holding both data-model layouts (or the one its
+    // config does not use) has no single answer to "what is missing", and a
+    // re-download would only add to the mix — so it is reported and nothing
+    // else runs. The documents themselves are never deleted here.
+    let config: Sync.Config;
+    try {
+      config = ConfigManager.getConfig() as Sync.Config;
+    } catch (_e) {
+      // No loaded config means the defaults, and the default layout is "records".
+      config = {} as Sync.Config;
+    }
+    const layout = await inspectCompositeLayout(manifest, config, ConfigManager.getSourcePath());
+    if (layout.conflicts.length > 0) {
+      logger.error(
+        `Data-model layout conflict (dataModelLayout "${layout.layout}"):\n` +
+          layout.conflicts.map((c) => `  ${c}`).join("\n") +
+          "\nResolve it before repairing: keep one layout per record."
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (layout.untracked.length > 0) {
+      logger.warn(
+        `${layout.untracked.length} data-model document entr${layout.untracked.length === 1 ? "y" : "ies"} ` +
+          "no manifest record claims (new records for `push --create`, or leftovers):\n" +
+          layout.untracked.map((u) => `  ${u}`).join("\n")
+      );
+    }
+
     const missing = await AppUtils.findMissingFiles(manifest);
     const missingCount = countMissing(missing);
     const orphans = await findOrphanFiles(manifest);

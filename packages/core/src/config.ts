@@ -8,6 +8,7 @@ import { types } from "node:util";
 import { logger } from "./Logger.js";
 import { includes, excludes, tableOptions } from "./defaultOptions.js";
 import { isValidDataModelTableName } from "./dataModel.js";
+import { DATA_MODEL_LAYOUTS, isValidDataModelLayout } from "./dataModelComposite.js";
 
 // #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
 // so a scoped deploy never silently degrades into a full deploy.
@@ -71,6 +72,9 @@ const DEFAULT_CONFIG: Sync.Config = {
   // empty list keeps every existing workspace exactly as it was; the documented
   // table list is DATA_MODEL_DEFAULT_TABLES (docs/DATA_MODEL.md).
   dataModelTables: [],
+  // SDK-F2: one sidecar per record stays the default; "composite" keeps a
+  // table, its columns and their choices in one data-model document.
+  dataModelLayout: "records",
 };
 
 type ConfigState = {
@@ -136,6 +140,7 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" 
   createRecords: "boolean",
   createTables: "array",
   dataModelTables: "array",
+  dataModelLayout: "string",
 };
 
 export function validateConfigShape(config: unknown, configPath: string): void {
@@ -180,6 +185,19 @@ export function validateConfigShape(config: unknown, configPath: string): void {
           `invalid: ${invalid.map((entry) => JSON.stringify(entry)).join(", ")}`
       );
     }
+  }
+
+  // A misspelt layout would silently fall back to "records" — and a workspace
+  // holding documents would then refuse every refresh with a layout conflict.
+  const dataModelLayout = (config as { dataModelLayout?: unknown }).dataModelLayout;
+  if (
+    typeof dataModelLayout === "string" &&
+    !isValidDataModelLayout(dataModelLayout)
+  ) {
+    errors.push(
+      `"dataModelLayout" must be one of ${DATA_MODEL_LAYOUTS.map((v) => `"${v}"`).join(", ")}; ` +
+        `got ${JSON.stringify(dataModelLayout)}`
+    );
   }
 
   if (errors.length > 0) {
@@ -703,7 +721,10 @@ export function getDefaultConfigFile(sourceDirectory = "src"): string {
       metaPush:true,
       // R4: data-model tables to track as editable records (opt-in; see
       // docs/DATA_MODEL.md for the documented list), e.g. ["sys_dictionary"].
-      dataModelTables:[]
+      dataModelTables:[],
+      // SDK-F2: "composite" keeps a table, its columns and their choices in one
+      // data-model/<table>.json document instead of one sidecar per record.
+      dataModelLayout:"records"
     };
     `.trim();
 }
