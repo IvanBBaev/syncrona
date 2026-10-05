@@ -69,6 +69,7 @@ jest.unstable_mockModule("../config.js", () => ({
 
 jest.unstable_mockModule("../appUtils.js", () => ({
   processManifest: (...a: unknown[]) => mockProcessManifest(...a),
+  applyRecordSecretRulesToContent: async () => undefined,
 }));
 
 jest.unstable_mockModule("../auth.js", () => ({

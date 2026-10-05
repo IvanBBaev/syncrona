@@ -19,6 +19,7 @@ import {
   listAppsFromTableAPI,
   isScopedEndpointUnavailableError,
 } from "./manifestBuilder.js";
+import { applyDataModelTableOptions } from "./dataModel.js";
 import {
   saveCredentials,
   setActiveInstance,
@@ -343,6 +344,16 @@ export async function downloadApp(
     if (options.scopeId) {
       man = { ...man, scopeId: options.scopeId };
     }
+
+    // The scoped endpoint's content ignores the record-level secret rule (a
+    // password sys_properties value comes back like any other); refresh and
+    // download never take that content for a governed column, and neither may
+    // init. A Table-API build carries no content, so this is a no-op for it.
+    await AppUtils.applyRecordSecretRulesToContent(
+      man,
+      client,
+      applyDataModelTableOptions(config)
+    );
 
     const totalFiles = countManifestFiles(man);
     logger.info(`Downloading scope ${scope}... ${totalFiles} files`);
