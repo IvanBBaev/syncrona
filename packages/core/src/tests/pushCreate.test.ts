@@ -95,16 +95,26 @@ const HIERARCHY: Record<string, string> = {
 };
 
 const makeClient = () => {
-  const tableAPIGet = jest.fn((_table: string, query: string) => {
+  // The idempotency lookup goes through tableAPIGet as `<field>=<value>^sys_scope=<id>`;
+  // nameLookup answers it with sys_ids, and each row carries the looked-up column
+  // back the way the instance does.
+  const nameLookup = jest.fn(
+    async (_t: string, _f: string, _n: string, _s: string): Promise<string[]> => []
+  );
+  const tableAPIGet = jest.fn(async (table: string, query: string, _fields?: string) => {
+    if (table !== "sys_db_object") {
+      const m = /^([^=^]+)=([^^]*)\^sys_scope=(.*)$/.exec(query);
+      if (!m) return { data: { result: [] as unknown } };
+      const [, field, value, scope] = m;
+      const sysIds = await nameLookup(table, field, value, scope);
+      return { data: { result: sysIds.map((sys_id) => ({ sys_id, [field]: value })) as unknown } };
+    }
     const name = query.replace(/^name=/, "");
     return name in HIERARCHY
       ? ok([{ name, "super_class.name": HIERARCHY[name] }])
       : ok([]);
   });
   const getScopeId = jest.fn((_scope: string) => ok([{ sys_id: "scope-1" }]));
-  const findRecordByName = jest.fn(
-    async (_t: string, _f: string, _n: string, _s: string): Promise<string[]> => []
-  );
   const createRecord = jest.fn(
     async (_t: string, _b: Record<string, string>): Promise<{ sys_id: string }> => ({
       sys_id: "new-1",
@@ -119,7 +129,7 @@ const makeClient = () => {
       sys_scope: "scope-1",
     })
   );
-  return { tableAPIGet, getScopeId, findRecordByName, createRecord, getRecordScope };
+  return { tableAPIGet, getScopeId, nameLookup, createRecord, getRecordScope };
 };
 type FakeClient = ReturnType<typeof makeClient>;
 const asClient = (c: FakeClient) =>
@@ -345,7 +355,7 @@ describe("planRecordCreation", () => {
   // AT-R1-6: the plan behind a dry run sends only GETs and writes nothing.
   it("plans create, adopt and error with GET-only requests", async () => {
     const client = makeClient();
-    client.findRecordByName.mockImplementation(async (_t, _f, name) =>
+    client.nameLookup.mockImplementation(async (_t, _f, name) =>
       name === "Existing" ? ["ex-1"] : name === "Twice" ? ["a", "b"] : []
     );
     const plan = await Pipeline.planRecordCreation(
@@ -369,7 +379,7 @@ describe("planRecordCreation", () => {
     expect(plan.plans[1].sysId).toBe("ex-1");
     expect(plan.plans[2].message).toContain("more than one");
     expect(plan.plans[4].message).toBe("two files");
-    expect(client.findRecordByName).toHaveBeenCalledWith(
+    expect(client.nameLookup).toHaveBeenCalledWith(
       "sys_script_include",
       "name",
       "New",
@@ -400,7 +410,7 @@ describe("planRecordCreation", () => {
     });
     expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: PREV });
     expect(client.getRecordScope).toHaveBeenCalledWith("sys_script_include", PREV);
-    expect(client.findRecordByName).not.toHaveBeenCalled();
+    expect(client.nameLookup).not.toHaveBeenCalled();
   });
 
   // The checkpoint is a local file: a sys_id from it is a claim, not a fact.
@@ -413,7 +423,7 @@ describe("planRecordCreation", () => {
       client: asClient(client),
     });
     expect(plan.plans[0].action).toBe("create");
-    expect(client.findRecordByName).toHaveBeenCalledTimes(1);
+    expect(client.nameLookup).toHaveBeenCalledTimes(1);
   });
 
   it("adopts a checkpoint record of a table with no scope column", async () => {
@@ -446,7 +456,7 @@ describe("planRecordCreation", () => {
     });
     expect(plan.plans[0].action).toBe("error");
     expect(plan.plans[0].message).toMatch(message);
-    expect(client.findRecordByName).not.toHaveBeenCalled();
+    expect(client.nameLookup).not.toHaveBeenCalled();
   });
 
   it("refuses a table with a differentiatorField", async () => {
@@ -463,13 +473,113 @@ describe("planRecordCreation", () => {
 
   it("turns a lookup failure into an error plan", async () => {
     const client = makeClient();
-    client.findRecordByName.mockRejectedValueOnce(new Error("boom"));
-    client.findRecordByName.mockRejectedValueOnce("raw");
+    client.nameLookup.mockRejectedValueOnce(new Error("boom"));
+    client.nameLookup.mockRejectedValueOnce("raw");
     const plan = await Pipeline.planRecordCreation(
       [candidate("sys_script_include", "A"), candidate("sys_script_include", "B")],
       { persistScopeId: false, client: asClient(client) }
     );
     expect(plan.plans.map((p) => p.message)).toEqual(["boom", "raw"]);
+  });
+});
+
+// Review findings on the idempotency lookup and adoption: an adoption must not
+// claim a sys_id the manifest or the same run already tracks, and a lookup hit
+// counts only when the instance returns the very key columns that were asked for.
+describe("planRecordCreation safety", () => {
+  const SYS_TRACKED = "c".repeat(32);
+  const lookupRows = (client: FakeClient, rows: Record<string, unknown>[]) =>
+    client.tableAPIGet.mockImplementation(async (table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.replace(/^name=/, "");
+        return name in HIERARCHY
+          ? { data: { result: [{ name, "super_class.name": HIERARCHY[name] }] as unknown } }
+          : { data: { result: [] as unknown } };
+      }
+      return { data: { result: rows as unknown } };
+    });
+  const lookupCalls = (client: FakeClient) =>
+    client.tableAPIGet.mock.calls.filter(([t]) => t !== "sys_db_object");
+
+  it("refuses to adopt a sys_id the manifest tracks under another record", async () => {
+    manifest.tables = {
+      sys_script_include: {
+        records: { Old: { name: "Old", sys_id: SYS_TRACKED, files: [] } },
+      },
+    };
+    const client = makeClient();
+    client.nameLookup.mockResolvedValue([SYS_TRACKED]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Renamed")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "error", sysId: SYS_TRACKED });
+    expect(plan.plans[0].message).toMatch(
+      /already tracked in the manifest as sys_script_include > Old; refusing to adopt/
+    );
+  });
+
+  it("refuses a checkpoint sys_id the manifest tracks under another table", async () => {
+    manifest.tables = {
+      sys_script: { records: { Other: { name: "Other", sys_id: SYS_TRACKED, files: [] } } },
+    };
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      known: { "sys_script_include:New": SYS_TRACKED },
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "error", sysId: SYS_TRACKED });
+    expect(plan.plans[0].message).toContain("sys_script > Other");
+  });
+
+  it("adopts one sys_id once per run and refuses the second candidate", async () => {
+    const client = makeClient();
+    client.nameLookup.mockResolvedValue(["same-1"]);
+    const plan = await Pipeline.planRecordCreation(
+      [candidate("sys_script_include", "A"), candidate("sys_script_include", "B")],
+      { persistScopeId: false, client: asClient(client) }
+    );
+    expect(plan.plans.map((p) => p.action)).toEqual(["adopt", "error"]);
+    expect(plan.plans[1].message).toContain("sys_script_include > A");
+  });
+
+  it("asks for sys_id and the lookup columns, and accepts a reference value", async () => {
+    const client = makeClient();
+    lookupRows(client, [{ sys_id: "ex-1", name: { link: "https://x", value: "Existing" } }]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Existing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "ex-1" });
+    expect(lookupCalls(client)).toEqual([
+      ["sys_script_include", "name=Existing^sys_scope=scope-1", "sys_id,name", 2],
+    ]);
+  });
+
+  it.each([
+    ["a row without the lookup column", { sys_id: "ex-1" }, /carries no "name" column/],
+    ["a row whose value differs", { sys_id: "ex-1", name: "existing" }, /whose name is "existing"/],
+  ])("fails closed on %s", async (_label, row, message) => {
+    const client = makeClient();
+    lookupRows(client, [row]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Existing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(message);
+  });
+
+  it("refuses a name holding ^ before any lookup request on the table", async () => {
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "A^B")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/contains "\^", which separates conditions/);
+    expect(lookupCalls(client)).toEqual([]);
   });
 });
 
@@ -526,7 +636,9 @@ describe("createRecords", () => {
       sys_script_include: { records: { Other: { name: "Other", sys_id: "o", files: [] } } },
     };
     const client = makeClient();
-    client.findRecordByName.mockImplementation(async () => ["ex-1"]);
+    client.nameLookup.mockImplementation(async (_t, _f, name) => [
+      name === "Ghost" ? "gh-1" : "ex-1",
+    ]);
     const adoptedCtx: Sync.FileContext = {
       filePath: "/proj/src/sys_script_include/Existing/script.js",
       name: "Existing",
@@ -560,7 +672,7 @@ describe("createRecords", () => {
   // AT-R1-3: more than one hit, or a refused table, is a failed result and no write.
   it("reports error plans as failures and sends nothing", async () => {
     const client = makeClient();
-    client.findRecordByName.mockImplementation(async () => ["a", "b"]);
+    client.nameLookup.mockImplementation(async () => ["a", "b"]);
     const plan = await planFor(client, [candidate("sys_script_include", "Twice")]);
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client) });
     expect(outcome.results[0].success).toBe(false);
@@ -573,7 +685,7 @@ describe("createRecords", () => {
     const client = makeClient();
     const plan = await planFor(client, [candidate("sys_script_include", "New")]);
     client.createRecord.mockRejectedValueOnce(new Error("ETIMEDOUT"));
-    client.findRecordByName.mockImplementationOnce(async () => ["late-1"]);
+    client.nameLookup.mockImplementationOnce(async () => ["late-1"]);
     const onCreated = jest.fn();
     const outcome = await Pipeline.createRecords(plan, {
       client: asClient(client),
@@ -613,7 +725,7 @@ describe("createRecords", () => {
     expect(client.createRecord).toHaveBeenCalledTimes(1);
 
     client.createRecord.mockRejectedValueOnce(new Error("ETIMEDOUT"));
-    client.findRecordByName.mockImplementationOnce(async () => ["a", "b"]);
+    client.nameLookup.mockImplementationOnce(async () => ["a", "b"]);
     const ambiguous = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
     expect(ambiguous.results[0].message).toContain("after a failed create");
   });

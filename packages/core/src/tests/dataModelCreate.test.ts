@@ -96,27 +96,40 @@ const HIERARCHY: Record<string, string> = {
   x_demo_rule: "sys_metadata",
 };
 
+/**
+ * Lookup rows as the instance returns them: every column the query matched on
+ * (`col=val`, or `colISEMPTY` for an empty one) is read back with the row, so
+ * the pipeline's check that a row really carries the looked-up key passes.
+ */
+const withLookupColumns = (query: string, rows: Record<string, unknown>[]) => {
+  const columns: Record<string, string> = {};
+  for (const term of query.split("^")) {
+    if (term.startsWith("sys_scope=")) continue;
+    const empty = /^(.+)ISEMPTY$/.exec(term);
+    if (empty) columns[empty[1]] = "";
+    else if (term.includes("=")) columns[term.slice(0, term.indexOf("="))] = term.slice(term.indexOf("=") + 1);
+  }
+  return rows.map((row) => ({ ...columns, ...row }));
+};
+
 const makeClient = () => {
   // Rows a composite lookup (`col=val^...^sys_scope=...`) answers with.
-  const lookupHits: { sys_id: string }[][] = [];
-  const tableAPIGet = jest.fn((table: string, query: string) => {
+  const lookupHits: Record<string, unknown>[][] = [];
+  const tableAPIGet = jest.fn((table: string, query: string, _fields?: string) => {
     if (table === "sys_db_object" && query.startsWith("name=")) {
       const name = query.slice("name=".length);
       return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
     }
-    if (query.includes("^sys_scope=")) return ok(lookupHits.shift() ?? []);
+    if (query.includes("^sys_scope=")) return ok(withLookupColumns(query, lookupHits.shift() ?? []));
     return ok([]);
   });
   const getScopeId = jest.fn((_scope: string) => ok([{ sys_id: "scope-1" }]));
-  const findRecordByName = jest.fn(
-    async (_t: string, _f: string, _n: string, _s: string): Promise<string[]> => []
-  );
   const createRecord = jest.fn(
     async (_t: string, _b: Record<string, string>): Promise<{ sys_id: string }> => ({
       sys_id: "new-1",
     })
   );
-  return { tableAPIGet, getScopeId, findRecordByName, createRecord, lookupHits };
+  return { tableAPIGet, getScopeId, createRecord, lookupHits };
 };
 type FakeClient = ReturnType<typeof makeClient>;
 const asClient = (c: FakeClient) => c as unknown as import("../snClient.js").SNClient;
@@ -193,7 +206,6 @@ describe("push --create for data-model records (R4)", () => {
     expect(plan.plans.map((p) => p.action)).toEqual(["error", "error"]);
     for (const p of plan.plans) expect(p.message).toMatch(/denied|not allowed|never/i);
     expect(client.tableAPIGet).not.toHaveBeenCalled();
-    expect(client.findRecordByName).not.toHaveBeenCalled();
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client) });
     expect(outcome.results.every((r) => !r.success)).toBe(true);
     expect(client.createRecord).not.toHaveBeenCalled();
@@ -206,11 +218,10 @@ describe("push --create for data-model records (R4)", () => {
     ]);
     expect(plan.plans[0].action).toBe("create");
     expect(plan.plans[0].lookup).toEqual({ name: "x_demo_task", element: "u_foo" });
-    expect(client.findRecordByName).not.toHaveBeenCalled();
     expect(client.tableAPIGet).toHaveBeenCalledWith(
       "sys_dictionary",
       "name=x_demo_task^element=u_foo^sys_scope=scope-1",
-      "sys_id",
+      "sys_id,name,element",
       2
     );
   });
@@ -378,7 +389,6 @@ describe("push --create for data-model records (R4)", () => {
     client.lookupHits.push([{ sys_id: "late-1" }]);
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
     expect(client.createRecord).toHaveBeenCalledTimes(1);
-    expect(client.findRecordByName).not.toHaveBeenCalled();
     expect(outcome.results[0].message).toContain("created (late-1)");
   });
 
@@ -407,11 +417,11 @@ describe("push --create for data-model records (R4)", () => {
       sidecarCandidate("sys_dictionary", "Foo", DICTIONARY_ROW),
     ]);
     expect(plan.plans[0].lookup).toBeUndefined();
-    expect(client.findRecordByName).toHaveBeenCalledWith(
+    expect(client.tableAPIGet).toHaveBeenCalledWith(
       "sys_dictionary",
-      "column_label",
-      "Foo",
-      "scope-1"
+      "column_label=Foo^sys_scope=scope-1",
+      "sys_id,column_label",
+      2
     );
   });
 
@@ -463,10 +473,16 @@ describe("push --create on a table whose records carry no scope", () => {
     expect(plan.plans[0]).toMatchObject({
       action: "create",
       scoped: false,
-      lookup: { name: "x_demo_task", element: "u_foo", value: "1", language: "en" },
+      lookup: {
+        name: "x_demo_task",
+        element: "u_foo",
+        value: "1",
+        language: "en",
+        dependent_value: "",
+      },
     });
     expect(queriesOf(client, "sys_choice")).toEqual([
-      "name=x_demo_task^element=u_foo^value=1^language=en",
+      "name=x_demo_task^element=u_foo^value=1^language=en^dependent_valueISEMPTY",
     ]);
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
     expect(outcome.results[0].success).toBe(true);
@@ -482,12 +498,51 @@ describe("push --create on a table whose records carry no scope", () => {
         const name = query.slice("name=".length);
         return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
       }
-      return ok(query.endsWith("^language=de") ? [{ sys_id: "choice-de" }] : []);
+      return ok(
+        query.includes("^language=de^")
+          ? withLookupColumns(query, [{ sys_id: "choice-de" }])
+          : []
+      );
     });
     const plan = await planFor(client, [
       sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", { ...CHOICE_ROW, language: "de" }),
     ]);
     expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "choice-de", scoped: false });
+  });
+
+  // A dependent choice list repeats one value per dependent value, so the
+  // column is part of the key: empty or missing locally means ISEMPTY, a set
+  // value is matched exactly.
+  it("keys on dependent_value: ISEMPTY when empty, an exact term when set", async () => {
+    const client = makeClient();
+    await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", { ...CHOICE_ROW, dependent_value: "" }),
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.2", {
+        ...CHOICE_ROW,
+        value: "2",
+        dependent_value: "hardware",
+      }),
+    ]);
+    expect(queriesOf(client, "sys_choice")).toEqual([
+      "name=x_demo_task^element=u_foo^value=1^language=en^dependent_valueISEMPTY",
+      "name=x_demo_task^element=u_foo^value=2^language=en^dependent_value=hardware",
+    ]);
+  });
+
+  it("does not adopt a choice whose dependent_value differs from the sidecar's", async () => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation((table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.slice("name=".length);
+        return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
+      }
+      return ok([{ ...withLookupColumns(query, [{ sys_id: "c-1" }])[0], dependent_value: "x" }]);
+    });
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
+    ]);
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/whose dependent_value is "x"/);
   });
 
   it("refuses two matches on the instance instead of guessing", async () => {
@@ -497,7 +552,7 @@ describe("push --create on a table whose records carry no scope", () => {
         const name = query.slice("name=".length);
         return name in HIERARCHY ? ok([{ name, "super_class.name": HIERARCHY[name] }]) : ok([]);
       }
-      return ok([{ sys_id: "a" }, { sys_id: "b" }]);
+      return ok(withLookupColumns(query, [{ sys_id: "a" }, { sys_id: "b" }]));
     });
     const plan = await planFor(client, [
       sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
@@ -526,7 +581,6 @@ describe("push --create on a table whose records carry no scope", () => {
       },
     ]);
     expect(plan.plans[0]).toMatchObject({ action: "create", scoped: false });
-    expect(client.findRecordByName).not.toHaveBeenCalled();
     expect(queriesOf(client, "u_plain")).toEqual(["name=Thing"]);
   });
 
@@ -536,13 +590,17 @@ describe("push --create on a table whose records carry no scope", () => {
       sidecarCandidate("sys_choice", "x_demo_task.u_foo.1", CHOICE_ROW),
     ]);
     client.createRecord.mockRejectedValueOnce(new Error("socket hang up"));
-    client.tableAPIGet.mockImplementation(() => ok([{ sys_id: "landed-1" }]));
+    client.tableAPIGet.mockImplementation((_table: string, query: string) =>
+      ok(withLookupColumns(query, [{ sys_id: "landed-1" }]))
+    );
     const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
     expect(outcome.results[0]).toMatchObject({ success: true });
     expect(outcome.results[0].message).toContain("landed-1");
     expect(client.createRecord).toHaveBeenCalledTimes(1);
     const retryQuery = client.tableAPIGet.mock.calls.at(-1)?.[1];
-    expect(retryQuery).toBe("name=x_demo_task^element=u_foo^value=1^language=en");
+    expect(retryQuery).toBe(
+      "name=x_demo_task^element=u_foo^value=1^language=en^dependent_valueISEMPTY"
+    );
   });
 
   it("keeps the scope term and the sys_scope column for a sys_metadata table", async () => {
