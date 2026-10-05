@@ -29,6 +29,23 @@
  * REV-212 rule for `sync_run_atf_tests`): one deadline for dispatch, poll and
  * result read together, because an MCP client gives up long before the CLI's
  * one-hour default.
+ *
+ * SDK-F7: a run that outlives that budget comes back `incomplete` with its
+ * `progressId`. Passing that id back as `progressId` resumes the run: the
+ * dispatch POST is skipped and the same tracker is polled (and, for the ATF
+ * actions, its result read) with the same outcome mapping — the CLI's
+ * `--progress-id`. A resume only reads, so it does not need
+ * `confirmDestructive=true`; `action` stays required because it decides which
+ * result record an ATF tracker links to, and the dispatch arguments are ignored.
+ * The action is bound to the tracker both ways: a tracker that links an ATF
+ * result resumed as install/publish/rollback is `incomplete`, and an ATF action
+ * over a tracker without a result link is never `succeeded`. The tracker does not
+ * record which app-repo action started it, so install, publish and rollback are
+ * indistinguishable on a resume and reported on the caller's word (with a note).
+ *
+ * The ATF verdict is the same allow-list as core ({@link ATF_PASSING_STATUSES}):
+ * a successful tracker over a result that is neither clearly passing nor clearly
+ * failing is `incomplete`, never `succeeded`.
  */
 import { wrapUntrustedData } from "../runtimeUtils";
 import { snRequest } from "../servicenowCore";
@@ -68,6 +85,8 @@ export const CICD_ROLE = "sn_cicd.sys_ci_automation";
 export const DEFAULT_CICD_POLL_MS = 1000;
 const MIN_CICD_POLL_MS = 250;
 const MAX_CICD_POLL_MS = 60000;
+// A tracker id is a sys_id — the same shape inputValidation enforces up front.
+const PROGRESS_ID_REGEX = /^[0-9a-f]{32}$/i;
 // Same floor as the ATF poll: a sub-second per-request timeout aborts before an
 // ordinary round trip can complete.
 const MIN_ATTEMPT_TIMEOUT_MS = 1000;
@@ -221,9 +240,87 @@ function statusLabel(progress: JsonObject): string {
   return nonEmptyString(progress.status_label) ?? STATUS_LABELS[status] ?? `status ${status}`;
 }
 
+/** A count for the summary only; the verdict reads {@link strictAtfCount}. */
 function countOf(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * The ATF verdict allow-list. It must stay identical to the copy in
+ * `packages/core/src/cicdCommand.ts` (this package may not import core), and
+ * both are table-tested against the same shapes.
+ *
+ * A status is compared trimmed and case-insensitively against two explicit sets:
+ * the `sys_atf_test_result` / `sys_atf_test_suite_result` status choice values
+ * sn_cicd reports in `test_status` and `test_suite_status`. Anything in neither
+ * set (canceled, skipped, running, pending, "failed", a missing status, ...) does
+ * not say whether the tests passed, so it is never read as a pass.
+ */
+export const ATF_PASSING_STATUSES: ReadonlySet<string> = new Set(["success", "success_with_warnings"]);
+export const ATF_FAILING_STATUSES: ReadonlySet<string> = new Set(["failure", "error"]);
+
+/**
+ * `passed` and `failed` are clear answers; `unknown` is a readable record that
+ * does not clearly say either, which a successful tracker turns into `incomplete`.
+ */
+export type AtfVerdict = "passed" | "failed" | "unknown";
+
+/** A status string trimmed and lower-cased, or undefined when there is none. */
+function normalizedAtfStatus(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim().toLowerCase() : undefined;
+}
+
+/**
+ * A count the record states unambiguously: a non-negative integer, as a number
+ * or a digit-only string. Anything else (missing, "", "n/a", 1.5, -1) is
+ * undefined, so it can neither prove a pass nor hide a failure.
+ */
+export function strictAtfCount(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (typeof value === "string" && /^\s*\d+\s*$/.test(value)) {
+    return Number(value);
+  }
+  return undefined;
+}
+
+/**
+ * The verdict of a suite result: `failed` when a failure or error count is
+ * positive or the status is a failing one; `passed` only when the status is a
+ * passing one AND both the failure and the error count are stated as 0; every
+ * other shape is `unknown` (fail-closed: a missing count is not a zero).
+ */
+export function atfSuiteVerdict(body: JsonObject): AtfVerdict {
+  const status = normalizedAtfStatus(body.test_suite_status);
+  const failed = strictAtfCount(body.rolledup_test_failure_count);
+  const errored = strictAtfCount(body.rolledup_test_error_count);
+  if ((failed ?? 0) > 0 || (errored ?? 0) > 0 || (status !== undefined && ATF_FAILING_STATUSES.has(status))) {
+    return "failed";
+  }
+  if (status !== undefined && ATF_PASSING_STATUSES.has(status) && failed === 0 && errored === 0) {
+    return "passed";
+  }
+  return "unknown";
+}
+
+/** The verdict of a single-test result, from `test_status` alone. */
+export function atfTestVerdict(body: JsonObject): AtfVerdict {
+  const status = normalizedAtfStatus(body.test_status);
+  if (status !== undefined && ATF_FAILING_STATUSES.has(status)) return "failed";
+  if (status !== undefined && ATF_PASSING_STATUSES.has(status)) return "passed";
+  return "unknown";
+}
+
+/**
+ * Whether a finished tracker carries the mark of an ATF run: a `links.results`
+ * entry (sn_cicd links the suite or test result from an ATF tracker; the
+ * app-repo trackers link none). That is the only kind evidence the tracker
+ * exposes — same rule as core's `syncrona cicd`.
+ */
+function trackerLinksAtfResult(progress: JsonObject): boolean {
+  return asObject(asObject(progress.links)?.results) !== undefined;
 }
 
 function pollIntervalOf(value: unknown): number {
@@ -289,18 +386,47 @@ async function cicdCall(
   return result;
 }
 
+/**
+ * Consecutive failed progress polls tolerated before the run is reported as
+ * incomplete. `snRequest` already retries a GET for well under a second; this
+ * rides out a longer blip, one `pollMs` apart (same limit as core's `syncrona cicd`).
+ */
+export const CICD_MAX_POLL_FAILURES = 3;
+
+/** No response, 429 and 5xx are worth another poll; auth, 404 and non-JSON answers are not. */
+function isTransientPollError(err: unknown): boolean {
+  if (err instanceof CicdRunIncomplete) {
+    const status = err.httpStatus;
+    return status === 429 || (status !== undefined && status >= 500);
+  }
+  return true;
+}
+
 async function pollProgress(
   progressId: string,
   pollMs: number,
   budget: Budget
 ): Promise<JsonObject> {
+  let failures = 0;
   for (;;) {
-    const progress = await cicdCall(
-      "GET",
-      cicdEndpoint(`progress/${encodeURIComponent(progressId)}`),
-      "progress",
-      budget
-    );
+    let progress: JsonObject;
+    try {
+      progress = await cicdCall(
+        "GET",
+        cicdEndpoint(`progress/${encodeURIComponent(progressId)}`),
+        "progress",
+        budget
+      );
+    } catch (e) {
+      failures += 1;
+      const left = budget.remaining();
+      if (!isTransientPollError(e) || failures >= CICD_MAX_POLL_FAILURES || left <= 0) {
+        throw e;
+      }
+      await sleep(Math.min(pollMs, left));
+      continue;
+    }
+    failures = 0;
     if (TERMINAL_STATUSES.has(String(progress.status ?? ""))) {
       return progress;
     }
@@ -315,24 +441,25 @@ async function pollProgress(
 }
 
 interface AtfOutcome {
-  failed: boolean;
+  verdict: AtfVerdict;
   summary: JsonObject;
   url?: string;
 }
 
 /**
- * Reads the suite or test result linked from the finished tracker. Best effort,
- * like core: the tracker is already terminal, so a failed read degrades to the
- * tracker's own verdict instead of turning the outcome into `incomplete`.
+ * Reads the suite or test result linked from the finished tracker. A tracker
+ * that links no result, or a result that cannot be read, comes back as
+ * `{ unreadable }`: the caller must not report a pass it could not see, so a
+ * successful tracker then yields `incomplete` (like core's `syncrona cicd`).
  */
 async function fetchAtfOutcome(
   action: CicdRunAction,
   progress: JsonObject,
   budget: Budget
-): Promise<AtfOutcome | undefined> {
+): Promise<AtfOutcome | { unreadable: string }> {
   const resultId = linkOf(progress, "results", "id");
   if (!resultId) {
-    return undefined;
+    return { unreadable: "the tracker links no ATF result record" };
   }
   const path =
     action === "run-suite"
@@ -341,8 +468,8 @@ async function fetchAtfOutcome(
   let body: JsonObject;
   try {
     body = await cicdCall("GET", cicdEndpoint(path), "ATF result", budget);
-  } catch (_) {
-    return undefined;
+  } catch (e) {
+    return { unreadable: `ATF result ${resultId} could not be read: ${e instanceof Error ? e.message : String(e)}` };
   }
   const url = linkOf(body, "results", "url") ?? linkOf(progress, "results", "url");
   if (action === "run-suite") {
@@ -352,16 +479,26 @@ async function fetchAtfOutcome(
     const skipped = countOf(body.rolledup_test_skip_count);
     const suiteStatus = nonEmptyString(body.test_suite_status);
     return {
-      failed: failed + errored > 0 || /^(failure|error)$/i.test(suiteStatus ?? ""),
-      summary: { suiteStatus: suiteStatus ?? null, passed, failed, errored, skipped },
+      verdict: atfSuiteVerdict(body),
+      // The status strings and the URL are instance-authored, like the messages.
+      summary: {
+        suiteStatus: suiteStatus ? wrapUntrustedData(suiteStatus, "servicenow") : null,
+        passed,
+        failed,
+        errored,
+        skipped,
+      },
       url,
     };
   }
   const testStatus = nonEmptyString(body.test_status);
   return {
-    failed: /^(failure|error)$/i.test(testStatus ?? ""),
+    verdict: atfTestVerdict(body),
     // Step output is instance-authored free text — fence it as untrusted.
-    summary: { testStatus: testStatus ?? null, output: wrapUntrustedData(body.output, "servicenow") },
+    summary: {
+      testStatus: testStatus ? wrapUntrustedData(testStatus, "servicenow") : null,
+      output: wrapUntrustedData(body.output, "servicenow"),
+    },
     url,
   };
 }
@@ -369,12 +506,48 @@ async function fetchAtfOutcome(
 function trackerSummary(progress: JsonObject): JsonObject {
   return {
     status: String(progress.status ?? ""),
-    statusLabel: statusLabel(progress),
+    // status_label is instance-authored text too (the fallback labels are ours).
+    statusLabel: wrapUntrustedData(statusLabel(progress), "servicenow"),
     percentComplete: progress.percent_complete ?? null,
     // status_message / error / status_detail are instance-authored text.
     message: wrapUntrustedData(extractCicdErrorMessage({ result: progress }), "servicenow"),
     detail: wrapUntrustedData(progress.status_detail, "servicenow"),
   };
+}
+
+/** Sends the dispatch POST and returns the id of the progress tracker it started. */
+async function dispatchAction(action: CicdRunAction, endpoint: string, budget: Budget): Promise<string> {
+  const dispatched = await cicdCall("POST", endpoint, action, budget);
+  const progressId = linkOf(dispatched, "progress", "id");
+  if (!progressId) {
+    // A 200 can still carry a rejection in the sn_cicd envelope (status "3" +
+    // error); either way nothing was started, so nothing can be reported on.
+    const reason = extractCicdErrorMessage({ result: dispatched });
+    throw new CicdRunIncomplete(
+      reason
+        ? `The instance rejected ${action}: ${reason}`
+        : `The instance accepted ${action} but returned no progress id to follow.`
+    );
+  }
+  return progressId;
+}
+
+/**
+ * The `progressId` argument of a resume: undefined when absent, the trimmed id
+ * when it is a sys_id, and a {@link CicdRunArgumentError} for anything else —
+ * it is spliced into the tracker URL, so it is validated even past the schema.
+ */
+export function parseResumeProgressId(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const id = typeof value === "string" ? value.trim() : "";
+  if (!PROGRESS_ID_REGEX.test(id)) {
+    throw new CicdRunArgumentError(
+      "progressId must be the 32-character hexadecimal sys_id of an sn_cicd progress tracker (the progressId an incomplete run returned)."
+    );
+  }
+  return id;
 }
 
 export async function handleCicdRun(
@@ -386,17 +559,24 @@ export async function handleCicdRun(
     return errorResponse(`Missing or unknown action. Expected one of: ${CICD_RUN_ACTIONS.join(" | ")}.`);
   }
 
+  // A resume (SDK-F7) polls an existing tracker and dispatches nothing, so it
+  // neither builds a dispatch request nor needs confirmDestructive=true.
+  let resumeId: string | undefined;
   let request: CicdRunRequest;
   try {
-    request = buildCicdRunRequest(action, args);
+    resumeId = parseResumeProgressId(args.progressId);
+    request = resumeId
+      ? { path: `progress/${encodeURIComponent(resumeId)}`, params: {} }
+      : buildCicdRunRequest(action, args);
   } catch (e) {
     return errorResponse(e instanceof Error ? e.message : String(e));
   }
+  const method = resumeId ? "GET" : "POST";
 
   // Every action changes the instance: install/publish/rollback rewrite the
   // application, and an ATF run executes tests and writes their results. Same
   // confirmDestructive / dryRun / audit contract as sync_run_atf_tests.
-  if (args.confirmDestructive !== true) {
+  if (!resumeId && args.confirmDestructive !== true) {
     return errorResponse(
       `sync_cicd_run ${action} dispatches work on the instance through the CI/CD API. Re-run with confirmDestructive=true.`
     );
@@ -406,42 +586,69 @@ export async function handleCicdRun(
   if (context.dryRun) {
     return context.makeDryRunAuditResponse(TOOL_NAME, args, {
       action,
-      method: "POST",
+      method,
       endpoint,
-      params: request.params,
+      ...(resumeId ? { resume: true, progressId: resumeId } : { params: request.params }),
     });
   }
 
   const budget = new Budget(context.timeoutMs);
   const pollMs = pollIntervalOf(args.pollMs);
   let outcome: CicdRunOutcome = "incomplete";
-  let progressId: string | undefined;
+  let progressId: string | undefined = resumeId;
   let progress: JsonObject | undefined;
   let atf: AtfOutcome | undefined;
   let message: string | undefined;
   let httpStatus: number | undefined;
 
   try {
-    const dispatched = await cicdCall("POST", endpoint, action, budget);
-    progressId = linkOf(dispatched, "progress", "id");
-    if (!progressId) {
-      // A 200 can still carry a rejection in the sn_cicd envelope (status "3" +
-      // error); either way nothing was started, so nothing can be reported on.
-      const reason = extractCicdErrorMessage({ result: dispatched });
-      throw new CicdRunIncomplete(
-        reason
-          ? `The instance rejected ${action}: ${reason}`
-          : `The instance accepted ${action} but returned no progress id to follow.`
+    progressId = resumeId ?? (await dispatchAction(action, endpoint, budget));
+    if (!resumeId) {
+      // The dispatch is audited before polling: a poll that outlives the MCP
+      // call, or a crash, must not leave dispatched work without an audit line.
+      context.auditMutatingTool(
+        TOOL_NAME,
+        args,
+        { action, phase: "dispatched", method, path: request.path, progressId },
+        Date.now() - context.startedAt
       );
     }
     progress = await pollProgress(progressId, pollMs, budget);
-    if (action === "run-suite" || action === "run-test") {
-      atf = await fetchAtfOutcome(action, progress, budget);
+    const trackerSucceeded = String(progress.status) === STATUS_SUCCESSFUL;
+    const isAtfAction = action === "run-suite" || action === "run-test";
+    if (resumeId && !isAtfAction && trackerLinksAtfResult(progress)) {
+      // A resume takes the action on the caller's word. A tracker that links an
+      // ATF result is a test run, so reporting it as an app-repo action would
+      // skip the test verdict — whatever its status.
+      throw new CicdRunIncomplete(
+        `progress ${progressId} links an ATF result, so it looks like a test run rather than ${action}. Resume it with the run-suite or run-test action to read the test verdict.`
+      );
     }
-    const succeeded = String(progress.status) === STATUS_SUCCESSFUL && atf?.failed !== true;
+    if (isAtfAction) {
+      // The other direction: an app-repo tracker resumed as an ATF action links
+      // no result, which is reported unreadable below and never as a pass.
+      const read = await fetchAtfOutcome(action, progress, budget);
+      if ("unreadable" in read) {
+        if (trackerSucceeded) {
+          throw new CicdRunIncomplete(
+            `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. Resume with progressId ${progressId} to read the result again.`
+          );
+        }
+      } else {
+        atf = read;
+        if (trackerSucceeded && read.verdict === "unknown") {
+          throw new CicdRunIncomplete(
+            `progress ${progressId} finished, but the ATF result does not clearly report a pass or a failure, so whether the tests passed is unknown. Resume with progressId ${progressId} to read the result again.`
+          );
+        }
+      }
+    }
+    const succeeded = trackerSucceeded && (!isAtfAction || atf?.verdict === "passed");
     outcome = succeeded ? "succeeded" : "failed";
-    if (!succeeded && String(progress.status) === STATUS_SUCCESSFUL) {
+    if (!succeeded && trackerSucceeded) {
       message = "ATF reported failing tests.";
+    } else if (succeeded && resumeId && !isAtfAction) {
+      message = `The tracker does not record which app-repo action started it; reported as ${action} on the caller's word.`;
     }
   } catch (e) {
     outcome = "incomplete";
@@ -457,6 +664,11 @@ export async function handleCicdRun(
     args,
     {
       action,
+      phase: "finished",
+      // A resume is recorded as such, so the audit trail never reads a poll as
+      // a second dispatch of the same work.
+      ...(resumeId ? { resumed: true } : {}),
+      method,
       path: request.path,
       outcome,
       exitCode,
@@ -472,11 +684,13 @@ export async function handleCicdRun(
       action,
       outcome,
       exitCode,
-      request: { method: "POST", path: `api/sn_cicd/${request.path}`, params: request.params },
+      ...(resumeId ? { resumed: true } : {}),
+      request: { method, path: `api/sn_cicd/${request.path}`, params: request.params },
       progressId: progressId ?? null,
       tracker: progress ? trackerSummary(progress) : null,
       ...(atf ? { atf: atf.summary } : {}),
-      ...(resultsUrl ? { resultsUrl } : {}),
+      // The URL comes from the instance's answer, so it is fenced like the text.
+      ...(resultsUrl ? { resultsUrl: wrapUntrustedData(resultsUrl, "servicenow") } : {}),
       // Messages can quote the instance's error envelope, so they are fenced too.
       ...(message ? { message: wrapUntrustedData(message, "servicenow") } : {}),
     },
