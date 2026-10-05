@@ -7,7 +7,7 @@
 SyncroNow AI is a monorepo that ships a ServiceNow development toolchain:
 a **CLI** that syncs scoped-application files between a local workspace and a
 ServiceNow instance, and an **MCP server** that exposes the same instance to
-AI agents through ~60 governed tools.
+AI agents through 63 governed tools.
 
 ## 1. Workspace layout
 

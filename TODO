@@ -31,30 +31,74 @@ mocked tests. These items close what it deliberately left open.
   personal developer instance. Record the results in PRODUCT_STATE and drop the
   "live verification pending" caveats in README, COMPARISON, ROADMAP and
   MIGRATING_FROM_NOW_SDK once they pass.
-- [ ] **SDK-F2. Composite data-model documents** — one parent-plus-children
+  - Read-only slice verified live 2026-10-05 against a vendor instance (Australia
+    patch 5, admin user): `query` (table, `-o json` paging, exit 1 on an unknown
+    table), `fluent types --native --scope` (9 scope tables plus the cross-scope
+    parent, `extends` chain correct), `cicd <action> --progress-id` (succeeded →
+    exit 0; unknown id → 404 → exit 1; malformed id → exit 1, nothing sent) and the
+    `sync_cicd_run` handler (GET-only poll, `confirmDestructive` refusal, dry-run
+    describes the POST). Still open: every write path above.
+  - Found live: `push --dry-run` refuses on a user/project scope mismatch (exit 1)
+    before it previews anything, so a preview needs `--scopeSwap`, which writes
+    the user's scope preference. A poll of an unknown progress id reports
+    `outcome: "incomplete"` from `sync_cicd_run` but "failed" from the CLI (both
+    exit 1).
+- [x] **SDK-F2. Composite data-model documents** — one parent-plus-children
   document per table (table, columns, choices) on top of the independent
   sidecar records shipped in 1.1.0; push must stay idempotent and ordered.
-- [ ] **SDK-F3. Native type generation** — generate `.d.ts` from
-  `sys_dictionary` without `@servicenow/sdk`, so `fluent types` works without
-  the optional peer.
+- [x] **SDK-F3. Native type generation** — `fluent types --native` writes
+  `@types/syncrona/tables.d.ts` (or `--out`) from `sys_db_object` (tables and
+  `super_class` inheritance), `sys_dictionary` (columns, `internal_type` mapped
+  to TypeScript) and `sys_choice` (literal unions) for the project scope,
+  `--scope` or `--table`, without `@servicenow/sdk`. A plain `fluent types`
+  keeps the SDK as the default and falls back to native generation when the
+  adapter or the SDK is missing (unless `--scripts`/`--fluent` asks for
+  SDK-only definitions). Works with API-key and mutual-TLS profiles. Covered by
+  mocked Table API tests; not yet run against a live instance.
 - [ ] **SDK-F4. API-key and mutual-TLS profiles in the Fluent tier** — today
   instance-side `fluent` actions refuse these profiles because the SDK's
   install, reinstall and update-set export endpoints accept only a UI session.
   Revisit when the SDK exposes a token-based path.
-- [ ] **SDK-F5. `explain` counterpart** — decide whether to wrap the SDK's
-  `explain` or point to its docs; `move-to-app` has the same open question.
+- [x] **SDK-F5. `explain` counterpart** — decided to wrap both SDK commands as
+  `fluent` actions rather than point to the SDK docs, because each is reachable
+  through a public SDK entry point. `fluent explain [topic]` (`--list`, `--peek`)
+  reads the docs the SDK bundles through `@servicenow/sdk-api/docs`: offline,
+  read-only, no project or instance. `fluent move-to-app --ids <sys_id,...>`
+  calls `Orchestrator.moveToApp`, which creates `sys_claim` records and rewrites
+  local sources, so it confirms unless `--ci` (and, like `install`, refuses to
+  prompt without a terminal or with `--json`), previews with `--dry-run`, refuses
+  API-key and mutual-TLS profiles, and refuses non-global projects. Mocked tests
+  only; not yet run against a real SDK or a live instance.
 - [x] **WP-8. MCP exposure of `cicd`** — `sync_cicd_run` (62nd MCP tool) wraps
   the same `api/sn_cicd` requests as `syncrona cicd` through `servicenowCore.ts`
   (native fetch, no core import), behind `confirmDestructive` / `dryRun` /
   audit, with the outcome mapped to `succeeded` / `failed` / `incomplete` and
   the CLI exit code. Mocked tests only; the live run is part of SDK-F1.
-- [ ] **SDK-F6. `sync_fluent_build` MCP tool** — deferred from WP-8. Needs a
-  design for running the optional `@syncrona/fluent` package from the MCP
-  server without importing core.
-- [ ] **SDK-F7. Resume a `sync_cicd_run` by progress id** — the tool is bounded
+- [x] **SDK-F6. `sync_fluent_build` MCP tool** — deferred from WP-8. Done: the
+  63rd MCP tool (`handlers/fluentHandlers.ts`, registry module `fluent`) builds
+  a Fluent project through `@syncrona/fluent`, resolved lazily at call time from
+  the project and then from the server's own install — core's order, no static
+  import and no package.json dependency, so the depcruise boundaries are
+  unchanged. The project path is confined to the workspace (symlinks included)
+  and must hold `now.config.json`; `frozenKeys` / `errorOnConflict` /
+  `skipClean` mirror the CLI. Exit codes mirror `fluent build`: 0 `succeeded`,
+  2 `failed`, 1 `incomplete` (adapter or SDK missing → `FLUENT_NOT_INSTALLED` /
+  `FLUENT_SDK_MISSING` plus the install hint, a thrown failure, or the
+  `timeoutMs` budget). It returns errors, warnings, the `dist/` output paths
+  (capped at 200) and the SDK log. Local-only, so not a mutating tool (the
+  `sync_build` / scope-docs precedent), but `dryRun`-aware and audited by the
+  per-call audit. stdout-bound console methods are routed to stderr while a
+  build runs, so the SDK cannot corrupt the stdio stream. Mocked adapter tests
+  only; a live build with the SDK installed is part of SDK-F1.
+- [x] **SDK-F7. Resume a `sync_cicd_run` by progress id** — the tool is bounded
   by `timeoutMs` (max 15 min); a long install that outlives it returns
-  `incomplete` with its `progressId`. A follow-up could accept a `progressId`
-  argument to poll that tracker again instead of dispatching new work.
+  `incomplete` with its `progressId`. Done: an optional `progressId` (a 32-hex
+  sys_id, Zod- and handler-validated) GETs `api/sn_cicd/progress/{id}` instead
+  of POSTing; `confirmDestructive` stays a required field but may be false for
+  a poll; `action` still picks the ATF result record; dispatch arguments are
+  ignored. `dryRun` describes the GET, the audit entry records `resumed: true`,
+  and outcomes and exit codes match the dispatch path. CLI parity:
+  `syncrona cicd <action> --progress-id <sys_id>`. Mocked tests only.
 
 ---
 

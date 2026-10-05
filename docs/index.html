@@ -17,7 +17,7 @@
     <title>SyncroNow AI — ServiceNow source control &amp; build pipeline</title>
     <meta
       name="description"
-      content="SyncroNow AI pulls your ServiceNow scoped-app source out of the instance as plain, editable files — real diffs, branches and pull requests. Every save is built through modern tooling (TypeScript / Babel / Webpack / Sass) and pushed straight back to the record. 27 CLI commands, 6 build plugins and a built-in MCP server with 62 tools."
+      content="SyncroNow AI pulls your ServiceNow scoped-app source out of the instance as plain, editable files — real diffs, branches and pull requests. Every save is built through modern tooling (TypeScript / Babel / Webpack / Sass) and pushed straight back to the record. 27 CLI commands, 6 build plugins and a built-in MCP server with 63 tools."
     />
     <meta name="theme-color" content="#f4f0e7" />
     <link rel="canonical" href="https://ivanbbaev.github.io/syncrona/" />
@@ -286,7 +286,7 @@
             <div class="fig-stats">
               <div class="stat"><div class="stat-n">27</div><div class="stat-l">CLI commands</div></div>
               <div class="stat"><div class="stat-n">6</div><div class="stat-l">build plugins</div></div>
-              <div class="stat"><div class="stat-n">62</div><div class="stat-l">MCP tools</div></div>
+              <div class="stat"><div class="stat-n">63</div><div class="stat-l">MCP tools</div></div>
               <div class="stat"><div class="stat-n">≥22</div><div class="stat-l">Node.js</div></div>
             </div>
           </div>
@@ -612,7 +612,7 @@ syncrona init</code></pre>
             </div>
             <div class="cmd-row" data-search="query queries any table through the table api with now-sdk query flags; -o json prints the {ok, hasmore, nextoffset, records} envelope.">
               <div><div class="cmd-name">query</div><div class="cmd-alias">no alias</div></div>
-              <div><div class="cmd-desc">Queries any table through the Table API with <code class="inline">now-sdk query</code> flags; <code class="inline">-o json</code> prints the <code class="inline">{ok, hasMore, nextOffset, records}</code> envelope.</div><code class="cmd-usage">syncrona query incident -q active=true</code></div>
+              <div><div class="cmd-desc">Queries any table through the Table API with <code class="inline">now-sdk query</code> flags (except <code class="inline">--select</code> and <code class="inline">--auth</code>); <code class="inline">-o json</code> prints the <code class="inline">{ok, hasMore, nextOffset, records}</code> envelope.</div><code class="cmd-usage">syncrona query incident -q active=true</code></div>
             </div>
             <div class="cmd-row" data-search="cicd drives the servicenow ci/cd api: run atf suites or tests, install, publish or roll back an app, and wait for the result.">
               <div><div class="cmd-name">cicd</div><div class="cmd-alias">no alias</div></div>
@@ -800,7 +800,7 @@ includes: {
             The bundled <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
             server (<code class="inline">@syncrona/mcp-server</code>) turns any MCP-capable client — Claude Desktop,
             Claude Code, VS Code Chat — into a teammate that can read your scope, map dependencies, analyse scripts and
-            propose gated changes behind a dry-run guardrail. It exposes 62 MCP tools in 8 families.
+            propose gated changes behind a dry-run guardrail. It exposes 63 MCP tools in 8 families.
           </p>
 
           <p class="sec-note">
@@ -820,7 +820,7 @@ includes: {
           </div>
 
           <div class="tools-head">
-            <div class="tools-count"><span class="tools-n">62</span> tools · 8 families</div>
+            <div class="tools-count"><span class="tools-n">63</span> tools · 8 families</div>
             <div class="tools-controls">
               <button type="button" class="ghost-btn" id="toolsExpand">Expand all</button>
               <button type="button" class="ghost-btn" id="toolsCollapse">Collapse all</button>
@@ -912,12 +912,13 @@ includes: {
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, gated execution, ATF and AI planning · 16 tools</span></summary>
+              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, gated execution, ATF and AI planning · 17 tools</span></summary>
               <div class="tool-body">
                 <ul>
                   <li><code>sync_status</code> — connected instance, scope and user</li>
                   <li><code>sync_refresh</code> — refresh the local manifest from the instance</li>
                   <li><code>sync_build</code> — build local files through the plugin pipeline</li>
+                  <li><code>sync_fluent_build</code> — build a Fluent project through the optional <code>@syncrona/fluent</code> package</li>
                   <li><code>sync_push</code> — push local files to the instance (destructive, gated)</li>
                   <li><code>run_workspace_command</code> — run a local workspace command for automation</li>
                   <li><code>sync_create_script_include</code> — create a Script Include, optionally pull it local</li>
@@ -1126,7 +1127,7 @@ includes: {
               </svg>
             </div>
             <div class="arch-pkgs" aria-label="Workspace packages">
-              <span class="apk-label">15 PACKAGES</span>
+              <span class="apk-label">17 PACKAGES</span>
               <span class="apk">core</span>
               <span class="apk">mcp-server</span>
               <span class="apk">types</span>
@@ -1134,6 +1135,8 @@ includes: {
               <span class="apk">credential-store</span>
               <span class="apk">redaction</span>
               <span class="apk">jira</span>
+              <span class="apk">mirror</span>
+              <span class="apk">fluent</span>
               <span class="apk">typescript</span>
               <span class="apk">babel</span>
               <span class="apk">webpack</span>

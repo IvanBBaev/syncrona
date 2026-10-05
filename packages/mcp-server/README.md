@@ -92,6 +92,7 @@ The server reads the following environment variables (all optional):
 | `SYNCRONA_HEALTH_HTTP_PORT` | Port for the optional HTTP health endpoint. Setting it is what enables the endpoint; unset means no HTTP listener.                  |
 | `SYNCRONA_HEALTH_HTTP_HOST` | Bind address for the health endpoint (default `127.0.0.1`). Only read when the port is set.                                        |
 | `SYNCRONA_HEALTH_HTTP_PATH` | Request path for the health endpoint (default `/healthz`). Only read when the port is set.                                         |
+| `SN_MAX_RPS` | Lowers the 20 requests/second cap on ServiceNow calls to a whole number from 1 to 20. Read from this process's environment only (not the project `.env`); an out-of-range value fails every ServiceNow request with an error instead of running at full rate. |
 
 ServiceNow credentials (`SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`) and Jira
 credentials (`JIRA_BASE_URL`, `JIRA_TOKEN`, `JIRA_EMAIL`, `JIRA_DEPLOYMENT`)
@@ -202,7 +203,9 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
 - `sync_run_atf_tests`
   - Triggers ATF test/suite execution in the instance and polls `sys_atf_test_result` / `sys_atf_test_suite_result` for pass/fail results
 - `sync_cicd_run`
-  - Runs an ATF suite or test, or installs, publishes or rolls back an application, through the CI/CD REST API (`sn_cicd`) — the same requests as `syncrona cicd`; polls the progress tracker and returns `succeeded` / `failed` / `incomplete` with the CLI exit code (gated by `confirmDestructive`, supports `dryRun`)
+  - Runs an ATF suite or test, or installs, publishes or rolls back an application, through the CI/CD REST API (`sn_cicd`) — the same requests as `syncrona cicd`; polls the progress tracker and returns `succeeded` / `failed` / `incomplete` with the CLI exit code (gated by `confirmDestructive`, supports `dryRun`); a `progressId` from an `incomplete` run resumes polling that tracker without dispatching new work
+- `sync_fluent_build`
+  - Builds a Fluent project (a directory with `now.config.json`, confined to the workspace) through the optional `@syncrona/fluent` package — the same build as `syncrona fluent build`, with `frozenKeys` / `errorOnConflict` / `skipClean`; returns errors, warnings, `dist/` output paths and the CLI exit code (0 succeeded, 2 failed, 1 incomplete), or `FLUENT_NOT_INSTALLED` / `FLUENT_SDK_MISSING` with an install hint (local-only, supports `dryRun`)
 - `sync_validate_before_push`
   - Pre-push validation: runs security/architecture analysis on a scope's scripts, checks recent conflicting changes, reports ready or blocked per record
 - `sync_compare_instances`

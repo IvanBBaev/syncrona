@@ -238,7 +238,7 @@ applications. The following are **shipped**:
   credential-scrubbed environment).
 
 ### MCP & AI ✅
-- 62 MCP tools across the handler modules: metadata/impact/dependency analysis,
+- 63 MCP tools across the handler modules: metadata/impact/dependency analysis,
   scope knowledge graphs, scope docs + Mermaid diagrams, minimal-footprint
   planning, unified change workflow (with gates and optional remote apply),
   health/metrics, AI next-action suggestions, and read-only Jira issue context
@@ -285,25 +285,29 @@ which is why they are marked 🚧.
 | R1 | `push --create` / `--no-create` (+ `createRecords`, `createTables`, `SYNCRONA_CREATE_TABLE_ALLOWLIST`): create or adopt records for unmapped files, with a hard deny list | 🚧 implemented; live PDI verification pending |
 | R2 | `push --prune`: delete in-scope records whose local files were all removed (scope-checked, confirmed unless `--ci`, exit 130 on decline) | 🚧 implemented; live PDI verification pending |
 | R3 | `init --new --name [--scope] [--vendor-prefix]`: create a scoped application (`sys_app`) and bind the directory | 🚧 implemented; live PDI verification pending |
-| R4 | Data model as editable local records (opt-in `dataModelTables`, sidecar-only records, stable naming) — [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | 🚧 implemented; live round-trip pending; composite documents deferred |
-| R5 | Type definitions (`fluent types`, via the SDK) | ✅ implemented (SDK adapter); native generation deferred |
+| R4 | Data model as editable local records (opt-in `dataModelTables`, sidecar-only records, stable naming) — [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | 🚧 implemented, including composite documents (opt-in `dataModelLayout: "composite"`); live round-trip pending |
+| R5 | Type definitions (`fluent types`, via the SDK; `--native` from `sys_dictionary`) | ✅ implemented (SDK adapter, plus native generation without the SDK, which is also the fallback when it is absent) |
 | R6 | `cicd <action>`: `run-suite`, `run-test`, `install`, `publish`, `rollback` over `api/sn_cicd`, exit codes 0/1/2 | 🚧 implemented; live run pending |
 | R7 | `fluent <action>` through the optional `@syncrona/fluent` package (`@servicenow/sdk` optional peer `~4.13`): `init`, `build`, `transform`, `pack`, `install`, `types`, `dependencies`, `run`, `status`; Basic and OAuth profiles | 🚧 implemented; live install pending |
 | R8 | `query <table>` with the `now-sdk query` flag set and its JSON envelope | ✅ implemented (read-only) |
-| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2). A `sync_fluent_build` tool is deferred | 🚧 `sync_cicd_run` implemented; live run pending. Fluent tool deferred |
+| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2; `progressId` resumes an `incomplete` run). `sync_fluent_build` (SDK-F6) runs the R7 `fluent build` through the optional `@syncrona/fluent` package (local-only, `dryRun`, audit; exit code 0/2/1) | 🚧 `sync_cicd_run` and `sync_fluent_build` implemented; live runs pending |
 
 Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
 
 - 📋 **Live PDI verification** of `push --create` / `--prune`, `init --new`,
   `cicd`, `fluent install` and the data-model round-trip.
-- 📋 **Composite data-model documents** (a table with its columns and choices
-  as one parent-plus-children document).
-- 📋 **Native type generation** from `sys_dictionary`, without the SDK.
+- ✅ **Composite data-model documents** (a table with its columns and choices
+  as one document, opt-in `dataModelLayout: "composite"`). Live round-trip
+  pending with the rest of R4.
+- ✅ **Native type generation** from `sys_dictionary`, without the SDK (`fluent types --native`, SDK-F3).
 - 📋 **API-key and mutual-TLS profiles in the Fluent tier** (blocked today by
   the SDK's session-only endpoints).
-- 📋 **`explain`** counterpart (out of scope for 1.1.0; the SDK docs cover it).
-- 📋 **`sync_fluent_build` MCP tool**: deferred from WP-8, which shipped only
-  `sync_cicd_run`.
+- ✅ **`explain` and `move-to-app`** counterparts: `fluent explain` reads the
+  SDK's bundled documentation offline, and `fluent move-to-app` wraps the SDK's
+  `moveToApp` behind a confirmation (SDK-F5).
+- ✅ **`sync_fluent_build` MCP tool** (SDK-F6): runs `fluent build` through the
+  optional `@syncrona/fluent` package, confined to the workspace, with
+  `dryRun`, audit and the CLI's exit codes. Live build pending with SDK-F1.
 
 ---
 

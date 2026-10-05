@@ -61,8 +61,8 @@ GPL-3.0-**only** is one of the open legal questions in [§6](#6-open-items-owner
 |---|---|---|
 | Root license | Verbatim GPL-3.0 text | [`LICENSE`](../LICENSE) |
 | Attribution / NOTICE | Names Sincronia/Nuvolo origin, per-area copyright split, trademark disclaimer | [`NOTICE`](../NOTICE) |
-| Workspace `license` fields | All 17 packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
-| Per-file SPDX headers | `SPDX-License-Identifier: GPL-3.0-or-later` on **132/132** non-test source `.ts` files (shebang-aware on the 2 bin files) | `packages/*/src/**` |
+| Workspace `license` fields | The root `package.json` and all 17 workspace packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
+| Per-file SPDX headers | `SPDX-License-Identifier: GPL-3.0-or-later` on **193/193** non-test source `.ts` files (shebang-aware on the 2 bin files) | `packages/*/src/**` |
 | README license section | Declares GPL-3.0, points at Sincronia + NOTICE, states the GPL redistribution obligation | [`README.md`](../README.md) |
 | Governance note | License + derivative status recorded | [`GOVERNANCE.md`](../GOVERNANCE.md) |
 | Drift guard (CI) | `licenseConsistency.test.ts` fails the build on any revert to MIT / missing NOTICE / non-GPL workspace license | `packages/core/src/tests/licenseConsistency.test.ts` |
@@ -89,6 +89,11 @@ redistribute** any of the SDK's code:
   the SDK's public API. Using an MIT library from GPL code is compatible; the
   MIT copyright and permission notice travel with the SDK package the user
   installs from npm.
+- The native type generator (`syncrona fluent types --native`,
+  `packages/core/src/fluentNativeTypes.ts`) is original code. It derives its
+  output from the instance's own metadata (`sys_db_object`, `sys_dictionary`,
+  `sys_choice`) read over the Table API, and copies nothing from the SDK's
+  type files or generator.
 
 If the SDK is ever vendored or bundled, its MIT copyright and permission notice
 must be added to [`NOTICE`](../NOTICE) in the same change.

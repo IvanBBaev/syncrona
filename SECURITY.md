@@ -105,7 +105,8 @@ credential/transport story above:
     `sn_create_record`, `sn_execute_background_script`,
     `sync_create_script_include`, `sync_create_script_include_and_sync`,
     `sn_update_metadata_record`, `sync_run_atf_tests`, `sync_cicd_run` — require
-    `confirmDestructive=true` in their schema. **Not every mutating tool does.**
+    `confirmDestructive=true` in their schema (a `sync_cicd_run` that only
+    resumes polling an existing `progressId` dispatches nothing and accepts `false`). **Not every mutating tool does.**
     `sync_set_scope`, `sync_set_update_set` (which can also create a missing
     update set) and `sync_prepare_session` change the integration user's current
     scope/update set on the instance with no confirmation flag, so an assistant
@@ -203,3 +204,13 @@ the top of this document, the same as a vulnerability in our own code.
   gitignored).
 - Rely on OS file permissions and full-disk encryption for `~/.syncrona/`.
 - Rotate credentials if a stored credential file may have been exposed.
+- Keep `push --prune` scoped. It deletes only records whose tracked files git
+  shows as deleted, refuses while a download is unfinished or when
+  `sourceDirectory` is blank, missing or empty, refuses more than 25 deletions
+  (or over 20% of the manifest) without `--allow-mass-delete`, and under `--ci`
+  needs `--diff`, a path or that flag. Treat `--allow-mass-delete` in a pipeline
+  as a reviewed exception, and run `--dry-run` first.
+- For the Fluent tier (`syncrona fluent`), trust a corporate or self-signed CA
+  through `NODE_EXTRA_CA_CERTS`. Its UI login, OAuth token request and the
+  ServiceNow SDK's own requests use Node's native `fetch`, which ignores
+  `SYNCRONA_CA_BUNDLE` and `SYNCRONA_TLS_REJECT_UNAUTHORIZED`.
