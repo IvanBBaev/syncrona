@@ -16,7 +16,12 @@ import type {
 } from "./pushPipeline.js";
 import inquirer from "inquirer";
 import { formatTable } from "./genericUtils.js";
-import { gitDiffToChanges, gitDiffToEncodedPaths } from "./gitUtils.js";
+import {
+  gitDiffToChanges,
+  gitDiffToEncodedPaths,
+  gitWorkingTreeDeletions,
+} from "./gitUtils.js";
+import { getDownloadCheckpointPath } from "./downloadCheckpoint.js";
 import { isPromptAbort } from "./errorTaxonomy.js";
 import {
   setLogLevel,
@@ -108,6 +113,74 @@ const recToCheckpointKey = (rec: Sync.BuildableRecord): string =>
 // the project root, a missing record directory proves nothing.
 const isSourceTheProjectRoot = (): boolean =>
   path.resolve(ConfigManager.getSourcePath()) === path.resolve(ConfigManager.getRootDir());
+
+// `push --prune` refuses a source tree in which "the files are gone" cannot be
+// trusted to mean "the record was deleted": a blank `sourceDirectory`, a
+// source directory that is missing or empty (a wrong checkout or a wiped tree
+// would make every record look deleted), and an unfinished download, whose
+// not-yet-written files are absent rather than deleted.
+/**
+ * Turn every `delete` of a prune plan on a table a creation failed on (all of
+ * them when `failedTables` is null) into a refusal, so nothing is sent for it
+ * and the manifest entry stays for the next run.
+ */
+export const holdPrunesAfterFailedCreates = (
+  plan: PrunePlan,
+  failedTables: Set<string> | null
+): PrunePlan => {
+  if (failedTables !== null && failedTables.size === 0) return plan;
+  return {
+    ...plan,
+    plans: plan.plans.map((planned) =>
+      planned.action === "delete" &&
+      (failedTables === null || failedTables.has(planned.candidate.table))
+        ? {
+            ...planned,
+            action: "error",
+            message:
+              "not deleted: a record could not be created in this table during the same push, " +
+              "and a rename is a delete plus a create. The record is kept until the creation " +
+              "succeeds; re-run the push.",
+          }
+        : planned
+    ),
+  };
+};
+
+const pruneSourceRefusal = async (): Promise<string | undefined> => {
+  let configured: unknown;
+  try {
+    configured = (ConfigManager.getConfig() as Sync.Config | undefined)?.sourceDirectory;
+  } catch (_) {
+    configured = undefined;
+  }
+  if (typeof configured === "string" && configured.trim() === "") {
+    return "`sourceDirectory` in sync.config.js is blank. Set the directory the records live in first.";
+  }
+  const sourcePath = ConfigManager.getSourcePath();
+  let entries: unknown[];
+  try {
+    entries = await fsp.readdir(sourcePath);
+  } catch (_) {
+    return `the source directory ${sourcePath} does not exist or cannot be read.`;
+  }
+  if (entries.length === 0) {
+    return `the source directory ${sourcePath} is empty, so every record would look deleted.`;
+  }
+  const checkpointPath = getDownloadCheckpointPath();
+  try {
+    await fsp.access(checkpointPath);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return undefined;
+    return `cannot tell whether a download is unfinished (${checkpointPath}: ${errorText(e)}).`;
+  }
+  return (
+    `a download is unfinished (${checkpointPath} exists), so missing files may never have been written. ` +
+    "Re-run `syncrona download` to finish it first."
+  );
+};
+
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 // R1: `--create` wins when given either way; otherwise `createRecords` in
 // sync.config.js decides, and the default is off. A config that cannot be read
@@ -710,16 +783,55 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         process.exitCode = 1;
         return;
       }
-      let encodedPaths;
+      const allowMassDelete = args.allowMassDelete === true;
+      if (prune) {
+        const refusal = await pruneSourceRefusal();
+        if (refusal) {
+          logger.error(`Refusing to prune: ${refusal}`);
+          process.exitCode = 1;
+          return;
+        }
+        // Unattended, nobody reads the candidate list before the DELETEs run, so
+        // the scope must come from somewhere other than "whatever is missing".
+        // A dry run deletes nothing, so it may preview the whole tree.
+        if (skipPrompt && !dryRun && !explicitTarget && !diff && !allowMassDelete) {
+          logger.error(
+            "Refusing to prune under --ci without a scope: pass --diff <ref> or a target path, " +
+              "or --allow-mass-delete to consider every record of the tree."
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
+      let encodedPaths: string;
       let diffDeleted: string[] | undefined;
-      if (explicitTarget) encodedPaths = target as string;
-      else if (prune && diff !== "") {
+      if (prune && diff !== "") {
         // One git call yields both sides: the files to push, and the deleted
-        // paths that restrict which records `--prune` may consider.
+        // paths that restrict which records `--prune` may consider. An explicit
+        // target still names the files to push, but the deletion evidence is
+        // the diff the user asked for, as the --prune help states — not the
+        // working tree against HEAD.
         const changes = await gitDiffToChanges(diff);
-        encodedPaths = changes.changed;
+        encodedPaths = explicitTarget ? (target as string) : changes.changed;
         diffDeleted = changes.deleted;
-      } else encodedPaths = await gitDiffToEncodedPaths(diff);
+      } else {
+        encodedPaths = explicitTarget ? (target as string) : await gitDiffToEncodedPaths(diff);
+      }
+      if (prune && diffDeleted === undefined) {
+        // Without --diff the evidence is the working tree against HEAD: only a
+        // file git tracked and that is now gone counts as deleted. A file that
+        // is merely absent — never downloaded, never committed — proves nothing.
+        try {
+          diffDeleted = await gitWorkingTreeDeletions();
+        } catch (e) {
+          logger.error(
+            `Refusing to prune: git cannot list the deleted files (${errorText(e)}). ` +
+              "`--prune` deletes only records whose files git shows as deleted."
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
 
       const create = resolveCreateFlag(args.create);
       let fileList: Sync.BuildableRecord[];
@@ -764,6 +876,30 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         return;
       }
 
+      if (pruneCandidates.length > 0) {
+        const volume = AppUtils.pruneVolumeRefusal(pruneCandidates.length);
+        if (volume && !allowMassDelete) {
+          if (!dryRun) {
+            logger.error(`Refusing to prune: ${volume}`);
+            process.exitCode = 1;
+            return;
+          }
+          logger.warn(`${volume} A real run refuses it.`);
+        }
+        // A rename under --create is a delete plus a create: the record comes
+        // back under a NEW sys_id, and whatever referenced the old one breaks.
+        const pruneTables = new Set(pruneCandidates.map((c) => c.table));
+        const renamed = [...new Set(candidates.map((c) => c.table))].filter((t) =>
+          pruneTables.has(t)
+        );
+        for (const table of renamed) {
+          logger.warn(
+            `${table}: this push both deletes and creates records. If one is a rename, ` +
+              "it is deleted and created again under a new sys_id, and references to the old sys_id break."
+          );
+        }
+      }
+
       // A dry run is a read-only preview, so it returns before any checkpoint
       // state is read, resumed or cleared: previewing must never consume or
       // destroy the resume state a later real push depends on. It also previews
@@ -802,7 +938,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
           for (const plan of prunePlan?.plans ?? []) {
             const { table, recordName, files, sysId } = plan.candidate;
             rows.push([plan.action, table, recordName, String(files.length), sysId]);
-            if (plan.action === "error") {
+            if (plan.action === "error" || plan.action === "unverified") {
               logger.warn(`${table} > ${recordName} : ${plan.message}`);
             }
           }
@@ -956,12 +1092,14 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       // R2: plan the prune (GETs only) before anything is written, then ask a
       // separate confirmation that names the exact number of records the DELETEs
-      // will remove. `--ci` is the only way past it unattended.
+      // will remove. `--ci` is the only way past it unattended. The scope sys_id
+      // is persisted only once that confirmation passed: a declined run writes
+      // nothing.
       let prunePlan: PrunePlan | undefined;
       if (pruneCandidates.length > 0) {
-        prunePlan = await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: true });
+        prunePlan = await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: false });
         for (const plan of prunePlan.plans) {
-          if (plan.action === "error") {
+          if (plan.action === "error" || plan.action === "unverified") {
             const { table, recordName } = plan.candidate;
             logger.warn(`${table} > ${recordName} : ${plan.message}`);
           }
@@ -984,6 +1122,7 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
             return;
           }
         }
+        await AppUtils.persistScopeId(prunePlan.scopeId);
       }
 
       // Does not create update set if updateSetName is blank
@@ -1038,6 +1177,8 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       await writePushCheckpoint(checkpointFor([], attempted));
 
       let creationResults: Sync.PushResult[] = [];
+      // Tables a creation failed on; `null` holds back every deletion.
+      let createFailedTables: Set<string> | null = new Set();
       if (creation) {
         const outcome = await AppUtils.createRecords(creation, {
           onCreated: async (key: string, sysId: string) => {
@@ -1046,6 +1187,11 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
           },
         });
         creationResults = outcome.results;
+        if (Array.isArray(outcome.failedTables)) {
+          createFailedTables = new Set(outcome.failedTables);
+        } else if (outcome.results.some((res) => !res.success)) {
+          createFailedTables = null;
+        }
         if (outcome.records.length > 0) {
           // Adopted records are ordinary updates from here on.
           fileList = [...fileList, ...outcome.records];
@@ -1057,7 +1203,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
 
       // R2: deletions run after creations and before the PATCHes; each removes
       // its record from the manifest as it lands.
-      const pruneResults = prunePlan ? await AppUtils.pruneRecords(prunePlan) : [];
+      // Batch 4 item 3: a rename is a delete plus a create, so a deletion on a
+      // table whose creation failed in this run is held back — deleting the
+      // old record when its replacement never landed would lose it.
+      const pruneResults = prunePlan
+        ? await AppUtils.pruneRecords(holdPrunesAfterFailedCreates(prunePlan, createFailedTables))
+        : [];
 
       const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);
 

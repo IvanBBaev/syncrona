@@ -90,6 +90,7 @@ jest.unstable_mockModule("../scopeDocs.js", () => ({
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...a: unknown[]) => mockGitDiffToEncodedPaths(...a),
   gitDiffToChanges: jest.fn(),
+  gitWorkingTreeDeletions: jest.fn(async () => []),
   writeDiff: (...a: unknown[]) => mockWriteDiff(...a),
   clearDiff: (...a: unknown[]) => mockClearDiff(...a),
 }));

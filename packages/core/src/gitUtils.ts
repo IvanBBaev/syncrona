@@ -67,6 +67,28 @@ const gitDiffChanges = async (
   return formatGitChanges(stdout);
 };
 
+/**
+ * R2, `push --prune` without `--diff`: the source-tree files git proves were
+ * deleted — tracked in HEAD and now missing from the working tree (or staged
+ * for removal). Renames are not detected, so a moved file lists its old path.
+ * A file that was never committed is not evidence of anything and is absent
+ * here. Throws when git cannot answer (not a repository, no HEAD commit).
+ */
+export const gitWorkingTreeDeletions = async (): Promise<string[]> => {
+  const stdout = await execGit([
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "--name-status",
+    "--no-renames",
+    "--diff-filter=D",
+    "HEAD",
+    "--",
+    ConfigManager.getSourcePath(),
+  ]);
+  return (await formatGitChanges(stdout)).deleted;
+};
+
 const gitDiff = async (target: string, sourcePath: string): Promise<string> =>
   (await gitDiffChanges(target, sourcePath)).changed;
 

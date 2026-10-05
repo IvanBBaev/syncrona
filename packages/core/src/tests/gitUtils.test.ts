@@ -60,6 +60,7 @@ let clearDiff: typeof import("../gitUtils.js").clearDiff;
 let getCurrentBranch: typeof import("../gitUtils.js").getCurrentBranch;
 let gitDiffToChanges: typeof import("../gitUtils.js").gitDiffToChanges;
 let formatGitFiles: typeof import("../gitUtils.js").formatGitFiles;
+let gitWorkingTreeDeletions: typeof import("../gitUtils.js").gitWorkingTreeDeletions;
 
 describe("gitUtils", () => {
   let cwdSpy: jest.SpyInstance;
@@ -73,6 +74,7 @@ describe("gitUtils", () => {
       getCurrentBranch,
       gitDiffToChanges,
       formatGitFiles,
+      gitWorkingTreeDeletions,
     } = await import("../gitUtils.js"));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
@@ -178,6 +180,47 @@ describe("gitUtils", () => {
       await expect(
         formatGitFiles(["D\tpackages/scope/src/gone.js", "M\tpackages/scope/src/a.js"].join("\n"))
       ).resolves.toBe(path.resolve("/repo", "packages/scope/src/a.js"));
+    });
+  });
+
+  // R2 (`push --prune` without `--diff`): a candidate needs git evidence of the
+  // deletion — tracked in HEAD and missing now — not just an absent local file.
+  describe("gitWorkingTreeDeletions", () => {
+    it("asks git for deletions against HEAD inside the source tree, renames split", async () => {
+      mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+          if (args.includes("rev-parse")) cb(null, "/repo\n");
+          else
+            cb(
+              null,
+              ["D\tpackages/scope/src/gone.js", "D\tpackages/other/elsewhere.js"].join("\n")
+            );
+        }
+      );
+      await expect(gitWorkingTreeDeletions()).resolves.toEqual([
+        path.resolve("/repo", "packages/scope/src/gone.js"),
+      ]);
+      const diffCall = mockExecFile.mock.calls.find((c) => c[1].includes("diff"));
+      expect(diffCall?.[1]).toEqual([
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--name-status",
+        "--no-renames",
+        "--diff-filter=D",
+        "HEAD",
+        "--",
+        "/repo/packages/scope/src",
+      ]);
+    });
+
+    it("rejects when git cannot answer", async () => {
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+          cb(new Error("fatal: bad revision 'HEAD'"), "")
+      );
+      await expect(gitWorkingTreeDeletions()).rejects.toThrow("bad revision");
     });
   });
 
