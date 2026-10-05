@@ -304,3 +304,153 @@ describe("C3: the data-field fallback applies the type and secret filters", () =
     ).toBe(true);
   });
 });
+
+describe("C4: an includes entry does not lift the unsafe-type filter", () => {
+  const ref = (type: string): unknown => ({ link: LINK, value: type });
+  const CRED_COLUMNS: Row[] = [
+    { element: "name", internal_type: ref("string") },
+    { element: "script", internal_type: ref("script") },
+    { element: "u_token", internal_type: ref("password2") },
+    { element: "u_pw", internal_type: ref("password") },
+    { element: "u_notes", internal_type: ref("journal") },
+    { element: "u_pic", internal_type: ref("user_image") },
+    { element: "u_label", internal_type: ref("string") },
+  ];
+  const CRED_RECORDS: Row[] = [
+    {
+      sys_id: "c1",
+      name: "cred-one",
+      script: "gs.info(1)",
+      u_token: "S3CR3T-TOKEN",
+      u_pw: "S3CR3T-PW",
+      u_notes: "journal text",
+      u_pic: "img",
+      u_label: "label",
+    },
+  ];
+  const UNSAFE = ["u_token", "u_pw", "u_notes", "u_pic"];
+  const includesFor = (columns: string[]): Sync.TablePropMap =>
+    ({
+      x_demo_cred: Object.fromEntries(
+        columns.map((column) => [column, { type: "txt" as SN.FileType }])
+      ),
+    }) as Sync.TablePropMap;
+  const config = (includes: Sync.TablePropMap): BuildConfig =>
+    ({ includes, excludes: {}, tableOptions: {}, meta: false }) as BuildConfig;
+  const warnings = (): string[] =>
+    (logger.warn as unknown as jest.Mock).mock.calls.map((c) => String(c[0]));
+
+  const buildAndDownload = async (tableAPIGet: TableApiGet, includes: Sync.TablePropMap) => {
+    const client = createClient(tableAPIGet);
+    const manifest = await buildManifestFromTableAPI("x_demo", client, config(includes));
+    const files = manifest.tables.x_demo_cred?.records["cred-one"]?.files ?? [];
+    const download = await buildBulkDownloadFromTableAPI(
+      { x_demo_cred: { c1: files.map((f) => ({ name: f.name, type: f.type })) } } as SN.MissingFileTableMap,
+      client,
+      {},
+      { x_demo_cred: { c1: "cred-one" } }
+    );
+    return {
+      names: files.map((f) => f.name).sort(),
+      downloaded: JSON.stringify(download.x_demo_cred?.records["cred-one"]?.files ?? []),
+    };
+  };
+
+  it("file-field path: drops an included password, journal or image column and warns once per column", async () => {
+    const tableAPIGet = fakeInstance({
+      sweep: ["x_demo_cred"],
+      fileColumns: [{ element: "script", internal_type: ref("script") }],
+      columns: CRED_COLUMNS,
+      records: { x_demo_cred: CRED_RECORDS },
+    });
+
+    const out = await buildAndDownload(tableAPIGet, includesFor([...UNSAFE, "u_label"]));
+
+    expect(out.names).toEqual(["script", "u_label"]);
+    expect(out.downloaded).not.toMatch(/S3CR3T/);
+    expect(out.downloaded).toContain("label");
+    for (const column of UNSAFE) {
+      expect(
+        warnings().filter((w) => w.includes("x_demo_cred") && w.includes(`"${column}"`))
+      ).toHaveLength(1);
+    }
+    // The included columns' types are read in one dictionary lookup.
+    expect(
+      tableAPIGet.mock.calls.filter(
+        ([t, q]) => t === "sys_dictionary" && String(q).includes("^elementINu_token,u_pw,u_notes,u_pic,u_label")
+      )
+    ).toHaveLength(1);
+  });
+
+  it("data-field fallback: includes cannot re-add a column the filter dropped, and each warning is emitted once", async () => {
+    process.env.SYNCRONA_DATA_TABLES = "x_demo_cred";
+    const tableAPIGet = fakeInstance({
+      sweep: ["x_demo_cred"],
+      fileColumns: [],
+      columns: CRED_COLUMNS,
+      records: { x_demo_cred: CRED_RECORDS },
+    });
+
+    // Only unsafe columns are included, so the file-field path ends up empty and
+    // the table falls through to the data-field fallback, which sees them again.
+    const out = await buildAndDownload(tableAPIGet, includesFor(UNSAFE));
+
+    expect(out.names).toEqual(["name", "script", "u_label"]);
+    expect(out.downloaded).not.toMatch(/S3CR3T/);
+    for (const column of UNSAFE) {
+      expect(
+        warnings().filter((w) => w.includes("x_demo_cred") && w.includes(`"${column}"`))
+      ).toHaveLength(1);
+    }
+  });
+
+  it("keeps an included column the dictionary has no row for", async () => {
+    const tableAPIGet = fakeInstance({
+      sweep: ["x_demo_cred"],
+      fileColumns: [{ element: "script", internal_type: ref("script") }],
+      columns: CRED_COLUMNS,
+      records: { x_demo_cred: [{ ...CRED_RECORDS[0], u_calc: "derived" }] },
+    });
+
+    const out = await buildAndDownload(tableAPIGet, includesFor(["u_calc", "u_token"]));
+
+    expect(out.names).toEqual(["script", "u_calc"]);
+  });
+
+  it("keeps the included columns, and says so, when their dictionary type cannot be read", async () => {
+    const base = fakeInstance({
+      sweep: ["x_demo_cred"],
+      fileColumns: [{ element: "script", internal_type: ref("script") }],
+      columns: CRED_COLUMNS,
+      records: { x_demo_cred: CRED_RECORDS },
+    });
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table, query, ...rest) => {
+      if (table === "sys_dictionary" && String(query).includes("^elementIN")) {
+        throw new Error("read ACL on sys_dictionary");
+      }
+      return base(table, query, ...rest);
+    });
+
+    const client = createClient(tableAPIGet);
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      client,
+      config(includesFor(["u_label", "u_token"]))
+    );
+
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name).sort()).toEqual([
+      "script",
+      "u_label",
+      "u_token",
+    ]);
+    expect(
+      warnings().some(
+        (w) =>
+          w.includes("x_demo_cred") &&
+          w.includes("could not read the dictionary type") &&
+          w.includes("u_label, u_token")
+      )
+    ).toBe(true);
+  });
+});
