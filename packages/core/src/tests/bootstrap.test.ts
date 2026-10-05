@@ -247,6 +247,15 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
     [["--log-level", "debug", "query", "incident", "-q", "active=true", "-o", "json"]],
     [["-o", "json", "query", "incident"]],
     [["--output=raw", "--log-level", "debug", "query", "incident"]],
+    // `--o` is the same yargs key as `-o` (the `output` alias).
+    [["query", "incident", "--o", "json"]],
+    [["query", "incident", "--o=json"]],
+    [["--o", "raw", "query", "incident"]],
+    // A command option with a value BEFORE the subcommand: yargs lets the
+    // unknown-at-top-level `-q` consume `active=true`, then dispatches `query`.
+    [["-q", "active=true", "query", "incident", "-o", "json"]],
+    [["--limit", "5", "-f", "sys_id", "query", "incident", "--output", "json"]],
+    [["--no-count", "-q", "active=true", "query", "incident", "--o=raw"]],
   ])("routes to stderr for machine-mode query %j", async (args) => {
     process.argv = ["node", "syncrona", ...args];
     await init();
@@ -262,6 +271,30 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
     process.argv = ["node", "syncrona", "-o", "json", "status"];
     await init();
     expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
+  it("does NOT route when a leading option swallows the `query`/`mcp` token as its value", async () => {
+    // yargs' command-finding parse does not know the command-level boolean
+    // `--dry-run`, so it takes `query` as its value and dispatches nothing.
+    process.argv = ["node", "syncrona", "--dry-run", "query", "incident", "-o", "json"];
+    await init();
+    process.argv = ["node", "syncrona", "-q", "mcp", "status"];
+    await init();
+    // Past a leading `--` nothing is a command.
+    process.argv = ["node", "syncrona", "--", "mcp"];
+    await init();
+    // yargs has no unique-prefix matching: `--out` is an unknown argument.
+    process.argv = ["node", "syncrona", "query", "incident", "--out", "json"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
+  it("finds the command past valueless `--help` / `--version` and `--flag=value` forms", async () => {
+    process.argv = ["node", "syncrona", "--version", "mcp"];
+    await init();
+    process.argv = ["node", "syncrona", "-q=active=true", "query", "incident", "-o", "json"];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(2);
   });
 
   it("does not route when a trailing global option swallows a token named `mcp`", async () => {
