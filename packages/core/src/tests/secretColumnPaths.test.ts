@@ -13,6 +13,7 @@
 //                            (kept, with a warning that the type is unknown);
 //   - sys_properties x_demo.api_key  — a password2 property (value withheld);
 //   - sys_properties x_demo.endpoint — a string property (value written).
+// repair runs over a project each source built, after the string value is deleted.
 // No instance is contacted: the client is a fake injected through snClient.
 import { jest } from "@jest/globals";
 import fs from "fs";
@@ -174,6 +175,7 @@ const { syncManifest } = await import("../downloadPipeline.js");
 const { downloadCommand } = await import("../commands.js");
 const ConfigManager = await import("../config.js");
 const { logger } = await import("../Logger.js");
+const { repairCommand } = await import("../repairCommand.js");
 
 const walk = (dir: string): string[] =>
   fs.existsSync(dir)
@@ -207,6 +209,62 @@ const UNTYPED_WARNING =
   "Table x_demo_cred: could not read the dictionary type of included column(s) u_ghost " +
   "(no dictionary row or an empty internal_type); they are kept without the unsafe-type check.";
 
+// One temp project per test, with the fixture's includes in its config.
+type Fixture = {
+  tmp: string;
+  warn: jest.SpiedFunction<typeof logger.warn>;
+  error: jest.SpiedFunction<typeof logger.error>;
+};
+const originalCwd = process.cwd();
+
+const enterFixture = async (manifestSource: Mode): Promise<Fixture> => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "secret-paths-")));
+  const config = ConfigManager.getDefaultConfigFile("src").replace(
+    "includes:{}",
+    "includes:{ sys_properties: { value: { type: \"txt\" } }, " +
+      'x_demo_cred: { u_token: { type: "txt" }, u_ghost: { type: "txt" } } }'
+  );
+  fs.writeFileSync(path.join(tmp, "sync.config.js"), config);
+  fs.mkdirSync(path.join(tmp, "src"));
+  process.chdir(tmp);
+  ConfigManager.resetConfigState();
+  await ConfigManager.loadConfigs();
+  for (const level of ["info", "debug", "success"] as const) {
+    jest.spyOn(logger, level).mockImplementation((() => undefined) as never);
+  }
+  const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+  const error = jest.spyOn(logger, "error").mockImplementation((() => undefined) as never);
+  fake.getManifest.mockClear();
+  fake.getMissingFiles.mockClear();
+  fake.tableAPIGet.mockClear();
+  mode = manifestSource;
+  process.exitCode = undefined;
+  return { tmp, warn, error };
+};
+
+const leaveFixture = (fixture: Fixture): void => {
+  jest.restoreAllMocks();
+  process.chdir(originalCwd);
+  ConfigManager.resetConfigState();
+  fs.rmSync(fixture.tmp, { recursive: true, force: true });
+  process.exitCode = undefined;
+};
+
+const writtenHolding = (tmp: string, needle: string): string[] =>
+  walk(path.join(tmp, "src"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(needle))
+    .map((file) => path.relative(tmp, file));
+
+// Every column the scoped bulk download was asked for, as `table.record.column`.
+const missingFilesRequest = (): string[] =>
+  fake.getMissingFiles.mock.calls.flatMap(([missing]) =>
+    Object.entries(missing).flatMap(([table, records]) =>
+      Object.entries(records).flatMap(([sysId, files]) =>
+        files.map((file) => `${table}.${NAME_OF[sysId]}.${file.name}`)
+      )
+    )
+  );
+
 describe.each<[Command, Mode]>([
   ["init", "scoped"],
   ["init", "tableapi"],
@@ -215,47 +273,17 @@ describe.each<[Command, Mode]>([
   ["download", "scoped"],
   ["download", "tableapi"],
 ])("secret columns: %s over the %s manifest", (command, manifestSource) => {
-  const originalCwd = process.cwd();
+  let fixture: Fixture;
   let tmp: string;
-  let warn: jest.SpiedFunction<typeof logger.warn>;
-  let error: jest.SpiedFunction<typeof logger.error>;
+  let warn: Fixture["warn"];
+  let error: Fixture["error"];
 
   beforeEach(async () => {
-    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "secret-paths-")));
-    const config = ConfigManager.getDefaultConfigFile("src").replace(
-      "includes:{}",
-      "includes:{ sys_properties: { value: { type: \"txt\" } }, " +
-        'x_demo_cred: { u_token: { type: "txt" }, u_ghost: { type: "txt" } } }'
-    );
-    fs.writeFileSync(path.join(tmp, "sync.config.js"), config);
-    fs.mkdirSync(path.join(tmp, "src"));
-    process.chdir(tmp);
-    ConfigManager.resetConfigState();
-    await ConfigManager.loadConfigs();
-    for (const level of ["info", "debug", "success"] as const) {
-      jest.spyOn(logger, level).mockImplementation((() => undefined) as never);
-    }
-    warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
-    error = jest.spyOn(logger, "error").mockImplementation((() => undefined) as never);
-    fake.getManifest.mockClear();
-    fake.getMissingFiles.mockClear();
-    fake.tableAPIGet.mockClear();
-    mode = manifestSource;
-    process.exitCode = undefined;
+    fixture = await enterFixture(manifestSource);
+    ({ tmp, warn, error } = fixture);
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-    process.chdir(originalCwd);
-    ConfigManager.resetConfigState();
-    fs.rmSync(tmp, { recursive: true, force: true });
-    process.exitCode = undefined;
-  });
-
-  const writtenHolding = (needle: string): string[] =>
-    walk(path.join(tmp, "src"))
-      .filter((file) => fs.readFileSync(file, "utf8").includes(needle))
-      .map((file) => path.relative(tmp, file));
+  afterEach(() => leaveFixture(fixture));
 
   const listed = (table: string, record: string): string[] => {
     const manifest = JSON.parse(fs.readFileSync(path.join(tmp, "sync.manifest.json"), "utf8")) as {
@@ -263,16 +291,6 @@ describe.each<[Command, Mode]>([
     };
     return manifest.tables[table].records[record].files.map((file) => file.name);
   };
-
-  // Every column the scoped bulk download was asked for, as `table.record.column`.
-  const missingFilesRequest = (): string[] =>
-    fake.getMissingFiles.mock.calls.flatMap(([missing]) =>
-      Object.entries(missing).flatMap(([table, records]) =>
-        Object.entries(records).flatMap(([sysId, files]) =>
-          files.map((file) => `${table}.${NAME_OF[sysId]}.${file.name}`)
-        )
-      )
-    );
 
   it("writes, lists, warns and requests the same as every other path", async () => {
     await run[command]();
@@ -300,9 +318,9 @@ describe.each<[Command, Mode]>([
 
     // Field files written: the string property's value, never the password
     // property's value or the password2 include.
-    expect(writtenHolding(ENDPOINT)).toEqual(["src/sys_properties/x_demo.endpoint/value.txt"]);
-    expect(writtenHolding(SECRET)).toEqual([]);
-    expect(writtenHolding(TOKEN)).toEqual([]);
+    expect(writtenHolding(tmp, ENDPOINT)).toEqual(["src/sys_properties/x_demo.endpoint/value.txt"]);
+    expect(writtenHolding(tmp, SECRET)).toEqual([]);
+    expect(writtenHolding(tmp, TOKEN)).toEqual([]);
     // Nothing that was withheld reaches the manifest on disk either.
     const manifestText = fs.readFileSync(path.join(tmp, "sync.manifest.json"), "utf8");
     expect(manifestText).not.toContain(SECRET);
@@ -339,7 +357,46 @@ describe.each<[Command, Mode]>([
   });
 });
 
-// TODO(repair): add the `repair` rows (report-only and --apply, over both
-// manifest sources) to the matrix above once the repair-side changes land:
-// same fixture, same four assertions.
-it.todo("secret columns: repair over the scoped and the Table API manifest");
+// repair over a project a refresh built from each source: the string
+// property's value file is deleted, then repair runs report-only and --apply.
+describe.each<[Mode]>([["scoped"], ["tableapi"]])("secret columns: repair over the %s manifest", (manifestSource) => {
+  let fixture: Fixture;
+  const endpointValue = (): string => path.join(fixture.tmp, "src/sys_properties/x_demo.endpoint/value.txt");
+
+  beforeEach(async () => {
+    fixture = await enterFixture(manifestSource);
+    await run.refresh();
+    fs.rmSync(endpointValue());
+    fake.getMissingFiles.mockClear();
+    fake.tableAPIGet.mockClear();
+    fixture.warn.mockClear();
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => leaveFixture(fixture));
+
+  it("report-only fetches nothing and writes nothing", async () => {
+    await repairCommand({ logLevel: "info", ci: true } as never);
+
+    expect(fake.getMissingFiles).not.toHaveBeenCalled();
+    expect(fs.existsSync(endpointValue())).toBe(false);
+    expect(writtenHolding(fixture.tmp, SECRET)).toEqual([]);
+    expect(writtenHolding(fixture.tmp, TOKEN)).toEqual([]);
+  });
+
+  it("--apply restores the non-secret value and never writes or requests a secret", async () => {
+    await repairCommand({ logLevel: "info", ci: true, apply: true } as never);
+
+    expect(fs.readFileSync(endpointValue(), "utf8")).toBe(ENDPOINT);
+    expect(writtenHolding(fixture.tmp, ENDPOINT)).toEqual(["src/sys_properties/x_demo.endpoint/value.txt"]);
+    expect(writtenHolding(fixture.tmp, SECRET)).toEqual([]);
+    expect(writtenHolding(fixture.tmp, TOKEN)).toEqual([]);
+    const manifestText = fs.readFileSync(path.join(fixture.tmp, "sync.manifest.json"), "utf8");
+    expect(manifestText).not.toContain(SECRET);
+    expect(manifestText).not.toContain(TOKEN);
+
+    const request = missingFilesRequest();
+    expect(request.filter((entry) => entry.endsWith(".u_token"))).toEqual([]);
+    expect(request.filter((entry) => entry.startsWith("sys_properties."))).toEqual([]);
+  });
+});
