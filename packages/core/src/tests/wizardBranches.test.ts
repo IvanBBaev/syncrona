@@ -424,3 +424,29 @@ describe("startWizard branches", () => {
     );
   });
 });
+
+describe("downloadApp (init --new binding)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetConfig.mockReturnValue({});
+    mockProcessManifest.mockResolvedValue(undefined);
+  });
+
+  it("stamps the new application's sys_id into the manifest it writes", async () => {
+    mockUnwrapSNResponse.mockResolvedValueOnce(oneFileManifest("x_acme_app"));
+    const client = { getManifest: jest.fn() };
+    const { downloadApp } = await import("../wizard.js");
+    const man = await downloadApp("x_acme_app", client as never, { scopeId: "app-sys-id-1" });
+    expect(man).toMatchObject({ scope: "x_acme_app", scopeId: "app-sys-id-1" });
+    expect(mockProcessManifest).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "x_acme_app", scopeId: "app-sys-id-1" })
+    );
+  });
+
+  it("leaves scopeId off when none is given", async () => {
+    mockUnwrapSNResponse.mockResolvedValueOnce(oneFileManifest("x_acme_app"));
+    const { downloadApp } = await import("../wizard.js");
+    const man = await downloadApp("x_acme_app", { getManifest: jest.fn() } as never);
+    expect(man).not.toHaveProperty("scopeId");
+  });
+});

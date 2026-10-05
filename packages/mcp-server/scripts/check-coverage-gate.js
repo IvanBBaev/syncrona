@@ -245,7 +245,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/createTablePolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/endpointPolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // Input validation is the injection/traversal boundary for every tool argument.
-  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.30 / 96.15 (also 99.30 / 96.30: V8 range granularity, 25/26 vs 26/27 branches, same uncovered lines)
+  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.35 / 96.15 (also 99.35 / 96.30: V8 range granularity, 25/26 vs 26/27 branches, same uncovered lines)
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
   // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
@@ -279,7 +279,10 @@ const MODULE_FLOORS = [
   // 92.05 was what 61 of 62 runs printed and the odd one out was LOWER, an extra
   // range that was not executing, so the denominator grew alone. If it reappears on
   // the new counters, re-declare it from a fresh pair of readings.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.44 / 91.62
+  // The flicker reappeared on the new counters during WP-8 (1 of 4 runs, no change
+  // to toolService): 153/168 vs 153/167 branch ranges, the denominator growing alone
+  // as before. Lower reading first, per the annotation contract.
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.44 / 91.07 (also 92.44 / 91.62: V8 range granularity, 153/168 vs 153/167 branches, covered count unchanged)
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.

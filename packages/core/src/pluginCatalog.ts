@@ -57,6 +57,26 @@ export const KNOWN_PLUGINS: readonly KnownPlugin[] = [
   },
 ];
 
+/** An optional package that unlocks a command tier instead of a build rule. */
+export interface OptionalPackage {
+  pkg: string;
+  description: string;
+}
+
+// Not build plugins (they never appear in `rules`), but `syncrona plugins`
+// reports their availability so a missing Fluent tier is visible before
+// `syncrona fluent` fails on it.
+export const OPTIONAL_PACKAGES: readonly OptionalPackage[] = [
+  {
+    pkg: "@syncrona/fluent",
+    description: "Fluent tier adapter behind `syncrona fluent`.",
+  },
+  {
+    pkg: "@servicenow/sdk",
+    description: "ServiceNow SDK that `syncrona fluent` drives (installed alongside @syncrona/fluent).",
+  },
+];
+
 /**
  * Resolve a plugin from a user query, accepting the short alias
  * ("typescript"), the full package name ("@syncrona/typescript-plugin"),

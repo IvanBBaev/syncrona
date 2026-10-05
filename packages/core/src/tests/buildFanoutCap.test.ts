@@ -76,6 +76,8 @@ jest.unstable_mockModule("../snClient.js", () => ({
   SNClient: jest.fn(),
   defaultClient: jest.fn(),
   getErrorResponseStatus: jest.fn(),
+  unwrapSNResponse: jest.fn(),
+  unwrapTableAPIFirstItem: jest.fn(),
 }));
 
 // jest.unstable_mockModule does not hoist under ESM: import the SUT dynamically

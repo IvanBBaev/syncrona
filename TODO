@@ -19,6 +19,45 @@ decisions (incl. npm publish, which is owner-gated).
 
 ---
 
+## now-sdk parity follow-ups (v1.1.0) — 2026-10-03
+The v1.1.0 parity epic (ROADMAP "v1.1.0 — now-sdk parity", R1–R8) shipped with
+mocked tests. These items close what it deliberately left open.
+
+- [ ] **SDK-F1. Live PDI verification of the 1.1.0 write paths** — run
+  `push --create` / `--no-create`, `push --prune` (including the decline path,
+  exit 130), `init --new` (`sys_app` create and directory binding), every
+  `cicd` action (and the `sync_cicd_run` MCP tool), `fluent install` / `--reinstall`, and the opt-in
+  `dataModelTables` round-trip (download, edit, push, re-download) against a
+  personal developer instance. Record the results in PRODUCT_STATE and drop the
+  "live verification pending" caveats in README, COMPARISON, ROADMAP and
+  MIGRATING_FROM_NOW_SDK once they pass.
+- [ ] **SDK-F2. Composite data-model documents** — one parent-plus-children
+  document per table (table, columns, choices) on top of the independent
+  sidecar records shipped in 1.1.0; push must stay idempotent and ordered.
+- [ ] **SDK-F3. Native type generation** — generate `.d.ts` from
+  `sys_dictionary` without `@servicenow/sdk`, so `fluent types` works without
+  the optional peer.
+- [ ] **SDK-F4. API-key and mutual-TLS profiles in the Fluent tier** — today
+  instance-side `fluent` actions refuse these profiles because the SDK's
+  install, reinstall and update-set export endpoints accept only a UI session.
+  Revisit when the SDK exposes a token-based path.
+- [ ] **SDK-F5. `explain` counterpart** — decide whether to wrap the SDK's
+  `explain` or point to its docs; `move-to-app` has the same open question.
+- [x] **WP-8. MCP exposure of `cicd`** — `sync_cicd_run` (62nd MCP tool) wraps
+  the same `api/sn_cicd` requests as `syncrona cicd` through `servicenowCore.ts`
+  (native fetch, no core import), behind `confirmDestructive` / `dryRun` /
+  audit, with the outcome mapped to `succeeded` / `failed` / `incomplete` and
+  the CLI exit code. Mocked tests only; the live run is part of SDK-F1.
+- [ ] **SDK-F6. `sync_fluent_build` MCP tool** — deferred from WP-8. Needs a
+  design for running the optional `@syncrona/fluent` package from the MCP
+  server without importing core.
+- [ ] **SDK-F7. Resume a `sync_cicd_run` by progress id** — the tool is bounded
+  by `timeoutMs` (max 15 min); a long install that outlives it returns
+  `incomplete` with its `progressId`. A follow-up could accept a `progressId`
+  argument to poll that tracker again instead of dispatching new work.
+
+---
+
 ## HARDENING WAVE — 2026-07-13 (10/10 push: offline-completable hardening)
 Scope: close every engineering-completable gap toward a 10/10 real-world readiness
 that does not require a live instance, a Windows host, or an owner-gated npm

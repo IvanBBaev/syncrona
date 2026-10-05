@@ -61,7 +61,7 @@ GPL-3.0-**only** is one of the open legal questions in [§6](#6-open-items-owner
 |---|---|---|
 | Root license | Verbatim GPL-3.0 text | [`LICENSE`](../LICENSE) |
 | Attribution / NOTICE | Names Sincronia/Nuvolo origin, per-area copyright split, trademark disclaimer | [`NOTICE`](../NOTICE) |
-| Workspace `license` fields | All 15 packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
+| Workspace `license` fields | All 17 packages declare `GPL-3.0-or-later` | `package.json` + `packages/*/package.json` |
 | Per-file SPDX headers | `SPDX-License-Identifier: GPL-3.0-or-later` on **132/132** non-test source `.ts` files (shebang-aware on the 2 bin files) | `packages/*/src/**` |
 | README license section | Declares GPL-3.0, points at Sincronia + NOTICE, states the GPL redistribution obligation | [`README.md`](../README.md) |
 | Governance note | License + derivative status recorded | [`GOVERNANCE.md`](../GOVERNANCE.md) |
@@ -71,6 +71,27 @@ The drift guard is the key durable control: it asserts the `LICENSE` is GPL (not
 the MIT preamble), that a `NOTICE` exists and mentions Sincronia + GPL, that the
 root and every workspace `package.json` declare `GPL-3.0-or-later`, and that any
 per-package `LICENSE` file is GPL text. A future accidental relicense fails CI.
+
+### Third-party notice: the ServiceNow SDK (Fluent tier)
+
+The optional `@syncrona/fluent` package drives ServiceNow's SDK,
+[`@servicenow/sdk`](https://www.npmjs.com/package/@servicenow/sdk), which is
+published under the **MIT license**. syncrona does **not vendor, copy or
+redistribute** any of the SDK's code:
+
+- `@servicenow/sdk` is declared as an **optional peer dependency** of
+  `@syncrona/fluent` (`~4.13`), never as a dependency of `syncrona` or of any
+  other workspace package, and it is not bundled into any published tarball.
+- The user installs it themselves (`npm install --save-dev @syncrona/fluent
+  @servicenow/sdk`); `syncrona fluent` loads it at run time and prints an
+  install hint when it is absent.
+- `@syncrona/fluent`'s own source is original GPL-3.0-or-later code that calls
+  the SDK's public API. Using an MIT library from GPL code is compatible; the
+  MIT copyright and permission notice travel with the SDK package the user
+  installs from npm.
+
+If the SDK is ever vendored or bundled, its MIT copyright and permission notice
+must be added to [`NOTICE`](../NOTICE) in the same change.
 
 ## 4. Trademarks
 

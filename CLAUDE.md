@@ -16,16 +16,19 @@ It complements README and package-level docs with implementation and quality-gat
 - MCP governance checks run through `packages/mcp-server/scripts/quality-gates.sh`.
 
 ## Command Reference
-- `npx syncrona init` provisions a project (`--ci` provisions every scope the detected `.env` exposes without prompting).
+- `npx syncrona init` provisions a project (`--ci` provisions every scope the detected `.env` exposes without prompting;
+  `--new --name "<display>" [--scope x_<prefix>_<name>] [--vendor-prefix <p>]` creates a new scoped
+  application on the instance and binds the directory to it, and `--dry-run` only prints the `sys_app` body).
 - `npx syncrona refresh` refreshes manifest and downloads new files.
 - `npx syncrona dev` starts watch mode.
-- `npx syncrona push` pushes local files to ServiceNow.
+- `npx syncrona push` pushes local files to ServiceNow (`--create` creates or adopts records for files not in the manifest yet; `createRecords: true` in `sync.config.js` sets the default, and the flag (or `--no-create`) wins; `--prune` deletes in-scope records whose local files were all deleted, confirming unless `--ci`, with no config switch).
 - `npx syncrona download` downloads scoped application files.
 - `npx syncrona build` builds local artifacts.
 - `npx syncrona deploy` deploys built files (`--ci` skips the interactive prompts: it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
 - `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files, and `--apply --prune` deletes orphan files no record claims.
 - `npx syncrona status` prints extended diagnostics.
+- `npx syncrona query <table>` queries records through the Table API with the `now-sdk query` flags (`-q` required); read-only, and `-o json` prints the `{ok, hasMore, nextOffset, records}` envelope.
 - `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncrona doctor` runs diagnostic checks.
 - `npx syncrona plugins` reports configured plugin rules and plugin package availability.
@@ -47,13 +50,25 @@ It complements README and package-level docs with implementation and quality-gat
   `status` compares the tree against the live instance, `verify` checks it against its own
   manifests offline, and `report` re-prints the last sweep's report (`--deep`, `--json`).
   It exits 0 clean, 1 when the run could not finish, and 2 on drift or findings.
+- `npx syncrona cicd <action>` drives the ServiceNow CI/CD REST API (`api/sn_cicd`) and polls
+  its progress tracker: `run-suite` / `run-test` run ATF, `install` / `publish` / `rollback`
+  act on an app-repo application (`--scope` or `--app-sys-id`, `--app-version`), `--json`
+  prints the machine result. It needs the `sn_cicd.sys_ci_automation` role and exits 0 on
+  success, 1 when the run could not finish, and 2 on test failures or a failed/cancelled run.
+- `npx syncrona fluent <action>` drives Fluent (`.now.ts`) apps through the optional
+  `@syncrona/fluent` + `@servicenow/sdk` tier: `init`, `build`, `transform`, `pack`,
+  `install` (`--reinstall`, prompts unless `--ci`), `types`, `dependencies`, `run` and
+  `status`. It exits 0 on success, 1 on failure, and 2 on build errors or an unfinished install.
 
 ### Shared option contracts
-- `--dry-run` is implemented by `push`, `deploy`, `download`, `build`, `init` and
-  `repair`. Every other command declares `supportsDryRun: false` in the CLI registry
-  and `commander.ts` refuses the flag with an explanation — a parsed-then-ignored
-  `--dry-run` would turn a request for a preview into a real run. A new command that
-  takes the shared options must state which side it is on; a registry test enforces it.
+- `--dry-run` is implemented by `push`, `deploy`, `download`, `build`, `init`,
+  `repair` and `fluent`. Every other command that takes the shared options declares
+  `supportsDryRun: false` in the CLI registry and `commander.ts` refuses the flag with
+  an explanation — a parsed-then-ignored `--dry-run` would turn a request for a
+  preview into a real run. Commands registered with `includeSharedOptions: false`
+  (`completion`, `login`, `logout`, `instances`, `use`, `jira`, `jira-login`,
+  `jira-logout`) do not accept the flag at all. A new command that takes the shared
+  options must state which side it is on; a registry test enforces it.
 
 ## Documentation Drift Policy
 - README command table and this document must stay aligned for core CLI commands.

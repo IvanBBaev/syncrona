@@ -6,11 +6,11 @@
 This reference is generated from `packages/mcp-server/src/toolSchemas.ts`.
 Do not edit it manually; regenerate with `node packages/mcp-server/scripts/generate-tool-reference.js`.
 
-Total tools: **61**.
+Total tools: **62**.
 
 ## Contents
 
-- [sync_ tools (41)](#sync_-tools)
+- [sync_ tools (42)](#sync_-tools)
   - [sync_status](#sync_status)
   - [sync_get_session_context](#sync_get_session_context)
   - [sync_set_scope](#sync_set_scope)
@@ -47,6 +47,7 @@ Total tools: **61**.
   - [sync_list_recent_changes](#sync_list_recent_changes)
   - [sync_generate_release_notes](#sync_generate_release_notes)
   - [sync_run_atf_tests](#sync_run_atf_tests)
+  - [sync_cicd_run](#sync_cicd_run)
   - [sync_validate_before_push](#sync_validate_before_push)
   - [sync_compare_instances](#sync_compare_instances)
   - [sync_export_update_set](#sync_export_update_set)
@@ -648,6 +649,37 @@ Trigger ATF test execution in the instance (a single test, a suite, or all suite
 | `confirmDestructive` | `boolean` | yes | `false` | Required acknowledgement — running ATF tests executes a background script and mutates the instance. Must be true to run. |
 | `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without triggering ATF execution. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
+
+### sync_cicd_run
+
+Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. Needs the sn_cicd.sys_ci_automation role.
+
+- Version: `1.0.0`
+- Safety: mutating - requires `confirmDestructive: true`; supports `dryRun`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `action` | `string (one of: "run-suite", "run-test", "install", "publish", "rollback")` | yes |  | The CI/CD action to run. |
+| `suiteId` | `string` | no |  | run-suite: sys_id of the ATF test suite (exactly one of suiteId or suiteName). |
+| `suiteName` | `string` | no |  | run-suite: name of the ATF test suite (exactly one of suiteId or suiteName). |
+| `testId` | `string` | no |  | run-test: sys_id of the ATF test (required). |
+| `browserName` | `string` | no |  | run-suite: browser to schedule the run on (for example chrome). |
+| `browserVersion` | `string` | no |  | run-suite: browser version. |
+| `osName` | `string` | no |  | run-suite: operating system name. |
+| `osVersion` | `string` | no |  | run-suite: operating system version. |
+| `runInCloud` | `boolean` | no |  | run-suite / run-test: run on the Cloud Runner. |
+| `performance` | `boolean` | no |  | run-suite: run as a performance run. |
+| `captureNodeLogs` | `boolean` | no |  | run-test: capture node logs for the run. |
+| `scope` | `string` | no |  | install / publish / rollback: application scope (exactly one of scope or appSysId). |
+| `appSysId` | `string` | no |  | install / publish / rollback: application sys_id (exactly one of scope or appSysId). |
+| `appVersion` | `string` | no |  | install / publish: version to install or publish. rollback: the version to roll back to (required). |
+| `baseAppVersion` | `string` | no |  | install: base application version. |
+| `autoUpgradeBaseApp` | `boolean` | no |  | install: upgrade the base application automatically. |
+| `devNotes` | `string` | no |  | publish: developer notes for the published version. |
+| `pollMs` | `number (min 250, max 60000)` | no | `1000` | Interval between progress-tracker polls, in milliseconds. |
+| `confirmDestructive` | `boolean` | yes | `false` | Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to run. |
+| `dryRun` | `boolean` | no | `false` | Return the request that would be dispatched and record an audit entry without calling the instance. |
+| `timeoutMs` | `number (min 1000, max 900000)` | no |  | Budget for the whole call (dispatch, polling and result read). When it runs out the outcome is incomplete and the work may still be running on the instance. |
 
 ### sync_validate_before_push
 

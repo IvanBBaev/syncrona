@@ -35,6 +35,7 @@ import {
   logErrorHint,
 } from "./commandHelpers.js";
 import { mcpCommand } from "./mcpCommand.js";
+import { initNewApp, wantsInitNew, type InitCmdArgs } from "./appCreator.js";
 
 // Re-export extracted command modules so consumers can import the full command
 // surface from "./commands" (barrel) in addition to the dedicated modules.
@@ -298,8 +299,18 @@ export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
     process.exitCode = 1;
   }
 }
-export async function initCommand(args: Sync.SharedCmdArgs) {
+export async function initCommand(args: InitCmdArgs) {
   setLogLevel(args);
+  // R3: `init --new` creates the application first, so it must win over the
+  // .env branch below (which binds every EXISTING scope) and over the wizard.
+  // It has its own dry-run, so the wizard's dry-run refusal does not apply.
+  if (wantsInitNew(args)) {
+    const created = await initNewApp(args);
+    if (created) {
+      await mcpCommand({ ...args, autoConfigure: true, start: false });
+    }
+    return;
+  }
   const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
   if (hasEnvFile) {
     // DX2: name the instance the .env resolves to so the user knows which

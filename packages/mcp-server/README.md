@@ -201,6 +201,8 @@ This repository also includes a ready-to-use config at [../../../.vscode/mcp.jso
   - Generates release notes from an Update Set's `sys_update_xml` records in markdown or json
 - `sync_run_atf_tests`
   - Triggers ATF test/suite execution in the instance and polls `sys_atf_test_result` / `sys_atf_test_suite_result` for pass/fail results
+- `sync_cicd_run`
+  - Runs an ATF suite or test, or installs, publishes or rolls back an application, through the CI/CD REST API (`sn_cicd`) — the same requests as `syncrona cicd`; polls the progress tracker and returns `succeeded` / `failed` / `incomplete` with the CLI exit code (gated by `confirmDestructive`, supports `dryRun`)
 - `sync_validate_before_push`
   - Pre-push validation: runs security/architecture analysis on a scope's scripts, checks recent conflicting changes, reports ready or blocked per record
 - `sync_compare_instances`

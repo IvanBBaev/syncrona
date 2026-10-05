@@ -12,6 +12,7 @@
 //   - insightValidateBeforePush: sync_validate_before_push (E2)
 //   - insightCompareInstances:  sync_compare_instances (E5)
 //   - insightExportUpdateSet:   sync_export_update_set (E7)
+//   - insightCicdRun:           sync_cicd_run (WP-8, sn_cicd CI/CD API)
 export * from "./insightShared";
 export * from "./insightRecentChanges";
 export * from "./insightScriptSearch";
@@ -21,6 +22,7 @@ export * from "./insightAtfTests";
 export * from "./insightValidateBeforePush";
 export * from "./insightCompareInstances";
 export * from "./insightExportUpdateSet";
+export * from "./insightCicdRun";
 
 import type { ToolResponse } from "../toolResponse";
 import type { InsightToolContext } from "./insightShared";
@@ -32,6 +34,7 @@ import { handleRunAtfTests } from "./insightAtfTests";
 import { handleValidateBeforePush } from "./insightValidateBeforePush";
 import { handleCompareInstances } from "./insightCompareInstances";
 import { handleExportUpdateSet } from "./insightExportUpdateSet";
+import { handleCicdRun } from "./insightCicdRun";
 
 export async function handleInsightTool(
   toolName: string,
@@ -57,6 +60,8 @@ export async function handleInsightTool(
       return handleCompareInstances(args, timeoutMs);
     case "sync_export_update_set":
       return handleExportUpdateSet(args, timeoutMs);
+    case "sync_cicd_run":
+      return handleCicdRun(args, context);
     default:
       return null;
   }

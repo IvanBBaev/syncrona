@@ -12,6 +12,27 @@ export const gitDiffToEncodedPaths = async (diff: string) => {
   return ConfigManager.getSourcePath();
 };
 
+/** What `git diff --name-status` says about the source tree. */
+export interface GitDiffChanges {
+  /** Added, modified, copied and renamed-to paths, encoded like gitDiffToEncodedPaths. */
+  changed: string;
+  /**
+   * Absolute paths the diff removed: `D` lines and the OLD side of an `R`
+   * rename (a rename takes the file away from its old record).
+   */
+  deleted: string[];
+}
+
+/**
+ * gitDiffToEncodedPaths plus the deleted side of the diff (R2, `push --prune`).
+ * Without a diff target there is no diff to read, so nothing counts as deleted.
+ */
+export const gitDiffToChanges = async (diff: string): Promise<GitDiffChanges> => {
+  const sourcePath = ConfigManager.getSourcePath();
+  if (diff !== "") return gitDiffChanges(diff, sourcePath);
+  return { changed: sourcePath, deleted: [] };
+};
+
 const execGit = (args: string[]): Promise<string> => {
   return new Promise<string>((resolve, reject) => {
     // execFile (no shell) keeps paths with spaces intact and rules out shell
@@ -26,7 +47,10 @@ const execGit = (args: string[]): Promise<string> => {
   });
 };
 
-const gitDiff = async (target: string, sourcePath: string): Promise<string> => {
+const gitDiffChanges = async (
+  target: string,
+  sourcePath: string
+): Promise<GitDiffChanges> => {
   const stdout = await execGit([
     // Emit literal UTF-8 paths. Under the default core.quotePath=true git
     // C-quotes any byte >0x80 (e.g. a Cyrillic record name becomes
@@ -40,8 +64,11 @@ const gitDiff = async (target: string, sourcePath: string): Promise<string> => {
     "--",
     sourcePath,
   ]);
-  return formatGitFiles(stdout);
+  return formatGitChanges(stdout);
 };
+
+const gitDiff = async (target: string, sourcePath: string): Promise<string> =>
+  (await gitDiffChanges(target, sourcePath)).changed;
 
 export const writeDiff = async (files: string) => {
   const paths = await fUtils.encodedPathsToFilePaths(files);
@@ -78,32 +105,52 @@ export const clearDiff = async () => {
   }
 };
 
-const formatGitFiles = async (gitFiles: string) => {
+/**
+ * Splits `git diff --name-status` output into the paths to push and the paths
+ * the diff removed. Lines are tab separated: "M\tpath", "D\tpath",
+ * "R100\told\tnew", "C75\tsrc\tcopy". The last column is always a path that
+ * exists after the diff; for a rename the first path column no longer does, so
+ * it is reported as deleted. A copy leaves its source in place.
+ */
+export const formatGitChanges = async (gitFiles: string): Promise<GitDiffChanges> => {
   const baseRepoPath = await getRepoRootDir();
   const workspaceDir = process.cwd();
   const fileSplit = gitFiles.split(/\r?\n/);
   const fileArray: string[] = [];
+  const deleted: string[] = [];
+  const addIfInScope = (target: string[], filePath: string) => {
+    if (isValidScope(filePath, workspaceDir, baseRepoPath)) {
+      target.push(path.resolve(baseRepoPath, filePath));
+      return true;
+    }
+    return false;
+  };
   fileSplit.forEach((diffFile) => {
     if (diffFile === "") {
       return;
     }
-    // --name-status lines are tab separated: "M\tpath", "R100\told\tnew",
-    // "C75\tsrc\tcopy". For renames/copies the new path is the last column.
     const columns = diffFile.split("\t");
-    const modCode = columns[0].charAt(0);
-    if (modCode === "D" || columns.length < 2) {
+    if (columns.length < 2) {
       return;
     }
-    const filePath = columns[columns.length - 1].trim();
-
-    if (isValidScope(filePath, workspaceDir, baseRepoPath)) {
+    const modCode = columns[0].charAt(0);
+    if (modCode === "D") {
+      addIfInScope(deleted, columns[1].trim());
+      return;
+    }
+    if (modCode === "R" && columns.length > 2) {
+      addIfInScope(deleted, columns[1].trim());
+    }
+    if (addIfInScope(fileArray, columns[columns.length - 1].trim())) {
       logger.info(diffFile);
-      const absFilePath = path.resolve(baseRepoPath, filePath);
-      fileArray.push(absFilePath);
     }
   });
-  return fileArray.join(PATH_DELIMITER);
+  return { changed: fileArray.join(PATH_DELIMITER), deleted };
 };
+
+/** The changed side only, in the encoded form every push/build caller expects. */
+export const formatGitFiles = async (gitFiles: string): Promise<string> =>
+  (await formatGitChanges(gitFiles)).changed;
 
 const getRepoRootDir = async (): Promise<string> => {
   return execGit(["rev-parse", "--show-toplevel"]);

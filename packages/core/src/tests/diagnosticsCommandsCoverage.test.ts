@@ -488,6 +488,23 @@ describe("pluginsCommand", () => {
     );
   });
 
+  it("reports the optional Fluent tier packages without adding them to the summary", async () => {
+    tmpRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "syncrona-optional-"));
+    await fsp.mkdir(path.join(tmpRoot, "node_modules", "@syncrona", "fluent"), { recursive: true });
+    mockGetRootDir.mockReturnValue(tmpRoot);
+    mockGetConfig.mockReturnValue({ rules: [] });
+    const { pluginsCommand } = await import("../diagnosticsCommands.js");
+    const summary = await pluginsCommand({ logLevel: "info" } as never);
+    expect(summary.totalPlugins).toBe(0);
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringMatching(/^optional:@syncrona\/fluent status=installed — /)
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringMatching(/^optional:@servicenow\/sdk status=missing — /)
+    );
+    expect(mockLoggerWarn).not.toHaveBeenCalledWith(expect.stringContaining("optional:"));
+  });
+
   it("falls back to process.cwd() when getRootDir throws (line 358)", async () => {
     mockGetRootDir.mockImplementation(() => {
       throw new Error("no root");

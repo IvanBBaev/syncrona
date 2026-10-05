@@ -298,7 +298,17 @@ function renderProgressBar(current: number, total: number): string {
   return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
 }
 
-async function downloadApp(scope: string, client: SNClient = defaultClient()) {
+/**
+ * Builds the manifest for `scope`, downloads its files and writes
+ * sync.manifest.json. `init --new` passes the sys_id of the application it just
+ * created as `scopeId`, so the manifest records it and the first
+ * `push --create` skips the sys_scope lookup.
+ */
+export async function downloadApp(
+  scope: string,
+  client: SNClient = defaultClient(),
+  options: { scopeId?: string } = {}
+): Promise<SN.AppManifest> {
   // #48: the wizard lists apps via the explicit store-backed client built from
   // the just-saved credentials, so the download must use the SAME client.
   // Falling back to defaultClient() (which prefers ambient SN_* env vars) could
@@ -320,6 +330,10 @@ async function downloadApp(scope: string, client: SNClient = defaultClient()) {
     if (countManifestFiles(man) === 0) {
       logger.info("Custom endpoint returned empty manifest — building from Table API...");
       man = await buildManifestFromTableAPI(scope, client, config);
+    }
+
+    if (options.scopeId) {
+      man = { ...man, scopeId: options.scopeId };
     }
 
     const totalFiles = countManifestFiles(man);

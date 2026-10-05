@@ -134,6 +134,7 @@ const FIXTURE_PACKAGES = {
   "babel-plugin": "@syncrona/babel-plugin",
   redaction: "@syncrona/redaction",
   mirror: "@syncrona/mirror",
+  fluent: "@syncrona/fluent",
 };
 
 /**
@@ -191,6 +192,8 @@ export function writeViolatingFixtures(root, { tsConfigFileName = "tsconfig.json
   w("packages/redaction/src/violation.ts", "import '@syncrona/credential-store';\nexport const r = 1;\n");
   // mirror-no-core: the mirror engine importing the core CLI it is delegated to from.
   w("packages/mirror/src/violation.ts", "import 'syncrona';\nexport const g = 1;\n");
+  // fluent-no-core: the optional Fluent tier importing the core CLI that loads it.
+  w("packages/fluent/src/violation.ts", "import 'syncrona';\nexport const f = 1;\n");
   // plugins-are-leaves: a build plugin importing a non-types @syncrona package.
   w("packages/babel-plugin/src/violation.ts", "import '@syncrona/credential-store';\nexport const c = 1;\n");
   // no-circular: a genuine runtime (value) cycle between two local modules.

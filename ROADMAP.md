@@ -211,10 +211,11 @@ applications. The following are **shipped**:
 
 ### CLI core & workflow ✅
 - Registry-driven CLI (`commander` interpreter, open/closed command registry),
-  23 commands: `init`, `refresh`, `dev`, `push`, `download`, `build`, `deploy`,
-  `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`, `repair`,
-  `completion`, `mcp`, `login`, `logout`, `instances`, `use`, `jira`,
-  `jira-login`, `jira-logout`.
+  24 commands in 1.0.0: `init`, `refresh`, `dev`, `push`, `download`, `build`,
+  `deploy`, `docs`, `status`, `check-env`, `doctor`, `plugins`, `config`,
+  `repair`, `completion`, `mcp`, `login`, `logout`, `instances`, `use`, `jira`,
+  `jira-login`, `jira-logout`, `mirror`. The v1.1.0 epic below adds `query`,
+  `cicd` and `fluent` (27).
 - Typed CLI args (`typedHandler<TArgs>`), `--dry-run` across mutating commands,
   `--log-level` profiling, column-aligned dry-run tables.
 - Push safety: connection preflight, partial-push checkpoint/resume,
@@ -237,7 +238,7 @@ applications. The following are **shipped**:
   credential-scrubbed environment).
 
 ### MCP & AI ✅
-- 61 MCP tools across the handler modules: metadata/impact/dependency analysis,
+- 62 MCP tools across the handler modules: metadata/impact/dependency analysis,
   scope knowledge graphs, scope docs + Mermaid diagrams, minimal-footprint
   planning, unified change workflow (with gates and optional remote apply),
   health/metrics, AI next-action suggestions, and read-only Jira issue context
@@ -264,6 +265,45 @@ applications. The following are **shipped**:
 - README, ARCHITECTURE, PLUGIN_DEVELOPMENT, MONOREPO_GUIDE, MULTI_INSTANCE,
   COMPARISON, BUSINESS_ANALYSIS, ENTERPRISE_READINESS, SECURITY, SUPPORT,
   CODE_OF_CONDUCT, issue/feature templates.
+
+---
+
+## v1.1.0 — now-sdk parity
+
+Goal: close the everyday gap to the ServiceNow SDK (`now-sdk` / Fluent) without
+giving up the file-based workflow, and let teams drive Fluent projects through
+the same CLI, credential store and exit-code conventions. User-facing guide:
+[docs/MIGRATING_FROM_NOW_SDK.md](docs/MIGRATING_FROM_NOW_SDK.md); comparison:
+[docs/COMPARISON.md](docs/COMPARISON.md).
+
+Every requirement below is implemented and covered by mocked tests. The
+**instance-side write paths are not yet verified against a live instance**,
+which is why they are marked 🚧.
+
+| Req | Capability | Status |
+|---|---|---|
+| R1 | `push --create` / `--no-create` (+ `createRecords`, `createTables`, `SYNCRONA_CREATE_TABLE_ALLOWLIST`): create or adopt records for unmapped files, with a hard deny list | 🚧 implemented; live PDI verification pending |
+| R2 | `push --prune`: delete in-scope records whose local files were all removed (scope-checked, confirmed unless `--ci`, exit 130 on decline) | 🚧 implemented; live PDI verification pending |
+| R3 | `init --new --name [--scope] [--vendor-prefix]`: create a scoped application (`sys_app`) and bind the directory | 🚧 implemented; live PDI verification pending |
+| R4 | Data model as editable local records (opt-in `dataModelTables`, sidecar-only records, stable naming) — [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | 🚧 implemented; live round-trip pending; composite documents deferred |
+| R5 | Type definitions (`fluent types`, via the SDK) | ✅ implemented (SDK adapter); native generation deferred |
+| R6 | `cicd <action>`: `run-suite`, `run-test`, `install`, `publish`, `rollback` over `api/sn_cicd`, exit codes 0/1/2 | 🚧 implemented; live run pending |
+| R7 | `fluent <action>` through the optional `@syncrona/fluent` package (`@servicenow/sdk` optional peer `~4.13`): `init`, `build`, `transform`, `pack`, `install`, `types`, `dependencies`, `run`, `status`; Basic and OAuth profiles | 🚧 implemented; live install pending |
+| R8 | `query <table>` with the `now-sdk query` flag set and its JSON envelope | ✅ implemented (read-only) |
+| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2). A `sync_fluent_build` tool is deferred | 🚧 `sync_cicd_run` implemented; live run pending. Fluent tool deferred |
+
+Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
+
+- 📋 **Live PDI verification** of `push --create` / `--prune`, `init --new`,
+  `cicd`, `fluent install` and the data-model round-trip.
+- 📋 **Composite data-model documents** (a table with its columns and choices
+  as one parent-plus-children document).
+- 📋 **Native type generation** from `sys_dictionary`, without the SDK.
+- 📋 **API-key and mutual-TLS profiles in the Fluent tier** (blocked today by
+  the SDK's session-only endpoints).
+- 📋 **`explain`** counterpart (out of scope for 1.1.0; the SDK docs cover it).
+- 📋 **`sync_fluent_build` MCP tool**: deferred from WP-8, which shipped only
+  `sync_cicd_run`.
 
 ---
 

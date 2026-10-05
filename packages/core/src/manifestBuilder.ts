@@ -19,6 +19,11 @@ import {
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
 import * as ConfigManager from "./config.js";
+import {
+  applyDataModelIncludes,
+  applyDataModelTableOptions,
+  getDataModelTables,
+} from "./dataModel.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 
@@ -814,7 +819,18 @@ function buildRecordName(
   const override = tableOptions?.displayField
     ? fieldText(record[tableOptions.displayField])
     : "";
-  let name = override || fieldText(record[displayField]) || sysId;
+  // R4: a composite name for data-model tables, whose display value alone is
+  // not unique (every dictionary entry of a table displays as the table name).
+  // Empty parts are dropped so a row without one (the collection entry of a
+  // table has no element) is named by what it does have.
+  const composite =
+    !override && Array.isArray(tableOptions?.nameFields)
+      ? tableOptions.nameFields
+          .map((field) => fieldText(record[field]).trim())
+          .filter((part) => part.length > 0)
+          .join(".")
+      : "";
+  let name = override || composite || fieldText(record[displayField]) || sysId;
 
   if (tableOptions?.differentiatorField) {
     const isStringDiff = typeof tableOptions.differentiatorField === "string";
@@ -902,6 +918,9 @@ function buildRecordFieldList(
         ? [tableOptions.differentiatorField]
         : tableOptions.differentiatorField;
     fields.push(...diffFields);
+  }
+  if (Array.isArray(tableOptions?.nameFields)) {
+    fields.push(...tableOptions.nameFields);
   }
   fields.push(...fileFieldNames);
   // Dedupe while preserving first-seen order; drop empty names defensively.
@@ -1109,49 +1128,119 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 // ─── Public: buildManifestFromTableAPI ──────────────────────────────────────
 // Full equivalent of SincUtilsMS.getManifest() using only Table API
 
-export async function buildManifestFromTableAPI(
-  scopeName: string,
-  client: SNClient,
-  config: Pick<Sync.Config, "includes" | "excludes" | "tableOptions" | "meta">
-): Promise<SN.AppManifest> {
-  const includes = config.includes || {};
-  const excludes = config.excludes || {};
-  const tableOptions = config.tableOptions || {};
-  // DX22: opt-out, not opt-in. A workspace holding only the scripts of its
-  // records is missing most of what defines them, and a default-off flag would
-  // have left every existing project in that state indefinitely.
-  const metaEnabled = config.meta !== false;
-  // One build is one run: every table in a scope shares most of its ancestry,
-  // and the walk is memoized for the duration rather than across the process.
-  resetTableHierarchyCache();
+/** Everything one table's enumeration needs, shared by a whole build. */
+interface TableEnumerationContext {
+  client: SNClient;
+  scopeId: string;
+  includes: Sync.TablePropMap;
+  excludes: Sync.TablePropMap;
+  tableOptions: Sync.ITableOptionsMap;
+  metaEnabled: boolean;
+  /** R4: tables whose records may be represented by the sidecar alone. */
+  dataModelTables: ReadonlySet<string>;
+}
 
-  const scopeId = await getScopeId(client, scopeName);
-  if (!scopeId) {
-    throw new Error(
-      `Scope "${scopeName}" not found on this instance. Check the scope code.`
-    );
-  }
+/** One table's enumeration: its manifest entry (if any) and whether it was cut short. */
+interface TableEnumeration {
+  table?: SN.TableConfig;
+  skipped: boolean;
+}
 
-  const tableNames = await getTableNamesInScope(client, scopeName, scopeId, includes, excludes);
-  if (tableNames.length === 0) {
-    // A populated scope never has zero discoverable tables; an empty result
-    // here almost always means connectivity/ACL trouble. Refuse to build an
-    // empty manifest that would overwrite a previously good one.
-    throw new Error(
-      `No tables discovered for scope "${scopeName}". ` +
-        "Refusing to build an empty manifest (check connectivity, credentials, and ACLs)."
-    );
-  }
-
-  // INJ-2, same reason as buildBulkDownloadFromTableAPI's result map: the table
-  // key is instance data, `tables["__proto__"] = …` on a literal creates no own
-  // property, and a table that vanishes from the manifest takes every one of its
-  // local files out of the push with it. The carry-forward below assigns into
-  // this map too, from a manifest read off disk.
-  const manifest: SN.AppManifest = {
-    scope: scopeName,
-    tables: Object.create(null),
+/**
+ * Enumerate one table: its file fields, its sidecar columns and its records.
+ * Throws for a failure that must fail the build; reports a skippable refusal
+ * through `skipped` so the caller can carry the previous entry forward.
+ */
+async function enumerateTable(
+  ctx: TableEnumerationContext,
+  tableName: string
+): Promise<TableEnumeration> {
+  const { client, scopeId, includes, excludes, tableOptions, metaEnabled } = ctx;
+  let skipped = false;
+  const onSkip = () => {
+    skipped = true;
   };
+  let hierarchyTableNames: string[] | undefined;
+  const files = await getFileFieldsForTable(
+    client,
+    tableName,
+    includes,
+    excludes,
+    onSkip,
+    (names) => {
+      hierarchyTableNames = names;
+    }
+  );
+  // A table with no field file has nothing to write — unless it is an opted-in
+  // data-model table (R4), whose records are their sidecar and nothing else.
+  // Without metadata there is no sidecar either, so `meta: false` keeps the
+  // early return for those tables too.
+  const sidecarOnly =
+    files.length === 0 && metaEnabled && ctx.dataModelTables.has(tableName);
+  if (files.length === 0 && !sidecarOnly) {
+    return { skipped };
+  }
+
+  const meta = metaEnabled
+    ? await getMetaFieldsForTable(
+        client,
+        tableName,
+        files.map((f) => f.name),
+        tableOptions[tableName],
+        hierarchyTableNames
+      )
+    : NO_META_FIELDS;
+  const hasMeta = meta.fields.length > 0;
+  if (sidecarOnly && !hasMeta) {
+    // The dictionary was unreadable (getMetaFieldsForTable warned) or the table
+    // has no writable column: a record with neither files nor a sidecar is not
+    // representable, so the table is left out exactly as before R4.
+    return { skipped };
+  }
+
+  const records = await getRecordsForTable(
+    client,
+    tableName,
+    scopeId,
+    files,
+    tableOptions[tableName],
+    onSkip,
+    hasMeta ? [...files, metaFile()] : files
+  );
+  if (Object.keys(records).length === 0) {
+    return { skipped };
+  }
+
+  // metaReadOnlyFields is omitted when empty rather than written as []: the
+  // manifest is diffed by humans and committed, so an always-present empty
+  // key would be noise on every table that has no read-only column.
+  //
+  // A partially refused read (one `sys_idIN` chunk denied while the others
+  // answered) still yields records — but an incomplete set. Committing it as
+  // authoritative is the same data loss as dropping the table: the records
+  // that fell out stop mapping to their local files, so `push` ignores edits
+  // to them and `repair --prune` deletes them. `skipped` is reported so the
+  // carry-forward restores whatever the refused part would have held.
+  const table: SN.TableConfig = !hasMeta
+    ? { records }
+    : meta.readOnly.length > 0
+      ? { records, metaFields: meta.fields, metaReadOnlyFields: meta.readOnly }
+      : { records, metaFields: meta.fields };
+  return { table, skipped };
+}
+
+/**
+ * Enumerate `tableNames` through a bounded pool into `tables`, then carry the
+ * previous entries forward for every table the instance refused. Throws when a
+ * table failed outright.
+ */
+async function enumerateTables(
+  ctx: TableEnumerationContext,
+  scopeName: string,
+  tableNames: string[],
+  tables: SN.AppManifest["tables"],
+  concurrencyConfig: unknown
+): Promise<void> {
   const failedTables: string[] = [];
   // Tables whose enumeration was cut short by a skippable 400/403/404. They are
   // NOT "empty" — see the carry-forward below.
@@ -1159,75 +1248,21 @@ export async function buildManifestFromTableAPI(
 
   // PERF-7 (REV-100): enumerate tables through a bounded pool instead of a single
   // Promise.all that opened one request chain per table at once.
-  const tableConcurrency = resolveManifestTableConcurrency(config);
-  await mapWithConcurrency(tableNames, tableConcurrency, async (tableName) => {
-    let skipped = false;
-    const onSkip = () => {
-      skipped = true;
-    };
-    let hierarchyTableNames: string[] | undefined;
-    try {
-      const files = await getFileFieldsForTable(
-        client,
-        tableName,
-        includes,
-        excludes,
-        onSkip,
-        (names) => {
-          hierarchyTableNames = names;
-        }
-      );
-      if (files.length === 0) {
-        if (skipped) skippedTables.push(tableName);
-        return;
+  await mapWithConcurrency(
+    tableNames,
+    resolveManifestTableConcurrency(concurrencyConfig),
+    async (tableName) => {
+      try {
+        const result = await enumerateTable(ctx, tableName);
+        if (result.table) tables[tableName] = result.table;
+        if (result.skipped) skippedTables.push(tableName);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
+        failedTables.push(tableName);
       }
-
-      const meta = metaEnabled
-        ? await getMetaFieldsForTable(
-            client,
-            tableName,
-            files.map((f) => f.name),
-            tableOptions[tableName],
-            hierarchyTableNames
-          )
-        : NO_META_FIELDS;
-      const hasMeta = meta.fields.length > 0;
-
-      const records = await getRecordsForTable(
-        client,
-        tableName,
-        scopeId,
-        files,
-        tableOptions[tableName],
-        onSkip,
-        hasMeta ? [...files, metaFile()] : files
-      );
-      if (Object.keys(records).length === 0) {
-        if (skipped) skippedTables.push(tableName);
-        return;
-      }
-
-      // metaReadOnlyFields is omitted when empty rather than written as []: the
-      // manifest is diffed by humans and committed, so an always-present empty
-      // key would be noise on every table that has no read-only column.
-      manifest.tables[tableName] = !hasMeta
-        ? { records }
-        : meta.readOnly.length > 0
-          ? { records, metaFields: meta.fields, metaReadOnlyFields: meta.readOnly }
-          : { records, metaFields: meta.fields };
-      // A partially refused read (one `sys_idIN` chunk denied while the others
-      // answered) still yields records — but an incomplete set. Committing it as
-      // authoritative is the same data loss as dropping the table: the records
-      // that fell out stop mapping to their local files, so `push` ignores edits
-      // to them and `repair --prune` deletes them. Report the skip so the
-      // carry-forward below restores whatever the refused part would have held.
-      if (skipped) skippedTables.push(tableName);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      logger.warn(`Failed to enumerate table ${tableName}: ${message}`);
-      failedTables.push(tableName);
     }
-  });
+  );
 
   if (failedTables.length > 0) {
     // Better to fail the whole build than to persist a partial manifest in
@@ -1251,8 +1286,8 @@ export async function buildManifestFromTableAPI(
       if (!priorTable || Object.keys(priorTable.records || {}).length === 0) {
         continue;
       }
-      const current = manifest.tables[tableName]?.records;
-      manifest.tables[tableName] =
+      const current = tables[tableName]?.records;
+      tables[tableName] =
         current && Object.keys(current).length > 0
           ? // Partial read: keep every record just enumerated (they are the
             // fresher truth) and restore only the ones the refused part of the
@@ -1268,8 +1303,178 @@ export async function buildManifestFromTableAPI(
           : "")
     );
   }
+}
 
+type ManifestBuildConfig = Pick<
+  Sync.Config,
+  "includes" | "excludes" | "tableOptions" | "meta" | "dataModelTables"
+>;
+
+/** The enumeration context for `config`, with the R4 opt-in applied. */
+function tableEnumerationContext(
+  client: SNClient,
+  scopeId: string,
+  config: ManifestBuildConfig
+): TableEnumerationContext {
+  return {
+    client,
+    scopeId,
+    // R4: an opted-in table is re-included even when it is excluded by default,
+    // and its records get the data-model naming rule.
+    includes: applyDataModelIncludes(config),
+    excludes: config.excludes || {},
+    tableOptions: applyDataModelTableOptions(config),
+    // DX22: opt-out, not opt-in. A workspace holding only the scripts of its
+    // records is missing most of what defines them, and a default-off flag would
+    // have left every existing project in that state indefinitely.
+    metaEnabled: config.meta !== false,
+    dataModelTables: new Set(getDataModelTables(config)),
+  };
+}
+
+export async function buildManifestFromTableAPI(
+  scopeName: string,
+  client: SNClient,
+  config: ManifestBuildConfig
+): Promise<SN.AppManifest> {
+  // One build is one run: every table in a scope shares most of its ancestry,
+  // and the walk is memoized for the duration rather than across the process.
+  resetTableHierarchyCache();
+
+  const scopeId = await getScopeId(client, scopeName);
+  if (!scopeId) {
+    throw new Error(
+      `Scope "${scopeName}" not found on this instance. Check the scope code.`
+    );
+  }
+  const ctx = tableEnumerationContext(client, scopeId, config);
+
+  const discovered = await getTableNamesInScope(
+    client,
+    scopeName,
+    scopeId,
+    ctx.includes,
+    ctx.excludes
+  );
+  if (discovered.length === 0) {
+    // A populated scope never has zero discoverable tables; an empty result
+    // here almost always means connectivity/ACL trouble. Refuse to build an
+    // empty manifest that would overwrite a previously good one.
+    throw new Error(
+      `No tables discovered for scope "${scopeName}". ` +
+        "Refusing to build an empty manifest (check connectivity, credentials, and ACLs)."
+    );
+  }
+  // R4: an opted-in table is enumerated even when the sys_metadata sweep did
+  // not list it (a table it found nothing in yields no entry, as before). An
+  // explicit `includes.<table>: false` switches it off here too.
+  const tableNames = [...discovered];
+  for (const tableName of ctx.dataModelTables) {
+    if (ctx.includes[tableName] !== false && !tableNames.includes(tableName)) {
+      tableNames.push(tableName);
+    }
+  }
+
+  // INJ-2, same reason as buildBulkDownloadFromTableAPI's result map: the table
+  // key is instance data, `tables["__proto__"] = …` on a literal creates no own
+  // property, and a table that vanishes from the manifest takes every one of its
+  // local files out of the push with it. The carry-forward assigns into this
+  // map too, from a manifest read off disk.
+  const manifest: SN.AppManifest = {
+    scope: scopeName,
+    tables: Object.create(null),
+  };
+  await enumerateTables(ctx, scopeName, tableNames, manifest.tables, config);
   return manifest;
+}
+
+// ─── Public: attachDataModelTablesToManifest ─────────────────────────────────
+
+/**
+ * R4 on the companion-app path: add the opted-in data-model tables to a
+ * manifest the scoped `sinc/getManifest` endpoint produced.
+ *
+ * That endpoint predates R4: it never lists a table without field files, and it
+ * names records by their display value alone. Every opted-in table is therefore
+ * (re)built here through the Table API, replacing whatever entry the endpoint
+ * returned, so a data-model record has the same name and the same sidecar on
+ * both paths. A no-op when nothing is opted in or `meta: false`.
+ *
+ * Mutates and returns `manifest`. Throws, like the builder, when a table fails.
+ */
+export async function attachDataModelTablesToManifest(
+  manifest: SN.AppManifest,
+  client: SNClient,
+  config: ManifestBuildConfig
+): Promise<SN.AppManifest> {
+  const tables = getDataModelTables(config);
+  if (tables.length === 0 || config.meta === false) {
+    return manifest;
+  }
+  const scopeId = manifest.scopeId || (await getScopeId(client, manifest.scope));
+  if (!scopeId) {
+    throw new Error(
+      `Scope "${manifest.scope}" not found on this instance. Check the scope code.`
+    );
+  }
+  resetTableHierarchyCache();
+  const ctx = tableEnumerationContext(client, scopeId, config);
+  const wanted = tables.filter((tableName) => ctx.includes[tableName] !== false);
+  // Built into a fresh map first: a table that comes back empty must REPLACE
+  // the endpoint's entry (named by the old rule), not leave it in place.
+  const built: SN.AppManifest["tables"] = Object.create(null);
+  await enumerateTables(ctx, manifest.scope, wanted, built, config);
+  const merged: SN.AppManifest["tables"] = Object.assign(
+    Object.create(null),
+    manifest.tables || {}
+  );
+  for (const tableName of wanted) {
+    if (Object.prototype.hasOwnProperty.call(built, tableName)) {
+      merged[tableName] = built[tableName];
+    } else {
+      delete merged[tableName];
+    }
+  }
+  manifest.tables = merged;
+  return manifest;
+}
+
+// ─── Public: discoverTableMetaFields ─────────────────────────────────────────
+
+/**
+ * R4: the sidecar columns of one table, discovered exactly as a manifest build
+ * would (the file fields are removed first, the denylist and the read-only
+ * rules apply). `push --create` uses it for a sidecar-only data-model record
+ * whose table the manifest does not know yet — without it the sidecar cannot be
+ * resolved and the create fails on the degraded-manifest check.
+ *
+ * Returns empty lists when the dictionary cannot be read; the caller then
+ * reports the record as not creatable rather than posting a guess.
+ */
+export async function discoverTableMetaFields(
+  client: SNClient,
+  tableName: string,
+  config: ManifestBuildConfig
+): Promise<{ fields: string[]; readOnly: string[] }> {
+  const ctx = tableEnumerationContext(client, "", config);
+  let hierarchyTableNames: string[] | undefined;
+  const files = await getFileFieldsForTable(
+    client,
+    tableName,
+    ctx.includes,
+    ctx.excludes,
+    undefined,
+    (names) => {
+      hierarchyTableNames = names;
+    }
+  );
+  return getMetaFieldsForTable(
+    client,
+    tableName,
+    files.map((f) => f.name),
+    ctx.tableOptions[tableName],
+    hierarchyTableNames
+  );
 }
 
 // Best-effort read of the manifest currently loaded in memory, used only to
@@ -1310,13 +1515,18 @@ function getPreviousManifest(scopeName: string): SN.AppManifest | undefined {
 export async function attachMetaFieldsToManifest(
   manifest: SN.AppManifest,
   client: SNClient,
-  config: Pick<Sync.Config, "tableOptions" | "meta">
+  config: Pick<Sync.Config, "tableOptions" | "meta"> &
+    Partial<Pick<Sync.Config, "includes" | "excludes" | "dataModelTables">>
 ): Promise<SN.AppManifest> {
   // Same opt-out as the builder: `meta: false` means a project has decided it
   // wants the pre-DX22 workspace, and that decision must hold on both paths.
   if (config.meta === false) {
     return manifest;
   }
+  // R4: the scoped endpoint lists no sidecar-only table at all, so the opted-in
+  // data-model tables are added (and named) here first. Every caller that
+  // enriches a scoped manifest gets them without a second call to forget.
+  await attachDataModelTablesToManifest(manifest, client, config);
   const tableOptions = config.tableOptions || {};
 
   const pending = Object.entries(manifest.tables || {}).filter(

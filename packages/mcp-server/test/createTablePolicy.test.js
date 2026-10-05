@@ -141,3 +141,20 @@ test('policy defaults to process.env when no env object is passed', () => {
     }
   }
 });
+
+// AD-4: the policy is shared with the core CLI's `push --create` through
+// @syncrona/sn-transport. The shared variable widens the MCP allowlist too, but
+// the MCP-specific variable wins whenever both are set.
+test('the shared SYNCRONA_CREATE_TABLE_ALLOWLIST also extends the allowlist', () => {
+  const env = { SYNCRONA_CREATE_TABLE_ALLOWLIST: 'u_shared_table' };
+  assert.deepEqual(evaluateCreateTablePolicy('u_shared_table', env), { allowed: true });
+});
+
+test('the MCP-specific allowlist wins over the shared one when both are set', () => {
+  const env = {
+    SYNCRONA_CREATE_TABLE_ALLOWLIST: 'u_shared_table',
+    [CREATE_TABLE_ALLOWLIST_ENV]: 'u_mcp_table',
+  };
+  assert.deepEqual(evaluateCreateTablePolicy('u_mcp_table', env), { allowed: true });
+  assert.equal(evaluateCreateTablePolicy('u_shared_table', env).allowed, false);
+});

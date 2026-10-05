@@ -74,6 +74,7 @@ jest.unstable_mockModule("../scopeDocs.js", () => ({
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...a: unknown[]) => mockGitDiffToEncodedPaths(...a),
+  gitDiffToChanges: jest.fn(),
   writeDiff: jest.fn(),
   clearDiff: jest.fn(),
 }));

@@ -201,48 +201,56 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 87 }, // measured 98.58 / 94.62
+    './src/FileUtils.ts': { lines: 95, branches: 89 }, // measured 98.78 / 95.79
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
-    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 94.07
-    './src/pushPipeline.ts': { lines: 93, branches: 76 }, // measured 97.07 / 83.82
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.08 / 85.36
+    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.37
+    './src/pushPipeline.ts': { lines: 95, branches: 88 }, // measured 99.05 / 93.33
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.12 / 85.27
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 91, branches: 77 }, // measured 94.56 / 83.62
+    './src/manifestBuilder.ts': { lines: 91, branches: 78 }, // measured 94.94 / 85.82
+    './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.66 / 93.82
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.67 / 94.25
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.70 / 94.75
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.62 / 75.89
     // The instance-host normalizer both of the above go through (#20).
     './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/config.ts': { lines: 96, branches: 85 }, // measured 99.54 / 91.41
+    './src/config.ts': { lines: 96, branches: 85 }, // measured 99.56 / 91.61
     './src/envFile.ts': { lines: 96, branches: 80 }, // measured 100.00 / 85.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
     './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 71.79
-    './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.16 / 87.36
+    './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.23 / 87.87
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.90
     './src/Watcher.ts': { lines: 91, branches: 72 }, // measured 94.82 / 78.94
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
-    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.57 / 71.79
+    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.59 / 72.83
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
     // true of the engine — so it holds credential material for a whole sweep.
     './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.10
+    // Installs and reinstalls applications through the optional Fluent tier, and
+    // mints the OAuth token the ServiceNow SDK uses for the whole session.
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 97.96 / 97.60
     // Rewrites third-party MCP client config files, writes the secrets file that
     // points the server at an instance, and spawns the server. It had no named
     // floor while it was the weakest file in the tree; that is what let it fail
     // the tree-wide floor on Linux by a single line (77.77 lines / 52.27
     // branches) while macOS measured 83.33 / 68.18 and shipped green.
     './src/mcpCommand.ts': { lines: 97, branches: 93 }, // measured 100.00 / 98.27
-    // The CLI registry: 24 entries, nearly all one-line delegations, so a floor
+    // The CLI registry: 25 entries, nearly all one-line delegations, so a floor
     // on LINES is what
     // catches an entry that no longer routes anywhere (it declares no branches,
     // and a branch floor on 0/0 is reported as 100% and would gate nothing).
     './src/cliCommands.ts': { lines: 96 }, // measured 100.00 lines (0 branches)
+    // `init --new`: derives and validates the scope, resolves the vendor prefix
+    // and inserts the sys_app row — the one command that creates an application
+    // on the instance, so every refusal it makes before that POST is pinned.
+    './src/appCreator.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.61
   },
 }

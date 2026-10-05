@@ -229,7 +229,7 @@ const isColumnScalar = (raw: unknown): boolean =>
  * those reported a column that HAS a value as empty. That is the same silent
  * loss the empty-vs-absent rule below exists to prevent, one layer down.
  */
-const metaValueText = (raw: unknown): string => {
+export const metaValueText = (raw: unknown): string => {
   if (raw === null || raw === undefined) {
     return "";
   }

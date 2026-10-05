@@ -194,3 +194,6 @@ export * from "./mirrorPolicy";
 // Path-safety rules shared with the v1 core download pipeline, plus the D18
 // mirror guards (NFC, UTF-8 byte cap, case-insensitive uniqueness).
 export * from "./pathSafety";
+// Record-creation table policy (deny list + env allowlist) shared by the MCP
+// `sn_create_record` tool and the core CLI's `push --create`.
+export * from "./createPolicy";

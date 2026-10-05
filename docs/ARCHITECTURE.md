@@ -20,6 +20,8 @@ packages/
   sn-transport/         @syncrona/sn-transport     — shared HTTP transport + record policy
   jira/                 @syncrona/jira             — read-only Jira issue client
   redaction/            @syncrona/redaction        — secret detection + redaction
+  mirror/               @syncrona/mirror           — full-instance git mirror engine (GET-only)
+  fluent/               @syncrona/fluent           — optional Fluent tier: drives @servicenow/sdk
   babel-plugin/  babel-plugin-remove-modules/  babel-preset-servicenow/
   typescript-plugin/  webpack-plugin/  sass-plugin/  prettier-plugin/  eslint-plugin/
                         — build-pipeline plugins loaded via sync.config.js rules
@@ -40,6 +42,9 @@ graph TD
     core["syncrona<br/>CLI (yargs, axios)"]
     mcp["@syncrona/mcp-server<br/>MCP runtime (fetch, node:test)"]
     plugins["build plugins<br/>(babel/ts/webpack/sass/prettier)"]
+    mirror["@syncrona/mirror<br/>instance git mirror engine"]
+    fluent["@syncrona/fluent<br/>optional Fluent tier"]
+    sdk["@servicenow/sdk<br/>(MIT, optional peer)"]
 
     core --> types
     core --> transport
@@ -50,12 +55,28 @@ graph TD
     mcp --> jira
     mcp --> redaction
     jira --> credstore
+    core --> mirror
+    mirror --> transport
+    mirror --> credstore
+    mirror --> redaction
+    fluent --> types
+    core -. "lazy import on<br/>first fluent action" .-> fluent
+    fluent -. "lazy import" .-> sdk
     mcp -. "spawns as child process" .-> core
     core -. "dynamic import via<br/>sync.config.js rules" .-> plugins
 ```
 
 Build order is enforced by the root `build:deps` script: `credential-store`,
 `jira`, `redaction` and `sn-transport` compile before their consumers.
+
+`@syncrona/fluent` is **not** a core dependency. `syncrona fluent <action>`
+resolves it lazily, first from the project and then from core's own location,
+on the first non-dry-run action. It loads `@servicenow/sdk` (an optional peer,
+pinned `~4.13`) the same way, so `syncrona --help` and every other command
+never pay the SDK's start-up cost. When either package is missing, the command
+prints one install hint and exits 1. The adapter's only workspace dependency is
+`@syncrona/types`, and the `fluent-no-core` dependency-cruiser rule keeps it from
+importing core.
 
 `types` and `redaction` are the two leaves. `types` may import no other
 `@syncrona` package; `redaction` is stricter still — it may import **nothing**,
@@ -98,7 +119,7 @@ dotenv → credential preload → update notifier → `commander.initCommands()`
 
 | Area | Modules |
 |---|---|
-| Command layer | `cliCommands` (declarative command registry), `commander` (registry interpreter), `commands` (init/download/build/deploy/docs), `pushCommand`, `devCommands`, `authCommands`, `diagnosticsCommands` (status/doctor/plugins), `mcpCommand`, `commandHelpers` |
+| Command layer | `cliCommands` (declarative command registry), `commander` (registry interpreter), `commands` (init/download/build/deploy/docs), `pushCommand`, `devCommands`, `authCommands`, `diagnosticsCommands` (status/doctor/plugins), `mcpCommand`, `mirrorCommand`, `fluentCommand`, `commandHelpers` |
 | Sync engine | `appUtils` (manifest processing, push/build), `manifestBuilder` (Table-API fallback builder, paginated), `FileUtils`, `Watcher` (chokidar, serialized queue), `PluginManager` |
 | Instance access | `snClient` (axios client factory + credential resolution), `auth` (re-export of credential-store) |
 | Infrastructure | `config` (ConfigStore singleton + factory), `Logger` (winston), `gitUtils` (execFile-based diff), `updateNotifier`, `wizard`, `scopeDocs`, `envFile`, `genericUtils` |

@@ -239,6 +239,7 @@ describe("CLI registry dry-run declarations", () => {
     "build", // commands.ts
     "deploy", // commands.ts
     "repair", // repairCommand.ts
+    "fluent", // fluentCommand.ts (prints the SDK call it would make)
   ]);
 
   it("marks every shared-option command as previewing or not", async () => {

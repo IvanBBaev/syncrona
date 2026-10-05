@@ -1785,6 +1785,99 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
     },
   },
   {
+    name: "sync_cicd_run",
+    description:
+      "Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. Needs the sn_cicd.sys_ci_automation role.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["run-suite", "run-test", "install", "publish", "rollback"],
+          description: "The CI/CD action to run.",
+        },
+        suiteId: {
+          type: "string",
+          description: "run-suite: sys_id of the ATF test suite (exactly one of suiteId or suiteName).",
+        },
+        suiteName: {
+          type: "string",
+          description: "run-suite: name of the ATF test suite (exactly one of suiteId or suiteName).",
+        },
+        testId: {
+          type: "string",
+          description: "run-test: sys_id of the ATF test (required).",
+        },
+        browserName: {
+          type: "string",
+          description: "run-suite: browser to schedule the run on (for example chrome).",
+        },
+        browserVersion: { type: "string", description: "run-suite: browser version." },
+        osName: { type: "string", description: "run-suite: operating system name." },
+        osVersion: { type: "string", description: "run-suite: operating system version." },
+        runInCloud: {
+          type: "boolean",
+          description: "run-suite / run-test: run on the Cloud Runner.",
+        },
+        performance: {
+          type: "boolean",
+          description: "run-suite: run as a performance run.",
+        },
+        captureNodeLogs: {
+          type: "boolean",
+          description: "run-test: capture node logs for the run.",
+        },
+        scope: {
+          type: "string",
+          description:
+            "install / publish / rollback: application scope (exactly one of scope or appSysId).",
+        },
+        appSysId: {
+          type: "string",
+          description:
+            "install / publish / rollback: application sys_id (exactly one of scope or appSysId).",
+        },
+        appVersion: {
+          type: "string",
+          description:
+            "install / publish: version to install or publish. rollback: the version to roll back to (required).",
+        },
+        baseAppVersion: { type: "string", description: "install: base application version." },
+        autoUpgradeBaseApp: {
+          type: "boolean",
+          description: "install: upgrade the base application automatically.",
+        },
+        devNotes: { type: "string", description: "publish: developer notes for the published version." },
+        pollMs: {
+          type: "number",
+          minimum: 250,
+          maximum: 60000,
+          default: 1000,
+          description: "Interval between progress-tracker polls, in milliseconds.",
+        },
+        confirmDestructive: {
+          type: "boolean",
+          default: false,
+          description:
+            "Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to run.",
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description: "Return the request that would be dispatched and record an audit entry without calling the instance.",
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1000,
+          maximum: 900000,
+          description:
+            "Budget for the whole call (dispatch, polling and result read). When it runs out the outcome is incomplete and the work may still be running on the instance.",
+        },
+      },
+      required: ["action", "confirmDestructive"],
+    },
+  },
+  {
     name: "sync_validate_before_push",
     description:
       "Pre-push validation pipeline: runs security/architecture analysis on a scope's scripts, checks for recent conflicting changes, and reports ready or blocked per record.",

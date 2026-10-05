@@ -17,7 +17,7 @@
     <title>SyncroNow AI — ServiceNow source control &amp; build pipeline</title>
     <meta
       name="description"
-      content="SyncroNow AI pulls your ServiceNow scoped-app source out of the instance as plain, editable files — real diffs, branches and pull requests. Every save is built through modern tooling (TypeScript / Babel / Webpack / Sass) and pushed straight back to the record. 24 CLI commands, 6 build plugins and a built-in MCP server with 61 tools."
+      content="SyncroNow AI pulls your ServiceNow scoped-app source out of the instance as plain, editable files — real diffs, branches and pull requests. Every save is built through modern tooling (TypeScript / Babel / Webpack / Sass) and pushed straight back to the record. 27 CLI commands, 6 build plugins and a built-in MCP server with 62 tools."
     />
     <meta name="theme-color" content="#f4f0e7" />
     <link rel="canonical" href="https://ivanbbaev.github.io/syncrona/" />
@@ -36,7 +36,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="SyncroNow AI — track ServiceNow scoped-app code in Git. 24 commands, 6 build plugins, MCP server, GPL-3.0."
+      content="SyncroNow AI — track ServiceNow scoped-app code in Git. 27 commands, 6 build plugins, MCP server, GPL-3.0."
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="SyncroNow AI — your ServiceNow code, in Git." />
@@ -47,7 +47,7 @@
     <meta name="twitter:image" content="https://ivanbbaev.github.io/syncrona/assets/og-image.png" />
     <meta
       name="twitter:image:alt"
-      content="SyncroNow AI — track ServiceNow scoped-app code in Git. 24 commands, 6 build plugins, MCP server, GPL-3.0."
+      content="SyncroNow AI — track ServiceNow scoped-app code in Git. 27 commands, 6 build plugins, MCP server, GPL-3.0."
     />
 
     <!-- Structured data: software listing + FAQ rich results -->
@@ -284,9 +284,9 @@
               </svg>
             </div>
             <div class="fig-stats">
-              <div class="stat"><div class="stat-n">24</div><div class="stat-l">CLI commands</div></div>
+              <div class="stat"><div class="stat-n">27</div><div class="stat-l">CLI commands</div></div>
               <div class="stat"><div class="stat-n">6</div><div class="stat-l">build plugins</div></div>
-              <div class="stat"><div class="stat-n">61</div><div class="stat-l">MCP tools</div></div>
+              <div class="stat"><div class="stat-n">62</div><div class="stat-l">MCP tools</div></div>
               <div class="stat"><div class="stat-n">≥22</div><div class="stat-l">Node.js</div></div>
             </div>
           </div>
@@ -610,6 +610,18 @@ syncrona init</code></pre>
               <div><div class="cmd-name">status</div><div class="cmd-alias">no alias</div></div>
               <div><div class="cmd-desc">Extended workspace status: instance, user, scope, config paths, env and connectivity.</div><code class="cmd-usage">syncrona status</code></div>
             </div>
+            <div class="cmd-row" data-search="query queries any table through the table api with now-sdk query flags; -o json prints the {ok, hasmore, nextoffset, records} envelope.">
+              <div><div class="cmd-name">query</div><div class="cmd-alias">no alias</div></div>
+              <div><div class="cmd-desc">Queries any table through the Table API with <code class="inline">now-sdk query</code> flags; <code class="inline">-o json</code> prints the <code class="inline">{ok, hasMore, nextOffset, records}</code> envelope.</div><code class="cmd-usage">syncrona query incident -q active=true</code></div>
+            </div>
+            <div class="cmd-row" data-search="cicd drives the servicenow ci/cd api: run atf suites or tests, install, publish or roll back an app, and wait for the result.">
+              <div><div class="cmd-name">cicd</div><div class="cmd-alias">no alias</div></div>
+              <div><div class="cmd-desc">Drives the ServiceNow CI/CD API: run ATF suites or tests, install, publish or roll back an app, and wait for the result.</div><code class="cmd-usage">syncrona cicd run-suite --suite-name "Smoke tests"</code></div>
+            </div>
+            <div class="cmd-row" data-search="fluent builds, packs, transforms and installs fluent (.now.ts) apps through the optional servicenow sdk tier.">
+              <div><div class="cmd-name">fluent</div><div class="cmd-alias">no alias</div></div>
+              <div><div class="cmd-desc">Builds, packs, transforms and installs Fluent (<code class="inline">.now.ts</code>) apps through the optional ServiceNow SDK tier.</div><code class="cmd-usage">syncrona fluent build</code></div>
+            </div>
             <div class="cmd-row" data-search="doctor runs local config and servicenow connectivity diagnostics with actionable fixes.">
               <div><div class="cmd-name">doctor</div><div class="cmd-alias">no alias</div></div>
               <div><div class="cmd-desc">Runs local config and ServiceNow connectivity diagnostics with actionable fixes.</div><code class="cmd-usage">syncrona doctor</code></div>
@@ -788,7 +800,7 @@ includes: {
             The bundled <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">Model Context Protocol</a>
             server (<code class="inline">@syncrona/mcp-server</code>) turns any MCP-capable client — Claude Desktop,
             Claude Code, VS Code Chat — into a teammate that can read your scope, map dependencies, analyse scripts and
-            propose gated changes behind a dry-run guardrail. It exposes 61 MCP tools in 8 families.
+            propose gated changes behind a dry-run guardrail. It exposes 62 MCP tools in 8 families.
           </p>
 
           <p class="sec-note">
@@ -808,7 +820,7 @@ includes: {
           </div>
 
           <div class="tools-head">
-            <div class="tools-count"><span class="tools-n">61</span> tools · 8 families</div>
+            <div class="tools-count"><span class="tools-n">62</span> tools · 8 families</div>
             <div class="tools-controls">
               <button type="button" class="ghost-btn" id="toolsExpand">Expand all</button>
               <button type="button" class="ghost-btn" id="toolsCollapse">Collapse all</button>
@@ -900,7 +912,7 @@ includes: {
               </div>
             </details>
             <details class="tool">
-              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, gated execution, ATF and AI planning · 15 tools</span></summary>
+              <summary><code class="tool-name">Workflow &amp; orchestration</code><span class="tool-sum">CLI wrappers, gated execution, ATF and AI planning · 16 tools</span></summary>
               <div class="tool-body">
                 <ul>
                   <li><code>sync_status</code> — connected instance, scope and user</li>
@@ -913,6 +925,7 @@ includes: {
                   <li><code>sn_execute_background_script</code> — gated background-script execution with raw output</li>
                   <li><code>run_node_code</code> — execute JavaScript with Node.js in the workspace</li>
                   <li><code>sync_run_atf_tests</code> — run ATF tests (test, suite or whole scope) and poll results</li>
+                  <li><code>sync_cicd_run</code> — CI/CD API: run ATF suites/tests, install, publish or roll back an app (gated)</li>
                   <li><code>sync_suggest_tests</code> — scaffold an ATF server-side test skeleton from a Script Include</li>
                   <li><code>sn_autonomous_remediation_workflow</code> — detect → propose → dry-run/apply → validate, with approval</li>
                   <li><code>sync_ai_next_actions</code> — prioritized next actions from a natural-language objective</li>

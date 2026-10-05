@@ -17,7 +17,7 @@ import {
 } from "./snClient.js";
 import { listInstances } from "./auth.js";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder.js";
-import { KNOWN_PLUGINS, findKnownPlugin, renderPluginRule } from "./pluginCatalog.js";
+import { KNOWN_PLUGINS, OPTIONAL_PACKAGES, findKnownPlugin, renderPluginRule } from "./pluginCatalog.js";
 import {
   setLogLevel,
   logScopedEndpointCapability,
@@ -433,6 +433,19 @@ export async function pluginsCommand(args: Sync.SharedCmdArgs): Promise<PluginsS
     if (!plugin.installed) {
       logger.warn(`plugin:${plugin.name} is configured but not installed in node_modules.`);
     }
+  }
+
+  // Optional command tiers: availability only, never a warning, and kept out of
+  // the summary so its shape (and the `plugins` JSON consumers) stay unchanged.
+  for (const optional of OPTIONAL_PACKAGES) {
+    let present = false;
+    try {
+      await fsp.stat(path.join(rootDir, "node_modules", optional.pkg));
+      present = true;
+    } catch (_) {
+      present = false;
+    }
+    logger.info(`optional:${optional.pkg} status=${present ? "installed" : "missing"} — ${optional.description}`);
   }
 
   return summary;
