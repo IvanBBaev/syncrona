@@ -7,7 +7,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { isEffectiveDryRun, isMutatingTool } from "./safetyPolicy";
+import { isEffectiveDryRun, isMutatingTool, isReadOnlyMutatingCall } from "./safetyPolicy";
 import { checkAuditLogIntegrity } from "./audit";
 import { logger } from "./logger";
 import { loadMetricEvents } from "./metricsStore";
@@ -166,15 +166,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   try {
-    const isUnifiedPlanningCall =
-      toolName === "sync_unified_change_workflow" && args.apply !== true;
-
     // REV-197: skip the preflight gate only for a dry run the TOOL ACTUALLY HONOURS.
     // Keying the skip on the requested flag is safe only while MUTATING_TOOLS stays a
     // subset of DRY_RUN_AWARE_TOOLS — the first mutating tool added without a
     // dryRun-aware handler would silently disable its preflight, which is exactly how
     // REV-150 turned `sync_unified_change_workflow`'s dry run into an ungated apply.
-    if (isMutatingTool(toolName) && !isEffectiveDryRun(toolName, args) && !isUnifiedPlanningCall) {
+    if (
+      isMutatingTool(toolName) &&
+      !isEffectiveDryRun(toolName, args) &&
+      !isReadOnlyMutatingCall(toolName, args)
+    ) {
       await enforcePreflightForTool(toolName, timeoutMs);
     }
 

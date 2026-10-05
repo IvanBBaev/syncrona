@@ -12,11 +12,12 @@
 // The consequence of a dropped entry depends on which side of the gate the table
 // sits on:
 //   * a DENYLIST / recognizer entry (BLOCKED_*, DESTRUCTIVE_CLI_SUBCOMMANDS,
-//     PACKAGE_*, CLI_PACKAGE_NAMES, MUTATING_TOOLS, DRY_RUN_AWARE_TOOLS,
+//     FLAG_GATED_CLI_SUBCOMMANDS, PACKAGE_*, CLI_PACKAGE_NAMES, MUTATING_TOOLS, DRY_RUN_AWARE_TOOLS,
 //     GIT_VERB_DANGEROUS_OPTIONS) fails OPEN — the invocation stops being
 //     recognized as dangerous and runs unconfirmed, or an audit record claims a
 //     simulation of a run that really happened. Security-critical.
-//   * an ALLOWLIST entry (READONLY_ALLOWLIST, GIT_SAFE_*, GIT_READONLY_SUBCOMMANDS)
+//   * an ALLOWLIST entry (READONLY_ALLOWLIST, FLUENT_READONLY_ACTIONS, GIT_SAFE_*,
+//     GIT_READONLY_SUBCOMMANDS)
 //     fails CLOSED — the gate over-confirms. Safe direction, but still a real
 //     regression: it breaks a read-only agent workflow that used to work.
 // Both are pinned here.
@@ -59,7 +60,15 @@ const BLOCKED_SHELL_INTERPRETERS = ['bash', 'sh', 'zsh', 'fish'];
 
 const BLOCKED_SHELL_TOKENS = ['&&', '||', ';', '|', '`', '$(', '>', '<'];
 
-const DESTRUCTIVE_CLI_SUBCOMMANDS = ['push', 'deploy', 'download'];
+const DESTRUCTIVE_CLI_SUBCOMMANDS = ['push', 'deploy', 'download', 'cicd', 'dev', 'refresh'];
+
+// Subcommand -> the flag that selects its instance-writing form.
+const FLAG_GATED_CLI_SUBCOMMANDS = [
+  ['init', '--new'],
+  ['repair', '--apply'],
+];
+
+const FLUENT_READONLY_ACTIONS = ['status', 'explain', 'types'];
 
 const CLI_PACKAGE_NAMES = ['syncrona'];
 
@@ -85,6 +94,7 @@ const DRY_RUN_AWARE_TOOLS = [
   'sync_generate_scope_docs',
   'sync_scope_knowledge_auto_update',
   'sync_generate_table_dependency_report',
+  'sync_fluent_build',
 ];
 
 const READONLY_ALLOWLIST = ['git', 'ls', 'cat', 'pwd', 'echo', 'syncrona'];
@@ -198,10 +208,12 @@ test('policy fixtures have their expected sizes', () => {
     ['BLOCKED_COMMANDS', BLOCKED_COMMANDS, 8],
     ['BLOCKED_SHELL_INTERPRETERS', BLOCKED_SHELL_INTERPRETERS, 4],
     ['BLOCKED_SHELL_TOKENS', BLOCKED_SHELL_TOKENS, 8],
-    ['DESTRUCTIVE_CLI_SUBCOMMANDS', DESTRUCTIVE_CLI_SUBCOMMANDS, 3],
+    ['DESTRUCTIVE_CLI_SUBCOMMANDS', DESTRUCTIVE_CLI_SUBCOMMANDS, 6],
+    ['FLAG_GATED_CLI_SUBCOMMANDS', FLAG_GATED_CLI_SUBCOMMANDS.map(([name]) => name), 2],
+    ['FLUENT_READONLY_ACTIONS', FLUENT_READONLY_ACTIONS, 3],
     ['CLI_PACKAGE_NAMES', CLI_PACKAGE_NAMES, 1],
     ['PACKAGE_RUNNERS', PACKAGE_RUNNERS, 3],
-    ['DRY_RUN_AWARE_TOOLS', DRY_RUN_AWARE_TOOLS, 19],
+    ['DRY_RUN_AWARE_TOOLS', DRY_RUN_AWARE_TOOLS, 20],
     ['READONLY_ALLOWLIST', READONLY_ALLOWLIST, 6],
     ['GIT_SAFE_MAIN_OPTIONS', GIT_SAFE_MAIN_OPTIONS, 13],
     ['GIT_READONLY_SUBCOMMANDS', GIT_READONLY_SUBCOMMANDS, 27],
@@ -303,6 +315,25 @@ test('every destructive CLI subcommand confirms, whatever the operand position',
   }
 });
 
+test('every flag-gated CLI subcommand confirms with its flag and only with it', () => {
+  for (const [subcommand, flag] of FLAG_GATED_CLI_SUBCOMMANDS) {
+    for (const args of [[subcommand, flag], [flag, subcommand], [subcommand, `${flag}=true`]]) {
+      assert.equal(
+        requiresConfirmation('syncrona', args),
+        true,
+        `syncrona ${args.join(' ')} must require confirmation`
+      );
+    }
+    assert.equal(
+      requiresConfirmation('syncrona', [subcommand]),
+      false,
+      `bare syncrona ${subcommand} must not require confirmation`
+    );
+    // A different command's flag does not open the gate.
+    assert.equal(requiresConfirmation('syncrona', ['status', flag]), false);
+  }
+});
+
 // The bare `<runner> syncrona <verb>` form is pinned in policy.cov.test.js; what is
 // pinned here are the argument SHAPES a runner accepts around the package token,
 // each of which is its own way to lose the invocation.
@@ -388,6 +419,30 @@ test('every git help option that hands its argument to a viewer confirms', () =>
 });
 
 // --- Fail-CLOSED tables: a dropped entry breaks a read-only workflow -------
+
+test('every read-only fluent action runs unconfirmed', () => {
+  for (const action of FLUENT_READONLY_ACTIONS) {
+    assert.equal(
+      requiresConfirmation('syncrona', ['fluent', action]),
+      false,
+      `syncrona fluent ${action} must not confirm`
+    );
+    // The action is lowercased before the lookup.
+    assert.equal(
+      isDestructiveWorkspaceCommand('npx', ['syncrona', 'fluent', action.toUpperCase()]),
+      false,
+      `npx syncrona fluent ${action.toUpperCase()} must not be destructive`
+    );
+  }
+  // Contrast: every other fluent action confirms (default-deny).
+  for (const action of ['install', 'move-to-app', 'build', 'pack', 'transform', 'init', 'run', 'dependencies']) {
+    assert.equal(
+      requiresConfirmation('syncrona', ['fluent', action]),
+      true,
+      `syncrona fluent ${action} must confirm`
+    );
+  }
+});
 
 test('every allowlisted read-only command runs unconfirmed', () => {
   for (const command of READONLY_ALLOWLIST) {

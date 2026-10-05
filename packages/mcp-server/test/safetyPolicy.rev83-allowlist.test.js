@@ -72,7 +72,7 @@ const NO_CONFIRM = [
   ['echo', ['syncrona push']], // a literal argument is not a subcommand
   ['syncrona', ['status']],
   ['syncrona', ['doctor']],
-  ['syncrona', ['refresh']],
+  ['syncrona', ['plugins']],
 ];
 
 for (const [command, args] of NO_CONFIRM) {
@@ -90,7 +90,7 @@ for (const sub of MUTATING_GIT) {
   });
 }
 
-const DESTRUCTIVE_SYNCRONA = ['push', 'deploy', 'download'];
+const DESTRUCTIVE_SYNCRONA = ['push', 'deploy', 'download', 'cicd', 'dev', 'refresh'];
 for (const sub of DESTRUCTIVE_SYNCRONA) {
   test(`REV-83: requiresConfirmation gates "syncrona ${sub}"`, () => {
     assert.equal(requiresConfirmation('syncrona', [sub]), true);

@@ -41,7 +41,42 @@ const BLOCKED_SHELL_TOKENS = ["&&", "||", ";", "|", "`", "$(", ">", "<"];
 
 // CLI subcommands that mutate the connected ServiceNow instance and therefore
 // require confirmDestructive when reached through run_workspace_command.
-const DESTRUCTIVE_CLI_SUBCOMMANDS = new Set(["push", "deploy", "download"]);
+// `cicd` is here as a whole: every one of its actions (run-suite, run-test, install,
+// publish, rollback) dispatches work on the instance through api/sn_cicd, so it is
+// the CLI twin of sync_cicd_run and must not run unconfirmed where that tool asks.
+// `dev` is watch mode, which pushes every local change to the instance; `refresh`
+// downloads new files into the workspace, the same overwrite case as `download`.
+const DESTRUCTIVE_CLI_SUBCOMMANDS = new Set([
+  "push",
+  "deploy",
+  "download",
+  "cicd",
+  "dev",
+  "refresh",
+]);
+// CLI subcommands that mutate only when a flag selects their writing form: a bare
+// `init` provisions a local project, `init --new` creates a sys_app on the instance;
+// a bare `repair` only reports, `repair --apply` re-downloads (and with --prune
+// deletes) files. Neither flag has a short alias in the CLI registration.
+const FLAG_GATED_CLI_SUBCOMMANDS = new Map<string, string>([
+  ["init", "--new"],
+  ["repair", "--apply"],
+]);
+// `fluent <action>` is decided per action, default-deny: only these actions run
+// unconfirmed, and every other action — including one the CLI adds later — confirms.
+//   * status   reads the last install's progress from the instance.
+//   * explain  searches the SDK's bundled docs, offline.
+//   * types    downloads type definitions into the project; with `--out` it writes
+//              to a caller-chosen path, so that form confirms (see isFluentWrite).
+// Held out, each because it writes: install (installs the app on the instance,
+// --reinstall uninstalls first), move-to-app (creates sys_claim records on the
+// instance), build and pack (write the build output that install ships), transform
+// (converts instance records into .now.ts sources, --force overwrites them), init
+// (scaffolds a project, --from pulls an instance app), run (executes a project
+// script — arbitrary code) and dependencies (with --table adds dependencies to
+// now.config.json; its bare form is an alias of `types`, which stays available).
+const FLUENT_READONLY_ACTIONS = new Set(["status", "explain", "types"]);
+const FLUENT_TYPES_OUTPUT_FLAG = "--out";
 // npm identifiers that resolve to the CLI (see packages/core/package.json).
 const CLI_PACKAGE_NAMES = new Set(["syncrona"]);
 // Runners that take the package name as their first non-flag argument.
@@ -108,6 +143,9 @@ const DRY_RUN_AWARE_TOOLS = new Set([
   "sync_generate_scope_docs",
   "sync_scope_knowledge_auto_update",
   "sync_generate_table_dependency_report",
+  // SDK-F6: a local build — not mutating (it never reaches the instance), but its
+  // dryRun really does skip the write to the project's dist/.
+  "sync_fluent_build",
 ]);
 
 /** True when `toolName`'s handler honors `dryRun` (i.e. dryRun really means "did nothing"). */
@@ -121,6 +159,25 @@ export function isEffectiveDryRun(
   args?: Record<string, unknown>
 ): boolean {
   return !!args && args.dryRun === true && toolImplementsDryRun(toolName);
+}
+
+/**
+ * True when this invocation of a mutating tool only reads and so skips the
+ * mutating-tool preflight: the unified workflow's planning call (no `apply`) and
+ * a `sync_cicd_run` resume, which GETs an existing progress tracker and never
+ * dispatches when `progressId` is set (SDK-F7).
+ */
+export function isReadOnlyMutatingCall(
+  toolName: string,
+  args?: Record<string, unknown>
+): boolean {
+  if (toolName === "sync_unified_change_workflow") {
+    return !args || args.apply !== true;
+  }
+  if (toolName === "sync_cicd_run") {
+    return !!args && args.progressId !== undefined;
+  }
+  return false;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -187,11 +244,21 @@ function firstOperandIndex(tokens: string[]): number {
  * "sync push" never occurs in a real invocation and matching it gates nothing.
  */
 function cliOperands(command: string, args: string[]): string[] | null {
+  const tokens = cliTokens(command, args);
+  return tokens === null ? null : operandsOf(tokens);
+}
+
+/**
+ * The raw (trimmed) argument region after the CLI binary, flags included, or null
+ * when the invocation does not reach the CLI. The flag-gated and per-action rules
+ * need the flags and the token order that {@link cliOperands} discards.
+ */
+function cliTokens(command: string, args: string[]): string[] | null {
   const base = normalizeBinaryName(command);
   const tokens = args.map((token) => token.trim()).filter((token) => token.length > 0);
 
   if (isCliPackageToken(base)) {
-    return operandsOf(tokens);
+    return tokens;
   }
 
   let rest: string[] | null = null;
@@ -225,7 +292,39 @@ function cliOperands(command: string, args: string[]): string[] | null {
   if (cliIndex < 0) {
     return null;
   }
-  return operandsOf(rest.slice(cliIndex + 1));
+  return rest.slice(cliIndex + 1);
+}
+
+/** True when `tokens` carries `flag`, spelled bare or as `flag=value`. */
+function hasCliFlag(tokens: string[], flag: string): boolean {
+  return tokens.some((token) => {
+    const lowered = token.toLowerCase();
+    return lowered === flag || lowered.startsWith(`${flag}=`);
+  });
+}
+
+/**
+ * True when any `fluent` operand is followed by something other than a read-only
+ * action. yargs binds `fluent <action>` to the token right after `fluent`, so the
+ * action is read from that position only: a later operand may be an option value
+ * (`fluent --scope status install` runs install) and a value cannot stand between
+ * `fluent` and its action without itself taking that position — in which case the
+ * token there is a flag, not a read-only action, and the call confirms.
+ */
+function isFluentWrite(tokens: string[]): boolean {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if ((tokens[i] as string).toLowerCase() !== "fluent") {
+      continue;
+    }
+    const action = tokens[i + 1]?.toLowerCase();
+    if (action === undefined || !FLUENT_READONLY_ACTIONS.has(action)) {
+      return true;
+    }
+    if (action === "types" && hasCliFlag(tokens, FLUENT_TYPES_OUTPUT_FLAG)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -259,14 +358,33 @@ export function findSyncroCliSubcommand(command: string, args: string[]): string
  * every time the CLI grows one, so this is default-deny in the same way the git
  * option regions are: any destructive verb anywhere in the operand region confirms.
  * The cost is over-confirming a read-only command that happens to take
- * "push"/"deploy"/"download" as a positional argument, which is the safe direction.
+ * "push"/"deploy"/"download"/"cicd"/"dev"/"refresh" as a positional argument,
+ * which is the safe direction.
+ *
+ * Beyond those always-destructive verbs, `init` and `repair` confirm only with the
+ * flag that selects their writing form (`--new`, `--apply`), and `fluent` confirms
+ * for every action but the read-only ones (see FLUENT_READONLY_ACTIONS). A
+ * `--dry-run` form confirms exactly as `push --dry-run` does: the gate does not
+ * trust the CLI's own flag parsing to keep the run simulated.
  */
 export function isDestructiveWorkspaceCommand(command: string, args: string[]): boolean {
-  const operands = cliOperands(command, args);
-  if (operands === null) {
+  const tokens = cliTokens(command, args);
+  if (tokens === null) {
     return false;
   }
-  return operands.some((operand) => DESTRUCTIVE_CLI_SUBCOMMANDS.has(operand));
+  const operands = operandsOf(tokens);
+  if (operands.some((operand) => DESTRUCTIVE_CLI_SUBCOMMANDS.has(operand))) {
+    return true;
+  }
+  // The flag-gated forms follow the same any-operand rule: the subcommand may sit
+  // anywhere in the operand region, and its gating flag anywhere in the argv
+  // (yargs accepts options before or after the command).
+  for (const [subcommand, flag] of FLAG_GATED_CLI_SUBCOMMANDS) {
+    if (operands.includes(subcommand) && hasCliFlag(tokens, flag)) {
+      return true;
+    }
+  }
+  return isFluentWrite(tokens);
 }
 
 // REV-83 (SEC-2): read-only command allowlist for run_workspace_command.
@@ -559,7 +677,8 @@ function gitRequiresConfirmation(tokens: string[]): boolean {
  * confirmed (confirmDestructive=true). Default-deny — anything whose base name
  * is not on READONLY_ALLOWLIST requires confirmation, which covers every
  * interpreter and wrapper binary the old denylist missed. Allowlisted commands
- * still confirm for their mutating uses: a `syncrona push/deploy/download`, and
+ * still confirm for their mutating uses: a `syncrona push/deploy/download/cicd/dev/refresh`,
+ * `init --new`, `repair --apply` or a writing `fluent` action, and
  * (REV-124) any git subcommand that is not a known read-only verb — plus any git
  * inline-config injection, which is an arbitrary-code-execution vector.
  */
