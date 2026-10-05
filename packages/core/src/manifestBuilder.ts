@@ -10,12 +10,16 @@ import {
   META_DICTIONARY_FIELDS,
   META_FILE_NAME,
   META_FILE_TYPE,
+  UNSAFE_VALUE_INTERNAL_TYPES,
+  dictionaryInternalType,
   isMetaFieldCandidate,
   isMetaFile,
   isReadOnlyDictionaryRow,
   metaFile,
   serializeMetaFields,
   metaSecretClassifierFields,
+  metaSecretColumns,
+  metaSecretRuleColumns,
 } from "./metaFields.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
@@ -424,11 +428,14 @@ async function getFileFieldsForTable(
       "element,internal_type",
       200
     );
+    // `internal_type` is a reference column and may arrive as `{ link, value }`;
+    // String() on that is "[object Object]", which no type map knows, so every
+    // script field fell back to `.txt`. See dictionaryInternalType.
     const files: SN.File[] = rows
-      .filter((r) => r.element && r.internal_type)
+      .filter((r) => r.element && dictionaryInternalType(r.internal_type))
       .map((r) => ({
         name: r.element,
-        type: getFileTypeForInternalType(r.internal_type) as SN.FileType,
+        type: getFileTypeForInternalType(dictionaryInternalType(r.internal_type)) as SN.FileType,
       }));
 
     // Apply field-level includes overrides
@@ -501,15 +508,28 @@ async function getTextFieldsForTable(
       client,
       "sys_dictionary",
       query,
-      "element",
+      "element,internal_type",
       500
     );
 
+    // This fallback turns EVERY column into a `.txt` field file, so it needs
+    // the same type filter the sidecar applies: a `password2` column written
+    // here is a credential in the working tree, and a journal is an activity
+    // stream that churns on every pull. Collected over every row of a column
+    // before the first-wins dedupe — a hierarchy query returns the base entry
+    // and a child override in no guaranteed order, and either may carry the
+    // unsafe type.
+    const unsafe = new Set<string>();
+    for (const row of rows) {
+      if (row.element && UNSAFE_VALUE_INTERNAL_TYPES.has(dictionaryInternalType(row.internal_type))) {
+        unsafe.add(row.element);
+      }
+    }
     const seen = new Set<string>();
     const files: SN.File[] = [];
     for (const row of rows) {
       const fieldName = row.element;
-      if (!fieldName || seen.has(fieldName)) {
+      if (!fieldName || seen.has(fieldName) || unsafe.has(fieldName)) {
         continue;
       }
       seen.add(fieldName);
@@ -963,11 +983,30 @@ async function getRecordsForTable(
 ): Promise<SN.TableConfigRecords> {
   const displayField = getDisplayField(tableName);
 
+  // A field file a record-level secret rule governs (`sys_properties.value`,
+  // made a field file by an `includes` entry or the data-field fallback) is
+  // listed per record, not per table: a password property's value must never
+  // be a manifest file, or it would be downloaded into the working tree and be
+  // a push target. The rule's classifier column is selected so each row can be
+  // judged.
+  const fileFieldNames = files.map((f) => f.name);
+  const secretRuleColumns = metaSecretRuleColumns(tableName);
+  const governsFileField = fileFieldNames.some((name) => secretRuleColumns.includes(name));
   const tableFields = buildRecordFieldList(
     displayField,
-    files.map((f) => f.name),
+    governsFileField
+      ? [...fileFieldNames, ...metaSecretClassifierFields(tableName)]
+      : fileFieldNames,
     tableOptions
   );
+  const filesForRow = (row: TableAPIRecord): SN.File[] => {
+    const listed = recordFiles.map((f) => ({ name: f.name, type: f.type }));
+    if (!governsFileField) {
+      return listed;
+    }
+    const secret = new Set(metaSecretColumns(tableName, row));
+    return listed.filter((f) => isMetaFile(f) || !secret.has(f.name));
+  };
 
   const toRecords = (rows: TableAPIRecord[]): SN.TableConfigRecords => {
     const records: SN.TableConfigRecords = {};
@@ -991,7 +1030,12 @@ async function getRecordsForTable(
       .map((row) => {
         const sysId = recordSysId(row);
         const name = buildRecordName(row, displayField, tableOptions);
-        return { sysId, name, normalized: name.normalize("NFC").toLowerCase() };
+        return {
+          sysId,
+          name,
+          normalized: name.normalize("NFC").toLowerCase(),
+          files: filesForRow(row),
+        };
       })
       .filter((entry) => {
         // Both values are checked as path components, not just for emptiness: the
@@ -1030,7 +1074,7 @@ async function getRecordsForTable(
       setRecord(records, name, {
         sys_id: entry.sysId,
         name,
-        files: recordFiles.map((f) => ({ name: f.name, type: f.type })),
+        files: entry.files,
       });
     }
 
@@ -1968,10 +2012,22 @@ export async function buildBulkDownloadFromTableAPI(
       // Same field list as the manifest path so record names stay in parity —
       // plus the sidecar columns, which only this path (not the manifest build)
       // needs the values of.
+      // A field file a record-level secret rule governs is judged per row here
+      // as well as in the manifest build: a manifest from the scoped endpoint,
+      // or one written before the rule applied to field files, still lists
+      // `sys_properties.value` for a password property.
+      const secretRuleColumns = metaSecretRuleColumns(tableName);
+      const governsFileField = [...allFiles.keys()].some((name) =>
+        secretRuleColumns.includes(name)
+      );
       const tableFields = buildRecordFieldList(
         defaultDisplayField,
-        wantMeta
-          ? [...allFiles.keys(), ...metaFields, ...metaSecretClassifierFields(tableName)]
+        wantMeta || governsFileField
+          ? [
+              ...allFiles.keys(),
+              ...(wantMeta ? metaFields : []),
+              ...metaSecretClassifierFields(tableName),
+            ]
           : [...allFiles.keys()],
         tableOpts
       );
@@ -1994,6 +2050,7 @@ export async function buildBulkDownloadFromTableAPI(
         const records: SN.TableConfigRecords = {};
         const unreturnedFields = new Set<string>();
         let unusableRows = 0;
+        let withheldSecrets = 0;
 
         const namesForTable = recordNames?.[tableName];
 
@@ -2038,8 +2095,17 @@ export async function buildBulkDownloadFromTableAPI(
             continue;
           }
           const files: SN.File[] = [];
+          const secretColumns = governsFileField
+            ? new Set(metaSecretColumns(tableName, row))
+            : undefined;
 
           for (const [fieldName, fieldType] of allFiles.entries()) {
+            // Withheld, not blanked: no file is produced, so a local copy is
+            // left as it is and nothing is written that a push could send back.
+            if (secretColumns?.has(fieldName)) {
+              withheldSecrets += 1;
+              continue;
+            }
             // A field the response did not return AT ALL (column-level ACL,
             // dropped from the projection) is "not fetched" — not "empty".
             // `row[fieldName] || ""` erased that distinction, and because
@@ -2082,6 +2148,16 @@ export async function buildBulkDownloadFromTableAPI(
         if (unusableRows > 0) {
           logger.warn(
             `Table ${tableName}: skipped ${unusableRows} record(s) the instance returned without a usable sys_id.`
+          );
+        }
+
+        if (withheldSecrets > 0) {
+          // Info, not warn: it is the rule working, and `dev` re-runs this on
+          // every refresh interval at warn level.
+          logger.info(
+            `Table ${tableName}: withheld ${withheldSecrets} secret field value(s) ` +
+              `(${secretRuleColumns.join(", ")} of a password-typed or unclassifiable ` +
+              "record) — they are never written to the working tree."
           );
         }
 

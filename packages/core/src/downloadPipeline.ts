@@ -15,7 +15,7 @@ import {
   ManifestMetaFields,
   ManifestRecordNames,
 } from "./manifestBuilder.js";
-import { isMetaFile } from "./metaFields.js";
+import { isMetaFile, metaSecretRuleColumns } from "./metaFields.js";
 import { applyDataModelTableOptions } from "./dataModel.js";
 import {
   COMPOSITE_TABLES,
@@ -335,6 +335,18 @@ export const syncManifest = async (): Promise<boolean> => {
     const client = defaultClient();
     const config = ConfigManager.getConfig();
 
+    // A manifest that already binds this scope by sys_id and lists no table is
+    // what `init --new` writes for an application that owns nothing yet. For
+    // that one shape an empty discovery is the truth, not a symptom of a wrong
+    // scope or missing access, so the empty-manifest refusal is lifted. A
+    // manifest without a scopeId, or one that lists tables, keeps the refusal:
+    // emptying a previously populated manifest on a flaky read would make
+    // `repair --prune` treat every local file as an orphan.
+    const bindsEmptyScope =
+      typeof curManifest.scopeId === "string" &&
+      curManifest.scopeId.length > 0 &&
+      Object.keys(curManifest.tables ?? {}).length === 0;
+
     let newManifest: SN.AppManifest;
     // Tracked rather than inferred from the result: only the scoped answer needs
     // enriching, and running the dictionary sweep over a Table-API build would
@@ -351,7 +363,8 @@ export const syncManifest = async (): Promise<boolean> => {
         newManifest = await buildManifestFromTableAPI(
           curManifest.scope,
           client,
-          config
+          config,
+          { allowEmpty: bindsEmptyScope }
         );
       } else {
         throw e;
@@ -370,6 +383,12 @@ export const syncManifest = async (): Promise<boolean> => {
     // its sys_id carries over.
     if (!newManifest.scopeId && curManifest.scopeId && newManifest.scope === curManifest.scope) {
       newManifest = { ...newManifest, scopeId: curManifest.scopeId };
+    }
+
+    if (bindsEmptyScope && Object.keys(newManifest.tables ?? {}).length === 0) {
+      logger.info(
+        `Scope "${newManifest.scope}" owns no records yet — keeping the empty manifest.`
+      );
     }
 
     logger.info("Writing new manifest file...");
@@ -780,6 +799,20 @@ const createTableFetcher = (
     return Array.isArray(nameFields) && nameFields.length > 0;
   });
 
+  // A field file a record-level secret rule governs (`sys_properties.value`)
+  // never goes to the scoped endpoint either: it returns the value whatever the
+  // record's type, so a password property would be written to disk. The Table
+  // API path reads the classifier with the row and withholds the value.
+  const requestsSecretRuleColumn = (table: string, records: SN.MissingFileRecord): boolean => {
+    const columns = metaSecretRuleColumns(table);
+    return (
+      columns.length > 0 &&
+      Object.values(records ?? {}).some((files) =>
+        (files ?? []).some((file) => columns.includes(file.name))
+      )
+    );
+  };
+
   return async (requested: SN.MissingFileTableMap): Promise<SN.TableMap> => {
     if (scopedEndpointUnavailable) {
       return viaTableAPI(requested);
@@ -787,8 +820,8 @@ const createTableFetcher = (
 
     let forcedResult: SN.TableMap = {};
     let tableMissing = requested;
-    const forced = forcedTables.filter((table) =>
-      Object.prototype.hasOwnProperty.call(requested, table)
+    const forced = Object.keys(requested).filter(
+      (table) => forcedTables.includes(table) || requestsSecretRuleColumn(table, requested[table])
     );
     if (forced.length > 0) {
       const viaApi: SN.MissingFileTableMap = Object.create(null);
@@ -876,6 +909,7 @@ export const processMissingFiles = async (
     // printed "complete ✅" over a workspace that can never converge. Name the
     // gap and let the caller decide the exit status.
     const unfetchedFields = collectUnfetchedFields(
+      table,
       missing[table],
       filesToProcess[table]
     );
@@ -946,9 +980,16 @@ export const computeMissingFingerprint = (
 // deliberately not judged here — a record deleted server-side between the
 // manifest build and the download is not a field-level gap.
 const collectUnfetchedFields = (
+  table: string,
   requested: SN.MissingFileRecord | undefined,
   fetched: SN.TableConfig | undefined
 ): string[] => {
+  // A column a record-level secret rule governs is withheld ON PURPOSE for a
+  // password-typed record (buildBulkDownloadFromTableAPI reports that itself),
+  // and its absence is indistinguishable from a read gap here. Counting it would
+  // make every refresh of a workspace that lists a password property's value
+  // report itself incomplete, forever.
+  const withheldByRule = new Set(metaSecretRuleColumns(table));
   const returnedBySysId = new Map<string, Set<string>>();
   for (const record of Object.values(fetched?.records ?? {})) {
     returnedBySysId.set(
@@ -966,7 +1007,7 @@ const collectUnfetchedFields = (
       // is not a read-access gap. The scoped bulk endpoint never produces one,
       // and counting its absence here would make every refresh against an
       // instance that HAS that endpoint report itself incomplete forever.
-      if (isMetaFile(file)) continue;
+      if (isMetaFile(file) || withheldByRule.has(file.name)) continue;
       if (!returned.has(file.name)) unfetched.add(file.name);
     }
   }
@@ -1059,7 +1100,7 @@ export const downloadTablesWithResume = async (
     // "Download complete" over files that were never downloaded. Treat a
     // field-level gap exactly like an inaccessible table: keep the checkpoint,
     // name the fields, and retry on the next run.
-    const unfetchedFields = collectUnfetchedFields(missing[table], files[table]);
+    const unfetchedFields = collectUnfetchedFields(table, missing[table], files[table]);
     if (unfetchedFields.length > 0) {
       failedTables.push(table);
       logger.warn(

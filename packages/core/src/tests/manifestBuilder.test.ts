@@ -391,7 +391,7 @@ describe("manifestBuilder", () => {
     process.env.SYNCRONA_INCLUDE_DATA_FIELDS = "true";
 
     const tableAPIGet: TableApiGet = jest.fn();
-    tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
+    tableAPIGet.mockImplementation(async (table: string, query: string) => {
       if (table === "sys_app") {
         return { data: { result: [{ sys_id: "scope-1" }] } };
       }
@@ -402,10 +402,19 @@ describe("manifestBuilder", () => {
         return { data: { result: [{ name: "x_data_table" }] } };
       }
       if (table === "sys_dictionary") {
-        if (fields === "element,internal_type") {
+        // The file-field query filters on the script-like internal types; the
+        // text-field fallback asks for every column.
+        if (query.includes("internal_type=")) {
           return { data: { result: [] } };
         }
-        return { data: { result: [{ element: "u_name" }, { element: "u_code" }] } };
+        return {
+          data: {
+            result: [
+              { element: "u_name", internal_type: "string" },
+              { element: "u_code", internal_type: "string" },
+            ],
+          },
+        };
       }
       if (table === "x_data_table") {
         return {
