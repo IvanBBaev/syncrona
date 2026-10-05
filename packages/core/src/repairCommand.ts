@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { SN, Sync } from "@syncrona/types";
+import * as cp from "child_process";
 import { promises as fsp } from "fs";
 import path from "path";
 import inquirer from "inquirer";
@@ -81,6 +82,33 @@ function isManifestShapedPath(sourcePath: string, filePath: string): boolean {
 const canonicalName = (name: string): string =>
   name.normalize("NFC").toLowerCase().replace(/[.\s]+$/u, "");
 
+// Own keys only. Table and record names come off a directory listing, and a
+// plain `tables[name]` answers an inherited Object.prototype member for a
+// directory named `constructor`, `toString` or `hasOwnProperty`: a truthy value
+// with no records, so the files under it read as the orphans of a listed table
+// (and were pruned) instead of as files of a table the manifest does not list.
+const hasOwn = (map: object, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(map, key);
+
+// The manifest table a directory name denotes, under any encoding of the name.
+function findTable(
+  manifest: SN.AppManifest,
+  name: string
+): SN.TableConfig | undefined {
+  const tables = manifest.tables ?? {};
+  if (hasOwn(tables, name)) {
+    return tables[name];
+  }
+  const canonical = canonicalName(name);
+  return Object.entries(tables).find(([key]) => canonicalName(key) === canonical)?.[1];
+}
+
+// True when `records` holds `name` under any encoding of it.
+const hasRecordNamed = (records: object, name: string): boolean => {
+  const canonical = canonicalName(name);
+  return Object.keys(records).some((key) => canonicalName(key) === canonical);
+};
+
 // The <table>/<record> pair a manifest-shaped path encodes (folder mode keeps
 // them as their own segments; flat mode packs the record into the file stem
 // ahead of the LAST separator, exactly as getFileContextFromPath reads it).
@@ -118,18 +146,11 @@ function isClaimedUnderAnotherEncoding(
   if (!key) {
     return false;
   }
-  const tables = manifest.tables ?? {};
-  const table =
-    tables[key.table] ??
-    Object.entries(tables).find(
-      ([name]) => canonicalName(name) === canonicalName(key.table)
-    )?.[1];
-  const records = table?.records;
-  if (!records || Object.prototype.hasOwnProperty.call(records, key.record)) {
+  const records = findTable(manifest, key.table)?.records;
+  if (!records || hasOwn(records, key.record)) {
     return false;
   }
-  const canonical = canonicalName(key.record);
-  return Object.keys(records).some((name) => canonicalName(name) === canonical);
+  return hasRecordNamed(records, key.record);
 }
 
 // Batch 4b R3: what a `.meta.json` sidecar is to repair. A sidecar is kept when
@@ -165,19 +186,12 @@ function classifySidecar(
   if (!key || key.record === "") {
     return "tracked";
   }
-  const tables = manifest.tables ?? {};
-  const table =
-    tables[key.table] ??
-    Object.entries(tables).find(([name]) => canonicalName(name) === canonicalName(key.table))?.[1];
+  const table = findTable(manifest, key.table);
   if (!table) {
     return "untracked-table";
   }
   const records = table.records ?? {};
-  if (Object.prototype.hasOwnProperty.call(records, key.record)) {
-    return "tracked";
-  }
-  const canonical = canonicalName(key.record);
-  return Object.keys(records).some((name) => canonicalName(name) === canonical)
+  return hasOwn(records, key.record) || hasRecordNamed(records, key.record)
     ? "tracked"
     : "orphan";
 }
@@ -196,6 +210,7 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   const orphans: string[] = [];
   const encodingMismatches: string[] = [];
   const untrackedSidecars: string[] = [];
+  const untrackedTableFiles: string[] = [];
   for (const file of allFiles) {
     // DX22: a `.meta.json` sidecar is never an orphan. Against a healthy
     // manifest getFileContextFromPath resolves it and the check below would let
@@ -228,6 +243,15 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
       encodingMismatches.push(file);
       continue;
     }
+    // The same rule as for a sidecar (see classifySidecar): a field file is the
+    // leftover of a record only when the manifest lists its table. A table the
+    // manifest does not list was never pulled or could not be read, so its files
+    // are new work for `push --create` or simply outside this manifest's view.
+    const key = recordKeyFromPath(sourcePath, file);
+    if (key && !findTable(manifest, key.table)) {
+      untrackedTableFiles.push(file);
+      continue;
+    }
     orphans.push(file);
   }
   if (untrackedSidecars.length > 0) {
@@ -236,6 +260,14 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
         "(new records for `push --create`, or a table the last refresh could not read). " +
         "They are never pruned:\n" +
         untrackedSidecars.map((f) => `  ${f}`).join("\n")
+    );
+  }
+  if (untrackedTableFiles.length > 0) {
+    logger.warn(
+      `Kept ${untrackedTableFiles.length} file(s) of table(s) the manifest does not list ` +
+        "(new records for `push --create`, or a table the last refresh could not read). " +
+        "They are never pruned:\n" +
+        untrackedTableFiles.map((f) => `  ${f}`).join("\n")
     );
   }
   if (encodingMismatches.length > 0) {
@@ -247,11 +279,89 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   return orphans;
 }
 
+// Git is run straight from here rather than through gitUtils: those helpers
+// answer "what changed against a ref" for push, while prune needs the opposite
+// question — which files are byte-identical to a committed blob — and a cwd of
+// the source directory rather than the process's.
+const runGit = (cwd: string, args: string[]): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    cp.execFile(
+      "git",
+      args,
+      { cwd, maxBuffer: 256 * 1024 * 1024 },
+      (err, stdout) => (err ? reject(err) : resolve(stdout))
+    );
+  });
+
+// `hash-object` takes its paths on the command line; chunking keeps one call
+// well under every platform's argument-length limit.
+const HASH_CHUNK = 200;
+
+/**
+ * The orphans git can give back: files whose content is exactly a blob of the
+ * HEAD commit at the same path. That is the whole rule `--prune` deletes by.
+ *
+ * "No manifest record claims it" describes two very different files: the
+ * leftover of a record deleted on the instance, and local work not pushed yet —
+ * a new script, a new column's `.meta.json` — that `push --create` would
+ * create. The manifest cannot tell them apart; git can. A file committed and
+ * unchanged since HEAD is recoverable with `git checkout HEAD -- <file>`, so
+ * deleting it loses nothing. Everything else — untracked, ignored, staged but
+ * never committed, or edited since HEAD (staged or not) — is kept.
+ *
+ * Content is compared by hash (`hash-object` applies the same clean/eol filters
+ * a commit does) rather than read from `git status`, so neither an index flag
+ * (assume-unchanged, skip-worktree) nor a stale stat cache can make an edited
+ * file look clean. Throws when git cannot answer: git missing, the source
+ * directory outside a repository, or a repository with no commit yet.
+ */
+async function restorableFromGit(sourcePath: string, files: string[]): Promise<Set<string>> {
+  const committed = new Map<string, string>();
+  // From a subdirectory ls-tree lists that subtree only, with paths relative to
+  // it — the same relativization the orphan paths get below, so a source
+  // directory reached through a symlink still lines up. `-z` turns quoting off.
+  const listing = await runGit(sourcePath, ["ls-tree", "-r", "-z", "HEAD"]);
+  for (const entry of listing.split("\0")) {
+    const tab = entry.indexOf("\t");
+    if (tab < 0) {
+      continue;
+    }
+    const [mode, type, blob] = entry.slice(0, tab).split(" ");
+    // Regular files only: a symlink or a submodule is not something a download
+    // writes, and its "content" is not what hash-object would read.
+    if (type === "blob" && (mode === "100644" || mode === "100755")) {
+      committed.set(entry.slice(tab + 1), blob);
+    }
+  }
+  const candidates = files
+    .map((file) => ({
+      file,
+      rel: path.relative(sourcePath, file).split(path.sep).join("/"),
+    }))
+    .filter(({ rel }) => committed.has(rel));
+  const restorable = new Set<string>();
+  for (let i = 0; i < candidates.length; i += HASH_CHUNK) {
+    const chunk = candidates.slice(i, i + HASH_CHUNK);
+    const hashes = (
+      await runGit(sourcePath, ["hash-object", "--", ...chunk.map(({ rel }) => rel)])
+    )
+      .trim()
+      .split(/\r?\n/);
+    chunk.forEach(({ file, rel }, index) => {
+      if (hashes[index] === committed.get(rel)) {
+        restorable.add(file);
+      }
+    });
+  }
+  return restorable;
+}
+
 /**
  * DX18: reconcile the manifest against the files on disk and (optionally) repair.
  * Reports files the manifest expects but are missing locally, and local files
  * no manifest record claims (orphans). Dry-run by default — only `--apply`
- * re-downloads missing files, and only `--prune` deletes orphans.
+ * re-downloads missing files, and only `--prune` deletes orphans, and of those
+ * only the ones git holds committed and unchanged (see restorableFromGit).
  */
 export async function repairCommand(args: RepairCmdArgs): Promise<void> {
   setLogLevel(args);
@@ -302,7 +412,10 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
 
     // A column a record-level secret rule governs (`sys_properties.value`) is
     // absent on disk by design for a password property, so it is not counted —
-    // otherwise the report never reaches zero, whatever `--apply` does.
+    // otherwise the report never reaches zero, whatever `--apply` does. Nothing
+    // local says which absent values are secret, so `--apply` still re-fetches
+    // them all: the Table API path writes a non-secret record's value and keeps
+    // withholding a password one.
     const { missing, exempt } = withoutSecretRuleColumns(
       await AppUtils.findMissingFiles(manifest)
     );
@@ -311,8 +424,8 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
     if (exempt > 0) {
       logger.info(
         `Not counted: ${exempt} field file(s) a record secret rule governs (e.g. sys_properties.value) ` +
-          "are absent — a password-typed record's value is withheld by design. `syncrona refresh` " +
-          "re-fetches the value of every non-secret record."
+          "are absent — a password-typed record's value is withheld by design. `--apply` (and " +
+          "`syncrona refresh`) re-fetches them, restoring the value of every non-secret record."
       );
     }
 
@@ -339,14 +452,17 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       );
     }
 
-    if (missingCount === 0 && orphans.length === 0) {
+    // --dry-run forces report-only even if --apply is passed; repair is
+    // report-only by default anyway (the safe stance for a destructive verb).
+    const apply = args.apply === true && args.dryRun !== true;
+    const consistent = missingCount === 0 && orphans.length === 0;
+    // An uncounted governed value may be a non-secret one the user deleted:
+    // `--apply` must still fetch it, or "Nothing to repair" would hide the gap.
+    if (consistent && !(apply && exempt > 0)) {
       logger.success("Workspace is consistent with the manifest. Nothing to repair. ✅");
       return;
     }
 
-    // --dry-run forces report-only even if --apply is passed; repair is
-    // report-only by default anyway (the safe stance for a destructive verb).
-    const apply = args.apply === true && args.dryRun !== true;
     if (!apply) {
       const hints: string[] = [];
       if (missingCount > 0) hints.push("`--apply` re-downloads missing files");
@@ -356,10 +472,15 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
     }
 
     let incompleteTables: string[] = [];
-    if (missingCount > 0) {
-      logger.info("Re-downloading missing files...");
+    if (missingCount > 0 || exempt > 0) {
+      logger.info(
+        missingCount > 0
+          ? "Re-downloading missing files..."
+          : `Re-fetching ${exempt} field file(s) a record secret rule governs (a password-typed record's value stays withheld)...`
+      );
       // `?? []` because processMissingFiles is module-mocked in tests; a mock
-      // that resolves to undefined must not crash the command.
+      // that resolves to undefined must not crash the command. It recomputes the
+      // full missing map, so the governed columns are fetched on either branch.
       incompleteTables = (await AppUtils.processMissingFiles(manifest)) ?? [];
     }
 
@@ -375,27 +496,53 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
         process.exitCode = 1;
         return;
       }
+      let restorable: Set<string>;
+      try {
+        restorable = await restorableFromGit(path.resolve(ConfigManager.getSourcePath()), orphans);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message.split("\n")[0] : String(e);
+        logger.error(
+          `Refusing to prune: git cannot show which orphans are committed and unchanged (${reason}). ` +
+            "`--prune` deletes only files git can restore, so an orphan that is new local work " +
+            "(a script or column not pushed yet) is never lost. Commit the source directory to a " +
+            "git repository first, or delete the orphans listed above by hand."
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const prunable = orphans.filter((orphan) => restorable.has(orphan));
+      const keptLocal = orphans.filter((orphan) => !restorable.has(orphan));
+      if (keptLocal.length > 0) {
+        logger.warn(
+          `Kept ${keptLocal.length} orphan file(s) git does not show as committed and unchanged ` +
+            "(new or edited locally — e.g. records awaiting `push --create`). " +
+            "Commit them first, or delete them by hand:\n" +
+            keptLocal.map((f) => `  ${f}`).join("\n")
+        );
+      }
       const confirmed =
-        args.ci === true
-          ? true
-          : (
-              await inquirer.prompt<{ confirmed: boolean }>([
-                {
-                  type: "confirm",
-                  name: "confirmed",
-                  message: `Delete ${orphans.length} orphan file(s)? This cannot be undone.`,
-                  default: false,
-                },
-              ])
-            ).confirmed;
-      if (confirmed) {
+        prunable.length > 0 &&
+        (args.ci === true ||
+          (
+            await inquirer.prompt<{ confirmed: boolean }>([
+              {
+                type: "confirm",
+                name: "confirmed",
+                message: `Delete ${prunable.length} orphan file(s)? This cannot be undone.`,
+                default: false,
+              },
+            ])
+          ).confirmed);
+      if (prunable.length === 0) {
+        logger.info("Nothing to prune: no orphan is committed and unchanged in git.");
+      } else if (confirmed) {
         // Deletions are irreversible, so failures must be reported, not
         // swallowed: `.catch(() => undefined)` reported "Pruned N file(s)" even
         // when every unlink failed (permissions, read-only mount, EBUSY), so a
         // repair that changed nothing looked like a success.
         let pruned = 0;
         const failures: string[] = [];
-        for (const orphan of orphans) {
+        for (const orphan of prunable) {
           try {
             await fsp.unlink(orphan);
             pruned += 1;
@@ -434,11 +581,17 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
     // Every table answered and the files were still not all written (a record
     // the instance no longer returns, a manifest name the writer refused): the
     // report would list them again, so this run did not repair the workspace.
-    if (missingCount > 0) {
-      const remaining = countMissing(
-        withoutSecretRuleColumns(await AppUtils.findMissingFiles(manifest)).missing
-      );
-      if (remaining > 0) {
+    let restoredExempt = 0;
+    if (missingCount > 0 || exempt > 0) {
+      const after = withoutSecretRuleColumns(await AppUtils.findMissingFiles(manifest));
+      const remaining = countMissing(after.missing);
+      restoredExempt = Math.max(0, exempt - after.exempt);
+      if (restoredExempt > 0) {
+        logger.info(
+          `Restored ${restoredExempt} of ${exempt} field file(s) a record secret rule governs (non-secret values).`
+        );
+      }
+      if (missingCount > 0 && remaining > 0) {
         logger.error(
           `Repair incomplete: ${remaining} of ${missingCount} missing file(s) are still missing after the re-download. ` +
             "Run `syncrona repair` to list them."
@@ -448,6 +601,11 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       }
     }
 
+    if (consistent && restoredExempt === 0) {
+      // Every absent governed value was a withheld secret: nothing changed.
+      logger.success("Workspace is consistent with the manifest. Nothing to repair. ✅");
+      return;
+    }
     logger.success("Repair complete. ✅");
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

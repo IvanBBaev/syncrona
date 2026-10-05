@@ -25,6 +25,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
 import type { SN } from "@syncrona/types";
+import { initRepo } from "./helpers/gitFixture.js";
 
 let ConfigManager: typeof import("../config.js");
 let AppUtils: typeof import("../appUtils.js");
@@ -104,6 +105,8 @@ describe("REV-140: prune keeps tracked files whose on-disk name is encoded diffe
     const file = path.join(sourceDir, ...relSegments);
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, "live content");
+    // Committed, so git would vouch for it: what keeps it is the encoding check.
+    initRepo(tmp);
     getPathsInPath.mockResolvedValue([file]);
     return file;
   };

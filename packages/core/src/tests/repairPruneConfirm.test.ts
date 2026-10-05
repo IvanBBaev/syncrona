@@ -32,6 +32,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
 import type { SN } from "@syncrona/types";
+import { git, commitAll } from "./helpers/gitFixture.js";
 
 let ConfigManager: typeof import("../config.js");
 let AppUtils: typeof import("../appUtils.js");
@@ -80,7 +81,12 @@ beforeAll(async () => {
   >;
 });
 
-const MANIFEST = { scope: "x_app", tables: {} } as unknown as SN.AppManifest;
+// sys_script is listed: a file of a table the manifest does not list is never
+// an orphan, so an empty table map would leave nothing to confirm.
+const MANIFEST = {
+  scope: "x_app",
+  tables: { sys_script: { records: {} } },
+} as unknown as SN.AppManifest;
 
 describe("repair --prune confirmation", () => {
   let tmp: string;
@@ -95,6 +101,8 @@ describe("repair --prune confirmation", () => {
       writeFileSync(file, "stray");
       files.push(file);
     }
+    // --prune deletes only files git holds committed and unchanged.
+    commitAll(tmp);
     getPathsInPath.mockResolvedValue(files);
     return files;
   };
@@ -105,6 +113,7 @@ describe("repair --prune confirmation", () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "sync-repair-confirm-"));
     sourceDir = path.join(tmp, "src");
     mkdirSync(sourceDir, { recursive: true });
+    git(tmp, "init", "-q");
     getManifest.mockReturnValue(MANIFEST as never);
     getSourcePath.mockReturnValue(sourceDir);
     getRootDir.mockReturnValue(tmp);
