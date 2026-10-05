@@ -264,13 +264,37 @@ describe("cicd run-suite", () => {
     expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
   });
 
-  it("falls back to the tracker verdict when the result fetch fails", async () => {
+  // Batch 4 item 5: a successful tracker without a readable result is not a pass.
+  it("exits 1 with the progress id when the result fetch fails", async () => {
     const h = harness({
       progress: [() => progress("2", { links: { results: { id: "r", url: "https://x/r" } } })],
       results: () => httpError(500, "api/sn_cicd/testsuite/results/r", { error: { message: "boom" } }),
     });
-    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(0);
-    expect(infos).toContain("Details: https://x/r");
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    expect(errors[0]).toMatch(/progress prog-1 finished, but ATF result r could not be read: boom/);
+    expect(errors[0]).toMatch(/--progress-id prog-1/);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, progressId: "prog-1" });
+  });
+
+  it("exits 1 when a successful ATF tracker links no result record", async () => {
+    const h = harness({ progress: [() => progress("2")] });
+    expect(await run(h, "run-test", { testId: "t1" })).toBe(1);
+    expect(errors[0]).toMatch(/links no ATF result record/);
+  });
+
+  it("keeps exit 2 for a failed ATF tracker whose result cannot be read", async () => {
+    const h = harness({
+      progress: [() => progress("3", { links: { results: { id: "r" } } })],
+      results: () => httpError(500, "api/sn_cicd/testsuite/results/r", {}),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
+  });
+
+  it("rejects a --timeout that is not a positive number before any request", async () => {
+    const h = harness();
+    expect(await run(h, "install", { scope: "x_app", timeout: "soon" })).toBe(1);
+    expect(errors[0]).toMatch(/--timeout must be a positive number of seconds/);
+    expect(h.deps.createClient).not.toHaveBeenCalled();
   });
 
   it("emits the machine result with --json", async () => {
@@ -347,6 +371,7 @@ describe("cicd could-not-finish paths (exit 1)", () => {
 
     expect(code).toBe(1);
     expect(errors[0]).toMatch(/Timed out after 5s waiting for progress prog-1 \(last status: Running\)/);
+    expect(errors[0]).toContain("resume waiting with --progress-id prog-1 (and a longer --timeout)");
     const polls = h.calls.filter((c) => c.path.startsWith("progress/")).length;
     expect(polls).toBe(6);
   });
@@ -406,5 +431,315 @@ describe("cicd could-not-finish paths (exit 1)", () => {
     expect(await run(h, "deploy-everything")).toBe(1);
     expect(errors[0]).toMatch(/Unknown cicd subcommand "deploy-everything"/);
     expect(h.deps.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("cicd --json on the could-not-finish paths", () => {
+  it("a timeout after dispatch writes a failure document with the progress id", async () => {
+    const h = harness({ progress: [() => progress("1")] });
+
+    const code = await run(h, "install", { scope: "x_app", timeout: 5, pollMs: 1000, json: true }, 10_000);
+
+    expect(code).toBe(1);
+    const parsed = JSON.parse(h.written.join("\n")) as Record<string, unknown>;
+    expect(parsed).toEqual({
+      command: "cicd",
+      action: "install",
+      exitCode: 1,
+      progressId: "prog-1",
+      error: expect.stringMatching(/^cicd install failed: Timed out after 5s/),
+    });
+  });
+
+  it("a failed dispatch writes a failure document without a progress id", async () => {
+    const h = harness({
+      post: () => httpError(403, "api/sn_cicd/testsuite/run", { error: { message: "User Not Authorized" } }),
+    });
+
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    const parsed = JSON.parse(h.written.join("\n")) as Record<string, unknown>;
+    expect(parsed).toEqual({
+      command: "cicd",
+      action: "run-suite",
+      exitCode: 1,
+      error: "cicd run-suite failed: Request failed with status code 403 — User Not Authorized",
+    });
+  });
+
+  it("an unknown action writes a failure document", async () => {
+    const h = harness();
+    expect(await run(h, "deploy-everything", { json: true })).toBe(1);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({
+      action: "deploy-everything",
+      exitCode: 1,
+      error: expect.stringContaining('Unknown cicd subcommand "deploy-everything"'),
+    });
+  });
+
+  it("writes nothing to stdout without --json", async () => {
+    const h = harness({ post: () => ok({ status: "0" }) });
+    expect(await run(h, "publish", { scope: "x_app" })).toBe(1);
+    expect(h.written).toEqual([]);
+  });
+});
+
+describe("cicd --poll-ms floor", () => {
+  it("clamps a tiny --poll-ms to 250ms between polls", async () => {
+    const h = harness({ progress: [() => progress("1")] });
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1 }, 5_000)).toBe(1);
+
+    const polls = h.calls.filter((c) => c.path.startsWith("progress/")).length;
+    expect(polls).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("cicd --progress-id (resume, SDK-F7)", () => {
+  const RESUME_ID = "d".repeat(32);
+
+  it("polls the given tracker without dispatching and exits 0 on SUCCESSFUL", async () => {
+    const h = harness({ progress: [() => progress("1"), () => progress("2")] });
+
+    // The original dispatch flags ride along and are ignored, not validated.
+    const code = await run(h, "install", { progressId: ` ${RESUME_ID} `, scope: "x_app", appSysId: "both" });
+
+    expect(code).toBe(0);
+    expect(h.client.cicdPost).not.toHaveBeenCalled();
+    expect(h.calls).toEqual([
+      { method: "GET", path: `progress/${RESUME_ID}` },
+      { method: "GET", path: `progress/${RESUME_ID}` },
+    ]);
+    expect(infos.some((line) => line.includes(`Resuming cicd install from progress ${RESUME_ID}`))).toBe(true);
+  });
+
+  it("reads the ATF result of a resumed run-suite and exits 2 on failing tests", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => ok({ rolledup_test_failure_count: 1 }),
+    });
+
+    const code = await run(h, "run-suite", { progressId: RESUME_ID, json: true });
+
+    expect(code).toBe(2);
+    expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`, "testsuite/results/r"]);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({
+      action: "run-suite",
+      exitCode: 2,
+      resumed: true,
+      progressId: RESUME_ID,
+    });
+  });
+
+  // Batch 4 item 6: the resume action is the caller's word; a tracker that
+  // links an ATF result is a test run, so it is not reported as an install.
+  it("exits 1 when a tracker resumed as install links an ATF result", async () => {
+    const h = harness({ progress: [() => progress("2", { links: { results: { id: "r" } } })] });
+    expect(await run(h, "install", { progressId: RESUME_ID })).toBe(1);
+    expect(errors[0]).toMatch(/looks like a test run rather than install/);
+    expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
+  });
+
+  it("times out like a dispatched run, exiting 1", async () => {
+    const h = harness({ progress: [() => progress("1")] });
+    expect(await run(h, "publish", { progressId: RESUME_ID, timeout: 2, pollMs: 1000 }, 5_000)).toBe(1);
+    expect(errors[0]).toMatch(new RegExp(`waiting for progress ${RESUME_ID}`));
+  });
+
+  it("rejects a malformed id before creating a client", async () => {
+    const h = harness();
+    expect(await run(h, "install", { progressId: "../table/sys_user" })).toBe(1);
+    expect(errors[0]).toMatch(/--progress-id must be the 32-character hexadecimal sys_id/);
+    expect(h.deps.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("cicd poll retry", () => {
+  const networkError = () => Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+
+  it("rides out transient poll failures and finishes", async () => {
+    const h = harness({
+      progress: [
+        () => networkError(),
+        () => httpError(502, "api/sn_cicd/progress/prog-1", "Bad Gateway"),
+        () => progress("1"),
+        () => httpError(429, "api/sn_cicd/progress/prog-1", {}),
+        () => progress("2"),
+      ],
+    });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(0);
+    expect(warnings.filter((w) => /poll failed \(\d\/3\), retrying/.test(w))).toHaveLength(3);
+  });
+
+  it("gives up after three consecutive transient failures", async () => {
+    const h = harness({ progress: [() => httpError(503, "api/sn_cicd/progress/prog-1", "")] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(3);
+    expect(errors.join("\n")).toContain("status code 503");
+    // The resume id is a warning, so a --log-level warn run still sees it.
+    expect(warnings).toContain("The work was dispatched as progress prog-1; resume with --progress-id prog-1.");
+  });
+
+  it("does not retry a 401/403/404", async () => {
+    for (const status of [401, 403, 404]) {
+      const h = harness({ progress: [() => httpError(status, "api/sn_cicd/progress/prog-1", {})] });
+      expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
+      expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    }
+  });
+
+  it("does not retry past --timeout", async () => {
+    const h = harness({ progress: [() => progress("1"), () => networkError()] });
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1000 }, 10_000)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(2);
+  });
+});
+
+// Review finding 4: the ATF verdict is an allow-list, identical to the
+// mcp-server's sync_cicd_run. Only a passing status with failure and error
+// counts stated as 0 is a pass; a clear failure is exit 2; anything else over a
+// successful tracker is exit 1 (the answer is unknown).
+describe("cicd ATF verdict allow-list", () => {
+  const suiteRun = async (result: Record<string, unknown>): Promise<number> => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => ok(result),
+    });
+    return run(h, "run-suite", { suiteId: "s1" });
+  };
+  const testRun = async (result: Record<string, unknown>): Promise<number> => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "tr" } } })],
+      results: () => ok(result),
+    });
+    return run(h, "run-test", { testId: "t1" });
+  };
+  const zero = { rolledup_test_failure_count: 0, rolledup_test_error_count: 0 };
+
+  it.each([
+    ["success", { test_suite_status: "success", ...zero }],
+    ["SUCCESS with whitespace", { test_suite_status: "  SUCCESS ", ...zero }],
+    ["success_with_warnings", { test_suite_status: "success_with_warnings", ...zero }],
+    ["digit-string zero counts", { test_suite_status: "success", rolledup_test_failure_count: "0", rolledup_test_error_count: " 0 " }],
+  ])("suite %s exits 0", async (_label, result) => {
+    expect(await suiteRun(result)).toBe(0);
+  });
+
+  it.each([
+    ["status failure with a trailing space", { test_suite_status: "failure ", ...zero }],
+    ["status ERROR", { test_suite_status: "ERROR", ...zero }],
+    ["a positive failure count under a passing status", { test_suite_status: "success", rolledup_test_failure_count: 1, rolledup_test_error_count: 0 }],
+    ["a positive error count as a string", { test_suite_status: "success", rolledup_test_failure_count: 0, rolledup_test_error_count: "2" }],
+    ["a positive count with no status", { rolledup_test_error_count: 1 }],
+    ["a failing status with unreadable counts", { test_suite_status: "failure", rolledup_test_failure_count: "n/a" }],
+  ])("suite with %s exits 2", async (_label, result) => {
+    expect(await suiteRun(result)).toBe(2);
+  });
+
+  it.each([
+    ["an empty result", {}],
+    ["status canceled", { test_suite_status: "canceled", ...zero }],
+    ["status running", { test_suite_status: "running", ...zero }],
+    ["status skipped", { test_suite_status: "skipped", ...zero }],
+    ['status "failed" (not a ServiceNow value)', { test_suite_status: "failed", ...zero }],
+    ["zero counts and no status", { ...zero }],
+    ["a passing status and no counts", { test_suite_status: "success" }],
+    ["a passing status and a missing error count", { test_suite_status: "success", rolledup_test_failure_count: 0 }],
+    ['a passing status and a count of "n/a"', { test_suite_status: "success", rolledup_test_failure_count: "n/a", rolledup_test_error_count: 0 }],
+    ["a passing status and an empty-string count", { test_suite_status: "success", rolledup_test_failure_count: "", rolledup_test_error_count: 0 }],
+    ["a passing status and a fractional count", { test_suite_status: "success", rolledup_test_failure_count: 0.5, rolledup_test_error_count: 0 }],
+    ["a passing status and a negative count", { test_suite_status: "success", rolledup_test_failure_count: -1, rolledup_test_error_count: 0 }],
+    ["a non-string status", { test_suite_status: 1, ...zero }],
+  ])("suite with %s exits 1 (unknown, not a pass)", async (_label, result) => {
+    expect(await suiteRun(result)).toBe(1);
+    expect(errors[0]).toMatch(/does not clearly report a pass or a failure/);
+    expect(errors[0]).toMatch(/--progress-id prog-1/);
+  });
+
+  it.each([
+    ["success", 0],
+    [" Success ", 0],
+    ["success_with_warnings", 0],
+    ["failure", 2],
+    ["failure ", 2],
+    ["Error", 2],
+    ["failed", 1],
+    ["canceled", 1],
+    ["running", 1],
+    ["skipped", 1],
+    ["", 1],
+  ])('single test with status "%s" exits %i', async (status, expected) => {
+    expect(await testRun({ test_status: status })).toBe(expected);
+  });
+
+  it("a single test with no status exits 1", async () => {
+    expect(await testRun({})).toBe(1);
+    expect(errors[0]).toMatch(/does not clearly report a pass or a failure/);
+  });
+
+  it("keeps exit 2 for a failed tracker whose readable result is unknown", async () => {
+    const h = harness({
+      progress: [() => progress("3", { links: { results: { id: "r" } } })],
+      results: () => ok({}),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
+  });
+
+  it("emits a --json failure with the progress id for an unknown verdict", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => ok({ test_suite_status: "canceled" }),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, progressId: "prog-1" });
+  });
+});
+
+// Review finding 5: the resumed action is bound to the tracker kind both ways.
+describe("cicd --progress-id tracker-kind binding", () => {
+  const RESUME_ID = "e".repeat(32);
+
+  it.each(["install", "publish", "rollback"])(
+    "refuses an ATF tracker resumed as %s, whatever its status",
+    async (action) => {
+      for (const status of ["2", "3", "4"]) {
+        errors.length = 0;
+        const h = harness({ progress: [() => progress(status, { links: { results: { id: "r" } } })] });
+        expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
+        expect(errors[0]).toMatch(new RegExp(`looks like a test run rather than ${action}`));
+        expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
+      }
+    }
+  );
+
+  it("treats a results link without an id as ATF evidence too", async () => {
+    const h = harness({ progress: [() => progress("2", { links: { results: { url: "https://x/r" } } })] });
+    expect(await run(h, "install", { progressId: RESUME_ID })).toBe(1);
+    expect(errors[0]).toMatch(/looks like a test run rather than install/);
+  });
+
+  it.each(["run-suite", "run-test"])(
+    "does not report a successful app-repo tracker resumed as %s as a pass",
+    async (action) => {
+      const h = harness({ progress: [() => progress("2")] });
+      expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
+      expect(errors[0]).toMatch(/links no ATF result record/);
+    }
+  );
+
+  it("warns that a resumed app-repo action is taken on the caller's word", async () => {
+    const h = harness({ progress: [() => progress("2")] });
+    expect(await run(h, "rollback", { progressId: RESUME_ID })).toBe(0);
+    expect(warnings).toEqual([
+      `progress ${RESUME_ID} does not record which app-repo action started it; reporting it as rollback on the caller's word.`,
+    ]);
+  });
+
+  it("does not warn for a dispatched app-repo action", async () => {
+    const h = harness({ progress: [() => progress("2")] });
+    expect(await run(h, "install", { scope: "x_app" })).toBe(0);
+    expect(warnings).toEqual([]);
   });
 });
