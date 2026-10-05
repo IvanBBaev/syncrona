@@ -522,6 +522,91 @@ export const getFileContextFromPath = (
   }
 };
 
+/** A local file that names a record the manifest does not know yet. */
+export interface UnmappedPathInfo {
+  table: string;
+  recordName: string;
+  /** Target column: `inputs.script` on sys_atf_step, `.meta` for a sidecar. */
+  field: string;
+  /** Extension including the dot, as path.extname returns it. */
+  ext: string;
+  isSidecar: boolean;
+}
+
+// Table names are taken from a directory name, then interpolated into a Table
+// API URL. ServiceNow table names are lower-case snake_case, so anything else
+// is refused here rather than sent.
+const TABLE_NAME_PATTERN = /^[a-z0-9_]+$/;
+
+/**
+ * R1 (`push --create`): decompose a source-tree path that getFileContextFromPath
+ * could not resolve into the record it would describe.
+ *
+ * Only the two layouts the tool itself writes are accepted, relative to the
+ * source directory: `<table>/<record>~<field>.<ext>` (flat, exactly two
+ * segments) and `<table>/<record>/<field>.<ext>` (folder, exactly three).
+ * Anything deeper, shallower, extensionless or outside the source tree returns
+ * undefined, as does a path whose record already exists in the manifest — that
+ * file is either an ordinary update or a field the record does not map, and
+ * neither is a creation.
+ */
+export const parseUnmappedPath = (
+  filePath: string
+): UnmappedPathInfo | undefined => {
+  let sourcePath: string;
+  try {
+    sourcePath = ConfigManager.getSourcePath();
+  } catch (_e) {
+    return undefined;
+  }
+  const rel = path.relative(path.resolve(sourcePath), path.resolve(filePath));
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
+  const segments = rel.split(/[/\\]/).filter((token) => token !== "");
+  const ext = getFileExtension(filePath);
+  if (!ext) return undefined;
+  const fileName = segments[segments.length - 1];
+  const stem = fileName.slice(0, -ext.length);
+  let table: string;
+  let recordName: string;
+  let field: string;
+  if (segments.length === 2) {
+    if (!isFlatEncoded(fileName)) return undefined;
+    const sepIndex = stem.lastIndexOf(FLAT_FIELD_SEPARATOR);
+    table = segments[0];
+    recordName = stem.slice(0, sepIndex);
+    field = stem.slice(sepIndex + 1);
+  } else if (segments.length === 3) {
+    [table, recordName] = segments;
+    field = stem;
+  } else {
+    return undefined;
+  }
+  const isSidecar = isMetaSidecarPath(filePath);
+  if (isSidecar) {
+    field = META_FILE_NAME;
+  } else if (table === "sys_atf_step") {
+    field = "inputs.script";
+  }
+  // A name shadowing an Object.prototype member (`__proto__`, `constructor`)
+  // would become a manifest map key; refuse it rather than write one.
+  const isPrototypeKey = (key: string) =>
+    Object.prototype.hasOwnProperty.call(Object.prototype, key);
+  if (
+    !TABLE_NAME_PATTERN.test(table) ||
+    !isSafePathComponent(recordName) ||
+    !isSafePathComponent(field) ||
+    isPrototypeKey(table) ||
+    isPrototypeKey(recordName)
+  ) {
+    return undefined;
+  }
+  const manifest = ConfigManager.getManifest();
+  if (ownEntry(ownEntry(manifest?.tables, table)?.records, recordName)) {
+    return undefined;
+  }
+  return { table, recordName, field, ext, isSidecar };
+};
+
 export const toAbsolutePath = (p: string): string =>
   path.isAbsolute(p) ? p : path.join(process.cwd(), p);
 

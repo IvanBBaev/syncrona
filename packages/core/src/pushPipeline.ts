@@ -1,15 +1,38 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { Sync } from "@syncrona/types";
+import { SN, Sync } from "@syncrona/types";
+import {
+  classifyCreateTable,
+  describeDeniedCreateTable,
+  describeUnlistedCreateTable,
+  escapeQueryValue,
+  isDeniedCreateTable,
+} from "@syncrona/sn-transport";
+import { promises as fsp } from "fs";
 import path from "path";
 import * as fUtils from "./FileUtils.js";
 import * as ConfigManager from "./config.js";
 import { PUSH_RETRY_LIMIT, PUSH_RETRY_WAIT } from "./constants.js";
+import { excludes as defaultExcludedTables } from "./defaultOptions.js";
+import { findMissingFiles } from "./downloadPipeline.js";
+import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
 import PluginManager from "./PluginManager.js";
+import { getDisplayField } from "./fieldMap.js";
 import {
   META_FILE_NAME,
+  META_FILE_TYPE,
+  META_SIDECAR_FILE_NAME,
   isMetaFieldName,
+  metaValueText,
   resolveMetaUpdate,
+  stripBOM,
 } from "./metaFields.js";
+import {
+  applyDataModelTableOptions,
+  getDataModelTables,
+  isDataModelTable,
+  isPruneDeniedTable,
+  nameFieldColumn,
+} from "./dataModel.js";
 import {
   defaultClient,
   getErrorResponseStatus,
@@ -17,9 +40,11 @@ import {
   processPushResponse,
   retryOnErr,
   SNClient,
+  unwrapSNResponse,
+  unwrapTableAPIFirstItem,
 } from "./snClient.js";
 import { logger } from "./Logger.js";
-import { aggregateErrorMessages, allSettled } from "./genericUtils.js";
+import { aggregateErrorMessages, allSettled, wait } from "./genericUtils.js";
 import { getProgTick } from "./progress.js";
 
 export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
@@ -94,21 +119,81 @@ export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
   return Object.values(combinedFiles);
 };
 
-export const getAppFileList = async (
-  paths: string | string[]
-): Promise<Sync.BuildableRecord[]> => {
+/** One local file of a record `push --create` would create or adopt. */
+export interface CreateCandidateFile {
+  filePath: string;
+  field: string;
+  ext: string;
+  isSidecar: boolean;
+}
+
+/** A record the manifest does not know, with every local file naming it. */
+export interface CreateCandidate {
+  table: string;
+  recordName: string;
+  files: CreateCandidateFile[];
+  /** Set when two local files claim the same field; the record is not created. */
+  conflict?: string;
+}
+
+export interface AppFileListWithCandidates {
+  records: Sync.BuildableRecord[];
+  candidates: CreateCandidate[];
+}
+
+/**
+ * getAppFileList, plus — with `create` — the unmapped paths that name a record
+ * the manifest does not have yet (R1, `push --create`), grouped per record.
+ * Without `create` the candidates list is always empty and the behaviour is
+ * exactly getAppFileList's.
+ */
+export const getAppFileListWithCandidates = async (
+  paths: string | string[],
+  options: { create: boolean }
+): Promise<AppFileListWithCandidates> => {
   const validPaths =
     typeof paths === "object"
       ? paths
       : await fUtils.encodedPathsToFilePaths(paths);
   const appFileCtxs: Sync.FileContext[] = [];
   const unresolved: string[] = [];
+  const candidates = new Map<string, CreateCandidate>();
   for (const filePath of validPaths) {
     const ctx = fUtils.getFileContextFromPath(filePath);
     if (ctx) {
       appFileCtxs.push(ctx);
-    } else {
+      continue;
+    }
+    const unmapped = options.create ? fUtils.parseUnmappedPath(filePath) : undefined;
+    if (!unmapped) {
       unresolved.push(filePath);
+      continue;
+    }
+    const key = `${unmapped.table}:${unmapped.recordName}`;
+    let candidate = candidates.get(key);
+    if (!candidate) {
+      candidate = { table: unmapped.table, recordName: unmapped.recordName, files: [] };
+      candidates.set(key, candidate);
+    }
+    const clash = candidate.files.find(
+      (file) => file.field === unmapped.field && file.filePath !== filePath
+    );
+    if (clash) {
+      // The same rule groupAppFiles applies to known records: a field comes from
+      // exactly one file, and guessing which would make the created record
+      // depend on directory iteration order.
+      candidate.conflict =
+        `field "${unmapped.field}" is claimed by more than one local file ` +
+        `(${clash.filePath}, ${filePath}). Delete the stale copy and retry.`;
+      continue;
+    }
+    if (!candidate.files.some((file) => file.filePath === filePath)) {
+      candidate.files.push({
+        filePath,
+        field: unmapped.field,
+        ext: unmapped.ext,
+        isSidecar: unmapped.isSidecar,
+      });
     }
   }
   if (unresolved.length > 0) {
@@ -121,11 +206,23 @@ export const getAppFileList = async (
       `${unresolved.length} file(s) are not in the manifest and will not be ` +
         `pushed:\n  ${unresolved.join("\n  ")}\n` +
         "Run `syncrona refresh` if these are real records; otherwise they are " +
-        "leftovers from a scope or a layout this workspace no longer tracks."
+        "leftovers from a scope or a layout this workspace no longer tracks." +
+        (options.create
+          ? " `push --create` only creates records from <table>/<record>/<field>.<ext> " +
+            "or <table>/<record>~<field>.<ext> paths under the source directory."
+          : "")
     );
   }
-  return groupAppFiles(appFileCtxs);
+  return {
+    records: groupAppFiles(appFileCtxs),
+    candidates: [...candidates.values()],
+  };
 };
+
+export const getAppFileList = async (
+  paths: string | string[]
+): Promise<Sync.BuildableRecord[]> =>
+  (await getAppFileListWithCandidates(paths, { create: false })).records;
 
 const buildRec = async (
   rec: Sync.BuildableRecord
@@ -196,7 +293,11 @@ interface MetaExpansion {
  */
 export const expandMetaSidecar = (
   rec: Sync.BuildableRecord,
-  builtRec: Record<string, string>
+  builtRec: Record<string, string>,
+  // R4: the columns of a table the manifest does not know yet, discovered by
+  // `push --create` for a sidecar-only data-model record. Used only when the
+  // manifest has no metaFields of its own for the table.
+  discovered?: { metaFields: readonly string[]; readOnlyFields: readonly string[] }
 ): MetaExpansion => {
   if (!(META_FILE_NAME in builtRec)) {
     return { fields: builtRec, skipped: [] };
@@ -223,14 +324,68 @@ export const expandMetaSidecar = (
   }
 
   const table = ConfigManager.getManifest()?.tables[rec.table];
+  const useDiscovered = discovered !== undefined && !(table?.metaFields?.length);
   const update = resolveMetaUpdate(content, {
-    metaFields: table?.metaFields,
-    readOnlyFields: table?.metaReadOnlyFields,
+    metaFields: useDiscovered ? discovered.metaFields : table?.metaFields,
+    readOnlyFields: useDiscovered ? discovered.readOnlyFields : table?.metaReadOnlyFields,
   });
   return {
     fields: { ...update.fields, ...fileFields },
     skipped: update.skipped,
   };
+};
+
+/**
+ * R4: drop the sidecar columns of a data-model record whose value already
+ * matches the instance, so the update carries only what was edited.
+ *
+ * A data-model sidecar holds every column of the record, and an ordinary
+ * sidecar push sends them all. For a dictionary entry that is not harmless:
+ * re-sending an unchanged `internal_type`, `reference` or `max_length` runs the
+ * dictionary business rules again (and can alter the physical table), and it
+ * overwrites a column someone else changed on the instance since the last pull.
+ * One GET of the columns the push would send makes the PATCH a true diff.
+ *
+ * Field files are always sent as they are. Throws when the record cannot be
+ * read: sending every column blind is the behaviour this exists to avoid.
+ */
+const withoutUnchangedMetaColumns = async (
+  client: SNClient,
+  rec: Sync.BuildableRecord,
+  fields: Record<string, string>
+): Promise<{ fields: Record<string, string>; unchanged: string[] }> => {
+  const metaColumns = Object.keys(fields).filter(
+    (column) => !Object.prototype.hasOwnProperty.call(rec.fields, column)
+  );
+  if (metaColumns.length === 0) return { fields, unchanged: [] };
+  const rows = await unwrapSNResponse<Record<string, unknown>[]>(
+    client.tableAPIGet(
+      rec.table,
+      `sys_id=${escapeQueryValue(rec.sysId)}`,
+      metaColumns.join(","),
+      1
+    )
+  );
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  if (!row || typeof row !== "object") {
+    throw new Error(
+      "could not read the record from the instance to compare its metadata " +
+        "columns; nothing was sent. Check that the record still exists and is readable."
+    );
+  }
+  const changed: Record<string, string> = Object.create(null);
+  const unchanged: string[] = [];
+  for (const [column, value] of Object.entries(fields)) {
+    const isMeta = metaColumns.includes(column);
+    // A column the response omitted (a column-level read ACL) is sent: there is
+    // no current value to prove the edit redundant.
+    if (isMeta && column in row && metaValueText(row[column]) === value) {
+      unchanged.push(column);
+    } else {
+      changed[column] = value;
+    }
+  }
+  return { fields: changed, unchanged };
 };
 
 const pushRec = async (
@@ -362,9 +517,31 @@ export const pushFiles = async (
           `${expanded.skipped.join(", ")} — the instance would discard them.`
       );
     }
+    if (
+      META_FILE_NAME in rec.fields &&
+      getDataModelTables(ConfigManager.getConfig() as Sync.Config).includes(rec.table)
+    ) {
+      try {
+        const diff = await withoutUnchangedMetaColumns(client, rec, expanded.fields);
+        if (diff.unchanged.length > 0) {
+          logger.debug(
+            `${recSummary} : ${diff.unchanged.length} metadata column(s) already match ` +
+              "the instance and are not sent."
+          );
+        }
+        expanded = { ...expanded, fields: diff.fields };
+      } catch (e) {
+        tick();
+        return {
+          success: false,
+          message: `${recSummary} : ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+    }
     if (Object.keys(expanded.fields).length === 0) {
-      // Only reachable for a sidecar-only record whose every column was skipped.
-      // PATCHing `{}` would answer 200 and report a push that changed nothing.
+      // A sidecar-only record whose every column was skipped, or (R4) whose
+      // every column already matches the instance. PATCHing `{}` would answer
+      // 200 and report a push that changed nothing.
       tick();
       return { success: true, message: `${recSummary} : nothing to push.` };
     }
@@ -378,6 +555,883 @@ export const pushFiles = async (
     tick();
     return pushRes;
   });
+};
+
+// ---------------------------------------------------------------------------
+// R1 — `push --create`: create (or adopt) records for files not in the manifest
+// ---------------------------------------------------------------------------
+
+const CREATE_CONSUMER = "push --create";
+const SYS_METADATA_TABLE = "sys_metadata";
+// The deepest real hierarchies under sys_metadata are well under ten levels; the
+// bound only stops a cyclic or corrupt sys_db_object chain from looping.
+const MAX_CREATE_HIERARCHY_DEPTH = 16;
+// manifestBuilder writes a "/" in a display value as this look-alike, because
+// the name becomes a path component. Creating from that path reverses it.
+const PATH_SEPARATOR_STAND_IN = "〳";
+
+const MANIFEST_FILE_TYPES: readonly SN.FileType[] = [
+  "js",
+  "css",
+  "xml",
+  "html",
+  "scss",
+  "txt",
+  "json",
+];
+
+/**
+ * The manifest `type` for a field first seen as a local file. A known extension
+ * is its own type; the TypeScript and module flavours of JavaScript build to
+ * `js` (getBuildExt compiles a local file to the manifest type on the way out);
+ * anything else is stored as text until a `refresh` reads the dictionary.
+ */
+export const manifestTypeForExt = (ext: string, isSidecar = false): SN.FileType => {
+  if (isSidecar) return META_FILE_TYPE;
+  const bare = ext.replace(/^\./, "").toLowerCase();
+  if ((MANIFEST_FILE_TYPES as readonly string[]).includes(bare)) {
+    return bare as SN.FileType;
+  }
+  if (["ts", "tsx", "jsx", "mjs", "cjs", "mts", "cts"].includes(bare)) {
+    return "js";
+  }
+  return "txt";
+};
+
+export type CreatePolicyResult =
+  | { allowed: true }
+  | { allowed: false; reason: string };
+
+/**
+ * True when `table` extends sys_metadata, walked through sys_db_object one
+ * `super_class` at a time. Every table visited is cached with the answer, so a
+ * push creating many records in sibling tables walks each chain once.
+ */
+export const extendsSysMetadata = async (
+  client: SNClient,
+  table: string,
+  cache: Map<string, boolean> = new Map()
+): Promise<boolean> => {
+  // sys_metadata itself is not a "descendant": raw sys_metadata rows are not
+  // application files any tool round-trips.
+  if (table === SYS_METADATA_TABLE) return false;
+  const visited: string[] = [];
+  let current = table;
+  let result = false;
+  for (let depth = 0; depth < MAX_CREATE_HIERARCHY_DEPTH; depth += 1) {
+    if (depth > 0 && current === SYS_METADATA_TABLE) {
+      result = true;
+      break;
+    }
+    const cached = cache.get(current);
+    if (cached !== undefined) {
+      result = cached;
+      break;
+    }
+    if (visited.includes(current)) break;
+    visited.push(current);
+    const rows = await unwrapSNResponse<Record<string, unknown>[]>(
+      client.tableAPIGet(
+        "sys_db_object",
+        `name=${escapeQueryValue(current)}`,
+        "name,super_class.name",
+        1
+      )
+    );
+    const parent = Array.isArray(rows) ? rows[0]?.["super_class.name"] : undefined;
+    if (typeof parent !== "string" || parent === "") break;
+    current = parent;
+  }
+  for (const name of visited) cache.set(name, result);
+  return result;
+};
+
+/**
+ * AD-4 for the CLI. The shared deny list wins over everything and costs no
+ * request; a table named in SYNCRONA_CREATE_TABLE_ALLOWLIST or in
+ * `createTables` is allowed; every other table must extend sys_metadata.
+ */
+export const checkCreateTablePolicy = async (
+  client: SNClient,
+  table: string,
+  cache: Map<string, boolean> = new Map()
+): Promise<CreatePolicyResult> => {
+  const config = ConfigManager.getConfig() as Sync.Config;
+  const extraAllowed = Array.isArray(config.createTables) ? config.createTables : [];
+  const classification = classifyCreateTable(table, {
+    env: process.env,
+    extraAllowed,
+  });
+  if (classification === "denied") {
+    return {
+      allowed: false,
+      reason: describeDeniedCreateTable(table, { consumer: CREATE_CONSUMER }),
+    };
+  }
+  if (classification === "allowlisted") return { allowed: true };
+  if (await extendsSysMetadata(client, table, cache)) return { allowed: true };
+  return {
+    allowed: false,
+    reason: describeUnlistedCreateTable(
+      table,
+      "only tables that extend sys_metadata (application files) are allowed",
+      {
+        consumer: CREATE_CONSUMER,
+        extraRemedy: "Or list the table under createTables in sync.config.js.",
+      }
+    ),
+  };
+};
+
+const readManifest = (): SN.AppManifest => {
+  const manifest = ConfigManager.getManifest();
+  if (!manifest) throw new Error("No manifest has been loaded!");
+  return manifest;
+};
+
+const saveManifest = async (manifest: SN.AppManifest): Promise<void> => {
+  ConfigManager.updateManifest(manifest);
+  await fUtils.writeManifestFile(manifest);
+};
+
+/**
+ * AD-10: the application's sys_id, from the manifest when it is recorded there
+ * and from sys_scope otherwise. `persist` writes a looked-up value back so later
+ * pushes skip the request; a dry run passes false and leaves the manifest alone.
+ */
+export const resolveScopeId = async (
+  client: SNClient,
+  persist: boolean
+): Promise<string> => {
+  const manifest = readManifest();
+  if (manifest.scopeId) return manifest.scopeId;
+  const scopeId = await unwrapTableAPIFirstItem<SN.ScopeRecord>(
+    client.getScopeId(manifest.scope),
+    "sys_id"
+  );
+  if (typeof scopeId !== "string" || scopeId === "") {
+    throw new Error(`Could not resolve the sys_id of scope "${manifest.scope}".`);
+  }
+  if (persist) {
+    await saveManifest({ ...readManifest(), scopeId });
+  }
+  return scopeId;
+};
+
+const candidateKey = (candidate: { table: string; recordName: string }): string =>
+  `${candidate.table}:${candidate.recordName}`;
+
+const candidateManifestFiles = (candidate: CreateCandidate): SN.File[] =>
+  candidate.files.map((file) => ({
+    name: file.field,
+    type: manifestTypeForExt(file.ext, file.isSidecar),
+  }));
+
+const addRecordToManifest = async (
+  candidate: CreateCandidate,
+  sysId: string,
+  discovered?: DiscoveredMeta
+): Promise<void> => {
+  const manifest = readManifest();
+  const existingTable = Object.prototype.hasOwnProperty.call(manifest.tables, candidate.table)
+    ? manifest.tables[candidate.table]
+    : undefined;
+  // R4: a table first seen through a created sidecar-only record keeps the
+  // columns discovered for it, so the next push of that sidecar resolves
+  // without waiting for a refresh. A table that already has its own list keeps it.
+  const metaColumns: Partial<SN.TableConfig> =
+    discovered && !(existingTable?.metaFields?.length)
+      ? discovered.readOnlyFields.length > 0
+        ? {
+            metaFields: [...discovered.metaFields],
+            metaReadOnlyFields: [...discovered.readOnlyFields],
+          }
+        : { metaFields: [...discovered.metaFields] }
+      : {};
+  const tableConfig: SN.TableConfig = {
+    ...(existingTable ?? {}),
+    ...metaColumns,
+    records: {
+      ...(existingTable?.records ?? {}),
+      [candidate.recordName]: {
+        name: candidate.recordName,
+        sys_id: sysId,
+        files: candidateManifestFiles(candidate),
+      },
+    },
+  };
+  await saveManifest({
+    ...manifest,
+    tables: { ...manifest.tables, [candidate.table]: tableConfig },
+  });
+};
+
+export type CreateAction = "create" | "adopt";
+
+/** Sidecar columns discovered at create time for a table the manifest lacks. */
+export interface DiscoveredMeta {
+  metaFields: string[];
+  readOnlyFields: string[];
+}
+
+export interface PlannedCreation {
+  candidate: CreateCandidate;
+  action: CreateAction | "error";
+  /** The column holding the record name (the manifest's display field). */
+  nameField: string;
+  /** The value written to `nameField`: the record name as the instance shows it. */
+  nameValue: string;
+  /** Set for `adopt`: the existing record's sys_id. */
+  sysId?: string;
+  /** Set for `error`: why the record is neither created nor adopted. */
+  message?: string;
+  /**
+   * R4: set for a table named by a composite rule (`tableOptions.nameFields`).
+   * The record name is not one column, so the idempotency lookup matches these
+   * column values from the sidecar instead, and nothing is written from the
+   * name: the sidecar already carries every column.
+   */
+  lookup?: Record<string, string>;
+}
+
+export interface CreationPlan {
+  scopeId: string;
+  plans: PlannedCreation[];
+}
+
+/**
+ * Decide, per candidate, whether `push --create` creates it, adopts an existing
+ * record of the same name in the same scope, or refuses it. Read-only: the only
+ * requests are GETs (the scope sys_id, the sys_db_object hierarchy walk and the
+ * idempotency lookup), so a dry run calls it too. `known` maps
+ * `table:recordName` to a sys_id an interrupted earlier run already created —
+ * those are adopted without another lookup.
+ */
+export const planRecordCreation = async (
+  candidates: CreateCandidate[],
+  options: {
+    persistScopeId: boolean;
+    known?: Record<string, string>;
+    client?: SNClient;
+  }
+): Promise<CreationPlan> => {
+  if (candidates.length === 0) return { scopeId: "", plans: [] };
+  const client = options.client ?? defaultClient();
+  const scopeId = await resolveScopeId(client, options.persistScopeId);
+  const config = ConfigManager.getConfig() as Sync.Config;
+  // R4: the effective options carry the data-model naming rules, so a record
+  // is matched by the same columns its name was built from.
+  const allTableOptions = applyDataModelTableOptions(config);
+  const hierarchyCache = new Map<string, boolean>();
+  const plans: PlannedCreation[] = [];
+  // Sequential on purpose: the lookups are cheap, and creation order must not
+  // depend on which request happened to answer first.
+  for (const candidate of candidates) {
+    const tableOptions = Object.prototype.hasOwnProperty.call(allTableOptions, candidate.table)
+      ? allTableOptions[candidate.table]
+      : undefined;
+    const nameField = tableOptions?.displayField || getDisplayField(candidate.table);
+    const nameValue = candidate.recordName.split(PATH_SEPARATOR_STAND_IN).join("/");
+    const plan = (
+      action: PlannedCreation["action"],
+      extra: Partial<PlannedCreation> = {}
+    ): PlannedCreation => ({ candidate, action, nameField, nameValue, ...extra });
+
+    if (candidate.conflict) {
+      plans.push(plan("error", { message: candidate.conflict }));
+      continue;
+    }
+    const knownSysId = options.known?.[candidateKey(candidate)];
+    if (typeof knownSysId === "string" && knownSysId !== "") {
+      plans.push(plan("adopt", { sysId: knownSysId }));
+      continue;
+    }
+    if (tableOptions?.differentiatorField) {
+      // The manifest name of such a record carries a " (value)" suffix the
+      // instance never stores, so the name column cannot be derived from it.
+      plans.push(
+        plan("error", {
+          message:
+            `tableOptions.${candidate.table}.differentiatorField is set, so the ` +
+            "record name cannot be mapped back to a single column. Create the " +
+            "record on the instance and run `syncrona refresh`.",
+        })
+      );
+      continue;
+    }
+    let lookup: Record<string, string> | undefined;
+    const nameFields = tableOptions?.displayField ? undefined : tableOptions?.nameFields;
+    if (Array.isArray(nameFields) && nameFields.length > 0) {
+      const resolved = await compositeLookupValues(candidate, nameFields);
+      if (typeof resolved === "string") {
+        plans.push(plan("error", { message: resolved }));
+        continue;
+      }
+      lookup = resolved;
+    }
+    try {
+      const policy = await checkCreateTablePolicy(client, candidate.table, hierarchyCache);
+      if (!policy.allowed) {
+        plans.push(plan("error", { message: policy.reason }));
+        continue;
+      }
+      const hits = lookup
+        ? await findRecordByColumns(client, candidate.table, lookup, scopeId)
+        : await client.findRecordByName(candidate.table, nameField, nameValue, scopeId);
+      const extra = lookup ? { lookup } : {};
+      if (hits.length === 0) {
+        plans.push(plan("create", extra));
+      } else if (hits.length === 1) {
+        plans.push(plan("adopt", { ...extra, sysId: hits[0] }));
+      } else {
+        plans.push(
+          plan("error", {
+            message:
+              `more than one ${candidate.table} record ${describeTarget(lookup, nameValue)} exists in ` +
+              "this scope; refusing to guess which one the local files belong to.",
+          })
+        );
+      }
+    } catch (e) {
+      plans.push(plan("error", { message: e instanceof Error ? e.message : String(e) }));
+    }
+  }
+  return { scopeId, plans };
+};
+
+/**
+ * R4: the column values a composite-named record is matched by, read from its
+ * sidecar. Returns an error message when the record cannot be matched: no
+ * sidecar, an unreadable one, or a naming column it leaves empty. Matching on
+ * fewer columns than the name was built from could adopt a different record.
+ */
+const compositeLookupValues = async (
+  candidate: CreateCandidate,
+  nameFields: readonly string[]
+): Promise<Record<string, string> | string> => {
+  const columns = [...new Set(nameFields.map(nameFieldColumn))];
+  const sidecar = candidate.files.find((file) => file.isSidecar);
+  const needs =
+    `the columns its name is built from (${columns.join(", ")}) must be set in ` +
+    "its .meta.json sidecar";
+  if (!sidecar) {
+    return `this table names records by several columns, so ${needs}.`;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripBOM(await fsp.readFile(sidecar.filePath, "utf8")));
+  } catch (e) {
+    return `could not read ${sidecar.filePath}: ${e instanceof Error ? e.message : String(e)}`;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return `${sidecar.filePath} must be a JSON object of "column": "value" pairs.`;
+  }
+  const values: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const column of columns) {
+    const raw = (parsed as Record<string, unknown>)[column];
+    const value =
+      typeof raw === "string"
+        ? raw
+        : typeof raw === "number" || typeof raw === "boolean"
+          ? String(raw)
+          : "";
+    if (value.trim() === "") missing.push(column);
+    else values[column] = value;
+  }
+  if (missing.length > 0) {
+    return `this table names records by several columns, so ${needs}; missing: ${missing.join(", ")}.`;
+  }
+  return values;
+};
+
+/** The sys_ids of the records in `scopeId` whose columns equal `values`. */
+const findRecordByColumns = async (
+  client: SNClient,
+  table: string,
+  values: Record<string, string>,
+  scopeId: string
+): Promise<string[]> => {
+  const query = [
+    ...Object.entries(values).map(
+      ([column, value]) => `${escapeQueryValue(column)}=${escapeQueryValue(value)}`
+    ),
+    `sys_scope=${escapeQueryValue(scopeId)}`,
+  ].join("^");
+  const records = await unwrapSNResponse<{ sys_id?: unknown }[]>(
+    client.tableAPIGet(table, query, "sys_id", 2)
+  );
+  return (Array.isArray(records) ? records : [])
+    .map((record) => record?.sys_id)
+    .filter((sysId): sysId is string => typeof sysId === "string" && sysId !== "");
+};
+
+/** How a record is identified in a message: by its name, or by its lookup columns. */
+const describeTarget = (
+  lookup: Record<string, string> | undefined,
+  nameValue: string
+): string =>
+  lookup
+    ? `with ${Object.entries(lookup)
+        .map(([column, value]) => `${column}=${value}`)
+        .join(", ")}`
+    : `named "${nameValue}"`;
+
+export interface CreationOutcome {
+  /** One result per created or refused record. Adopted records report through pushFiles. */
+  results: Sync.PushResult[];
+  /** Adopted records, resolved through the updated manifest, for pushFiles to PATCH. */
+  records: Sync.BuildableRecord[];
+}
+
+/**
+ * R4: discover the sidecar columns of a data-model table the manifest does not
+ * know yet. Undefined when discovery does not apply: no sidecar, a table the
+ * manifest already describes, or a table that is not a data-model table (whose
+ * sidecar keeps failing on the degraded-manifest check, as before).
+ */
+const discoverCreateMeta = async (
+  client: SNClient,
+  candidate: CreateCandidate
+): Promise<DiscoveredMeta | undefined> => {
+  if (!candidate.files.some((file) => file.isSidecar)) return undefined;
+  const config = ConfigManager.getConfig() as Sync.Config;
+  if (config.meta === false || config.metaPush === false) return undefined;
+  if (!isDataModelTable(candidate.table, config)) return undefined;
+  const known = readManifest().tables?.[candidate.table];
+  if (known?.metaFields?.length) return undefined;
+  // Loaded on demand: the manifest builder is a large module, and this branch
+  // runs only for a sidecar-only create on a table new to the workspace.
+  const { discoverTableMetaFields } = await import("./manifestBuilder.js");
+  const meta = await discoverTableMetaFields(client, candidate.table, config);
+  if (meta.fields.length === 0) {
+    throw new Error(
+      `could not read the columns of ${candidate.table} from the dictionary, so ` +
+        "its .meta.json cannot be checked. Check read access to sys_dictionary and retry."
+    );
+  }
+  return { metaFields: meta.fields, readOnlyFields: meta.readOnly };
+};
+
+const buildCreateFields = async (
+  plan: PlannedCreation,
+  scopeId: string,
+  discovered?: DiscoveredMeta
+): Promise<Record<string, string>> => {
+  const { candidate } = plan;
+  const manifest = readManifest();
+  const rec: Sync.BuildableRecord = { table: candidate.table, sysId: "", fields: {} };
+  for (const file of candidate.files) {
+    rec.fields[file.field] = {
+      filePath: file.filePath,
+      ext: file.ext,
+      sys_id: "",
+      name: candidate.recordName,
+      scope: manifest.scope,
+      tableName: candidate.table,
+      targetField: file.field,
+    };
+  }
+  const buildRes = await buildRec(rec);
+  if (!buildRes.success) throw new Error(buildRes.message);
+  const expanded = expandMetaSidecar(rec, buildRes.builtRec, discovered);
+  return {
+    ...expanded.fields,
+    // A composite name is not one column; the sidecar carries the columns.
+    ...(plan.lookup ? {} : { [plan.nameField]: plan.nameValue }),
+    sys_scope: scopeId,
+  };
+};
+
+/**
+ * POST one record. The client never retries a POST (it is not idempotent), so
+ * the retry lives here, and every retry is preceded by the idempotency lookup:
+ * a timeout can arrive after the instance inserted the row, and posting again
+ * would create a duplicate.
+ */
+const postWithLookup = async (
+  client: SNClient,
+  plan: PlannedCreation,
+  scopeId: string,
+  body: Record<string, string>,
+  retryWaitMs: number
+): Promise<string> => {
+  const { table } = plan.candidate;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return (await client.createRecord(table, body)).sys_id;
+    } catch (e) {
+      if (!isRetryableRequestError(e) || attempt >= PUSH_RETRY_LIMIT) throw e;
+      logger.debug(
+        `Creating ${summarizeRecord(table, plan.candidate.recordName)} failed; ` +
+          "checking whether it exists before retrying..."
+      );
+      await wait(retryWaitMs);
+      const hits = plan.lookup
+        ? await findRecordByColumns(client, table, plan.lookup, scopeId)
+        : await client.findRecordByName(table, plan.nameField, plan.nameValue, scopeId);
+      if (hits.length === 1) return hits[0];
+      if (hits.length > 1) {
+        throw new Error(
+          `more than one ${table} record ${describeTarget(plan.lookup, plan.nameValue)} exists after a failed create.`
+        );
+      }
+    }
+  }
+};
+
+/**
+ * Carry out a creation plan, one record at a time.
+ *
+ * - `create`: build the files (plugins and sidecar expansion as for any push),
+ *   POST them with the name column and `sys_scope`, report the sys_id through
+ *   `onCreated` (the push checkpoint) and add the record to the manifest.
+ * - `adopt`: add the existing record to the manifest and hand its files back as
+ *   ordinary records, so pushFiles PATCHes them like any other update.
+ * - `error`: a failed result, nothing sent.
+ */
+export const createRecords = async (
+  creation: CreationPlan,
+  options: {
+    client?: SNClient;
+    onCreated?: (key: string, sysId: string) => Promise<void> | void;
+    retryWaitMs?: number;
+  } = {}
+): Promise<CreationOutcome> => {
+  const results: Sync.PushResult[] = [];
+  const adoptedPaths: string[] = [];
+  if (creation.plans.length === 0) return { results, records: [] };
+  const client = options.client ?? defaultClient();
+  const retryWaitMs = options.retryWaitMs ?? PUSH_RETRY_WAIT;
+  for (const plan of creation.plans) {
+    const { candidate } = plan;
+    const summary = summarizeRecord(candidate.table, candidate.recordName);
+    try {
+      if (plan.action === "error") {
+        results.push({ success: false, message: `${summary} : ${plan.message}` });
+        continue;
+      }
+      if (plan.action === "adopt") {
+        await addRecordToManifest(candidate, plan.sysId as string);
+        logger.info(`${summary} : adopted existing record ${plan.sysId}.`);
+        adoptedPaths.push(...candidate.files.map((file) => file.filePath));
+        continue;
+      }
+      const discovered = await discoverCreateMeta(client, candidate);
+      const body = await buildCreateFields(plan, creation.scopeId, discovered);
+      const sysId = await postWithLookup(client, plan, creation.scopeId, body, retryWaitMs);
+      await options.onCreated?.(candidateKey(candidate), sysId);
+      await addRecordToManifest(candidate, sysId, discovered);
+      results.push({ success: true, message: `${summary} : created (${sysId}).` });
+    } catch (e) {
+      results.push({
+        success: false,
+        message: `${summary} : ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+  }
+  const contexts = adoptedPaths
+    .map((filePath) => fUtils.getFileContextFromPath(filePath))
+    .filter((ctx): ctx is Sync.FileContext => ctx !== undefined);
+  return { results, records: groupAppFiles(contexts) };
+};
+
+// ---------------------------------------------------------------------------
+// R2, `push --prune`: delete instance records whose local files are all gone.
+// ---------------------------------------------------------------------------
+
+/** A manifest record every local file of which (sidecar included) is missing. */
+export interface PruneCandidate {
+  table: string;
+  /** The record's key in `manifest.tables[table].records`. */
+  recordKey: string;
+  /** The record name as written to disk (`record.name`, falling back to the key). */
+  recordName: string;
+  sysId: string;
+  /** The manifest's file entries for the record (all missing locally). */
+  files: SN.File[];
+}
+
+export interface PruneCandidateOptions {
+  /**
+   * `--diff`: absolute paths the diff deleted (D lines, renamed-from paths).
+   * Only records one of these paths belongs to stay candidates.
+   */
+  diffDeleted?: string[];
+  /**
+   * An explicit push target (encoded paths). Only records at or under one of
+   * the targets — or containing one — stay candidates, so `push <dir> --prune`
+   * never reaches outside `<dir>`.
+   */
+  targets?: string;
+}
+
+const isWithin = (parent: string, child: string): boolean => {
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+};
+
+/** Where the record lives on disk: its folder, or the flat `<record>~` stem. */
+const recordBasePath = (table: string, recordName: string, flat: boolean): string =>
+  path.join(
+    ConfigManager.getSourcePath(),
+    table,
+    flat ? `${recordName}${FLAT_FIELD_SEPARATOR}` : recordName
+  );
+
+const sidecarPath = (table: string, recordName: string, flat: boolean): string =>
+  flat
+    ? path.join(
+        ConfigManager.getSourcePath(),
+        table,
+        `${recordName}${FLAT_FIELD_SEPARATOR}${META_SIDECAR_FILE_NAME}`
+      )
+    : path.join(ConfigManager.getSourcePath(), table, recordName, META_SIDECAR_FILE_NAME);
+
+const targetCoversRecord = (
+  target: string,
+  table: string,
+  recordName: string,
+  flat: boolean
+): boolean => {
+  const resolved = path.resolve(target);
+  const base = recordBasePath(table, recordName, flat);
+  if (flat) {
+    const tableDir = path.dirname(base);
+    // A target at or above the table directory covers every record in it; a
+    // target inside the table directory covers the record whose stem it names.
+    return (
+      isWithin(resolved, tableDir) ||
+      (path.dirname(resolved) === tableDir && path.basename(resolved).startsWith(path.basename(base)))
+    );
+  }
+  return isWithin(resolved, base) || isWithin(base, resolved);
+};
+
+/**
+ * Manifest records whose local files are ALL missing — every field file and the
+ * metadata sidecar. A record with even one file left is an edit in progress, not
+ * a deletion, and is never a candidate. Read-only: local stats only.
+ */
+export const findPruneCandidates = async (
+  options: PruneCandidateOptions = {}
+): Promise<PruneCandidate[]> => {
+  const manifest = readManifest();
+  const flat = ConfigManager.getConfig().flat === true;
+  const missing = await findMissingFiles(manifest);
+  let deletedRecords: Set<string> | undefined;
+  if (options.diffDeleted) {
+    deletedRecords = new Set<string>();
+    for (const deletedPath of options.diffDeleted) {
+      const ctx = fUtils.getFileContextFromPath(deletedPath);
+      if (ctx) deletedRecords.add(`${ctx.tableName}\u0000${ctx.sys_id}`);
+    }
+  }
+  const targets =
+    options.targets !== undefined ? fUtils.splitEncodedPaths(options.targets) : undefined;
+  const candidates: PruneCandidate[] = [];
+  for (const [table, tableConfig] of Object.entries(manifest.tables)) {
+    const missingInTable = Object.prototype.hasOwnProperty.call(missing, table)
+      ? missing[table]
+      : undefined;
+    if (!missingInTable) continue;
+    for (const [recordKey, record] of Object.entries(tableConfig.records ?? {})) {
+      const files = Array.isArray(record?.files) ? record.files : [];
+      if (files.length === 0 || typeof record.sys_id !== "string") continue;
+      const missingFiles = Object.prototype.hasOwnProperty.call(missingInTable, record.sys_id)
+        ? missingInTable[record.sys_id]
+        : [];
+      if (missingFiles.length < files.length) continue;
+      const recordName = record.name || recordKey;
+      if (deletedRecords && !deletedRecords.has(`${table}\u0000${record.sys_id}`)) continue;
+      if (targets && !targets.some((t) => targetCoversRecord(t, table, recordName, flat))) {
+        continue;
+      }
+      // A sidecar on disk the manifest does not list still belongs to the record.
+      if (await fUtils.pathExists(sidecarPath(table, recordName, flat))) continue;
+      candidates.push({ table, recordKey, recordName, sysId: record.sys_id, files });
+    }
+  }
+  return candidates;
+};
+
+const SYS_ID_PATTERN = /^[0-9a-f]{32}$/i;
+
+/**
+ * Tables `push --prune` never deletes from: the shared create-policy deny list
+ * (users, roles, groups, system properties, CMDB), the data-model tables (a
+ * DELETE there drops a column, table, role or ACL), and every table the default
+ * download configuration excludes — unless the project opted that table in
+ * through `tableOptions`. Returns the refusal reason, or undefined when allowed.
+ */
+export const checkPruneTablePolicy = (table: string): string | undefined => {
+  if (isDeniedCreateTable(table)) {
+    return (
+      `refusing to delete from "${table}": the table is on the deny list ` +
+      "(users, roles, groups, system properties, CMDB). Delete it on the instance by hand."
+    );
+  }
+  if (isPruneDeniedTable(table)) {
+    return (
+      `refusing to delete from "${table}": it is a data-model table, and deleting its ` +
+      "records drops schema or access on the instance. Delete it on the instance by hand."
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(defaultExcludedTables, table)) {
+    const { tableOptions = {} } = ConfigManager.getConfig() as Sync.Config;
+    if (!Object.prototype.hasOwnProperty.call(tableOptions, table)) {
+      return (
+        `refusing to delete from "${table}": the table is excluded by default. ` +
+        `Opt in with a tableOptions["${table}"] entry in sync.config.js to prune it.`
+      );
+    }
+  }
+  return undefined;
+};
+
+/**
+ * `delete`: in scope, sent as a DELETE. `gone`: the instance already answers 404,
+ * so only the manifest entry goes. `error`: refused, nothing sent.
+ */
+export type PruneAction = "delete" | "gone" | "error";
+
+export interface PlannedPrune {
+  candidate: PruneCandidate;
+  action: PruneAction;
+  message?: string;
+}
+
+export interface PrunePlan {
+  scopeId: string;
+  plans: PlannedPrune[];
+}
+
+const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/**
+ * Decide, per candidate, whether it may be deleted. Read-only — GETs only (the
+ * scope sys_id when the manifest lacks it, and one `sys_id,sys_scope` read per
+ * record) — so a dry run calls it too. A record is deleted only when the
+ * instance confirms it belongs to the manifest's scope.
+ */
+export const planRecordPrune = async (
+  candidates: PruneCandidate[],
+  options: { persistScopeId: boolean; client?: SNClient }
+): Promise<PrunePlan> => {
+  if (candidates.length === 0) return { scopeId: "", plans: [] };
+  const client = options.client ?? defaultClient();
+  let scopeId: string;
+  try {
+    scopeId = await resolveScopeId(client, options.persistScopeId);
+  } catch (e) {
+    const message = `the application scope is unknown, so no record can be checked: ${errorMessage(e)}`;
+    return {
+      scopeId: "",
+      plans: candidates.map((candidate) => ({ candidate, action: "error", message })),
+    };
+  }
+  const plans: PlannedPrune[] = [];
+  for (const candidate of candidates) {
+    const refusal = checkPruneTablePolicy(candidate.table);
+    if (refusal) {
+      plans.push({ candidate, action: "error", message: refusal });
+      continue;
+    }
+    if (!SYS_ID_PATTERN.test(candidate.sysId)) {
+      plans.push({
+        candidate,
+        action: "error",
+        message: `refusing to delete: "${candidate.sysId}" is not a sys_id.`,
+      });
+      continue;
+    }
+    try {
+      const remote = await client.getRecordScope(candidate.table, candidate.sysId);
+      if (!remote) {
+        plans.push({ candidate, action: "gone", message: "already deleted on the instance." });
+      } else if (remote.sys_scope !== scopeId) {
+        plans.push({
+          candidate,
+          action: "error",
+          message:
+            `refusing to delete: the record belongs to scope "${remote.sys_scope || "unknown"}", ` +
+            `not to this application (${scopeId}).`,
+        });
+      } else {
+        plans.push({ candidate, action: "delete" });
+      }
+    } catch (e) {
+      plans.push({
+        candidate,
+        action: "error",
+        message: `could not verify the record's scope: ${errorMessage(e)}`,
+      });
+    }
+  }
+  return { scopeId, plans };
+};
+
+const removeRecordFromManifest = async (candidate: PruneCandidate): Promise<void> => {
+  const manifest = readManifest();
+  if (!Object.prototype.hasOwnProperty.call(manifest.tables, candidate.table)) return;
+  const tableConfig = manifest.tables[candidate.table];
+  const records = { ...(tableConfig.records ?? {}) };
+  if (!Object.prototype.hasOwnProperty.call(records, candidate.recordKey)) return;
+  delete records[candidate.recordKey];
+  await saveManifest({
+    ...manifest,
+    tables: { ...manifest.tables, [candidate.table]: { ...tableConfig, records } },
+  });
+};
+
+/**
+ * Carry out a prune plan, one record at a time: DELETE each `delete` record
+ * (retried on transient failures; a 404 means an earlier attempt landed) and
+ * drop it from the manifest. `gone` records only leave the manifest; `error`
+ * records report a failure and nothing is sent.
+ */
+export const pruneRecords = async (
+  plan: PrunePlan,
+  options: { client?: SNClient; retryWaitMs?: number } = {}
+): Promise<Sync.PushResult[]> => {
+  const results: Sync.PushResult[] = [];
+  if (plan.plans.length === 0) return results;
+  const client = options.client ?? defaultClient();
+  const retryWaitMs = options.retryWaitMs ?? PUSH_RETRY_WAIT;
+  for (const { candidate, action, message } of plan.plans) {
+    const summary = summarizeRecord(candidate.table, candidate.recordName);
+    if (action === "error") {
+      results.push({ success: false, message: `${summary} : ${message}` });
+      continue;
+    }
+    try {
+      if (action === "delete") {
+        try {
+          await retryOnErr(
+            () => client.deleteRecord(candidate.table, candidate.sysId),
+            PUSH_RETRY_LIMIT,
+            retryWaitMs,
+            (retriesLeft: number) =>
+              logger.debug(`Retrying delete of ${summary}; ${retriesLeft} attempt(s) left.`),
+            isRetryableRequestError
+          );
+        } catch (e) {
+          if (getErrorResponseStatus(e) !== 404) throw e;
+        }
+      }
+      await removeRecordFromManifest(candidate);
+      results.push({
+        success: true,
+        message:
+          action === "delete"
+            ? `${summary} : deleted (${candidate.sysId}).`
+            : `${summary} : already deleted on the instance; removed from the manifest.`,
+      });
+    } catch (e) {
+      results.push({ success: false, message: `${summary} : ${errorMessage(e)}` });
+    }
+  }
+  return results;
 };
 
 export const summarizeRecord = (table: string, recDescriptor: string): string =>

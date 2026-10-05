@@ -16,6 +16,17 @@ export namespace Sync {
     updateSet: string;
     ci: boolean;
     pushConcurrency?: number;
+    /**
+     * Create (or adopt) records for local files that are not in the manifest.
+     * Undefined when the flag is absent, so `createRecords` in sync.config.js
+     * can supply the default.
+     */
+    create?: boolean;
+    /**
+     * R2: delete instance records whose local files are all gone. Per run only;
+     * there is deliberately no config switch.
+     */
+    prune?: boolean;
   }
   interface BuildCmdArgs extends SharedCmdArgs {
     diff: string;
@@ -42,6 +53,23 @@ export namespace Sync {
      * to true; set false to keep the sidecar as read-only reference data.
      */
     metaPush?: boolean;
+    /**
+     * Default for `push --create`: create (or adopt) records for local files
+     * that are not in the manifest yet. Defaults to false; the CLI flag wins.
+     */
+    createRecords?: boolean;
+    /**
+     * Tables `push --create` may create records in even though they do not
+     * extend `sys_metadata`. The always-deny list still applies.
+     */
+    createTables?: string[];
+    /**
+     * R4: data-model tables to track as editable local records (a record with
+     * no field file is represented by its `.meta.json` sidecar alone). Opt-in:
+     * defaults to an empty list. Naming a table re-includes it even when it is
+     * excluded by default. See docs/DATA_MODEL.md for the documented list.
+     */
+    dataModelTables?: string[];
   }
 
   interface ITableOptionsMap {
@@ -57,6 +85,12 @@ export namespace Sync {
      * so it can also re-add a column the default rules exclude.
      */
     metaFields?: string[];
+    /**
+     * Columns whose non-empty values, joined with ".", name each record (a
+     * dotted entry is a Table API dot-walk). Set automatically for the
+     * data-model tables listed in `dataModelTables`; `displayField` wins.
+     */
+    nameFields?: string[];
   }
 
   interface FieldConfig {
@@ -185,6 +219,11 @@ export namespace SN {
   interface AppManifest {
     tables: TableMap;
     scope: string;
+    /**
+     * sys_id of the application scope. Optional: manifests written before it
+     * existed stay valid, and it is resolved and persisted on first use.
+     */
+    scopeId?: string;
   }
 
   interface TableMap {
@@ -272,6 +311,111 @@ export namespace SN {
 
   interface UpdateSetRecord {
     sys_id: string;
+  }
+
+  // --- Fluent tier port (`syncrona fluent <action>`) --------------------------
+  //
+  // The port between the core CLI and the optional `@syncrona/fluent` adapter,
+  // which drives the ServiceNow SDK (`@servicenow/sdk`) orchestrator. Core only
+  // ever sees these shapes: it loads the adapter lazily, hands it a credential
+  // input, and maps the results to output and an exit code. Nothing here names
+  // an SDK type, so core compiles and runs without the SDK installed.
+
+  /** What the SDK's credential resolver accepts: a bearer token or a UI session. */
+  type FluentResolvedAuth =
+    | { type: "oauth"; token: string; expiresAt?: number }
+    | { type: "basic"; token: string; cookie: string; expiresAt?: number };
+
+  /**
+   * Called by the SDK whenever it needs (fresh) instance credentials. It may be
+   * called more than once in one run: the SDK re-resolves after its cache TTL
+   * and after an instance 401.
+   */
+  interface FluentAuthResolver {
+    (): Promise<FluentResolvedAuth>;
+  }
+
+  /**
+   * The credential core resolved for the active profile, in the form the
+   * adapter can bridge. API-key and mutual-TLS profiles cannot be expressed to
+   * the SDK, so they arrive as `unsupported` and the resolver refuses them.
+   */
+  type FluentCredentialInput =
+    | { kind: "basic"; username: string; password: string }
+    | { kind: "oauth"; getToken: () => Promise<string> }
+    | { kind: "unsupported"; method: string };
+
+  interface FluentLogger {
+    info(message: string): void;
+    warn(message: string): void;
+    debug(message: string): void;
+  }
+
+  interface FluentEngineOptions {
+    /** The Fluent project root (the directory holding `now.config.json`). */
+    projectDir: string;
+    /** `https://<instance>/`; omitted for purely local actions. */
+    instanceUrl?: string;
+    /** Omitted for purely local actions; the SDK then runs without a credential. */
+    auth?: FluentAuthResolver;
+    logger: FluentLogger;
+  }
+
+  interface FluentBuildResult {
+    success: boolean;
+    errors: string[];
+    warnings: string[];
+  }
+
+  interface FluentTransformResult {
+    changedFiles: string[];
+    handledPaths: string[];
+  }
+
+  /** Options for `transform`, mapped explicitly onto the SDK's transform modes. */
+  type FluentTransformOptions =
+    | { mode: "paths"; paths: string[]; tables?: string[]; force?: boolean }
+    | { mode: "complete" }
+    | { mode: "incremental" }
+    | { mode: "update-set"; updateSetId: string };
+
+  interface FluentEngine {
+    build(options: {
+      frozenKeys?: boolean;
+      errorOnConflict?: boolean;
+      skipClean?: boolean;
+    }): Promise<FluentBuildResult>;
+    transform(options: FluentTransformOptions): Promise<FluentTransformResult>;
+    pack(options: { packagePath?: string }): Promise<string>;
+    install(options: {
+      clean?: boolean;
+      installAsStoreApp?: boolean;
+      installAsync?: boolean;
+      demoData?: boolean;
+      skipFlowActivation?: boolean;
+    }): Promise<{ trackerId?: string; rollbackId?: string }>;
+    installStatus(): Promise<{ finished: boolean; id?: string }>;
+    types(options: { downloadScripts?: boolean; downloadFluent?: boolean }): Promise<void>;
+    addDependency(options: { table: string; ids: string[]; scope: string }): Promise<void>;
+    run(options: { script: string; args?: Record<string, unknown> }): Promise<void>;
+    createProject(options: {
+      name: string;
+      scope: string;
+      scopeId?: string;
+      packageName?: string;
+      description?: string;
+      templateId?: string;
+      projectVersion?: string;
+    }): Promise<void>;
+    createProjectFromApp(options: { scopeId: string; packageName?: string }): Promise<void>;
+    /** The `@servicenow/sdk` version the adapter resolved, when it can tell. */
+    sdkVersion(): Promise<string | undefined>;
+  }
+
+  /** The shape of the `@syncrona/fluent` module, as core imports it. */
+  interface FluentModule {
+    createFluentEngine(options: FluentEngineOptions): FluentEngine;
+    createFluentAuthResolver(instanceUrl: string, input: FluentCredentialInput): FluentAuthResolver;
   }
 }
 

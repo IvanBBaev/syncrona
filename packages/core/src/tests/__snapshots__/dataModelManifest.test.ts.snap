@@ -1,0 +1,50 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`R4 manifest: sidecar-only data-model records AT-R4-1: a sys_dictionary record is listed with its sidecar alone 1`] = `
+{
+  "metaFields": [
+    "column_label",
+    "element",
+    "internal_type",
+    "mandatory",
+    "max_length",
+    "name",
+    "sys_name",
+  ],
+  "metaReadOnlyFields": [
+    "sys_name",
+  ],
+  "records": {
+    "x_demo_task": {
+      "files": [
+        {
+          "name": ".meta",
+          "type": "json",
+        },
+      ],
+      "name": "x_demo_task",
+      "sys_id": "d2",
+    },
+    "x_demo_task.u_bar": {
+      "files": [
+        {
+          "name": ".meta",
+          "type": "json",
+        },
+      ],
+      "name": "x_demo_task.u_bar",
+      "sys_id": "d3",
+    },
+    "x_demo_task.u_foo": {
+      "files": [
+        {
+          "name": ".meta",
+          "type": "json",
+        },
+      ],
+      "name": "x_demo_task.u_foo",
+      "sys_id": "d1",
+    },
+  },
+}
+`;

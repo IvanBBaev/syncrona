@@ -58,14 +58,22 @@ let gitDiffToEncodedPaths: typeof import("../gitUtils.js").gitDiffToEncodedPaths
 let writeDiff: typeof import("../gitUtils.js").writeDiff;
 let clearDiff: typeof import("../gitUtils.js").clearDiff;
 let getCurrentBranch: typeof import("../gitUtils.js").getCurrentBranch;
+let gitDiffToChanges: typeof import("../gitUtils.js").gitDiffToChanges;
+let formatGitFiles: typeof import("../gitUtils.js").formatGitFiles;
 
 describe("gitUtils", () => {
   let cwdSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    ({ gitDiffToEncodedPaths, writeDiff, clearDiff, getCurrentBranch } =
-      await import("../gitUtils.js"));
+    ({
+      gitDiffToEncodedPaths,
+      writeDiff,
+      clearDiff,
+      getCurrentBranch,
+      gitDiffToChanges,
+      formatGitFiles,
+    } = await import("../gitUtils.js"));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.
@@ -112,6 +120,65 @@ describe("gitUtils", () => {
     expect(result).not.toContain("gone.js");
     expect(result).not.toContain("foo.js");
     expect(result).not.toContain("old.js");
+  });
+
+  // R2 (`push --prune --diff`): the deleted side of the diff is what restricts
+  // prune candidates, so D lines and the OLD side of a rename are reported —
+  // scope-filtered and absolute, like the changed side.
+  describe("gitDiffToChanges", () => {
+    it("reports D lines and renamed-from paths as deleted, keeping the changed side intact", async () => {
+      mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+          if (args.includes("rev-parse")) {
+            cb(null, "/repo\n");
+          } else {
+            cb(
+              null,
+              [
+                "M\tpackages/scope/src/keep.js",
+                "D\tpackages/scope/src/gone.js",
+                "D\tpackages/other/elsewhere.js", // out of scope -> ignored
+                "R100\tpackages/scope/src/old.js\tpackages/scope/src/new.js",
+                "C75\tpackages/scope/src/orig.js\tpackages/scope/src/copy.js",
+                "R090\tpackages/other/from.js\tpackages/scope/src/moved-in.js",
+              ].join("\n")
+            );
+          }
+        }
+      );
+
+      const { changed, deleted } = await gitDiffToChanges("HEAD~1");
+
+      expect(deleted).toEqual([
+        path.resolve("/repo", "packages/scope/src/gone.js"),
+        path.resolve("/repo", "packages/scope/src/old.js"),
+      ]);
+      const changedList = changed.split(PATH_DELIMITER);
+      expect(changedList).toEqual([
+        path.resolve("/repo", "packages/scope/src/keep.js"),
+        path.resolve("/repo", "packages/scope/src/new.js"),
+        path.resolve("/repo", "packages/scope/src/copy.js"),
+        path.resolve("/repo", "packages/scope/src/moved-in.js"),
+      ]);
+      // A copy leaves its source in place: it is neither deleted nor pushed.
+      expect(changed).not.toContain("orig.js");
+    });
+
+    it("reports nothing deleted and the whole source tree as changed without a diff target", async () => {
+      mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+      await expect(gitDiffToChanges("")).resolves.toEqual({
+        changed: "/repo/packages/scope/src",
+        deleted: [],
+      });
+      expect(mockExecFile).not.toHaveBeenCalled();
+    });
+
+    it("keeps the legacy formatGitFiles signature returning only the changed side", async () => {
+      await expect(
+        formatGitFiles(["D\tpackages/scope/src/gone.js", "M\tpackages/scope/src/a.js"].join("\n"))
+      ).resolves.toBe(path.resolve("/repo", "packages/scope/src/a.js"));
+    });
   });
 
   it("rejects when git exits with an error", async () => {

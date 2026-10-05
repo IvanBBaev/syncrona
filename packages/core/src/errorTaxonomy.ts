@@ -35,6 +35,16 @@ const HINTS: Record<ErrorCategory, string> = {
     "Run again with `--log-level debug` for detail, or `syncrona doctor` to check configuration and connectivity.",
 };
 
+/**
+ * WP-5 (R6): the role the CI/CD REST API (`api/sn_cicd/*`) checks. A 403 from
+ * those endpoints almost never means bad credentials — the same user can read
+ * the Table API fine — it means this role is missing, so the generic auth hint
+ * ("re-run login") would send the user the wrong way.
+ */
+export const CICD_ROLE = "sn_cicd.sys_ci_automation";
+
+const CICD_ROLE_HINT = `Access denied by the CI/CD REST API: the user needs the \`${CICD_ROLE}\` role (admin also passes). Grant it to the integration user in ServiceNow, then retry.`;
+
 const NETWORK_CODES = new Set([
   "ECONNREFUSED",
   "ENOTFOUND",
@@ -58,6 +68,19 @@ function codeOf(error: unknown): string {
   return typeof code === "string" ? code : "";
 }
 
+function requestUrlOf(error: unknown): string {
+  const url = (error as { config?: { url?: unknown } } | null | undefined)?.config?.url;
+  return typeof url === "string" ? url : "";
+}
+
+// A 403 whose request (or message) names sn_cicd: the missing-role case above.
+function isCicdAccessDenied(error: unknown): boolean {
+  if (statusOf(error) !== 403) {
+    return false;
+  }
+  return /sn_cicd/i.test(requestUrlOf(error)) || /sn_cicd/i.test(messageOf(error));
+}
+
 function messageOf(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error ?? "");
@@ -70,6 +93,9 @@ function messageOf(error: unknown): string {
  * "unknown".
  */
 export function classifyError(error: unknown): ClassifiedError {
+  if (isCicdAccessDenied(error)) {
+    return { category: "auth", hint: CICD_ROLE_HINT };
+  }
   const category = categorize(error);
   return { category, hint: HINTS[category] };
 }

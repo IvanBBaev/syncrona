@@ -68,6 +68,9 @@ const MUTATING_TOOLS = new Set([
   // Triggers ATF execution via a background script — a side effect on the
   // instance — so it must go through the same preflight/audit/confirm gates.
   "sync_run_atf_tests",
+  // WP-8: dispatches sn_cicd work — application install/publish/rollback or an
+  // ATF run — so it takes the same preflight/audit/confirm gates.
+  "sync_cicd_run",
 ]);
 
 // SEC-6 follow-up (REV-151): tools whose handler actually BRANCHES on `dryRun` and returns
@@ -94,6 +97,7 @@ const DRY_RUN_AWARE_TOOLS = new Set([
   "sn_autonomous_remediation_workflow",
   "sync_unified_change_workflow",
   "sync_run_atf_tests",
+  "sync_cicd_run",
   // SEC-3 follow-up (REV-195): these four declare `dryRun` in their public input
   // schema AND branch on it (scopeKnowledgeHandlers.ts:252, :407, :458, :507), but
   // were never added here — so isEffectiveDryRun said false and auditToolCall stamped

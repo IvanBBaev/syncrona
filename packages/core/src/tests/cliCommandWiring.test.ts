@@ -41,6 +41,9 @@ const commandNames = [
   "jiraLogoutCommand",
   "completionCommand",
   "mirrorCommand",
+  "queryCommand",
+  "cicdCommand",
+  "fluentCommand",
 ] as const;
 
 type CommandName = (typeof commandNames)[number];
@@ -81,12 +84,30 @@ jest.unstable_mockModule("../jiraCommands.js", () => ({
 jest.unstable_mockModule("../completionCommand.js", () => ({
   ...pick("completionCommand"),
 }));
+// The registry also reads the query option constants for defaults/choices.
+jest.unstable_mockModule("../queryCommand.js", () => ({
+  ...pick("queryCommand"),
+  QUERY_DEFAULT_LIMIT: 100,
+  QUERY_DEFAULT_TIMEOUT_MS: 30000,
+  QUERY_DISPLAY_VALUES: ["true", "false", "all"] as const,
+  QUERY_OUTPUT_FORMATS: ["json", "raw"] as const,
+}));
 // The registry also reads MIRROR_ACTIONS for the positional's `choices`, so the
 // mock has to carry it: a stubbed module that omits it would make the entry
 // declare `choices: undefined` and quietly stop rejecting a bad subcommand.
 jest.unstable_mockModule("../mirrorCommand.js", () => ({
   ...pick("mirrorCommand"),
   MIRROR_ACTIONS: ["init", "sync", "status", "verify", "report"] as const,
+}));
+// Same reason for CICD_ACTIONS.
+jest.unstable_mockModule("../cicdCommand.js", () => ({
+  ...pick("cicdCommand"),
+  CICD_ACTIONS: ["run-suite", "run-test", "install", "publish", "rollback"] as const,
+}));
+// Same for the Fluent tier's FLUENT_ACTIONS.
+jest.unstable_mockModule("../fluentCommand.js", () => ({
+  ...pick("fluentCommand"),
+  FLUENT_ACTIONS: ["init", "build", "transform", "pack", "install", "types", "dependencies", "run", "status"] as const,
 }));
 
 // The registry is imported dynamically AFTER the module mocks are registered:
@@ -113,6 +134,7 @@ const EXPECTED_WIRING: Array<[string, CommandName]> = [
   ["docs", "docsCommand"],
   ["repair", "repairCommand"],
   ["status", "statusCommand"],
+  ["query", "queryCommand"],
   ["check-env", "checkEnvCommand"],
   ["doctor", "doctorCommand"],
   ["plugins", "pluginsCommand"],
@@ -127,6 +149,8 @@ const EXPECTED_WIRING: Array<[string, CommandName]> = [
   ["jira-login", "jiraLoginCommand"],
   ["jira-logout", "jiraLogoutCommand"],
   ["mirror", "mirrorCommand"],
+  ["cicd", "cicdCommand"],
+  ["fluent", "fluentCommand"],
 ];
 
 describe("CLI command wiring", () => {

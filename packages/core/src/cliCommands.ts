@@ -26,6 +26,17 @@ import {
 } from "./jiraCommands.js";
 import { completionCommand } from "./completionCommand.js";
 import { mirrorCommand, MIRROR_ACTIONS } from "./mirrorCommand.js";
+import {
+  queryCommand,
+  QUERY_DEFAULT_LIMIT,
+  QUERY_DEFAULT_TIMEOUT_MS,
+  QUERY_DISPLAY_VALUES,
+  QUERY_OUTPUT_FORMATS,
+  type QueryCmdArgs,
+} from "./queryCommand.js";
+import { cicdCommand, CICD_ACTIONS, type CicdCmdArgs } from "./cicdCommand.js";
+import { fluentCommand, FLUENT_ACTIONS, type FluentCmdArgs } from "./fluentCommand.js";
+import type { InitCmdArgs } from "./appCreator.js";
 import { LOG_LEVELS } from "./Logger.js";
 
 /**
@@ -159,8 +170,24 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe:
           "Max records pushed in parallel (1-50; overrides sync.config.js pushConcurrency, default 10)",
       },
+      // No default on purpose: "not given" must stay distinguishable from
+      // `--no-create`, so createRecords in sync.config.js can decide only when
+      // the flag is absent.
+      create: {
+        type: "boolean",
+        describe:
+          "Create (or adopt) records for local files not in the manifest yet (default: createRecords in sync.config.js, else off)",
+      },
+      prune: {
+        type: "boolean",
+        default: false,
+        describe:
+          "[DESTRUCTIVE] Delete instance records whose local files were all deleted (in-scope only; with --diff, only files the diff deletes; confirms unless --ci)",
+      },
     },
     examples: [
+      ["$0 push --create", "Also create records for new local files that are not in the manifest yet"],
+      ["$0 push --diff main --prune", "Also delete the records whose files were deleted since main"],
       ["$0 push --dry-run", "Preview what would be pushed without writing anything"],
       ["$0 push --concurrency 5", "Throttle to 5 parallel record pushes (slow networks)"],
       ["$0 push --diff main", "Push only the files changed vs the main branch (changed-only push)"],
@@ -194,12 +221,31 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         default: false,
         describe: "Skip the all-scope init confirmation prompt for noninteractive automation",
       },
+      new: {
+        type: "boolean",
+        describe: "Create a new scoped application on the instance and bind this directory to it",
+      },
+      name: {
+        type: "string",
+        describe: "--new: display name of the new application",
+      },
+      scope: {
+        type: "string",
+        describe: "--new: scope (x_<prefix>_<name>, max 18 chars); derived from --name by default",
+      },
+      vendorPrefix: {
+        alias: "vendor-prefix",
+        type: "string",
+        describe: "--new: vendor prefix (company code); read from the instance by default",
+      },
     },
     examples: [
       ["$0 init", "Provision a project, confirming before any folders are created"],
       ["$0 init --ci", "Initialize every scope a detected .env exposes without prompting"],
+      ['$0 init --new --name "Asset Tracker"', "Create x_<prefix>_asset_tracker and bind this directory to it"],
+      ['$0 init --new --name "Asset Tracker" --dry-run', "Print the sys_app body init --new would send"],
     ],
-    handler: typedHandler<Sync.SharedCmdArgs>((args) => initCommand(args)),
+    handler: typedHandler<InitCmdArgs>((args) => initCommand(args)),
   },
   {
     command: "build",
@@ -294,6 +340,92 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 status --debug-credentials", "Explain where credentials resolve from and why"],
     ],
     handler: typedHandler<Sync.SharedCmdArgs & { debugCredentials?: boolean }>((args) => statusCommand(args)),
+  },
+  {
+    command: "query <table>",
+    describe:
+      "Query records from any table through the Table API (now-sdk query compatible; -o json prints {ok, hasMore, nextOffset, records})",
+    // Read-only: a preview of a query would be the query itself.
+    supportsDryRun: false,
+    positionals: {
+      table: {
+        type: "string",
+        describe: "ServiceNow table name (e.g. incident, sys_user)",
+      },
+    },
+    options: {
+      query: {
+        alias: "q",
+        type: "string",
+        demandOption: true,
+        describe: 'Encoded query (sysparm_query), e.g. "active=true^priority<=2"; pass "" for every row',
+      },
+      limit: {
+        type: "number",
+        default: QUERY_DEFAULT_LIMIT,
+        describe: "Maximum records per page (sysparm_limit)",
+      },
+      offset: {
+        type: "number",
+        default: 0,
+        describe: "Starting offset (sysparm_offset)",
+      },
+      fields: {
+        alias: "f",
+        type: "string",
+        describe: "Comma-separated fields to return (sysparm_fields)",
+      },
+      displayValue: {
+        alias: "display-value",
+        type: "string",
+        choices: [...QUERY_DISPLAY_VALUES],
+        default: "false",
+        describe: 'Return display values (sysparm_display_value): "true", "false", or "all" for both',
+      },
+      excludeReferenceLink: {
+        alias: "exclude-reference-link",
+        type: "boolean",
+        default: true,
+        describe: "Exclude reference link metadata (sysparm_exclude_reference_link); --no-exclude-reference-link keeps it",
+      },
+      count: {
+        type: "boolean",
+        default: true,
+        describe: "Let the instance compute the total row count; --no-count skips it (sysparm_no_count)",
+      },
+      timeout: {
+        type: "number",
+        default: QUERY_DEFAULT_TIMEOUT_MS,
+        describe: "Per-request timeout in milliseconds",
+      },
+      view: {
+        type: "string",
+        describe: "UI view that decides which fields to return (sysparm_view)",
+      },
+      queryCategory: {
+        alias: "query-category",
+        type: "string",
+        describe: "Query category for extended queries (sysparm_query_category)",
+      },
+      queryNoDomain: {
+        alias: "query-no-domain",
+        type: "boolean",
+        default: false,
+        describe: "Ignore domain separation when querying (sysparm_query_no_domain)",
+      },
+      output: {
+        alias: "o",
+        type: "string",
+        choices: [...QUERY_OUTPUT_FORMATS],
+        describe: "Machine-readable output: print the {ok, hasMore, nextOffset, records} envelope only",
+      },
+    },
+    examples: [
+      ['$0 query incident -q "active=true^priority=1"', "Print the first 100 active P1 incidents"],
+      ["$0 query sys_user -q active=true -f sys_id,user_name --limit 10 --offset 10", "Fetch the second page of 10 users, two fields each"],
+      ["$0 query sys_script_include -q api_name=x_app.Util -o json", "Emit the now-sdk compatible JSON envelope for scripting"],
+    ],
+    handler: typedHandler<QueryCmdArgs>((args) => queryCommand(args)),
   },
   {
     command: "check-env",
@@ -693,5 +825,147 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         json?: boolean;
       }
     >((args) => mirrorCommand(args)),
+  },
+  {
+    // WP-5 (R6): the CI/CD REST API (`api/sn_cicd/*`). One entry for five
+    // subcommands for the same reason as `mirror`: they share one dispatch-then-
+    // poll engine, one exit-code contract and one set of credentials.
+    command: "cicd <action>",
+    describe:
+      "Run ATF and app-repo CI/CD actions (action: run-suite, run-test, install, publish, rollback); exits 2 on test failures",
+    // The dispatch POST is the whole effect — there is nothing to preview short
+    // of not sending it — so --dry-run is refused rather than ignored.
+    supportsDryRun: false,
+    positionals: {
+      action: {
+        type: "string",
+        describe: "cicd action",
+        choices: [...CICD_ACTIONS],
+      },
+    },
+    options: {
+      suiteId: { alias: "suite-id", type: "string", describe: "run-suite: sys_id of the ATF test suite" },
+      suiteName: { alias: "suite-name", type: "string", describe: "run-suite: name of the ATF test suite" },
+      testId: { alias: "test-id", type: "string", describe: "run-test: sys_id of the ATF test" },
+      browserName: {
+        alias: "browser-name",
+        type: "string",
+        describe: "run-suite: browser to run UI tests in (e.g. chrome, firefox, any)",
+      },
+      browserVersion: { alias: "browser-version", type: "string", describe: "run-suite: browser version" },
+      osName: { alias: "os-name", type: "string", describe: "run-suite: operating system of the client runner" },
+      osVersion: { alias: "os-version", type: "string", describe: "run-suite: operating system version" },
+      runInCloud: {
+        alias: "run-in-cloud",
+        type: "boolean",
+        describe: "run-suite/run-test: run on the cloud runner instead of a local client test runner",
+      },
+      performance: { type: "boolean", describe: "run-suite: mark the run as a performance run" },
+      captureNodeLogs: {
+        alias: "capture-node-logs",
+        type: "boolean",
+        describe: "run-test: capture node logs for the run",
+      },
+      scope: { type: "string", describe: "install/publish/rollback: application scope (e.g. x_acme_app)" },
+      appSysId: {
+        alias: "app-sys-id",
+        type: "string",
+        describe: "install/publish/rollback: application sys_id (instead of --scope)",
+      },
+      appVersion: {
+        // Not `--version`: yargs reserves it for the CLI's own version.
+        alias: "app-version",
+        type: "string",
+        describe: "install/publish: application version; rollback: the version to roll back to (required)",
+      },
+      baseAppVersion: { alias: "base-app-version", type: "string", describe: "install: base application version" },
+      autoUpgradeBaseApp: {
+        alias: "auto-upgrade-base-app",
+        type: "boolean",
+        describe: "install: upgrade the base application when the requested version needs it",
+      },
+      devNotes: { alias: "dev-notes", type: "string", describe: "publish: developer notes for the published version" },
+      pollMs: {
+        alias: "poll-ms",
+        type: "number",
+        default: 1000,
+        describe: "Milliseconds between progress polls",
+      },
+      timeout: {
+        type: "number",
+        default: 3600,
+        describe: "Seconds to wait for the work to finish before exiting 1",
+      },
+      json: {
+        type: "boolean",
+        default: false,
+        describe: "Emit the machine-readable result instead of the human rendering",
+      },
+    },
+    examples: [
+      ["$0 cicd run-suite --suite-name 'Smoke tests'", "Run an ATF suite and exit 2 if any test fails"],
+      ["$0 cicd run-test --test-id <sys_id> --json", "Run one ATF test and print the machine result"],
+      ["$0 cicd install --scope x_acme_app --app-version 1.2.0", "Install an application version from the app repository"],
+      ["$0 cicd publish --scope x_acme_app --app-version 1.3.0 --dev-notes 'Release'", "Publish the application to the app repository"],
+      ["$0 cicd rollback --scope x_acme_app --app-version 1.2.0", "Roll the application back to a version"],
+    ],
+    handler: typedHandler<CicdCmdArgs>((args) => cicdCommand(args)),
+  },
+  {
+    // One entry for the whole Fluent tier, for the same reason as `mirror`: every
+    // action drives one engine (the ServiceNow SDK orchestrator, through the
+    // optional @syncrona/fluent adapter) and only means something inside a
+    // Fluent project. The adapter is loaded by the handler, never at startup.
+    command: "fluent <action>",
+    describe:
+      "Fluent (.now.ts) apps via the ServiceNow SDK (action: init, build, transform, pack, install, types, dependencies, run, status); needs @syncrona/fluent",
+    // `--dry-run` prints the SDK call each action would make, without loading the
+    // SDK, resolving credentials or prompting.
+    supportsDryRun: true,
+    positionals: {
+      action: {
+        type: "string",
+        describe: "fluent action",
+        choices: [...FLUENT_ACTIONS],
+      },
+    },
+    options: {
+      project: { type: "string", describe: "Fluent project directory (default: nearest now.config.json)" },
+      json: { type: "boolean", default: false, describe: "Emit the machine-readable result" },
+      ci: { type: "boolean", default: false, describe: "install: skip the confirmation prompt" },
+      name: { type: "string", describe: "init: application name" },
+      scope: { type: "string", describe: "init: application scope; dependencies: dependency scope" },
+      packageName: { type: "string", describe: "init: npm package name (derived from the scope by default)" },
+      description: { type: "string", describe: "init: application description" },
+      template: { type: "string", describe: "init: SDK template id" },
+      from: { type: "string", describe: "init: convert an existing instance application (scope sys_id)" },
+      frozenKeys: { type: "boolean", describe: "build: fail when generated keys would change" },
+      errorOnConflict: { type: "boolean", describe: "build: treat key conflicts as errors" },
+      skipClean: { type: "boolean", describe: "build: keep the previous output directory" },
+      out: { type: "string", describe: "pack: output path for the application package" },
+      reinstall: { type: "boolean", describe: "install: uninstall the application first, then install" },
+      store: { type: "boolean", describe: "install: install as a store application" },
+      sync: { type: "boolean", describe: "install: wait for the install instead of returning a tracker" },
+      demoData: { type: "boolean", default: true, describe: "install: load demo data (--no-demo-data to skip)" },
+      skipFlowActivation: { type: "boolean", describe: "install: do not activate flows" },
+      paths: { type: "string", describe: "transform: comma-separated source paths to convert locally" },
+      table: { type: "string", describe: "transform: limit to tables (comma-separated); dependencies: table" },
+      ids: { type: "string", describe: "dependencies: comma-separated record sys_ids" },
+      updateSet: { type: "string", describe: "transform: convert one update set (sys_id)" },
+      incremental: { type: "boolean", describe: "transform: only records changed since the last transform" },
+      force: { type: "boolean", describe: "transform: overwrite existing Fluent sources" },
+      scripts: { type: "boolean", describe: "types: also download script type definitions" },
+      fluent: { type: "boolean", describe: "types: also download Fluent definitions" },
+      script: { type: "string", describe: "run: project script to execute" },
+    },
+    examples: [
+      ["$0 fluent init --name 'My App' --scope x_acme_app", "Create a Fluent project in the current directory"],
+      ["$0 fluent build", "Build the Fluent project (exit 2 on build errors)"],
+      ["$0 fluent install --ci", "Install the packed application without prompting"],
+      ["$0 fluent install --reinstall", "Uninstall the application, then install it again"],
+      ["$0 fluent status", "Show the SDK version and the last install's progress"],
+      ["$0 fluent build --dry-run", "Print the SDK call without running it"],
+    ],
+    handler: typedHandler<FluentCmdArgs>((args) => fluentCommand(args)),
   },
 ];

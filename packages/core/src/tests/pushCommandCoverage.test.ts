@@ -54,6 +54,7 @@ jest.unstable_mockModule("../appUtils.js", () => ({
 
 jest.unstable_mockModule("../gitUtils.js", () => ({
   gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
+  gitDiffToChanges: jest.fn(),
   writeDiff: jest.fn(),
   clearDiff: jest.fn(),
 }));

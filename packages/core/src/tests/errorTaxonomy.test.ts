@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { classifyError, ErrorCategory } from "../errorTaxonomy.js";
+import { classifyError, CICD_ROLE, ErrorCategory } from "../errorTaxonomy.js";
 
 // DX19: every CLI failure is classified so the user gets an actionable hint.
 
@@ -32,6 +32,23 @@ describe("classifyError", () => {
     expect(cat(new Error("something weird happened"))).toBe("unknown");
     expect(cat(undefined)).toBe("unknown");
     expect(cat("a bare string")).toBe("unknown");
+  });
+
+  it("names the missing sn_cicd role for a 403 from the CI/CD API (WP-5)", () => {
+    const byUrl = classifyError({ response: { status: 403 }, config: { url: "api/sn_cicd/testsuite/run" } });
+    expect(byUrl.category).toBe("auth");
+    expect(byUrl.hint).toContain(CICD_ROLE);
+    const byMessage = classifyError(
+      Object.assign(new Error("403 from /api/sn_cicd/progress/1"), { response: { status: 403 } })
+    );
+    expect(byMessage.hint).toContain(CICD_ROLE);
+    // Other 403s keep the generic auth hint; a 401 on sn_cicd is still bad credentials.
+    expect(classifyError({ response: { status: 403 }, config: { url: "api/now/table/x" } }).hint).not.toContain(
+      CICD_ROLE
+    );
+    expect(classifyError({ response: { status: 401 }, config: { url: "api/sn_cicd/x" } }).hint).not.toContain(
+      CICD_ROLE
+    );
   });
 
   it("always provides a non-empty actionable hint", () => {

@@ -44,6 +44,7 @@ const REQUIRED_TOOLS = [
   'sync_create_script_include',
   'sync_create_script_include_and_sync',
   'sync_run_atf_tests',
+  'sync_cicd_run',
   'run_node_code',
   'run_workspace_command',
   // Full-surface floor: the entries above pinned only part of the manifest, so a

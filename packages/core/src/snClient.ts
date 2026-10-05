@@ -204,6 +204,12 @@ export const processPushResponse = (
   };
 };
 
+/** Optional extras for `tableAPIGet`: additional sysparm_* params and a per-request timeout (ms). */
+export type TableAPIGetExtra = {
+  params?: Record<string, string>;
+  timeout?: number;
+};
+
 /** Inbound-REST API key auth: a static key sent as a fixed HTTP header. */
 export type ApiKeyAuth = { header: string; value: string };
 
@@ -337,7 +343,11 @@ export const snClient = (
     sysparmQuery: string,
     sysparmFields: string,
     sysparmLimit = 500,
-    sysparmOffset = 0
+    sysparmOffset = 0,
+    // `syncrona query` passes the rest of the Table API read surface
+    // (sysparm_display_value, sysparm_view, ...) and its own per-request
+    // timeout; every other caller omits it and sends exactly the base params.
+    extra?: TableAPIGetExtra
   ) => {
     const endpoint = `api/now/table/${table}`;
     return client.get(endpoint, {
@@ -348,9 +358,125 @@ export const snClient = (
         ...(sysparmOffset > 0
           ? { sysparm_offset: String(sysparmOffset) }
           : {}),
+        ...extra?.params,
       },
+      ...(extra?.timeout !== undefined ? { timeout: extra.timeout } : {}),
     });
   };
+
+  /**
+   * Create one record through the Table API and return its sys_id.
+   *
+   * Deliberately NOT retried here: a POST is not idempotent, and a timeout or a
+   * 5xx can arrive after the instance has already inserted the row. The caller
+   * re-checks with findRecordByName before any second attempt.
+   *
+   * The ATF side-call mirrors updateRecord: a step's script lives behind the
+   * scoped pushATFfile endpoint, which needs the sys_id, so it runs after the
+   * POST.
+   */
+  const createRecord = async (
+    table: string,
+    // Values are strings for every file-backed record; `init --new` also sends
+    // a JSON boolean (`active: true`) in its sys_app body.
+    fields: Record<string, string | boolean>
+  ): Promise<{ sys_id: string }> => {
+    const endpoint = `api/now/table/${table}`;
+    type CreateResponse = Sync.SNAPIResponse<{ sys_id?: unknown }>;
+    const resp = await client.post<CreateResponse>(endpoint, fields, {
+      params: { sysparm_fields: "sys_id" },
+    });
+    const created = assertSNApiResponse(resp);
+    const sysId =
+      created && typeof created.sys_id === "string" ? created.sys_id : "";
+    if (!sysId) {
+      throw new Error(
+        `Creating a ${table} record returned no sys_id (HTTP ${resp.status}).`
+      );
+    }
+    const atfScript = fields["inputs.script"];
+    if (table === "sys_atf_step" && typeof atfScript === "string") {
+      await updateATFfile(atfScript, sysId);
+    }
+    return { sys_id: sysId };
+  };
+
+  /**
+   * sys_ids of the records in `scopeId` whose `nameField` equals `name`. At most
+   * two are fetched: the caller only distinguishes none, one and "more than
+   * one". Every interpolated value is escaped, so a record name taken from a
+   * file path cannot add conditions and slip past the scope filter.
+   */
+  const findRecordByName = async (
+    table: string,
+    nameField: string,
+    name: string,
+    scopeId: string
+  ): Promise<string[]> => {
+    const query =
+      `${escapeQueryValue(nameField)}=${escapeQueryValue(name)}` +
+      `^sys_scope=${escapeQueryValue(scopeId)}`;
+    const records = await unwrapSNResponse<{ sys_id?: unknown }[]>(
+      tableAPIGet(table, query, "sys_id", 2)
+    );
+    return (Array.isArray(records) ? records : [])
+      .map((record) => record?.sys_id)
+      .filter(
+        (sysId): sysId is string => typeof sysId === "string" && sysId !== ""
+      );
+  };
+
+  /** Table API URL of one record; both path segments are URL-encoded. */
+  const recordEndpoint = (table: string, sysId: string) =>
+    `api/now/table/${encodeURIComponent(table)}/${encodeURIComponent(sysId)}`;
+
+  /**
+   * The record's sys_id and owning scope (`push --prune` reads this before any
+   * DELETE). Resolves undefined when the instance answers 404: the record is
+   * already gone. Every other failure is thrown for the caller to report.
+   * `sysparm_exclude_reference_link` keeps sys_scope a plain sys_id string; the
+   * `{ value }` reference shape is normalized too, in case an instance ignores it.
+   */
+  const getRecordScope = async (
+    table: string,
+    sysId: string
+  ): Promise<{ sys_id: string; sys_scope: string } | undefined> => {
+    type ScopeOf = { sys_id?: unknown; sys_scope?: unknown };
+    let resp: AxiosResponse<Sync.SNAPIResponse<ScopeOf>>;
+    try {
+      resp = await client.get<Sync.SNAPIResponse<ScopeOf>>(
+        recordEndpoint(table, sysId),
+        {
+          params: {
+            sysparm_fields: "sys_id,sys_scope",
+            sysparm_exclude_reference_link: "true",
+          },
+        }
+      );
+    } catch (e) {
+      if (getErrorResponseStatus(e) === 404) return undefined;
+      throw e;
+    }
+    const record = assertSNApiResponse(resp);
+    const rawScope = record?.sys_scope;
+    const scope =
+      typeof rawScope === "string"
+        ? rawScope
+        : rawScope &&
+            typeof rawScope === "object" &&
+            typeof (rawScope as { value?: unknown }).value === "string"
+          ? (rawScope as { value: string }).value
+          : "";
+    const id = typeof record?.sys_id === "string" ? record.sys_id : sysId;
+    return { sys_id: id, sys_scope: scope };
+  };
+
+  /**
+   * Delete one record through the Table API. Not retried here: the caller
+   * decides (a DELETE is idempotent, and a 404 on a retry means it landed).
+   */
+  const deleteRecord = (table: string, sysId: string) =>
+    client.delete(recordEndpoint(table, sysId));
 
   const getScopeId = (scopeName: string) => {
     const endpoint = "api/now/table/sys_scope";
@@ -504,9 +630,31 @@ export const snClient = (
     );
   };
 
+  // WP-5 (R6): the CI/CD REST API (`sn_cicd`). Deliberately thin — the command
+  // layer owns paths, parameters, polling and the error envelopes, so these two
+  // stay trivially mockable. sn_cicd reads its arguments from the QUERY STRING
+  // (as now-sdk sends them), not from a JSON body, so a POST carries no body.
+  const cicdPost = <T = unknown>(path: string, params: Record<string, string> = {}) =>
+    client.post<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`, undefined, { params });
+
+  const cicdGet = <T = unknown>(path: string) =>
+    client.get<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`);
+
+  // WP-3 (R3): the instance's application vendor prefix, as App Creator and
+  // now-sdk read it. A platform (Java) REST resource, not a scripted API; the
+  // WP-0 spike saw `{"result":"x_nuvo_"}` (the value includes `x_` and the
+  // trailing underscore). The caller normalizes it.
+  const getVendorPrefix = () =>
+    client.get<Sync.SNAPIResponse<string>>("api/now/appcreator/app/vendorprefix");
+
   return {
     getAppList,
     updateRecord,
+    createRecord,
+    getVendorPrefix,
+    findRecordByName,
+    getRecordScope,
+    deleteRecord,
     getScopeId,
     getUserSysId,
     getCurrentAppUserPrefSysId,
@@ -521,6 +669,8 @@ export const snClient = (
     createCurrentUpdateSetUserPref,
     getMissingFiles,
     getManifest,
+    cicdPost,
+    cicdGet,
   };
 };
 

@@ -12,6 +12,9 @@
  *  - `@syncrona/mirror` never imports the `core` CLI or `mcp-server`
  *    (mirror-architecture §12: the mirror engine is a sibling of the CLI, not a
  *    dependant of it, so `syncrona mirror` can delegate into it without a cycle);
+ *  - `@syncrona/fluent` never imports the `core` CLI or `mcp-server` either
+ *    (core loads the optional Fluent tier lazily, so an arrow back would close
+ *    a cycle);
  *  - the `core` and `mcp-server` consumers never import each other directly;
  *  - the 8 build-plugin packages are leaves that may only import `types`.
  *
@@ -77,6 +80,16 @@ module.exports = {
         "@syncrona/mirror is a sibling of the core CLI, not a dependant of it: it may import the foundation packages (types, sn-transport, credential-store, redaction) but never `syncrona` or `@syncrona/mcp-server`. mirror-architecture §5.13 has core's `mirrorCommand.ts` delegate INTO the mirror engine (`runMirrorCommand(argv)`), so an arrow back would close a cycle and make the CLI un-loadable; §14 Δ1 keeps the mirror's own binary GET client here rather than reaching into core's `snClient` for the same reason. (Reaches: packages/mirror/src.)",
       severity: "error",
       from: { path: "^packages/mirror/src" },
+      to: {
+        path: "(@syncrona/mcp-server(/|$)|^syncrona(/|$)|^packages/(core|mcp-server)/)",
+      },
+    },
+    {
+      name: "fluent-no-core",
+      comment:
+        "@syncrona/fluent is the optional Fluent tier: core's `fluentCommand.ts` resolves it lazily and talks to it only through the `SN.FluentModule` port in @syncrona/types. It may import the foundation packages but never `syncrona` or `@syncrona/mcp-server`, because an arrow back into the CLI would close a cycle and drag the CLI into every Fluent build. Matched in both the specifier and the resolved-path form for the same REV-139 reason as `consumers-are-siblings`. (Reaches: packages/fluent/src.)",
+      severity: "error",
+      from: { path: "^packages/fluent/src" },
       to: {
         path: "(@syncrona/mcp-server(/|$)|^syncrona(/|$)|^packages/(core|mcp-server)/)",
       },

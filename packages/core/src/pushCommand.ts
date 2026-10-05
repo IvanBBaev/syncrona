@@ -8,9 +8,15 @@ import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
 import { logPushResults } from "./logMessages.js";
 import { defaultClient, resolveCredentials } from "./snClient.js";
+import type {
+  CreateCandidate,
+  CreationPlan,
+  PruneCandidate,
+  PrunePlan,
+} from "./pushPipeline.js";
 import inquirer from "inquirer";
 import { formatTable } from "./genericUtils.js";
-import { gitDiffToEncodedPaths } from "./gitUtils.js";
+import { gitDiffToChanges, gitDiffToEncodedPaths } from "./gitUtils.js";
 import { isPromptAbort } from "./errorTaxonomy.js";
 import {
   setLogLevel,
@@ -36,6 +42,11 @@ type PushCheckpoint = {
   // so the edit would never reach the instance. Optional so a legacy checkpoint
   // (written before this field existed) still resumes on identity alone.
   fingerprints?: Record<string, string>;
+  // R1 (`push --create`): records this run created, `table:recordName` →
+  // sys_id, written the moment each POST answers. A run interrupted between
+  // the POST and the manifest write leaves the record on the instance but not
+  // in the manifest; the next run adopts these instead of creating twice.
+  created?: Record<string, string>;
 };
 
 type CollaborationLock = {
@@ -93,6 +104,23 @@ const getCollaborationLockPath = () => path.join(getStateBaseDir(), COLLABORATIO
 const recToCheckpointKey = (rec: Sync.BuildableRecord): string =>
   `${rec.table}:${rec.sysId}`;
 
+// repairCommand's guard, shared by `push --prune`: with the source directory at
+// the project root, a missing record directory proves nothing.
+const isSourceTheProjectRoot = (): boolean =>
+  path.resolve(ConfigManager.getSourcePath()) === path.resolve(ConfigManager.getRootDir());
+
+// R1: `--create` wins when given either way; otherwise `createRecords` in
+// sync.config.js decides, and the default is off. A config that cannot be read
+// here is "off": creating records must never be the fallback.
+const resolveCreateFlag = (flag: boolean | undefined): boolean => {
+  if (typeof flag === "boolean") return flag;
+  try {
+    return (ConfigManager.getConfig() as Sync.Config | undefined)?.createRecords === true;
+  } catch (_) {
+    return false;
+  }
+};
+
 // Fingerprints the sources a record pushes, so a later resume can tell whether
 // the record still holds the content that was pushed. Field order is normalized
 // so the fingerprint depends on content only. A source that cannot be read
@@ -137,6 +165,16 @@ async function loadPushCheckpoint(): Promise<PushCheckpoint | null> {
     }
     return null;
   }
+}
+
+// The checkpoint is a file on disk, so its `created` map is untrusted input:
+// keep only non-empty string sys_ids under own keys, or nothing at all.
+function sanitizeCreatedMap(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== ""
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 async function writePushCheckpoint(checkpoint: PushCheckpoint): Promise<void> {
@@ -659,11 +697,47 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // Did the caller name the scope, or did we derive it? The two answers make
       // an empty result mean opposite things, so the distinction is kept.
       const explicitTarget = target !== undefined && target !== "";
+      // R2: `--prune` deletes instance records, so it is opt-in per run (there is
+      // deliberately no config switch) and refuses a source directory that IS
+      // the project root — there, "every file of the record is missing" can be
+      // the result of pointing the CLI at the wrong tree.
+      const prune = args.prune === true;
+      if (prune && isSourceTheProjectRoot()) {
+        logger.error(
+          "Refusing to prune: the source directory is the project root. " +
+            "Set a dedicated `sourceDirectory` in sync.config.js first."
+        );
+        process.exitCode = 1;
+        return;
+      }
       let encodedPaths;
+      let diffDeleted: string[] | undefined;
       if (explicitTarget) encodedPaths = target as string;
-      else encodedPaths = await gitDiffToEncodedPaths(diff);
+      else if (prune && diff !== "") {
+        // One git call yields both sides: the files to push, and the deleted
+        // paths that restrict which records `--prune` may consider.
+        const changes = await gitDiffToChanges(diff);
+        encodedPaths = changes.changed;
+        diffDeleted = changes.deleted;
+      } else encodedPaths = await gitDiffToEncodedPaths(diff);
 
-      let fileList = await AppUtils.getAppFileList(encodedPaths);
+      const create = resolveCreateFlag(args.create);
+      let fileList: Sync.BuildableRecord[];
+      let candidates: CreateCandidate[] = [];
+      if (create) {
+        ({ records: fileList, candidates } = await AppUtils.getAppFileListWithCandidates(
+          encodedPaths,
+          { create: true }
+        ));
+      } else {
+        fileList = await AppUtils.getAppFileList(encodedPaths);
+      }
+      const pruneCandidates: PruneCandidate[] = prune
+        ? await AppUtils.findPruneCandidates({
+            diffDeleted,
+            targets: explicitTarget ? (target as string) : undefined,
+          })
+        : [];
 
       // #15: `syncrona push <path>` names its own scope, and three ordinary
       // mistakes empty it out — a typo (encodedPathsToFilePaths drops paths that
@@ -676,7 +750,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // A derived scope is the opposite case and stays a no-op: `push --diff main`
       // with nothing changed since main is a legitimate success, and so is a push
       // over a source tree that holds no tracked record yet.
-      if (explicitTarget && fileList.length === 0) {
+      if (
+        explicitTarget &&
+        fileList.length === 0 &&
+        candidates.length === 0 &&
+        pruneCandidates.length === 0
+      ) {
         logger.error(
           `Nothing to push: "${target}" matched no record this workspace tracks. ` +
             "Check the path, or run `syncrona refresh` if it is a real record that is not in the manifest yet."
@@ -692,15 +771,45 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // would describe a push this run is not the one to perform.
       if (dryRun) {
         logger.info(`${fileList.length} files to push.`);
-        if (fileList.length > 0) {
+        // R1: the creation plan is read-only (GETs only, and the scope sys_id is
+        // not persisted), so the preview can say exactly which records would be
+        // created and which adopted.
+        const creation =
+          candidates.length > 0
+            ? await AppUtils.planRecordCreation(candidates, { persistScopeId: false })
+            : undefined;
+        // R2: the prune plan is read-only too (one GET per candidate, scope
+        // sys_id not persisted). No DELETE is sent and the manifest is untouched.
+        const prunePlan =
+          pruneCandidates.length > 0
+            ? await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: false })
+            : undefined;
+        const showAction = create || prune;
+        if (fileList.length > 0 || creation || prunePlan) {
           const rows = fileList.map((rec) => {
             const fieldNames = Object.keys(rec.fields);
             const recordName = rec.fields[fieldNames[0]]?.name || rec.sysId;
-            return [rec.table, recordName, String(fieldNames.length), rec.sysId];
+            const row = [rec.table, recordName, String(fieldNames.length), rec.sysId];
+            return showAction ? ["update", ...row] : row;
           });
+          for (const plan of creation?.plans ?? []) {
+            const { table, recordName, files } = plan.candidate;
+            rows.push([plan.action, table, recordName, String(files.length), plan.sysId ?? ""]);
+            if (plan.action === "error") {
+              logger.warn(`${table} > ${recordName} : ${plan.message}`);
+            }
+          }
+          for (const plan of prunePlan?.plans ?? []) {
+            const { table, recordName, files, sysId } = plan.candidate;
+            rows.push([plan.action, table, recordName, String(files.length), sysId]);
+            if (plan.action === "error") {
+              logger.warn(`${table} > ${recordName} : ${plan.message}`);
+            }
+          }
+          const header = ["Table", "Record", "Fields", "sys_id"];
           logger.info(
             "Dry run — records that would be pushed:\n" +
-              formatTable(["Table", "Record", "Fields", "sys_id"], rows)
+              formatTable(showAction ? ["Action", ...header] : header, rows)
           );
         }
         logger.info("Dry run enabled: skipping push checkpoint writes and remote push operation.");
@@ -724,6 +833,14 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       };
 
       const existingCheckpoint = await loadPushCheckpoint();
+      // Records an interrupted run already created on THIS instance. Read before
+      // the resume decision, which may discard the checkpoint: these sys_ids are
+      // facts about the instance, not about the diff, and creating them again
+      // would duplicate them.
+      const knownCreated =
+        existingCheckpoint && (existingCheckpoint.instance ?? "") === targetServer
+          ? sanitizeCreatedMap(existingCheckpoint.created)
+          : undefined;
       if (existingCheckpoint && existingCheckpoint.failed.length > 0) {
         // A checkpoint only belongs to *this* push when three things all hold.
         // Otherwise it is discarded and the FULL current diff is pushed — never
@@ -802,6 +919,14 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       }
 
       logger.info(`${fileList.length} files to push.`);
+      if (candidates.length > 0) {
+        logger.info(`${candidates.length} new record(s) to create or adopt.`);
+      }
+      if (pruneCandidates.length > 0) {
+        logger.info(
+          `${pruneCandidates.length} record(s) with every local file deleted to prune.`
+        );
+      }
 
       const lock = await acquireCollaborationLock("push", args.instanceProfile);
       if (!lock.acquired) {
@@ -829,6 +954,38 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         if (!answers["confirmed"]) return;
       }
 
+      // R2: plan the prune (GETs only) before anything is written, then ask a
+      // separate confirmation that names the exact number of records the DELETEs
+      // will remove. `--ci` is the only way past it unattended.
+      let prunePlan: PrunePlan | undefined;
+      if (pruneCandidates.length > 0) {
+        prunePlan = await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: true });
+        for (const plan of prunePlan.plans) {
+          if (plan.action === "error") {
+            const { table, recordName } = plan.candidate;
+            logger.warn(`${table} > ${recordName} : ${plan.message}`);
+          }
+        }
+        const toDelete = prunePlan.plans.filter((plan) => plan.action === "delete").length;
+        if (toDelete > 0 && !skipPrompt) {
+          const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
+            {
+              type: "confirm",
+              name: "confirmed",
+              message: `Delete ${toDelete} record(s) from ${targetServer}? This cannot be undone.`,
+              default: false,
+            },
+          ]);
+          if (!confirmed) {
+            // A declined delete is a cancellation of the whole run (nothing has
+            // been written yet), reported like Ctrl-C at a prompt.
+            logger.warn("Push cancelled: no record was deleted and nothing was pushed.");
+            process.exitCode = 130;
+            return;
+          }
+        }
+      }
+
       // Does not create update set if updateSetName is blank
       if (updateSet) {
         if (!skipPrompt) {
@@ -851,20 +1008,56 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         );
       }
 
+      // R1: plan after the lock and the update set, so the idempotency lookups
+      // see what any concurrent push left behind and the creations land in the
+      // update set just selected.
+      let creation: CreationPlan | undefined;
+      if (candidates.length > 0) {
+        creation = await AppUtils.planRecordCreation(candidates, {
+          persistScopeId: true,
+          known: knownCreated,
+        });
+      }
+
       // Write the checkpoint only after every confirmation has passed, so a
       // declined prompt leaves no fake "unfinished push" state behind.
-      const attempted = fileList.map(recToCheckpointKey);
+      let attempted = fileList.map(recToCheckpointKey);
       const currentFingerprints = await getCurrentFingerprints();
-      const fingerprints = Object.fromEntries(
+      let fingerprints = Object.fromEntries(
         attempted.map((key) => [key, currentFingerprints[key]])
       );
-      await writePushCheckpoint({
+      const created: Record<string, string> = { ...(knownCreated ?? {}) };
+      const checkpointFor = (succeeded: string[], failed: string[]): PushCheckpoint => ({
         attempted,
-        succeeded: [],
-        failed: attempted,
+        succeeded,
+        failed,
         instance: targetServer,
         fingerprints,
+        ...(Object.keys(created).length > 0 ? { created } : {}),
       });
+      await writePushCheckpoint(checkpointFor([], attempted));
+
+      let creationResults: Sync.PushResult[] = [];
+      if (creation) {
+        const outcome = await AppUtils.createRecords(creation, {
+          onCreated: async (key: string, sysId: string) => {
+            created[key] = sysId;
+            await writePushCheckpoint(checkpointFor([], attempted));
+          },
+        });
+        creationResults = outcome.results;
+        if (outcome.records.length > 0) {
+          // Adopted records are ordinary updates from here on.
+          fileList = [...fileList, ...outcome.records];
+          attempted = fileList.map(recToCheckpointKey);
+          fingerprints = { ...fingerprints, ...(await fingerprintRecords(outcome.records)) };
+          await writePushCheckpoint(checkpointFor([], attempted));
+        }
+      }
+
+      // R2: deletions run after creations and before the PATCHes; each removes
+      // its record from the manifest as it lands.
+      const pruneResults = prunePlan ? await AppUtils.pruneRecords(prunePlan) : [];
 
       const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);
 
@@ -878,23 +1071,26 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         .filter((item) => !item.res.success)
         .map((item) => item.key);
 
-      await writePushCheckpoint({
-        attempted,
-        succeeded,
-        failed,
-        instance: targetServer,
-        fingerprints,
-      });
-      if (failed.length === 0) {
+      await writePushCheckpoint(checkpointFor(succeeded, failed));
+      const creationFailed = creationResults.some((res) => !res.success);
+      if (failed.length === 0 && !creationFailed) {
         await clearPushCheckpoint();
       } else {
         // #3: per-record push failures never reach the outer catch (pushFiles
         // converts them to { success: false } results), so `push --ci` used to
         // exit 0 on a broken deployment. Fail the shell whenever any record failed.
+        // A failed creation keeps the checkpoint too: its `created` map is what
+        // stops the next run from creating a record twice.
+        process.exitCode = 1;
+      }
+      if (pruneResults.some((res) => !res.success)) {
+        // Prune is not part of the checkpoint (a DELETE is re-planned from the
+        // manifest on the next run), but a refused or failed delete still fails
+        // the shell.
         process.exitCode = 1;
       }
 
-      logPushResults(pushResults);
+      logPushResults([...creationResults, ...pruneResults, ...pushResults]);
     } catch (e) {
       // Ctrl-C at the overwrite/confirmation prompt is a cancellation, not a
       // push failure: it used to be logged as an error and exit 1, which reads

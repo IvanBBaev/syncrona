@@ -7,6 +7,7 @@ import { createRequire } from "module";
 import { types } from "node:util";
 import { logger } from "./Logger.js";
 import { includes, excludes, tableOptions } from "./defaultOptions.js";
+import { isValidDataModelTableName } from "./dataModel.js";
 
 // #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
 // so a scoped deploy never silently degrades into a full deploy.
@@ -66,6 +67,10 @@ const DEFAULT_CONFIG: Sync.Config = {
   // from `meta` because "show me the metadata" and "let me change it" are
   // different decisions — a team can keep the sidecar as read-only reference.
   metaPush: true,
+  // R4: the data model (dictionary, choices, roles, ACLs, …) is opt-in. An
+  // empty list keeps every existing workspace exactly as it was; the documented
+  // table list is DATA_MODEL_DEFAULT_TABLES (docs/DATA_MODEL.md).
+  dataModelTables: [],
 };
 
 type ConfigState = {
@@ -128,6 +133,9 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" 
   flat: "boolean",
   meta: "boolean",
   metaPush: "boolean",
+  createRecords: "boolean",
+  createTables: "array",
+  dataModelTables: "array",
 };
 
 export function validateConfigShape(config: unknown, configPath: string): void {
@@ -158,6 +166,19 @@ export function validateConfigShape(config: unknown, configPath: string): void {
           : typeof value === expected;
     if (!matches) {
       errors.push(`"${key}" must be ${expected === "array" ? "an array" : `a ${expected}`}`);
+    }
+  }
+
+  // An entry that is not a table name would be interpolated into a Table API
+  // query and a directory name, so it is refused rather than skipped.
+  const dataModelTables = (config as { dataModelTables?: unknown }).dataModelTables;
+  if (Array.isArray(dataModelTables)) {
+    const invalid = dataModelTables.filter((entry) => !isValidDataModelTableName(entry));
+    if (invalid.length > 0) {
+      errors.push(
+        `"dataModelTables" must list table names (letters, digits and "_"); ` +
+          `invalid: ${invalid.map((entry) => JSON.stringify(entry)).join(", ")}`
+      );
     }
   }
 
@@ -679,7 +700,10 @@ export function getDefaultConfigFile(sourceDirectory = "src"): string {
       // DX22: set to false to stop writing the per-record .meta.json sidecar.
       meta:true,
       // DX22: set to false to keep that sidecar read-only (never pushed back).
-      metaPush:true
+      metaPush:true,
+      // R4: data-model tables to track as editable records (opt-in; see
+      // docs/DATA_MODEL.md for the documented list), e.g. ["sys_dictionary"].
+      dataModelTables:[]
     };
     `.trim();
 }

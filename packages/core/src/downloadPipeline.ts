@@ -16,6 +16,7 @@ import {
   ManifestRecordNames,
 } from "./manifestBuilder.js";
 import { isMetaFile } from "./metaFields.js";
+import { applyDataModelTableOptions } from "./dataModel.js";
 import { logger } from "./Logger.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
@@ -674,9 +675,35 @@ const createTableFetcher = (
       metaFields
     );
 
-  return async (tableMissing: SN.MissingFileTableMap): Promise<SN.TableMap> => {
+  // R4: a table named by a composite rule (`nameFields`) never goes to the
+  // scoped endpoint. That endpoint names records by their display value, so
+  // its answer would land in a folder the manifest does not know; the Table
+  // API path takes the manifest's own names.
+  const forcedTables = Object.keys(tableOptions).filter((table) => {
+    const nameFields = tableOptions[table]?.nameFields;
+    return Array.isArray(nameFields) && nameFields.length > 0;
+  });
+
+  return async (requested: SN.MissingFileTableMap): Promise<SN.TableMap> => {
     if (scopedEndpointUnavailable) {
-      return viaTableAPI(tableMissing);
+      return viaTableAPI(requested);
+    }
+
+    let forcedResult: SN.TableMap = {};
+    let tableMissing = requested;
+    const forced = forcedTables.filter((table) =>
+      Object.prototype.hasOwnProperty.call(requested, table)
+    );
+    if (forced.length > 0) {
+      const viaApi: SN.MissingFileTableMap = Object.create(null);
+      tableMissing = Object.create(null);
+      for (const [table, records] of Object.entries(requested)) {
+        (forced.includes(table) ? viaApi : tableMissing)[table] = records;
+      }
+      forcedResult = await viaTableAPI(viaApi);
+      if (isEmptyMissingMap(tableMissing)) {
+        return forcedResult;
+      }
     }
 
     const { files, meta } = partitionMetaRequests(tableMissing);
@@ -684,19 +711,22 @@ const createTableFetcher = (
     // perfectly healthy — see partitionMetaRequests.
     const metaResult = isEmptyMissingMap(meta) ? {} : await viaTableAPI(meta);
     if (isEmptyMissingMap(files)) {
-      return metaResult;
+      return mergeTableMaps(forcedResult, metaResult);
     }
 
     try {
       const fileResult = await unwrapSNResponse(
         client.getMissingFiles(files, tableOptions)
       );
-      return mergeTableMaps(fileResult, metaResult);
+      return mergeTableMaps(forcedResult, mergeTableMaps(fileResult, metaResult));
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
         onFallback();
         scopedEndpointUnavailable = true;
-        return mergeTableMaps(await viaTableAPI(files), metaResult);
+        return mergeTableMaps(
+          forcedResult,
+          mergeTableMaps(await viaTableAPI(files), metaResult)
+        );
       }
       throw e;
     }
@@ -717,7 +747,9 @@ export const processMissingFiles = async (
   logger.debug(
     `Refresh: ${missingRecords} missing record(s) across ${Object.keys(missing).length} table(s) to fetch.`
   );
-  const { tableOptions = {} } = ConfigManager.getConfig();
+  // R4: the effective options carry the data-model naming rule, so the Table
+  // API fallback names a record exactly as the manifest build did.
+  const tableOptions = applyDataModelTableOptions(ConfigManager.getConfig());
   const client = defaultClient();
   const recordNames = buildManifestRecordNames(newManifest);
   const metaFields = buildManifestMetaFields(newManifest);
@@ -974,7 +1006,8 @@ export const downloadAllFiles = async (
   instanceProfile?: string
 ): Promise<void> => {
   const missing = buildFullMissingMap(manifest);
-  const { tableOptions = {} } = ConfigManager.getConfig();
+  // R4: see processMissingFiles.
+  const tableOptions = applyDataModelTableOptions(ConfigManager.getConfig());
   const client = defaultClient(instanceProfile);
   const recordNames = buildManifestRecordNames(manifest);
   const metaFields = buildManifestMetaFields(manifest);

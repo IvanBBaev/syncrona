@@ -104,7 +104,7 @@ credential/transport story above:
   - Tools that write records or execute code on the instance — `sync_push`,
     `sn_create_record`, `sn_execute_background_script`,
     `sync_create_script_include`, `sync_create_script_include_and_sync`,
-    `sn_update_metadata_record`, `sync_run_atf_tests` — require
+    `sn_update_metadata_record`, `sync_run_atf_tests`, `sync_cicd_run` — require
     `confirmDestructive=true` in their schema. **Not every mutating tool does.**
     `sync_set_scope`, `sync_set_update_set` (which can also create a missing
     update set) and `sync_prepare_session` change the integration user's current

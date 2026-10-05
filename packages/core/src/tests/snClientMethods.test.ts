@@ -23,6 +23,7 @@ const mockGet = jest.fn();
 const mockPost = jest.fn();
 const mockPut = jest.fn();
 const mockPatch = jest.fn();
+const mockDelete = jest.fn();
 const mockRequest = jest.fn();
 
 type InterceptorRefs = {
@@ -38,6 +39,7 @@ const mockAxiosCreate = jest.fn((_config?: unknown) => ({
   post: mockPost,
   put: mockPut,
   patch: mockPatch,
+  delete: mockDelete,
   request: mockRequest,
   interceptors: {
     request: { use: (fn: (cfg: unknown) => unknown) => { mockInterceptors.request = fn; } },
@@ -243,6 +245,22 @@ describe("snClient request wrappers", () => {
     });
   });
 
+  it("cicdPost POSTs under api/sn_cicd with the arguments as query params and no body (WP-5)", async () => {
+    const client = await makeClient();
+    await client.cicdPost("/testsuite/run", { test_suite_name: "Smoke" });
+    expect(mockPost).toHaveBeenCalledWith("api/sn_cicd/testsuite/run", undefined, {
+      params: { test_suite_name: "Smoke" },
+    });
+    await client.cicdPost("app_repo/publish");
+    expect(mockPost).toHaveBeenLastCalledWith("api/sn_cicd/app_repo/publish", undefined, { params: {} });
+  });
+
+  it("cicdGet GETs under api/sn_cicd (WP-5)", async () => {
+    const client = await makeClient();
+    await client.cicdGet("//progress/abc");
+    expect(mockGet).toHaveBeenCalledWith("api/sn_cicd/progress/abc");
+  });
+
   it("tableAPIGet includes a sysparm_offset only when offset > 0", async () => {
     const client = await makeClient();
     await client.tableAPIGet("sys_script", "active=true", "sys_id", 100, 50);
@@ -256,10 +274,181 @@ describe("snClient request wrappers", () => {
     });
   });
 
+  it("tableAPIGet merges extra sysparm params and a per-request timeout when given", async () => {
+    const client = await makeClient();
+    await client.tableAPIGet("incident", "active=true", "", 11, 0, {
+      params: { sysparm_display_value: "all", sysparm_no_count: "true" },
+      timeout: 30000,
+    });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/incident", {
+      params: {
+        sysparm_query: "active=true",
+        sysparm_fields: "",
+        sysparm_limit: "11",
+        sysparm_display_value: "all",
+        sysparm_no_count: "true",
+      },
+      timeout: 30000,
+    });
+  });
+
+  it("tableAPIGet adds no timeout key when the extras carry params only", async () => {
+    const client = await makeClient();
+    await client.tableAPIGet("incident", "", "", 1, 0, { params: { sysparm_view: "ess" } });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/incident", {
+      params: { sysparm_query: "", sysparm_fields: "", sysparm_limit: "1", sysparm_view: "ess" },
+    });
+  });
+
   it("updateRecord PATCHes the record for non-ATF tables", async () => {
     const client = await makeClient();
     await client.updateRecord("sys_script", "rec-1", { script: "x" });
     expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_script/rec-1", { script: "x" });
+  });
+
+  it("createRecord POSTs once, asks only for sys_id, and returns it", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "new-1" } } });
+    await expect(
+      client.createRecord("sys_script_include", { name: "Util", script: "x" })
+    ).resolves.toEqual({ sys_id: "new-1" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      "api/now/table/sys_script_include",
+      { name: "Util", script: "x" },
+      { params: { sysparm_fields: "sys_id" } }
+    );
+  });
+
+  it("createRecord throws when the instance answers without a sys_id", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: {} } });
+    await expect(client.createRecord("sys_script_include", { name: "U" })).rejects.toThrow(
+      "Creating a sys_script_include record returned no sys_id (HTTP 201)."
+    );
+  });
+
+  it("createRecord does not retry a failed POST (it is not idempotent)", async () => {
+    const client = await makeClient();
+    mockPost.mockRejectedValueOnce({ response: { status: 503 } });
+    await expect(client.createRecord("sys_script_include", { name: "U" })).rejects.toEqual({
+      response: { status: 503 },
+    });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("createRecord pushes an ATF step script through pushATFfile after the insert", async () => {
+    const client = await makeClient();
+    mockPost
+      .mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-1" } } })
+      .mockResolvedValue(okResult({}));
+    await client.createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" });
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    const [endpoint, body] = mockPost.mock.calls[1] as [string, Record<string, unknown>];
+    expect(endpoint).toContain("pushATFfile");
+    expect(JSON.stringify(body)).toContain("step-1");
+  });
+
+  it("createRecord skips the ATF side-call for a step without a script", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-2" } } });
+    await client.createRecord("sys_atf_step", { description: "d" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("createRecord sends boolean fields as JSON booleans (init --new sys_app body)", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "app-1" } } });
+    await expect(
+      client.createRecord("sys_app", { name: "My App", active: true })
+    ).resolves.toEqual({ sys_id: "app-1" });
+    expect(mockPost).toHaveBeenCalledWith(
+      "api/now/table/sys_app",
+      { name: "My App", active: true },
+      { params: { sysparm_fields: "sys_id" } }
+    );
+  });
+
+  it("getVendorPrefix GETs the App Creator vendor prefix resource (WP-3)", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult("x_acme_"));
+    const resp = await client.getVendorPrefix();
+    expect(mockGet).toHaveBeenCalledWith("api/now/appcreator/app/vendorprefix");
+    expect(resp.data.result).toBe("x_acme_");
+  });
+
+  it("findRecordByName scopes and escapes the lookup and fetches at most two rows", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "a" }, { sys_id: "" }, {}]));
+    await expect(
+      client.findRecordByName("sys_script_include", "name", "Util^ORname=x", "scope-1")
+    ).resolves.toEqual(["a"]);
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_script_include", {
+      params: {
+        sysparm_query: "name=Util ORname=x^sys_scope=scope-1",
+        sysparm_fields: "sys_id",
+        sysparm_limit: "2",
+      },
+    });
+  });
+
+  it("findRecordByName returns an empty list for a non-array result", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({}));
+    await expect(client.findRecordByName("t", "name", "n", "s")).resolves.toEqual([]);
+  });
+
+  // R2, `push --prune`: the scope read before a DELETE, and the DELETE itself.
+  it("getRecordScope reads only sys_id and sys_scope from the encoded record URL", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({ sys_id: "abc", sys_scope: "scope-1" }));
+    await expect(client.getRecordScope("sys_script", "a/b")).resolves.toEqual({
+      sys_id: "abc",
+      sys_scope: "scope-1",
+    });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_script/a%2Fb", {
+      params: {
+        sysparm_fields: "sys_id,sys_scope",
+        sysparm_exclude_reference_link: "true",
+      },
+    });
+  });
+
+  it("getRecordScope normalizes a reference-shaped sys_scope and a missing sys_id", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({ sys_scope: { value: "scope-2", link: "x" } }));
+    await expect(client.getRecordScope("t", "id-1")).resolves.toEqual({
+      sys_id: "id-1",
+      sys_scope: "scope-2",
+    });
+    mockGet.mockResolvedValueOnce(okResult({ sys_id: "id-2", sys_scope: { value: 7 } }));
+    await expect(client.getRecordScope("t", "id-2")).resolves.toEqual({
+      sys_id: "id-2",
+      sys_scope: "",
+    });
+    mockGet.mockResolvedValueOnce(okResult(null));
+    await expect(client.getRecordScope("t", "id-3")).resolves.toEqual({
+      sys_id: "id-3",
+      sys_scope: "",
+    });
+  });
+
+  it("getRecordScope resolves undefined on 404 and rethrows anything else", async () => {
+    const client = await makeClient();
+    mockGet.mockRejectedValueOnce({ response: { status: 404 } });
+    await expect(client.getRecordScope("t", "gone")).resolves.toBeUndefined();
+    mockGet.mockRejectedValueOnce({ response: { status: 403 } });
+    await expect(client.getRecordScope("t", "denied")).rejects.toEqual({
+      response: { status: 403 },
+    });
+  });
+
+  it("deleteRecord sends one DELETE to the encoded record URL", async () => {
+    const client = await makeClient();
+    mockDelete.mockResolvedValueOnce({ status: 204, data: "" });
+    await client.deleteRecord("sys_script include", "id-1");
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(mockDelete).toHaveBeenCalledWith("api/now/table/sys_script%20include/id-1");
   });
 
   it("requestScopedEndpoint rethrows immediately on a non-404 error", async () => {

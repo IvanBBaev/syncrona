@@ -37,15 +37,16 @@ Two version numbers are intentionally *not* part of the lockstep:
   `packages/core/package.json` and is bumped as part of the release checklist;
   a claims-drift gate (run as a unit test) fails the build if it is forgotten.
 
-The project is currently **pre-1.0** (`0.x`): surfaces are stable in practice
-and guarded by the gates below, but the 1.0 line is where the promises become
-contractual.
+The project shipped **1.0.0** on 2026-08-25, so the promises below are
+contractual for the whole 1.x line. New capabilities — such as the 1.1.0
+ServiceNow SDK parity commands (`query`, `cicd`, `fluent`, `push --create` /
+`--prune`, `init --new`) — arrive in minor releases and are additive.
 
 ## Stability promises by surface
 
 ### MCP tool contract
 
-The MCP server currently exposes **61 tools**
+The MCP server currently exposes **62 tools**
 (reference: [MCP_TOOLS.md](MCP_TOOLS.md), generated from the schemas). The
 tool contract is the most strictly guarded surface:
 
@@ -62,13 +63,22 @@ tool contract is the most strictly guarded surface:
 
 ### CLI
 
-The CLI exposes **24 commands** (see the README
+The CLI exposes **27 commands** (see the README
 [command table](../README.md#commands)). Documentation-drift gates keep the
 README command table, `CLAUDE.md`, and the actual command registry aligned, so
 a command cannot be added, renamed, or removed without the change being
 visible in the user-facing docs in the same commit. Command removals or
 renames are treated like tool-contract changes: deprecation notice first,
 removal in a major version.
+
+### Optional ServiceNow SDK tier
+
+`@syncrona/fluent` versions in lockstep with the rest of the family, but the
+ServiceNow SDK it drives is a separate, third-party package: `@servicenow/sdk`
+is an **optional peer dependency** pinned to a tested minor range (`~4.13`),
+never bundled. The SDK's programmatic API is not covered by syncrona's
+stability promise; widening the peer range is a deliberate change that ships
+in a syncrona minor release once the new SDK line has been tested.
 
 ### Configuration and file formats
 
