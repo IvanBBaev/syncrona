@@ -109,7 +109,11 @@ describe("runQuery", () => {
     [{ limit: 0 }, /--limit must be an integer >= 1/],
     [{ limit: 2.5 }, /--limit must be an integer >= 1/],
     [{ offset: -1 }, /--offset must be an integer >= 0/],
-    [{ timeout: Number.NaN }, /--timeout must be an integer >= 0/],
+    [{ timeout: Number.NaN }, /--timeout must be an integer >= 1/],
+    [{ timeout: 0 }, /--timeout must be an integer >= 1/],
+    [{ table: "incident/../sys_user" }, /"incident\/\.\.\/sys_user" is not a table name/],
+    [{ table: "incident?sysparm_limit=1" }, /is not a table name/],
+    [{ table: "inc%2Fident" }, /is not a table name/],
     [{ table: "  " }, /table name is required/],
     [{ query: undefined }, /--query \(-q\) is required/],
   ])("refuses %p before any request", async (over, message) => {
@@ -300,5 +304,22 @@ describe("query CLI surface", () => {
   it("refuses an unknown output format and --dry-run", async () => {
     expect(await parse(["query", "incident", "-q", "", "-o", "csv"])).toBeNull();
     expect(await parse(["query", "incident", "-q", "", "--dry-run"])).toBeNull();
+  });
+});
+
+describe("nodeQueryClient", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it("refuses with an actionable message when no instance is configured", async () => {
+    const { nodeQueryClient } = await import("../queryCommand.js");
+    // SN_USER without SN_INSTANCE: credentials are present, so nothing falls back
+    // to the credential store, and the query has nowhere to go.
+    delete process.env.SN_INSTANCE;
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "s3cr3t";
+    expect(() => nodeQueryClient()).toThrow(/No ServiceNow instance is configured/);
   });
 });

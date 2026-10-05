@@ -19,6 +19,26 @@ import { runUpdateNotifier } from "./updateNotifier.js";
 // that follows a failure would be interleaved with (or emitted instead of) the
 // document and break `| jq`. The JSON payloads themselves are written with
 // process.stdout.write, not the logger, so nothing that belongs on stdout moves.
+//
+// `query -o json|raw` (`--output`) is the same contract: queryCommand routes
+// the logger to stderr itself, but only once yargs has dispatched it, which is
+// after loadConfigs() could already have printed a notice onto stdout.
+function isOutputOption(tok: string): boolean {
+  return tok === "-o" || tok === "--output" || /^(?:-o|--output)=/.test(tok) || /^-o[a-z]+$/i.test(tok);
+}
+
+function queryOutputRequested(rest: string[]): boolean {
+  for (const tok of rest) {
+    if (tok === "--") {
+      return false;
+    }
+    if (isOutputOption(tok)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function stdoutIsProtocolChannel(argv: string[]): boolean {
   // `--json` can appear anywhere after the command, so it is scanned for over
   // the whole argv rather than in the leading-options walk below. Only the
@@ -34,11 +54,22 @@ function stdoutIsProtocolChannel(argv: string[]): boolean {
     "--logLevel",
     "--instance-profile",
     "--instanceProfile",
+    // yargs accepts `-o` / `--output` before the command too (`syncrona -o
+    // json query ...`); its value must not be mistaken for the command.
+    "-o",
+    "--output",
   ]);
+  let leadingOutput = false;
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (!tok.startsWith("-")) {
+      if (tok === "query") {
+        return leadingOutput || queryOutputRequested(argv.slice(i + 1));
+      }
       return tok === "mcp" || tok === "completion";
+    }
+    if (isOutputOption(tok)) {
+      leadingOutput = true;
     }
     // `--flag=value` is self-contained; `--flag value` consumes the next token
     // only for the known value-taking globals.
