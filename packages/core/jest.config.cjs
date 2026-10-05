@@ -206,14 +206,14 @@ module.exports = {
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
     './src/pushPipeline.ts': { lines: 95, branches: 88 }, // measured 98.57 / 91.53
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.05 / 84.32
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.53 / 85.29
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 91, branches: 82 }, // measured 96.70 / 89.08
+    './src/manifestBuilder.ts': { lines: 91, branches: 82 }, // measured 96.99 / 88.51
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.83
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.44 / 92.18
+    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 97.78 / 92.77
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.70 / 94.75
     // Credentials: the keychain/file store and the auth-method picker.
@@ -225,12 +225,12 @@ module.exports = {
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
     './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 71.79
-    './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.28 / 87.61
+    './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.29 / 87.61
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 91.42
     './src/Watcher.ts': { lines: 91, branches: 76 }, // measured 95.34 / 82.60
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
-    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.61 / 75.00
+    './src/wizard.ts': { lines: 95, branches: 68 }, // measured 98.65 / 75.58
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
@@ -243,7 +243,7 @@ module.exports = {
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.01 / 95.65
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
-    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.41 / 98.70
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.44 / 98.72
     // Writes the native `.d.ts` from instance metadata: a regression here ships a
     // type file that silently mistypes columns or drops inherited ones.
     './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 95.93
