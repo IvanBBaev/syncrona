@@ -137,6 +137,10 @@ describe("buildManifestFromTableAPI with an inaccessible table", () => {
 // used to swallow the skip without reporting it: the text-field fallback, the
 // sys_metadata lookup behind an empty record query, and the per-chunk `sys_idIN`
 // fallback. Each one has to reach the same carry-forward.
+// The file-field query filters sys_dictionary on the script-like internal
+// types. The text-field fallback selects the same columns without that filter.
+const isFileFieldQuery = (query: string): boolean => query.includes("internal_type=");
+
 describe("buildManifestFromTableAPI with a refused read below the top-level query", () => {
   // Answers everything the builder needs to reach getRecordsForTable for
   // `sys_script`; `overrides` decides which of the deeper reads is refused.
@@ -161,7 +165,7 @@ describe("buildManifestFromTableAPI with a refused read below the top-level quer
         // Hierarchy walk: no parent class.
         if (table === "sys_db_object") return { data: { result: [] } };
         // File fields for the table.
-        if (table === "sys_dictionary" && fields === "element,internal_type")
+        if (table === "sys_dictionary" && isFileFieldQuery(query))
           return { data: { result: [{ element: "script", internal_type: "script" }] } };
         return { data: { result: [] } };
       }
@@ -171,17 +175,19 @@ describe("buildManifestFromTableAPI with a refused read below the top-level quer
 
   it("reports a refused text-field fallback instead of returning no fields", async () => {
     // The fallback only runs for a data-materialized table, and it is the only
-    // sys_dictionary read that asks for "element" alone.
+    // sys_dictionary read that is not filtered on the script-like types.
     process.env.SYNCRONA_DATA_TABLES = "sys_script";
     getManifest.mockReturnValue(PREVIOUS);
 
     try {
       const manifest = await buildManifestFromTableAPI(
         "x_demo",
-        createClient(createRefusingClient((table, _query, fields) => {
-          if (table === "sys_dictionary" && fields === "element,internal_type")
+        createClient(createRefusingClient((table, query, fields) => {
+          if (table === "sys_dictionary" && isFileFieldQuery(query))
             return { data: { result: [] } };
-          if (table === "sys_dictionary" && fields === "element") return forbidden();
+          // The text-field fallback, and only it: the metadata-column read asks
+          // for read_only and virtual as well.
+          if (table === "sys_dictionary" && fields === "element,internal_type") return forbidden();
           return undefined;
         })),
         emptyConfig

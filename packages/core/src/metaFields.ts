@@ -127,6 +127,24 @@ export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Dictionary types whose value must never become a working-tree file of any
+ * kind: credentials, append-only journals and binaries. The sidecar excludes
+ * them through NON_META_INTERNAL_TYPES; the data-field fallback
+ * (`SYNCRONA_DATA_TABLES` / `SYNCRONA_INCLUDE_DATA_FIELDS`), which turns every
+ * column into a `.txt` field file, excludes them through this set directly.
+ */
+export const UNSAFE_VALUE_INTERNAL_TYPES: ReadonlySet<string> = new Set([
+  "password",
+  "password2",
+  "journal",
+  "journal_input",
+  "journal_list",
+  "collection",
+  "image",
+  "user_image",
+]);
+
+/**
  * Dictionary types never written into a sidecar.
  *
  * SN_TYPE_MAP's own keys are the file types: a field of that type either IS a
@@ -140,14 +158,7 @@ export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
  */
 export const NON_META_INTERNAL_TYPES: ReadonlySet<string> = new Set([
   ...Object.keys(SN_TYPE_MAP),
-  "password",
-  "password2",
-  "journal",
-  "journal_input",
-  "journal_list",
-  "collection",
-  "image",
-  "user_image",
+  ...UNSAFE_VALUE_INTERNAL_TYPES,
 ]);
 
 /**
@@ -203,7 +214,7 @@ export const isReadOnlyDictionaryRow = (row: {
  */
 export const isMetaFieldCandidate = (
   element: string | undefined,
-  internalType: string | undefined
+  internalType: unknown
 ): boolean => {
   if (!element) {
     return false;
@@ -211,8 +222,21 @@ export const isMetaFieldCandidate = (
   if (META_FIELD_DENYLIST.has(element)) {
     return false;
   }
-  return !NON_META_INTERNAL_TYPES.has(String(internalType ?? ""));
+  return !NON_META_INTERNAL_TYPES.has(dictionaryInternalType(internalType));
 };
+
+/**
+ * The type name of a `sys_dictionary.internal_type` cell.
+ *
+ * `internal_type` is a REFERENCE (to sys_glide_object, keyed by name), and the
+ * client does not send `sysparm_exclude_reference_link`, so the Table API may
+ * hand the cell back as `{ link, value }` rather than as the bare name.
+ * `String()` on that object is "[object Object]" — a type no lookup knows — so
+ * every type filter keyed on it failed open: a `password2` or `journal` column
+ * passed the sidecar filter, and a `script` field fell back to `.txt`. Every
+ * consumer of the column goes through this instead of `String()`.
+ */
+export const dictionaryInternalType = (raw: unknown): string => metaValueText(raw).trim();
 
 /**
  * Own properties only.
@@ -243,14 +267,36 @@ export const META_RECORD_SECRET_RULES: Readonly<
   sys_properties: { classifier: "type", secretValues: ["password", "password2"], columns: ["value"] },
 });
 
+// Own properties only: `table` comes from the instance or a hand-edited
+// manifest, and `constructor` is a valid table-name shape that a bare index
+// resolves to Object's own function — a "rule" whose `columns` is undefined.
+const secretRuleFor = (
+  table: string | undefined
+): (typeof META_RECORD_SECRET_RULES)[string] | undefined =>
+  table && Object.prototype.hasOwnProperty.call(META_RECORD_SECRET_RULES, table)
+    ? META_RECORD_SECRET_RULES[table]
+    : undefined;
+
+/**
+ * The columns of `table` a record-level secret rule may withhold, whatever the
+ * record. Empty for a table without a rule.
+ */
+export const metaSecretRuleColumns = (table: string | undefined): readonly string[] => {
+  const rule = secretRuleFor(table);
+  return rule ? rule.columns : [];
+};
+
 /** The classifier columns a sidecar read of `table` must also fetch. */
 export const metaSecretClassifierFields = (table: string | undefined): string[] => {
-  const rule = table ? META_RECORD_SECRET_RULES[table] : undefined;
+  const rule = secretRuleFor(table);
   return rule ? [rule.classifier] : [];
 };
 
 /**
- * Columns of `row` that must not be written to its sidecar.
+ * Columns of `row` that must not be written to the working tree — neither into
+ * its sidecar nor as a field file (an `includes` entry or the data-field
+ * fallback can make `sys_properties.value` a field file, and the rule is about
+ * the value, not the file it would land in).
  *
  * Fails closed: a row whose classifier column is missing or unreadable (a
  * column-level read ACL, or a `metaFields` override that left it out) is
@@ -262,7 +308,7 @@ export const metaSecretColumns = (
   table: string | undefined,
   row: Record<string, unknown>
 ): string[] => {
-  const rule = table ? META_RECORD_SECRET_RULES[table] : undefined;
+  const rule = secretRuleFor(table);
   if (!rule) {
     return [];
   }

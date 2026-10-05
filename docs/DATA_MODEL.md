@@ -102,14 +102,19 @@ If it has none, its records cannot be attributed to a scope:
 
 A data-model record is its sidecar. The columns written there are the ones
 dictionary discovery finds for the table, minus the deny list that applies to
-every sidecar: system columns, passwords and other secrets, and file fields. A
-field file is only written where the table has a script-typed column (a
-dictionary entry's `calculation`, for example). `tableOptions.<table>.metaFields`
-replaces discovery for a table, just as it does for any other sidecar.
+every sidecar: system columns, file fields, passwords and other secrets,
+journals, collections and images. Field files are written for script-typed
+columns (a dictionary entry's `calculation`, for example) and for any column you
+list in `includes`; the same password, journal, collection and image filter
+applies to those. `tableOptions.<table>.metaFields` replaces discovery for a
+table, just as it does for any other sidecar.
 
 A `sys_properties` record of type `password` or `password2` keeps its secret in
-`value`, a plain string column, so the type filter cannot see it. Its sidecar
-leaves `value` out. So does a property whose `type` cannot be read. Pushing that
+`value`, a plain string column, so the type filter cannot see it. Neither its
+sidecar nor a `value` field file (from `includes` or the data-field fallback)
+carries it: the manifest does not list `value` for that record, and a download
+withholds it and reports the count at info level. A property whose `type` cannot
+be read is treated the same way. Pushing that
 sidecar does not clear the value on the instance, because a missing key is never
 a request to clear a column. To change such a value, set it on the instance.
 
@@ -139,6 +144,10 @@ Either one takes precedence over the built-in rule.
 Records in composite-named tables are always downloaded through the Table API.
 The scoped bulk endpoint names records by display value, so its answer would
 land in folders the manifest does not know.
+
+A `sys_properties` `value` field file is also always fetched through the Table
+API, which reads each property's `type` with the row; the scoped endpoint cannot
+tell a password property from any other.
 
 ## Child tables
 

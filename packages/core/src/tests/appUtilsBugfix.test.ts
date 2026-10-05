@@ -190,7 +190,9 @@ describe("appUtils critical bugfixes", () => {
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
       "x_test",
       expect.anything(),
-      {}
+      {},
+      // No scopeId in the current manifest: the empty-manifest refusal stays.
+      { allowEmpty: false }
     );
     expect(writeManifestFile).toHaveBeenCalledWith({ scope: "x_test", tables: {} });
   });
@@ -207,7 +209,9 @@ describe("appUtils critical bugfixes", () => {
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
       "x_test",
       expect.anything(),
-      {}
+      {},
+      // No scopeId in the current manifest: the empty-manifest refusal stays.
+      { allowEmpty: false }
     );
     expect(writeManifestFile).toHaveBeenCalledWith({ scope: "x_test", tables: {} });
   });
