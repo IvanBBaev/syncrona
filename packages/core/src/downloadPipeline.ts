@@ -8,6 +8,7 @@ import * as ConfigManager from "./config.js";
 import { defaultClient, unwrapSNResponse } from "./snClient.js";
 import type { SNClient } from "./snClient.js";
 import {
+  applyIncludeTypeRulesToManifest,
   attachMetaFieldsToManifest,
   buildManifestFromTableAPI,
   buildBulkDownloadFromTableAPI,
@@ -15,7 +16,7 @@ import {
   ManifestMetaFields,
   ManifestRecordNames,
 } from "./manifestBuilder.js";
-import { isMetaFile, isSecretRuleColumn, metaSecretRuleColumns } from "./metaFields.js";
+import { classifyColumn, isMetaFile } from "./metaFields.js";
 import { applyDataModelTableOptions } from "./dataModel.js";
 import {
   COMPOSITE_TABLES,
@@ -350,10 +351,10 @@ export const applyRecordSecretRulesToContent = async (
 ): Promise<void> => {
   const requested: SN.MissingFileTableMap = Object.create(null);
   for (const [table, tableConfig] of Object.entries(manifest.tables ?? {})) {
-    const columns = metaSecretRuleColumns(table);
-    if (columns.length === 0) continue;
     for (const record of Object.values(tableConfig.records ?? {})) {
-      const governed = (record.files ?? []).filter((file) => columns.includes(file.name));
+      const governed = (record.files ?? []).filter(
+        (file) => classifyColumn(table, file.name) === "secret"
+      );
       if (governed.length === 0) continue;
       for (const file of governed) {
         delete file.content;
@@ -372,14 +373,20 @@ export const applyRecordSecretRulesToContent = async (
     tableOptions,
     buildManifestRecordNames(manifest)
   );
+  const unread: string[] = [];
+  let unreadTotal = 0;
   for (const table of Object.keys(requested)) {
     const fetchedBySysId = new Map<string, SN.File[]>();
     for (const record of Object.values(fetched[table]?.records ?? {})) {
       fetchedBySysId.set(record.sys_id, record.files ?? []);
     }
+    let unreadInTable = 0;
     for (const record of Object.values(manifest.tables[table].records)) {
       const values = fetchedBySysId.get(record.sys_id);
-      if (!values) continue;
+      if (!values) {
+        if (requested[table][record.sys_id]) unreadInTable += 1;
+        continue;
+      }
       for (const file of record.files ?? []) {
         const value = values.find((candidate) => candidate.name === file.name);
         if (value && "content" in value) {
@@ -387,6 +394,19 @@ export const applyRecordSecretRulesToContent = async (
         }
       }
     }
+    if (unreadInTable > 0) {
+      unread.push(`${unreadInTable} in ${table}`);
+      unreadTotal += unreadInTable;
+    }
+  }
+  if (unread.length > 0) {
+    // A 200 with fewer rows than asked for (a row-level read ACL, a record
+    // deleted mid-run) leaves those records with no content, so init writes no
+    // value file for them. That is the safe outcome, not a silent one.
+    logger.warn(
+      `Could not re-read the secret-governed value of ${unreadTotal} record(s) (${unread.join(", ")}) ` +
+        "through the Table API — no value was written for them; `syncrona refresh` retries them."
+    );
   }
 };
 
@@ -435,6 +455,10 @@ export const syncManifest = async (): Promise<boolean> => {
       }
     }
     if (fromScopedEndpoint) {
+      // The scoped endpoint lists an included column whatever its dictionary
+      // type, and processMissingFiles would then ask it for the value. Filtered
+      // before the manifest is written, so the request never names the column.
+      await applyIncludeTypeRulesToManifest(newManifest, client, config);
       // DX22: the companion scoped app answers without a metadata layer, so
       // refresh used to write `.meta.json` only on the fallback path — that is,
       // only on instances WITHOUT the app the docs tell you to install.
@@ -867,15 +891,10 @@ const createTableFetcher = (
   // never goes to the scoped endpoint either: it returns the value whatever the
   // record's type, so a password property would be written to disk. The Table
   // API path reads the classifier with the row and withholds the value.
-  const requestsSecretRuleColumn = (table: string, records: SN.MissingFileRecord): boolean => {
-    const columns = metaSecretRuleColumns(table);
-    return (
-      columns.length > 0 &&
-      Object.values(records ?? {}).some((files) =>
-        (files ?? []).some((file) => columns.includes(file.name))
-      )
+  const requestsSecretRuleColumn = (table: string, records: SN.MissingFileRecord): boolean =>
+    Object.values(records ?? {}).some((files) =>
+      (files ?? []).some((file) => classifyColumn(table, file.name) === "secret")
     );
-  };
 
   return async (requested: SN.MissingFileTableMap): Promise<SN.TableMap> => {
     if (scopedEndpointUnavailable) {
@@ -1070,7 +1089,7 @@ const collectUnfetchedFields = (
       // is not a read-access gap. The scoped bulk endpoint never produces one,
       // and counting its absence here would make every refresh against an
       // instance that HAS that endpoint report itself incomplete forever.
-      if (isMetaFile(file) || isSecretRuleColumn(table, file.name)) continue;
+      if (isMetaFile(file) || classifyColumn(table, file.name) === "secret") continue;
       if (!returned.has(file.name)) unfetched.add(file.name);
     }
   }

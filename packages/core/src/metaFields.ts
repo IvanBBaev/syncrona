@@ -302,9 +302,11 @@ export const isSecretRuleColumn = (table: string | undefined, column: string): b
  * so it is "missing" on every run by design; counted, it kept `repair` from
  * ever converging. Same exemption as collectUnfetchedFields (downloadPipeline) applies to a fetch.
  *
- * Only the REPORT uses this: refresh and `repair --apply` still fetch every
- * listed governed column (processMissingFiles recomputes the full map), and the
- * Table API path writes the value of a non-secret record.
+ * Only the COUNT uses this: refresh and `repair --apply` still fetch every
+ * listed governed column (processMissingFiles recomputes the full map) — repair
+ * runs that fetch whenever `exempt` > 0, even when nothing counted is missing —
+ * and the Table API path writes the value of a non-secret record while a
+ * password-typed one stays withheld.
  */
 export const withoutSecretRuleColumns = (
   missing: SN.MissingFileTableMap
@@ -355,8 +357,45 @@ export const metaSecretColumns = (
   return kind !== "" && !rule.secretValues.includes(kind) ? [] : [...rule.columns];
 };
 
+/**
+ * How the value of `column` of `table` may reach the working tree.
+ *
+ *  - "unsafe" — its dictionary type is in UNSAFE_VALUE_INTERNAL_TYPES (a
+ *    credential, journal or binary). Never written, whatever selected the
+ *    column: discovery, an `includes` entry or the data-field fallback.
+ *  - "secret" — a record-level secret rule (META_RECORD_SECRET_RULES) governs
+ *    it. Written only from a Table API read that carries the rule's classifier,
+ *    and then per row as metaSecretColumns decides.
+ *  - "unknown" — its dictionary type could not be read (no row, or an empty
+ *    type). Kept, and the caller says so: dropping it would make `includes`
+ *    unusable where sys_dictionary reads are restricted.
+ *  - "safe" — anything else.
+ *
+ * The one column-level decision: the Table API manifest build, the
+ * scoped-endpoint post-processing, the `includes` filter, init's content
+ * re-read and the download fetcher all route through it. `dictType` is the raw
+ * `sys_dictionary.internal_type` cell; a caller with no dictionary row passes
+ * nothing, and only the record-level rule can then be told apart.
+ */
+export type ColumnClass = "unsafe" | "secret" | "unknown" | "safe";
+
+export const classifyColumn = (
+  table: string | undefined,
+  column: string,
+  dictType?: unknown
+): ColumnClass => {
+  const type = dictionaryInternalType(dictType);
+  if (UNSAFE_VALUE_INTERNAL_TYPES.has(type)) {
+    return "unsafe";
+  }
+  if (secretRuleFor(table)?.columns.includes(column)) {
+    return "secret";
+  }
+  return type === "" ? "unknown" : "safe";
+};
+
 /** A value with a single unambiguous column form. */
-const isColumnScalar = (raw: unknown): boolean =>
+const isColumnScalar =(raw: unknown): boolean =>
   typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean";
 
 /**
