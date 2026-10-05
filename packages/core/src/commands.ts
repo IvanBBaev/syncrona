@@ -246,6 +246,16 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
       throw e;
     }
   }
+  if (fromScopedEndpoint && Object.keys(man.tables || {}).length === 0) {
+    // The scoped endpoint answers `{ tables: {} }` for a scope it finds nothing
+    // in — including a misspelt one, or one the user cannot read. Writing that
+    // would bind the directory to an empty manifest without a scopeId, past the
+    // refusal the Table API build enforces for exactly this case. Rebuild it
+    // there instead, so both paths either produce a real manifest or refuse.
+    logger.info("Custom endpoint returned empty manifest — building from Table API...");
+    fromScopedEndpoint = false;
+    man = await buildManifestFromTableAPI(args.scope, client, config);
+  }
   if (fromScopedEndpoint) {
     // DX22: without this the scoped app's manifest lists only file fields, so a
     // download against an instance that has the companion app produces scripts

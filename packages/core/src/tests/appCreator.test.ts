@@ -215,7 +215,9 @@ describe("sys_app helpers", () => {
   it("findExistingApp returns the sys_id of a matching scope, or undefined", async () => {
     const { client: hit } = fakeClient({ existingApps: [{ sys_id: "s1" }] });
     await expect(findExistingApp(hit, "x_acme_app")).resolves.toBe("s1");
-    expect(hit.tableAPIGet).toHaveBeenCalledWith("sys_app", "scope=x_acme_app", "sys_id", 1);
+    // sys_scope, not sys_app: a scope installed from the store lives in
+    // sys_store_app, and only their common parent sees both.
+    expect(hit.tableAPIGet).toHaveBeenCalledWith("sys_scope", "scope=x_acme_app", "sys_id", 1);
     const { client: miss } = fakeClient({ existingApps: [] });
     await expect(findExistingApp(miss, "x_acme_app")).resolves.toBeUndefined();
     const { client: odd } = fakeClient();
@@ -270,7 +272,10 @@ describe("initNewApp", () => {
       },
     });
     expect(d.prepareWorkspace).toHaveBeenCalledTimes(1);
-    expect(d.downloadApp).toHaveBeenCalledWith("x_acme_asset_track", client, { scopeId: "app-sys-id-1" });
+    expect(d.downloadApp).toHaveBeenCalledWith("x_acme_asset_track", client, {
+      scopeId: "app-sys-id-1",
+      justCreated: true,
+    });
     expect(mockLoggerSuccess).toHaveBeenCalledWith(expect.stringContaining("sys_id app-sys-id-1"));
   });
 
@@ -370,7 +375,25 @@ describe("initNewApp", () => {
         deps(client, { downloadApp: jest.fn(async () => Promise.reject(failure)) })
       )
     ).rejects.toThrow(
-      /created \(sys_id app-sys-id-1\), but binding this directory failed: disk full .*syncrona download x_acme_asset_track/
+      /created \(sys_id app-sys-id-1\), but binding this directory failed: disk full Do not re-run init --new/
+    );
+  });
+
+  it("the failed-bind recovery spells out the manifest instead of recommending `download`", async () => {
+    // `syncrona download <scope>` refuses a scope that owns no records, which a
+    // just-created one usually is, so it cannot be THE recovery.
+    const { client } = fakeClient();
+    const error = await initNewApp(
+      { logLevel: "info", new: true, name: "Asset Tracker" } as never,
+      deps(client, { downloadApp: jest.fn(async () => Promise.reject(new Error("disk full"))) })
+    ).catch((e: unknown) => e as Error);
+    expect(error).toBeInstanceOf(AppCreatorError);
+    expect((error as Error).message).toContain(
+      'Bind this directory by writing sync.manifest.json with {"scope":"x_acme_asset_track","scopeId":"app-sys-id-1","tables":{}}'
+    );
+    expect((error as Error).message).not.toMatch(/Re-run the binding with `syncrona download/);
+    expect((error as Error).message).toContain(
+      "`syncrona download x_acme_asset_track` only works once the scope owns records."
     );
   });
 });

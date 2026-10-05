@@ -63,6 +63,18 @@ jest.unstable_mockModule("inquirer", () => ({
   },
 }));
 
+// A scoped-endpoint answer with one table: an EMPTY answer is no longer taken
+// at face value (it is rebuilt through the Table API, which refuses it), see
+// downloadEmptyScope.test.ts.
+const SCOPED_MANIFEST = {
+  scope: "x_test",
+  tables: {
+    sys_script_include: {
+      records: { Demo: { name: "Demo", sys_id: "1", files: [{ name: "script", type: "js" }] } },
+    },
+  },
+};
+
 describe("downloadCommand flow", () => {
   // REV-206. `downloadCommand` ends by branching on `process.exitCode`, which
   // `downloadAllFiles` sets when a table could not be fetched. That value is
@@ -89,7 +101,7 @@ describe("downloadCommand flow", () => {
   });
 
   it("downloads manifest and skeletons non-destructively (processManifest forceWrite=false)", async () => {
-    const manifest = { scope: "x_test", tables: {} };
+    const manifest = SCOPED_MANIFEST;
     mockGetManifestApi.mockResolvedValue({ data: { result: manifest } });
 
     const { downloadCommand } = await import("../commands.js");
@@ -109,7 +121,7 @@ describe("downloadCommand flow", () => {
   });
 
   it("skips confirmation prompt in ci mode", async () => {
-    const manifest = { scope: "x_test", tables: {} };
+    const manifest = SCOPED_MANIFEST;
     mockGetManifestApi.mockResolvedValue({ data: { result: manifest } });
 
     const { downloadCommand } = await import("../commands.js");
@@ -121,7 +133,7 @@ describe("downloadCommand flow", () => {
   });
 
   it("REV-206 announces a clean completion when nothing flagged a failed table", async () => {
-    mockGetManifestApi.mockResolvedValue({ data: { result: { scope: "x_test", tables: {} } } });
+    mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
 
     const { downloadCommand } = await import("../commands.js");
 
@@ -136,7 +148,7 @@ describe("downloadCommand flow", () => {
   });
 
   it("REV-206 warns instead of announcing success when a table could not be fetched", async () => {
-    mockGetManifestApi.mockResolvedValue({ data: { result: { scope: "x_test", tables: {} } } });
+    mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
 
     const { downloadCommand } = await import("../commands.js");
 

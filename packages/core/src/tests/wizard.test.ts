@@ -317,10 +317,13 @@ describe("wizard", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "Custom endpoint returned empty manifest — building from Table API..."
     );
+    // The interactive wizard binds an EXISTING scope, so the empty-manifest
+    // refusal stays on: only `init --new` (justCreated) may lift it.
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
       "x_demo",
       expect.anything(),
-      expect.anything()
+      expect.anything(),
+      { allowEmpty: false }
     );
     expect(mockLoggerSuccess).toHaveBeenCalledWith("1 files ready. Open Claude and start coding.");
   });

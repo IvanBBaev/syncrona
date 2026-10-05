@@ -228,13 +228,18 @@ export async function createScopedApp(
   return sys_id;
 }
 
-/** sys_id of an existing application with this scope, if there is one. */
+/**
+ * sys_id of an existing scope with this name, if there is one. It reads
+ * `sys_scope`, the parent of both `sys_app` (custom applications) and
+ * `sys_store_app` (installed store/plugin applications): a scope the store
+ * installed is taken too, and `sys_app` alone would not see it.
+ */
 export async function findExistingApp(
   client: Pick<SNClient, "tableAPIGet">,
   scope: string
 ): Promise<string | undefined> {
   const rows = await unwrapSNResponse<Array<{ sys_id?: unknown }>>(
-    client.tableAPIGet("sys_app", `scope=${escapeQueryValue(scope)}`, "sys_id", 1)
+    client.tableAPIGet("sys_scope", `scope=${escapeQueryValue(scope)}`, "sys_id", 1)
   );
   const sysId = Array.isArray(rows) ? rows[0]?.sys_id : undefined;
   return typeof sysId === "string" && sysId !== "" ? sysId : undefined;
@@ -248,7 +253,7 @@ export type InitNewDeps = {
   downloadApp: (
     scope: string,
     client: SNClient,
-    options: { scopeId?: string }
+    options: { scopeId?: string; justCreated?: boolean }
   ) => Promise<SN.AppManifest>;
   /** Makes sure sync.config.js and the source directory exist, then reloads the config. */
   prepareWorkspace: () => Promise<void>;
@@ -360,12 +365,22 @@ export async function initNewApp(
 
   try {
     await deps.prepareWorkspace();
-    await deps.downloadApp(scope, client, { scopeId });
+    // justCreated: the scope has existed for one request and may own no
+    // sys_metadata rows at all, so the empty-manifest refusal that guards
+    // `download` / `refresh` of an existing scope must not apply here.
+    await deps.downloadApp(scope, client, { scopeId, justCreated: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    // The recovery must not be `syncrona download <scope>`: a scope that owns no
+    // records yet is exactly what download refuses to build a manifest for. The
+    // manifest init --new would have written is spelled out instead, scopeId
+    // included, so the hand-written binding is the same one.
+    const manifest = JSON.stringify({ scope, scopeId, tables: {} });
     throw new AppCreatorError(
       `The application ${scope} was created (sys_id ${scopeId}), but binding this directory failed: ${message} ` +
-        `Re-run the binding with \`syncrona download ${scope}\` — do not re-run init --new, the scope now exists.`
+        "Do not re-run init --new, the scope now exists. " +
+        `Bind this directory by writing sync.manifest.json with ${manifest} next to sync.config.js; ` +
+        `\`syncrona download ${scope}\` only works once the scope owns records.`
     );
   }
   logger.success(`This directory is bound to ${scope}. Add files and run \`syncrona push --create\`.`);
