@@ -630,6 +630,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         diff: {
           type: "string",
           description: "Optional branch name for --diff build",
+          pattern: "^(?!\\s*-)",
           default: "",
         },
         logLevel: {
@@ -654,12 +655,14 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
       properties: {
         target: {
           type: "string",
-          description: "Optional encoded target path(s)",
+          description: "Optional encoded target path(s); must not start with \"-\"",
+          pattern: "^(?!\\s*-)",
           default: "",
         },
         diff: {
           type: "string",
           description: "Optional branch name for --diff",
+          pattern: "^(?!\\s*-)",
           default: "",
         },
         scopeSwap: {
@@ -668,6 +671,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
         updateSet: {
           type: "string",
+          pattern: "^(?!\\s*-)",
           default: "",
         },
         logLevel: {
@@ -1787,7 +1791,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
   {
     name: "sync_cicd_run",
     description:
-      "Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. Needs the sn_cicd.sys_ci_automation role.",
+      "Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. An incomplete run returns its progressId; pass it back as progressId to resume polling that tracker without dispatching new work. Needs the sn_cicd.sys_ci_automation role.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1848,6 +1852,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           description: "install: upgrade the base application automatically.",
         },
         devNotes: { type: "string", description: "publish: developer notes for the published version." },
+        progressId: {
+          type: "string",
+          pattern: "^\\s*[0-9a-fA-F]{32}\\s*$",
+          description:
+            "Resume instead of dispatch: the 32-character hexadecimal sys_id of an existing sn_cicd progress tracker (the progressId an incomplete run returned). Polls that tracker — and for ATF actions reads its result — with the same outcome mapping; no dispatch request is sent, so confirmDestructive may be false, and the dispatch arguments are ignored. action is still required: it picks the ATF result record to read.",
+        },
         pollMs: {
           type: "number",
           minimum: 250,
@@ -1859,12 +1869,12 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           type: "boolean",
           default: false,
           description:
-            "Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to run.",
+            "Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to dispatch; a progressId resume only polls and accepts false.",
         },
         dryRun: {
           type: "boolean",
           default: false,
-          description: "Return the request that would be dispatched and record an audit entry without calling the instance.",
+          description: "Return the request that would be dispatched (or, with progressId, the tracker that would be polled) and record an audit entry without calling the instance.",
         },
         timeoutMs: {
           type: "number",
@@ -1875,6 +1885,50 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
       },
       required: ["action", "confirmDestructive"],
+    },
+  },
+  {
+    name: "sync_fluent_build",
+    description:
+      "Build a ServiceNow Fluent project (a directory holding now.config.json) through the optional @syncrona/fluent package and the ServiceNow SDK — the same build as `syncrona fluent build`. Local only: writes the project's dist/ output and never calls the instance. Returns the build errors and warnings, the output paths, and outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. When @syncrona/fluent or @servicenow/sdk is not installed, returns outcome incomplete with code FLUENT_NOT_INSTALLED or FLUENT_SDK_MISSING and an install hint. Errors and warnings are capped at 200 each (errorCount and warningCount give the totals, errorsTruncated and warningsTruncated mark a cut); symlinks in the output are not followed, and an output directory that cannot be listed is reported in outputWarnings without failing the build.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          default: ".",
+          description:
+            "Fluent project directory, relative to the workspace; it must contain now.config.json and may not lead outside the workspace (symlinks included).",
+        },
+        frozenKeys: {
+          type: "boolean",
+          default: false,
+          description: "Fail when generated keys would change (the CLI's --frozen-keys).",
+        },
+        errorOnConflict: {
+          type: "boolean",
+          default: false,
+          description: "Treat key conflicts as errors (the CLI's --error-on-conflict).",
+        },
+        skipClean: {
+          type: "boolean",
+          default: false,
+          description: "Keep the previous output directory instead of cleaning it (the CLI's --skip-clean).",
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description:
+            "Plan the run and record an audit entry without writing any file to the workspace.",
+        },
+        timeoutMs: {
+          type: "number",
+          minimum: 1000,
+          maximum: 900000,
+          description:
+            "Budget for the build. The build runs in-process and cannot be cancelled: when the budget runs out the outcome is incomplete and the build may still write its output. A build that blocks the event loop (synchronous compile work) delays the timeout, and the server, until it returns; such a run returns its real result with budgetExceeded: true.",
+        },
+      },
     },
   },
   {

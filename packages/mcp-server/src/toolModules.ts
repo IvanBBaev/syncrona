@@ -31,6 +31,7 @@ import { handleSessionTool } from "./handlers/sessionHandlers";
 import { handleWorkspaceTool } from "./handlers/workspaceHandlers";
 import { handleServiceNowCrudTool } from "./handlers/serviceNowCrudHandlers";
 import { handleInsightTool } from "./handlers/insightToolHandlers";
+import { handleFluentTool } from "./handlers/fluentHandlers";
 import { handleMetadataAnalysisTool } from "./handlers/metadataAnalysisHandlers";
 import { handleScriptAnalysisTool } from "./handlers/scriptAnalysisHandlers";
 import { handleHealthPlanningTool } from "./handlers/healthPlanningHandlers";
@@ -153,6 +154,18 @@ export const TOOL_HANDLER_MODULES: ToolHandlerModule[] = [
         timeoutMs: ctx.timeoutMs,
         dryRun: ctx.dryRun,
         startedAt: ctx.startedAt,
+        makeDryRunAuditResponse: ctx.makeDryRunAuditResponse,
+        auditMutatingTool: ctx.auditMutatingTool,
+      }),
+  },
+  {
+    name: "fluent",
+    invoke: (ctx) =>
+      handleFluentTool(ctx.toolName, ctx.args, {
+        timeoutMs: ctx.timeoutMs,
+        dryRun: ctx.dryRun,
+        startedAt: ctx.startedAt,
+        workspaceDir: PROJECT_DIR,
         makeDryRunAuditResponse: ctx.makeDryRunAuditResponse,
         auditMutatingTool: ctx.auditMutatingTool,
       }),

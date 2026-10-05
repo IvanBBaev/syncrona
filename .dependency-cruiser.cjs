@@ -13,8 +13,8 @@
  *    (mirror-architecture §12: the mirror engine is a sibling of the CLI, not a
  *    dependant of it, so `syncrona mirror` can delegate into it without a cycle);
  *  - `@syncrona/fluent` never imports the `core` CLI or `mcp-server` either
- *    (core loads the optional Fluent tier lazily, so an arrow back would close
- *    a cycle);
+ *    (core and the mcp-server's `sync_fluent_build` both load the optional
+ *    Fluent tier lazily, so an arrow back would close a cycle);
  *  - the `core` and `mcp-server` consumers never import each other directly;
  *  - the 8 build-plugin packages are leaves that may only import `types`.
  *
@@ -87,7 +87,7 @@ module.exports = {
     {
       name: "fluent-no-core",
       comment:
-        "@syncrona/fluent is the optional Fluent tier: core's `fluentCommand.ts` resolves it lazily and talks to it only through the `SN.FluentModule` port in @syncrona/types. It may import the foundation packages but never `syncrona` or `@syncrona/mcp-server`, because an arrow back into the CLI would close a cycle and drag the CLI into every Fluent build. Matched in both the specifier and the resolved-path form for the same REV-139 reason as `consumers-are-siblings`. (Reaches: packages/fluent/src.)",
+        "@syncrona/fluent is the optional Fluent tier: core's `fluentCommand.ts` and the mcp-server's `handlers/fluentHandlers.ts` (`sync_fluent_build`) resolve it lazily at call time — neither declares it as a dependency or imports it statically — and talk to it only through the `SN.FluentModule` port in @syncrona/types (the mcp-server through a structural copy of its build slice). It may import the foundation packages but never `syncrona` or `@syncrona/mcp-server`, because an arrow back into the CLI would close a cycle and drag the CLI into every Fluent build. Matched in both the specifier and the resolved-path form for the same REV-139 reason as `consumers-are-siblings`. (Reaches: packages/fluent/src.)",
       severity: "error",
       from: { path: "^packages/fluent/src" },
       to: {

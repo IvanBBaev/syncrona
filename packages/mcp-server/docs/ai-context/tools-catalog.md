@@ -64,6 +64,7 @@
 - sync_generate_release_notes: release notes from an Update Set in markdown or json
 - sync_run_atf_tests: trigger ATF test/suite execution and poll pass/fail results
 - sync_cicd_run: run an ATF suite/test or install/publish/roll back an app through the sn_cicd CI/CD API and poll its progress
+- sync_fluent_build: build a workspace Fluent project through the optional @syncrona/fluent package and return diagnostics, output paths and the CLI exit code
 - sync_validate_before_push: pre-push security/architecture analysis plus conflict check per record
 - sync_compare_instances: compare a scope's script records between two stored instance profiles
 - sync_export_update_set: export an Update Set as XML and optionally write it to disk

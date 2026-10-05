@@ -28,6 +28,17 @@ const optionalSysIdSchema = z
   })
   .optional();
 
+// Values the MCP handlers forward to the syncrona CLI as argv tokens. A value
+// that starts with "-" would be parsed by the CLI as an option, so a caller
+// could smuggle `--prune` or `--create` into a push through `target`. The
+// handlers also pass option values in `--opt=value` form, but a positional
+// (`push [target]`) cannot be protected that way, so the schema refuses them.
+export const CLI_TOKEN_PATTERN = "^(?!\\s*-)";
+const cliTokenSchema = z
+  .string()
+  .regex(new RegExp(CLI_TOKEN_PATTERN), 'must not start with "-" (it would be read as a CLI option)');
+const logLevelSchema = z.enum(["error", "warn", "info", "debug", "silly"]);
+
 const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   sn_query_records: z
     .looseObject({
@@ -94,13 +105,29 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
     }),
+  sync_status: z
+    .looseObject({
+      logLevel: logLevelSchema.optional(),
+      timeoutMs: timeoutSchema.optional(),
+    }),
+  sync_refresh: z
+    .looseObject({
+      logLevel: logLevelSchema.optional(),
+      timeoutMs: timeoutSchema.optional(),
+    }),
+  sync_build: z
+    .looseObject({
+      diff: cliTokenSchema.optional(),
+      logLevel: logLevelSchema.optional(),
+      timeoutMs: timeoutSchema.optional(),
+    }),
   sync_push: z
     .looseObject({
-      target: z.string().optional(),
-      diff: z.string().optional(),
+      target: cliTokenSchema.optional(),
+      diff: cliTokenSchema.optional(),
       scopeSwap: z.boolean().optional(),
-      updateSet: z.string().optional(),
-      logLevel: z.enum(["error", "warn", "info", "debug", "silly"]).optional(),
+      updateSet: cliTokenSchema.optional(),
+      logLevel: logLevelSchema.optional(),
       confirmDestructive: z.boolean(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
@@ -165,8 +192,19 @@ const toolArgSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
       baseAppVersion: z.string().optional(),
       autoUpgradeBaseApp: z.boolean().optional(),
       devNotes: z.string().optional(),
+      // SDK-F7: resume an incomplete run by polling its tracker; spliced into a URL.
+      progressId: sysIdSchema.optional(),
       pollMs: z.number().min(250).max(60000).optional(),
       confirmDestructive: z.boolean(),
+      dryRun: z.boolean().optional(),
+      timeoutMs: timeoutSchema.optional(),
+    }),
+  sync_fluent_build: z
+    .looseObject({
+      project: z.string().optional(),
+      frozenKeys: z.boolean().optional(),
+      errorOnConflict: z.boolean().optional(),
+      skipClean: z.boolean().optional(),
       dryRun: z.boolean().optional(),
       timeoutMs: timeoutSchema.optional(),
     }),

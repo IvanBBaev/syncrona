@@ -6,11 +6,11 @@
 This reference is generated from `packages/mcp-server/src/toolSchemas.ts`.
 Do not edit it manually; regenerate with `node packages/mcp-server/scripts/generate-tool-reference.js`.
 
-Total tools: **62**.
+Total tools: **63**.
 
 ## Contents
 
-- [sync_ tools (42)](#sync_-tools)
+- [sync_ tools (43)](#sync_-tools)
   - [sync_status](#sync_status)
   - [sync_get_session_context](#sync_get_session_context)
   - [sync_set_scope](#sync_set_scope)
@@ -48,6 +48,7 @@ Total tools: **62**.
   - [sync_generate_release_notes](#sync_generate_release_notes)
   - [sync_run_atf_tests](#sync_run_atf_tests)
   - [sync_cicd_run](#sync_cicd_run)
+  - [sync_fluent_build](#sync_fluent_build)
   - [sync_validate_before_push](#sync_validate_before_push)
   - [sync_compare_instances](#sync_compare_instances)
   - [sync_export_update_set](#sync_export_update_set)
@@ -322,7 +323,7 @@ Push files to ServiceNow instance using SyncroNow AI. Destructive action.
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `target` | `string` | no | `""` | Optional encoded target path(s) |
+| `target` | `string` | no | `""` | Optional encoded target path(s); must not start with "-" |
 | `diff` | `string` | no | `""` | Optional branch name for --diff |
 | `scopeSwap` | `boolean` | no | `false` |  |
 | `updateSet` | `string` | no | `""` |  |
@@ -652,7 +653,7 @@ Trigger ATF test execution in the instance (a single test, a suite, or all suite
 
 ### sync_cicd_run
 
-Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. Needs the sn_cicd.sys_ci_automation role.
+Run an ATF suite or test, or install, publish or roll back an application, through the ServiceNow CI/CD REST API (sn_cicd) — the same requests as `syncrona cicd <action>`. Dispatches the action, polls its progress tracker until it finishes or timeoutMs runs out, and for ATF actions reads the linked result. Returns outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. An incomplete run returns its progressId; pass it back as progressId to resume polling that tracker without dispatching new work. Needs the sn_cicd.sys_ci_automation role.
 
 - Version: `1.0.0`
 - Safety: mutating - requires `confirmDestructive: true`; supports `dryRun`
@@ -676,10 +677,27 @@ Run an ATF suite or test, or install, publish or roll back an application, throu
 | `baseAppVersion` | `string` | no |  | install: base application version. |
 | `autoUpgradeBaseApp` | `boolean` | no |  | install: upgrade the base application automatically. |
 | `devNotes` | `string` | no |  | publish: developer notes for the published version. |
+| `progressId` | `string` | no |  | Resume instead of dispatch: the 32-character hexadecimal sys_id of an existing sn_cicd progress tracker (the progressId an incomplete run returned). Polls that tracker — and for ATF actions reads its result — with the same outcome mapping; no dispatch request is sent, so confirmDestructive may be false, and the dispatch arguments are ignored. action is still required: it picks the ATF result record to read. |
 | `pollMs` | `number (min 250, max 60000)` | no | `1000` | Interval between progress-tracker polls, in milliseconds. |
-| `confirmDestructive` | `boolean` | yes | `false` | Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to run. |
-| `dryRun` | `boolean` | no | `false` | Return the request that would be dispatched and record an audit entry without calling the instance. |
+| `confirmDestructive` | `boolean` | yes | `false` | Required acknowledgement — every action dispatches work that changes the instance (application installs, publishes and rollbacks, or ATF runs that write results). Must be true to dispatch; a progressId resume only polls and accepts false. |
+| `dryRun` | `boolean` | no | `false` | Return the request that would be dispatched (or, with progressId, the tracker that would be polled) and record an audit entry without calling the instance. |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  | Budget for the whole call (dispatch, polling and result read). When it runs out the outcome is incomplete and the work may still be running on the instance. |
+
+### sync_fluent_build
+
+Build a ServiceNow Fluent project (a directory holding now.config.json) through the optional @syncrona/fluent package and the ServiceNow SDK — the same build as `syncrona fluent build`. Local only: writes the project's dist/ output and never calls the instance. Returns the build errors and warnings, the output paths, and outcome succeeded | failed | incomplete with the CLI's exitCode 0 | 2 | 1. When @syncrona/fluent or @servicenow/sdk is not installed, returns outcome incomplete with code FLUENT_NOT_INSTALLED or FLUENT_SDK_MISSING and an install hint. Errors and warnings are capped at 200 each (errorCount and warningCount give the totals, errorsTruncated and warningsTruncated mark a cut); symlinks in the output are not followed, and an output directory that cannot be listed is reported in outputWarnings without failing the build.
+
+- Version: `1.0.0`
+- Safety: supports `dryRun`
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `project` | `string` | no | `"."` | Fluent project directory, relative to the workspace; it must contain now.config.json and may not lead outside the workspace (symlinks included). |
+| `frozenKeys` | `boolean` | no | `false` | Fail when generated keys would change (the CLI's --frozen-keys). |
+| `errorOnConflict` | `boolean` | no | `false` | Treat key conflicts as errors (the CLI's --error-on-conflict). |
+| `skipClean` | `boolean` | no | `false` | Keep the previous output directory instead of cleaning it (the CLI's --skip-clean). |
+| `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without writing any file to the workspace. |
+| `timeoutMs` | `number (min 1000, max 900000)` | no |  | Budget for the build. The build runs in-process and cannot be cancelled: when the budget runs out the outcome is incomplete and the build may still write its output. A build that blocks the event loop (synchronous compile work) delays the timeout, and the server, until it returns; such a run returns its real result with budgetExceeded: true. |
 
 ### sync_validate_before_push
 
