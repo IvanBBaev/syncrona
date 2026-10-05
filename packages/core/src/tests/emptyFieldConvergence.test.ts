@@ -52,6 +52,7 @@ jest.unstable_mockModule("../snClient.js", () => ({
 jest.unstable_mockModule("../manifestBuilder.js", () => ({
   // DX22: the scoped-manifest enrichment is a no-op for these suites — they
   // assert on the manifest they hand in, not on the metadata layer.
+  applyIncludeTypeRulesToManifest: async (manifest: unknown) => manifest,
   attachMetaFieldsToManifest: jest.fn(async (manifest: unknown) => manifest),
   buildManifestFromTableAPI: jest.fn(),
   buildBulkDownloadFromTableAPI: jest.fn(),

@@ -78,6 +78,7 @@ jest.unstable_mockModule("../snClient.js", () => ({
 }));
 
 jest.unstable_mockModule("../manifestBuilder.js", () => ({
+  applyIncludeTypeRulesToManifest: async (manifest: unknown) => manifest,
   attachMetaFieldsToManifest: (...a: unknown[]) =>
     (mockAttachMetaFieldsToManifest as (...x: unknown[]) => unknown)(...a),
   buildManifestFromTableAPI: (...a: unknown[]) =>

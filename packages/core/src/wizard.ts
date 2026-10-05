@@ -15,6 +15,7 @@ import {
   type SNClient,
 } from "./snClient.js";
 import {
+  applyIncludeTypeRulesToManifest,
   buildManifestFromTableAPI,
   listAppsFromTableAPI,
   isScopedEndpointUnavailableError,
@@ -325,11 +326,15 @@ export async function downloadApp(
   try {
     const config = ConfigManager.getConfig();
     let man: SN.AppManifest;
+    // Only the scoped answer still needs the `includes` type filter; a
+    // Table-API build has already been through it.
+    let fromScopedEndpoint = true;
     try {
       man = await unwrapSNResponse(client.getManifest(scope, config, true));
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
         logger.info("Custom scope not found — building manifest from Table API...");
+        fromScopedEndpoint = false;
         man = await buildManifestFromTableAPI(scope, client, config, { allowEmpty });
       } else {
         throw e;
@@ -338,11 +343,18 @@ export async function downloadApp(
 
     if (countManifestFiles(man) === 0) {
       logger.info("Custom endpoint returned empty manifest — building from Table API...");
+      fromScopedEndpoint = false;
       man = await buildManifestFromTableAPI(scope, client, config, { allowEmpty });
     }
 
     if (options.scopeId) {
       man = { ...man, scopeId: options.scopeId };
+    }
+
+    if (fromScopedEndpoint) {
+      // The scoped endpoint lists and fills an included column whatever its
+      // dictionary type; an unsafe one leaves the manifest with its content.
+      await applyIncludeTypeRulesToManifest(man, client, config);
     }
 
     // The scoped endpoint's content ignores the record-level secret rule (a

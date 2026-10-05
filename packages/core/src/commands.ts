@@ -19,6 +19,7 @@ import inquirer from "inquirer";
 import { clearDiff, gitDiffToEncodedPaths, writeDiff } from "./gitUtils.js";
 import { encodedPathsToFilePaths } from "./FileUtils.js";
 import {
+  applyIncludeTypeRulesToManifest,
   attachMetaFieldsToManifest,
   isScopedEndpointUnavailableError,
   buildManifestFromTableAPI,
@@ -257,6 +258,9 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
     man = await buildManifestFromTableAPI(args.scope, client, config);
   }
   if (fromScopedEndpoint) {
+    // See syncManifest: the `includes` type filter runs first, so neither the
+    // metadata layer nor the fetch below ever sees an unsafe included column.
+    await applyIncludeTypeRulesToManifest(man, client, config);
     // DX22: without this the scoped app's manifest lists only file fields, so a
     // download against an instance that has the companion app produces scripts
     // and no `.meta.json` at all.
