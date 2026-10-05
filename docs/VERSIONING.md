@@ -46,7 +46,7 @@ ServiceNow SDK parity commands (`query`, `cicd`, `fluent`, `push --create` /
 
 ### MCP tool contract
 
-The MCP server currently exposes **62 tools**
+The MCP server currently exposes **63 tools**
 (reference: [MCP_TOOLS.md](MCP_TOOLS.md), generated from the schemas). The
 tool contract is the most strictly guarded surface:
 

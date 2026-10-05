@@ -21,14 +21,14 @@ It complements README and package-level docs with implementation and quality-gat
   application on the instance and binds the directory to it, and `--dry-run` only prints the `sys_app` body).
 - `npx syncrona refresh` refreshes manifest and downloads new files.
 - `npx syncrona dev` starts watch mode.
-- `npx syncrona push` pushes local files to ServiceNow (`--create` creates or adopts records for files not in the manifest yet; `createRecords: true` in `sync.config.js` sets the default, and the flag (or `--no-create`) wins; `--prune` deletes in-scope records whose local files were all deleted, confirming unless `--ci`, with no config switch).
+- `npx syncrona push` pushes local files to ServiceNow (`--create` creates or adopts records for files not in the manifest yet; `createRecords: true` in `sync.config.js` sets the default, and the flag (or `--no-create`) wins; `--prune` deletes in-scope records whose tracked files git shows deleted, confirming unless `--ci`, with no config switch; `--allow-mass-delete` lifts the 25-record / 20% limit and the `--ci` scope requirement).
 - `npx syncrona download` downloads scoped application files.
 - `npx syncrona build` builds local artifacts.
 - `npx syncrona deploy` deploys built files (`--ci` skips the interactive prompts: it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
 - `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files, and `--apply --prune` deletes orphan files no record claims.
 - `npx syncrona status` prints extended diagnostics.
-- `npx syncrona query <table>` queries records through the Table API with the `now-sdk query` flags (`-q` required); read-only, and `-o json` prints the `{ok, hasMore, nextOffset, records}` envelope.
+- `npx syncrona query <table>` queries records through the Table API with the `now-sdk query` flags except `--select`/`--auth` (`-q` required); read-only, and `-o json` prints the `{ok, hasMore, nextOffset, records}` envelope.
 - `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.
 - `npx syncrona doctor` runs diagnostic checks.
 - `npx syncrona plugins` reports configured plugin rules and plugin package availability.
@@ -52,13 +52,18 @@ It complements README and package-level docs with implementation and quality-gat
   It exits 0 clean, 1 when the run could not finish, and 2 on drift or findings.
 - `npx syncrona cicd <action>` drives the ServiceNow CI/CD REST API (`api/sn_cicd`) and polls
   its progress tracker: `run-suite` / `run-test` run ATF, `install` / `publish` / `rollback`
-  act on an app-repo application (`--scope` or `--app-sys-id`, `--app-version`), `--json`
-  prints the machine result. It needs the `sn_cicd.sys_ci_automation` role and exits 0 on
+  act on an app-repo application (`--scope` or `--app-sys-id`, `--app-version`), `--progress-id`
+  resumes polling an existing tracker without dispatching, and `--json` prints the machine result. It needs the `sn_cicd.sys_ci_automation` role and exits 0 on
   success, 1 when the run could not finish, and 2 on test failures or a failed/cancelled run.
 - `npx syncrona fluent <action>` drives Fluent (`.now.ts`) apps through the optional
   `@syncrona/fluent` + `@servicenow/sdk` tier: `init`, `build`, `transform`, `pack`,
-  `install` (`--reinstall`, prompts unless `--ci`), `types`, `dependencies`, `run` and
-  `status`. It exits 0 on success, 1 on failure, and 2 on build errors or an unfinished install.
+  `install` (`--reinstall`, prompts unless `--ci`; without a terminal or with `--json` it needs `--ci`), `types`, `dependencies`, `run` (local, no instance credential),
+  `status`, `explain [topic]` (the SDK's bundled docs, offline; `--list`, `--peek`) and
+  `move-to-app --ids` (global records into a global app; prompts unless `--ci`, and needs
+  `--ci` without a terminal or with `--json`). `types --native` generates table types from `sys_dictionary` without the SDK,
+  and a plain `types` falls back to it when the SDK is missing.
+  It exits 0 on success (`install` once submitted), 1 on failure, and 2 on build errors, a
+  `status` whose install has not finished, or a `move-to-app` that moved nothing.
 
 ### Shared option contracts
 - `--dry-run` is implemented by `push`, `deploy`, `download`, `build`, `init`,

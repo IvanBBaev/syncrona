@@ -68,16 +68,17 @@ Versus the ServiceNow SDK specifically:
 
 - **Flow Designer and UI Builder** are not editable as source in the file-based
   tier. Use Fluent through `syncrona fluent` where the SDK supports them.
-- **Data-model records are independent sidecars.** A table, its columns and its
-  choices are tracked as separate records (opt-in `dataModelTables`, see
-  [DATA_MODEL.md](DATA_MODEL.md)). Composite parent-plus-children documents are
-  not available yet.
+- **Data-model records are opt-in.** A table, its columns and its choices are
+  tracked as separate sidecars, or as one document per table with
+  `dataModelLayout: "composite"` (opt-in `dataModelTables`, see
+  [DATA_MODEL.md](DATA_MODEL.md)). The live round-trip is still pending.
 - **API-key and mutual-TLS profiles do not reach the `fluent` tier.** The SDK's
   install, reinstall and update-set export endpoints accept only a UI session,
   so only Basic and OAuth profiles work for instance-side `fluent` actions.
-- **Type definitions come from the SDK.** `fluent types` delegates to it, and
-  native generation from `sys_dictionary` is not built yet. There is no
-  `explain` counterpart.
+- **Script and Fluent type definitions come from the SDK.** `fluent types
+  --native` generates table types from `sys_dictionary` without it, but the
+  `--scripts` / `--fluent` definitions still need the SDK, and so do
+  `fluent explain` (the SDK's bundled documentation) and `fluent move-to-app`.
 - **Live-instance verification is pending for the 1.1.0 write paths:**
   `push --create` / `--prune`, `init --new`, `cicd`, `fluent install` and the
   data-model round-trip are covered by mocked tests but have not yet been run

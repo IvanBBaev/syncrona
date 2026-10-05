@@ -222,7 +222,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // list, and one extra function range on top (62/64 against 61/64). Those four counters
 // are the ORIGINAL split, kept because they are what the shape was first read from;
 // the module has since gained coverage and re-based them (the branch pair now reads
-// 289/309 against 287/307 and functions 65/66 against 64/66), so do not treat them as
+// 289/309 against 288/308 and functions 65/66 against 64/66), so do not treat them as
 // the current measurement — the entry's own comment below carries that. Two entries is
 // no longer an outlier — assume any entry can split. Agreement observed is not
 // agreement guaranteed, and a floor set flush turns the first one-branch difference
@@ -240,12 +240,15 @@ const PER_FILE_BRANCH_FLOOR = 45;
 const MODULE_FLOORS = [
   // Guardrail evaluation and the mutating-tool policy: the fail-closed paths here
   // are the difference between a blocked and an executed write.
-  { pattern: 'dist/safetyPolicy.js', line: 97, branch: 96 }, // measured 99.74 / 98.64
+  { pattern: 'dist/safetyPolicy.js', line: 97, branch: 96 }, // measured 99.78 / 98.81
   { pattern: 'dist/policyConfig.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/createTablePolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/endpointPolicy.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // Input validation is the injection/traversal boundary for every tool argument.
-  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.35 / 96.15 (also 99.35 / 96.30: V8 range granularity, 25/26 vs 26/27 branches, same uncovered lines)
+  { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.42 / 96.15
+  // sync_cicd_run installs, publishes and rolls back applications on the instance;
+  // a lost branch here reports a failed or unknown run as succeeded.
+  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 96.64
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
   // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
@@ -286,7 +289,9 @@ const MODULE_FLOORS = [
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.
-  { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.27 / 95.65
+  // SDK-F6: the `fluent` registry module adds covered lines and one covered branch
+  // around the same uncovered lines, which is the whole of 90.27 -> 90.76.
+  { pattern: 'dist/toolModules.js', line: 87, branch: 91 }, // measured 90.76 / 95.83
   // Transport and scope handling: a scope code reaches both a ServiceNow URL and a
   // local filesystem path.
   // Both readings moved UP together (98.50 -> 99.05 line, 91.64 -> 93.49 branch):
@@ -311,13 +316,14 @@ const MODULE_FLOORS = [
   //
   // Neither report prints branch counters, so the lower pair was re-measured the
   // way audit.js's was: `--test-reporter=lcov` under the gate's own flags, which
-  // renders darwin as 287/307 branches, 1040/1050 lines and 64/66 functions. The
+  // renders darwin as 288/308 branches (287/307 before the sync_cicd_run poll-retry
+  // tests drove one more range), 1040/1050 lines and 64/66 functions. The
   // higher pair is then forced, not guessed. Ubuntu's 98.48 is 65/66 — exactly one
   // more covered function range, the same +1 shape this file recorded the last two
   // times this module split — and 289/309 is the only pair that both renders 93.53
   // and moves numerator and denominator together the way an extra counted range
   // does (288/308 renders 93.51, 290/310 renders 93.55).
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.49 (also 99.05 / 93.53: V8 range granularity on ubuntu, 287/307 vs 289/309 branches, same uncovered lines 432-436 441-442 832 1032-1033, one extra covered function range at 98.48 against darwin's 96.97)
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.51 (also 99.05 / 93.53: V8 range granularity on ubuntu, 288/308 vs 289/309 branches, same uncovered lines 432-436 441-442 832 1032-1033, one extra covered function range at 98.48 against darwin's 96.97)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
@@ -334,6 +340,9 @@ const MODULE_FLOORS = [
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
   { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  // SDK-F6: the Fluent build resolves a caller-supplied project path against the
+  // workspace (symlinks included) and swaps the process console while it runs.
+  { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.71
   // REV-213: process-lifetime state and on-disk telemetry. None of these three had a
   // named floor before, and each just rose a long way — the semantic index cache from
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93

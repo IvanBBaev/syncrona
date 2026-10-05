@@ -9,7 +9,7 @@
 |---|---|
 | Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
 | CLI | 27 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps **with or without** the companion scoped app installed |
-| MCP server | 62 tools in 12 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
+| MCP server | 63 tools in 13 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
 | Tests | **4942 passing** — core **116 suites / 1332 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1712** (node:test, against `dist`); mirror **46 suites / 1336 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-25) |
 | Coverage | core **97.85%** lines / 88.51% branches; mcp **97.87%** lines / 91.31% branches; mirror **100%** on all four axes (re-measured 2026-08-25) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). Dev dependencies are audited too since 2026-08-25 — the full tree is also **0 vulnerabilities** (was 11: 5 low, 3 moderate, 3 high, all dev-only), gated in `ci.yml` by a blocking `npm audit --audit-level=high` plus a non-blocking low+moderate report; see [Dependency audit posture](../SECURITY.md#dependency-audit-posture) for why the two trees have different thresholds |
@@ -93,8 +93,9 @@ companion scoped app via the Table-API fallback layer.
 
 ### MCP server
 
-- ~60 tools across 11 handler groups: session/preflight, workspace commands,
-  ServiceNow CRUD, insights, metadata analysis, script analysis,
+- 63 tools across 13 handler modules: session/preflight, workspace commands,
+  ServiceNow CRUD, insights (including the CI/CD runner `sync_cicd_run`),
+  Fluent build (`sync_fluent_build`), metadata analysis, script analysis,
   health/planning, scope knowledge, relation onboarding, unified workflow,
   developer tools (ATF test suggestion, instance-vs-local diff), Jira issue
   context (`jira_get_issue`).
@@ -227,10 +228,11 @@ mindmap
    ServiceNow SDK (`push --create`/`--prune`, `init --new`, `query`, `cicd`,
    `fluent`, opt-in data-model records) are covered by mocked tests, but the
    instance writes have not yet been verified against a live instance (the
-   WP-0 spike verified the read paths only). Still open past 1.1.0: composite
-   parent + children data-model documents, native type generation from
-   `sys_dictionary`, API-key and mutual-TLS profiles in the Fluent tier, and an
-   `explain` counterpart. See [MIGRATING_FROM_NOW_SDK.md](MIGRATING_FROM_NOW_SDK.md)
+   WP-0 spike verified the read paths only). Still open past 1.1.0: API-key
+   and mutual-TLS profiles in the Fluent tier. The opt-in composite data-model
+   layout (`dataModelLayout: "composite"`) has shipped. Native type generation from
+   `sys_dictionary` (`fluent types --native`) and the `fluent explain` /
+   `fluent move-to-app` counterparts have shipped, covered by mocked tests. See [MIGRATING_FROM_NOW_SDK.md](MIGRATING_FROM_NOW_SDK.md)
    and `ROADMAP.md`.
 6. **DX backlog (DX1–DX24)** — onboarding (`check-env`, credential-source
    visibility), help examples, multi-instance guide, plugin-dev docs, error
