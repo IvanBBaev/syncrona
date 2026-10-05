@@ -147,6 +147,50 @@ export const holdPrunesAfterFailedCreates = (
   };
 };
 
+/**
+ * Turn every `delete` of a prune plan whose sys_id the creation plan of the
+ * same run matched into a refusal. That is a record renamed on the instance
+ * whose local files were renamed to match: deleting it would remove the very
+ * record the new files are about to update. The creation plan refuses such an
+ * adoption (the manifest already tracks the sys_id), and this keeps the
+ * DELETE from landing either way, in a dry run and a real run alike.
+ */
+export const holdPrunesMatchedByCreation = (
+  plan: PrunePlan,
+  creation: CreationPlan | undefined
+): PrunePlan => {
+  const matched = new Map<string, string>();
+  for (const planned of creation?.plans ?? []) {
+    if (typeof planned.sysId === "string" && planned.sysId !== "") {
+      matched.set(planned.sysId, `${planned.candidate.table} > ${planned.candidate.recordName}`);
+    }
+  }
+  if (matched.size === 0) return plan;
+  return {
+    ...plan,
+    plans: plan.plans.map((planned) => {
+      const newFiles = matched.get(planned.candidate.sysId);
+      if (planned.action !== "delete" || newFiles === undefined) return planned;
+      return {
+        ...planned,
+        action: "error",
+        message:
+          `not deleted: the new local files of ${newFiles} match this same instance record ` +
+          `(${planned.candidate.sysId}), so it looks renamed rather than deleted. The record ` +
+          "and its manifest entry are kept; run `syncrona refresh` to pick up the new name.",
+      };
+    }),
+  };
+};
+
+/** Tables on which the creation plan already refuses at least one record. */
+const tablesWithPlannedErrors = (creation: CreationPlan | undefined): Set<string> =>
+  new Set(
+    (creation?.plans ?? [])
+      .filter((planned) => planned.action === "error")
+      .map((planned) => planned.candidate.table)
+  );
+
 const pruneSourceRefusal = async (): Promise<string | undefined> => {
   let configured: unknown;
   try {
@@ -916,9 +960,17 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
             : undefined;
         // R2: the prune plan is read-only too (one GET per candidate, scope
         // sys_id not persisted). No DELETE is sent and the manifest is untouched.
+        // The same holds a real run applies before its DELETEs, so the preview
+        // shows the decision the run would make.
         const prunePlan =
           pruneCandidates.length > 0
-            ? await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: false })
+            ? holdPrunesAfterFailedCreates(
+                holdPrunesMatchedByCreation(
+                  await AppUtils.planRecordPrune(pruneCandidates, { persistScopeId: false }),
+                  creation
+                ),
+                tablesWithPlannedErrors(creation)
+              )
             : undefined;
         const showAction = create || prune;
         if (fileList.length > 0 || creation || prunePlan) {
@@ -1207,7 +1259,12 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
       // table whose creation failed in this run is held back — deleting the
       // old record when its replacement never landed would lose it.
       const pruneResults = prunePlan
-        ? await AppUtils.pruneRecords(holdPrunesAfterFailedCreates(prunePlan, createFailedTables))
+        ? await AppUtils.pruneRecords(
+            holdPrunesAfterFailedCreates(
+              holdPrunesMatchedByCreation(prunePlan, creation),
+              createFailedTables
+            )
+          )
         : [];
 
       const pushResults = await AppUtils.pushFiles(fileList, args.pushConcurrency);

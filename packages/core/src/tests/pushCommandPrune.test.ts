@@ -567,6 +567,70 @@ describe("pushCommand --prune", () => {
     expect(sent.plans[0].action).toBe("delete");
   });
 
+  // A record renamed on the instance, with its local folder renamed to match:
+  // the old entry's files are gone (a prune candidate) and the new folder's
+  // lookup finds the same sys_id. Deleting it would remove the record the new
+  // files describe, so the delete is held in the dry run and the real run alike.
+  const sameRecordCreation = (action: "adopt" | "error") => ({
+    scopeId: "scope-1",
+    plans: [
+      {
+        candidate: { table: "sys_script_include", recordName: "Renamed", files: [] },
+        action,
+        nameField: "name",
+        nameValue: "Renamed",
+        sysId: SYS_GONE,
+        ...(action === "error" ? { message: "already tracked in the manifest" } : {}),
+      },
+    ],
+  });
+
+  it.each(["adopt", "error"] as const)(
+    "dry run holds the delete of the record a planned %s matched by sys_id",
+    async (action) => {
+      mockGetAppFileListWithCandidates.mockResolvedValue({
+        records: [rec("1")],
+        candidates: [{ table: "sys_script_include", recordName: "Renamed", files: [] }],
+      });
+      mockPlanRecordCreation.mockResolvedValue(sameRecordCreation(action));
+      await runPush({ diff: "main", create: true, dryRun: true });
+      expect(mockPruneRecords).not.toHaveBeenCalled();
+      const [table] = loggedTables();
+      expect(table).not.toMatch(new RegExp(`delete\\s+.*Gone`));
+      expect(table).toMatch(new RegExp(`error\\s+.*Gone.*${SYS_GONE}`));
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("looks renamed rather than deleted")
+      );
+    }
+  );
+
+  it.each([
+    ["a refused adoption", "error", false],
+    ["an adoption that succeeded", "adopt", true],
+  ] as const)(
+    "a real run sends no DELETE for the record %s matched by sys_id",
+    async (_label, action, createdOk) => {
+      mockGetAppFileListWithCandidates.mockResolvedValue({
+        records: [rec("1")],
+        candidates: [{ table: "sys_script_include", recordName: "Renamed", files: [] }],
+      });
+      mockPlanRecordCreation.mockResolvedValue(sameRecordCreation(action));
+      mockCreateRecords.mockResolvedValue({
+        results: createdOk
+          ? []
+          : [{ success: false, message: "sys_script_include > Renamed : already tracked" }],
+        records: [],
+        failedTables: createdOk ? [] : ["sys_script_include"],
+      });
+      await runPush({ diff: "main", create: true });
+      const sent = mockPruneRecords.mock.calls[0][0] as {
+        plans: { action: string; message?: string }[];
+      };
+      expect(sent.plans.map((p) => p.action)).toEqual(["error"]);
+      expect(sent.plans[0].message).toContain("looks renamed rather than deleted");
+    }
+  );
+
   it("no candidates means no plan and no prompt", async () => {
     mockFindPruneCandidates.mockResolvedValue([]);
     await runPush({ ci: false });

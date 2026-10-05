@@ -777,12 +777,18 @@ const MAX_CREATE_HIERARCHY_DEPTH = 16;
  * it does not know, so `sys_scope=<id>` neither narrows the idempotency lookup
  * nor gets stored: the lookup would match records across the whole instance.
  * These columns identify the record instead. A column the sidecar leaves empty
- * takes the value the instance itself defaults it to.
+ * takes the value the instance itself defaults it to; an empty default is
+ * matched with ISEMPTY, so an absent and an empty `dependent_value` are the
+ * same key (a choice list that depends on another field repeats a `value` once
+ * per dependent value, and without the column the lookup would adopt the wrong one).
  */
 const UNSCOPED_NATURAL_KEYS: Readonly<
   Record<string, { columns: readonly string[]; defaults: Readonly<Record<string, string>> }>
 > = Object.freeze({
-  sys_choice: { columns: ["name", "element", "value", "language"], defaults: { language: "en" } },
+  sys_choice: {
+    columns: ["name", "element", "value", "language", "dependent_value"],
+    defaults: { language: "en", dependent_value: "" },
+  },
 });
 // manifestBuilder writes a "/" in a display value as this look-alike, because
 // the name becomes a path component. Creating from that path reverses it.
@@ -984,6 +990,21 @@ const addRecordToManifest = async (
   });
 };
 
+/** Every sys_id the manifest tracks, with the record that owns it. */
+const manifestOwners = (): Map<
+  string,
+  { table: string; recordKey: string; recordName: string }
+> => {
+  const owners = new Map<string, { table: string; recordKey: string; recordName: string }>();
+  for (const [table, tableConfig] of Object.entries(readManifest().tables ?? {})) {
+    for (const [recordKey, record] of Object.entries(tableConfig?.records ?? {})) {
+      if (typeof record?.sys_id !== "string" || record.sys_id === "") continue;
+      owners.set(record.sys_id, { table, recordKey, recordName: record.name || recordKey });
+    }
+  }
+  return owners;
+};
+
 export type CreateAction = "create" | "adopt";
 
 /** Sidecar columns discovered at create time for a table the manifest lacks. */
@@ -999,7 +1020,11 @@ export interface PlannedCreation {
   nameField: string;
   /** The value written to `nameField`: the record name as the instance shows it. */
   nameValue: string;
-  /** Set for `adopt`: the existing record's sys_id. */
+  /**
+   * Set for `adopt`: the existing record's sys_id. Also set on the `error` of
+   * an adoption refused because the manifest already tracks that sys_id, so
+   * `push --prune` can hold back a DELETE of the same record.
+   */
   sysId?: string;
   /** Set for `error`: why the record is neither created nor adopted. */
   message?: string;
@@ -1079,6 +1104,36 @@ export const planRecordCreation = async (
   const allTableOptions = applyDataModelTableOptions(config);
   const hierarchyCache = new Map<string, boolean>();
   const plans: PlannedCreation[] = [];
+  const owners = manifestOwners();
+  // An adoption is refused when the sys_id already belongs to a manifest
+  // record or to another adoption of this run: two entries for one instance
+  // record would PATCH it from two sets of files, and a `push --prune` of the
+  // first entry would DELETE the record the second one just adopted.
+  const adoptOrRefuse = (
+    plan: (action: PlannedCreation["action"], extra?: Partial<PlannedCreation>) => PlannedCreation,
+    candidate: CreateCandidate,
+    sysId: string,
+    extra: Partial<PlannedCreation> = {}
+  ): PlannedCreation => {
+    const owner = owners.get(sysId);
+    if (owner && !(owner.table === candidate.table && owner.recordKey === candidate.recordName)) {
+      return plan("error", {
+        ...extra,
+        sysId,
+        message:
+          `the matching instance record ${sysId} is already tracked in the manifest as ` +
+          `${summarizeRecord(owner.table, owner.recordName)}; refusing to adopt it a second time. ` +
+          "If the record was renamed on the instance, keep the local files under the name the " +
+          "manifest tracks and run `syncrona refresh` to pick up the new name.",
+      });
+    }
+    owners.set(sysId, {
+      table: candidate.table,
+      recordKey: candidate.recordName,
+      recordName: candidate.recordName,
+    });
+    return plan("adopt", { ...extra, sysId });
+  };
   // Sequential on purpose: the lookups are cheap, and creation order must not
   // depend on which request happened to answer first.
   for (const candidate of candidates) {
@@ -1104,7 +1159,7 @@ export const planRecordCreation = async (
       // ordinary lookup below.
       const verdict = await verifyKnownRecord(client, candidate.table, knownSysId, scopeId);
       if (verdict === "adopt") {
-        plans.push(plan("adopt", { sysId: knownSysId }));
+        plans.push(adoptOrRefuse(plan, candidate, knownSysId));
         continue;
       }
       if (verdict !== "missing") {
@@ -1163,7 +1218,7 @@ export const planRecordCreation = async (
       if (hits.length === 0) {
         plans.push(plan("create", extra));
       } else if (hits.length === 1) {
-        plans.push(plan("adopt", { ...extra, sysId: hits[0] }));
+        plans.push(adoptOrRefuse(plan, candidate, hits[0], extra));
       } else {
         plans.push(
           plan("error", {
@@ -1232,8 +1287,32 @@ const compositeLookupValues = async (
 };
 
 /**
+ * A column value as the Table API returns it: a plain string, a reference as
+ * `{ link, value }`, or undefined when the row does not carry the column at
+ * all — which is what a column the table does not have looks like.
+ */
+const returnedColumnValue = (raw: unknown): string | undefined => {
+  if (raw === undefined) return undefined;
+  if (raw === null) return "";
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  if (typeof raw === "object" && typeof (raw as { value?: unknown }).value === "string") {
+    return (raw as { value: string }).value;
+  }
+  return undefined;
+};
+
+/**
  * The sys_ids of the records whose columns equal `values`, in `scopeId` when
  * one is given (undefined for a table whose records have no sys_scope column).
+ *
+ * The instance drops a query term on a column the table does not have, so the
+ * lookup alone cannot be trusted: a wrong naming column would match unrelated
+ * records. Every lookup column is read back and compared with the value looked
+ * for, and a row that does not carry the column or holds another value fails
+ * the lookup instead of being adopted. A value holding `^`, the encoded-query
+ * condition separator, has no escape, so it fails the lookup too rather than
+ * being looked up as something else.
  */
 const findRecordByColumns = async (
   client: SNClient,
@@ -1241,18 +1320,53 @@ const findRecordByColumns = async (
   values: Record<string, string>,
   scopeId: string | undefined
 ): Promise<string[]> => {
+  const entries = Object.entries(values);
+  for (const [column, value] of entries) {
+    if (column.includes("^") || value.includes("^")) {
+      throw new Error(
+        `the ${table} lookup on ${column}="${value}" contains "^", which separates ` +
+          "conditions in a ServiceNow encoded query and cannot be escaped, so the record " +
+          "cannot be matched safely. Create or link it on the instance and run `syncrona refresh`."
+      );
+    }
+  }
   const query = [
-    ...Object.entries(values).map(
-      ([column, value]) => `${escapeQueryValue(column)}=${escapeQueryValue(value)}`
+    ...entries.map(([column, value]) =>
+      value === ""
+        ? `${escapeQueryValue(column)}ISEMPTY`
+        : `${escapeQueryValue(column)}=${escapeQueryValue(value)}`
     ),
     ...(scopeId === undefined ? [] : [`sys_scope=${escapeQueryValue(scopeId)}`]),
   ].join("^");
-  const records = await unwrapSNResponse<{ sys_id?: unknown }[]>(
-    client.tableAPIGet(table, query, "sys_id", 2)
+  const fields = [...new Set(["sys_id", ...entries.map(([column]) => column)])].join(",");
+  const records = await unwrapSNResponse<Record<string, unknown>[]>(
+    client.tableAPIGet(table, query, fields, 2)
   );
-  return (Array.isArray(records) ? records : [])
-    .map((record) => record?.sys_id)
-    .filter((sysId): sysId is string => typeof sysId === "string" && sysId !== "");
+  const sysIds: string[] = [];
+  for (const record of Array.isArray(records) ? records : []) {
+    const sysId = record?.sys_id;
+    if (typeof sysId !== "string" || sysId === "") continue;
+    for (const [column, expected] of entries) {
+      const actual = returnedColumnValue(record[column]);
+      if (actual === undefined) {
+        throw new Error(
+          `the ${table} lookup matched record ${sysId}, which carries no "${column}" column. ` +
+            "The instance ignores a query term on a column the table does not have, so the " +
+            `match cannot be trusted; check the naming columns configured for ${table}. ` +
+            "Nothing was adopted or created."
+        );
+      }
+      if (actual !== expected) {
+        throw new Error(
+          `the ${table} lookup for ${column}="${expected}" matched record ${sysId}, whose ` +
+            `${column} is "${actual}". Refusing to adopt a record whose key differs from the ` +
+            "local one; nothing was adopted or created."
+        );
+      }
+    }
+    sysIds.push(sysId);
+  }
+  return sysIds;
 };
 
 /**
@@ -1267,11 +1381,12 @@ const findExisting = (
 ): Promise<string[]> => {
   const { table } = plan.candidate;
   const scope = plan.scoped === false ? undefined : scopeId;
-  if (plan.lookup) return findRecordByColumns(client, table, plan.lookup, scope);
-  if (scope === undefined) {
-    return findRecordByColumns(client, table, { [plan.nameField]: plan.nameValue }, undefined);
-  }
-  return client.findRecordByName(table, plan.nameField, plan.nameValue, scope);
+  return findRecordByColumns(
+    client,
+    table,
+    plan.lookup ?? { [plan.nameField]: plan.nameValue },
+    scope
+  );
 };
 
 /** How a record is identified in a message: by its name, or by its lookup columns. */
@@ -1531,9 +1646,15 @@ const targetCoversRecord = (
     const tableDir = path.dirname(base);
     // A target at or above the table directory covers every record in it; a
     // target inside the table directory covers the record whose stem it names.
+    // The rest of the file name after the stem is one field file, which holds
+    // no separator: `Foo~Bar~script.js` belongs to record `Foo~Bar`, not to `Foo`.
+    if (isWithin(resolved, tableDir)) return true;
+    const stem = path.basename(base);
+    const fileName = path.basename(resolved);
     return (
-      isWithin(resolved, tableDir) ||
-      (path.dirname(resolved) === tableDir && path.basename(resolved).startsWith(path.basename(base)))
+      path.dirname(resolved) === tableDir &&
+      fileName.startsWith(stem) &&
+      !fileName.slice(stem.length).includes(FLAT_FIELD_SEPARATOR)
     );
   }
   return isWithin(resolved, base) || isWithin(base, resolved);

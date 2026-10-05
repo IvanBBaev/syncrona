@@ -307,6 +307,37 @@ describe("findPruneCandidates", () => {
     ).resolves.toMatchObject([{ sysId: SYS_A }]);
   });
 
+  // `Foo~Bar~script.js` is a field file of record `Foo~Bar`; a prefix match on
+  // the stem alone would also select record `Foo` and delete it.
+  it("a flat target names one record exactly, not every record its stem prefixes", async () => {
+    mockGetConfig.mockReturnValue({ flat: true, tableOptions: {} });
+    mockGetManifest.mockReturnValue({
+      scope: "x_app",
+      scopeId: SCOPE,
+      tables: {
+        sys_ui_script: {
+          records: {
+            Foo: { name: "Foo", sys_id: SYS_A, files: [file("script")] },
+            "Foo~Bar": { name: "Foo~Bar", sys_id: SYS_B, files: [file("script")] },
+          },
+        },
+      },
+    });
+    mockFindMissingFiles.mockResolvedValue(
+      missingMap([
+        ["sys_ui_script", SYS_A, [file("script")]],
+        ["sys_ui_script", SYS_B, [file("script")]],
+      ])
+    );
+    const dir = path.join(SOURCE, "sys_ui_script");
+    await expect(
+      Pipeline.findPruneCandidates({ targets: path.join(dir, "Foo~Bar~script.js") })
+    ).resolves.toMatchObject([{ sysId: SYS_B }]);
+    await expect(
+      Pipeline.findPruneCandidates({ targets: path.join(dir, "Foo~script.js") })
+    ).resolves.toMatchObject([{ sysId: SYS_A }]);
+  });
+
   it("throws when no manifest is loaded", async () => {
     mockGetManifest.mockReturnValue(undefined);
     await expect(Pipeline.findPruneCandidates()).rejects.toThrow("No manifest has been loaded!");
