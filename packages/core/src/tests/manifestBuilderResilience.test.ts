@@ -308,3 +308,65 @@ describe("buildBulkDownloadFromTableAPI with a field the instance withholds", ()
     ]);
   });
 });
+
+// Batch 4b R2: a sidecar-only data-model table has no records without its
+// metadata layer, so a failed dictionary read must not drop the table from the
+// rebuilt manifest. It is reported as skipped and its previous entry is kept.
+describe("buildManifestFromTableAPI with a sidecar-only table whose dictionary read fails", () => {
+  const PREVIOUS_DICTIONARY = {
+    scope: "x_demo",
+    tables: {
+      sys_dictionary: {
+        records: {
+          "x_demo_task.u_foo": {
+            sys_id: "d1",
+            name: "x_demo_task.u_foo",
+            files: [{ name: ".meta", type: "json" }],
+          },
+        },
+        metaFields: ["column_label", "element", "name"],
+      },
+    },
+  } as unknown as SN.AppManifest;
+
+  const clientFailingMetaDiscovery = (): TableApiGet => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string) => {
+      if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
+      if (table === "sys_metadata")
+        return { data: { result: [{ sys_class_name: "sys_script" }] } };
+      if (table === "sys_dictionary") {
+        // File-field discovery answers (no script column); the metadata
+        // discovery of every column is the read that fails.
+        if (String(query).includes("internal_type")) return { data: { result: [] } };
+        throw Object.assign(new Error("http 503"), {
+          isAxiosError: true,
+          response: { status: 503 },
+        });
+      }
+      return { data: { result: [] } };
+    });
+    return tableAPIGet;
+  };
+
+  const dataModelConfig = {
+    includes: {},
+    excludes: { sys_dictionary: true },
+    tableOptions: {},
+    dataModelTables: ["sys_dictionary"],
+  } as unknown as Pick<Sync.Config, "includes" | "excludes" | "tableOptions">;
+
+  it("carries the previous entry forward and says so", async () => {
+    getManifest.mockReturnValue(PREVIOUS_DICTIONARY);
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(clientFailingMetaDiscovery()),
+      dataModelConfig
+    );
+    expect(manifest.tables.sys_dictionary).toEqual(PREVIOUS_DICTIONARY.tables.sys_dictionary);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not read the dictionary"));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Kept the previously known records for: sys_dictionary")
+    );
+  });
+});

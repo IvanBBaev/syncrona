@@ -90,6 +90,18 @@ describe("PluginManager.getFinalFileContents", () => {
     expect(out).not.toContain("// transformed");
   });
 
+  // SDK-F2: an entry expanded from a data-model document names a per-record
+  // sidecar that does not exist on disk; its text travels on the context.
+  it("uses in-memory fileContents instead of reading the path", async () => {
+    getConfig.mockReturnValue({ rules: [] });
+    const PluginManager = (await import("../PluginManager.js")).default;
+    const ctx = {
+      ...context(path.join(FIXTURE_ROOT, "src", "absent", ".meta.json")),
+      fileContents: '{\n  "label": "One"\n}\n',
+    } as Sync.FileContext;
+    expect(await PluginManager.getFinalFileContents(ctx, false)).toBe('{\n  "label": "One"\n}\n');
+  });
+
   it("copies a file as-is when no rule matches its path", async () => {
     getConfig.mockReturnValue({ rules: [{ match: /\.ts$/, plugins: [] }] });
     const PluginManager = (await import("../PluginManager.js")).default;

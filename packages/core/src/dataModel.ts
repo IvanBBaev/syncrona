@@ -35,6 +35,24 @@ export const DATA_MODEL_DEFAULT_TABLES: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * Data-model tables that have NO `sys_scope` column.
+ *
+ * `sys_choice` does not extend `sys_metadata`: it carries neither `sys_scope`
+ * nor `sys_class_name`. The Table API ignores an encoded-query term on a column
+ * the table does not have (unless the instance sets
+ * `glide.invalid_query.returns_no_rows`), so `sys_scope=<id>` on such a table
+ * matches every row on the instance instead of the scope's rows. A table listed
+ * here must never be filtered by `sys_scope`: the manifest builder attributes
+ * its records to a scope by a rule of its own (see docs/DATA_MODEL.md), and any
+ * other reader has to bring one too.
+ */
+export const DATA_MODEL_TABLES_WITHOUT_SCOPE: readonly string[] = Object.freeze(["sys_choice"]);
+
+/** True when `table` is a data-model table that cannot be filtered by `sys_scope`. */
+export const isScopelessDataModelTable = (table: string): boolean =>
+  DATA_MODEL_TABLES_WITHOUT_SCOPE.includes(table);
+
+/**
  * Stable record names for data-model tables whose display value is not unique.
  *
  * Every column listed is read from the record (a dotted entry is a Table API

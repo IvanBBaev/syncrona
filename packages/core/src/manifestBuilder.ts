@@ -15,14 +15,17 @@ import {
   isReadOnlyDictionaryRow,
   metaFile,
   serializeMetaFields,
+  metaSecretClassifierFields,
 } from "./metaFields.js";
 import type { SNClient } from "./snClient.js";
 import { getErrorResponseStatus } from "./snClient.js";
 import * as ConfigManager from "./config.js";
 import {
+  DATA_MODEL_DEFAULT_TABLES,
   applyDataModelIncludes,
   applyDataModelTableOptions,
   getDataModelTables,
+  isScopelessDataModelTable,
 } from "./dataModel.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
@@ -562,6 +565,18 @@ interface MetaFieldSet {
 
 const NO_META_FIELDS: MetaFieldSet = { fields: [], readOnly: [] };
 
+/**
+ * What getMetaFieldsForTable returns when the dictionary read FAILED, as
+ * opposed to a table that genuinely has no sidecar column. Same shape as
+ * NO_META_FIELDS (callers that only need the lists see no difference); told
+ * apart by identity, so a sidecar-only data-model table can report the failure
+ * as a skip and keep its previous manifest entry.
+ */
+const UNREADABLE_META_FIELDS: MetaFieldSet = Object.freeze({
+  fields: [],
+  readOnly: [],
+}) as MetaFieldSet;
+
 async function getMetaFieldsForTable(
   client: SNClient,
   tableName: string,
@@ -645,6 +660,9 @@ async function getMetaFieldsForTable(
     // so the skippable-error rule would not have covered the common case anyway.)
     // Reporting onSkip is equally wrong: a "skipped" table is carried forward
     // wholesale from the previous manifest, discarding the records just built.
+    // The exception is a sidecar-only data-model table, which has no records
+    // without this layer: enumerateTable sees UNREADABLE_META_FIELDS and
+    // reports that table as skipped so its previous entry is carried forward.
     //
     // But it is reported at WARN, not debug. Swallowing the error is only half a
     // decision — the other half is that the user must be able to tell the two
@@ -663,7 +681,7 @@ async function getMetaFieldsForTable(
         `\`tableOptions.${tableName}.metaFields\` explicitly; otherwise re-run ` +
         `\`syncrona refresh\` once the instance answers again.`
     );
-    return NO_META_FIELDS;
+    return UNREADABLE_META_FIELDS;
   }
 }
 
@@ -938,13 +956,12 @@ async function getRecordsForTable(
   // pseudo-file. Kept separate from `files` because `files` is what the query
   // SELECTS, and `.meta` is not a column — asking the Table API for it would
   // make the whole projection invalid.
-  recordFiles: SN.File[] = files
+  recordFiles: SN.File[] = files,
+  // How the rows are attributed to the scope. Only a table without a
+  // `sys_scope` column is read any other way than by the scope filter.
+  scoping: RecordScoping = "scope-column"
 ): Promise<SN.TableConfigRecords> {
   const displayField = getDisplayField(tableName);
-  const baseQuery = `sys_scope=${scopeId}^sys_class_name=${tableName}`;
-  const query = tableOptions?.query
-    ? `${baseQuery}^${tableOptions.query}`
-    : baseQuery;
 
   const tableFields = buildRecordFieldList(
     displayField,
@@ -1019,6 +1036,36 @@ async function getRecordsForTable(
 
     return records;
   };
+
+  // A table without a `sys_scope` column is never sent the scope filter and
+  // never falls back to sys_metadata: the instance ignores a condition on a
+  // column the table does not have, so the "scoped" read below would return
+  // every row of the table.
+  if (scoping === "choice-owner") {
+    return toRecords(
+      await getScopeChoiceRows(
+        client,
+        tableName,
+        scopeId,
+        tableFields,
+        tableOptions?.query,
+        onSkip
+      )
+    );
+  }
+  if (scoping === "operator-query") {
+    // An empty query here would be the whole-table sweep this mode prevents.
+    return tableOptions?.query
+      ? toRecords(
+          await readRowsOrSkip(client, tableName, tableOptions.query, tableFields, 500, onSkip)
+        )
+      : {};
+  }
+
+  const baseQuery = `sys_scope=${scopeId}^sys_class_name=${tableName}`;
+  const query = tableOptions?.query
+    ? `${baseQuery}^${tableOptions.query}`
+    : baseQuery;
 
   let rows: TableAPIRecord[] = [];
 
@@ -1125,6 +1172,230 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
+// ─── Records of a table without a scope column ───────────────────────────────
+
+/**
+ * How the records of one table are attributed to the scope being built.
+ *
+ * - `scope-column`: the table has `sys_scope` (it extends sys_metadata or
+ *   carries the column itself), so the scope filter selects its records.
+ * - `choice-owner`: sys_choice, which has no scope column; a choice follows the
+ *   table, column or choice list it belongs to (see getScopeChoiceRows).
+ * - `operator-query`: no scope column and no built-in rule; the operator's own
+ *   `tableOptions.<table>.query` is the only thing that bounds the read.
+ */
+type RecordScoping = "scope-column" | "choice-owner" | "operator-query";
+
+// Table and column names read from the instance are interpolated into `IN`
+// lists below. Anything outside this alphabet (a comma, a caret) would add
+// conditions to the query, so such a name is dropped instead of sent.
+const QUERY_IDENTIFIER_PATTERN = /^[A-Za-z0-9_]+$/;
+const isQueryIdentifier = (value: unknown): value is string =>
+  typeof value === "string" && QUERY_IDENTIFIER_PATTERN.test(value);
+
+// Names per `IN` list. A table or column name is at most 80 characters, so a
+// full chunk stays far below the URL length a GET can carry.
+const NAME_CHUNK_SIZE = 50;
+
+// Well under any instance's row cap, so a short page always means "last page".
+const SCOPE_OWNERSHIP_PAGE_SIZE = 1000;
+
+/**
+ * Pages `query` over `table`. A skippable refusal (400/403/404) is reported
+ * through `onSkip` and reads as no rows; anything else is thrown, so an outage
+ * can never pass for an empty table.
+ */
+async function readRowsOrSkip(
+  client: SNClient,
+  table: string,
+  query: string,
+  fields: string,
+  pageSize: number,
+  onSkip?: () => void
+): Promise<TableAPIRecord[]> {
+  try {
+    return await tableAPIGetAllRows(client, table, query, fields, pageSize);
+  } catch (e) {
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
+    onSkip?.();
+    return [];
+  }
+}
+
+/**
+ * The choices that belong to a scope.
+ *
+ * sys_choice has no `sys_scope` column (see DATA_MODEL_TABLES_WITHOUT_SCOPE), so
+ * a choice is attributed through what it describes. It belongs to the scope when
+ *
+ *  - its table is defined by the scope (sys_db_object), or
+ *  - its column is defined by the scope on another scope's table
+ *    (sys_dictionary), or
+ *  - its choice list is owned by the scope (sys_choice_set, the application
+ *    file the platform itself records a choice list under).
+ *
+ * Ownership is per choice list, not per choice: a single choice a scope adds to
+ * a list another scope owns cannot be told apart, because nothing on the row
+ * names its scope.
+ *
+ * Every read is bounded by names taken from the scope, so a scope that owns no
+ * table, column or choice list sends no sys_choice request at all. A refused
+ * ownership read is reported through `onSkip`: the result is then a partial
+ * set, and the caller carries the previously known records forward.
+ */
+async function getScopeChoiceRows(
+  client: SNClient,
+  tableName: string,
+  scopeId: string,
+  tableFields: string,
+  operatorQuery: string | undefined,
+  onSkip?: () => void
+): Promise<TableAPIRecord[]> {
+  const readOwnership = (table: string, query: string, fields: string) =>
+    readRowsOrSkip(client, table, query, fields, SCOPE_OWNERSHIP_PAGE_SIZE, onSkip);
+
+  // Sequential on purpose: these are three small reads, and the table pool
+  // around this call already runs other tables in parallel.
+  const tableRows = await readOwnership(
+    "sys_db_object",
+    `sys_scope=${scopeId}^nameISNOTEMPTY`,
+    "name"
+  );
+  const columnRows = await readOwnership(
+    "sys_dictionary",
+    `sys_scope=${scopeId}^nameISNOTEMPTY^elementISNOTEMPTY`,
+    "name,element"
+  );
+  const choiceSetRows = await readOwnership(
+    "sys_choice_set",
+    `sys_scope=${scopeId}^nameISNOTEMPTY^elementISNOTEMPTY`,
+    "name,element"
+  );
+
+  const ownedTables = new Set<string>();
+  for (const row of tableRows) {
+    if (isQueryIdentifier(row.name)) {
+      ownedTables.add(row.name);
+    }
+  }
+  // table -> columns, for choices on a table the scope does not define. A
+  // column of an owned table needs no entry: the table already covers it.
+  const ownedColumns = new Map<string, Set<string>>();
+  for (const row of [...columnRows, ...choiceSetRows]) {
+    if (!isQueryIdentifier(row.name) || !isQueryIdentifier(row.element)) {
+      continue;
+    }
+    if (ownedTables.has(row.name)) {
+      continue;
+    }
+    let columns = ownedColumns.get(row.name);
+    if (!columns) {
+      columns = new Set<string>();
+      ownedColumns.set(row.name, columns);
+    }
+    columns.add(row.element);
+  }
+
+  // Sorted, so the same scope always sends the same requests in the same order.
+  const queries: string[] = [];
+  for (const chunk of chunkArray([...ownedTables].sort(), NAME_CHUNK_SIZE)) {
+    queries.push(`nameIN${chunk.join(",")}`);
+  }
+  for (const table of [...ownedColumns.keys()].sort()) {
+    const columns = [...(ownedColumns.get(table) as Set<string>)].sort();
+    for (const chunk of chunkArray(columns, NAME_CHUNK_SIZE)) {
+      queries.push(`name=${table}^elementIN${chunk.join(",")}`);
+    }
+  }
+
+  const rows: TableAPIRecord[] = [];
+  for (const ownershipQuery of queries) {
+    const query = operatorQuery ? `${ownershipQuery}^${operatorQuery}` : ownershipQuery;
+    rows.push(...(await readRowsOrSkip(client, tableName, query, tableFields, 500, onSkip)));
+  }
+  return rows;
+}
+
+/**
+ * True when `tableName` or one of its ancestors declares a `sys_scope` column.
+ *
+ * The walk is strict: unlike getTableHierarchyTableNames it does not swallow a
+ * failed lookup, because a hierarchy cut short would report "no scope column"
+ * for a table that inherits one, and the table would be dropped from the
+ * manifest. The parent lookups are memoized, so after the file-field discovery
+ * of the same table this costs the one dictionary request.
+ */
+async function tableHasScopeColumn(client: SNClient, tableName: string): Promise<boolean> {
+  const hierarchy: string[] = [];
+  let current: string | undefined = tableName;
+  while (
+    current &&
+    !hierarchy.includes(current) &&
+    hierarchy.length < MAX_TABLE_HIERARCHY_DEPTH
+  ) {
+    hierarchy.push(current);
+    current = await getTableParentName(client, current);
+  }
+  const names = hierarchy.filter(isQueryIdentifier);
+  if (names.length === 0) {
+    return false;
+  }
+  // Deliberately unpaged: one row is the whole answer.
+  const res = await client.tableAPIGet(
+    "sys_dictionary",
+    `nameIN${names.join(",")}^element=sys_scope`,
+    "name",
+    1
+  );
+  return extractResult(res.data).length > 0;
+}
+
+/**
+ * Decide how `tableName`'s records are attributed to the scope, or return
+ * undefined when the table must be left out of this build.
+ *
+ * Tables reached through scope discovery and the documented data-model tables
+ * keep the scope filter; they are not probed. sys_choice has its own rule. Only
+ * a table the operator added to `dataModelTables` by hand is checked for the
+ * column, with one dictionary request per build.
+ */
+async function resolveRecordScoping(
+  ctx: TableEnumerationContext,
+  tableName: string,
+  onSkip: () => void
+): Promise<RecordScoping | undefined> {
+  if (isScopelessDataModelTable(tableName)) {
+    return "choice-owner";
+  }
+  if (!ctx.dataModelTables.has(tableName) || DATA_MODEL_DEFAULT_TABLES.includes(tableName)) {
+    return "scope-column";
+  }
+
+  let hasScopeColumn: boolean;
+  try {
+    hasScopeColumn = await tableHasScopeColumn(ctx.client, tableName);
+  } catch (e) {
+    if (!isTableSkippableError(e)) {
+      throw e;
+    }
+    // Unknown is not "no": report the skip so the previous entry is kept.
+    onSkip();
+    return undefined;
+  }
+  if (hasScopeColumn) {
+    return "scope-column";
+  }
+  if (ctx.tableOptions[tableName]?.query) {
+    return "operator-query";
+  }
+  logger.warn(
+    `Table ${tableName} is listed in dataModelTables but has no sys_scope column, so its records cannot be attributed to a scope. It was left out; set tableOptions.${tableName}.query to select its records.`
+  );
+  return undefined;
+}
+
 // ─── Public: buildManifestFromTableAPI ──────────────────────────────────────
 // Full equivalent of SincUtilsMS.getManifest() using only Table API
 
@@ -1192,9 +1463,17 @@ async function enumerateTable(
     : NO_META_FIELDS;
   const hasMeta = meta.fields.length > 0;
   if (sidecarOnly && !hasMeta) {
-    // The dictionary was unreadable (getMetaFieldsForTable warned) or the table
-    // has no writable column: a record with neither files nor a sidecar is not
-    // representable, so the table is left out exactly as before R4.
+    // A record with neither files nor a sidecar is not representable. When the
+    // table has no writable column it is left out exactly as before R4. When
+    // the dictionary read FAILED (getMetaFieldsForTable warned), dropping the
+    // table would replace a good manifest entry with nothing: push would ignore
+    // the existing sidecars and repair --prune would call them orphans. Report
+    // a skip instead, so the previous entry is carried forward.
+    return { skipped: skipped || meta === UNREADABLE_META_FIELDS };
+  }
+
+  const scoping = await resolveRecordScoping(ctx, tableName, onSkip);
+  if (!scoping) {
     return { skipped };
   }
 
@@ -1205,7 +1484,8 @@ async function enumerateTable(
     files,
     tableOptions[tableName],
     onSkip,
-    hasMeta ? [...files, metaFile()] : files
+    hasMeta ? [...files, metaFile()] : files,
+    scoping
   );
   if (Object.keys(records).length === 0) {
     return { skipped };
@@ -1332,10 +1612,25 @@ function tableEnumerationContext(
   };
 }
 
+/**
+ * Options for {@link buildManifestFromTableAPI}.
+ *
+ * `allowEmpty` lifts the empty-manifest refusal. Only `init --new` sets it, for
+ * the application it has just created: that scope is known to exist (its
+ * sys_app insert returned the sys_id) and is expected to own nothing yet, so an
+ * empty result is the truth rather than a symptom of a wrong scope or missing
+ * access. Every other caller (`download`, `refresh`, the `init` wizard) binds an
+ * EXISTING scope and must keep the refusal.
+ */
+export type BuildManifestOptions = {
+  allowEmpty?: boolean;
+};
+
 export async function buildManifestFromTableAPI(
   scopeName: string,
   client: SNClient,
-  config: ManifestBuildConfig
+  config: ManifestBuildConfig,
+  options: BuildManifestOptions = {}
 ): Promise<SN.AppManifest> {
   // One build is one run: every table in a scope shares most of its ancestry,
   // and the walk is memoized for the duration rather than across the process.
@@ -1356,6 +1651,18 @@ export async function buildManifestFromTableAPI(
     ctx.includes,
     ctx.excludes
   );
+  if (discovered.length === 0 && options.allowEmpty === true) {
+    // A just-created scope: bind it with an empty manifest that carries its
+    // sys_id, so the first `push --create` needs no sys_scope lookup and the
+    // directory is bound even though the scope has nothing to download.
+    //
+    // The premise "a new application owns no sys_metadata rows" is NOT verified
+    // on a live instance. The sys_app insert may well create rows of its own
+    // (e.g. a sys_app_module / menu, or the sys_app row itself being indexed
+    // under the scope); when it does, `discovered` is non-empty and the normal
+    // enumeration below runs, which is equally correct.
+    return { scope: scopeName, scopeId, tables: Object.create(null) };
+  }
   if (discovered.length === 0) {
     // A populated scope never has zero discoverable tables; an empty result
     // here almost always means connectivity/ACL trouble. Refuse to build an
@@ -1663,7 +1970,9 @@ export async function buildBulkDownloadFromTableAPI(
       // needs the values of.
       const tableFields = buildRecordFieldList(
         defaultDisplayField,
-        wantMeta ? [...allFiles.keys(), ...metaFields] : [...allFiles.keys()],
+        wantMeta
+          ? [...allFiles.keys(), ...metaFields, ...metaSecretClassifierFields(tableName)]
+          : [...allFiles.keys()],
         tableOpts
       );
 
@@ -1763,7 +2072,7 @@ export async function buildBulkDownloadFromTableAPI(
             files.push({
               name: META_FILE_NAME,
               type: META_FILE_TYPE,
-              content: serializeMetaFields(row, metaFields),
+              content: serializeMetaFields(row, metaFields, tableName),
             });
           }
 

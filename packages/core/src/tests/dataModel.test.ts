@@ -10,12 +10,14 @@ import { Sync } from "@syncrona/types";
 import {
   DATA_MODEL_DEFAULT_TABLES,
   DATA_MODEL_NAME_FIELDS,
+  DATA_MODEL_TABLES_WITHOUT_SCOPE,
   applyDataModelIncludes,
   applyDataModelTableOptions,
   getDataModelNameFields,
   getDataModelTables,
   isDataModelTable,
   isPruneDeniedTable,
+  isScopelessDataModelTable,
   isValidDataModelTableName,
   nameFieldColumn,
 } from "../dataModel.js";
@@ -47,6 +49,20 @@ describe("dataModel configuration (R4)", () => {
     for (const table of Object.keys(DATA_MODEL_NAME_FIELDS)) {
       expect(DATA_MODEL_DEFAULT_TABLES).toContain(table);
     }
+  });
+
+  it("names sys_choice as the one documented table without a scope column", () => {
+    // sys_choice does not extend sys_metadata. Every other documented table
+    // does, and is filtered by sys_scope.
+    expect([...DATA_MODEL_TABLES_WITHOUT_SCOPE]).toEqual(["sys_choice"]);
+    expect(Object.isFrozen(DATA_MODEL_TABLES_WITHOUT_SCOPE)).toBe(true);
+    for (const table of DATA_MODEL_TABLES_WITHOUT_SCOPE) {
+      expect(DATA_MODEL_DEFAULT_TABLES).toContain(table);
+    }
+    expect(isScopelessDataModelTable("sys_choice")).toBe(true);
+    expect(isScopelessDataModelTable("sys_dictionary")).toBe(false);
+    expect(isScopelessDataModelTable("sys_choice_set")).toBe(false);
+    expect(isScopelessDataModelTable("x_demo_lookup")).toBe(false);
   });
 
   it("is opt-in: the default config tracks no data-model table", () => {
@@ -170,6 +186,22 @@ describe("dataModel configuration (R4)", () => {
           "sync.config.js"
         )
       ).toThrow(/"dataModelTables" must list table names.*"sys choice", 7/);
+    });
+
+    // SDK-F2
+    it("accepts both data-model layouts", () => {
+      for (const dataModelLayout of ["records", "composite"]) {
+        expect(() => validateConfigShape({ dataModelLayout }, "sync.config.js")).not.toThrow();
+      }
+    });
+
+    it("rejects an unknown data-model layout, naming the valid ones", () => {
+      expect(() =>
+        validateConfigShape({ dataModelLayout: "documents" }, "sync.config.js")
+      ).toThrow(/"dataModelLayout" must be one of "records", "composite"; got "documents"/);
+      expect(() => validateConfigShape({ dataModelLayout: 1 }, "sync.config.js")).toThrow(
+        /dataModelLayout/
+      );
     });
   });
 });

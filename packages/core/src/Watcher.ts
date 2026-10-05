@@ -11,6 +11,11 @@ import { Sync } from "@syncrona/types";
 import { groupAppFiles, pushFiles } from "./appUtils.js";
 import * as ConfigManager from "./config.js";
 import { logger } from "./Logger.js";
+import {
+  LAYOUT_CONFLICT_HINT,
+  strayCompositeSidecarMessage,
+  strayCompositeSidecarTable,
+} from "./dataModelComposite.js";
 const { debounce } = lodash;
 const DEBOUNCE_MS = 300;
 // Self-driving retry backoff for a failed batch. A failed push requeues its
@@ -37,6 +42,38 @@ let retryAttempt = 0;
 // event log — one line per save would bury everything else in the dev output.
 // Cleared by stopWatching along with the rest of the session state.
 let warnedUntracked = new Set<string>();
+// SDK-F2: paths already reported as a stray per-record sidecar of a composite
+// table, for the same reason — one warning per path per session.
+let warnedStraySidecar = new Set<string>();
+
+/**
+ * True when `filePath` is a per-record sidecar of a table whose metadata the
+ * `composite` layout keeps in the data-model documents. `push` refuses such a
+ * file; `dev` must not push it either, or the copy that reaches the instance
+ * would depend on which of the two files was saved last. Warned once per path.
+ * Without a loadable config nothing is composite, so nothing is skipped.
+ */
+const skipStrayCompositeSidecar = (filePath: string): boolean => {
+  let table: string | undefined;
+  try {
+    table = strayCompositeSidecarTable(
+      filePath,
+      ConfigManager.getSourcePath(),
+      ConfigManager.getConfig()
+    );
+  } catch {
+    return false;
+  }
+  if (table === undefined) return false;
+  if (!warnedStraySidecar.has(filePath)) {
+    warnedStraySidecar.add(filePath);
+    logger.warn(
+      `Change ignored: ${strayCompositeSidecarMessage(filePath, table)} It will not be pushed. ` +
+        LAYOUT_CONFLICT_HINT
+    );
+  }
+  return true;
+};
 
 // Arms the self-driving retry on the capped exponential backoff. Guarded
 // against stacking so overlapping failures schedule at most one pending retry.
@@ -85,6 +122,7 @@ const drainQueue = async (): Promise<void> => {
       await ConfigManager.reloadManifest();
       const pathContexts: { queuedPath: string; ctx: Sync.FileContext }[] = [];
       for (const queuedPath of toProcess) {
+        if (skipStrayCompositeSidecar(queuedPath)) continue;
         const ctx = getFileContextFromPath(queuedPath);
         if (ctx) {
           pathContexts.push({ queuedPath, ctx });
@@ -227,6 +265,7 @@ function fileAdded(path: string): void {
   // local delete): getFileContextFromPath resolves paths through the manifest
   // and returns undefined for unknown files, which drainQueue would then
   // silently drop. Surface the untracked case instead of pretending to sync.
+  if (skipStrayCompositeSidecar(path)) return;
   let tracked = false;
   try {
     tracked = Boolean(getFileContextFromPath(path));
@@ -274,6 +313,7 @@ export async function stopWatching(): Promise<void> {
   // The "already told you" set is session state too: a restarted `dev` must
   // warn again about a file it never warned about in THIS run.
   warnedUntracked = new Set<string>();
+  warnedStraySidecar = new Set<string>();
   if (watcher) {
     const current = watcher;
     watcher = undefined;

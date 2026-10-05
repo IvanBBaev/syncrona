@@ -174,6 +174,38 @@ describe("statusCommand", () => {
     expect(summary.scope).toBe("<unknown>");
   });
 
+  // SDK-F2: status names the data-model layout and reports a mixed workspace.
+  it("reports the records data-model layout by default", async () => {
+    const { statusCommand } = await import("../diagnosticsCommands.js");
+    const summary = await statusCommand({ logLevel: "info" } as never);
+    expect(summary.dataModelLayout).toBe("records");
+    expect(mockLoggerInfo).toHaveBeenCalledWith("Data model layout: records");
+  });
+
+  it("counts composite documents and reports a document the records layout ignores", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "sdk-f2-status-"));
+    try {
+      await fsp.mkdir(path.join(dir, "data-model"));
+      await fsp.writeFile(
+        path.join(dir, "data-model", "x_t.json"),
+        JSON.stringify({ format: "syncrona.data-model/1", table: "x_t" })
+      );
+      mockGetSourcePath.mockReturnValue(dir);
+      const { statusCommand } = await import("../diagnosticsCommands.js");
+      mockGetConfig.mockReturnValue({ dataModelLayout: "composite", dataModelTables: ["sys_choice"] });
+      expect((await statusCommand({ logLevel: "info" } as never)).dataModelLayout).toBe(
+        "composite (1 document(s))"
+      );
+      mockGetConfig.mockReturnValue({ dataModelTables: ["sys_choice"] });
+      const summary = await statusCommand({ logLevel: "info" } as never);
+      expect(summary.dataModelLayout).toBe("records");
+      expect(summary.errors).toEqual([expect.stringContaining('data model: ')]);
+      expect(summary.errors[0]).toContain('dataModelLayout is "records"');
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to zero rule counts when getConfig throws (line 52)", async () => {
     mockGetConfig.mockImplementation(() => {
       throw new Error("config unreadable");
@@ -182,6 +214,8 @@ describe("statusCommand", () => {
     const summary = await statusCommand({ logLevel: "info" } as never);
     expect(summary.includeRules).toBe(0);
     expect(summary.excludeRules).toBe(0);
+    // the data-model layout is best-effort and left out rather than guessed
+    expect(summary.dataModelLayout).toBeUndefined();
   });
 
   it("degrades to Table-API mode and records a warning when the scoped scope endpoint is unavailable", async () => {
@@ -539,6 +573,7 @@ describe("configCommand", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("sourceDirectory: src"));
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("pushConcurrency: 4"));
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("refreshInterval: 30s"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("dataModelLayout: records"));
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("default include table rules: 2")
     );

@@ -46,6 +46,20 @@ import {
 import { logger } from "./Logger.js";
 import { aggregateErrorMessages, allSettled, wait } from "./genericUtils.js";
 import { getProgTick } from "./progress.js";
+import {
+  COMPOSITE_TABLES,
+  LAYOUT_CONFLICT_HINT,
+  compositeTier,
+  getCompositeTables,
+  getDataModelLayout,
+  isCompositeDocumentPath,
+  pathExistsPlain,
+  perRecordSidecarPath,
+  readCompositeDocument,
+  serializeCompositeEntry,
+  strayCompositeSidecarMessage,
+  strayCompositeSidecarTable,
+} from "./dataModelComposite.js";
 
 export const groupAppFiles = (fileCtxs: Sync.FileContext[]) => {
   // #47: mutate the accumulator instead of spreading it on every iteration.
@@ -125,6 +139,12 @@ export interface CreateCandidateFile {
   field: string;
   ext: string;
   isSidecar: boolean;
+  /**
+   * SDK-F2: the sidecar text of an entry expanded from a data-model document.
+   * `filePath` then names the per-record sidecar the entry stands for, which
+   * does not exist on disk.
+   */
+  contents?: string;
 }
 
 /** A record the manifest does not know, with every local file naming it. */
@@ -158,15 +178,28 @@ export const getAppFileListWithCandidates = async (
   const appFileCtxs: Sync.FileContext[] = [];
   const unresolved: string[] = [];
   const candidates = new Map<string, CreateCandidate>();
-  for (const filePath of validPaths) {
+  const items = await expandCompositeDocuments(validPaths);
+  const misresolved: string[] = [];
+  for (const { filePath, contents, label, entry } of items) {
     const ctx = fUtils.getFileContextFromPath(filePath);
     if (ctx) {
+      if (entry && (ctx.tableName !== entry.table || ctx.name !== entry.recordName)) {
+        misresolved.push(`${label ?? filePath} resolves to ${ctx.tableName} "${ctx.name}"`);
+        continue;
+      }
+      if (contents !== undefined) ctx.fileContents = contents;
       appFileCtxs.push(ctx);
       continue;
     }
     const unmapped = options.create ? fUtils.parseUnmappedPath(filePath) : undefined;
     if (!unmapped) {
-      unresolved.push(filePath);
+      unresolved.push(label ?? filePath);
+      continue;
+    }
+    if (entry && (unmapped.table !== entry.table || unmapped.recordName !== entry.recordName)) {
+      misresolved.push(
+        `${label ?? filePath} resolves to ${unmapped.table} "${unmapped.recordName}"`
+      );
       continue;
     }
     const key = `${unmapped.table}:${unmapped.recordName}`;
@@ -193,8 +226,19 @@ export const getAppFileListWithCandidates = async (
         field: unmapped.field,
         ext: unmapped.ext,
         isSidecar: unmapped.isSidecar,
+        ...(contents !== undefined ? { contents } : {}),
       });
     }
+  }
+  if (misresolved.length > 0) {
+    // Defence in depth behind parseCompositeDocument's key check: a document
+    // entry is pushed only to the record it names. Any other answer means its
+    // virtual path escaped its own table, and pushing it would write a record
+    // the document's section never covered.
+    throw new Error(
+      `Refusing to push data-model document entries that do not resolve to their own ` +
+        `record:\n  ${misresolved.join("\n  ")}`
+    );
   }
   if (unresolved.length > 0) {
     // A path the manifest cannot place is dropped — the alternative, failing the
@@ -215,8 +259,120 @@ export const getAppFileListWithCandidates = async (
   }
   return {
     records: groupAppFiles(appFileCtxs),
-    candidates: [...candidates.values()],
+    candidates: orderCreateCandidates([...candidates.values()]),
   };
+};
+
+/**
+ * SDK-F2: under the composite layout a table is created before its columns,
+ * and a column before its choices — a dictionary row naming a table the
+ * instance does not have yet is refused. Stable, so every other record keeps
+ * the order the paths were listed in.
+ */
+const orderCreateCandidates = (candidates: CreateCandidate[]): CreateCandidate[] => {
+  let layout: string;
+  try {
+    layout = getDataModelLayout(ConfigManager.getConfig());
+  } catch (_e) {
+    return candidates;
+  }
+  if (layout !== "composite") return candidates;
+  return candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort(
+      (a, b) =>
+        compositeTier(a.candidate.table) - compositeTier(b.candidate.table) || a.index - b.index
+    )
+    .map(({ candidate }) => candidate);
+};
+
+/** One path to push: a file on disk, or an entry of a data-model document. */
+interface PushPathItem {
+  filePath: string;
+  /** In-memory sidecar text; set only for a document entry. */
+  contents?: string;
+  /** How an unresolved document entry is named in the warning. */
+  label?: string;
+  /** The section and key a document entry came from; set only for an entry. */
+  entry?: { table: string; recordName: string };
+}
+
+/**
+ * SDK-F2: replace every data-model document among `paths` by one virtual
+ * per-record sidecar per entry, so the rest of the push — resolution, the
+ * diff-only metadata update, create-or-adopt — sees exactly what the
+ * `records` layout would have handed it. Every other path passes through.
+ *
+ * Refused, before anything is pushed:
+ * - a document under the `records` layout (it would silently not be pushed);
+ * - a document section for a table the composite layout does not cover;
+ * - a record held both by a document and by a per-record sidecar on disk;
+ * - a per-record sidecar of a composite table under the `composite` layout.
+ */
+const expandCompositeDocuments = async (paths: string[]): Promise<PushPathItem[]> => {
+  let sourcePath: string;
+  let config: Sync.Config;
+  try {
+    sourcePath = ConfigManager.getSourcePath();
+    config = ConfigManager.getConfig();
+  } catch (_e) {
+    return paths.map((filePath) => ({ filePath }));
+  }
+  const layout = getDataModelLayout(config);
+  const compositeTables = getCompositeTables(config);
+  const flat = config.flat === true;
+  const items: PushPathItem[] = [];
+  const errors: string[] = [];
+  for (const filePath of paths) {
+    if (!isCompositeDocumentPath(filePath, sourcePath)) {
+      const strayTable = strayCompositeSidecarTable(filePath, sourcePath, config);
+      if (strayTable !== undefined) {
+        errors.push(strayCompositeSidecarMessage(filePath, strayTable));
+        continue;
+      }
+      items.push({ filePath });
+      continue;
+    }
+    if (layout !== "composite") {
+      errors.push(
+        `${filePath} is a data-model document, but dataModelLayout is "records": ` +
+          "it would not be pushed."
+      );
+      continue;
+    }
+    const doc = await readCompositeDocument(filePath);
+    for (const table of COMPOSITE_TABLES) {
+      const section = Object.prototype.hasOwnProperty.call(doc.sections, table)
+        ? doc.sections[table]
+        : undefined;
+      if (!section) continue;
+      if (!compositeTables.includes(table)) {
+        errors.push(
+          `${filePath} holds a ${table} section, but ${table} is not in dataModelTables.`
+        );
+        continue;
+      }
+      for (const recordName of Object.keys(section)) {
+        const virtual = perRecordSidecarPath(sourcePath, table, recordName, flat);
+        if (await pathExistsPlain(virtual)) {
+          errors.push(`${table} "${recordName}" is in both ${filePath} and ${virtual}.`);
+          continue;
+        }
+        items.push({
+          filePath: virtual,
+          contents: serializeCompositeEntry(section[recordName]),
+          label: `${filePath}#${table}/${recordName}`,
+          entry: { table, recordName },
+        });
+      }
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      `Ambiguous data-model layout:\n  ${errors.join("\n  ")}\n${LAYOUT_CONFLICT_HINT}`
+    );
+  }
+  return items;
 };
 
 export const getAppFileList = async (
@@ -337,14 +493,19 @@ export const expandMetaSidecar = (
 
 /**
  * R4: drop the sidecar columns of a data-model record whose value already
- * matches the instance, so the update carries only what was edited.
+ * matches the CURRENT instance value, so the update carries only the columns
+ * that differ.
  *
  * A data-model sidecar holds every column of the record, and an ordinary
  * sidecar push sends them all. For a dictionary entry that is not harmless:
  * re-sending an unchanged `internal_type`, `reference` or `max_length` runs the
- * dictionary business rules again (and can alter the physical table), and it
- * overwrites a column someone else changed on the instance since the last pull.
- * One GET of the columns the push would send makes the PATCH a true diff.
+ * dictionary business rules again (and can alter the physical table). One GET
+ * of the columns the push would send drops the ones that already match.
+ *
+ * This is a two-way compare (local sidecar vs current row), not a three-way
+ * merge: no pulled baseline is kept. A column someone changed on the instance
+ * since the last pull still differs from the local sidecar, so it IS sent and
+ * overwrites that change. DATA_MODEL.md "Editing and pushing" says so.
  *
  * Field files are always sent as they are. Throws when the record cannot be
  * read: sending every column blind is the behaviour this exists to avoid.
@@ -487,7 +648,7 @@ export const pushFiles = async (
   const client = defaultClient();
   const pushConcurrency = resolvePushConcurrency(concurrencyOverride);
   const tick = getProgTick(logger.getLogLevel(), recs.length * 2) || (() => {});
-  return mapWithConcurrency(recs, pushConcurrency, async (rec) => {
+  const pushOne = async (rec: Sync.BuildableRecord): Promise<Sync.PushResult> => {
     const fieldNames = Object.keys(rec.fields);
     const recSummary = summarizeRecord(
       rec.table,
@@ -554,7 +715,50 @@ export const pushFiles = async (
     );
     tick();
     return pushRes;
+  };
+  return mapInCompositeTiers(recs, pushConcurrency, pushOne);
+};
+
+/**
+ * SDK-F2: under the composite layout, push every table definition before any
+ * column and every column before any choice — a choice set on a column the
+ * instance has not saved yet is rejected, and the order must not depend on
+ * which request answers first. Each tier keeps the full concurrency. Results
+ * come back in input order, as callers match them to `recs` by position.
+ * Under the `records` layout this is exactly one mapWithConcurrency.
+ */
+const mapInCompositeTiers = async <R>(
+  recs: Sync.BuildableRecord[],
+  concurrency: number,
+  worker: (rec: Sync.BuildableRecord) => Promise<R>
+): Promise<R[]> => {
+  let layout: string;
+  try {
+    layout = getDataModelLayout(ConfigManager.getConfig());
+  } catch (_e) {
+    layout = "records";
+  }
+  if (layout !== "composite") return mapWithConcurrency(recs, concurrency, (rec) => worker(rec));
+  const tiers = new Map<number, number[]>();
+  recs.forEach((rec, index) => {
+    const tier = compositeTier(rec.table);
+    const list = tiers.get(tier);
+    if (list) list.push(index);
+    else tiers.set(tier, [index]);
   });
+  const results: R[] = new Array(recs.length);
+  for (const tier of [...tiers.keys()].sort((a, b) => a - b)) {
+    const indexes = tiers.get(tier) as number[];
+    const tierResults = await mapWithConcurrency(
+      indexes.map((index) => recs[index]),
+      concurrency,
+      (rec) => worker(rec)
+    );
+    indexes.forEach((index, position) => {
+      results[index] = tierResults[position];
+    });
+  }
+  return results;
 };
 
 // ---------------------------------------------------------------------------
@@ -566,6 +770,20 @@ const SYS_METADATA_TABLE = "sys_metadata";
 // The deepest real hierarchies under sys_metadata are well under ten levels; the
 // bound only stops a cyclic or corrupt sys_db_object chain from looping.
 const MAX_CREATE_HIERARCHY_DEPTH = 16;
+
+/**
+ * The natural key of a table outside the sys_metadata hierarchy, where records
+ * carry no sys_scope column. The instance ignores a query term or a body column
+ * it does not know, so `sys_scope=<id>` neither narrows the idempotency lookup
+ * nor gets stored: the lookup would match records across the whole instance.
+ * These columns identify the record instead. A column the sidecar leaves empty
+ * takes the value the instance itself defaults it to.
+ */
+const UNSCOPED_NATURAL_KEYS: Readonly<
+  Record<string, { columns: readonly string[]; defaults: Readonly<Record<string, string>> }>
+> = Object.freeze({
+  sys_choice: { columns: ["name", "element", "value", "language"], defaults: { language: "en" } },
+});
 // manifestBuilder writes a "/" in a display value as this look-alike, because
 // the name becomes a path component. Creating from that path reverses it.
 const PATH_SEPARATOR_STAND_IN = "〳";
@@ -792,6 +1010,12 @@ export interface PlannedCreation {
    * name: the sidecar already carries every column.
    */
   lookup?: Record<string, string>;
+  /**
+   * False for a table outside the sys_metadata hierarchy. Its records have no
+   * sys_scope column, so neither the idempotency lookup nor the POST body names
+   * the application scope.
+   */
+  scoped?: boolean;
 }
 
 export interface CreationPlan {
@@ -800,12 +1024,43 @@ export interface CreationPlan {
 }
 
 /**
+ * Whether a sys_id an interrupted run recorded as created may be adopted:
+ * "adopt" when the instance has the record in this scope (or the table carries
+ * no scope column), "missing" on a 404, otherwise the refusal message.
+ */
+const verifyKnownRecord = async (
+  client: SNClient,
+  table: string,
+  sysId: string,
+  scopeId: string
+): Promise<string> => {
+  if (!/^[0-9a-f]{32}$/i.test(sysId)) {
+    return `the push checkpoint names "${sysId}", which is not a sys_id; refusing to adopt it.`;
+  }
+  try {
+    const remote = await client.getRecordScope(table, sysId);
+    if (!remote) return "missing";
+    if (remote.sys_scope !== "" && remote.sys_scope !== scopeId) {
+      return (
+        `the push checkpoint names ${sysId}, which belongs to scope "${remote.sys_scope}", ` +
+        `not to this application (${scopeId}); refusing to adopt it.`
+      );
+    }
+    return "adopt";
+  } catch (e) {
+    return `could not verify the record ${sysId} the push checkpoint names: ${
+      e instanceof Error ? e.message : String(e)
+    }`;
+  }
+};
+
+/**
  * Decide, per candidate, whether `push --create` creates it, adopts an existing
  * record of the same name in the same scope, or refuses it. Read-only: the only
  * requests are GETs (the scope sys_id, the sys_db_object hierarchy walk and the
  * idempotency lookup), so a dry run calls it too. `known` maps
  * `table:recordName` to a sys_id an interrupted earlier run already created —
- * those are adopted without another lookup.
+ * those are adopted after one GET confirms the record exists in this scope.
  */
 export const planRecordCreation = async (
   candidates: CreateCandidate[],
@@ -843,8 +1098,19 @@ export const planRecordCreation = async (
     }
     const knownSysId = options.known?.[candidateKey(candidate)];
     if (typeof knownSysId === "string" && knownSysId !== "") {
-      plans.push(plan("adopt", { sysId: knownSysId }));
-      continue;
+      // The checkpoint is a local file: its sys_id is adopted only once the
+      // instance confirms the record exists in this scope. A record that is
+      // gone (deleted since, or the checkpoint is stale) falls through to the
+      // ordinary lookup below.
+      const verdict = await verifyKnownRecord(client, candidate.table, knownSysId, scopeId);
+      if (verdict === "adopt") {
+        plans.push(plan("adopt", { sysId: knownSysId }));
+        continue;
+      }
+      if (verdict !== "missing") {
+        plans.push(plan("error", { message: verdict }));
+        continue;
+      }
     }
     if (tableOptions?.differentiatorField) {
       // The manifest name of such a record carries a " (value)" suffix the
@@ -875,10 +1141,25 @@ export const planRecordCreation = async (
         plans.push(plan("error", { message: policy.reason }));
         continue;
       }
-      const hits = lookup
-        ? await findRecordByColumns(client, candidate.table, lookup, scopeId)
-        : await client.findRecordByName(candidate.table, nameField, nameValue, scopeId);
-      const extra = lookup ? { lookup } : {};
+      const scoped = await extendsSysMetadata(client, candidate.table, hierarchyCache);
+      const natural = scoped ? undefined : UNSCOPED_NATURAL_KEYS[candidate.table];
+      if (natural) {
+        const resolved = await compositeLookupValues(
+          candidate,
+          [...(nameFields ?? []), ...natural.columns],
+          natural.defaults
+        );
+        if (typeof resolved === "string") {
+          plans.push(plan("error", { message: resolved }));
+          continue;
+        }
+        lookup = resolved;
+      }
+      const extra: Partial<PlannedCreation> = {
+        ...(lookup ? { lookup } : {}),
+        ...(scoped ? {} : { scoped: false }),
+      };
+      const hits = await findExisting(client, { candidate, nameField, nameValue, ...extra }, scopeId);
       if (hits.length === 0) {
         plans.push(plan("create", extra));
       } else if (hits.length === 1) {
@@ -887,8 +1168,9 @@ export const planRecordCreation = async (
         plans.push(
           plan("error", {
             message:
-              `more than one ${candidate.table} record ${describeTarget(lookup, nameValue)} exists in ` +
-              "this scope; refusing to guess which one the local files belong to.",
+              `more than one ${candidate.table} record ${describeTarget(lookup, nameValue)} exists ` +
+              `${scoped ? "in this scope" : "on the instance"}; refusing to guess which one ` +
+              "the local files belong to.",
           })
         );
       }
@@ -907,7 +1189,8 @@ export const planRecordCreation = async (
  */
 const compositeLookupValues = async (
   candidate: CreateCandidate,
-  nameFields: readonly string[]
+  nameFields: readonly string[],
+  defaults: Readonly<Record<string, string>> = {}
 ): Promise<Record<string, string> | string> => {
   const columns = [...new Set(nameFields.map(nameFieldColumn))];
   const sidecar = candidate.files.find((file) => file.isSidecar);
@@ -919,7 +1202,9 @@ const compositeLookupValues = async (
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripBOM(await fsp.readFile(sidecar.filePath, "utf8")));
+    // SDK-F2: an entry expanded from a data-model document carries its text.
+    const text = sidecar.contents ?? (await fsp.readFile(sidecar.filePath, "utf8"));
+    parsed = JSON.parse(stripBOM(text));
   } catch (e) {
     return `could not read ${sidecar.filePath}: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -936,8 +1221,9 @@ const compositeLookupValues = async (
         : typeof raw === "number" || typeof raw === "boolean"
           ? String(raw)
           : "";
-    if (value.trim() === "") missing.push(column);
-    else values[column] = value;
+    if (value.trim() !== "") values[column] = value;
+    else if (defaults[column] !== undefined) values[column] = defaults[column];
+    else missing.push(column);
   }
   if (missing.length > 0) {
     return `this table names records by several columns, so ${needs}; missing: ${missing.join(", ")}.`;
@@ -945,18 +1231,21 @@ const compositeLookupValues = async (
   return values;
 };
 
-/** The sys_ids of the records in `scopeId` whose columns equal `values`. */
+/**
+ * The sys_ids of the records whose columns equal `values`, in `scopeId` when
+ * one is given (undefined for a table whose records have no sys_scope column).
+ */
 const findRecordByColumns = async (
   client: SNClient,
   table: string,
   values: Record<string, string>,
-  scopeId: string
+  scopeId: string | undefined
 ): Promise<string[]> => {
   const query = [
     ...Object.entries(values).map(
       ([column, value]) => `${escapeQueryValue(column)}=${escapeQueryValue(value)}`
     ),
-    `sys_scope=${escapeQueryValue(scopeId)}`,
+    ...(scopeId === undefined ? [] : [`sys_scope=${escapeQueryValue(scopeId)}`]),
   ].join("^");
   const records = await unwrapSNResponse<{ sys_id?: unknown }[]>(
     client.tableAPIGet(table, query, "sys_id", 2)
@@ -964,6 +1253,25 @@ const findRecordByColumns = async (
   return (Array.isArray(records) ? records : [])
     .map((record) => record?.sys_id)
     .filter((sysId): sysId is string => typeof sysId === "string" && sysId !== "");
+};
+
+/**
+ * The idempotency lookup: the records a planned creation would duplicate. A
+ * table outside the sys_metadata hierarchy is matched without a sys_scope term,
+ * which the instance would ignore anyway, on its natural key when one is known.
+ */
+const findExisting = (
+  client: SNClient,
+  plan: Pick<PlannedCreation, "candidate" | "nameField" | "nameValue" | "lookup" | "scoped">,
+  scopeId: string
+): Promise<string[]> => {
+  const { table } = plan.candidate;
+  const scope = plan.scoped === false ? undefined : scopeId;
+  if (plan.lookup) return findRecordByColumns(client, table, plan.lookup, scope);
+  if (scope === undefined) {
+    return findRecordByColumns(client, table, { [plan.nameField]: plan.nameValue }, undefined);
+  }
+  return client.findRecordByName(table, plan.nameField, plan.nameValue, scope);
 };
 
 /** How a record is identified in a message: by its name, or by its lookup columns. */
@@ -982,6 +1290,12 @@ export interface CreationOutcome {
   results: Sync.PushResult[];
   /** Adopted records, resolved through the updated manifest, for pushFiles to PATCH. */
   records: Sync.BuildableRecord[];
+  /**
+   * Tables with at least one refused or failed creation. `push --prune` holds
+   * back deletions on these tables: a rename is a delete plus a create, and
+   * deleting the old record when the new one was never created would lose it.
+   */
+  failedTables: string[];
 }
 
 /**
@@ -1030,6 +1344,7 @@ const buildCreateFields = async (
       scope: manifest.scope,
       tableName: candidate.table,
       targetField: file.field,
+      ...(file.contents !== undefined ? { fileContents: file.contents } : {}),
     };
   }
   const buildRes = await buildRec(rec);
@@ -1039,7 +1354,8 @@ const buildCreateFields = async (
     ...expanded.fields,
     // A composite name is not one column; the sidecar carries the columns.
     ...(plan.lookup ? {} : { [plan.nameField]: plan.nameValue }),
-    sys_scope: scopeId,
+    // A record outside the sys_metadata hierarchy has no sys_scope column.
+    ...(plan.scoped === false ? {} : { sys_scope: scopeId }),
   };
 };
 
@@ -1067,9 +1383,7 @@ const postWithLookup = async (
           "checking whether it exists before retrying..."
       );
       await wait(retryWaitMs);
-      const hits = plan.lookup
-        ? await findRecordByColumns(client, table, plan.lookup, scopeId)
-        : await client.findRecordByName(table, plan.nameField, plan.nameValue, scopeId);
+      const hits = await findExisting(client, plan, scopeId);
       if (hits.length === 1) return hits[0];
       if (hits.length > 1) {
         throw new Error(
@@ -1100,7 +1414,10 @@ export const createRecords = async (
 ): Promise<CreationOutcome> => {
   const results: Sync.PushResult[] = [];
   const adoptedPaths: string[] = [];
-  if (creation.plans.length === 0) return { results, records: [] };
+  const failedTables = new Set<string>();
+  // SDK-F2: the in-memory text of adopted document entries, by virtual path.
+  const adoptedContents = new Map<string, string>();
+  if (creation.plans.length === 0) return { results, records: [], failedTables: [] };
   const client = options.client ?? defaultClient();
   const retryWaitMs = options.retryWaitMs ?? PUSH_RETRY_WAIT;
   for (const plan of creation.plans) {
@@ -1108,13 +1425,17 @@ export const createRecords = async (
     const summary = summarizeRecord(candidate.table, candidate.recordName);
     try {
       if (plan.action === "error") {
+        failedTables.add(candidate.table);
         results.push({ success: false, message: `${summary} : ${plan.message}` });
         continue;
       }
       if (plan.action === "adopt") {
         await addRecordToManifest(candidate, plan.sysId as string);
         logger.info(`${summary} : adopted existing record ${plan.sysId}.`);
-        adoptedPaths.push(...candidate.files.map((file) => file.filePath));
+        for (const file of candidate.files) {
+          adoptedPaths.push(file.filePath);
+          if (file.contents !== undefined) adoptedContents.set(file.filePath, file.contents);
+        }
         continue;
       }
       const discovered = await discoverCreateMeta(client, candidate);
@@ -1124,6 +1445,7 @@ export const createRecords = async (
       await addRecordToManifest(candidate, sysId, discovered);
       results.push({ success: true, message: `${summary} : created (${sysId}).` });
     } catch (e) {
+      failedTables.add(candidate.table);
       results.push({
         success: false,
         message: `${summary} : ${e instanceof Error ? e.message : String(e)}`,
@@ -1131,9 +1453,14 @@ export const createRecords = async (
     }
   }
   const contexts = adoptedPaths
-    .map((filePath) => fUtils.getFileContextFromPath(filePath))
+    .map((filePath) => {
+      const ctx = fUtils.getFileContextFromPath(filePath);
+      const contents = adoptedContents.get(filePath);
+      if (ctx && contents !== undefined) ctx.fileContents = contents;
+      return ctx;
+    })
     .filter((ctx): ctx is Sync.FileContext => ctx !== undefined);
-  return { results, records: groupAppFiles(contexts) };
+  return { results, records: groupAppFiles(contexts), failedTables: [...failedTables] };
 };
 
 // ---------------------------------------------------------------------------
@@ -1154,8 +1481,12 @@ export interface PruneCandidate {
 
 export interface PruneCandidateOptions {
   /**
-   * `--diff`: absolute paths the diff deleted (D lines, renamed-from paths).
-   * Only records one of these paths belongs to stay candidates.
+   * The git evidence of the deletion: absolute paths the `--diff` range
+   * deleted (D lines, renamed-from paths), or — without `--diff` — the files
+   * tracked in HEAD that are missing from the working tree. Only records one
+   * of these paths belongs to stay candidates. `push --prune` always passes
+   * it: a manifest file that is merely absent locally (an interrupted
+   * download, a never-committed record) is not a deletion.
    */
   diffDeleted?: string[];
   /**
@@ -1255,6 +1586,49 @@ export const findPruneCandidates = async (
   return candidates;
 };
 
+/** Above this many candidates `push --prune` needs `--allow-mass-delete`. */
+export const PRUNE_MASS_DELETE_COUNT = 25;
+/**
+ * Above this share of the manifest's records (and more than
+ * PRUNE_MASS_DELETE_FLOOR candidates) `push --prune` needs `--allow-mass-delete`.
+ */
+export const PRUNE_MASS_DELETE_SHARE = 0.2;
+const PRUNE_MASS_DELETE_FLOOR = 5;
+
+/**
+ * The mass-delete guard of `push --prune`: a message when the candidates are
+ * more than PRUNE_MASS_DELETE_COUNT records, or more than
+ * PRUNE_MASS_DELETE_FLOOR records and over PRUNE_MASS_DELETE_SHARE of every
+ * record the manifest tracks — the shape of a wrong source tree or a wiped
+ * checkout rather than of a cleanup. Undefined when the run may proceed.
+ */
+export const pruneVolumeRefusal = (candidateCount: number): string | undefined => {
+  const manifest = readManifest();
+  let total = 0;
+  for (const tableConfig of Object.values(manifest.tables ?? {})) {
+    total += Object.keys(tableConfig?.records ?? {}).length;
+  }
+  const share = total > 0 ? candidateCount / total : 1;
+  const tooMany = candidateCount > PRUNE_MASS_DELETE_COUNT;
+  const tooLarge = candidateCount > PRUNE_MASS_DELETE_FLOOR && share > PRUNE_MASS_DELETE_SHARE;
+  if (!tooMany && !tooLarge) return undefined;
+  return (
+    `${candidateCount} of the ${total} record(s) the manifest tracks would be deleted ` +
+    `(${Math.round(share * 100)}%), above the mass-delete limit of ${PRUNE_MASS_DELETE_COUNT} ` +
+    `records or ${Math.round(PRUNE_MASS_DELETE_SHARE * 100)}% of the manifest. ` +
+    "Check the source directory and the git state; pass --allow-mass-delete if the deletion is intended."
+  );
+};
+
+/**
+ * Store the scope sys_id a prune plan resolved, once the run is past its
+ * confirmation. No-op when the manifest already holds one.
+ */
+export const persistScopeId = async (scopeId: string): Promise<void> => {
+  if (scopeId === "" || readManifest().scopeId) return;
+  await saveManifest({ ...readManifest(), scopeId });
+};
+
 const SYS_ID_PATTERN = /^[0-9a-f]{32}$/i;
 
 /**
@@ -1290,10 +1664,11 @@ export const checkPruneTablePolicy = (table: string): string | undefined => {
 };
 
 /**
- * `delete`: in scope, sent as a DELETE. `gone`: the instance already answers 404,
- * so only the manifest entry goes. `error`: refused, nothing sent.
+ * `delete`: in scope, sent as a DELETE. `unverified`: the instance answers 404,
+ * which is also what a read ACL that hides the record looks like, so nothing is
+ * sent and the manifest entry stays. `error`: refused, nothing sent.
  */
-export type PruneAction = "delete" | "gone" | "error";
+export type PruneAction = "delete" | "unverified" | "error";
 
 export interface PlannedPrune {
   candidate: PruneCandidate;
@@ -1348,7 +1723,14 @@ export const planRecordPrune = async (
     try {
       const remote = await client.getRecordScope(candidate.table, candidate.sysId);
       if (!remote) {
-        plans.push({ candidate, action: "gone", message: "already deleted on the instance." });
+        plans.push({
+          candidate,
+          action: "unverified",
+          message:
+            "skipped: the instance answers 404 — the record is already deleted, or a read ACL " +
+            "hides it from this user. Nothing was sent and the manifest entry is kept; " +
+            "`syncrona refresh` drops it once the record is really gone.",
+        });
       } else if (remote.sys_scope !== scopeId) {
         plans.push({
           candidate,
@@ -1387,8 +1769,8 @@ const removeRecordFromManifest = async (candidate: PruneCandidate): Promise<void
 /**
  * Carry out a prune plan, one record at a time: DELETE each `delete` record
  * (retried on transient failures; a 404 means an earlier attempt landed) and
- * drop it from the manifest. `gone` records only leave the manifest; `error`
- * records report a failure and nothing is sent.
+ * drop it from the manifest. `unverified` records are reported and kept, with
+ * nothing sent; `error` records report a failure and nothing is sent.
  */
 export const pruneRecords = async (
   plan: PrunePlan,
@@ -1404,29 +1786,27 @@ export const pruneRecords = async (
       results.push({ success: false, message: `${summary} : ${message}` });
       continue;
     }
+    if (action === "unverified") {
+      results.push({ success: true, message: `${summary} : ${message}` });
+      continue;
+    }
     try {
-      if (action === "delete") {
-        try {
-          await retryOnErr(
-            () => client.deleteRecord(candidate.table, candidate.sysId),
-            PUSH_RETRY_LIMIT,
-            retryWaitMs,
-            (retriesLeft: number) =>
-              logger.debug(`Retrying delete of ${summary}; ${retriesLeft} attempt(s) left.`),
-            isRetryableRequestError
-          );
-        } catch (e) {
-          if (getErrorResponseStatus(e) !== 404) throw e;
-        }
+      try {
+        await retryOnErr(
+          () => client.deleteRecord(candidate.table, candidate.sysId),
+          PUSH_RETRY_LIMIT,
+          retryWaitMs,
+          (retriesLeft: number) =>
+            logger.debug(`Retrying delete of ${summary}; ${retriesLeft} attempt(s) left.`),
+          isRetryableRequestError
+        );
+      } catch (e) {
+        // The GET just confirmed the record, so a 404 here means an earlier
+        // attempt of this DELETE landed.
+        if (getErrorResponseStatus(e) !== 404) throw e;
       }
       await removeRecordFromManifest(candidate);
-      results.push({
-        success: true,
-        message:
-          action === "delete"
-            ? `${summary} : deleted (${candidate.sysId}).`
-            : `${summary} : already deleted on the instance; removed from the manifest.`,
-      });
+      results.push({ success: true, message: `${summary} : deleted (${candidate.sysId}).` });
     } catch (e) {
       results.push({ success: false, message: `${summary} : ${errorMessage(e)}` });
     }

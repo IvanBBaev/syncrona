@@ -17,6 +17,16 @@ import {
 } from "./manifestBuilder.js";
 import { isMetaFile } from "./metaFields.js";
 import { applyDataModelTableOptions } from "./dataModel.js";
+import {
+  COMPOSITE_TABLES,
+  CompositeWrite,
+  assertNoCompositeEntries,
+  assertNoPerRecordSidecars,
+  compositeIndexKey,
+  getCompositeTables,
+  loadCompositeIndex,
+  mergeCompositeWrites,
+} from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
@@ -195,7 +205,29 @@ export const processTablesInManifest = async (
 ) => {
   // DX17: read flat mode straight off the loaded config (not getFlatMode()) so
   // this single seam governs every pull path — wizard, refresh and download.
-  const flat = ConfigManager.getConfig().flat === true;
+  const config = ConfigManager.getConfig();
+  const flat = config.flat === true;
+  // SDK-F2: with dataModelLayout "composite" the sidecars of sys_db_object,
+  // sys_dictionary and sys_choice are not written per record — they are merged
+  // into one data-model document per table after the file pool drains.
+  const compositeTables = new Set(getCompositeTables(config));
+  const compositeWrites: CompositeWrite[] = [];
+  // "records" layout: the per-record sidecars of those tables are refused while
+  // a data-model document still holds the same record.
+  const recordsLayoutSidecars: Array<{ table: string; recordName: string }> = [];
+  const routeToDocument = (tableName: string, recordName: string, file: SN.File): boolean => {
+    if (!isMetaFile(file) || !("content" in file)) return false;
+    if (compositeTables.has(tableName)) {
+      if (typeof file.content === "string" && file.content !== "") {
+        compositeWrites.push({ table: tableName, recordName, content: file.content });
+      }
+      return true;
+    }
+    if (COMPOSITE_TABLES.includes(tableName)) {
+      recordsLayoutSidecars.push({ table: tableName, recordName });
+    }
+    return false;
+  };
   const sourcePath = ConfigManager.getSourcePath();
   const concurrency = resolveWriteConcurrency();
   const tableNames = Object.keys(tables);
@@ -218,7 +250,7 @@ export const processTablesInManifest = async (
     if (flat) {
       // DX17: flat layout writes every field file directly under the table
       // directory as `<record>~<field>.<ext>`, so there are no per-record folders.
-      dirTasks.push(tablePath);
+      let tableHasFiles = false;
       for (const recKey of recKeys) {
         const rec = records[recKey];
         // rec.name still flows into the flat file stem (`<record>~<field>`), so
@@ -227,26 +259,41 @@ export const processTablesInManifest = async (
         assertSafePathComponent(rec.name, "record name");
         for (const file of rec.files) {
           assertSafeFileComponents(file);
+          if (routeToDocument(tableName, rec.name, file)) continue;
+          if (compositeTables.has(tableName) && isMetaFile(file)) continue;
+          tableHasFiles = true;
           fileTasks.push(() =>
             fUtils.writeFlatSNFileCurry(!forceWrite)(file, tablePath, rec.name)
           );
         }
       }
+      // A composite table whose records carry nothing but metadata gets no
+      // directory: its sidecars all live in the data-model documents.
+      if (tableHasFiles || !compositeTables.has(tableName)) dirTasks.push(tablePath);
     } else {
       for (const recKey of recKeys) {
         const rec = records[recKey];
         assertSafePathComponent(rec.name, "record name");
         const recPath = path.join(tablePath, rec.name);
-        dirTasks.push(recPath);
+        let recordHasFiles = false;
         for (const file of rec.files) {
           assertSafeFileComponents(file);
+          if (routeToDocument(tableName, rec.name, file)) continue;
+          if (compositeTables.has(tableName) && isMetaFile(file)) continue;
+          recordHasFiles = true;
           fileTasks.push(() =>
             fUtils.writeSNFileCurry(!forceWrite)(file, recPath)
           );
         }
+        if (recordHasFiles || !compositeTables.has(tableName)) dirTasks.push(recPath);
       }
     }
   }
+
+  // Both layout checks run before anything is written, so a refused pull
+  // leaves the workspace as it was.
+  await assertNoCompositeEntries(sourcePath, recordsLayoutSidecars);
+  await assertNoPerRecordSidecars(sourcePath, compositeWrites, flat);
 
   // Every directory must exist before its files are written, so drain the dir
   // pool to completion first, then the file pool.
@@ -254,6 +301,7 @@ export const processTablesInManifest = async (
     fUtils.createDirRecursively(dir)
   );
   await mapWithConcurrency(fileTasks, concurrency, (task) => task());
+  await mergeCompositeWrites(sourcePath, compositeWrites, { force: forceWrite, flat });
 
   // Side effect (unchanged): strip content from every file so the follow-up
   // manifest write doesn't persist file bodies. Done after all writes finish so
@@ -314,6 +362,14 @@ export const syncManifest = async (): Promise<boolean> => {
       // refresh used to write `.meta.json` only on the fallback path — that is,
       // only on instances WITHOUT the app the docs tell you to install.
       await attachMetaFieldsToManifest(newManifest, client, config);
+    }
+
+    // Neither the scoped endpoint nor the Table API build records the scope's
+    // sys_id, so a refresh would silently drop the one `init --new` wrote (and
+    // `push --create` would go back to looking it up). It is the same scope, so
+    // its sys_id carries over.
+    if (!newManifest.scopeId && curManifest.scopeId && newManifest.scope === curManifest.scope) {
+      newManifest = { ...newManifest, scopeId: curManifest.scopeId };
     }
 
     logger.info("Writing new manifest file...");
@@ -528,8 +584,48 @@ export const findMissingFiles = async (
     missingTableFunc,
     flat
   );
+  await reconcileCompositeMissing(missing, tables, missingTableFunc);
   // missing gets mutated along the way as things get processed
   return missing;
+};
+
+// SDK-F2: under dataModelLayout "composite" the sidecar of a sys_db_object,
+// sys_dictionary or sys_choice record is present when a data-model document
+// holds its entry — the per-record probe above cannot see that, and would
+// otherwise report every such sidecar missing on every refresh.
+const reconcileCompositeMissing = async (
+  missing: SN.MissingFileTableMap,
+  tables: SN.TableMap,
+  markTable: MarkTableMissingFunc
+): Promise<void> => {
+  const compositeTables = getCompositeTables(ConfigManager.getConfig());
+  if (compositeTables.length === 0) return;
+  const index = await loadCompositeIndex(ConfigManager.getSourcePath());
+  for (const table of compositeTables) {
+    const tableConfig = Object.prototype.hasOwnProperty.call(tables, table)
+      ? tables[table]
+      : undefined;
+    if (!tableConfig) continue;
+    for (const [recordKey, record] of Object.entries(tableConfig.records)) {
+      const meta = record.files.find((file) => isMetaFile(file));
+      if (!meta) continue;
+      const recordName = record.name || recordKey;
+      const held = index.has(compositeIndexKey(table, recordName));
+      const listed = missing[table]?.[record.sys_id];
+      const listedMeta = listed?.some((file) => isMetaFile(file)) === true;
+      if (held && listed && listedMeta) {
+        const rest = listed.filter((file) => !isMetaFile(file));
+        if (rest.length > 0) {
+          missing[table][record.sys_id] = rest;
+        } else {
+          delete missing[table][record.sys_id];
+          if (Object.keys(missing[table]).length === 0) delete missing[table];
+        }
+      } else if (!held && !listedMeta) {
+        markTable(table)(record.sys_id)(meta);
+      }
+    }
+  }
 };
 
 // The manifest's own record names (table -> sys_id -> name). processTablesInManifest

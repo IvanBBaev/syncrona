@@ -17,6 +17,7 @@ import {
 } from "./snClient.js";
 import { listInstances } from "./auth.js";
 import { isScopedEndpointUnavailableError } from "./manifestBuilder.js";
+import { inspectCompositeLayout } from "./dataModelComposite.js";
 import { KNOWN_PLUGINS, OPTIONAL_PACKAGES, findKnownPlugin, renderPluginRule } from "./pluginCatalog.js";
 import {
   setLogLevel,
@@ -38,6 +39,8 @@ type StatusSummary = {
   includeRules: number;
   excludeRules: number;
   envReady: boolean;
+  /** SDK-F2: the data-model layout, when the workspace could be inspected. */
+  dataModelLayout?: string;
   connectivityOk: boolean;
   errors: string[];
 };
@@ -177,6 +180,25 @@ export async function statusCommand(
     }
   }
 
+  // SDK-F2: name the data-model layout and report a workspace holding both
+  // layouts (or the one it does not use). Best-effort: a status run never fails
+  // because the workspace could not be inspected.
+  let dataModelLayout: string | undefined;
+  try {
+    const report = await inspectCompositeLayout(
+      ConfigManager.getManifest(),
+      ConfigManager.getConfig() as Sync.Config,
+      ConfigManager.getSourcePath()
+    );
+    dataModelLayout =
+      report.layout === "composite"
+        ? `composite (${report.documents.length} document(s))`
+        : report.layout;
+    errors.push(...report.conflicts.map((conflict) => `data model: ${conflict}`));
+  } catch (_e) {
+    dataModelLayout = undefined;
+  }
+
   const summary: StatusSummary = {
     ok: envReady && connectivityOk,
     instance,
@@ -191,6 +213,7 @@ export async function statusCommand(
     envReady,
     connectivityOk,
     errors,
+    ...(dataModelLayout !== undefined ? { dataModelLayout } : {}),
   };
 
   logger.info(`Instance: ${summary.instance || "<missing>"}`);
@@ -204,6 +227,9 @@ export async function statusCommand(
   logger.info(
     `Config rules: ${summary.includeRules} include, ${summary.excludeRules} exclude (defaults + overrides)`
   );
+  if (summary.dataModelLayout !== undefined) {
+    logger.info(`Data model layout: ${summary.dataModelLayout}`);
+  }
   logger.info(`Environment Ready: ${summary.envReady ? "yes" : "no"}`);
   logger.info(`Connectivity: ${summary.connectivityOk ? "ok" : "failed"}`);
   for (const error of summary.errors) {
@@ -469,6 +495,7 @@ export async function configCommand(
     logger.info(`  buildDirectory:  ${def.buildDirectory}`);
     logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
     logger.info(`  refreshInterval: ${def.refreshInterval}s`);
+    logger.info(`  dataModelLayout: ${def.dataModelLayout ?? "records"}`);
     logger.info(`  default include table rules: ${Object.keys(def.includes ?? {}).length}`);
     logger.info(`  default exclude table rules: ${Object.keys(def.excludes ?? {}).length}`);
     logger.info(

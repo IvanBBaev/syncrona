@@ -227,6 +227,68 @@ describe("report output", () => {
     expect(messageWith(infoSpy, "Orphans")).toBeUndefined();
   });
 
+  // Batch 4b R3: a sidecar whose record the manifest no longer holds (deleted
+  // on the instance, then refreshed) is an orphan; `push --create` would POST
+  // it back otherwise.
+  it("reports the sidecar of a record the manifest no longer holds as an orphan", async () => {
+    getManifest.mockReturnValue({
+      scope: "x_app",
+      tables: {
+        sys_dictionary: {
+          records: {
+            "x_t.u_kept": { sys_id: "a", name: "x_t.u_kept", files: [{ name: ".meta", type: "json" }] },
+          },
+        },
+      },
+    } as never);
+    getPathsInPath.mockResolvedValue([
+      "/src/sys_dictionary/x_t.u_kept/.meta.json",
+      "/src/sys_dictionary/x_t.u_gone/.meta.json",
+      "/src/sys_dictionary/x_t.u_flat_gone~.meta.json",
+      "/src/sys_dictionary/X_T.U_KEPT~.meta.json",
+    ]);
+    getFileContextFromPath.mockReturnValue(undefined);
+
+    await repairCommand({ logLevel: "info" } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("2 orphan file(s)");
+    expect(messageWith(infoSpy, "Orphans")?.split("\n").slice(1)).toEqual([
+      "  /src/sys_dictionary/x_t.u_gone/.meta.json",
+      "  /src/sys_dictionary/x_t.u_flat_gone~.meta.json",
+    ]);
+  });
+
+  it("never judges a sidecar outside the two download shapes", async () => {
+    getManifest.mockReturnValue({
+      scope: "x_app",
+      tables: { sys_dictionary: { records: {} } },
+    } as never);
+    getPathsInPath.mockResolvedValue([
+      "/src/sys_dictionary/x_t.u_deep/nested/.meta.json",
+      "/src/sys_dictionary/.hidden/.meta.json",
+      "/src/sys_dictionary/~.meta.json",
+    ]);
+    getFileContextFromPath.mockReturnValue(undefined);
+
+    await repairCommand({ logLevel: "info" } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("0 orphan file(s)");
+  });
+
+  it("keeps and warns about sidecars of a table the manifest does not list", async () => {
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    getPathsInPath.mockResolvedValue(["/src/sys_choice/x_t.state.1/.meta.json"]);
+    getFileContextFromPath.mockReturnValue(undefined);
+
+    await repairCommand({ logLevel: "info" } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("0 orphan file(s)");
+    expect(messageWith(warnSpy, "metadata sidecar(s) of table(s) the manifest does not list")).toContain(
+      "/src/sys_choice/x_t.state.1/.meta.json"
+    );
+    warnSpy.mockRestore();
+  });
+
   it("tables each missing record with the number of files it is short of", async () => {
     findMissingFiles.mockResolvedValue({
       sys_script: { sysA: [{ name: "script", type: "js" }] },
@@ -419,6 +481,31 @@ describe("--prune deletion (real fs)", () => {
 
     expect(existsSync(tracked)).toBe(true);
     expect(existsSync(orphan)).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
+  });
+
+  // Batch 4b R3: --apply --prune removes an orphan sidecar (local file only;
+  // the instance-side prune deny list governs DELETEs, and none is sent here),
+  // and never one whose record is tracked or whose table is unlisted.
+  test("--apply --prune deletes an orphan sidecar and keeps tracked and unlisted ones", async () => {
+    const gone = path.join(sourceDir, "sys_dictionary", "x_t.u_gone", ".meta.json");
+    const kept = path.join(sourceDir, "sys_dictionary", "x_t.u_kept", ".meta.json");
+    const unlisted = path.join(sourceDir, "sys_choice", "x_t.state.1", ".meta.json");
+    for (const file of [gone, kept, unlisted]) {
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, "{}");
+    }
+    getManifest.mockReturnValue({
+      scope: "x_app",
+      tables: { sys_dictionary: { records: { "x_t.u_kept": { sys_id: "a", name: "x_t.u_kept", files: [] } } } },
+    } as never);
+    getPathsInPath.mockResolvedValue([gone, kept, unlisted]);
+
+    await repairCommand({ logLevel: "info", apply: true, prune: true, ci: true } as never);
+
+    expect(existsSync(gone)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+    expect(existsSync(unlisted)).toBe(true);
     expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
   });
 
