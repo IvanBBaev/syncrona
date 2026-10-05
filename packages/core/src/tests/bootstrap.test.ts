@@ -237,6 +237,33 @@ describe("bootstrap init — protocol-channel stdout routing", () => {
     expect(mockRouteAllToStderr).not.toHaveBeenCalled();
   });
 
+  // Batch 4 item 2: `query -o json|raw` promises one JSON document on stdout.
+  it.each([
+    [["query", "incident", "-o", "json"]],
+    [["query", "incident", "--output", "raw"]],
+    [["query", "incident", "--output=json"]],
+    [["query", "incident", "-o=json"]],
+    [["query", "incident", "-ojson"]],
+    [["--log-level", "debug", "query", "incident", "-q", "active=true", "-o", "json"]],
+    [["-o", "json", "query", "incident"]],
+    [["--output=raw", "--log-level", "debug", "query", "incident"]],
+  ])("routes to stderr for machine-mode query %j", async (args) => {
+    process.argv = ["node", "syncrona", ...args];
+    await init();
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT route for a text-mode query, or an -o past the `--` separator", async () => {
+    process.argv = ["node", "syncrona", "query", "incident", "-q", "active=true"];
+    await init();
+    process.argv = ["node", "syncrona", "query", "incident", "--", "-o", "json"];
+    await init();
+    // A leading -o names no protocol command unless that command is `query`.
+    process.argv = ["node", "syncrona", "-o", "json", "status"];
+    await init();
+    expect(mockRouteAllToStderr).not.toHaveBeenCalled();
+  });
+
   it("does not route when a trailing global option swallows a token named `mcp`", async () => {
     // `mcp` here is the VALUE of --log-level, not a command, and it is also the
     // last token — so the option-skip has to run off the end of argv rather than

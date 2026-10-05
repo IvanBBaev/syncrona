@@ -2,7 +2,7 @@
 import { Sync } from "@syncrona/types";
 import { logger } from "./Logger.js";
 import { setLogLevel } from "./commandHelpers.js";
-import { defaultClient, NonApiResponseError, type SNClient } from "./snClient.js";
+import { defaultClient, NonApiResponseError, resolveCredentials, type SNClient } from "./snClient.js";
 
 /**
  * `syncrona query <table>` — a read-only Table API query with the flag set and
@@ -55,10 +55,26 @@ export type QueryDeps = {
   write: (line: string) => void;
 };
 
+/**
+ * The real client, after checking there is an instance to talk to. Without the
+ * check the request goes to an empty base URL and fails with a network error
+ * that names neither the cause nor the fix.
+ */
+export function nodeQueryClient(profile?: string): Pick<SNClient, "tableAPIGet"> {
+  if (!resolveCredentials(profile).instance) {
+    throw new Error(
+      "No ServiceNow instance is configured. Run `syncrona login`, or set SN_INSTANCE in the environment."
+    );
+  }
+  return defaultClient(profile);
+}
+
 const defaultDeps: QueryDeps = {
-  getClient: (profile) => defaultClient(profile),
+  getClient: nodeQueryClient,
   write: (line) => process.stdout.write(`${line}\n`),
 };
+
+const TABLE_NAME_PATTERN = /^[a-z0-9_]+$/i;
 
 function requireInteger(name: string, value: number, min: number): number {
   if (!Number.isInteger(value) || value < min) {
@@ -101,12 +117,20 @@ export async function runQuery(
   if (!table) {
     throw new Error("A table name is required, e.g. `syncrona query incident -q active=true`.");
   }
+  // The name is spliced into the request path (api/now/table/<table>), so only a
+  // plain table identifier may reach it: no "/", "?", "%" or "..".
+  if (!TABLE_NAME_PATTERN.test(table)) {
+    throw new Error(
+      `"${table}" is not a table name; use letters, digits and underscores only (e.g. incident, x_acme_task).`
+    );
+  }
   if (typeof args.query !== "string") {
     throw new Error("--query (-q) is required; pass an encoded query such as `active=true`.");
   }
   const limit = requireInteger("limit", args.limit ?? QUERY_DEFAULT_LIMIT, 1);
   const offset = requireInteger("offset", args.offset ?? 0, 0);
-  const timeout = requireInteger("timeout", args.timeout ?? QUERY_DEFAULT_TIMEOUT_MS, 0);
+  // At least 1 ms: axios reads a timeout of 0 as "never time out".
+  const timeout = requireInteger("timeout", args.timeout ?? QUERY_DEFAULT_TIMEOUT_MS, 1);
 
   const resp = await client.tableAPIGet(table, args.query, args.fields ?? "", limit + 1, offset, {
     params: buildQueryParams(args),
