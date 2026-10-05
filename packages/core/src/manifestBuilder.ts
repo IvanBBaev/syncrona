@@ -376,6 +376,76 @@ async function getTableNamesFromDictionary(
 // ─── File fields from sys_dictionary ────────────────────────────────────────
 // Mirrors server-side getFileMap — finds fields by internal_type
 
+/**
+ * Columns of `rows` (sys_dictionary rows with `element` and `internal_type`)
+ * whose type is in UNSAFE_VALUE_INTERNAL_TYPES, mapped to that type. Collected
+ * over every row of a column: a hierarchy query returns the base entry and a
+ * child override in no guaranteed order, and either may carry the unsafe type.
+ */
+const unsafeColumnTypes = (rows: TableAPIRecord[]): Map<string, string> => {
+  const unsafe = new Map<string, string>();
+  for (const row of rows) {
+    const internalType = dictionaryInternalType(row.internal_type);
+    if (row.element && !unsafe.has(row.element) && UNSAFE_VALUE_INTERNAL_TYPES.has(internalType)) {
+      unsafe.set(row.element, internalType);
+    }
+  }
+  return unsafe;
+};
+
+/** The field-level `includes` entries of `tableName`, if any. */
+const includedFieldNames = (includes: Sync.TablePropMap, tableName: string): string[] =>
+  tableName in includes && typeof includes[tableName] === "object"
+    ? Object.keys(includes[tableName] as Sync.FieldMap)
+    : [];
+
+/**
+ * `table.column` keys already warned about in this build. A column dropped on
+ * the file-field path is dropped again by the data-field fallback the same
+ * table may fall through to, and `dev` rebuilds on every interval — one line per
+ * column per build is the signal, more is noise. Cleared with the hierarchy
+ * memo (resetTableHierarchyCache), i.e. once per build.
+ */
+const warnedUnsafeIncludes = new Set<string>();
+
+/**
+ * Appends the field-level `includes` entries of `tableName` that `files` does
+ * not list yet. An entry whose dictionary type is unsafe (`unsafe`, from
+ * unsafeColumnTypes) is dropped with a warning: `includes` selects columns, it
+ * does not lift the rule that a credential, journal or binary value never
+ * reaches the working tree. `unsafe` is undefined when the type could not be
+ * read, and then every entry is kept, as before.
+ */
+const appendIncludedFields = (
+  files: SN.File[],
+  tableName: string,
+  includes: Sync.TablePropMap,
+  unsafe: ReadonlyMap<string, string> | undefined
+): void => {
+  if (!(tableName in includes) || typeof includes[tableName] !== "object") {
+    return;
+  }
+  const tableIncludes = includes[tableName] as Sync.FieldMap;
+  for (const [fieldName, fieldConfig] of Object.entries(tableIncludes)) {
+    if (files.some((f) => f.name === fieldName)) {
+      continue;
+    }
+    const unsafeType = unsafe?.get(fieldName);
+    if (unsafeType) {
+      const key = `${tableName}.${fieldName}`;
+      if (!warnedUnsafeIncludes.has(key)) {
+        warnedUnsafeIncludes.add(key);
+        logger.warn(
+          `Table ${tableName}: ignoring the includes entry for column "${fieldName}" — ` +
+            `its dictionary type is ${unsafeType}, and a value of that type is never written to the working tree.`
+        );
+      }
+      continue;
+    }
+    files.push({ name: fieldName, type: fieldConfig.type || ("txt" as SN.FileType) });
+  }
+};
+
 async function getFileFieldsForTable(
   client: SNClient,
   tableName: string,
@@ -438,15 +508,36 @@ async function getFileFieldsForTable(
         type: getFileTypeForInternalType(dictionaryInternalType(r.internal_type)) as SN.FileType,
       }));
 
-    // Apply field-level includes overrides
-    if (tableName in includes && typeof includes[tableName] === "object") {
-      const tableIncludes = includes[tableName] as Sync.FieldMap;
-      for (const [fieldName, fieldConfig] of Object.entries(tableIncludes)) {
-        if (!files.find((f) => f.name === fieldName)) {
-          files.push({ name: fieldName, type: fieldConfig.type || ("txt" as SN.FileType) });
-        }
+    // Apply field-level includes overrides. The query above only returns
+    // file-typed columns, so an included column's dictionary type has to be
+    // read separately before it can go through the unsafe-type filter.
+    const pendingIncludes = includedFieldNames(includes, tableName).filter(
+      (fieldName) => !files.some((f) => f.name === fieldName)
+    );
+    let unsafeIncludes: Map<string, string> | undefined;
+    if (pendingIncludes.length > 0) {
+      try {
+        const typeRows = await tableAPIGetAllRows(
+          client,
+          "sys_dictionary",
+          `${tableNameQuery}^elementIN${pendingIncludes.map(escapeQueryValue).join(",")}`,
+          "element,internal_type",
+          200
+        );
+        unsafeIncludes = unsafeColumnTypes(typeRows);
+      } catch (e) {
+        // Not fail-closed on purpose: dropping every included column whenever
+        // this lookup fails would make `includes` unusable on an instance that
+        // restricts sys_dictionary reads. The columns are kept as before, and
+        // the gap is named so it is not silent.
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(
+          `Table ${tableName}: could not read the dictionary type of included column(s) ` +
+            `${pendingIncludes.join(", ")} (${message}); they are kept without the unsafe-type check.`
+        );
       }
     }
+    appendIncludedFields(files, tableName, includes, unsafeIncludes);
 
     if (files.length === 0 && shouldMaterializeDataFieldsForTable(tableName)) {
       // Data-only tables may have no script/css/xml/html fields; fall back to text fields
@@ -519,12 +610,7 @@ async function getTextFieldsForTable(
     // before the first-wins dedupe — a hierarchy query returns the base entry
     // and a child override in no guaranteed order, and either may carry the
     // unsafe type.
-    const unsafe = new Set<string>();
-    for (const row of rows) {
-      if (row.element && UNSAFE_VALUE_INTERNAL_TYPES.has(dictionaryInternalType(row.internal_type))) {
-        unsafe.add(row.element);
-      }
-    }
+    const unsafe = unsafeColumnTypes(rows);
     const seen = new Set<string>();
     const files: SN.File[] = [];
     for (const row of rows) {
@@ -536,14 +622,8 @@ async function getTextFieldsForTable(
       files.push({ name: fieldName, type: "txt" as SN.FileType });
     }
 
-    if (tableName in includes && typeof includes[tableName] === "object") {
-      const tableIncludes = includes[tableName] as Sync.FieldMap;
-      for (const [fieldName, fieldConfig] of Object.entries(tableIncludes)) {
-        if (!files.find((f) => f.name === fieldName)) {
-          files.push({ name: fieldName, type: fieldConfig.type || ("txt" as SN.FileType) });
-        }
-      }
-    }
+    // An `includes` entry must not re-add a column the filter just dropped.
+    appendIncludedFields(files, tableName, includes, unsafe);
 
     return files;
   } catch (e) {
@@ -731,6 +811,8 @@ const tableParentCache = new Map<string, Promise<string | undefined>>();
 /** Drops the memo. Called at the start of every manifest build and enrichment. */
 export const resetTableHierarchyCache = (): void => {
   tableParentCache.clear();
+  // Same lifetime: the unsafe-include warnings are once per build.
+  warnedUnsafeIncludes.clear();
 };
 
 async function getTableParentName(
