@@ -206,14 +206,14 @@ module.exports = {
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
     './src/pushPipeline.ts': { lines: 95, branches: 88 }, // measured 98.57 / 91.53
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 98.99 / 85.23
+    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.05 / 84.32
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 91, branches: 80 }, // measured 96.09 / 87.83
+    './src/manifestBuilder.ts': { lines: 91, branches: 82 }, // measured 96.70 / 89.08
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.83
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.27 / 91.80
+    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 96.44 / 92.18
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.70 / 94.75
     // Credentials: the keychain/file store and the auth-method picker.
@@ -230,7 +230,7 @@ module.exports = {
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 91.42
     './src/Watcher.ts': { lines: 91, branches: 76 }, // measured 95.34 / 82.60
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
-    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.60 / 75.00
+    './src/wizard.ts': { lines: 95, branches: 67 }, // measured 98.61 / 75.00
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)

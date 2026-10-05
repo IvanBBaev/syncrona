@@ -105,8 +105,9 @@ dictionary discovery finds for the table, minus the deny list that applies to
 every sidecar: system columns, file fields, passwords and other secrets,
 journals, collections and images. Field files are written for script-typed
 columns (a dictionary entry's `calculation`, for example) and for any column you
-list in `includes`; the same password, journal, collection and image filter
-applies to those. `tableOptions.<table>.metaFields` replaces discovery for a
+list in `includes`. An `includes` entry cannot lift the password, journal,
+collection and image filter: such a column is dropped with a warning. If its
+dictionary type cannot be read, it is kept and a warning says so. `tableOptions.<table>.metaFields` replaces discovery for a
 table, just as it does for any other sidecar.
 
 A `sys_properties` record of type `password` or `password2` keeps its secret in
@@ -114,7 +115,10 @@ A `sys_properties` record of type `password` or `password2` keeps its secret in
 sidecar nor a `value` field file (from `includes` or the data-field fallback)
 carries it: the manifest does not list `value` for that record, and a download
 withholds it and reports the count at info level. A property whose `type` cannot
-be read is treated the same way. Pushing that
+be read is treated the same way. The rule applies on every write path, `init`
+included: there the scoped endpoint's answer for `value` is discarded and
+re-read by sys_id through the Table API. `repair` does not report a withheld
+value as a missing file. Pushing that
 sidecar does not clear the value on the instance, because a missing key is never
 a request to clear a column. To change such a value, set it on the instance.
 
