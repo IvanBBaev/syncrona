@@ -302,13 +302,21 @@ function renderProgressBar(current: number, total: number): string {
  * Builds the manifest for `scope`, downloads its files and writes
  * sync.manifest.json. `init --new` passes the sys_id of the application it just
  * created as `scopeId`, so the manifest records it and the first
- * `push --create` skips the sys_scope lookup.
+ * `push --create` skips the sys_scope lookup, and sets `justCreated`, which is
+ * the only way an EMPTY manifest is accepted: a scope that was created a moment
+ * ago legitimately owns nothing, while an existing scope that yields nothing
+ * points at a wrong scope code or missing access (see buildManifestFromTableAPI).
  */
 export async function downloadApp(
   scope: string,
   client: SNClient = defaultClient(),
-  options: { scopeId?: string } = {}
+  options: { scopeId?: string; justCreated?: boolean } = {}
 ): Promise<SN.AppManifest> {
+  // An empty manifest is only ever written for a just-created scope, and only
+  // with that scope's sys_id: without one, nothing downstream could tell the
+  // binding apart from a failed download.
+  const allowEmpty =
+    options.justCreated === true && typeof options.scopeId === "string" && options.scopeId !== "";
   // #48: the wizard lists apps via the explicit store-backed client built from
   // the just-saved credentials, so the download must use the SAME client.
   // Falling back to defaultClient() (which prefers ambient SN_* env vars) could
@@ -321,7 +329,7 @@ export async function downloadApp(
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
         logger.info("Custom scope not found — building manifest from Table API...");
-        man = await buildManifestFromTableAPI(scope, client, config);
+        man = await buildManifestFromTableAPI(scope, client, config, { allowEmpty });
       } else {
         throw e;
       }
@@ -329,7 +337,7 @@ export async function downloadApp(
 
     if (countManifestFiles(man) === 0) {
       logger.info("Custom endpoint returned empty manifest — building from Table API...");
-      man = await buildManifestFromTableAPI(scope, client, config);
+      man = await buildManifestFromTableAPI(scope, client, config, { allowEmpty });
     }
 
     if (options.scopeId) {
