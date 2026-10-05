@@ -375,7 +375,9 @@ describe("report output", () => {
   });
 
   it("--apply reports completion when every missing file came back", async () => {
-    findMissingFiles.mockResolvedValue(missingOneRecord());
+    // The first scan finds the gap; the post-apply re-scan falls through to the
+    // empty default from beforeEach.
+    findMissingFiles.mockResolvedValueOnce(missingOneRecord());
     processMissingFiles.mockResolvedValue(undefined);
 
     await repairCommand({ logLevel: "info", apply: true } as never);
@@ -398,6 +400,63 @@ describe("report output", () => {
     expect(failure).toContain("2 table(s)");
     expect(failure).toContain("sys_script, sys_ui_action");
     expect(successSpy).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  // Every table answered, yet the post-apply scan still finds files absent (a
+  // record the instance no longer returns, a name the writer refused): the next
+  // `repair` lists them again, so this run must not claim success.
+  it("--apply fails with the remaining count when files are still missing afterwards", async () => {
+    findMissingFiles.mockResolvedValue({
+      sys_script: {
+        sysA: [{ name: "script", type: "js" }],
+        sysB: [{ name: "script", type: "js" }],
+      },
+    } as unknown as SN.MissingFileTableMap);
+    processMissingFiles.mockResolvedValue([] as never);
+
+    await repairCommand({ logLevel: "info", apply: true } as never);
+
+    expect(processMissingFiles).toHaveBeenCalledTimes(1);
+    expect(findMissingFiles).toHaveBeenCalledTimes(2);
+    expect(messageWith(errorSpy, "Repair incomplete")).toContain(
+      "2 of 2 missing file(s) are still missing after the re-download"
+    );
+    expect(successSpy).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  // A password-typed sys_properties record has no value file by design, so a
+  // report that counted it could never reach zero, whatever --apply did.
+  it("does not count a column a record secret rule governs as missing", async () => {
+    findMissingFiles.mockResolvedValue({
+      sys_properties: { sysP: [{ name: "value", type: "txt" }] },
+    } as unknown as SN.MissingFileTableMap);
+
+    await repairCommand({ logLevel: "info" } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("0 missing file(s)");
+    expect(messageWith(infoSpy, "Not counted")).toContain("1 field file(s)");
+    expect(successSpy).toHaveBeenCalledWith(expect.stringContaining("Nothing to repair"));
+    expect(processMissingFiles).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("still counts the other missing files of a governed table", async () => {
+    findMissingFiles.mockResolvedValue({
+      sys_properties: {
+        sysP: [
+          { name: "value", type: "txt" },
+          { name: "description", type: "txt" },
+        ],
+      },
+    } as unknown as SN.MissingFileTableMap);
+
+    await repairCommand({ logLevel: "info", apply: true } as never);
+
+    expect(messageWith(infoSpy, "Repair report")).toContain("1 missing file(s)");
+    expect(processMissingFiles).toHaveBeenCalledTimes(1);
+    // The post-apply scan sees the same gap, so the run fails.
     expect(process.exitCode).toBe(1);
   });
 

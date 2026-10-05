@@ -286,6 +286,43 @@ export const metaSecretRuleColumns = (table: string | undefined): readonly strin
   return rule ? rule.columns : [];
 };
 
+/**
+ * Whether `column` of `table` is one a record-level secret rule may withhold.
+ * Its absence from the working tree is then not evidence of a gap: for a
+ * password-typed record it is the rule working, and nothing local says which
+ * records those are.
+ */
+export const isSecretRuleColumn = (table: string | undefined, column: string): boolean =>
+  metaSecretRuleColumns(table).includes(column);
+
+/**
+ * Splits a missing-file map into what a consistency report should count and the
+ * number of files a record-level secret rule may be withholding. A governed
+ * column (`sys_properties.value`) of a password-typed record is never written,
+ * so it is "missing" on every run by design; counted, it kept `repair` from
+ * ever converging. Same exemption as collectUnfetchedFields (downloadPipeline) applies to a fetch.
+ *
+ * Only the REPORT uses this: refresh and `repair --apply` still fetch every
+ * listed governed column (processMissingFiles recomputes the full map), and the
+ * Table API path writes the value of a non-secret record.
+ */
+export const withoutSecretRuleColumns = (
+  missing: SN.MissingFileTableMap
+): { missing: SN.MissingFileTableMap; exempt: number } => {
+  const counted: SN.MissingFileTableMap = Object.create(null);
+  let exempt = 0;
+  for (const [table, records] of Object.entries(missing)) {
+    for (const [sysId, files] of Object.entries(records ?? {})) {
+      const kept = (files ?? []).filter((file) => !isSecretRuleColumn(table, file.name));
+      exempt += (files ?? []).length - kept.length;
+      if (kept.length === 0) continue;
+      if (!counted[table]) counted[table] = Object.create(null);
+      counted[table][sysId] = kept;
+    }
+  }
+  return { missing: counted, exempt };
+};
+
 /** The classifier columns a sidecar read of `table` must also fetch. */
 export const metaSecretClassifierFields = (table: string | undefined): string[] => {
   const rule = secretRuleFor(table);

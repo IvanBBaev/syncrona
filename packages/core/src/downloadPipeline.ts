@@ -15,7 +15,7 @@ import {
   ManifestMetaFields,
   ManifestRecordNames,
 } from "./manifestBuilder.js";
-import { isMetaFile, metaSecretRuleColumns } from "./metaFields.js";
+import { isMetaFile, isSecretRuleColumn, metaSecretRuleColumns } from "./metaFields.js";
 import { applyDataModelTableOptions } from "./dataModel.js";
 import {
   COMPOSITE_TABLES,
@@ -324,6 +324,70 @@ export const processManifest = async (
     ConfigManager.getManifestPath(),
     JSON.stringify(manifest, null, 2)
   );
+};
+
+/**
+ * Applies the record-level secret rule (META_RECORD_SECRET_RULES) to a manifest
+ * that ARRIVED WITH CONTENT — `init`'s scoped-endpoint answer — before it is
+ * written. The scoped endpoint returns `sys_properties.value` whatever the
+ * property's type, and its rows carry no classifier column to judge them by.
+ *
+ * Same mechanism as refresh and download (createTableFetcher): the governed
+ * columns are re-read through buildBulkDownloadFromTableAPI, which selects the
+ * classifier with each row and withholds the value of a password-typed or
+ * unclassifiable record. The endpoint's content for those columns is discarded
+ * in every case; a record the Table API did not return keeps its manifest entry
+ * with no content, which the writer turns into no file at all. The manifest
+ * still LISTS the column, exactly as a refresh from the same endpoint does.
+ *
+ * Mutates `manifest` in place; a manifest without a governed column costs no
+ * request.
+ */
+export const applyRecordSecretRulesToContent = async (
+  manifest: SN.AppManifest,
+  client: SNClient,
+  tableOptions: Sync.ITableOptionsMap
+): Promise<void> => {
+  const requested: SN.MissingFileTableMap = Object.create(null);
+  for (const [table, tableConfig] of Object.entries(manifest.tables ?? {})) {
+    const columns = metaSecretRuleColumns(table);
+    if (columns.length === 0) continue;
+    for (const record of Object.values(tableConfig.records ?? {})) {
+      const governed = (record.files ?? []).filter((file) => columns.includes(file.name));
+      if (governed.length === 0) continue;
+      for (const file of governed) {
+        delete file.content;
+      }
+      if (!requested[table]) requested[table] = Object.create(null);
+      requested[table][record.sys_id] = governed.map(({ name, type }) => ({ name, type }));
+    }
+  }
+  if (isEmptyMissingMap(requested)) {
+    return;
+  }
+
+  const fetched = await buildBulkDownloadFromTableAPI(
+    requested,
+    client,
+    tableOptions,
+    buildManifestRecordNames(manifest)
+  );
+  for (const table of Object.keys(requested)) {
+    const fetchedBySysId = new Map<string, SN.File[]>();
+    for (const record of Object.values(fetched[table]?.records ?? {})) {
+      fetchedBySysId.set(record.sys_id, record.files ?? []);
+    }
+    for (const record of Object.values(manifest.tables[table].records)) {
+      const values = fetchedBySysId.get(record.sys_id);
+      if (!values) continue;
+      for (const file of record.files ?? []) {
+        const value = values.find((candidate) => candidate.name === file.name);
+        if (value && "content" in value) {
+          file.content = value.content;
+        }
+      }
+    }
+  }
 };
 
 // Returns true on success so callers (refresh/dev) can report the real outcome.
@@ -989,7 +1053,6 @@ const collectUnfetchedFields = (
   // and its absence is indistinguishable from a read gap here. Counting it would
   // make every refresh of a workspace that lists a password property's value
   // report itself incomplete, forever.
-  const withheldByRule = new Set(metaSecretRuleColumns(table));
   const returnedBySysId = new Map<string, Set<string>>();
   for (const record of Object.values(fetched?.records ?? {})) {
     returnedBySysId.set(
@@ -1007,7 +1070,7 @@ const collectUnfetchedFields = (
       // is not a read-access gap. The scoped bulk endpoint never produces one,
       // and counting its absence here would make every refresh against an
       // instance that HAS that endpoint report itself incomplete forever.
-      if (isMetaFile(file) || withheldByRule.has(file.name)) continue;
+      if (isMetaFile(file) || isSecretRuleColumn(table, file.name)) continue;
       if (!returned.has(file.name)) unfetched.add(file.name);
     }
   }

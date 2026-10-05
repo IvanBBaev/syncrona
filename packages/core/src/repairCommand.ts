@@ -7,7 +7,11 @@ import * as ConfigManager from "./config.js";
 import * as AppUtils from "./appUtils.js";
 import * as FileUtils from "./FileUtils.js";
 import { isFlatEncoded, FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
-import { META_SIDECAR_FILE_NAME, isMetaSidecarPath } from "./metaFields.js";
+import {
+  META_SIDECAR_FILE_NAME,
+  isMetaSidecarPath,
+  withoutSecretRuleColumns,
+} from "./metaFields.js";
 import { inspectCompositeLayout } from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
 import { formatTable } from "./genericUtils.js";
@@ -296,9 +300,21 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       );
     }
 
-    const missing = await AppUtils.findMissingFiles(manifest);
+    // A column a record-level secret rule governs (`sys_properties.value`) is
+    // absent on disk by design for a password property, so it is not counted —
+    // otherwise the report never reaches zero, whatever `--apply` does.
+    const { missing, exempt } = withoutSecretRuleColumns(
+      await AppUtils.findMissingFiles(manifest)
+    );
     const missingCount = countMissing(missing);
     const orphans = await findOrphanFiles(manifest);
+    if (exempt > 0) {
+      logger.info(
+        `Not counted: ${exempt} field file(s) a record secret rule governs (e.g. sys_properties.value) ` +
+          "are absent — a password-typed record's value is withheld by design. `syncrona refresh` " +
+          "re-fetches the value of every non-secret record."
+      );
+    }
 
     logger.info(
       `Repair report for scope "${manifest.scope}": ${missingCount} missing file(s), ${orphans.length} orphan file(s).`
@@ -413,6 +429,23 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       );
       process.exitCode = 1;
       return;
+    }
+
+    // Every table answered and the files were still not all written (a record
+    // the instance no longer returns, a manifest name the writer refused): the
+    // report would list them again, so this run did not repair the workspace.
+    if (missingCount > 0) {
+      const remaining = countMissing(
+        withoutSecretRuleColumns(await AppUtils.findMissingFiles(manifest)).missing
+      );
+      if (remaining > 0) {
+        logger.error(
+          `Repair incomplete: ${remaining} of ${missingCount} missing file(s) are still missing after the re-download. ` +
+            "Run `syncrona repair` to list them."
+        );
+        process.exitCode = 1;
+        return;
+      }
     }
 
     logger.success("Repair complete. ✅");
