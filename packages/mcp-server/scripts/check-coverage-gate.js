@@ -342,7 +342,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // SDK-F6: the Fluent build resolves a caller-supplied project path against the
   // workspace (symlinks included) and swaps the process console while it runs.
-  { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.71
+  { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 94.51
   // REV-213: process-lifetime state and on-disk telemetry. None of these three had a
   // named floor before, and each just rose a long way — the semantic index cache from
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
