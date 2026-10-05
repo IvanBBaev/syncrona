@@ -186,3 +186,42 @@ describe("REV-172: incomplete auth material fails instead of falling back to Bas
     expect(buildClientAuth(creds({}))).toEqual({});
   });
 });
+
+describe("SN_MAX_RPS: the client rate cap can only be lowered", () => {
+  const original = process.env.SN_MAX_RPS;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.SN_MAX_RPS;
+    } else {
+      process.env.SN_MAX_RPS = original;
+    }
+  });
+
+  it("refuses to build a client from an invalid or raising value", () => {
+    for (const bad of ["0", "21", "fast"]) {
+      process.env.SN_MAX_RPS = bad;
+      expect(() => snClient("http://127.0.0.1:1/", "u", "p")).toThrow(
+        /SN_MAX_RPS must be a whole number from 1 to 20/
+      );
+    }
+  });
+
+  it("throttles requests to the configured rate", async () => {
+    const arrivals: number[] = [];
+    const target = await startServer((_url, respond) => {
+      arrivals.push(Date.now());
+      respond(JSON.stringify({ result: [{ sys_id: "abc" }] }));
+    });
+    try {
+      process.env.SN_MAX_RPS = "1";
+      const client = snClient(`http://127.0.0.1:${target.port}/`, "u", "p");
+      await Promise.all([client.getScopeId("x_a"), client.getScopeId("x_b")]);
+      expect(arrivals).toHaveLength(2);
+      // One request per second: the second waits for the next window.
+      expect(arrivals[1] - arrivals[0]).toBeGreaterThanOrEqual(900);
+    } finally {
+      await stopServer(target);
+    }
+  });
+});

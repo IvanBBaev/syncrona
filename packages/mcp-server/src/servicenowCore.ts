@@ -9,7 +9,8 @@ import {
 } from "@syncrona/credential-store";
 import {
   DEFAULT_SCOPED_API_PREFIXES,
-  MAX_REQUESTS_PER_SECOND,
+  MAX_RPS_ENV,
+  resolveMaxRequestsPerSecond,
   SCOPED_API_PREFIXES_ENV,
   isEndpointNotFoundStatus,
   orderScopedApiPrefixes,
@@ -971,15 +972,16 @@ function sleep(ms: number): Promise<void> {
 }
 
 // G4: client-side rate limiting matching the core CLI's axios-rate-limit
-// (shared MAX_REQUESTS_PER_SECOND policy) — requests are spaced by a minimum
-// interval instead of relying solely on 429 retries.
-const MIN_REQUEST_INTERVAL_MS = Math.ceil(1000 / MAX_REQUESTS_PER_SECOND);
+// (shared MAX_REQUESTS_PER_SECOND policy, lowered by SN_MAX_RPS) — requests are
+// spaced by a minimum interval instead of relying solely on 429 retries. The
+// interval is resolved per request so the knob follows the server's env.
 let nextRequestSlotAt = 0;
 
 async function acquireRequestSlot(): Promise<void> {
+  const minIntervalMs = Math.ceil(1000 / resolveMaxRequestsPerSecond(process.env[MAX_RPS_ENV]));
   const now = Date.now();
   const waitMs = Math.max(0, nextRequestSlotAt - now);
-  nextRequestSlotAt = Math.max(now, nextRequestSlotAt) + MIN_REQUEST_INTERVAL_MS;
+  nextRequestSlotAt = Math.max(now, nextRequestSlotAt) + minIntervalMs;
   if (waitMs > 0) {
     await sleep(waitMs);
   }

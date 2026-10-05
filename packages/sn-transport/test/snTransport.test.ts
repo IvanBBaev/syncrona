@@ -8,6 +8,9 @@ import {
   resolveTlsPolicy,
   escapeQueryValue,
   DEFAULT_SCOPED_API_PREFIXES,
+  MAX_REQUESTS_PER_SECOND,
+  MAX_RPS_ENV,
+  resolveMaxRequestsPerSecond,
   oauthFormBody,
   createTokenManager,
   OAUTH_TOKEN_PATH,
@@ -265,5 +268,23 @@ describe("createTokenManager", () => {
     expect(a).toBe("tok");
     expect(b).toBe("tok");
     expect(calls).toBe(1);
+  });
+});
+
+describe("resolveMaxRequestsPerSecond", () => {
+  it("defaults to the shared cap when unset or blank", () => {
+    expect(resolveMaxRequestsPerSecond(undefined)).toBe(MAX_REQUESTS_PER_SECOND);
+    expect(resolveMaxRequestsPerSecond("")).toBe(MAX_REQUESTS_PER_SECOND);
+    expect(resolveMaxRequestsPerSecond("   ")).toBe(MAX_REQUESTS_PER_SECOND);
+  });
+
+  it("accepts a whole number from 1 to the cap", () => {
+    expect(resolveMaxRequestsPerSecond("1")).toBe(1);
+    expect(resolveMaxRequestsPerSecond(" 4 ")).toBe(4);
+    expect(resolveMaxRequestsPerSecond(String(MAX_REQUESTS_PER_SECOND))).toBe(MAX_REQUESTS_PER_SECOND);
+  });
+
+  it.each(["0", "-3", "2.5", "abc", "21", "1e3", "Infinity"])("rejects %s", (raw) => {
+    expect(() => resolveMaxRequestsPerSecond(raw)).toThrow(MAX_RPS_ENV);
   });
 });
