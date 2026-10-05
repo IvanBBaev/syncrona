@@ -27,6 +27,12 @@ export namespace Sync {
      * there is deliberately no config switch.
      */
     prune?: boolean;
+    /**
+     * Lets `--prune` past its mass-delete guard (more than 25 records, or a
+     * large share of the manifest) and, under `--ci`, run without --diff or a
+     * target.
+     */
+    allowMassDelete?: boolean;
   }
   interface BuildCmdArgs extends SharedCmdArgs {
     diff: string;
@@ -70,6 +76,13 @@ export namespace Sync {
      * excluded by default. See docs/DATA_MODEL.md for the documented list.
      */
     dataModelTables?: string[];
+    /**
+     * SDK-F2: how the sidecars of `sys_db_object`, `sys_dictionary` and
+     * `sys_choice` are stored. `"records"` (default) writes one `.meta.json`
+     * per record; `"composite"` writes one `data-model/<table>.json` document
+     * per table holding the table, its columns and their choices.
+     */
+    dataModelLayout?: "records" | "composite";
   }
 
   interface ITableOptionsMap {
@@ -379,6 +392,37 @@ export namespace SN {
     | { mode: "incremental" }
     | { mode: "update-set"; updateSetId: string };
 
+  /** One topic of the documentation bundled with `@servicenow/sdk` (its `docs` tree of Markdown files). */
+  interface FluentDocTopic {
+    /** The file's basename without `.md`; unique across the docs tree. */
+    name: string;
+    tags: string[];
+    /** The first paragraph after the first heading. */
+    summary: string;
+  }
+
+  /**
+   * What `explain` found, classified so the CLI can render and exit on it:
+   * `list` is the topic index (optionally filtered: strong matches in
+   * `topics`, weaker substring matches in `related`); `topic` is the one
+   * precise match with its Markdown body; `matches` is several precise matches
+   * (or one, with `peek`); `suggestions` is substring matches only; `none`
+   * means nothing matched.
+   */
+  type FluentExplainResult =
+    | { kind: "list"; filter?: string; topics: FluentDocTopic[]; related: FluentDocTopic[] }
+    | { kind: "topic"; topic: FluentDocTopic; body: string }
+    | { kind: "matches"; topics: FluentDocTopic[] }
+    | { kind: "suggestions"; topics: FluentDocTopic[] }
+    | { kind: "none"; topics: [] };
+
+  interface FluentMoveToAppResult {
+    /** False when the instance claimed none of the records, so no transform ran. */
+    moved: boolean;
+    changedFiles: string[];
+    handledPaths: string[];
+  }
+
   interface FluentEngine {
     build(options: {
       frozenKeys?: boolean;
@@ -408,6 +452,14 @@ export namespace SN {
       projectVersion?: string;
     }): Promise<void>;
     createProjectFromApp(options: { scopeId: string; packageName?: string }): Promise<void>;
+    /** Searches the SDK's bundled docs; local, read-only, and never loads the full SDK API. */
+    explain(options: { topic?: string; list?: boolean; peek?: boolean }): Promise<FluentExplainResult>;
+    /**
+     * Claims global records into this global application on the instance
+     * (`sys_claim`), then runs an incremental transform that writes them into
+     * the project as Fluent sources.
+     */
+    moveToApp(options: { sysIds: string[] }): Promise<FluentMoveToAppResult>;
     /** The `@servicenow/sdk` version the adapter resolved, when it can tell. */
     sdkVersion(): Promise<string | undefined>;
   }

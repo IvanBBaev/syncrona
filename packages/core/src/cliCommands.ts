@@ -182,7 +182,14 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         type: "boolean",
         default: false,
         describe:
-          "[DESTRUCTIVE] Delete instance records whose local files were all deleted (in-scope only; with --diff, only files the diff deletes; confirms unless --ci)",
+          "[DESTRUCTIVE] Delete instance records whose tracked files git shows deleted (in-scope only; with --diff, only files the diff deletes; confirms unless --ci)",
+      },
+      allowMassDelete: {
+        type: "boolean",
+        alias: "allow-mass-delete",
+        default: false,
+        describe:
+          "With --prune, allow more than 25 deletions or over 20% of the manifest, and --ci without --diff or a target",
       },
     },
     examples: [
@@ -885,6 +892,12 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "install: upgrade the base application when the requested version needs it",
       },
       devNotes: { alias: "dev-notes", type: "string", describe: "publish: developer notes for the published version" },
+      progressId: {
+        alias: "progress-id",
+        type: "string",
+        describe:
+          "Resume: poll this existing sn_cicd progress tracker (sys_id) instead of dispatching new work; dispatch flags are ignored",
+      },
       pollMs: {
         alias: "poll-ms",
         type: "number",
@@ -908,6 +921,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 cicd install --scope x_acme_app --app-version 1.2.0", "Install an application version from the app repository"],
       ["$0 cicd publish --scope x_acme_app --app-version 1.3.0 --dev-notes 'Release'", "Publish the application to the app repository"],
       ["$0 cicd rollback --scope x_acme_app --app-version 1.2.0", "Roll the application back to a version"],
+      ["$0 cicd install --progress-id <sys_id>", "Resume waiting on an install that outlived --timeout"],
     ],
     handler: typedHandler<CicdCmdArgs>((args) => cicdCommand(args)),
   },
@@ -916,9 +930,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     // action drives one engine (the ServiceNow SDK orchestrator, through the
     // optional @syncrona/fluent adapter) and only means something inside a
     // Fluent project. The adapter is loaded by the handler, never at startup.
-    command: "fluent <action>",
+    command: "fluent <action> [topic]",
     describe:
-      "Fluent (.now.ts) apps via the ServiceNow SDK (action: init, build, transform, pack, install, types, dependencies, run, status); needs @syncrona/fluent",
+      "Fluent (.now.ts) apps via the ServiceNow SDK (action: init, build, transform, pack, install, types, dependencies, run, status, explain, move-to-app); needs @syncrona/fluent, except `types --native`",
     // `--dry-run` prints the SDK call each action would make, without loading the
     // SDK, resolving credentials or prompting.
     supportsDryRun: true,
@@ -928,13 +942,20 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         describe: "fluent action",
         choices: [...FLUENT_ACTIONS],
       },
+      topic: {
+        type: "string",
+        describe: "explain: topic name or keyword to look up in the SDK docs",
+      },
     },
     options: {
       project: { type: "string", describe: "Fluent project directory (default: nearest now.config.json)" },
       json: { type: "boolean", default: false, describe: "Emit the machine-readable result" },
-      ci: { type: "boolean", default: false, describe: "install: skip the confirmation prompt" },
+      ci: { type: "boolean", default: false, describe: "install, move-to-app: skip the confirmation prompt" },
       name: { type: "string", describe: "init: application name" },
-      scope: { type: "string", describe: "init: application scope; dependencies: dependency scope" },
+      scope: {
+        type: "string",
+        describe: "init: application scope; dependencies: dependency scope; types --native: scope to generate",
+      },
       packageName: { type: "string", describe: "init: npm package name (derived from the scope by default)" },
       description: { type: "string", describe: "init: application description" },
       template: { type: "string", describe: "init: SDK template id" },
@@ -942,21 +963,36 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       frozenKeys: { type: "boolean", describe: "build: fail when generated keys would change" },
       errorOnConflict: { type: "boolean", describe: "build: treat key conflicts as errors" },
       skipClean: { type: "boolean", describe: "build: keep the previous output directory" },
-      out: { type: "string", describe: "pack: output path for the application package" },
+      out: {
+        type: "string",
+        describe: "pack: output path for the application package; types --native: output .d.ts path",
+      },
       reinstall: { type: "boolean", describe: "install: uninstall the application first, then install" },
       store: { type: "boolean", describe: "install: install as a store application" },
       sync: { type: "boolean", describe: "install: wait for the install instead of returning a tracker" },
       demoData: { type: "boolean", default: true, describe: "install: load demo data (--no-demo-data to skip)" },
       skipFlowActivation: { type: "boolean", describe: "install: do not activate flows" },
       paths: { type: "string", describe: "transform: comma-separated source paths to convert locally" },
-      table: { type: "string", describe: "transform: limit to tables (comma-separated); dependencies: table" },
-      ids: { type: "string", describe: "dependencies: comma-separated record sys_ids" },
+      table: {
+        type: "string",
+        describe: "transform: limit to tables (comma-separated); dependencies: table; types --native: tables to generate",
+      },
+      ids: {
+        type: "string",
+        describe: "dependencies: comma-separated record sys_ids; move-to-app: global records to move into the app",
+      },
       updateSet: { type: "string", describe: "transform: convert one update set (sys_id)" },
       incremental: { type: "boolean", describe: "transform: only records changed since the last transform" },
       force: { type: "boolean", describe: "transform: overwrite existing Fluent sources" },
       scripts: { type: "boolean", describe: "types: also download script type definitions" },
       fluent: { type: "boolean", describe: "types: also download Fluent definitions" },
+      native: {
+        type: "boolean",
+        describe: "types: generate table types from sys_dictionary without the SDK (the fallback when it is absent)",
+      },
       script: { type: "string", describe: "run: project script to execute" },
+      list: { type: "boolean", describe: "explain: list topics (filtered by the topic when one is given)" },
+      peek: { type: "boolean", describe: "explain: show summaries instead of the full document" },
     },
     examples: [
       ["$0 fluent init --name 'My App' --scope x_acme_app", "Create a Fluent project in the current directory"],
@@ -965,6 +1001,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 fluent install --reinstall", "Uninstall the application, then install it again"],
       ["$0 fluent status", "Show the SDK version and the last install's progress"],
       ["$0 fluent build --dry-run", "Print the SDK call without running it"],
+      ["$0 fluent types --native", "Generate the scope's table types without the SDK"],
+      ["$0 fluent explain table", "Read the SDK's documentation on a topic, offline"],
+      ["$0 fluent move-to-app --ids <sys_id>,<sys_id>", "Move global records into this global application"],
     ],
     handler: typedHandler<FluentCmdArgs>((args) => fluentCommand(args)),
   },

@@ -12,14 +12,20 @@ describe("@syncrona/fluent public surface", () => {
   it("exposes the supporting helpers", () => {
     expect(Object.keys(fluent).sort()).toEqual(
       [
+        "FluentDocsUnavailableError",
         "FluentLoginError",
         "FluentSdkMissingError",
         "SESSION_ONLY_ENDPOINTS",
         "cookieHeader",
+        "DEFAULT_PROJECT_VERSION",
+        "SUPPORTED_SDK_RANGE",
         "createFluentAuthResolver",
         "createFluentEngine",
+        "defaultSdkDocsLoader",
         "defaultSdkLoader",
+        "explainDocs",
         "findPackageVersion",
+        "isSupportedSdkVersion",
         "loginUiSession",
         "mergeSetCookies",
         "splitDiagnostics",

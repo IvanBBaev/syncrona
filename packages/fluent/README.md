@@ -35,6 +35,20 @@ install hint. No other command is affected.
     result and re-resolves after an instance 401.
 - `loginUiSession(instanceUrl, user, password, fetch?)`: the two-step UI login.
   It returns `{ type: "basic", token, cookie }` and never logs credentials.
+- `explainDocs(docs, options)` and `defaultSdkDocsLoader(projectDir)`: back
+  `fluent explain`. The loader finds the `docs` directory the SDK bundles and
+  the public `@servicenow/sdk-api/docs` module without evaluating the SDK; it
+  throws `FluentDocsUnavailableError` when either is missing.
+
+## TLS
+
+The UI login, the OAuth token request and the SDK's own requests all use Node's
+native `fetch`. `SYNCRONA_CA_BUNDLE` and `SYNCRONA_TLS_REJECT_UNAUTHORIZED` do
+not apply to them; set `NODE_EXTRA_CA_CERTS` to a PEM bundle for a corporate or
+self-signed certificate authority.
+
+`syncrona fluent run` runs a project script locally and passes it no instance
+credential.
 
 ## Licensing
 
