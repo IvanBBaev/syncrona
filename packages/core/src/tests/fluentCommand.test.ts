@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
 import type { SN } from "@syncrona/types";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 export {};
@@ -42,7 +42,15 @@ interface Recorder {
   authInputs: Array<{ instanceUrl: string; input: SN.FluentCredentialInput }>;
   written: string[];
   prompts: string[];
+  generated: Array<{ profile?: string; options: unknown }>;
+  outputs: Record<string, string>;
 }
+
+const TABLE_TOPIC: SN.FluentDocTopic = { name: "table", tags: ["fluent", "table"], summary: "Tables." };
+const RULE_TOPIC: SN.FluentDocTopic = { name: "business-rule", tags: [], summary: "Rules." };
+const GLOBAL_CONFIG = { [CONFIG_FILE]: JSON.stringify({ scope: "global", scopeId: "abc" }) };
+
+const NATIVE_RESULT = { content: "export interface Tables {}\n", tableCount: 2, fieldCount: 5 };
 
 function fakeEngine(rec: Recorder, overrides: Partial<SN.FluentEngine> = {}): SN.FluentEngine {
   const record =
@@ -62,10 +70,15 @@ function fakeEngine(rec: Recorder, overrides: Partial<SN.FluentEngine> = {}): SN
     run: record("run", undefined),
     createProject: record("createProject", undefined),
     createProjectFromApp: record("createProjectFromApp", undefined),
+    explain: record("explain", { kind: "topic", topic: TABLE_TOPIC, body: "# Table\n\nTables." }),
+    moveToApp: record("moveToApp", { moved: true, changedFiles: ["src/claimed.now.ts"], handledPaths: ["claimed.xml"] }),
     sdkVersion: async () => "4.13.3",
     ...overrides,
   } as SN.FluentEngine;
 }
+
+const ID_A = "a1".padEnd(32, "0");
+const ID_B = "b2".padEnd(32, "0");
 
 function harness(
   options: {
@@ -76,7 +89,15 @@ function harness(
     cwd?: string;
   } = {}
 ): { rec: Recorder; deps: Partial<Deps> } {
-  const rec: Recorder = { calls: [], engineOptions: [], authInputs: [], written: [], prompts: [] };
+  const rec: Recorder = {
+    calls: [],
+    engineOptions: [],
+    authInputs: [],
+    written: [],
+    prompts: [],
+    generated: [],
+    outputs: {},
+  };
   const files: Record<string, string> = options.files ?? {
     [CONFIG_FILE]: JSON.stringify({ scope: "x_acme_app" }),
   };
@@ -107,6 +128,15 @@ function harness(
     },
     write: (line: string) => {
       rec.written.push(line);
+    },
+    interactive: () => true,
+    getClient: (profile?: string) => ({ profile }) as never,
+    generateTypes: async (client: unknown, generateOptions: unknown) => {
+      rec.generated.push({ profile: (client as { profile?: string }).profile, options: generateOptions });
+      return NATIVE_RESULT;
+    },
+    writeFile: async (file: string, content: string) => {
+      rec.outputs[file] = content;
     },
   };
   return { rec, deps };
@@ -260,6 +290,19 @@ describe("planFluentAction (flag mapping)", () => {
     });
   });
 
+  it("maps types --native to the native generator and refuses SDK-only flags with it", () => {
+    expect(planFluentAction("types", { native: true } as never)).toEqual({
+      method: "nativeTypes",
+      options: {},
+      instance: true,
+    });
+    expect(
+      planFluentAction("types", { native: true, scope: "x_s", table: "a, b", out: "t.d.ts" } as never).options
+    ).toEqual({ scope: "x_s", tables: ["a", "b"], out: "t.d.ts" });
+    expect(() => planFluentAction("types", { native: true, scripts: true } as never)).toThrow("--scripts or --fluent");
+    expect(() => planFluentAction("types", { native: true, fluent: true } as never)).toThrow("--scripts or --fluent");
+  });
+
   it("maps dependencies with and without --table", () => {
     expect(planFluentAction("dependencies", {} as never)).toEqual({ method: "types", options: {}, instance: true });
     expect(planFluentAction("dependencies", { table: "sys_db_object", ids: "a,b", scope: "global" } as never)).toEqual({
@@ -283,6 +326,30 @@ describe("planFluentAction (flag mapping)", () => {
     });
     expect(() => planFluentAction("run", {} as never)).toThrow("fluent run needs --script");
     expect(planFluentAction("status", {} as never)).toEqual({ method: "installStatus", options: {}, instance: true });
+  });
+
+  it("maps explain locally, passing only the flags given", () => {
+    expect(planFluentAction("explain", {} as never)).toEqual({ method: "explain", options: {}, instance: false });
+    expect(planFluentAction("explain", { topic: "  " } as never).options).toEqual({});
+    expect(planFluentAction("explain", { topic: " flow ", list: true, peek: true } as never).options).toEqual({
+      topic: "flow",
+      list: true,
+      peek: true,
+    });
+  });
+
+  it("maps move-to-app to an instance call and requires at least one sys_id", () => {
+    expect(planFluentAction("move-to-app", { ids: `${ID_A}, ${ID_B},` } as never)).toEqual({
+      method: "moveToApp",
+      options: { sysIds: [ID_A, ID_B] },
+      instance: true,
+    });
+    expect(() => planFluentAction("move-to-app", {} as never)).toThrow("fluent move-to-app needs --ids");
+    expect(() => planFluentAction("move-to-app", { ids: " , " } as never)).toThrow("fluent move-to-app needs --ids");
+    expect(() => planFluentAction("install", { topic: "prod", ci: true } as never)).toThrow(
+      'fluent install takes no positional argument (got "prod"); only `fluent explain <topic>` does.'
+    );
+    expect(planFluentAction("build", { topic: "  " } as never).method).toBe("build");
   });
 });
 
@@ -426,6 +493,168 @@ describe("fluentCommand: dispatch and exit codes", () => {
   });
 });
 
+describe("fluentCommand: types --native", () => {
+  const DEFAULT_OUT = path.join(PROJECT, "@types", "syncrona", "tables.d.ts");
+
+  it("generates the project's scope into the default file without loading the adapter", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", native: true }, deps)).toBe(0);
+    expect(rec.engineOptions).toEqual([]);
+    expect(rec.generated).toEqual([{ profile: undefined, options: { scope: "x_acme_app" } }]);
+    expect(rec.outputs).toEqual({ [DEFAULT_OUT]: NATIVE_RESULT.content });
+    expect(infos).toContain(`Wrote 2 table type(s) with 5 field(s) to ${DEFAULT_OUT}.`);
+  });
+
+  it("needs no credential bridge, so an API-key profile works", async () => {
+    const { rec, deps } = harness({ credential: { kind: "unsupported", method: "api-key" } });
+    expect(await run({ action: "types", native: true, instanceProfile: "dev2" }, deps)).toBe(0);
+    expect(rec.generated[0].profile).toBe("dev2");
+  });
+
+  it("takes --scope, --table and --out over the project's defaults", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", native: true, scope: "x_other", out: "types/t.d.ts" }, deps)).toBe(0);
+    expect(rec.generated[0].options).toEqual({ scope: "x_other" });
+    expect(Object.keys(rec.outputs)).toEqual([path.resolve(PROJECT, "src", "fluent", "types/t.d.ts")]);
+
+    expect(await run({ action: "types", native: true, table: "incident,task" }, deps)).toBe(0);
+    expect(rec.generated[1].options).toEqual({ scope: "x_acme_app", tables: ["incident", "task"] });
+  });
+
+  it("runs outside a project when --out and a scope or tables are given", async () => {
+    const { rec, deps } = harness({ files: {}, cwd: path.resolve("/elsewhere") });
+    expect(await run({ action: "types", native: true, table: "incident", out: "t.d.ts" }, deps)).toBe(0);
+    expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
+    expect(Object.keys(rec.outputs)).toEqual([path.resolve("/elsewhere", "t.d.ts")]);
+
+    expect(await run({ action: "types", native: true, out: "t.d.ts" }, deps)).toBe(1);
+    expect(errors[0]).toContain("No now.config.json found");
+  });
+
+  it("refuses when neither the flags nor now.config.json name a scope", async () => {
+    const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{}" } });
+    expect(await run({ action: "types", native: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("needs a scope");
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("warns when the scope has no tables, and emits the JSON result", async () => {
+    const { rec, deps } = harness();
+    const empty = { content: "", tableCount: 0, fieldCount: 0 };
+    expect(await run({ action: "types", native: true }, { ...deps, generateTypes: async () => empty })).toBe(0);
+    expect(warnings).toEqual(["No tables found for scope x_acme_app; wrote an empty type file."]);
+
+    expect(await run({ action: "types", native: true, json: true }, deps)).toBe(0);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent types",
+      exitCode: 0,
+      mode: "native",
+      file: DEFAULT_OUT,
+      scope: "x_acme_app",
+      tableCount: 2,
+      fieldCount: 5,
+    });
+    expect(await run({ action: "types", native: true, json: true, table: "a" }, deps)).toBe(0);
+    expect(JSON.parse(rec.written[1])).toMatchObject({ tables: ["a"] });
+    expect(JSON.parse(rec.written[1])).not.toHaveProperty("scope");
+  });
+
+  it("describes the reads on --dry-run without touching the instance", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", native: true, table: "incident", dryRun: true }, deps)).toBe(0);
+    expect(rec.written).toEqual([
+      '[dry-run] fluent types --native → read sys_db_object, sys_dictionary and sys_choice ({"tables":["incident"]}) against the active instance',
+    ]);
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("refuses --native with --scripts as a usage error", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", native: true, scripts: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("cannot combine with --scripts or --fluent");
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("surfaces a generator failure as exit 1", async () => {
+    const { deps } = harness();
+    const failing = async () => {
+      throw new Error("No sys_db_object record for table(s): nope.");
+    };
+    expect(await run({ action: "types", native: true }, { ...deps, generateTypes: failing })).toBe(1);
+    expect(errors).toEqual(["No sys_db_object record for table(s): nope."]);
+  });
+});
+
+describe("fluentCommand: types falls back to native without the SDK", () => {
+  it("keeps the SDK path when it is installed, and says so in JSON", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "types", json: true }, deps)).toBe(0);
+    expect(rec.calls.map((c) => c.method)).toEqual(["types"]);
+    expect(rec.generated).toEqual([]);
+    expect(JSON.parse(rec.written[0])).toMatchObject({ mode: "sdk" });
+  });
+
+  it("generates natively when the adapter is not installed", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { rec, deps } = harness();
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run({ action: "types", table: "incident" }, { ...deps, loadFluent })).toBe(0);
+    expect(rec.generated[0].options).toEqual({ scope: "x_acme_app", tables: ["incident"] });
+    expect(infos[0]).toContain("@servicenow/sdk is not installed; generating table types natively");
+    expect(errors).toEqual([]);
+  });
+
+  it("generates natively when the adapter reports the SDK missing", async () => {
+    const { rec, deps } = harness({
+      engine: {
+        types: async () => {
+          throw Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "types" }, deps)).toBe(0);
+    expect(rec.generated).toHaveLength(1);
+  });
+
+  it("keeps the install hint when --scripts or --fluent needs the SDK", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { rec, deps } = harness({
+      engine: {
+        types: async () => {
+          throw Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "types", scripts: true }, deps)).toBe(1);
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run({ action: "types", fluent: true }, { ...deps, loadFluent })).toBe(1);
+    expect(await run({ action: "dependencies" }, { ...deps, loadFluent })).toBe(1);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT, FLUENT_INSTALL_HINT, FLUENT_INSTALL_HINT]);
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("rethrows any other SDK failure from types", async () => {
+    const { rec, deps } = harness({
+      engine: {
+        types: async () => {
+          throw new Error("types failed");
+        },
+      },
+    });
+    expect(await run({ action: "types" }, deps)).toBe(1);
+    expect(errors).toEqual(["types failed"]);
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("points an unsupported profile at --native for plain types only", async () => {
+    const { deps } = harness({ credential: { kind: "unsupported", method: "api-key" } });
+    expect(await run({ action: "types" }, deps)).toBe(1);
+    expect(errors[0]).toContain("or pass --native to generate table types without the SDK.");
+    expect(await run({ action: "types", scripts: true }, deps)).toBe(1);
+    expect(errors[1]).not.toContain("--native");
+  });
+});
+
 describe("fluentCommand: init", () => {
   it("creates a project in the current directory", async () => {
     const { rec, deps } = harness({ files: {}, cwd: "/new/app" });
@@ -483,6 +712,49 @@ describe("fluentCommand: install consent", () => {
     const broken = harness({ files: { [CONFIG_FILE]: "not json" } });
     expect(await run({ action: "install" }, broken.deps)).toBe(0);
     expect(broken.rec.prompts[0]).toContain("(unknown scope)");
+  });
+});
+
+describe("fluentCommand: install without a terminal", () => {
+  it.each([
+    ["no terminal", { interactive: () => false }, {}, "this session has no terminal"],
+    ["--json", {}, { json: true }, "--json output"],
+  ])("refuses with %s instead of prompting, and asks for --ci", async (_label, extraDeps, extraArgs, reason) => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "install", ...extraArgs }, { ...deps, ...extraDeps })).toBe(1);
+    expect(rec.prompts).toEqual([]);
+    expect(rec.calls).toEqual([]);
+    expect(rec.written).toEqual([]);
+    expect(errors[0]).toContain(reason);
+    expect(errors[0]).toContain("Pass --ci to install without asking.");
+  });
+
+  it("installs under --ci without a terminal, and --json prints only the result", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "install", ci: true, json: true }, { ...deps, interactive: () => false })).toBe(0);
+    expect(rec.prompts).toEqual([]);
+    expect(rec.written).toHaveLength(1);
+    expect(JSON.parse(rec.written[0])).toMatchObject({ command: "fluent install", exitCode: 0, trackerId: "trk" });
+  });
+
+  it("loads the adapter and the SDK before asking", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const missingAdapter = harness();
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run({ action: "install" }, { ...missingAdapter.deps, loadFluent })).toBe(1);
+    expect(missingAdapter.rec.prompts).toEqual([]);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT]);
+
+    const missingSdk = harness({
+      engine: {
+        sdkVersion: async () => {
+          throw Object.assign(new Error("no sdk"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "install" }, missingSdk.deps)).toBe(1);
+    expect(missingSdk.rec.prompts).toEqual([]);
+    expect(missingSdk.rec.calls).toEqual([]);
   });
 });
 
@@ -656,6 +928,48 @@ describe("default dependencies", () => {
     expect(stdout).toEqual(["[dry-run] fluent build → engine.build({}) (local only)\n"]);
   });
 
+  it("generates native types with the real generator and writes the file to disk", async () => {
+    const root = await newRoot();
+    await writeFile(path.join(root, "now.config.json"), JSON.stringify({ scope: "x_fs_app" }));
+    const { deps } = harness();
+    const { exists: _e, readFile: _r, generateTypes: _g, writeFile: _w, ...rest } = deps;
+    const client = {
+      // Honours the offset like an instance does: the reader stops on an empty page.
+      tableAPIGet: async (table: string, _query: string, _fields: string, _limit: number, offset: number) => ({
+        data: {
+          result:
+            offset > 0
+              ? []
+              : table === "sys_db_object"
+              ? [{ name: "x_fs_app_item", label: "Item", "sys_scope.scope": "x_fs_app" }]
+              : table === "sys_dictionary"
+                ? [{ name: "x_fs_app_item", element: "title", column_label: "Title", internal_type: "string" }]
+                : [],
+        },
+        headers: {},
+      }),
+    };
+    expect(await run({ action: "types", native: true }, { ...rest, cwd: root, getClient: () => client as never })).toBe(0);
+    const content = await readFile(path.join(root, "@types", "syncrona", "tables.d.ts"), "utf8");
+    expect(content).toContain("export interface x_fs_app_item {");
+    expect(content).toContain("  title?: string;");
+  });
+
+  it("builds the Table API client from the active profile", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "api-key";
+    process.env.SN_API_KEY = "key";
+    const { deps } = harness();
+    const { getClient: _c, ...rest } = deps;
+    let seen: unknown;
+    const generateTypes = async (client: unknown) => {
+      seen = client;
+      return NATIVE_RESULT;
+    };
+    expect(await run({ action: "types", native: true }, { ...rest, generateTypes })).toBe(0);
+    expect(typeof (seen as { tableAPIGet?: unknown }).tableAPIGet).toBe("function");
+  });
+
   it("loads the real adapter, which reports the SDK missing as the install hint", async () => {
     // @syncrona/fluent is a workspace package, so it resolves from core; the
     // ServiceNow SDK is not installed anywhere in the workspace, so the first
@@ -697,8 +1011,310 @@ describe("loadFluentModule", () => {
     });
   });
 
+  it("rethrows a missing dependency of the adapter instead of calling the adapter missing", async () => {
+    const root = await fixture("fake-fluent-c", "require('@syncrona/definitely-missing-dependency');\n");
+    const failure = loadFluentModule(root, "fake-fluent-c");
+    await expect(failure).rejects.not.toMatchObject({ code: "FLUENT_NOT_INSTALLED" });
+    await expect(failure).rejects.toThrow("@syncrona/definitely-missing-dependency");
+  });
+
   it("rethrows a broken adapter instead of calling it missing", async () => {
     const root = await fixture("fake-fluent-b", "throw new Error('adapter exploded');\n");
     await expect(loadFluentModule(root, "fake-fluent-b")).rejects.toThrow("adapter exploded");
+  });
+});
+
+describe("fluentCommand: explain", () => {
+  it("prints one topic's document to stdout without credentials or a now.config.json", async () => {
+    const { rec, deps } = harness({ files: {}, cwd: path.resolve("/elsewhere") });
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    expect(await run({ action: "explain", topic: "table" }, { ...deps, resolveCredential })).toBe(0);
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(rec.calls).toEqual([{ method: "explain", options: { topic: "table" } }]);
+    expect(rec.engineOptions[0]).toMatchObject({ projectDir: path.resolve("/elsewhere") });
+    expect(rec.engineOptions[0].auth).toBeUndefined();
+    expect(rec.written).toEqual(["# Table\n\nTables."]);
+  });
+
+  it("resolves the SDK from the nearest project, or from --project as given", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "explain" }, deps)).toBe(0);
+    expect(rec.engineOptions[0].projectDir).toBe(PROJECT);
+    expect(await run({ action: "explain", project: "/some/dir" }, deps)).toBe(0);
+    expect(rec.engineOptions[1].projectDir).toBe(path.resolve("/some/dir"));
+  });
+
+  it("lists topics with their tags, related matches and summaries on --peek", async () => {
+    const list = { kind: "list", topics: [TABLE_TOPIC, RULE_TOPIC], related: [] } as SN.FluentExplainResult;
+    let h = harness({ engine: { explain: async () => list } });
+    expect(await run({ action: "explain", list: true }, h.deps)).toBe(0);
+    expect(h.rec.written).toEqual(["table [fluent, table]", "business-rule"]);
+    expect(infos).toEqual([]);
+
+    const filtered = { kind: "list", filter: "rule", topics: [RULE_TOPIC], related: [TABLE_TOPIC] } as SN.FluentExplainResult;
+    h = harness({ engine: { explain: async () => filtered } });
+    expect(await run({ action: "explain", list: true, topic: "rule", peek: true }, h.deps)).toBe(0);
+    expect(h.rec.written).toEqual(["business-rule\n  Rules.", "table [fluent, table]\n  Tables."]);
+    expect(infos).toEqual(['Topics matching "rule":', "Related:"]);
+
+    const empty = { kind: "list", filter: "zzz", topics: [], related: [] } as SN.FluentExplainResult;
+    h = harness({ engine: { explain: async () => empty } });
+    expect(await run({ action: "explain", list: true, topic: "zzz" }, h.deps)).toBe(0);
+    expect(warnings).toEqual(["No matching topics."]);
+  });
+
+  it("summarises several matches, or one on --peek, and suggests related topics", async () => {
+    const several = { kind: "matches", topics: [TABLE_TOPIC, RULE_TOPIC] } as SN.FluentExplainResult;
+    let h = harness({ engine: { explain: async () => several } });
+    expect(await run({ action: "explain", topic: "fluent" }, h.deps)).toBe(0);
+    expect(h.rec.written).toEqual(["table [fluent, table]\n  Tables.", "business-rule\n  Rules."]);
+    expect(infos[0]).toBe('Several topics match "fluent":');
+    expect(infos[1]).toContain("syncrona fluent explain <topic>");
+
+    infos.length = 0;
+    const one = { kind: "matches", topics: [TABLE_TOPIC] } as SN.FluentExplainResult;
+    h = harness({ engine: { explain: async () => one } });
+    expect(await run({ action: "explain", topic: "table", peek: true }, h.deps)).toBe(0);
+    expect(h.rec.written).toEqual(["table [fluent, table]\n  Tables."]);
+    expect(infos).toEqual([]);
+
+    const suggestions = { kind: "suggestions", topics: [RULE_TOPIC] } as SN.FluentExplainResult;
+    h = harness({ engine: { explain: async () => suggestions } });
+    expect(await run({ action: "explain", topic: "rul" }, h.deps)).toBe(0);
+    expect(h.rec.written).toEqual(["business-rule\n  Rules."]);
+    expect(infos[0]).toBe('No topic matches "rul" exactly; these may be related:');
+  });
+
+  it("exits 1 when nothing matches, as now-sdk explain does", async () => {
+    const { rec, deps } = harness({ engine: { explain: async () => ({ kind: "none", topics: [] }) } });
+    expect(await run({ action: "explain", topic: "zzz" }, deps)).toBe(1);
+    expect(rec.written).toEqual([]);
+    expect(errors).toEqual(['No topic matches "zzz".']);
+    expect(infos).toContain("Run `syncrona fluent explain --list` to see every topic.");
+  });
+
+  it("emits the classified result as JSON", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "explain", topic: "table", json: true }, deps)).toBe(0);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent explain",
+      exitCode: 0,
+      kind: "topic",
+      topic: TABLE_TOPIC,
+      body: "# Table\n\nTables.",
+    });
+    const none = harness({ engine: { explain: async () => ({ kind: "none", topics: [] }) } });
+    expect(await run({ action: "explain", topic: "zzz", json: true }, none.deps)).toBe(1);
+    expect(JSON.parse(none.rec.written[0])).toMatchObject({ command: "fluent explain", exitCode: 1, kind: "none" });
+  });
+
+  it("prints the planned call on --dry-run", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "explain", topic: "flow", dryRun: true }, deps)).toBe(0);
+    expect(rec.written).toEqual(['[dry-run] fluent explain → engine.explain({"topic":"flow"}) (local only)']);
+    expect(rec.engineOptions).toEqual([]);
+  });
+
+  it("reports an SDK without bundled docs with the adapter's own message", async () => {
+    const unavailable = Object.assign(new Error("This @servicenow/sdk does not bundle its documentation"), {
+      code: "FLUENT_DOCS_UNAVAILABLE",
+    });
+    const { deps } = harness({
+      engine: {
+        explain: async () => {
+          throw unavailable;
+        },
+      },
+    });
+    expect(await run({ action: "explain", topic: "x" }, deps)).toBe(1);
+    expect(errors[0]).toBe("This @servicenow/sdk does not bundle its documentation");
+  });
+
+  it("prints the install hint when the SDK is missing", async () => {
+    const { deps } = harness({
+      engine: {
+        explain: async () => {
+          throw Object.assign(new Error("missing"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "explain" }, deps)).toBe(1);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT]);
+  });
+});
+
+describe("fluentCommand: move-to-app", () => {
+  it("asks first, naming the records, the instance and both effects, then moves", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: `${ID_A},${ID_B}` }, deps)).toBe(0);
+    expect(rec.prompts).toHaveLength(1);
+    expect(rec.prompts[0]).toContain("Move 2 record(s) into global on https://dev1.service-now.com/?");
+    expect(rec.prompts[0]).toContain("sys_claim");
+    expect(rec.prompts[0]).toContain("Fluent sources");
+    expect(rec.calls).toEqual([{ method: "moveToApp", options: { sysIds: [ID_A, ID_B] } }]);
+    expect(rec.authInputs).toHaveLength(1);
+    expect(infos).toContain("  src/claimed.now.ts");
+    expect(infos).toContain("Moved records into the application; 1 Fluent file(s) changed.");
+  });
+
+  it("does nothing when the prompt is declined", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG, confirm: false });
+    expect(await run({ action: "move-to-app", ids: ID_A }, deps)).toBe(0);
+    expect(rec.prompts).toHaveLength(1);
+    expect(rec.calls).toEqual([]);
+    expect(infos).toContain("fluent move-to-app cancelled.");
+  });
+
+  it.each([
+    ["no terminal", { interactive: () => false }, {}, "this session has no terminal"],
+    ["--json", {}, { json: true }, "--json output"],
+  ])("refuses with %s instead of prompting, and asks for --ci", async (_label, extraDeps, extraArgs, reason) => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, ...extraArgs }, { ...deps, ...extraDeps })).toBe(1);
+    expect(rec.prompts).toEqual([]);
+    expect(rec.calls).toEqual([]);
+    expect(rec.written).toEqual([]);
+    expect(rec.engineOptions).toEqual([]);
+    expect(errors[0]).toContain(reason);
+    expect(errors[0]).toContain("Pass --ci to move the records without asking.");
+  });
+
+  it("moves under --ci without a terminal", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, { ...deps, interactive: () => false })).toBe(0);
+    expect(rec.prompts).toEqual([]);
+    expect(rec.calls.map((c) => c.method)).toEqual(["moveToApp"]);
+  });
+
+  it("loads the adapter and the SDK before asking", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const missingAdapter = harness({ files: GLOBAL_CONFIG });
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run({ action: "move-to-app", ids: ID_A }, { ...missingAdapter.deps, loadFluent })).toBe(1);
+    expect(missingAdapter.rec.prompts).toEqual([]);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT]);
+
+    const missingSdk = harness({
+      files: GLOBAL_CONFIG,
+      engine: {
+        sdkVersion: async () => {
+          throw Object.assign(new Error("no sdk"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "move-to-app", ids: ID_A }, missingSdk.deps)).toBe(1);
+    expect(missingSdk.rec.prompts).toEqual([]);
+    expect(missingSdk.rec.calls).toEqual([]);
+  });
+
+  it("skips the prompt with --ci and emits JSON", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true, json: true }, deps)).toBe(0);
+    expect(rec.prompts).toEqual([]);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent move-to-app",
+      exitCode: 0,
+      requested: 1,
+      moved: true,
+      changedFiles: ["src/claimed.now.ts"],
+      handledPaths: ["claimed.xml"],
+    });
+  });
+
+  it("exits 2 with a warning when the instance moved none of the records", async () => {
+    const { deps } = harness({
+      files: GLOBAL_CONFIG,
+      engine: { moveToApp: async () => ({ moved: false, changedFiles: [], handledPaths: [] }) },
+    });
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(2);
+    expect(warnings[0]).toContain("moved none of the records");
+  });
+
+  it("refuses a scoped application before resolving anything on the instance", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(1);
+    expect(errors[0]).toBe(`fluent move-to-app works on global applications only; ${PROJECT} is scoped to x_acme_app.`);
+    expect(rec.prompts).toEqual([]);
+    expect(rec.engineOptions).toEqual([]);
+  });
+
+  it("leaves an unreadable scope to the SDK's own check, and says so in the prompt", async () => {
+    const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{not json" } });
+    expect(await run({ action: "move-to-app", ids: ID_A }, deps)).toBe(0);
+    expect(rec.prompts[0]).toContain("Move 1 record(s) into this application on");
+    expect(rec.calls.map((c) => c.method)).toEqual(["moveToApp"]);
+  });
+
+  it("refuses API-key and mutual-TLS profiles", async () => {
+    for (const method of ["api-key", "mutual-TLS"] as const) {
+      const { rec, deps } = harness({ files: GLOBAL_CONFIG, credential: { kind: "unsupported", method } });
+      expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(1);
+      expect(rec.calls).toEqual([]);
+      expect(rec.prompts).toEqual([]);
+    }
+    expect(errors[0]).toContain("fluent move-to-app cannot use a api-key profile");
+    expect(errors[0]).not.toContain("--native");
+    expect(errors[1]).toContain("cannot use a mutual-TLS profile");
+  });
+
+  it("requires a Fluent project", async () => {
+    const { deps } = harness({ files: {} });
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("No now.config.json found");
+  });
+
+  it("prints the planned call on --dry-run without credentials, prompts or the adapter", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    expect(await run({ action: "move-to-app", ids: `${ID_A},${ID_B}`, dryRun: true }, { ...deps, resolveCredential })).toBe(0);
+    expect(rec.written).toEqual([
+      `[dry-run] fluent move-to-app → engine.moveToApp({"sysIds":["${ID_A}","${ID_B}"]}) against the active instance`,
+    ]);
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(rec.prompts).toEqual([]);
+    expect(rec.engineOptions).toEqual([]);
+  });
+
+  it("folds repeated ids, case-insensitively, before asking", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: `${ID_A},${ID_A.toUpperCase()},${ID_B}` }, deps)).toBe(0);
+    expect(rec.prompts[0]).toContain("Move 2 record(s)");
+    expect(rec.calls).toEqual([{ method: "moveToApp", options: { sysIds: [ID_A, ID_B] } }]);
+  });
+
+  it("refuses an id that is not a sys_id before prompting or claiming anything", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: `${ID_A},not-an-id,abc` }, deps)).toBe(1);
+    expect(errors[0]).toBe(
+      "fluent move-to-app --ids takes 32-character hexadecimal sys_ids; not one: not-an-id, abc."
+    );
+    expect(rec.prompts).toEqual([]);
+    expect(rec.calls).toEqual([]);
+  });
+
+  it("--dry-run fails where the real run would: a scoped project", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true }, deps)).toBe(1);
+    expect(errors[0]).toContain("works on global applications only");
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run --json prints the plan as JSON", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true, json: true }, deps)).toBe(0);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent move-to-app",
+      exitCode: 0,
+      dryRun: true,
+      method: "moveToApp",
+      options: { sysIds: [ID_A] },
+      instance: true,
+    });
+  });
+
+  it("fails with exit 1 when --ids is missing", async () => {
+    const { deps } = harness({ files: GLOBAL_CONFIG });
+    expect(await run({ action: "move-to-app" }, deps)).toBe(1);
+    expect(errors[0]).toBe("fluent move-to-app needs --ids <sys_id,...>.");
   });
 });

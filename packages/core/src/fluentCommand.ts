@@ -21,10 +21,30 @@
  *    cannot reach the SDK's session-only endpoints, so they are refused up front
  *    for every action that talks to the instance.
  *
- * 3. **Consent and exit codes.** `install` changes an instance, so it asks
- *    first unless `--ci` is given. `--reinstall` uninstalls first and says so.
- *    Exit codes: 0 success; 2 for build errors and for an install that has not
- *    finished; 1 for a thrown failure.
+ * 3. **Consent and exit codes.** `install` and `move-to-app` change an
+ *    instance, so they ask first unless `--ci` is given; without a terminal to
+ *    ask in, or with `--json` (whose stdout a prompt would corrupt), they refuse
+ *    and ask for `--ci`. The adapter and the SDK are loaded before the prompt,
+ *    so a missing package fails before the user is asked. `--reinstall`
+ *    uninstalls first and says so. Exit codes: 0 success (an `install` exits 0
+ *    once the SDK has submitted it); 2 for build errors, for a `status` whose
+ *    install has not finished and for a `move-to-app` the instance claimed
+ *    nothing for; 1 for a thrown failure and for an `explain` topic that
+ *    matches nothing.
+ *
+ * `fluent run` runs a project script locally, without an instance credential.
+ *
+ * 4. **Native types.** `fluent types --native` does not use the SDK at all: it
+ *    reads `sys_db_object`, `sys_dictionary` and `sys_choice` over the Table API
+ *    with core's own client (so every auth method works, API key and mutual TLS
+ *    included) and writes one `.d.ts` (see `fluentNativeTypes.ts`). A plain
+ *    `fluent types` still prefers the SDK; when the adapter or the SDK is not
+ *    installed it falls back to the native generator instead of failing, unless
+ *    `--scripts`/`--fluent` asked for definitions only the SDK can download.
+ *
+ * 5. **`explain`** searches the Markdown docs the SDK ships, offline. It needs
+ *    no instance and no Fluent project: the SDK is resolved from the nearest
+ *    project when there is one, otherwise from the current directory.
  *
  * `--dry-run` prints the orchestrator call each action would make and stops.
  * It does not load the adapter, resolve credentials or prompt.
@@ -34,10 +54,11 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
-import { CLIENT_CERT_ENV } from "@syncrona/sn-transport";
+import { CLIENT_CERT_ENV, SYS_ID_RE } from "@syncrona/sn-transport";
 import { logger } from "./Logger.js";
 import { setLogLevel, logErrorHint, resolveInstanceProfile } from "./commandHelpers.js";
-import { resolveCredentials, buildClientAuth } from "./snClient.js";
+import { resolveCredentials, buildClientAuth, defaultClient } from "./snClient.js";
+import type { NativeTypesClient, NativeTypesOptions, NativeTypesResult } from "./fluentNativeTypes.js";
 import { createTokenManager, type OAuthTokenResponse, type TokenPoster } from "./oauth.js";
 
 export const FLUENT_ACTIONS = [
@@ -50,6 +71,8 @@ export const FLUENT_ACTIONS = [
   "dependencies",
   "run",
   "status",
+  "explain",
+  "move-to-app",
 ] as const;
 export type FluentAction = (typeof FLUENT_ACTIONS)[number];
 
@@ -63,6 +86,9 @@ const SESSION_ONLY_ENDPOINTS =
   "sn_appclient_upload_processor.do, xmlhttp.do and fluent_update_set_export.do";
 
 const NOW_CONFIG = "now.config.json";
+
+/** Where `fluent types --native` writes, relative to the project, when `--out` is not given. */
+export const NATIVE_TYPES_DEFAULT_OUT = path.join("@types", "syncrona", "tables.d.ts");
 
 export type FluentCmdArgs = Sync.SharedCmdArgs & {
   action?: string;
@@ -79,7 +105,7 @@ export type FluentCmdArgs = Sync.SharedCmdArgs & {
   frozenKeys?: boolean;
   errorOnConflict?: boolean;
   skipClean?: boolean;
-  // pack
+  // pack, types --native
   out?: string;
   // install
   reinstall?: boolean;
@@ -87,7 +113,7 @@ export type FluentCmdArgs = Sync.SharedCmdArgs & {
   sync?: boolean;
   demoData?: boolean;
   skipFlowActivation?: boolean;
-  // transform / dependencies
+  // transform / dependencies / move-to-app
   paths?: string;
   table?: string;
   ids?: string;
@@ -97,8 +123,13 @@ export type FluentCmdArgs = Sync.SharedCmdArgs & {
   // types
   scripts?: boolean;
   fluent?: boolean;
+  native?: boolean;
   // run
   script?: string;
+  // explain
+  topic?: string;
+  list?: boolean;
+  peek?: boolean;
 };
 
 /** The resolved credential, in the form the adapter accepts. */
@@ -117,6 +148,14 @@ export interface FluentCommandDeps {
   exists: (file: string) => Promise<boolean>;
   readFile: (file: string) => Promise<string>;
   write: (line: string) => void;
+  /** Whether a confirmation prompt can be answered (stdin is a terminal). */
+  interactive: () => boolean;
+  /** Table API client for `types --native`; resolves the profile's credentials. */
+  getClient: (profile?: string) => NativeTypesClient;
+  /** Native type generator; loaded on demand so startup does not pay for it. */
+  generateTypes: (client: NativeTypesClient, options: NativeTypesOptions) => Promise<NativeTypesResult>;
+  /** Writes a whole file, creating its directory. */
+  writeFile: (file: string, content: string) => Promise<void>;
 }
 
 class FluentCliError extends Error {
@@ -135,9 +174,17 @@ export class FluentNotInstalledError extends Error {
   }
 }
 
-function isModuleNotFound(e: unknown): boolean {
-  const code = (e as { code?: unknown } | null)?.code;
-  return code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND";
+/**
+ * Whether `e` says `specifier` itself cannot be found. A module-not-found
+ * error for one of the adapter's own dependencies names that dependency
+ * instead (the adapter appears only in the unquoted require stack), and must
+ * surface as itself rather than as "not installed".
+ */
+function isModuleNotFound(e: unknown, specifier: string): boolean {
+  const err = e as { code?: unknown; message?: unknown } | null;
+  const code = err?.code;
+  if (code !== "MODULE_NOT_FOUND" && code !== "ERR_MODULE_NOT_FOUND") return false;
+  return typeof err?.message === "string" && err.message.includes(`'${specifier}'`);
 }
 
 /**
@@ -150,12 +197,12 @@ export async function loadFluentModule(cwd: string, specifier: string = FLUENT_P
     const resolved = createRequire(path.join(cwd, "package.json")).resolve(specifier);
     mod = await import(pathToFileURL(resolved).href);
   } catch (first) {
-    if (!isModuleNotFound(first)) throw first;
+    if (!isModuleNotFound(first, specifier)) throw first;
     try {
       // A variable specifier, so TypeScript does not couple core to the optional package.
       mod = await import(specifier);
     } catch (second) {
-      if (isModuleNotFound(second)) throw new FluentNotInstalledError();
+      if (isModuleNotFound(second, specifier)) throw new FluentNotInstalledError();
       throw second;
     }
   }
@@ -238,13 +285,21 @@ const defaultDeps = (): FluentCommandDeps => ({
   exists: nodeExists,
   readFile: (file) => fsp.readFile(file, "utf8"),
   write: (line: string) => process.stdout.write(`${line}\n`),
+  interactive: () => process.stdin.isTTY === true,
+  getClient: (profile) => defaultClient(profile),
+  generateTypes: async (client, options) => (await import("./fluentNativeTypes.js")).generateNativeTypes(client, options),
+  writeFile: async (file, content) => {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await fsp.writeFile(file, content, "utf8");
+  },
 });
 
 // --- Planning ------------------------------------------------------------------
 
 /** What an action will do: the engine method, its options, and whether it needs the instance. */
 export interface FluentPlan {
-  method: keyof SN.FluentEngine;
+  /** An engine method, or `nativeTypes` for the SDK-free generator. */
+  method: keyof SN.FluentEngine | "nativeTypes";
   options: Record<string, unknown>;
   instance: boolean;
 }
@@ -262,8 +317,26 @@ function required(value: string | undefined, flag: string, action: string): stri
   return trimmed;
 }
 
+function nativeTypesOptions(args: FluentCmdArgs): Record<string, unknown> {
+  const tables = csv(args.table);
+  return {
+    ...(args.scope ? { scope: args.scope } : {}),
+    ...(tables.length > 0 ? { tables } : {}),
+    ...(args.out ? { out: args.out } : {}),
+  };
+}
+
 /** Maps CLI flags to one engine call. Pure, so `--dry-run` and tests share it. */
 export function planFluentAction(action: FluentAction, args: FluentCmdArgs): FluentPlan {
+  // The `[topic]` positional exists for `explain` only. Accepted and ignored on
+  // any other action, `fluent install prod --ci` would install while the caller
+  // believed they had named a target.
+  const strayTopic = String(args.topic ?? "").trim();
+  if (action !== "explain" && strayTopic) {
+    throw new FluentCliError(
+      `fluent ${action} takes no positional argument (got "${strayTopic}"); only \`fluent explain <topic>\` does.`
+    );
+  }
   switch (action) {
     case "init":
       if (args.from) {
@@ -337,6 +410,14 @@ export function planFluentAction(action: FluentAction, args: FluentCmdArgs): Flu
         instance: true,
       };
     case "types": {
+      if (args.native) {
+        if (args.scripts || args.fluent) {
+          throw new FluentCliError(
+            "fluent types --native cannot combine with --scripts or --fluent: those definitions come from the SDK only."
+          );
+        }
+        return { method: "nativeTypes", options: nativeTypesOptions(args), instance: true };
+      }
       const options =
         args.scripts || args.fluent
           ? { downloadScripts: args.scripts === true, downloadFluent: args.fluent === true }
@@ -364,6 +445,29 @@ export function planFluentAction(action: FluentAction, args: FluentCmdArgs): Flu
       };
     case "status":
       return { method: "installStatus", options: {}, instance: true };
+    case "explain":
+      return {
+        method: "explain",
+        options: {
+          ...(args.topic?.trim() ? { topic: args.topic.trim() } : {}),
+          ...(args.list ? { list: true } : {}),
+          ...(args.peek ? { peek: true } : {}),
+        },
+        instance: false,
+      };
+    case "move-to-app": {
+      // Each id becomes a sys_claim record on the instance, so a typo or a
+      // repeat is refused or folded here rather than claimed.
+      const sysIds = [...new Set(csv(args.ids).map((id) => id.toLowerCase()))];
+      if (sysIds.length === 0) throw new FluentCliError("fluent move-to-app needs --ids <sys_id,...>.");
+      const invalid = sysIds.filter((id) => !SYS_ID_RE.test(id));
+      if (invalid.length > 0) {
+        throw new FluentCliError(
+          `fluent move-to-app --ids takes 32-character hexadecimal sys_ids; not one: ${invalid.join(", ")}.`
+        );
+      }
+      return { method: "moveToApp", options: { sysIds }, instance: true };
+    }
   }
 }
 
@@ -386,6 +490,10 @@ async function resolveProjectDir(
   args: FluentCmdArgs
 ): Promise<string> {
   const explicit = args.project ? path.resolve(deps.cwd, args.project) : undefined;
+  if (action === "explain") {
+    // Only the SDK's location matters; any directory that resolves it will do.
+    return explicit ?? (await findProjectDir(deps, deps.cwd)) ?? deps.cwd;
+  }
   if (action === "init") {
     const dir = explicit ?? deps.cwd;
     if (await deps.exists(path.join(dir, NOW_CONFIG))) {
@@ -408,13 +516,17 @@ async function resolveProjectDir(
   return found;
 }
 
-async function projectScope(deps: FluentCommandDeps, projectDir: string): Promise<string> {
+async function configuredScope(deps: FluentCommandDeps, projectDir: string): Promise<string | undefined> {
   try {
     const config = JSON.parse(await deps.readFile(path.join(projectDir, NOW_CONFIG))) as { scope?: unknown };
-    return typeof config.scope === "string" && config.scope ? config.scope : "(unknown scope)";
+    return typeof config.scope === "string" && config.scope ? config.scope : undefined;
   } catch {
-    return "(unknown scope)";
+    return undefined;
   }
+}
+
+async function projectScope(deps: FluentCommandDeps, projectDir: string): Promise<string> {
+  return (await configuredScope(deps, projectDir)) ?? "(unknown scope)";
 }
 
 const fluentLogger: SN.FluentLogger = {
@@ -427,6 +539,116 @@ function isSdkMissing(e: unknown): boolean {
   return (e as { code?: unknown } | null)?.code === "FLUENT_SDK_MISSING";
 }
 
+function fallBackToNative(deps: FluentCommandDeps, args: FluentCmdArgs, profile: string | undefined): Promise<number> {
+  logger.info(
+    `${FLUENT_SDK_PACKAGE} is not installed; generating table types natively from sys_dictionary instead.`
+  );
+  return executeNativeTypes(deps, args, profile, nativeTypesOptions(args));
+}
+
+/**
+ * `fluent types --native`: reads the schema over the Table API and writes one
+ * `.d.ts`. A project is needed only for what it supplies: the default scope
+ * (`now.config.json`) and the default output location.
+ */
+async function executeNativeTypes(
+  deps: FluentCommandDeps,
+  args: FluentCmdArgs,
+  profile: string | undefined,
+  options: { scope?: string; tables?: string[]; out?: string }
+): Promise<number> {
+  const needsProject = !!args.project || !options.out || (!options.scope && !options.tables);
+  const projectDir = needsProject
+    ? await resolveProjectDir(deps, "types", args)
+    : await findProjectDir(deps, deps.cwd);
+  const scope = options.scope ?? (projectDir ? await configuredScope(deps, projectDir) : undefined);
+  if (!options.tables && !scope) {
+    throw new FluentCliError(
+      `fluent types --native needs a scope: pass --scope or --table, or set "scope" in ${NOW_CONFIG}.`
+    );
+  }
+  const file = options.out
+    ? path.resolve(deps.cwd, options.out)
+    : path.join(projectDir as string, NATIVE_TYPES_DEFAULT_OUT);
+
+  const result = await deps.generateTypes(deps.getClient(profile), {
+    ...(scope ? { scope } : {}),
+    ...(options.tables ? { tables: options.tables } : {}),
+  });
+  await deps.writeFile(file, result.content);
+
+  if (args.json === true) {
+    deps.write(
+      JSON.stringify(
+        {
+          command: "fluent types",
+          exitCode: 0,
+          mode: "native",
+          file,
+          ...(options.tables ? { tables: options.tables } : { scope }),
+          tableCount: result.tableCount,
+          fieldCount: result.fieldCount,
+        },
+        null,
+        2
+      )
+    );
+  } else {
+    if (result.tableCount === 0) logger.warn(`No tables found for scope ${scope}; wrote an empty type file.`);
+    logger.success(`Wrote ${result.tableCount} table type(s) with ${result.fieldCount} field(s) to ${file}.`);
+  }
+  return 0;
+}
+
+/** `fluent types` with no SDK-only flag can be served natively when the SDK is absent. */
+function canFallBackToNative(action: FluentAction, args: FluentCmdArgs): boolean {
+  return action === "types" && !args.scripts && !args.fluent;
+}
+
+/**
+ * The local checks a real run makes before it touches credentials or the SDK:
+ * the project directory resolves and, for move-to-app, the project is global.
+ * `--dry-run` runs them too, so a preview never passes where the run would fail.
+ */
+async function checkLocalPreconditions(
+  deps: FluentCommandDeps,
+  action: FluentAction,
+  args: FluentCmdArgs
+): Promise<{ projectDir: string; moveScope?: string }> {
+  const projectDir = await resolveProjectDir(deps, action, args);
+  if (action !== "move-to-app") {
+    return { projectDir };
+  }
+  const moveScope = await configuredScope(deps, projectDir);
+  if (moveScope !== undefined && moveScope !== "global") {
+    throw new FluentCliError(
+      `fluent move-to-app works on global applications only; ${projectDir} is scoped to ${moveScope}.`
+    );
+  }
+  return { projectDir, moveScope };
+}
+
+function writeDryRun(deps: FluentCommandDeps, action: FluentAction, plan: FluentPlan, args: FluentCmdArgs, line: string): void {
+  if (args.json === true) {
+    deps.write(
+      JSON.stringify(
+        {
+          command: `fluent ${action}`,
+          exitCode: 0,
+          dryRun: true,
+          method: plan.method,
+          options: plan.options,
+          instance: plan.instance,
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+  deps.write(line);
+}
+
 async function execute(
   deps: FluentCommandDeps,
   action: FluentAction,
@@ -434,7 +656,10 @@ async function execute(
   args: FluentCmdArgs,
   profile: string | undefined
 ): Promise<number> {
-  const projectDir = await resolveProjectDir(deps, action, args);
+  if (plan.method === "nativeTypes") {
+    return executeNativeTypes(deps, args, profile, plan.options);
+  }
+  const { projectDir, moveScope } = await checkLocalPreconditions(deps, action, args);
   const json = args.json === true;
 
   let credential: FluentCredential | undefined;
@@ -444,12 +669,44 @@ async function execute(
       throw new FluentCliError(
         `fluent ${action} cannot use a ${credential.input.method} profile: the ServiceNow SDK reaches ` +
           `${SESSION_ONLY_ENDPOINTS} with a UI session or a bearer token only. ` +
-          `Log in with a Basic or OAuth profile (\`syncrona login --auth-method\`).`
+          `Log in with a Basic or OAuth profile (\`syncrona login --auth-method\`)` +
+          (canFallBackToNative(action, args)
+            ? ", or pass --native to generate table types without the SDK."
+            : ".")
       );
     }
   }
 
+  if ((action === "install" || action === "move-to-app") && args.ci !== true && (json || !deps.interactive())) {
+    throw new FluentCliError(
+      `fluent ${action} asks for confirmation, and ${json ? "--json output" : "this session has no terminal"} ` +
+        `cannot answer it. Pass --ci to ${action === "install" ? "install" : "move the records"} without asking.`
+    );
+  }
+
+  let fluent: SN.FluentModule;
+  try {
+    fluent = await deps.loadFluent(projectDir);
+  } catch (e) {
+    if (e instanceof FluentNotInstalledError && canFallBackToNative(action, args)) {
+      return fallBackToNative(deps, args, profile);
+    }
+    throw e;
+  }
+  const engine = fluent.createFluentEngine({
+    projectDir,
+    logger: fluentLogger,
+    ...(credential
+      ? {
+          instanceUrl: credential.instanceUrl,
+          auth: fluent.createFluentAuthResolver(credential.instanceUrl, credential.input),
+        }
+      : {}),
+  });
+
   if (action === "install") {
+    // Load the SDK now, so a missing or broken SDK fails before the user consents.
+    await engine.sdkVersion();
     const scope = await projectScope(deps, projectDir);
     if (args.reinstall) {
       logger.warn(`--reinstall uninstalls ${scope} from the instance before installing it again.`);
@@ -463,17 +720,21 @@ async function execute(
     }
   }
 
-  const fluent = await deps.loadFluent(projectDir);
-  const engine = fluent.createFluentEngine({
-    projectDir,
-    logger: fluentLogger,
-    ...(credential
-      ? {
-          instanceUrl: credential.instanceUrl,
-          auth: fluent.createFluentAuthResolver(credential.instanceUrl, credential.input),
-        }
-      : {}),
-  });
+  if (action === "move-to-app") {
+    // Load the SDK now, so a missing or broken SDK fails before the user consents.
+    await engine.sdkVersion();
+    const count = (plan.options.sysIds as string[]).length;
+    const ok =
+      args.ci === true ||
+      (await deps.confirm(
+        `Move ${count} record(s) into ${moveScope ?? "this application"} on ${credential?.instanceUrl}? ` +
+          `This creates sys_claim records on the instance and writes the records into the project as Fluent sources.`
+      ));
+    if (!ok) {
+      logger.info("fluent move-to-app cancelled.");
+      return 0;
+    }
+  }
 
   const emit = (payload: Record<string, unknown>, human: () => void) => {
     if (json) deps.write(JSON.stringify({ command: `fluent ${action}`, ...payload }, null, 2));
@@ -531,8 +792,13 @@ async function execute(
       return exitCode;
     }
     case "types":
-      await engine.types(plan.options);
-      emit({ exitCode: 0 }, () => logger.success("Fluent types and dependencies updated."));
+      try {
+        await engine.types(plan.options);
+      } catch (e) {
+        if (isSdkMissing(e) && canFallBackToNative(action, args)) return fallBackToNative(deps, args, profile);
+        throw e;
+      }
+      emit({ exitCode: 0, mode: "sdk" }, () => logger.success("Fluent types and dependencies updated."));
       return 0;
     case "addDependency": {
       const options = plan.options as { table: string; ids: string[]; scope: string };
@@ -548,6 +814,26 @@ async function execute(
       emit({ exitCode: 0, script: options.script }, () => logger.success(`Ran ${options.script}.`));
       return 0;
     }
+    case "explain": {
+      const options = plan.options as { topic?: string; list?: boolean; peek?: boolean };
+      return renderExplain(deps, options, await engine.explain(options), emit);
+    }
+    case "moveToApp": {
+      const options = plan.options as { sysIds: string[] };
+      const result = await engine.moveToApp(options);
+      const exitCode = result.moved ? 0 : 2;
+      emit({ exitCode, requested: options.sysIds.length, ...result }, () => {
+        if (!result.moved) {
+          logger.warn("The instance moved none of the records; check that the sys_ids name valid records.");
+          return;
+        }
+        for (const file of result.changedFiles) logger.info(`  ${file}`);
+        logger.success(
+          `Moved records into the application; ${result.changedFiles.length} Fluent file(s) changed.`
+        );
+      });
+      return exitCode;
+    }
     case "createProject":
       await engine.createProject(plan.options as Parameters<SN.FluentEngine["createProject"]>[0]);
       emit({ exitCode: 0, projectDir }, () => logger.success(`Fluent project created in ${projectDir}.`));
@@ -559,6 +845,64 @@ async function execute(
       );
       return 0;
   }
+}
+
+function topicLine(topic: SN.FluentDocTopic): string {
+  return topic.tags.length > 0 ? `${topic.name} [${topic.tags.join(", ")}]` : topic.name;
+}
+
+function summaryLines(topics: readonly SN.FluentDocTopic[]): string[] {
+  return topics.map((topic) => `${topicLine(topic)}\n  ${topic.summary}`);
+}
+
+const EXPLAIN_HINT = "Run `syncrona fluent explain <topic>` to read one topic, or `--list` to see them all.";
+
+/**
+ * Renders an `explain` result. The document and the topic index go to stdout,
+ * so they can be piped; framing lines go through the logger. Exits 1 only when
+ * nothing matched, as `now-sdk explain` does.
+ */
+function renderExplain(
+  deps: FluentCommandDeps,
+  options: { topic?: string; peek?: boolean },
+  result: SN.FluentExplainResult,
+  emit: (payload: Record<string, unknown>, human: () => void) => void
+): number {
+  const exitCode = result.kind === "none" ? 1 : 0;
+  emit({ exitCode, ...result }, () => {
+    switch (result.kind) {
+      case "list": {
+        if (result.filter !== undefined) logger.info(`Topics matching "${result.filter}":`);
+        // `--peek` adds each topic's summary to the index.
+        const lines = (topics: readonly SN.FluentDocTopic[]) =>
+          options.peek ? summaryLines(topics) : topics.map(topicLine);
+        for (const line of lines(result.topics)) deps.write(line);
+        if (result.related.length > 0) {
+          logger.info("Related:");
+          for (const line of lines(result.related)) deps.write(line);
+        }
+        if (result.topics.length === 0 && result.related.length === 0) logger.warn("No matching topics.");
+        break;
+      }
+      case "topic":
+        deps.write(result.body);
+        break;
+      case "matches":
+        if (result.topics.length > 1) logger.info(`Several topics match "${options.topic}":`);
+        for (const line of summaryLines(result.topics)) deps.write(line);
+        if (result.topics.length > 1) logger.info(EXPLAIN_HINT);
+        break;
+      case "suggestions":
+        logger.info(`No topic matches "${options.topic}" exactly; these may be related:`);
+        for (const line of summaryLines(result.topics)) deps.write(line);
+        logger.info(EXPLAIN_HINT);
+        break;
+      default:
+        logger.error(`No topic matches "${options.topic}".`);
+        logger.info("Run `syncrona fluent explain --list` to see every topic.");
+    }
+  });
+  return exitCode;
 }
 
 /**
@@ -584,8 +928,25 @@ export async function fluentCommand(
 
   try {
     const plan = planFluentAction(action, args);
+    if (args.dryRun === true && plan.method === "nativeTypes") {
+      writeDryRun(
+        deps,
+        action,
+        plan,
+        args,
+        `[dry-run] fluent types --native → read sys_db_object, sys_dictionary and sys_choice ` +
+          `(${JSON.stringify(plan.options)}) against the active instance`
+      );
+      process.exitCode = 0;
+      return;
+    }
     if (args.dryRun === true) {
-      deps.write(
+      await checkLocalPreconditions(deps, action, args);
+      writeDryRun(
+        deps,
+        action,
+        plan,
+        args,
         `[dry-run] fluent ${action} → engine.${String(plan.method)}(${JSON.stringify(plan.options)})` +
           (plan.instance ? " against the active instance" : " (local only)")
       );

@@ -4,10 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import {
   createFluentEngine,
+  defaultSdkDocsLoader,
   defaultSdkLoader,
+  explainDocs,
   findPackageVersion,
+  FluentDocsUnavailableError,
   FluentSdkMissingError,
+  isSupportedSdkVersion,
   LoadedSdk,
+  LoadedSdkDocs,
+  SdkDocFile,
   splitDiagnostics,
 } from "../src/engine";
 import type { SN } from "@syncrona/types";
@@ -40,6 +46,7 @@ function fakeSdk(overrides: Partial<Record<string, (...args: unknown[]) => unkno
     types = record("types", undefined);
     addDependency = record("addDependency", undefined);
     run = record("run", undefined);
+    moveToApp = record("moveToApp", { changedFiles: [{ getPath: () => "/p/src/claimed.now.ts" }], handledPaths: ["claimed.xml"] });
   }
   class ProjectFactory {
     static createNpmPackageName = (name: string) => `pkg-${name.toLowerCase().replace(/\s+/g, "-")}`;
@@ -146,6 +153,48 @@ describe("createFluentEngine", () => {
     expect(result).toEqual({ changedFiles: ["a.now.ts"], handledPaths: ["a.xml"] });
   });
 
+  it("reports ProjectFile results by path", async () => {
+    const sdk = fakeSdk({ transform: () => ({ changedFiles: [{ getPath: () => "/p/src/x.now.ts" }, "y.now.ts"] }) });
+    expect(await engine(sdk).transform({ mode: "complete" })).toEqual({ changedFiles: ["/p/src/x.now.ts", "y.now.ts"], handledPaths: [] });
+  });
+
+  it("moves records into the app and reports the transformed files", async () => {
+    const sdk = fakeSdk();
+    const ids = ["a1", "b2"];
+    expect(await engine(sdk).moveToApp({ sysIds: ids })).toEqual({
+      moved: true,
+      changedFiles: ["/p/src/claimed.now.ts"],
+      handledPaths: ["claimed.xml"],
+    });
+    const call = of(sdk.calls, "moveToApp")[0];
+    expect(call.args[0]).toEqual({ sysIds: ["a1", "b2"] });
+    expect((call.args[0] as { sysIds: string[] }).sysIds).not.toBe(ids);
+    expect(of(sdk.calls, "Orchestrator")[0].args).toHaveLength(2);
+  });
+
+  it("reports nothing moved when the instance claims no records, and defaults missing arrays", async () => {
+    expect(await engine(fakeSdk({ moveToApp: () => undefined })).moveToApp({ sysIds: ["a"] })).toEqual({
+      moved: false,
+      changedFiles: [],
+      handledPaths: [],
+    });
+    expect(await engine(fakeSdk({ moveToApp: () => ({}) })).moveToApp({ sysIds: ["a"] })).toEqual({
+      moved: true,
+      changedFiles: [],
+      handledPaths: [],
+    });
+  });
+
+  it("explains through the docs loader without loading the SDK API", async () => {
+    const sdk = fakeSdk();
+    const loadDocs = jest.fn(() => fakeDocs());
+    const e = createFluentEngine({ projectDir: "/p", logger }, { loadSdk: sdk.loadSdk, loadDocs });
+    const result = await e.explain({ topic: "table" });
+    expect(result).toEqual({ kind: "topic", topic: { name: "table", tags: ["fluent", "table"], summary: "Tables." }, body: "# Table\n\nTables.\n" });
+    expect(loadDocs).toHaveBeenCalledWith("/p");
+    expect(sdk.loads()).toBe(0);
+  });
+
   it("defaults missing transform result arrays", async () => {
     const sdk = fakeSdk({ transform: () => ({}) });
     expect(await engine(sdk).transform({ mode: "complete" })).toEqual({ changedFiles: [], handledPaths: [] });
@@ -181,6 +230,7 @@ describe("createFluentEngine", () => {
     ["types", (e: SN.FluentEngine) => e.types({})],
     ["dependencies", (e: SN.FluentEngine) => e.addDependency({ table: "t", ids: [], scope: "s" })],
     ["init --from", (e: SN.FluentEngine) => e.createProjectFromApp({ scopeId: "S" })],
+    ["move-to-app", (e: SN.FluentEngine) => e.moveToApp({ sysIds: ["a"] })],
   ])("refuses %s without an instance credential", async (action, call) => {
     await expect(call(engine(fakeSdk(), false))).rejects.toThrow(`fluent ${action} needs an instance and credentials.`);
   });
@@ -199,11 +249,35 @@ describe("createFluentEngine", () => {
         packageName: "pkg-my-app",
         description: "",
         templateId: "typescript.basic",
-        projectVersion: undefined,
+        projectVersion: "0.0.1",
+        sdkVersion: "4.13.3",
       },
     ]);
     await e.createProject({ name: "N", scope: "x_n", packageName: "explicit", description: "d" });
     expect((of(sdk.calls, "createProject")[1].args[1] as { packageName: string }).packageName).toBe("explicit");
+  });
+
+  it("gives a new project a version and pins the loaded SDK, falling back to the supported range", async () => {
+    const sdk = fakeSdk();
+    await engine(sdk, false).createProject({ name: "N", scope: "x_n", projectVersion: "2.1.0" });
+    expect(of(sdk.calls, "createProject")[0].args[1]).toMatchObject({ projectVersion: "2.1.0", sdkVersion: "4.13.3" });
+    (sdk.sdk as { version?: string }).version = undefined;
+    await engine(sdk, false).createProject({ name: "N", scope: "x_n" });
+    expect(of(sdk.calls, "createProject")[1].args[1]).toMatchObject({ projectVersion: "0.0.1", sdkVersion: "~4.13" });
+  });
+
+  it("warns once when the loaded SDK is outside ~4.13", async () => {
+    const warn = jest.fn();
+    const sdk = fakeSdk();
+    (sdk.sdk as { version?: string }).version = "4.14.0";
+    const e = createFluentEngine({ projectDir: "/p", logger: { ...logger, warn } }, { loadSdk: sdk.loadSdk });
+    await e.build({});
+    await e.pack({});
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("@servicenow/sdk 4.14.0 is outside the supported range ~4.13");
+    const quiet = jest.fn();
+    await createFluentEngine({ projectDir: "/p", logger: { ...logger, warn: quiet } }, { loadSdk: fakeSdk().loadSdk }).build({});
+    expect(quiet).not.toHaveBeenCalled();
   });
 
   it("falls back to the scope when the SDK cannot derive a package name", async () => {
@@ -222,8 +296,12 @@ describe("createFluentEngine", () => {
     const [first, second] = of(sdk.calls, "createProjectFromApp");
     expect(first.args[0]).toBe("/p");
     expect(first.args[1]).toBe("S1");
-    expect(first.args[3]).toEqual({});
-    expect(second.args[3]).toEqual({ packageName: "pk" });
+    // Pinned to the loaded SDK; the SDK itself would write "latest".
+    expect(first.args[3]).toEqual({ sdkVersion: "4.13.3" });
+    expect(second.args[3]).toEqual({ sdkVersion: "4.13.3", packageName: "pk" });
+    (sdk.sdk as { version?: string }).version = undefined;
+    await engine(sdk).createProjectFromApp({ scopeId: "S3" });
+    expect(of(sdk.calls, "createProjectFromApp")[2].args[3]).toEqual({ sdkVersion: "~4.13" });
   });
 
   it("reports the SDK version and logs unknown versions", async () => {
@@ -232,6 +310,110 @@ describe("createFluentEngine", () => {
     (sdk.sdk as { version?: string }).version = undefined;
     expect(await engine(sdk).sdkVersion()).toBeUndefined();
     expect(logger.debug).toHaveBeenCalledWith("fluent: loaded @servicenow/sdk (unknown version)");
+  });
+});
+
+// A docs module of our own with the SDK's shape: precise matches are exact
+// names or tags, the broad filter adds substrings of either.
+function fakeDocs(): LoadedSdkDocs & { reads: string[] } {
+  const docFiles: SdkDocFile[] = [
+    { name: "table", tags: ["fluent", "table"], summary: "Tables.", filePath: "/docs/fluent/table.md" },
+    { name: "business-rule", tags: ["fluent", "rule"], summary: "Rules.", filePath: "/docs/fluent/business-rule.md" },
+    { name: "client-script", tags: ["fluent", "script"], summary: "Client scripts.", filePath: "/docs/fluent/client-script.md" },
+    { name: "script-include", tags: ["fluent", "script"], summary: "Script includes.", filePath: "/docs/fluent/script-include.md" },
+    { name: "flow", tags: ["guides"], summary: "Flows.", filePath: "/docs/guides/flow.md" },
+  ];
+  const reads: string[] = [];
+  const precise = (d: SdkDocFile, t: string) => d.name === t || d.tags.includes(t);
+  const broad = (d: SdkDocFile, t: string) => d.name.includes(t) || d.tags.some((tag) => tag.includes(t));
+  return {
+    reads,
+    docsDir: "/docs",
+    fs: {
+      readdirSync: () => [],
+      statSync: () => ({ isDirectory: () => false }),
+      readFileSync: (p) => {
+        reads.push(p);
+        return "---\ntags: [fluent, table]\n---\n# Table\n\nTables.\n";
+      },
+    },
+    docs: {
+      scanDocs: (dir, fsArg) => {
+        expect(dir).toBe("/docs");
+        expect(typeof fsArg.readFileSync).toBe("function");
+        return docFiles;
+      },
+      parseFrontmatter: (content) => ({ tags: [], body: content.replace(/^---[\s\S]*?---\n/, "") }),
+      findDocs: (topics, t) => topics.filter((d) => precise(d, t)),
+      filterDocs: (topics, t) => topics.filter((d) => broad(d, t)),
+    },
+  };
+}
+
+describe("explainDocs", () => {
+  const names = (topics: SN.FluentDocTopic[]) => topics.map((t) => t.name);
+
+  it("lists every topic without a topic, or with a blank one", () => {
+    for (const opts of [{}, { topic: "  " }, { list: true }]) {
+      const result = explainDocs(fakeDocs(), opts);
+      expect(result.kind).toBe("list");
+      if (result.kind !== "list") throw new Error("unreachable");
+      expect(names(result.topics)).toEqual(["table", "business-rule", "client-script", "script-include", "flow"]);
+      expect(result.related).toEqual([]);
+      expect(result.filter).toBeUndefined();
+    }
+  });
+
+  it("filters the list into strong and related matches", () => {
+    const result = explainDocs(fakeDocs(), { list: true, topic: "script" });
+    expect(result).toMatchObject({ kind: "list", filter: "script" });
+    if (result.kind !== "list") throw new Error("unreachable");
+    expect(names(result.topics)).toEqual(["client-script", "script-include"]);
+    const related = explainDocs(fakeDocs(), { list: true, topic: "rule" });
+    if (related.kind !== "list") throw new Error("unreachable");
+    expect(names(related.topics)).toEqual(["business-rule"]);
+    expect(related.related).toEqual([]);
+    const weak = explainDocs(fakeDocs(), { list: true, topic: "scr" });
+    if (weak.kind !== "list") throw new Error("unreachable");
+    expect(weak.topics).toEqual([]);
+    expect(names(weak.related)).toEqual(["client-script", "script-include"]);
+  });
+
+  it("returns one precise match with its body, read through the docs fs", () => {
+    const docs = fakeDocs();
+    expect(explainDocs(docs, { topic: " table " })).toEqual({
+      kind: "topic",
+      topic: { name: "table", tags: ["fluent", "table"], summary: "Tables." },
+      body: "# Table\n\nTables.\n",
+    });
+    expect(docs.reads).toEqual(["/docs/fluent/table.md"]);
+  });
+
+  it("returns summaries for several matches, or for one with peek", () => {
+    const docs = fakeDocs();
+    const several = explainDocs(docs, { topic: "script" });
+    expect(several.kind).toBe("matches");
+    expect(names((several as { topics: SN.FluentDocTopic[] }).topics)).toEqual(["client-script", "script-include"]);
+    expect(explainDocs(docs, { topic: "flow", peek: true })).toEqual({
+      kind: "matches",
+      topics: [{ name: "flow", tags: ["guides"], summary: "Flows." }],
+    });
+    expect(docs.reads).toEqual([]);
+  });
+
+  it("suggests substring matches, and reports none when nothing matches", () => {
+    const suggestions = explainDocs(fakeDocs(), { topic: "inc" });
+    expect(suggestions.kind).toBe("suggestions");
+    expect(names((suggestions as { topics: SN.FluentDocTopic[] }).topics)).toEqual(["script-include"]);
+    expect(explainDocs(fakeDocs(), { topic: "zzz" })).toEqual({ kind: "none", topics: [] });
+  });
+
+  it("copies tags so callers cannot mutate the SDK's index", () => {
+    const docs = fakeDocs();
+    const result = explainDocs(docs, { topic: "flow", peek: true });
+    if (result.kind !== "matches") throw new Error("unreachable");
+    result.topics[0].tags.push("x");
+    expect(docs.docs.scanDocs("/docs", docs.fs)[4].tags).toEqual(["guides"]);
   });
 });
 
@@ -289,6 +471,98 @@ describe("defaultSdkLoader", () => {
     expect(typeof loaded.LazyCredential).toBe("function");
     expect(loaded.version).toBe("4.13.3");
     expect(process.env.NO_TELEMETRY).toBe("1");
+  });
+
+  it("reports an SDK without @servicenow/sdk-api/credentials as missing, not as a resolver error", () => {
+    write("package.json", JSON.stringify({ name: "proj" }));
+    write(
+      "node_modules/@servicenow/sdk/package.json",
+      JSON.stringify({ name: "@servicenow/sdk", version: "4.13.3", exports: { "./api": { default: "./dist/api/index.js" } } }),
+    );
+    write("node_modules/@servicenow/sdk/dist/api/index.js", "exports.Project = function Project() {};\n");
+    let thrown: unknown;
+    try {
+      defaultSdkLoader(tmp);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(FluentSdkMissingError);
+    expect((thrown as Error).message).toContain("@servicenow/sdk-api/credentials cannot be loaded");
+  });
+
+  it("rethrows a credentials module that fails for another reason", () => {
+    write("package.json", JSON.stringify({ name: "proj" }));
+    write(
+      "node_modules/@servicenow/sdk/package.json",
+      JSON.stringify({ name: "@servicenow/sdk", version: "4.13.3", exports: { "./api": { default: "./dist/api/index.js" } } }),
+    );
+    write("node_modules/@servicenow/sdk/dist/api/index.js", "exports.Project = function Project() {};\n");
+    write(
+      "node_modules/@servicenow/sdk-api/package.json",
+      JSON.stringify({ name: "@servicenow/sdk-api", exports: { "./credentials": "./credentials.js" } }),
+    );
+    write("node_modules/@servicenow/sdk-api/credentials.js", "throw new Error('credentials exploded');\n");
+    expect(() => defaultSdkLoader(tmp)).toThrow("credentials exploded");
+  });
+
+  it("isSupportedSdkVersion accepts 4.13.x only", () => {
+    expect(["4.13.0", "4.13.3", " 4.13.10 ", "4.13.1-beta.2"].every(isSupportedSdkVersion)).toBe(true);
+    expect(["4.12.2", "4.14.0", "5.13.0", "4.130.1", "latest"].some(isSupportedSdkVersion)).toBe(false);
+  });
+
+  function writeSdk(options: { name?: string; docs?: boolean; docsModule?: boolean } = {}) {
+    write("package.json", JSON.stringify({ name: "proj" }));
+    write(
+      "node_modules/@servicenow/sdk/package.json",
+      JSON.stringify({
+        name: options.name ?? "@servicenow/sdk",
+        version: "4.13.3",
+        exports: { "./api": { default: "./dist/api/index.js" } },
+      }),
+    );
+    write("node_modules/@servicenow/sdk/dist/api/index.js", "throw new Error('the full API must not load for explain');\n");
+    if (options.docs ?? true) write("node_modules/@servicenow/sdk/docs/guides/flow.md", "---\ntags: [guides]\n---\n# Flow\n");
+    const exportsMap: Record<string, string> = { "./credentials": "./credentials.js" };
+    if (options.docsModule ?? true) {
+      exportsMap["./docs"] = "./docs.js";
+      write(
+        "node_modules/@servicenow/sdk-api/docs.js",
+        "exports.scanDocs = (dir, fs) => fs.readdirSync(dir).map((name) => ({ name, dir: fs.statSync(dir + '/' + name).isDirectory() }));\n" +
+          "exports.read = (fs, p) => fs.readFileSync(p, 'utf-8');\n",
+      );
+    }
+    write("node_modules/@servicenow/sdk-api/package.json", JSON.stringify({ name: "@servicenow/sdk-api", exports: exportsMap }));
+  }
+
+  it("locates the SDK's bundled docs and lean docs module without loading the API", () => {
+    writeSdk();
+    const loaded = defaultSdkDocsLoader(tmp);
+    const sdkRoot = fs.realpathSync(path.join(tmp, "node_modules/@servicenow/sdk"));
+    expect(fs.realpathSync(loaded.docsDir)).toBe(path.join(sdkRoot, "docs"));
+    const scanned = loaded.docs.scanDocs(loaded.docsDir, loaded.fs) as unknown as { name: string; dir: boolean }[];
+    expect(scanned).toEqual([{ name: "guides", dir: true }]);
+    const read = (loaded.docs as unknown as { read(fs: unknown, p: string): string }).read;
+    expect(read(loaded.fs, path.join(loaded.docsDir, "guides/flow.md"))).toContain("# Flow");
+  });
+
+  it("is the engine's default docs loader", async () => {
+    const e = createFluentEngine({ projectDir: tmp, logger });
+    await expect(e.explain({})).rejects.toBeInstanceOf(FluentSdkMissingError);
+  });
+
+  it.each([
+    ["no docs directory", { docs: false }],
+    ["no docs module", { docsModule: false }],
+    ["no @servicenow/sdk package root", { name: "not-the-sdk" }],
+  ])("explains that an SDK with %s cannot serve explain", (_label, options) => {
+    writeSdk(options);
+    expect(() => defaultSdkDocsLoader(tmp)).toThrow(FluentDocsUnavailableError);
+    expect(() => defaultSdkDocsLoader(tmp)).toThrow(/does not bundle its documentation/);
+    try {
+      defaultSdkDocsLoader(tmp);
+    } catch (e) {
+      expect((e as FluentDocsUnavailableError).code).toBe("FLUENT_DOCS_UNAVAILABLE");
+    }
   });
 
   it("findPackageVersion skips unreadable manifests and returns undefined when no ancestor matches", () => {
