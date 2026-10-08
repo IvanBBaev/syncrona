@@ -1868,7 +1868,9 @@ export async function buildManifestFromTableAPI(
     // empty manifest that would overwrite a previously good one.
     throw new Error(
       `No tables discovered for scope "${scopeName}". ` +
-        "Refusing to build an empty manifest (check connectivity, credentials, and ACLs)."
+        "Refusing to build an empty manifest (check connectivity, credentials, and ACLs). " +
+        "If the scope is new and owns no records yet, there is nothing to download: create a record " +
+        "in it on the instance first, or create the application with `syncrona init --new`, which binds an empty scope."
     );
   }
   // R4: an opted-in table is enumerated even when the sys_metadata sweep did
