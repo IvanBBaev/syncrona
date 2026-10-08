@@ -16,6 +16,7 @@ export {};
 let cicdCommand: typeof import("../cicdCommand.js").cicdCommand;
 let buildCicdRequest: typeof import("../cicdCommand.js").buildCicdRequest;
 let extractCicdErrorMessage: typeof import("../cicdCommand.js").extractCicdErrorMessage;
+let atfSuiteVerdict: typeof import("../cicdCommand.js").atfSuiteVerdict;
 let logger: typeof import("../Logger.js").logger;
 
 type Deps = NonNullable<Parameters<typeof cicdCommand>[1]>;
@@ -104,7 +105,7 @@ const run = async (
 };
 
 beforeAll(async () => {
-  ({ cicdCommand, buildCicdRequest, extractCicdErrorMessage } = await import("../cicdCommand.js"));
+  ({ cicdCommand, buildCicdRequest, extractCicdErrorMessage, atfSuiteVerdict } = await import("../cicdCommand.js"));
   ({ logger } = await import("../Logger.js"));
 });
 
@@ -701,13 +702,14 @@ describe("cicd ATF verdict allow-list", () => {
     });
     return run(h, "run-test", { testId: "t1" });
   };
-  const zero = { rolledup_test_failure_count: 0, rolledup_test_error_count: 0 };
+  // Zero failures and errors over a suite that did run tests (a stated success count).
+  const zero = { rolledup_test_success_count: 1, rolledup_test_failure_count: 0, rolledup_test_error_count: 0 };
 
   it.each([
     ["success", { test_suite_status: "success", ...zero }],
     ["SUCCESS with whitespace", { test_suite_status: "  SUCCESS ", ...zero }],
     ["success_with_warnings", { test_suite_status: "success_with_warnings", ...zero }],
-    ["digit-string zero counts", { test_suite_status: "success", rolledup_test_failure_count: "0", rolledup_test_error_count: " 0 " }],
+    ["digit-string counts", { test_suite_status: "success", rolledup_test_success_count: "3", rolledup_test_failure_count: "0", rolledup_test_error_count: " 0 " }],
   ])("suite %s exits 0", async (_label, result) => {
     expect(await suiteRun(result)).toBe(0);
   });
@@ -737,10 +739,42 @@ describe("cicd ATF verdict allow-list", () => {
     ["a passing status and a fractional count", { test_suite_status: "success", rolledup_test_failure_count: 0.5, rolledup_test_error_count: 0 }],
     ["a passing status and a negative count", { test_suite_status: "success", rolledup_test_failure_count: -1, rolledup_test_error_count: 0 }],
     ["a non-string status", { test_suite_status: 1, ...zero }],
+    ["a passing status and no success count", { test_suite_status: "success", rolledup_test_failure_count: 0, rolledup_test_error_count: 0 }],
+    ['a passing status and a success count of "n/a"', { test_suite_status: "success", ...zero, rolledup_test_success_count: "n/a" }],
+    ["zero tests under a non-ServiceNow status", { test_suite_status: "canceled", ...zero, rolledup_test_success_count: 0 }],
   ])("suite with %s exits 1 (unknown, not a pass)", async (_label, result) => {
     expect(await suiteRun(result)).toBe(1);
     expect(errors[0]).toMatch(/does not clearly report a pass or a failure/);
     expect(errors[0]).toMatch(/--progress-id prog-1/);
+  });
+
+  it.each([
+    ["success", "success"],
+    ["success_with_warnings", "success_with_warnings"],
+    ["every test skipped", "success"],
+  ])("a passing suite that ran zero tests (%s) exits 2, not 0", async (label, status) => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () =>
+        ok({
+          test_suite_status: status,
+          rolledup_test_success_count: 0,
+          rolledup_test_failure_count: 0,
+          rolledup_test_error_count: 0,
+          ...(label === "every test skipped" ? { rolledup_test_skip_count: 3 } : {}),
+        }),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
+    expect(warnings).toEqual([
+      `Suite ${status}: 0 passed, 0 failed, 0 errored, ${label === "every test skipped" ? 3 : 0} skipped`,
+    ]);
+    expect(errors).toEqual(["cicd run-suite finished with failures: the suite ran no tests, which is not a pass"]);
+  });
+
+  it("verdict functions agree with the run on the zero-tests shape", () => {
+    expect(atfSuiteVerdict({ test_suite_status: "success", ...zero, rolledup_test_success_count: 0 })).toBe("no_tests");
+    expect(atfSuiteVerdict({ test_suite_status: "failure", ...zero, rolledup_test_success_count: 0 })).toBe("failed");
+    expect(atfSuiteVerdict({ test_suite_status: "success", ...zero })).toBe("passed");
   });
 
   it.each([
@@ -806,13 +840,25 @@ describe("cicd --progress-id tracker-kind binding", () => {
   });
 
   it.each(["run-suite", "run-test"])(
-    "does not report a successful app-repo tracker resumed as %s as a pass",
+    "refuses an app-repo tracker resumed as %s, whatever its status",
     async (action) => {
-      const h = harness({ progress: [() => progress("2")] });
-      expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
-      expect(errors[0]).toMatch(/links no ATF result record/);
+      for (const [status, label] of [["2", "Successful"], ["3", "Failed"], ["4", "Canceled"]]) {
+        errors.length = 0;
+        const h = harness({ progress: [() => progress(status)] });
+        // Exit 1 (could not finish), never 0 (a pass) nor 2 (failing tests).
+        expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
+        expect(errors[0]).toMatch(
+          new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended ${label}\\)`)
+        );
+        expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
+      }
     }
   );
+
+  it("keeps exit 2 for a dispatched ATF run whose tracker failed before linking a result", async () => {
+    const h = harness({ progress: [() => progress("3")] });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
+  });
 
   it("warns that a resumed app-repo action is taken on the caller's word", async () => {
     const h = harness({ progress: [() => progress("2")] });

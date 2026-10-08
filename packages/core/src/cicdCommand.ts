@@ -39,13 +39,14 @@
  * still given, because it decides which result record an ATF tracker links to;
  * the dispatch flags are ignored. A tracker that links an ATF result is refused
  * (exit 1) when resumed as install/publish/rollback, and an ATF action over a
- * tracker that links no result is never a pass. The tracker does not record
+ * tracker that links no result is refused (exit 1) on a resume, never read as
+ * a test failure or a pass. The tracker does not record
  * which app-repo action started it, so install, publish and rollback cannot be
  * told apart on a resume: that one is taken on the caller's word, with a warning.
  *
  * The ATF verdict is an allow-list ({@link ATF_PASSING_STATUSES}): a successful
  * tracker over a result that is neither clearly passing nor clearly failing is
- * exit 1, never exit 0.
+ * exit 1, never exit 0, and a suite that executed zero tests is exit 2.
  */
 import type { Sync } from "@syncrona/types";
 import type { AxiosResponse } from "axios";
@@ -495,10 +496,13 @@ export const ATF_PASSING_STATUSES: ReadonlySet<string> = new Set(["success", "su
 export const ATF_FAILING_STATUSES: ReadonlySet<string> = new Set(["failure", "error"]);
 
 /**
- * `passed` and `failed` are clear answers; `unknown` is a readable record that
- * does not clearly say either, which a successful tracker turns into exit 1.
+ * `passed` and `failed` are clear answers; `no_tests` is a suite that reports a
+ * pass but executed zero tests, which is not a pass and exits 2 like a failure
+ * (the instance answered clearly, so reading it again would not change it);
+ * `unknown` is a readable record that does not clearly say either, which a
+ * successful tracker turns into exit 1.
  */
-export type AtfVerdict = "passed" | "failed" | "unknown";
+export type AtfVerdict = "passed" | "failed" | "no_tests" | "unknown";
 
 /** A status string trimmed and lower-cased, or undefined when there is none. */
 function normalizedAtfStatus(value: unknown): string | undefined {
@@ -523,8 +527,11 @@ export function strictAtfCount(value: unknown): number | undefined {
 /**
  * The verdict of a suite result: `failed` when a failure or error count is
  * positive or the status is a failing one; `passed` only when the status is a
- * passing one AND both the failure and the error count are stated as 0; every
- * other shape is `unknown` (fail-closed: a missing count is not a zero).
+ * passing one, both the failure and the error count are stated as 0, AND the
+ * success count is stated as at least 1; `no_tests` when that passing shape
+ * states a success count of 0 (a suite that executed nothing — empty, or every
+ * test skipped — proves nothing); every other shape is `unknown` (fail-closed:
+ * a missing count is not a zero, and a missing success count is not a run).
  */
 export function atfSuiteVerdict(body: JsonObject): AtfVerdict {
   const status = normalizedAtfStatus(body.test_suite_status);
@@ -534,7 +541,9 @@ export function atfSuiteVerdict(body: JsonObject): AtfVerdict {
     return "failed";
   }
   if (status !== undefined && ATF_PASSING_STATUSES.has(status) && failed === 0 && errored === 0) {
-    return "passed";
+    const succeeded = strictAtfCount(body.rolledup_test_success_count);
+    if (succeeded === 0) return "no_tests";
+    if (succeeded !== undefined) return "passed";
   }
   return "unknown";
 }
@@ -661,13 +670,21 @@ async function runAction(
   // tracker in both directions before any verdict. A tracker that links an ATF
   // result is a test run: reporting it as an app-repo action would skip the
   // pass/fail read, whatever its status. The other direction (an app tracker
-  // resumed as an ATF action) links no result, which the result read below
-  // refuses to treat as a pass. Install, publish and rollback trackers look the
+  // resumed as an ATF action) links no result: whatever its status, it says
+  // nothing about tests, so a failed install must not read as failing tests nor
+  // a successful one as a pass. Install, publish and rollback trackers look the
   // same, so a resumed app action is reported on the caller's word (warned).
   if (resumeId && !isAtfAction && trackerLinksAtfResult(progress)) {
     throw new CicdCliError(
       `progress ${progressId} links an ATF result, so it looks like a test run rather than ${action}. ` +
         "Resume it with the run-suite or run-test action to read whether the tests passed."
+    );
+  }
+  if (resumeId && isAtfAction && !trackerLinksAtfResult(progress)) {
+    throw new CicdCliError(
+      `progress ${progressId} links no ATF result record, so it looks like an app-repo run rather than ${action} ` +
+        `(it ended ${statusLabel(progress)}). Resume it with the install, publish or rollback action that started it; ` +
+        "it does not say whether any tests passed."
     );
   }
   const read = isAtfAction ? await fetchAtfOutcome(client, action, progress) : undefined;
@@ -730,7 +747,11 @@ async function runAction(
   } else {
     const reason =
       extractCicdErrorMessage({ result: progress }) ??
-      (status === CicdProgressStatus.SUCCESSFUL ? "ATF reported failing tests" : statusLabel(progress));
+      (status !== CicdProgressStatus.SUCCESSFUL
+        ? statusLabel(progress)
+        : atf?.verdict === "no_tests"
+          ? "the suite ran no tests, which is not a pass"
+          : "ATF reported failing tests");
     logger.error(`cicd ${action} finished with failures: ${reason}`);
   }
   return exitCode;
