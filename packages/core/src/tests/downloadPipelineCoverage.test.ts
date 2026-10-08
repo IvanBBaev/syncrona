@@ -41,6 +41,7 @@ const mockBuildBulkDownloadFromTableAPI = jest.fn();
 const loggerError = jest.fn();
 const loggerInfo = jest.fn();
 const loggerDebug = jest.fn();
+const loggerWarn = jest.fn();
 
 jest.unstable_mockModule("../FileUtils.js", () => ({
   createDirRecursively,
@@ -107,7 +108,7 @@ jest.unstable_mockModule("../Logger.js", () => ({
     debug: (...a: unknown[]) => loggerDebug(...a),
     error: (...a: unknown[]) => loggerError(...a),
     success: jest.fn(),
-    warn: jest.fn(),
+    warn: (...a: unknown[]) => loggerWarn(...a),
   },
 }));
 
@@ -181,6 +182,42 @@ describe("syncManifest error handling", () => {
     expect(result).toBe(false);
     // The stringified message is logged verbatim.
     expect(loggerError).toHaveBeenCalledWith("plain string failure");
+  });
+});
+
+describe("syncManifest withdrawn field files (17c)", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    const { mkdtemp } = await import("fs/promises");
+    const os = await import("os");
+    root = await mkdtemp(path.join(os.tmpdir(), "sync-withdrawn-"));
+  });
+
+  afterEach(async () => {
+    const { rm } = await import("fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("warns about the value file of a field the filter now drops and keeps it", async () => {
+    const { mkdir, writeFile, readFile } = await import("fs/promises");
+    const before = makeManifest();
+    before.tables.sys_script.records.recA.files.push({ name: "u_token", type: "txt" } as SN.File);
+    const stale = path.join(root, "sys_script", "recA", "u_token.txt");
+    await mkdir(path.dirname(stale), { recursive: true });
+    await writeFile(stale, "s3cr3t");
+    getSourcePath.mockReturnValue(root);
+    getManifest.mockResolvedValue(before);
+    getManifestApi.mockResolvedValue({ data: { result: makeManifest() } });
+
+    const { syncManifest } = await import("../appUtils.js");
+    const result = await syncManifest();
+
+    expect(result).toBe(true);
+    const warned = loggerWarn.mock.calls.map((call) => String(call[0]));
+    expect(warned.filter((m) => m.includes(stale))).toHaveLength(1);
+    expect(await readFile(stale, "utf8")).toBe("s3cr3t");
+    getSourcePath.mockReturnValue("/src");
   });
 });
 

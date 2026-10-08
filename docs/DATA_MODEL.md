@@ -116,7 +116,13 @@ warning names it once per build. When the table's parent hierarchy cannot be
 read (a `sys_db_object` lookup fails, or an ACL hides the row), a column the
 table inherits has no dictionary row either; it is kept the same way, and the
 warning says the parent table hierarchy could not be read and names the table
-where the walk stopped. A column that does not exist leaves the table reported incomplete on
+where the walk stopped. A column dropped this way that an earlier version had
+already written (or one you took out of `includes`) keeps its file on disk:
+`refresh` and `download` never delete it, but the run that drops the column warns
+once, naming each such file, that it is no longer synced and can be deleted.
+`syncrona repair` lists those files as orphans, and `repair --apply --prune`
+removes them only when git holds them committed and unchanged. If the file held
+a credential, delete it and rotate the credential. A column that does not exist leaves the table reported incomplete on
 `refresh` and `download`. `tableOptions.<table>.metaFields` replaces discovery for a
 table, just as it does for any other sidecar.
 
