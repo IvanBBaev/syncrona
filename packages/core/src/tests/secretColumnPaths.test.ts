@@ -161,7 +161,12 @@ const fake = {
     if (table === "sys_metadata") {
       return ok([{ sys_class_name: "x_demo_cred" }, { sys_class_name: "sys_properties" }]);
     }
-    if (table === "sys_db_object") return ok([]);
+    if (table === "sys_db_object") {
+      // A readable root table for the parent lookup; nothing for the scope
+      // enumeration (the build falls back to sys_metadata).
+      const name = /^name=([^^]+)$/.exec(q)?.[1];
+      return ok(name ? [{ name }] : []);
+    }
     if (table === "sys_dictionary") return ok(dictionaryRows(q));
     return ok(recordRows(table, q, String(fields ?? "")));
   }),

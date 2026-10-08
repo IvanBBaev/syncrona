@@ -504,13 +504,16 @@ const readColumnTypes = async (
  * selects columns, it does not lift the rule that a credential, journal or
  * binary value never reaches the working tree — and one without a readable
  * type is kept with a warning. `types` is undefined when the lookup itself
- * failed; the caller has warned, and every entry is kept.
+ * failed; the caller has warned, and every entry is kept. `untypedReason` is
+ * what the warning names: the hierarchy walk's failure when it was cut short
+ * (an inherited column then simply has no row), NO_DICTIONARY_TYPE otherwise.
  */
 const appendIncludedFields = (
   files: SN.File[],
   tableName: string,
   includes: Sync.TablePropMap,
-  types: ReadonlyMap<string, string> | undefined
+  types: ReadonlyMap<string, string> | undefined,
+  untypedReason: string
 ): void => {
   if (!(tableName in includes) || typeof includes[tableName] !== "object") {
     return;
@@ -534,8 +537,12 @@ const appendIncludedFields = (
     }
     files.push({ name: fieldName, type: fieldConfig.type || ("txt" as SN.FileType) });
   }
-  warnUntypedIncludes(tableName, untyped, NO_DICTIONARY_TYPE);
+  warnUntypedIncludes(tableName, untyped, untypedReason);
 };
+
+/** The reason an included column with no readable type is named with. */
+const untypedReasonFor = (hierarchy: TableHierarchy): string =>
+  hierarchy.unreadable ?? NO_DICTIONARY_TYPE;
 
 async function getFileFieldsForTable(
   client: SNClient,
@@ -554,9 +561,9 @@ async function getFileFieldsForTable(
       return [{ name: "inputs.script", type: "js" as SN.FileType }];
     }
 
-    const hierarchyTableNames = await getTableHierarchyTableNames(client, tableName);
-    onHierarchy?.(hierarchyTableNames);
-    const tableNameQuery = hierarchyTableNames
+    const hierarchy = await readTableHierarchy(client, tableName);
+    onHierarchy?.(hierarchy.tables);
+    const tableNameQuery = hierarchy.tables
       .map((name) => `name=${name}`)
       .join("^OR");
 
@@ -613,19 +620,12 @@ async function getFileFieldsForTable(
         warnUntypedIncludes(tableName, pendingIncludes, e instanceof Error ? e.message : String(e));
       }
     }
-    appendIncludedFields(files, tableName, includes, includeTypes);
+    appendIncludedFields(files, tableName, includes, includeTypes, untypedReasonFor(hierarchy));
 
     if (files.length === 0 && shouldMaterializeDataFieldsForTable(tableName)) {
       // Data-only tables may have no script/css/xml/html fields; fall back to text fields
       // so scoped records still materialize locally instead of producing an empty scope.
-      return getTextFieldsForTable(
-        client,
-        tableName,
-        includes,
-        excludes,
-        hierarchyTableNames,
-        onSkip
-      );
+      return getTextFieldsForTable(client, tableName, includes, excludes, hierarchy, onSkip);
     }
 
     return files;
@@ -649,12 +649,11 @@ async function getTextFieldsForTable(
   tableName: string,
   includes: Sync.TablePropMap,
   excludes: Sync.TablePropMap,
-  hierarchyTableNames?: string[],
+  hierarchy: TableHierarchy,
   onSkip?: () => void
 ): Promise<SN.File[]> {
   try {
-    const hierarchy = hierarchyTableNames || await getTableHierarchyTableNames(client, tableName);
-    const tableNameQuery = hierarchy.map((name) => `name=${name}`).join("^OR");
+    const tableNameQuery = hierarchy.tables.map((name) => `name=${name}`).join("^OR");
     let query = `${tableNameQuery}^elementISNOTEMPTY`;
 
     if (tableName in excludes && typeof excludes[tableName] === "object") {
@@ -700,7 +699,7 @@ async function getTextFieldsForTable(
     }
 
     // An `includes` entry must not re-add a column the filter just dropped.
-    appendIncludedFields(files, tableName, includes, types);
+    appendIncludedFields(files, tableName, includes, types, untypedReasonFor(hierarchy));
 
     return files;
   } catch (e) {
@@ -883,7 +882,13 @@ async function getMetaFieldsForTable(
  * change mid-run, but it can change between runs, and a long-lived `dev`
  * session must not pin a stale answer forever.
  */
-const tableParentCache = new Map<string, Promise<string | undefined>>();
+/** One sys_db_object parent lookup: `found` is false when no row came back. */
+interface TableParentLookup {
+  found: boolean;
+  parent?: string;
+}
+
+const tableParentCache = new Map<string, Promise<TableParentLookup>>();
 
 /** Drops the memo. Called at the start of every manifest build and enrichment. */
 export const resetTableHierarchyCache = (): void => {
@@ -892,15 +897,15 @@ export const resetTableHierarchyCache = (): void => {
   warnedIncludes.clear();
 };
 
-async function getTableParentName(
+async function lookupTableParent(
   client: SNClient,
   tableName: string
-): Promise<string | undefined> {
+): Promise<TableParentLookup> {
   const cached = tableParentCache.get(tableName);
   if (cached) {
     return cached;
   }
-  const pending = (async () => {
+  const pending = (async (): Promise<TableParentLookup> => {
     // Deliberately unpaged: `name` is unique in sys_db_object, so this is a
     // single-row lookup of one table's parent, not an enumeration.
     const res = await client.tableAPIGet(
@@ -909,7 +914,8 @@ async function getTableParentName(
       "name,super_class.name",
       1
     );
-    return extractResult(res.data)[0]?.["super_class.name"];
+    const row = extractResult(res.data)[0];
+    return { found: row !== undefined, parent: row?.["super_class.name"] };
   })();
   tableParentCache.set(tableName, pending);
   try {
@@ -922,13 +928,38 @@ async function getTableParentName(
   }
 }
 
-async function getTableHierarchyTableNames(
+/**
+ * The parent of `tableName`, or undefined for a root table — and for a table
+ * whose sys_db_object row did not come back (lookupTableParent tells the two
+ * apart).
+ */
+async function getTableParentName(
   client: SNClient,
   tableName: string
-): Promise<string[]> {
+): Promise<string | undefined> {
+  return (await lookupTableParent(client, tableName)).parent;
+}
+
+/**
+ * A table and its ancestors, nearest first. `unreadable` is set when the walk
+ * stopped short: a parent lookup threw, or answered with no row (what an ACL
+ * on sys_db_object looks like). `tables` is then a prefix of the real
+ * hierarchy, and a column inherited from a table past the cut has no
+ * dictionary row in any query built from it.
+ */
+interface TableHierarchy {
+  tables: string[];
+  unreadable?: string;
+}
+
+const unreadableHierarchy = (tableName: string, detail: string): string =>
+  `the parent table hierarchy of ${tableName} could not be read: ${detail}`;
+
+async function readTableHierarchy(client: SNClient, tableName: string): Promise<TableHierarchy> {
   const visited = new Set<string>();
   const queue: string[] = [tableName];
   const ordered: string[] = [];
+  let unreadable: string | undefined;
   let depth = 0;
 
   while (queue.length > 0 && depth < MAX_TABLE_HIERARCHY_DEPTH) {
@@ -940,18 +971,29 @@ async function getTableHierarchyTableNames(
     ordered.push(current);
 
     try {
-      const parentName = await getTableParentName(client, current);
-      if (parentName && !visited.has(parentName)) {
-        queue.push(parentName);
+      const lookup = await lookupTableParent(client, current);
+      if (!lookup.found) {
+        unreadable = unreadableHierarchy(current, `no sys_db_object row for ${current}`);
+      } else if (lookup.parent && !visited.has(lookup.parent)) {
+        queue.push(lookup.parent);
       }
-    } catch {
-      // If hierarchy lookup fails, continue with already discovered tables.
+    } catch (e) {
+      // Continue with the tables already discovered — but record that the walk
+      // was cut short, so an inherited column is not reported as typeless.
+      unreadable = unreadableHierarchy(current, e instanceof Error ? e.message : String(e));
     }
 
     depth += 1;
   }
 
-  return ordered.length > 0 ? ordered : [tableName];
+  return { tables: ordered.length > 0 ? ordered : [tableName], unreadable };
+}
+
+async function getTableHierarchyTableNames(
+  client: SNClient,
+  tableName: string
+): Promise<string[]> {
+  return (await readTableHierarchy(client, tableName)).tables;
 }
 
 // ─── Records for a single table ──────────────────────────────────────────────
@@ -2115,9 +2157,11 @@ export async function applyIncludeTypeRulesToManifest(
     resolveManifestTableConcurrency(config),
     async ({ tableName, records, columns }) => {
       let types: Map<string, string>;
+      let untypedReason: string;
       try {
-        const hierarchy = await getTableHierarchyTableNames(client, tableName);
-        const tableNameQuery = hierarchy.map((name) => `name=${name}`).join("^OR");
+        const hierarchy = await readTableHierarchy(client, tableName);
+        untypedReason = untypedReasonFor(hierarchy);
+        const tableNameQuery = hierarchy.tables.map((name) => `name=${name}`).join("^OR");
         types = await readColumnTypes(client, tableName, tableNameQuery, columns);
       } catch (e) {
         warnUntypedIncludes(tableName, columns, e instanceof Error ? e.message : String(e));
@@ -2135,7 +2179,7 @@ export async function applyIncludeTypeRulesToManifest(
           untyped.push(column);
         }
       }
-      warnUntypedIncludes(tableName, untyped, NO_DICTIONARY_TYPE);
+      warnUntypedIncludes(tableName, untyped, untypedReason);
       if (unsafe.size === 0) {
         return;
       }

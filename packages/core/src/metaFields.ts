@@ -235,8 +235,16 @@ export const isMetaFieldCandidate = (
  * every type filter keyed on it failed open: a `password2` or `journal` column
  * passed the sidecar filter, and a `script` field fell back to `.txt`. Every
  * consumer of the column goes through this instead of `String()`.
+ *
+ * Normalised (trimmed, lower-cased) as well: every type set this module and
+ * fieldMap key on is lower-case, and an exact compare let a `Password2` or a
+ * ` password2 ` cell — an import, a customised dictionary, a proxy that rewrites
+ * the value — read as an ordinary string column, so the credential was kept
+ * without a word. classifyColumn, the sidecar filter and the file-type map all
+ * read the type through here, so all of them get the same answer.
  */
-export const dictionaryInternalType = (raw: unknown): string => metaValueText(raw).trim();
+export const dictionaryInternalType = (raw: unknown): string =>
+  metaValueText(raw).trim().toLowerCase();
 
 /**
  * Own properties only.
@@ -367,14 +375,16 @@ export const metaSecretColumns = (
  *    it. Written only from a Table API read that carries the rule's classifier,
  *    and then per row as metaSecretColumns decides.
  *  - "unknown" — its dictionary type could not be read (no row, or an empty
- *    type). Kept, and the caller says so: dropping it would make `includes`
- *    unusable where sys_dictionary reads are restricted.
+ *    type — including a column inherited from an ancestor the sys_db_object
+ *    walk could not reach). Kept, and the caller says so and why: dropping it
+ *    would make `includes` unusable where sys_dictionary reads are restricted.
  *  - "safe" — anything else.
  *
  * The one column-level decision: the Table API manifest build, the
  * scoped-endpoint post-processing, the `includes` filter, init's content
  * re-read and the download fetcher all route through it. `dictType` is the raw
- * `sys_dictionary.internal_type` cell; a caller with no dictionary row passes
+ * `sys_dictionary.internal_type` cell, compared after dictionaryInternalType
+ * has trimmed and lower-cased it; a caller with no dictionary row passes
  * nothing, and only the record-level rule can then be told apart.
  */
 export type ColumnClass = "unsafe" | "secret" | "unknown" | "safe";

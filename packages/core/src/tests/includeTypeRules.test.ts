@@ -8,7 +8,7 @@ import { jest } from "@jest/globals";
 import { SN, Sync } from "@syncrona/types";
 import { applyIncludeTypeRulesToManifest, buildManifestFromTableAPI } from "../manifestBuilder.js";
 import { applyRecordSecretRulesToContent } from "../downloadPipeline.js";
-import { classifyColumn } from "../metaFields.js";
+import { classifyColumn, isMetaFieldCandidate } from "../metaFields.js";
 import { logger } from "../Logger.js";
 
 type Row = Record<string, unknown>;
@@ -340,5 +340,180 @@ describe("applyRecordSecretRulesToContent: a re-read that returns fewer rows", (
     }));
     await applyRecordSecretRulesToContent(manifest(), createClient(tableAPIGet), {});
     expect(warnings().filter((m) => m.startsWith("Could not re-read"))).toEqual([]);
+  });
+});
+
+describe("17a: the dictionary type is compared case- and whitespace-insensitively", () => {
+  it.each<[unknown, string]>([
+    ["Password2", "unsafe"],
+    [" password2 ", "unsafe"],
+    [ref("PASSWORD"), "unsafe"],
+    [ref(" Journal_Input\t"), "unsafe"],
+    ["User_Image", "unsafe"],
+    ["String", "safe"],
+  ])("x_demo_cred.u_token typed %j is %s", (type, expected) => {
+    expect(classifyColumn("x_demo_cred", "u_token", type)).toBe(expected);
+  });
+
+  it("a mixed-case credential type never reaches the sidecar either", () => {
+    expect(isMetaFieldCandidate("u_token", ref("Password2"))).toBe(false);
+    expect(isMetaFieldCandidate("u_token", " password2 ")).toBe(false);
+  });
+
+  it("the scoped-endpoint filter drops an include typed 'Password2'", async () => {
+    const tableAPIGet = fakeInstance({
+      includeLookup: () => [
+        { element: "u_token", internal_type: ref("Password2") },
+        { element: "u_label", internal_type: ref("string") },
+      ],
+    });
+    const manifest = {
+      scope: "x_demo",
+      tables: {
+        x_demo_cred: {
+          records: {
+            r: {
+              sys_id: "c1",
+              name: "r",
+              files: [
+                { name: "u_token", type: "txt", content: "SECRET" },
+                { name: "u_label", type: "txt", content: "label" },
+              ],
+            },
+          },
+        },
+      },
+    } as never as SN.AppManifest;
+    const config = {
+      includes: { x_demo_cred: { u_token: { type: "txt" }, u_label: { type: "txt" } } },
+      dataModelTables: undefined,
+    } as never;
+    await applyIncludeTypeRulesToManifest(manifest, createClient(tableAPIGet), config);
+    expect(manifest.tables.x_demo_cred.records.r.files.map((f) => f.name)).toEqual(["u_label"]);
+    expect(JSON.stringify(manifest)).not.toContain("SECRET");
+    // Named in its normalised form: the type the rule matched.
+    expect(warnings()).toEqual([unsafeWarning("u_token", "password2")]);
+  });
+
+  it("the Table API file-field path keeps a mixed-case script type as a .js file", async () => {
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(fakeInstance({ fileColumns: [{ element: "script", internal_type: ref("Script") }], records: { x_demo_cred: RECORDS } })),
+      { includes: {}, excludes: {}, tableOptions: {}, meta: false } as never
+    );
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files).toEqual([
+      expect.objectContaining({ name: "script", type: "js" }),
+    ]);
+  });
+});
+
+describe("17b: an unreadable parent hierarchy is named as the reason a type is unknown", () => {
+  // x_demo_cred extends x_demo_base, which defines u_token as password2. With
+  // the parent unreadable the dictionary query never reaches x_demo_base.
+  type ParentLookup = (name: string) => Row[];
+  const hierarchyInstance = (parentLookup: ParentLookup, dataFields = false): Get => {
+    const tableAPIGet: Get = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string) => {
+      const q = String(query);
+      if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
+      if (table === "sys_metadata") {
+        if (q.includes("sys_class_name=")) return { data: { result: [] } };
+        return { data: { result: [{ sys_class_name: "x_demo_cred" }] } };
+      }
+      if (table === "sys_db_object") {
+        return { data: { result: parentLookup(/name=([^^]+)/.exec(q)?.[1] ?? "") } };
+      }
+      if (table === "sys_dictionary") {
+        if (q.includes("internal_type=")) return { data: { result: dataFields ? [] : SCRIPT_ONLY } };
+        const rows: Row[] = [{ element: "u_label", internal_type: ref("string") }];
+        // u_token is defined on the parent only.
+        if (q.includes("name=x_demo_base")) rows.push({ element: "u_token", internal_type: ref("password2") });
+        if (!q.includes("elementIN")) return { data: { result: rows } };
+        return { data: { result: rows.filter((r) => q.includes(String(r.element))) } };
+      }
+      return { data: { result: RECORDS } };
+    });
+    return tableAPIGet;
+  };
+  const readableParent: ParentLookup = (name) =>
+    name === "x_demo_cred" ? [{ name, "super_class.name": "x_demo_base" }] : [{ name }];
+  const includes = { x_demo_cred: { u_token: { type: "txt" }, u_label: { type: "txt" } } };
+  const scopedManifest = (): SN.AppManifest =>
+    ({
+      scope: "x_demo",
+      tables: {
+        x_demo_cred: {
+          records: {
+            r: {
+              sys_id: "c1",
+              name: "r",
+              files: [
+                { name: "u_token", type: "txt", content: "T" },
+                { name: "u_label", type: "txt", content: "L" },
+              ],
+            },
+          },
+        },
+      },
+    }) as never;
+  const scopedConfig = { includes, dataModelTables: undefined } as never;
+  const buildConfigFor = { includes, excludes: {}, tableOptions: {}, meta: false } as never;
+  const hierarchyWarning = (detail: string) =>
+    untypedWarning("u_token", `the parent table hierarchy of x_demo_cred could not be read: ${detail}`);
+  const recordFiles = (manifest: SN.AppManifest, record: string) =>
+    (manifest.tables.x_demo_cred?.records[record]?.files ?? []).map((f) => f.name).sort();
+
+  it("control: with the parent readable, the inherited password2 include is dropped", async () => {
+    const manifest = scopedManifest();
+    await applyIncludeTypeRulesToManifest(manifest, createClient(hierarchyInstance(readableParent)), scopedConfig);
+    expect(recordFiles(manifest, "r")).toEqual(["u_label"]);
+    expect(warnings()).toEqual([unsafeWarning("u_token", "password2")]);
+  });
+
+  it("scoped endpoint: a parent lookup that throws is named, and the column is kept as unknown", async () => {
+    const manifest = scopedManifest();
+    const failing = hierarchyInstance(() => {
+      throw forbidden();
+    });
+    await applyIncludeTypeRulesToManifest(manifest, createClient(failing), scopedConfig);
+    expect(recordFiles(manifest, "r")).toEqual(["u_label", "u_token"]);
+    expect(warnings()).toEqual([hierarchyWarning("Request failed with status code 403")]);
+  });
+
+  it("scoped endpoint: a parent lookup an ACL answers with no row is named the same way", async () => {
+    const manifest = scopedManifest();
+    await applyIncludeTypeRulesToManifest(manifest, createClient(hierarchyInstance(() => [])), scopedConfig);
+    expect(recordFiles(manifest, "r")).toEqual(["u_label", "u_token"]);
+    expect(warnings()).toEqual([hierarchyWarning("no sys_db_object row for x_demo_cred")]);
+  });
+
+  it("an ancestor further up that cannot be read is the one named", async () => {
+    const manifest = scopedManifest();
+    const lookup: ParentLookup = (name) => (name === "x_demo_cred" ? readableParent(name) : []);
+    await applyIncludeTypeRulesToManifest(manifest, createClient(hierarchyInstance(lookup)), scopedConfig);
+    // u_token was found on x_demo_base, so it is judged; nothing is untyped.
+    expect(recordFiles(manifest, "r")).toEqual(["u_label"]);
+    expect(warnings()).toEqual([unsafeWarning("u_token", "password2")]);
+  });
+
+  it("Table API build: the same reason on the file-field path", async () => {
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(hierarchyInstance(() => [])), buildConfigFor);
+    expect(recordFiles(manifest, "cred-one")).toEqual(["script", "u_label", "u_token"]);
+    expect(warnings().filter((m) => m.includes("included column"))).toEqual([
+      hierarchyWarning("no sys_db_object row for x_demo_cred"),
+    ]);
+  });
+
+  it("Table API build: the same reason on the data-field fallback", async () => {
+    process.env.SYNCRONA_DATA_TABLES = "x_demo_cred";
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(hierarchyInstance(() => [], true)),
+      buildConfigFor
+    );
+    expect(recordFiles(manifest, "cred-one")).toEqual(["u_label", "u_token"]);
+    expect(warnings().filter((m) => m.includes("included column"))).toEqual([
+      hierarchyWarning("no sys_db_object row for x_demo_cred"),
+    ]);
   });
 });
