@@ -176,6 +176,19 @@ endpoint or from the Table API.
   `util_<sys_id>`. The result depends only on the set of records, not on the
   order the instance returns them in. The CLI prints one warning per group.
 - **Records that do not collide** keep their names exactly as before.
+- **Names no filesystem stores as written.** A NUL, another control character
+  (C0, DEL, C1) or a tab in a record name is replaced with `_`, and a lone
+  UTF-16 surrogate with U+FFFD. A name longer than 180 UTF-8 bytes is cut at
+  the last whole code point that fits and gets `_<hash>`, the first 8 hex
+  digits of the SHA-256 of the whole name. Two long names with the same prefix
+  therefore get different folders, and the result is the same on every run.
+  The 75 bytes left below the 255-byte segment limit hold a collision suffix
+  and the flat layout's `~<field>.<ext>`. The cut keeps whole code points, so
+  it can still separate an emoji from a combining mark that follows it.
+- **Other path segments are refused, not altered.** A table, field, type or
+  scope name with a separator, a control character, a lone surrogate or more
+  than 255 bytes stops the download with a `Refusing to download: unsafe ...`
+  error, because the same name also addresses the record on the instance.
 
 ### Upgrading an existing checkout
 
@@ -194,6 +207,9 @@ first `refresh` or `download` with these rules:
   them. It is left in place with a `Left "<table>/<old>" in place` warning, and
   each record is downloaded fresh into its new folder. Review the old folder,
   then delete it; `syncrona repair` lists its files as orphans.
+- A record whose name was stored verbatim but is now made to fit (181 to 255
+  bytes, or a tab or other control character) has its folder renamed in the
+  same way, with the same `Renamed` warning.
 - No folder is moved when the destination already exists. The old folder is
   left in place, with a warning.
 

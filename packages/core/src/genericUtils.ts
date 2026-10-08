@@ -6,11 +6,24 @@ import { Sync } from "@syncrona/types";
 // every consumer that joins an instance-supplied name onto a local path — the
 // download pipeline, `init --ci`'s packages/<scope> directories, the scope doc
 // generator — shares the exact same rule without dragging a module graph along.
+//
+// It also refuses what no filesystem can store as written: a NUL or other C0/C1
+// control character or DEL (NUL truncates the name in every OS call; the rest
+// are refused by Windows and break terminals and git), a lone UTF-16 surrogate
+// (Node writes it as U+FFFD, so the name on disk is not the name asked for),
+// and a segment over 255 UTF-8 bytes (NAME_MAX on Linux and macOS, ENAMETOOLONG).
+// Record names are made to fit first (recordFolderNames.sanitizeRecordFolderName);
+// every other segment — table, field, type, scope — is instance data that must
+// be refused rather than altered, because it also addresses the instance.
+export const MAX_PATH_SEGMENT_BYTES = 255;
+
 export const isSafePathComponent = (component: string): boolean =>
   typeof component === "string" &&
   component.length > 0 &&
   !/^\.+$/.test(component) &&
-  !/[/\\]/.test(component);
+  !/[/\\]/.test(component) &&
+  !/[\u0000-\u001f\u007f-\u009f]|[\ud800-\udfff]/u.test(component) &&
+  Buffer.byteLength(component, "utf8") <= MAX_PATH_SEGMENT_BYTES;
 
 export function wait(ms: number) {
   return new Promise((resolve) => {
