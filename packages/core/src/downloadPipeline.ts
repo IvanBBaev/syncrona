@@ -41,6 +41,7 @@ import {
   writeDownloadCheckpoint,
   deleteDownloadCheckpoint,
 } from "./downloadCheckpoint.js";
+import { warnWithdrawnFieldFiles } from "./withdrawnFieldFiles.js";
 
 // A bounded worker pool so the download/refresh writer and the missing-file
 // probe never open more filesystem handles than `resolveWriteConcurrency()` at
@@ -500,6 +501,12 @@ export const syncManifest = async (): Promise<boolean> => {
     // for each record at its new folder, and an existing checkout's renamed
     // folders must already be there so nothing is downloaded twice.
     await adoptRecordFolderNames(curManifest, newManifest);
+    // 17c: after the folders moved, so each record is looked up where it now
+    // lives. A field the new manifest dropped keeps its file; say so, once.
+    await warnWithdrawnFieldFiles(curManifest, newManifest, () => ({
+      sourcePath: ConfigManager.getSourcePath(),
+      flat: config.flat === true,
+    }));
 
     logger.info("Writing new manifest file...");
     await fUtils.writeManifestFile(newManifest);

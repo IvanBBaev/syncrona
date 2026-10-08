@@ -20,8 +20,13 @@ jest.unstable_mockModule("../Logger.js", () => ({
   },
 }));
 
+const mockGetManifest = jest.fn();
+const mockGetSourcePath = jest.fn(() => "/nonexistent-source");
+
 jest.unstable_mockModule("../config.js", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
+  getManifest: (...args: unknown[]) => mockGetManifest(...args),
+  getSourcePath: () => mockGetSourcePath(),
 }));
 
 jest.unstable_mockModule("../appUtils.js", () => ({
@@ -118,6 +123,47 @@ describe("downloadCommand flow", () => {
     // non-empty files so a resumed download doesn't truncate the tables it then
     // skips via the checkpoint. downloadAllFiles still force-writes pending tables.
     expect(mockProcessManifest).toHaveBeenCalledWith(manifest, false);
+  });
+
+  it("17c warns about a value file the previous manifest listed and this one drops", async () => {
+    const { mkdtemp, mkdir, writeFile, readFile, rm } = await import("fs/promises");
+    const os = await import("os");
+    const path = await import("path");
+    const root = await mkdtemp(path.join(os.tmpdir(), "download-withdrawn-"));
+    try {
+      const stale = path.join(root, "sys_script_include", "Demo", "u_token.txt");
+      await mkdir(path.dirname(stale), { recursive: true });
+      await writeFile(stale, "s3cr3t");
+      mockGetSourcePath.mockReturnValue(root);
+      mockGetManifest.mockReturnValue({
+        scope: "x_test",
+        tables: {
+          sys_script_include: {
+            records: {
+              Demo: {
+                name: "Demo",
+                sys_id: "1",
+                files: [
+                  { name: "script", type: "js" },
+                  { name: "u_token", type: "txt" },
+                ],
+              },
+            },
+          },
+        },
+      });
+      mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
+
+      const { downloadCommand } = await import("../commands.js");
+      await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
+
+      const warned = mockWarn.mock.calls.map((call) => String(call[0]));
+      expect(warned.filter((m) => m.includes(stale))).toHaveLength(1);
+      expect(await readFile(stale, "utf8")).toBe("s3cr3t");
+    } finally {
+      mockGetManifest.mockReturnValue(undefined);
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("skips confirmation prompt in ci mode", async () => {

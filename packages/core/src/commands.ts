@@ -26,6 +26,7 @@ import {
   listAppsFromTableAPI,
 } from "./manifestBuilder.js";
 import { generateScopeDocs } from "./scopeDocs.js";
+import { warnWithdrawnFieldFiles } from "./withdrawnFieldFiles.js";
 import { PATH_DELIMITER } from "./constants.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
@@ -267,6 +268,15 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
     await attachMetaFieldsToManifest(man, client, config);
   }
 
+  // 17c: the manifest this download replaces, read before processManifest
+  // overwrites it, so a field it listed and this one drops is reported below.
+  let previousManifest: import("@syncrona/types").SN.AppManifest | undefined;
+  try {
+    previousManifest = ConfigManager.getManifest(true);
+  } catch (_) {
+    previousManifest = undefined;
+  }
+
   logger.info("Creating local files from manifest...");
   // checkExists=true (forceWrite=false): the manifest file is still force-written
   // (processManifest always does that), and downloadAllFiles below force-writes
@@ -278,6 +288,10 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   await AppUtils.processManifest(man, false);
   logger.info("Fetching file contents...");
   await AppUtils.downloadAllFiles(man, args.instanceProfile);
+  await warnWithdrawnFieldFiles(previousManifest, man, () => ({
+    sourcePath: ConfigManager.getSourcePath(),
+    flat: config.flat === true,
+  }));
   try {
     const docPath = await generateScopeDocs(man);
     logger.success(`Scope documentation written to ${docPath}`);
