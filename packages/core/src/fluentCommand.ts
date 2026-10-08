@@ -47,7 +47,15 @@
  *    project when there is one, otherwise from the current directory.
  *
  * `--dry-run` prints the orchestrator call each action would make and stops.
- * It does not load the adapter, resolve credentials or prompt.
+ * It never resolves credentials, reaches the instance or prompts, and it fails
+ * wherever the real run's local checks would. It loads the adapter only for a
+ * plain `fluent types`, to check whether the adapter and the SDK are installed
+ * (the same resolution the real run makes), so it reports the native fallback
+ * when the real run would take it.
+ *
+ * `install` and `move-to-app` read the `scope` from `now.config.json`; a file
+ * that cannot be parsed, or that sets no scope, is refused with an error naming
+ * it, in the real run and `--dry-run` alike.
  */
 import type { SN, Sync } from "@syncrona/types";
 import { createRequire } from "node:module";
@@ -516,17 +524,44 @@ async function resolveProjectDir(
   return found;
 }
 
+/**
+ * The `scope` the project's `now.config.json` sets, or `undefined` when it sets
+ * none (no key, an empty or non-string value, or a document that is not an
+ * object). A file that cannot be read or parsed is an error naming it: the real
+ * run and `--dry-run` must not go on as if the project had no scope.
+ */
 async function configuredScope(deps: FluentCommandDeps, projectDir: string): Promise<string | undefined> {
+  const file = path.join(projectDir, NOW_CONFIG);
+  let text: string;
   try {
-    const config = JSON.parse(await deps.readFile(path.join(projectDir, NOW_CONFIG))) as { scope?: unknown };
-    return typeof config.scope === "string" && config.scope ? config.scope : undefined;
-  } catch {
-    return undefined;
+    text = await deps.readFile(file);
+  } catch (e) {
+    throw new FluentCliError(`Cannot read ${file}: ${e instanceof Error ? e.message : String(e)}`);
   }
+  let config: unknown;
+  try {
+    config = JSON.parse(text);
+  } catch (e) {
+    throw new FluentCliError(`${file} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return undefined;
+  const scope = (config as { scope?: unknown }).scope;
+  return typeof scope === "string" && scope ? scope : undefined;
 }
 
-async function projectScope(deps: FluentCommandDeps, projectDir: string): Promise<string> {
-  return (await configuredScope(deps, projectDir)) ?? "(unknown scope)";
+/**
+ * The scope an action that names the application on the instance needs
+ * (`install`, `move-to-app`). A project that sets none is refused, as
+ * `types --native` refuses one without `--scope` or `--table`.
+ */
+async function requiredScope(deps: FluentCommandDeps, projectDir: string, action: FluentAction): Promise<string> {
+  const scope = await configuredScope(deps, projectDir);
+  if (scope === undefined) {
+    throw new FluentCliError(
+      `${path.join(projectDir, NOW_CONFIG)} does not set "scope"; fluent ${action} needs it to name the application.`
+    );
+  }
+  return scope;
 }
 
 const fluentLogger: SN.FluentLogger = {
@@ -623,39 +658,109 @@ function canFallBackToNative(action: FluentAction, args: FluentCmdArgs): boolean
 
 /**
  * The local checks a real run makes before it touches credentials or the SDK:
- * the project directory resolves, for move-to-app the project is global, and an
- * action that asks for consent has a way to get it. `--dry-run` runs them too, so
- * a preview never passes where the run would fail. The credential check is not
- * here: it reads the credential store, which `--dry-run` deliberately leaves alone.
+ * the project directory resolves, install and move-to-app read the project's
+ * scope (move-to-app needs it global), and an action that asks for consent has a
+ * way to get it. `--dry-run` runs them too, so a preview never passes where the
+ * run would fail. The credential check is not here: it reads the credential
+ * store, which `--dry-run` deliberately leaves alone.
  */
 async function checkLocalPreconditions(
   deps: FluentCommandDeps,
   action: FluentAction,
   args: FluentCmdArgs
-): Promise<{ projectDir: string; moveScope?: string }> {
+): Promise<{ projectDir: string; scope?: string }> {
   const projectDir = await resolveProjectDir(deps, action, args);
-  let moveScope: string | undefined;
-  if (action === "move-to-app") {
-    moveScope = await configuredScope(deps, projectDir);
-    if (moveScope !== undefined && moveScope !== "global") {
+  let scope: string | undefined;
+  if (action === "install" || action === "move-to-app") {
+    scope = await requiredScope(deps, projectDir, action);
+    if (action === "move-to-app" && scope !== "global") {
       throw new FluentCliError(
-        `fluent move-to-app works on global applications only; ${projectDir} is scoped to ${moveScope}.`
+        `fluent move-to-app works on global applications only; ${projectDir} is scoped to ${scope}.`
       );
     }
   }
   assertConsentReachable(deps, action, args);
-  return moveScope === undefined ? { projectDir } : { projectDir, moveScope };
+  return scope === undefined ? { projectDir } : { projectDir, scope };
 }
 
-/** install and move-to-app ask first; without --ci there must be a terminal to answer. */
+/**
+ * install and move-to-app ask first; without --ci there must be a terminal to
+ * answer. `--dry-run` is refused the same way, so a preview fails where the run
+ * would; only its advice differs, since a dry run changes nothing.
+ */
 function assertConsentReachable(deps: FluentCommandDeps, action: FluentAction, args: FluentCmdArgs): void {
   if (action !== "install" && action !== "move-to-app") return;
   if (args.ci === true) return;
   const json = args.json === true;
   if (!json && deps.interactive()) return;
+  const advice =
+    args.dryRun === true
+      ? `Pass --ci to preview without a prompt; a dry run ${action === "install" ? "installs" : "moves"} nothing.`
+      : `Pass --ci to ${action === "install" ? "install" : "move the records"} without asking.`;
   throw new FluentCliError(
-    `fluent ${action} asks for confirmation, and ${json ? "--json output" : "this session has no terminal"} ` +
-      `cannot answer it. Pass --ci to ${action === "install" ? "install" : "move the records"} without asking.`
+    `fluent ${action} asks for confirmation, and ` +
+      `${json ? "--json output cannot answer it" : "this session has no terminal to answer it"}. ${advice}`
+  );
+}
+
+/**
+ * Whether plain `fluent types` would fall back to the native generator: the
+ * adapter and the SDK are resolved exactly as the real run resolves them, and
+ * nothing reads the credential store or reaches the instance. Any failure other
+ * than "not installed" surfaces, as it would in the real run.
+ */
+async function sdkMissing(deps: FluentCommandDeps, projectDir: string): Promise<boolean> {
+  let fluent: SN.FluentModule;
+  try {
+    fluent = await deps.loadFluent(projectDir);
+  } catch (e) {
+    if (e instanceof FluentNotInstalledError) return true;
+    throw e;
+  }
+  try {
+    await fluent.createFluentEngine({ projectDir, logger: fluentLogger }).sdkVersion();
+    return false;
+  } catch (e) {
+    if (isSdkMissing(e)) return true;
+    throw e;
+  }
+}
+
+const NATIVE_READS = "read sys_db_object, sys_dictionary and sys_choice";
+
+async function dryRun(deps: FluentCommandDeps, action: FluentAction, plan: FluentPlan, args: FluentCmdArgs): Promise<void> {
+  if (plan.method === "nativeTypes") {
+    await resolveNativeTypesTarget(deps, args, plan.options);
+    writeDryRun(
+      deps,
+      action,
+      plan,
+      args,
+      `[dry-run] fluent types --native → ${NATIVE_READS} (${JSON.stringify(plan.options)}) against the active instance`
+    );
+    return;
+  }
+  const { projectDir } = await checkLocalPreconditions(deps, action, args);
+  if (canFallBackToNative(action, args) && (await sdkMissing(deps, projectDir))) {
+    const native: FluentPlan = { method: "nativeTypes", options: nativeTypesOptions(args), instance: true };
+    await resolveNativeTypesTarget(deps, args, native.options);
+    writeDryRun(
+      deps,
+      action,
+      native,
+      args,
+      `[dry-run] fluent types → ${FLUENT_SDK_PACKAGE} is not installed; ${NATIVE_READS} ` +
+        `(${JSON.stringify(native.options)}) against the active instance`
+    );
+    return;
+  }
+  writeDryRun(
+    deps,
+    action,
+    plan,
+    args,
+    `[dry-run] fluent ${action} → engine.${String(plan.method)}(${JSON.stringify(plan.options)})` +
+      (plan.instance ? " against the active instance" : " (local only)")
   );
 }
 
@@ -690,7 +795,7 @@ async function execute(
   if (plan.method === "nativeTypes") {
     return executeNativeTypes(deps, args, profile, plan.options);
   }
-  const { projectDir, moveScope } = await checkLocalPreconditions(deps, action, args);
+  const { projectDir, scope } = await checkLocalPreconditions(deps, action, args);
   const json = args.json === true;
 
   let credential: FluentCredential | undefined;
@@ -731,7 +836,6 @@ async function execute(
   if (action === "install") {
     // Load the SDK now, so a missing or broken SDK fails before the user consents.
     await engine.sdkVersion();
-    const scope = await projectScope(deps, projectDir);
     if (args.reinstall) {
       logger.warn(`--reinstall uninstalls ${scope} from the instance before installing it again.`);
     }
@@ -751,7 +855,7 @@ async function execute(
     const ok =
       args.ci === true ||
       (await deps.confirm(
-        `Move ${count} record(s) into ${moveScope ?? "this application"} on ${credential?.instanceUrl}? ` +
+        `Move ${count} record(s) into ${scope} on ${credential?.instanceUrl}? ` +
           `This creates sys_claim records on the instance and writes the records into the project as Fluent sources.`
       ));
     if (!ok) {
@@ -952,29 +1056,8 @@ export async function fluentCommand(
 
   try {
     const plan = planFluentAction(action, args);
-    if (args.dryRun === true && plan.method === "nativeTypes") {
-      await resolveNativeTypesTarget(deps, args, plan.options);
-      writeDryRun(
-        deps,
-        action,
-        plan,
-        args,
-        `[dry-run] fluent types --native → read sys_db_object, sys_dictionary and sys_choice ` +
-          `(${JSON.stringify(plan.options)}) against the active instance`
-      );
-      process.exitCode = 0;
-      return;
-    }
     if (args.dryRun === true) {
-      await checkLocalPreconditions(deps, action, args);
-      writeDryRun(
-        deps,
-        action,
-        plan,
-        args,
-        `[dry-run] fluent ${action} → engine.${String(plan.method)}(${JSON.stringify(plan.options)})` +
-          (plan.instance ? " against the active instance" : " (local only)")
-      );
+      await dryRun(deps, action, plan, args);
       process.exitCode = 0;
       return;
     }
