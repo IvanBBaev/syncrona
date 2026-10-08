@@ -677,25 +677,37 @@ test('a refused adapter surfaces as an incomplete run with its code', async () =
   assert.equal(calls.audit[0][2].code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
 });
 
-test('the default loader loads a hoisted adapter in the workspace and refuses a linked one', async () => {
+test('the default loader loads a hoisted adapter in the workspace and never runs a linked one', async () => {
   const ws = mkWorkspace();
   mkProject(ws, 'apps/one');
   writeFixturePackage(
     ws,
     '@syncrona/fluent',
-    'exports.createFluentEngine = () => ({ build: async () => ({ success: true, errors: [], warnings: [] }) });'
+    'exports.createFluentEngine = () => ({ build: async () => { globalThis.__fluentFixtureBuilds = (globalThis.__fluentFixtureBuilds || 0) + 1; return { success: true, errors: [], warnings: [] }; } });'
   );
   const hoisted = makeContext(ws);
   const ok = payloadOf(await handleFluentBuild({ project: 'apps/one' }, hoisted.context));
   assert.equal(ok.outcome, 'succeeded');
+  assert.equal(globalThis.__fluentFixtureBuilds, 1);
 
   const linkedWs = mkWorkspace();
   mkProject(linkedWs);
   fs.symlinkSync(path.join(ws, 'node_modules'), path.join(linkedWs, 'node_modules'), 'dir');
   const linked = makeContext(linkedWs);
-  const refused = payloadOf(await handleFluentBuild({}, linked.context));
-  assert.equal(refused.outcome, 'incomplete');
-  assert.equal(refused.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+  const result = payloadOf(await handleFluentBuild({}, linked.context));
+  assert.equal(globalThis.__fluentFixtureBuilds, 1, 'the linked adapter never ran');
+  assert.equal(result.outcome, 'incomplete');
+  // The escape falls through to the server's own install. In this monorepo that
+  // is the workspace's @syncrona/fluent (without @servicenow/sdk); a server
+  // installed without the adapter refuses the escape instead.
+  let serverHasAdapter = true;
+  try {
+    require.resolve('@syncrona/fluent', { paths: [path.resolve(__dirname, '../dist/handlers')] });
+  } catch {
+    serverHasAdapter = false;
+  }
+  if (serverHasAdapter) assert.notEqual(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+  else assert.equal(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
 });
 
 test('loadFluentModule falls back to the server install and rethrows other resolution errors', () => {
@@ -707,6 +719,112 @@ test('loadFluentModule falls back to the server install and rethrows other resol
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@fixture/fluent-c', exports: {} }));
   assert.throws(() => loadFluentModule(ws, '@fixture/fluent-c'), (e) => !(e instanceof FluentNotInstalledError));
+});
+
+test('loadFluentModule falls through to the server install when the project resolves above the workspace', () => {
+  // The monorepo case: the server starts in a package directory, and the adapter
+  // is hoisted to the repository root. `zod` stands in for it: the project
+  // requirer finds <repo>/node_modules/zod, outside this package, and the
+  // server's own requirer resolves the identical real path, which is trusted.
+  const serverPackageDir = path.resolve(__dirname, '..');
+  const hoisted = require.resolve('zod', { paths: [serverPackageDir] });
+  assert.ok(
+    !fs.realpathSync(hoisted).startsWith(fs.realpathSync(serverPackageDir) + path.sep),
+    'zod is hoisted above the package'
+  );
+  assert.doesNotThrow(() => loadFluentModule(serverPackageDir, 'zod', serverPackageDir));
+});
+
+test('a project adapter hoisted above the workspace stays refused when the server install lacks it', () => {
+  const repo = mkWorkspace();
+  const appDir = mkProject(repo, 'packages/app');
+  writeFixturePackage(
+    repo,
+    '@fixture/fluent-above',
+    'globalThis.__fluentAboveLoaded = true; exports.createFluentEngine = () => "above";'
+  );
+  assert.throws(
+    () => loadFluentModule(appDir, '@fixture/fluent-above', appDir),
+    (e) =>
+      e instanceof FluentAdapterOutsideWorkspaceError &&
+      e.code === 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE' &&
+      /start the server from the workspace root or pass project:/.test(e.message)
+  );
+  assert.equal(globalThis.__fluentAboveLoaded, undefined, 'the hoisted code never ran');
+});
+
+/** Asserts the project adapter `specifier` is refused and its code never ran (`flag` stays unset). */
+function assertRefusedUnrun(projectDir, specifier, workspaceDir, flag) {
+  assert.throws(() => loadFluentModule(projectDir, specifier, workspaceDir), FluentAdapterOutsideWorkspaceError);
+  assert.equal(globalThis[flag], undefined, `${specifier} never ran`);
+}
+
+test('loadFluentModule refuses an adapter in a sibling directory that shares the workspace prefix', () => {
+  const root = mkWorkspace();
+  const ws = path.join(root, 'app');
+  fs.mkdirSync(ws);
+  writeFixturePackage(path.join(root, 'app-evil'), '@fixture/fluent-prefix', 'globalThis.__fluentPrefix = 1;');
+  fs.mkdirSync(path.join(ws, 'node_modules', '@fixture'), { recursive: true });
+  fs.symlinkSync(
+    path.join(root, 'app-evil', 'node_modules', '@fixture', 'fluent-prefix'),
+    path.join(ws, 'node_modules', '@fixture', 'fluent-prefix'),
+    'dir'
+  );
+  assertRefusedUnrun(ws, '@fixture/fluent-prefix', ws, '__fluentPrefix');
+});
+
+test('loadFluentModule refuses a package whose entry file is a symlink out of the workspace', () => {
+  const ws = mkWorkspace();
+  const outside = mkWorkspace();
+  fs.writeFileSync(path.join(outside, 'entry.js'), 'globalThis.__fluentEntryLink = 1;');
+  writeFixturePackage(ws, '@fixture/fluent-entry', '');
+  const entry = path.join(ws, 'node_modules', '@fixture', 'fluent-entry', 'index.js');
+  fs.rmSync(entry);
+  fs.symlinkSync(path.join(outside, 'entry.js'), entry, 'file');
+  assertRefusedUnrun(ws, '@fixture/fluent-entry', ws, '__fluentEntryLink');
+});
+
+test('loadFluentModule refuses a package whose main escapes the workspace', () => {
+  const root = mkWorkspace();
+  const ws = path.join(root, 'ws');
+  fs.mkdirSync(ws);
+  fs.writeFileSync(path.join(root, 'escaped.js'), 'globalThis.__fluentMainEscape = 1;');
+  const dir = path.join(ws, 'node_modules', '@fixture', 'fluent-main');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ name: '@fixture/fluent-main', main: '../../../../escaped.js' })
+  );
+  assertRefusedUnrun(ws, '@fixture/fluent-main', ws, '__fluentMainEscape');
+});
+
+// A case-insensitive filesystem (the macOS and Windows defaults) accepts a path
+// spelled in another case; the confinement checks must not refuse it for that.
+const caseInsensitiveFs = (() => {
+  const probe = fs.realpathSync(os.tmpdir());
+  const flipped = probe.replace(/[a-z]/, (c) => c.toUpperCase());
+  return flipped !== probe && fs.existsSync(flipped);
+})();
+
+function otherCase(dir) {
+  return path.join(path.dirname(dir), path.basename(dir).toUpperCase());
+}
+
+test(
+  'loadFluentModule accepts an in-workspace adapter when the workspace path differs only in case',
+  { skip: !caseInsensitiveFs },
+  () => {
+    const ws = mkWorkspace();
+    writeFixturePackage(ws, '@fixture/fluent-case', 'exports.createFluentEngine = () => "case";');
+    assert.equal(loadFluentModule(ws, '@fixture/fluent-case', otherCase(ws)).createFluentEngine(), 'case');
+    assert.equal(loadFluentModule(otherCase(ws), '@fixture/fluent-case', ws).createFluentEngine(), 'case');
+  }
+);
+
+test('resolveFluentProjectDir accepts a workspace path that differs only in case', { skip: !caseInsensitiveFs }, () => {
+  const ws = mkWorkspace();
+  mkProject(ws, 'apps/one');
+  assert.doesNotThrow(() => resolveFluentProjectDir(otherCase(ws), 'apps/one'));
 });
 
 // --- Output listing ------------------------------------------------------------------
