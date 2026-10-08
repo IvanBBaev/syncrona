@@ -571,29 +571,114 @@ describe("cicd poll retry", () => {
     expect(warnings.filter((w) => /poll failed \(\d\/3\), retrying/.test(w))).toHaveLength(3);
   });
 
-  it("gives up after three consecutive transient failures", async () => {
+  it.each([
+    ["a 500", () => httpError(500, "api/sn_cicd/progress/prog-1", "")],
+    ["a 502", () => httpError(502, "api/sn_cicd/progress/prog-1", "Bad Gateway")],
+    ["a 503", () => httpError(503, "api/sn_cicd/progress/prog-1", "")],
+    ["a 429", () => httpError(429, "api/sn_cicd/progress/prog-1", {})],
+    ["a connection reset", () => networkError()],
+  ])("retries %s one --poll-ms apart and finishes when the poll recovers", async (_label, failure) => {
+    const h = harness({ progress: [failure, failure, () => progress("2")] });
+    const sleeps: number[] = [];
+    const sleep = jest.fn(async (ms: number) => {
+      sleeps.push(ms);
+    });
+
+    expect(await run({ ...h, deps: { ...h.deps, sleep } }, "install", { scope: "x_app", pollMs: 1000 })).toBe(0);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(3);
+    expect(sleeps).toEqual([1000, 1000]);
+    expect(errors).toEqual([]);
+  });
+
+  it("gives up after three consecutive transient failures, naming the request", async () => {
     const h = harness({ progress: [() => httpError(503, "api/sn_cicd/progress/prog-1", "")] });
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(3);
-    expect(errors.join("\n")).toContain("status code 503");
+    expect(errors).toEqual([
+      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed 3 times in a row (last: HTTP 503). Request failed with status code 503",
+    ]);
     // The resume id is a warning, so a --log-level warn run still sees it.
     expect(warnings).toContain("The work was dispatched as progress prog-1; resume with --progress-id prog-1.");
   });
 
-  it("does not retry a 401/403/404", async () => {
-    for (const status of [401, 403, 404]) {
-      const h = harness({ progress: [() => httpError(status, "api/sn_cicd/progress/prog-1", {})] });
-      expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
-      expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
-    }
+  it("counts a network failure without a response as no response", async () => {
+    const h = harness({ progress: [() => networkError()] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
+    expect(errors[0]).toContain("failed 3 times in a row (last: no response). socket hang up");
   });
 
-  it("does not retry past --timeout", async () => {
+  it.each([
+    [400, "the instance rejected the request as malformed"],
+    [401, "the instance rejected the credentials"],
+    [403, "the user may not read CI/CD progress"],
+    [404, "the instance has no such progress tracker (check the id and the instance profile)"],
+    [409, undefined],
+  ])("fails fast on HTTP %i: one poll, no retry, the status and the request named", async (status, hint) => {
+    const h = harness({ progress: [() => httpError(status, "api/sn_cicd/progress/prog-1", {})] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    expect(warnings.some((w) => /retrying/.test(w))).toBe(false);
+    expect(errors).toEqual([
+      `cicd install failed: GET api/sn_cicd/progress/prog-1 answered HTTP ${status}${hint ? ` (${hint})` : ""}; a client error is not retried. Request failed with status code ${status}`,
+    ]);
+  });
+
+  it("keeps the instance's error envelope and the sn_cicd role hint on a permanent poll failure", async () => {
+    const h = harness({
+      progress: [
+        () =>
+          httpError(403, "api/sn_cicd/progress/prog-1", {
+            error: { message: "User Not Authorized", detail: "Missing role" },
+          }),
+      ],
+    });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000, json: true })).toBe(1);
+    expect(errors[0]).toMatch(/answered HTTP 403 .* — User Not Authorized: Missing role$/);
+    expect(infos.some((line) => line.includes("sn_cicd.sys_ci_automation"))).toBe(true);
+    const doc = JSON.parse(h.written[0]) as Record<string, unknown>;
+    expect(doc).toMatchObject({ exitCode: 1, progressId: "prog-1" });
+    expect(String(doc.error)).toContain("GET api/sn_cicd/progress/prog-1 answered HTTP 403");
+  });
+
+  it("ends a poll that keeps failing transiently with the timeout error, not the transport error", async () => {
     const h = harness({ progress: [() => progress("1"), () => networkError()] });
 
     expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1000 }, 10_000)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(2);
+    expect(errors).toEqual([
+      "cicd install failed: Timed out after 1s waiting for progress prog-1 (last status: Running; last poll error: socket hang up). " +
+        "The work may still be running on the instance; check it at https://x/api/sn_cicd/progress/prog-1 and resume waiting with --progress-id prog-1 (and a longer --timeout).",
+    ]);
+  });
+
+  it("reports a timeout before any poll answered as never read", async () => {
+    const h = harness({ progress: [() => httpError(502, "api/sn_cicd/progress/prog-1", "")] });
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1000 }, 10_000)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(2);
+    expect(errors[0]).toContain("(last status: never read; last poll error: Request failed with status code 502)");
+  });
+
+  it("points a timed-out run at the tracker URL the instance reported", async () => {
+    const h = harness({
+      progress: [() => progress("1", { links: { progress: { id: "prog-1", url: "https://inst/progress/prog-1" } } })],
+    });
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 2, pollMs: 1000 }, 5_000)).toBe(1);
+    expect(errors[0]).toContain("check it at https://inst/progress/prog-1 and resume waiting with --progress-id prog-1");
+  });
+
+  it("points a timed-out resume without any tracker URL at the progress API path", async () => {
+    const id = "0123456789abcdef0123456789abcdef";
+    const h = harness({ progress: [() => progress("1")] });
+
+    expect(await run(h, "publish", { progressId: id, timeout: 2, pollMs: 1000 }, 5_000)).toBe(1);
+    expect(errors[0]).toContain(`check it at GET api/sn_cicd/progress/${id} on the instance`);
+    expect(process.exitCode).toBe(1);
   });
 });
 
