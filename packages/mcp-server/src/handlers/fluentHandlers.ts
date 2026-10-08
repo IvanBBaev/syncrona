@@ -52,7 +52,9 @@
  *
  * Trust boundary: an adapter resolved from the project must really live inside
  * the workspace — its real path, after following symlinks, must not leave it —
- * or the call is refused. That keeps a symlinked `node_modules` from pulling in
+ * or it is not loaded from there: the server's own install is used when it has
+ * the adapter (a monorepo hoists it above a package directory), and otherwise
+ * the call is refused. That keeps a symlinked `node_modules` from pulling in
  * code from elsewhere on disk; it does not sandbox the code that is inside the
  * workspace. There is no process isolation: building a project means trusting it
  * as much as running `npm run build` in it with the server's environment.
@@ -185,29 +187,50 @@ function isSdkMissing(e: unknown): boolean {
  * `workspaceDir` (default: the project itself), so a symlink cannot make the
  * server execute code from outside the workspace. The server's own install is
  * trusted as it is the server's code.
+ *
+ * A project adapter outside the workspace is not refused on the spot: when the
+ * server starts in a monorepo package directory, the adapter is hoisted above it
+ * and the server's own requirer finds the same package. So the server requirer
+ * is still tried, and only when it finds nothing is the escape refused. The
+ * escaping path is never loaded through the project requirer.
  */
 export function loadFluentModule(
   projectDir: string,
   specifier: string = FLUENT_PACKAGE,
   workspaceDir: string = projectDir
 ): FluentBuildModule {
-  const requirers = [
-    { requireFrom: createRequire(path.join(projectDir, "package.json")), confined: true },
-    { requireFrom: createRequire(__filename), confined: false },
-  ];
-  for (const { requireFrom, confined } of requirers) {
-    let resolved: string;
-    try {
-      resolved = requireFrom.resolve(specifier);
-    } catch (e) {
-      if (isModuleNotFound(e, specifier)) continue;
-      throw e;
-    }
-    if (confined) assertAdapterInWorkspace(workspaceDir, specifier, resolved);
-    const mod = requireFrom(resolved) as Partial<FluentBuildModule> & { default?: FluentBuildModule };
-    return typeof mod.createFluentEngine === "function" ? (mod as FluentBuildModule) : (mod.default as FluentBuildModule);
+  const projectRequire = createRequire(path.join(projectDir, "package.json"));
+  const fromProject = tryResolve(projectRequire, specifier);
+  let refusal: FluentAdapterOutsideWorkspaceError | undefined;
+  if (fromProject !== undefined) {
+    refusal = adapterOutsideWorkspace(workspaceDir, specifier, fromProject);
+    if (!refusal) return loadResolved(projectRequire, fromProject);
   }
-  throw new FluentNotInstalledError();
+  const serverRequire = createRequire(__filename);
+  let fromServer: string | undefined;
+  try {
+    fromServer = tryResolve(serverRequire, specifier);
+  } catch (e) {
+    // A pending refusal wins over a resolution error of the fallback.
+    throw refusal ?? e;
+  }
+  if (fromServer !== undefined) return loadResolved(serverRequire, fromServer);
+  throw refusal ?? new FluentNotInstalledError();
+}
+
+/** `requireFrom.resolve(specifier)`, or undefined when the package itself is absent. */
+function tryResolve(requireFrom: NodeJS.Require, specifier: string): string | undefined {
+  try {
+    return requireFrom.resolve(specifier);
+  } catch (e) {
+    if (isModuleNotFound(e, specifier)) return undefined;
+    throw e;
+  }
+}
+
+function loadResolved(requireFrom: NodeJS.Require, resolved: string): FluentBuildModule {
+  const mod = requireFrom(resolved) as Partial<FluentBuildModule> & { default?: FluentBuildModule };
+  return typeof mod.createFluentEngine === "function" ? (mod as FluentBuildModule) : (mod.default as FluentBuildModule);
 }
 
 function isWithin(base: string, target: string): boolean {
@@ -215,21 +238,34 @@ function isWithin(base: string, target: string): boolean {
 }
 
 /**
- * Refuses an adapter resolved from the project whose real path leaves the
- * workspace — a symlinked package, or a `node_modules` that is itself a link.
+ * The canonical real path of `p`. The native realpath also canonicalizes letter
+ * case on a case-insensitive filesystem (the macOS and Windows defaults), where
+ * the JavaScript one keeps the case it was given, so two spellings of one
+ * directory compare equal in {@link isWithin}.
+ */
+export function canonicalRealpath(p: string): string {
+  return realpathSync.native(path.resolve(p));
+}
+
+/**
+ * The refusal for an adapter resolved from the project whose real path leaves
+ * the workspace — a symlinked package, a `node_modules` that is itself a link,
+ * or a package hoisted above the workspace — or undefined when it stays inside.
  * Node resolves symlinks by default, so `resolved` is normally real already; the
  * check re-reads it so the refusal does not depend on `--preserve-symlinks`.
  */
-function assertAdapterInWorkspace(workspaceDir: string, specifier: string, resolved: string): void {
+function adapterOutsideWorkspace(
+  workspaceDir: string,
+  specifier: string,
+  resolved: string
+): FluentAdapterOutsideWorkspaceError | undefined {
   // A builtin or other non-path resolution has no file to confine.
-  if (!path.isAbsolute(resolved)) return;
-  const base = realpathSync(path.resolve(workspaceDir));
-  const real = realpathSync(resolved);
-  if (!isWithin(base, real)) {
-    throw new FluentAdapterOutsideWorkspaceError(
-      `Refusing to load ${specifier} from outside the workspace: it resolves to ${JSON.stringify(real)}. Install it in the project rather than linking it in.`
-    );
-  }
+  if (!path.isAbsolute(resolved)) return undefined;
+  const real = canonicalRealpath(resolved);
+  if (isWithin(canonicalRealpath(workspaceDir), real)) return undefined;
+  return new FluentAdapterOutsideWorkspaceError(
+    `Refusing to load ${specifier} from outside the workspace: it resolves to ${JSON.stringify(real)}. Install it in the project rather than linking it in; if it is hoisted above the workspace, start the server from the workspace root or pass project: relative to that root.`
+  );
 }
 
 /**
@@ -250,7 +286,7 @@ export function resolveFluentProjectDir(workspaceDir: string, project: unknown):
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     throw new FluentProjectError(`Project directory not found: ${JSON.stringify(raw || ".")}.`);
   }
-  if (!isWithin(realpathSync(base), realpathSync(target))) {
+  if (!isWithin(canonicalRealpath(base), canonicalRealpath(target))) {
     throw new FluentProjectError(
       `Refusing to build outside the workspace: ${JSON.stringify(raw)} resolves through a symlink.`
     );
