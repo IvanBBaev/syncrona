@@ -16,6 +16,7 @@ jest.unstable_mockModule("../config.js", () => ({
   getSourcePath: jest.fn(),
   getRootDir: jest.fn(),
   getConfig: jest.fn(),
+  getManifestPath: jest.fn(),
 }));
 jest.unstable_mockModule("../appUtils.js", () => ({
   findMissingFiles: jest.fn(),
@@ -79,6 +80,14 @@ const useManifest = (tables: Record<string, unknown>): void => {
   (ConfigManager.getManifest as jest.Mock).mockReturnValue(manifest);
 };
 
+// The manifest as the last commit holds it: what the workspace looked like
+// before the refresh that dropped a record deleted on the instance. Only a
+// record this manifest tracked is a leftover; any other unlisted record awaits
+// `push --create`. Write it before initRepo/commitAll so it is in HEAD.
+const writeCommittedManifest = (tables: Record<string, unknown>): void => {
+  writeFileSync(path.join(tmp, "sync.manifest.json"), JSON.stringify({ scope: "x_app", tables }));
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   process.exitCode = undefined;
@@ -87,6 +96,7 @@ beforeEach(() => {
   mkdirSync(sourceDir, { recursive: true });
   (ConfigManager.getSourcePath as jest.Mock).mockReturnValue(sourceDir);
   (ConfigManager.getRootDir as jest.Mock).mockReturnValue(tmp);
+  (ConfigManager.getManifestPath as jest.Mock).mockReturnValue(path.join(tmp, "sync.manifest.json"));
   (ConfigManager.getConfig as jest.Mock).mockReturnValue({});
   (AppUtils.findMissingFiles as jest.Mock<() => Promise<unknown>>).mockResolvedValue({});
   (AppUtils.processMissingFiles as jest.Mock<() => Promise<unknown>>).mockResolvedValue([]);
@@ -106,6 +116,24 @@ describe("repair --prune deletes only files git can restore", () => {
     useManifest({
       sys_script: { records: { Kept: record("Kept") } },
       sys_dictionary: { records: { "x_t.u_kept": record("x_t.u_kept", []) } },
+    });
+    // Gone and x_t.u_gone were downloaded and committed, then deleted on the
+    // instance; the refresh since dropped them from the working manifest. The
+    // other names are leftovers too, so the tests that keep them exercise the
+    // git evidence rather than the awaiting-creation rule.
+    const leftovers = ["Gone", "Staged", "Edited", "StagedEdit", "Ignored"];
+    writeCommittedManifest({
+      sys_script: {
+        records: Object.fromEntries(
+          ["Kept", ...leftovers].map((name) => [name, record(name)])
+        ),
+      },
+      sys_dictionary: {
+        records: {
+          "x_t.u_kept": record("x_t.u_kept", []),
+          "x_t.u_gone": record("x_t.u_gone", []),
+        },
+      },
     });
   });
 
@@ -148,6 +176,7 @@ describe("repair --prune deletes only files git can restore", () => {
     await repairCommand(PRUNE);
 
     expect(existsSync(staged)).toBe(true);
+    expect(logged(warnSpy)).toContain("git cannot restore");
   });
 
   test("keeps a committed file that was edited since HEAD, staged or not", async () => {
@@ -162,6 +191,7 @@ describe("repair --prune deletes only files git can restore", () => {
 
     expect(existsSync(edited)).toBe(true);
     expect(existsSync(stagedEdit)).toBe(true);
+    expect(logged(warnSpy)).toContain("Kept 2 orphan file(s) git cannot restore");
   });
 
   test("keeps an ignored, never-committed file", async () => {
@@ -172,6 +202,7 @@ describe("repair --prune deletes only files git can restore", () => {
     await repairCommand(PRUNE);
 
     expect(existsSync(ignored)).toBe(true);
+    expect(logged(warnSpy)).toContain("git cannot restore");
   });
 
   test("prunes the clean leftovers and keeps the local work in one run", async () => {
@@ -248,6 +279,64 @@ describe("repair --prune deletes only files git can restore", () => {
     expect(existsSync(unlisted)).toBe(true);
     expect(logged(warnSpy)).toContain(unlisted);
     expect(successSpy).toHaveBeenCalledWith(expect.stringContaining("Nothing to repair"));
+  });
+
+  test("keeps a committed record that still awaits push --create", async () => {
+    // Written locally and committed, never pushed: no manifest — the current one
+    // or the committed one — has ever tracked it, so it is new work, and the
+    // fact that git could restore it is no reason to delete it.
+    const newScript = write("sys_script/NewRule/script.js", "work in progress");
+    const newColumn = write("sys_dictionary/x_t.u_new/.meta.json", '{"element":"u_new"}');
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(newScript)).toBe(true);
+    expect(existsSync(newColumn)).toBe(true);
+    const warning = logged(warnSpy);
+    expect(warning).toContain("push --create");
+    expect(warning).toContain(newScript);
+    expect(warning).not.toContain("Commit them first");
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining("Pruned"));
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  test("keeps every unlisted record when HEAD holds no manifest to vouch for it", async () => {
+    // Without a committed manifest nothing proves a record was ever on the
+    // instance, so a leftover and new work look alike: both are kept.
+    rmSync(path.join(tmp, "sync.manifest.json"));
+    const leftover = write("sys_script/Gone/script.js");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(logged(warnSpy)).toContain("awaiting `push --create`");
+    expect(logged(infoSpy)).toContain("Nothing to prune");
+  });
+
+  test("a sys_id-less entry in the committed manifest is not evidence of an instance record", async () => {
+    writeCommittedManifest({
+      sys_script: { records: { Gone: { name: "Gone", sys_id: "", files: [] } } },
+    });
+    const leftover = write("sys_script/Gone/script.js");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+  });
+
+  test("a field file the manifest's own record does not map stays subject to the git rule", async () => {
+    // Record Kept is in the manifest, so push --create would not create it:
+    // the unmapped field file is a genuine orphan.
+    const stray = write("sys_script/Kept/stale_field.js");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(stray)).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
   });
 
   test("reports a failed deletion of a restorable orphan", async () => {

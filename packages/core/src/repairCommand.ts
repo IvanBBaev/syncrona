@@ -355,11 +355,80 @@ async function restorableFromGit(sourcePath: string, files: string[]): Promise<S
 }
 
 /**
+ * The manifest as HEAD committed it, or undefined when git has no committed copy
+ * (the manifest is ignored, never committed, outside any repository) or it does
+ * not parse. `HEAD:./<name>` resolves against the manifest's own directory.
+ */
+async function committedManifest(): Promise<SN.AppManifest | undefined> {
+  try {
+    const manifestPath = ConfigManager.getManifestPath();
+    const text = await runGit(path.dirname(manifestPath), [
+      "show",
+      `HEAD:./${path.basename(manifestPath)}`,
+    ]);
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? (parsed as SN.AppManifest) : undefined;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
+// True when `manifest` tracks this record of this table with a sys_id: the
+// record existed on the instance when that manifest was written.
+function tracksInstanceRecord(
+  manifest: SN.AppManifest | undefined,
+  table: string,
+  record: string
+): boolean {
+  const records = manifest ? findTable(manifest, table)?.records : undefined;
+  if (!records || typeof records !== "object") {
+    return false;
+  }
+  const canonical = canonicalName(record);
+  return Object.entries(records).some(
+    ([key, entry]) =>
+      (key === record || canonicalName(key) === canonical) &&
+      typeof (entry as { sys_id?: unknown })?.sys_id === "string" &&
+      (entry as { sys_id: string }).sys_id !== ""
+  );
+}
+
+/**
+ * Finding 9: the orphans that belong to a record awaiting `push --create`.
+ *
+ * "Awaiting creation" is exactly what `push --create` itself would act on:
+ * parseUnmappedPath answers a record for every unmapped path whose record the
+ * manifest does not hold. A leftover of a record deleted on the instance looks
+ * the same from the current manifest, so the one thing that sets it apart is
+ * that an earlier manifest tracked it with a sys_id — and the only earlier
+ * manifest repair can trust is the one HEAD committed. A record that manifest
+ * tracked is a leftover and stays subject to the git rule; every other record is
+ * new local work and is never pruned, whether git holds it or not (committing a
+ * record before pushing it is ordinary, and must not make it deletable).
+ */
+async function awaitingCreate(orphans: string[]): Promise<Set<string>> {
+  const pending = orphans.flatMap((file) => {
+    const record = FileUtils.parseUnmappedPath(file);
+    return record ? [{ file, table: record.table, recordName: record.recordName }] : [];
+  });
+  if (pending.length === 0) {
+    return new Set();
+  }
+  const committed = await committedManifest();
+  return new Set(
+    pending
+      .filter(({ table, recordName }) => !tracksInstanceRecord(committed, table, recordName))
+      .map(({ file }) => file)
+  );
+}
+
+/**
  * DX18: reconcile the manifest against the files on disk and (optionally) repair.
  * Reports files the manifest expects but are missing locally, and local files
  * no manifest record claims (orphans). Dry-run by default — only `--apply`
  * re-downloads missing files, and only `--prune` deletes orphans, and of those
- * only the ones git holds committed and unchanged (see restorableFromGit).
+ * only the ones git holds committed and unchanged (see restorableFromGit) and
+ * never the files of a record awaiting `push --create` (see awaitingCreate).
  */
 export async function repairCommand(args: RepairCmdArgs): Promise<void> {
   setLogLevel(args);
@@ -508,13 +577,29 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
         process.exitCode = 1;
         return;
       }
-      const prunable = orphans.filter((orphan) => restorable.has(orphan));
-      const keptLocal = orphans.filter((orphan) => !restorable.has(orphan));
+      const pendingCreate = await awaitingCreate(orphans);
+      const prunable = orphans.filter(
+        (orphan) => restorable.has(orphan) && !pendingCreate.has(orphan)
+      );
+      const keptPending = orphans.filter((orphan) => pendingCreate.has(orphan));
+      const keptLocal = orphans.filter(
+        (orphan) => !restorable.has(orphan) && !pendingCreate.has(orphan)
+      );
+      if (keptPending.length > 0) {
+        logger.warn(
+          `Kept ${keptPending.length} orphan file(s) of record(s) awaiting \`push --create\`: ` +
+            "neither the manifest nor the one HEAD committed tracks them, so they are new local " +
+            "work, and `--prune` never deletes them, committed or not. Run `syncrona push --create` " +
+            "to create them; if one is the leftover of a record deleted on the instance, delete it by hand:\n" +
+            keptPending.map((f) => `  ${f}`).join("\n")
+        );
+      }
       if (keptLocal.length > 0) {
         logger.warn(
-          `Kept ${keptLocal.length} orphan file(s) git does not show as committed and unchanged ` +
-            "(new or edited locally — e.g. records awaiting `push --create`). " +
-            "Commit them first, or delete them by hand:\n" +
+          `Kept ${keptLocal.length} orphan file(s) git cannot restore ` +
+            "(untracked, ignored, staged but never committed, or edited since HEAD). " +
+            "`--prune` deletes only files git holds committed and unchanged; delete these by hand " +
+            "if they are not needed:\n" +
             keptLocal.map((f) => `  ${f}`).join("\n")
         );
       }
@@ -532,7 +617,10 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
             ])
           ).confirmed);
       if (prunable.length === 0) {
-        logger.info("Nothing to prune: no orphan is committed and unchanged in git.");
+        logger.info(
+          "Nothing to prune: no orphan is both a leftover of a record the committed manifest tracked " +
+            "and committed unchanged in git."
+        );
       } else if (confirmed) {
         // Deletions are irreversible, so failures must be reported, not
         // swallowed: `.catch(() => undefined)` reported "Pruned N file(s)" even
