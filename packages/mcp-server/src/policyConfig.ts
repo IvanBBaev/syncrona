@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { logger } from "./logger";
-import { toolImplementsDryRun } from "./safetyPolicy";
+import { isLocalMutatingTool, toolImplementsDryRun } from "./safetyPolicy";
 
 type ToolPolicy = {
   deny?: boolean;
@@ -305,6 +305,12 @@ export function shouldEnforcePreflight(config: GuardrailConfig, toolName: string
 
   if (toolPolicy.requirePreflight === true) {
     return true;
+  }
+
+  // A local mutating tool (sync_fluent_build) never reaches the instance, so the
+  // blanket mutation flags below do not send it through the instance preflight.
+  if (isLocalMutatingTool(toolName)) {
+    return false;
   }
 
   if (envPolicy.enforcePreflightForMutations === true) {

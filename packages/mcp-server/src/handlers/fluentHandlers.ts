@@ -47,8 +47,11 @@
  * workspace — the project's installed adapter and SDK, and any build-time code
  * the project's source pulls in — inside the server process, with the server's
  * full environment (including any instance credentials it holds). So it goes
- * through the same policy, preflight and mutating-audit gates as any other write,
- * and it honours `dryRun`: a dry run returns the plan without loading the adapter.
+ * through the same policy and mutating-audit gates as any other write, and it
+ * honours `dryRun`: a dry run returns the plan without loading the adapter. As a
+ * local write it is exempt from the blanket instance preflight
+ * (`enforcePreflightForMutations`; see `isLocalMutatingTool`), which reads the
+ * instance session and says nothing about a local build.
  *
  * Trust boundary: an adapter resolved from the project must really live inside
  * the workspace — its real path, after following symlinks, must not leave it —

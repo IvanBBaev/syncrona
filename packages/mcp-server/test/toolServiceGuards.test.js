@@ -222,6 +222,26 @@ test('enforcePreflightForTool enforces via the active environment policy', async
   assert.ok(error instanceof Error, 'an env-scoped flag must gate mutations too');
 });
 
+test('enforcePreflightForTool lets sync_fluent_build through enforcePreflightForMutations without an instance round-trip', async () => {
+  // The README's example config. A purely local build must not be refused because
+  // the instance is unreachable or its session scope differs from expectedScope.
+  for (const extra of [{ sessionError: new Error('instance unreachable') }, {}]) {
+    const { error, sessionCalls } = await runPreflight({
+      toolName: 'sync_fluent_build',
+      guardrails: { enforcePreflightForMutations: true, expectedScope: 'x_other_scope' },
+      ...extra,
+    });
+    assert.equal(error, null);
+    assert.equal(sessionCalls, 0, 'the local build never reads the instance session');
+  }
+  // The same config still gates an instance write.
+  const blocked = await runPreflight({
+    toolName: MUTATING_TOOL,
+    guardrails: { enforcePreflightForMutations: true, expectedScope: 'x_other_scope' },
+  });
+  assert.ok(blocked.error instanceof Error);
+});
+
 test('enforcePreflightForTool treats a missing scope in the session as a mismatch', async () => {
   const { error } = await runPreflight({
     toolName: MUTATING_TOOL,
