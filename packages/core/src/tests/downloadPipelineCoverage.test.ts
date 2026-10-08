@@ -463,6 +463,30 @@ describe("processTablesInManifest path-traversal guard (INJ-1)", () => {
     expect(createDirRecursively).not.toHaveBeenCalled();
   });
 
+  it("names path traversal as the reason for a traversal refusal", async () => {
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    await expect(
+      processTablesInManifest(oneRecordTables("../evil", "r1"), true)
+    ).rejects.toThrow(/path separator \(path traversal\) and would escape the workspace source root/);
+  });
+
+  it("names a control character instead of claiming an escape", async () => {
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    const refusal = processTablesInManifest(oneRecordTables("sys_\u0001script", "r1"), true);
+    await expect(refusal).rejects.toThrow(/unsafe table name .*control character \(U\+0001\)/);
+    await expect(
+      processTablesInManifest(oneRecordTables("sys_\u0001script", "r1"), true)
+    ).rejects.not.toThrow(/escape/);
+  });
+
+  it("names the byte length of an overlong segment", async () => {
+    const { processTablesInManifest } = await import("../downloadPipeline.js");
+    await expect(
+      processTablesInManifest(oneRecordTables("t".repeat(300), "r1"), true)
+    ).rejects.toThrow(/unsafe table name .*300 UTF-8 bytes, over the 255-byte limit/);
+    expect(createDirRecursively).not.toHaveBeenCalled();
+  });
+
   it("lets a benign manifest through unharmed", async () => {
     getConfig.mockReturnValue({});
     const { processTablesInManifest } = await import("../downloadPipeline.js");

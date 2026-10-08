@@ -5,7 +5,7 @@ import fs, { promises as fsp } from "fs";
 import path from "path";
 import * as ConfigManager from "./config.js";
 import { FLAT_FIELD_SEPARATOR, isFlatEncoded } from "./flatLayout.js";
-import { isSafePathComponent } from "./genericUtils.js";
+import { isSafePathComponent, unsafePathComponentReason } from "./genericUtils.js";
 import {
   META_FILE_NAME,
   META_FILE_TYPE,
@@ -149,10 +149,12 @@ const assertSafeWriteComponent = (
   value: string,
   kind: "file name" | "file type" | "record name"
 ): void => {
-  if (!isSafePathComponent(value)) {
+  const unsafe = unsafePathComponentReason(value);
+  if (unsafe) {
+    const consequence = unsafe.traversal ? " and would escape its target directory" : "";
     throw new Error(
-      `Refusing to write: unsafe ${kind} ${JSON.stringify(value)} would escape ` +
-        `its target directory.`
+      `Refusing to write: unsafe ${kind} ${JSON.stringify(value)}: ` +
+        `${unsafe.reason}${consequence}.`
     );
   }
 };
@@ -384,11 +386,12 @@ export const getBuildExt = (
   // untrusted value leaves the manifest, so both build layouts and any other future
   // caller are covered by one check. isSafePathComponent is the same rule the
   // download side uses, so the two cannot drift.
-  if (!isSafePathComponent(file.type)) {
+  const unsafeType = unsafePathComponentReason(file.type);
+  if (unsafeType) {
     throw new Error(
       `Refusing to build "${recordName}" in table "${table}": the manifest records ` +
-        `an unusable file type for field "${field}". A file type must be a single ` +
-        `path component (no "/" or "\\", not empty, not only dots). Re-run ` +
+        `an unusable file type for field "${field}" (${unsafeType.reason}). A file ` +
+        `type must be a single path component. Re-run ` +
         `\`syncrona refresh\` to rebuild the manifest from the instance.`
     );
   }
