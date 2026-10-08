@@ -5,7 +5,7 @@ import path from "path";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
 import { META_SIDECAR_FILE_NAME, isMetaSidecarPath, stripBOM } from "./metaFields.js";
 import { getDataModelTables, isValidDataModelTableName } from "./dataModel.js";
-import { isSafePathComponent } from "./genericUtils.js";
+import { unsafePathComponentReason } from "./genericUtils.js";
 
 /**
  * SDK-F2 — composite data-model documents.
@@ -139,8 +139,7 @@ export const unsafeCompositeRecordName = (recordName: string): string | undefine
   if (recordName === "") return "it is empty";
   if (recordName.includes("\u0000")) return "it contains a NUL character";
   if (/^\.+$/.test(recordName)) return "it is a relative directory name";
-  if (!isSafePathComponent(recordName)) return "it contains a path separator";
-  return undefined;
+  return unsafePathComponentReason(recordName)?.reason;
 };
 
 /**

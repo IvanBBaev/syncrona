@@ -29,7 +29,7 @@ import {
   mergeCompositeWrites,
 } from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
-import { isSafePathComponent } from "./genericUtils.js";
+import { unsafePathComponentReason } from "./genericUtils.js";
 import {
   applyManifestFolderNames,
   assignManifestFolderNames,
@@ -165,10 +165,16 @@ const assertSafePathComponent = (
   component: string,
   kind: UnsafeComponentKind
 ): void => {
-  if (!isSafePathComponent(component)) {
+  const unsafe = unsafePathComponentReason(component);
+  if (unsafe) {
+    // Only a traversal escapes anything; a control character or an overlong
+    // segment is refused because no filesystem stores it as written.
+    const consequence = unsafe.traversal
+      ? ` and would escape ${CONTAINMENT_BOUNDARY[kind]}`
+      : "";
     throw new Error(
-      `Refusing to download: unsafe ${kind} ${JSON.stringify(component)} ` +
-        `would escape ${CONTAINMENT_BOUNDARY[kind]}.`
+      `Refusing to download: unsafe ${kind} ${JSON.stringify(component)}: ` +
+        `${unsafe.reason}${consequence}.`
     );
   }
 };

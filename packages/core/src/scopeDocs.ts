@@ -2,7 +2,7 @@
 import { SN } from "@syncrona/types";
 import { promises as fsp } from "fs";
 import path from "path";
-import { isSafePathComponent } from "./genericUtils.js";
+import { unsafePathComponentReason } from "./genericUtils.js";
 
 export const DOCS_AUTO_START = "<!-- SYNCRONA:DOCS:START -->";
 export const DOCS_AUTO_END = "<!-- SYNCRONA:DOCS:END -->";
@@ -242,9 +242,11 @@ export async function generateScopeDocs(
   // from escaping via "..") made this write a Markdown file anywhere the
   // process can reach. Validate the component, then verify the joined path
   // really stays under outDir.
-  if (!isSafePathComponent(summary.scope)) {
+  const unsafeScope = unsafePathComponentReason(summary.scope);
+  if (unsafeScope) {
     throw new Error(
-      `Refusing to write scope documentation: unsafe scope name ${JSON.stringify(summary.scope)}.`
+      `Refusing to write scope documentation: unsafe scope name ${JSON.stringify(summary.scope)}: ` +
+        `${unsafeScope.reason}.`
     );
   }
   await fsp.mkdir(outDir, { recursive: true });

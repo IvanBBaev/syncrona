@@ -5,6 +5,8 @@ import {
   aggregateErrorMessages,
   wait,
   formatDuration,
+  isSafePathComponent,
+  unsafePathComponentReason,
 } from "../genericUtils.js";
 import type { Sync } from "@syncrona/types";
 
@@ -131,5 +133,39 @@ describe("formatDuration", () => {
     expect(formatDuration(59_499)).toBe("59s");
     expect(formatDuration(59_500)).toBe("1m");
     expect(formatDuration(60_000)).toBe("1m");
+  });
+});
+
+describe("unsafePathComponentReason", () => {
+  it.each([
+    ["", /^it is empty$/, true],
+    ["..", /relative directory name \(path traversal\)/, true],
+    [".", /relative directory name \(path traversal\)/, true],
+    ["../evil", /path separator \(path traversal\)/, true],
+    ["a\\b", /path separator \(path traversal\)/, true],
+    ["a\u0001b", /control character \(U\+0001\)/, false],
+    ["a\u0000b", /control character \(U\+0000\)/, false],
+    ["a\u007fb", /control character \(U\+007F\)/, false],
+    ["a\ud800b", /lone UTF-16 surrogate \(U\+D800\)/, false],
+    ["x".repeat(256), /256 UTF-8 bytes, over the 255-byte limit/, false],
+  ])("names the reason %j is refused", (component, reason, traversal) => {
+    const verdict = unsafePathComponentReason(component);
+    expect(verdict?.reason).toMatch(reason);
+    expect(verdict?.traversal).toBe(traversal);
+    expect(isSafePathComponent(component)).toBe(false);
+  });
+
+  it.each(["script", "inputs.script", "rec~field", "x".repeat(255), "Ünïcode"])(
+    "accepts %j",
+    (component) => {
+      expect(unsafePathComponentReason(component)).toBeUndefined();
+      expect(isSafePathComponent(component)).toBe(true);
+    }
+  );
+
+  it("refuses a non-string as not a string", () => {
+    expect(unsafePathComponentReason(undefined as unknown as string)?.reason).toMatch(
+      /not a string/
+    );
   });
 });

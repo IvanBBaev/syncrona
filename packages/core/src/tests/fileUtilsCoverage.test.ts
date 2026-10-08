@@ -168,6 +168,24 @@ describe("writeSNFileCurry content coercion", () => {
     expect(fs.existsSync(path.join(parent, "escape.js"))).toBe(false);
   });
 
+  it("names the actual reason a write is refused", async () => {
+    const root = makeNestedRoot();
+    await expect(
+      writeSNFileCurry(false)({ name: path.join("..", "escape"), type: "js", content: "x" } as any, root)
+    ).rejects.toThrow(/path separator \(path traversal\) and would escape its target directory/);
+    const control = writeSNFileCurry(false)(
+      { name: "scr\u0007ipt", type: "js", content: "x" } as any,
+      root
+    );
+    await expect(control).rejects.toThrow(/unsafe file name .*control character \(U\+0007\)/);
+    await expect(
+      writeSNFileCurry(false)({ name: "scr\u0007ipt", type: "js", content: "x" } as any, root)
+    ).rejects.not.toThrow(/escape/);
+    await expect(
+      writeSNFileCurry(false)({ name: "f".repeat(260), type: "js", content: "x" } as any, root)
+    ).rejects.toThrow(/unsafe file name .*260 UTF-8 bytes, over the 255-byte limit/);
+  });
+
   it("refuses to write when the parent directory itself escaped the source root", async () => {
     // INJ-1: even a benign file name must be rejected when parentPath was built
     // from an unsanitized "../evil" component and already points outside the

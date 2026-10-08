@@ -17,13 +17,61 @@ import { Sync } from "@syncrona/types";
 // be refused rather than altered, because it also addresses the instance.
 export const MAX_PATH_SEGMENT_BYTES = 255;
 
+export interface UnsafePathComponent {
+  /** Why the segment is refused, as a clause: "it contains a path separator (path traversal)". */
+  reason: string;
+  /**
+   * True when the segment would take a joined path somewhere else (a separator,
+   * a dot-only name, an empty segment). False when it stays in place but no
+   * filesystem stores it as written — a refusal message must not then claim an
+   * escape that would not happen.
+   */
+  traversal: boolean;
+}
+
+const codePointLabel = (char: string): string =>
+  `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+
+/** The reason isSafePathComponent refuses `component`, or undefined when it accepts it. */
+export const unsafePathComponentReason = (
+  component: string
+): UnsafePathComponent | undefined => {
+  if (typeof component !== "string") return { reason: "it is not a string", traversal: true };
+  if (component.length === 0) return { reason: "it is empty", traversal: true };
+  if (/^\.+$/.test(component)) {
+    return { reason: "it is a relative directory name (path traversal)", traversal: true };
+  }
+  if (/[/\\]/.test(component)) {
+    return { reason: "it contains a path separator (path traversal)", traversal: true };
+  }
+  const control = /[\u0000-\u001f\u007f-\u009f]/u.exec(component);
+  if (control) {
+    return {
+      reason: `it contains a control character (${codePointLabel(control[0])})`,
+      traversal: false,
+    };
+  }
+  // With the `u` flag a paired surrogate is one code point and does not match;
+  // only a lone half does.
+  const surrogate = /[\ud800-\udfff]/u.exec(component);
+  if (surrogate) {
+    return {
+      reason: `it contains a lone UTF-16 surrogate (${codePointLabel(surrogate[0])})`,
+      traversal: false,
+    };
+  }
+  const bytes = Buffer.byteLength(component, "utf8");
+  if (bytes > MAX_PATH_SEGMENT_BYTES) {
+    return {
+      reason: `it is ${bytes} UTF-8 bytes, over the ${MAX_PATH_SEGMENT_BYTES}-byte limit for one path segment`,
+      traversal: false,
+    };
+  }
+  return undefined;
+};
+
 export const isSafePathComponent = (component: string): boolean =>
-  typeof component === "string" &&
-  component.length > 0 &&
-  !/^\.+$/.test(component) &&
-  !/[/\\]/.test(component) &&
-  !/[\u0000-\u001f\u007f-\u009f]|[\ud800-\udfff]/u.test(component) &&
-  Buffer.byteLength(component, "utf8") <= MAX_PATH_SEGMENT_BYTES;
+  unsafePathComponentReason(component) === undefined;
 
 export function wait(ms: number) {
   return new Promise((resolve) => {

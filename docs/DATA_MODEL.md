@@ -199,7 +199,10 @@ endpoint or from the Table API.
 - **Other path segments are refused, not altered.** A table, field, type or
   scope name with a separator, a control character, a lone surrogate or more
   than 255 bytes stops the download with a `Refusing to download: unsafe ...`
-  error, because the same name also addresses the record on the instance.
+  error, because the same name also addresses the record on the instance. The
+  error states which rule the name broke: path traversal (it then also names
+  the directory it would escape), a control character or lone surrogate with
+  its code point, or the segment's length in UTF-8 bytes.
 
 ### Upgrading an existing checkout
 

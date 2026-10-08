@@ -166,6 +166,8 @@ describe("parseCompositeDocument", () => {
     [".", /it is a relative directory name/],
     ["", /it is empty/],
     ["a\u0000b", /it contains a NUL character/],
+    ["a\u0001b", /it contains a control character \(U\+0001\)/],
+    ["r".repeat(256), /it is 256 UTF-8 bytes, over the 255-byte limit/],
   ])("refuses the record-name key %j, naming the file", (key, message) => {
     const text = JSON.stringify({ ...valid, sys_choice: { [key]: { a: "1" } } });
     expect(() => parseCompositeDocument(text, P)).toThrow(message);
