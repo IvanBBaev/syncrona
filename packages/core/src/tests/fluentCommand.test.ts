@@ -587,6 +587,17 @@ describe("fluentCommand: types --native", () => {
     expect(noProject.rec.outputs).toEqual({});
   });
 
+  it("refuses an unparseable now.config.json in the run and the dry run alike", async () => {
+    for (const dryRun of [false, true]) {
+      const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{oops" } });
+      expect(await run({ action: "types", native: true, table: "incident", dryRun }, deps)).toBe(1);
+      expect(rec.generated).toEqual([]);
+      expect(rec.written).toEqual([]);
+    }
+    expect(errors).toHaveLength(2);
+    for (const error of errors) expect(error).toContain(`${CONFIG_FILE} is not valid JSON`);
+  });
+
   it("--dry-run --json prints the native plan as JSON", async () => {
     const { rec, deps } = harness();
     expect(await run({ action: "types", native: true, table: "incident", dryRun: true, json: true }, deps)).toBe(0);
@@ -685,6 +696,94 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(await run({ action: "types", scripts: true }, deps)).toBe(1);
     expect(errors[1]).not.toContain("--native");
   });
+
+  it("--dry-run reports the native generator when the adapter is not installed, without credentials", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { rec, deps } = harness();
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    const loadFluent = jest.fn(async () => Promise.reject(new FluentNotInstalledError()));
+    expect(
+      await run({ action: "types", table: "incident", dryRun: true, json: true }, { ...deps, loadFluent, resolveCredential })
+    ).toBe(0);
+    expect(JSON.parse(rec.written[0])).toEqual({
+      command: "fluent types",
+      exitCode: 0,
+      dryRun: true,
+      method: "nativeTypes",
+      options: { tables: ["incident"] },
+      instance: true,
+    });
+    expect(loadFluent).toHaveBeenCalledWith(PROJECT);
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(rec.generated).toEqual([]);
+    expect(rec.outputs).toEqual({});
+  });
+
+  it("--dry-run reports the native generator when the adapter reports the SDK missing", async () => {
+    const { rec, deps } = harness({
+      engine: {
+        sdkVersion: async () => {
+          throw Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    expect(await run({ action: "types", dryRun: true }, { ...deps, resolveCredential })).toBe(0);
+    expect(rec.written).toEqual([
+      "[dry-run] fluent types → @servicenow/sdk is not installed; read sys_db_object, sys_dictionary and sys_choice " +
+        "({}) against the active instance",
+    ]);
+    expect(rec.engineOptions).toEqual([{ projectDir: PROJECT, logger: expect.anything() }]);
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(rec.calls).toEqual([]);
+  });
+
+  it("--dry-run keeps engine.types when the SDK is present, without credentials", async () => {
+    const { rec, deps } = harness();
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    expect(await run({ action: "types", dryRun: true }, { ...deps, resolveCredential })).toBe(0);
+    expect(rec.written).toEqual(["[dry-run] fluent types → engine.types({}) against the active instance"]);
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(rec.calls).toEqual([]);
+  });
+
+  it("--dry-run without the SDK fails where the native fallback would: no scope", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{}" } });
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run({ action: "types", dryRun: true }, { ...deps, loadFluent })).toBe(1);
+    expect(errors[0]).toContain("needs a scope");
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run with an SDK-only flag never falls back, and does not probe the SDK", async () => {
+    const { rec, deps } = harness();
+    const loadFluent = jest.fn(deps.loadFluent!);
+    expect(await run({ action: "types", scripts: true, dryRun: true }, { ...deps, loadFluent })).toBe(0);
+    expect(rec.written[0]).toContain("engine.types(");
+    expect(loadFluent).not.toHaveBeenCalled();
+  });
+
+  it("--dry-run surfaces any other adapter failure, as the real run would", async () => {
+    const { rec, deps } = harness();
+    const loadFluent = async () => Promise.reject(new Error("adapter is broken"));
+    expect(await run({ action: "types", dryRun: true }, { ...deps, loadFluent })).toBe(1);
+    expect(errors).toEqual(["adapter is broken"]);
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run surfaces any other SDK load failure, as the real run would", async () => {
+    const { rec, deps } = harness({
+      engine: {
+        sdkVersion: async () => {
+          throw new Error("sdk is broken");
+        },
+      },
+    });
+    expect(await run({ action: "types", dryRun: true }, deps)).toBe(1);
+    expect(errors).toEqual(["sdk is broken"]);
+    expect(rec.written).toEqual([]);
+  });
 });
 
 describe("fluentCommand: init", () => {
@@ -737,13 +836,52 @@ describe("fluentCommand: install consent", () => {
     expect(warnings[0]).toContain("--reinstall uninstalls x_acme_app");
   });
 
-  it("prompts Reinstall and falls back to an unknown scope when now.config.json has none", async () => {
-    const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{}" } });
+  it("prompts Reinstall with the project's scope", async () => {
+    const { rec, deps } = harness();
     expect(await run({ action: "install", reinstall: true }, deps)).toBe(0);
-    expect(rec.prompts[0]).toBe("Reinstall (unknown scope) to https://dev1.service-now.com/?");
-    const broken = harness({ files: { [CONFIG_FILE]: "not json" } });
-    expect(await run({ action: "install" }, broken.deps)).toBe(0);
-    expect(broken.rec.prompts[0]).toContain("(unknown scope)");
+    expect(rec.prompts[0]).toBe("Reinstall x_acme_app to https://dev1.service-now.com/?");
+  });
+
+  it.each([false, true])(
+    "refuses an unparseable now.config.json, naming the file (dry run: %s)",
+    async (dryRun) => {
+      const { rec, deps } = harness({ files: { [CONFIG_FILE]: "not json" } });
+      const loadFluent = jest.fn(deps.loadFluent!);
+      expect(await run({ action: "install", dryRun }, { ...deps, loadFluent })).toBe(1);
+      expect(errors[0]).toContain(`${CONFIG_FILE} is not valid JSON`);
+      expect(rec.prompts).toEqual([]);
+      expect(rec.calls).toEqual([]);
+      expect(rec.written).toEqual([]);
+      expect(loadFluent).not.toHaveBeenCalled();
+    }
+  );
+
+  it("refuses a now.config.json that exists but cannot be read, naming the file", async () => {
+    const { rec, deps } = harness();
+    const readFile = async () => Promise.reject(new Error("EACCES: permission denied"));
+    expect(await run({ action: "install", dryRun: true }, { ...deps, readFile })).toBe(1);
+    expect(errors[0]).toBe(`Cannot read ${CONFIG_FILE}: EACCES: permission denied`);
+    expect(rec.written).toEqual([]);
+  });
+
+  it.each([
+    ["no scope key", "{}"],
+    ["an empty scope", JSON.stringify({ scope: "" })],
+    ["a non-string scope", JSON.stringify({ scope: 7 })],
+    ["a JSON array", "[]"],
+  ])("refuses a now.config.json with %s, naming the file", async (_label, content) => {
+    for (const dryRun of [false, true]) {
+      const { rec, deps } = harness({ files: { [CONFIG_FILE]: content } });
+      expect(await run({ action: "install", dryRun }, deps)).toBe(1);
+      expect(rec.prompts).toEqual([]);
+      expect(rec.calls).toEqual([]);
+      expect(rec.written).toEqual([]);
+    }
+    expect(errors).toHaveLength(2);
+    for (const error of errors) {
+      expect(error).toContain(CONFIG_FILE);
+      expect(error).toContain('"scope"');
+    }
   });
 });
 
@@ -769,6 +907,8 @@ describe("fluentCommand: install without a terminal", () => {
     const loadFluent = jest.fn(deps.loadFluent!);
     expect(await run({ action: "install", dryRun: true, ...extraArgs }, { ...deps, ...extraDeps, loadFluent })).toBe(1);
     expect(errors[0]).toContain(reason);
+    expect(errors[0]).toContain("Pass --ci to preview without a prompt; a dry run installs nothing.");
+    expect(errors[0]).not.toContain("install without asking");
     expect(rec.written).toEqual([]);
     expect(loadFluent).not.toHaveBeenCalled();
   });
@@ -1290,11 +1430,29 @@ describe("fluentCommand: move-to-app", () => {
     expect(rec.engineOptions).toEqual([]);
   });
 
-  it("leaves an unreadable scope to the SDK's own check, and says so in the prompt", async () => {
-    const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{not json" } });
+  it("names the global application in the prompt", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
     expect(await run({ action: "move-to-app", ids: ID_A }, deps)).toBe(0);
-    expect(rec.prompts[0]).toContain("Move 1 record(s) into this application on");
-    expect(rec.calls.map((c) => c.method)).toEqual(["moveToApp"]);
+    expect(rec.prompts[0]).toContain("Move 1 record(s) into global on");
+  });
+
+  it.each([
+    ["is unparseable", "{not json", "is not valid JSON"],
+    ["sets no scope", "{}", '"scope"'],
+  ])("refuses a now.config.json that %s in the run and the dry run alike", async (_label, content, reason) => {
+    for (const dryRun of [false, true]) {
+      const { rec, deps } = harness({ files: { [CONFIG_FILE]: content } });
+      expect(await run({ action: "move-to-app", ids: ID_A, dryRun }, deps)).toBe(1);
+      expect(rec.prompts).toEqual([]);
+      expect(rec.calls).toEqual([]);
+      expect(rec.written).toEqual([]);
+      expect(rec.engineOptions).toEqual([]);
+    }
+    expect(errors).toHaveLength(2);
+    for (const error of errors) {
+      expect(error).toContain(CONFIG_FILE);
+      expect(error).toContain(reason);
+    }
   });
 
   it("refuses API-key and mutual-TLS profiles", async () => {
@@ -1355,7 +1513,20 @@ describe("fluentCommand: move-to-app", () => {
     const { rec, deps } = harness({ files: GLOBAL_CONFIG });
     expect(await run({ action: "move-to-app", ids: ID_A, dryRun: true, json: true }, deps)).toBe(1);
     expect(errors[0]).toContain("--json output");
-    expect(errors[0]).toContain("Pass --ci to move the records without asking.");
+    expect(errors[0]).toContain("Pass --ci to preview without a prompt; a dry run moves nothing.");
+    expect(errors[0]).not.toContain("move the records without asking");
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run without a terminal is refused with the dry-run wording", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG });
+    expect(
+      await run({ action: "move-to-app", ids: ID_A, dryRun: true }, { ...deps, interactive: () => false })
+    ).toBe(1);
+    expect(errors[0]).toBe(
+      "fluent move-to-app asks for confirmation, and this session has no terminal to answer it. " +
+        "Pass --ci to preview without a prompt; a dry run moves nothing."
+    );
     expect(rec.written).toEqual([]);
   });
 
