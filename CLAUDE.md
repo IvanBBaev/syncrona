@@ -26,7 +26,7 @@ It complements README and package-level docs with implementation and quality-gat
 - `npx syncrona build` builds local artifacts.
 - `npx syncrona deploy` deploys built files (`--ci` skips the interactive prompts: it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise).
 - `npx syncrona docs` generates or logically updates scope Markdown docs and diagrams.
-- `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files (and re-fetches secret-rule values such as `sys_properties.value`, restoring non-secret ones), and `--apply --prune` deletes orphan files no record claims — only orphans git holds committed and unchanged; pruning is refused outside a git repository or without a commit.
+- `npx syncrona repair` reconciles the manifest with local files: report-only by default, `--apply` re-downloads missing files (and re-fetches secret-rule values such as `sys_properties.value`, restoring non-secret ones), and `--apply --prune` deletes orphan files no record claims — only orphans git holds committed and unchanged, never the files of a record awaiting `push --create`; pruning is refused outside a git repository or without a commit.
 - `npx syncrona status` prints extended diagnostics.
 - `npx syncrona query <table>` queries records through the Table API with the `now-sdk query` flags except `--select`/`--auth` (`-q` required); read-only, and `-o json` prints the `{ok, hasMore, nextOffset, records}` envelope.
 - `npx syncrona check-env` checks OS, Node, WSL and Git prerequisites.

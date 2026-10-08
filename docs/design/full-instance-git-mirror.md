@@ -147,11 +147,15 @@ Measured baseline from the current code (all references verified 2026-08-12).
    `initAllScopesFromEnv` does `process.chdir` + singleton reset per scope
    (`commands.ts:66-203`) — non-reentrant, no instance-level lock, checkpoint, or
    manifest.
-5. **Prune safety assumes a complete manifest.** `repair --prune` deletes anything
-   the manifest doesn't claim (`repairCommand.ts:138-172`, auto-confirmed under
-   `--ci` at `:262-263`), while the pull path silently skips tables on 400/403/404
-   (`manifestBuilder.ts:102-105`). At instance scale, ACL-variable visibility
+5. **Prune safety assumes a complete manifest.** At the time of this analysis
+   `repair --prune` deleted anything the manifest didn't claim (auto-confirmed under
+   `--ci`), while the pull path silently skips tables on 400/403/404
+   (`manifestBuilder.ts`). At instance scale, ACL-variable visibility
    guarantees under-claiming; "not in manifest" must be decoupled from "delete it".
+   *Since resolved for `repair`:* it now deletes an orphan only on git evidence —
+   committed and unchanged at HEAD, of a record the committed manifest tracked —
+   keeps records awaiting `push --create` and files of tables the manifest does
+   not list, and refuses outright without a git repository or commit.
 
 ### 3.3 Transport gaps (13, measured)
 

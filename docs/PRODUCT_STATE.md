@@ -74,7 +74,7 @@ timeline
 | `push` | ✅ | confirm → atomic collaboration lock → checkpoint/resume → concurrent push; `--diff`, `--dry-run`, `--ci`, `--updateSet`, `--scopeSwap`; `--create` creates or adopts records for unmapped files and `--prune` deletes in-scope records whose files were all removed (1.1.0, live-instance verification pending) |
 | `build` / `deploy` | ✅ | plugin pipeline (babel/ts/webpack/sass/prettier) → build dir → deploy |
 | `docs` | ✅ | per-scope Markdown + mermaid docs generated from the manifest |
-| `repair` | ✅ | reconciles the manifest with local files; report-only by default, `--apply` re-downloads, `--apply --prune` deletes orphan files |
+| `repair` | ✅ | reconciles the manifest with local files; report-only by default, `--apply` re-downloads, `--apply --prune` deletes orphan files git holds committed and unchanged (never records awaiting `push --create` or files of unlisted tables; refused without git evidence) |
 | `query <table>` | ✅ | read-only Table API query with the `now-sdk query` flag set and its `-o json` envelope (1.1.0) |
 | `cicd <action>` | ✅ | `sn_cicd` driver: ATF suite/test runs and app-repo install/publish/rollback with exit codes 0/1/2 (1.1.0, live-instance verification pending) |
 | `fluent <action>` | ✅ | Fluent (`.now.ts`) toolchain through the optional `@syncrona/fluent` + `@servicenow/sdk` tier; Basic and OAuth profiles only (1.1.0, live install pending) |

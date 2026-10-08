@@ -276,12 +276,17 @@ Pruning (deleting instance records whose local files are gone) is **never
 allowed** for the documented data-model tables, whether or not a workspace opts
 them in: `push --prune` refuses those records and sends no DELETE. Deleting a dictionary entry, a table, a role or an ACL deletes data or
 access on the instance. Delete these records on the instance on purpose, then
-refresh. (`repair --prune` only deletes local orphan files and is unaffected.)
+refresh. (`repair --prune` only deletes local orphan files git holds committed
+and unchanged, and is unaffected.)
 
 After such a refresh the record's local `.meta.json` is left behind. `repair`
 reports it as an orphan when the manifest still lists the table but no longer
-holds the record, and `repair --apply --prune` deletes that local file, so a
-later `push --create` does not POST the deleted record back. A sidecar of a
+holds the record, and `repair --apply --prune` deletes that local file — when
+the manifest committed at HEAD tracked the record (so it was on the instance)
+and git holds the file committed and unchanged — so a later `push --create`
+does not POST the deleted record back. A record no committed manifest tracked
+is taken for one awaiting `push --create` and kept, committed or not; so is a
+file git cannot restore. Delete such a leftover by hand. A sidecar of a
 table the manifest does not list at all (a new record waiting for
 `push --create`, or a table the last refresh could not read) is reported with
 a warning and never pruned.
