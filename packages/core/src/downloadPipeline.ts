@@ -31,6 +31,11 @@ import {
 import { logger } from "./Logger.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
+  applyManifestFolderNames,
+  assignManifestFolderNames,
+  migrateRenamedRecordFolders,
+} from "./recordFolderNames.js";
+import {
   DownloadCheckpoint,
   readDownloadCheckpoint,
   writeDownloadCheckpoint,
@@ -174,30 +179,6 @@ const assertSafeFileComponents = (file: SN.File): void => {
   assertSafePathComponent(file.type, "file type");
 };
 
-// Two records whose names differ only by case or Unicode normal form occupy the
-// SAME path on macOS/Windows volumes, so one silently overwrites the other's
-// files and a later push uploads the wrong content. The Table-API builder now
-// disambiguates such names, but a manifest produced by the scoped endpoint is
-// server-owned and cannot be renamed here — so at least make the collision
-// visible instead of letting it surface as mysteriously missing content.
-const warnOnRecordNameCollisions = (
-  tableName: string,
-  records: Record<string, { name: string }>
-): void => {
-  const seen = new Map<string, string>();
-  for (const rec of Object.values(records)) {
-    const name = String(rec?.name ?? "");
-    const normalized = name.normalize("NFC").toLowerCase();
-    const prior = seen.get(normalized);
-    if (prior !== undefined && prior !== name) {
-      logger.warn(
-        `Record name collision in ${tableName}: "${name}" and "${prior}" resolve to the same path on case-insensitive or Unicode-normalizing filesystems; one will overwrite the other.`
-      );
-    }
-    seen.set(normalized, name);
-  }
-};
-
 // Shared by processManifest, processMissingFiles and downloadAllFiles — the
 // single seam that governs every pull path (wizard, refresh and download).
 export const processTablesInManifest = async (
@@ -246,7 +227,6 @@ export const processTablesInManifest = async (
     const tablePath = path.join(sourcePath, tableName);
     const { records } = tables[tableName];
     const recKeys = Object.keys(records);
-    warnOnRecordNameCollisions(tableName, records);
 
     if (flat) {
       // DX17: flat layout writes every field file directly under the table
@@ -316,10 +296,47 @@ export const processTablesInManifest = async (
   }
 };
 
+/**
+ * Gives a freshly fetched manifest its folder names (recordFolderNames) and, on
+ * an existing checkout, moves the folders the naming rules renamed. The scoped
+ * endpoint names records by display value alone, so without this two records
+ * whose names collide on disk would share — and overwrite — one folder. In
+ * place, and a no-op on a manifest already named by these rules.
+ */
+export const adoptRecordFolderNames = async (
+  previous: SN.AppManifest | undefined,
+  next: SN.AppManifest
+): Promise<void> => {
+  assignManifestFolderNames(next);
+  if (!previous) return;
+  try {
+    await migrateRenamedRecordFolders(
+      previous,
+      next,
+      ConfigManager.getSourcePath(),
+      ConfigManager.getConfig().flat === true
+    );
+  } catch (e) {
+    logger.warn(
+      `Could not move renamed record folders: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+};
+
+// The manifest on disk before this run, if the directory has one.
+const loadPreviousManifest = async (): Promise<SN.AppManifest | undefined> => {
+  try {
+    return (await ConfigManager.getManifest()) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const processManifest = async (
   manifest: SN.AppManifest,
   forceWrite = false
 ): Promise<void> => {
+  await adoptRecordFolderNames(await loadPreviousManifest(), manifest);
   await processTablesInManifest(manifest.tables, forceWrite);
   await fUtils.writeFileForce(
     ConfigManager.getManifestPath(),
@@ -478,6 +495,11 @@ export const syncManifest = async (): Promise<boolean> => {
         `Scope "${newManifest.scope}" owns no records yet — keeping the empty manifest.`
       );
     }
+
+    // Before the manifest is written: the missing-file probe below must look
+    // for each record at its new folder, and an existing checkout's renamed
+    // folders must already be there so nothing is downloaded twice.
+    await adoptRecordFolderNames(curManifest, newManifest);
 
     logger.info("Writing new manifest file...");
     await fUtils.writeManifestFile(newManifest);
@@ -927,8 +949,12 @@ const createTableFetcher = (
     }
 
     try {
-      const fileResult = await unwrapSNResponse(
-        client.getMissingFiles(files, tableOptions)
+      // The scoped endpoint names what it returns by display value; re-key it
+      // onto the manifest's folder names so a disambiguated record is written
+      // at its own folder, not at the colliding one.
+      const fileResult = applyManifestFolderNames(
+        await unwrapSNResponse(client.getMissingFiles(files, tableOptions)),
+        recordNames
       );
       return mergeTableMaps(forcedResult, mergeTableMaps(fileResult, metaResult));
     } catch (e) {

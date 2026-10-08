@@ -16,6 +16,7 @@ import {
 import { inspectCompositeLayout } from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
 import { formatTable } from "./genericUtils.js";
+import { canonicalFolderKey } from "./recordFolderNames.js";
 import { setLogLevel, logErrorHint } from "./commandHelpers.js";
 
 export type RepairCmdArgs = Sync.SharedCmdArgs & {
@@ -72,15 +73,12 @@ function isManifestShapedPath(sourcePath: string, filePath: string): boolean {
 // macOS and Windows. So a manifest record "Foo" whose folder is on disk as "foo"
 // is not reported missing (stat finds it) while the orphan lookup, which is a
 // byte-exact `records[recordName]`, does not claim it — and `repair --apply
-// --prune` deleted a file the manifest does claim. Folding here is also what
-// manifestBuilder already does when it decides two record names collide
-// (`normalize("NFC").toLowerCase()`), so the two modules agree on when two names
-// are "the same name". `toLowerCase`, never `toLocaleLowerCase`: the latter is
-// locale-dependent (Turkish dotless ı) and would make pruning depend on the
-// operator's locale. Merging two records that differ only in case is the safe
-// direction — it can only ever make this predicate refuse to delete.
-const canonicalName = (name: string): string =>
-  name.normalize("NFC").toLowerCase().replace(/[.\s]+$/u, "");
+// --prune` deleted a file the manifest does claim. The fold is the one the
+// folder naming rules use to decide two record names collide
+// (recordFolderNames.canonicalFolderKey), so the two modules agree on when two
+// names are "the same name". Merging two records that differ only in case is
+// the safe direction — it can only ever make this predicate refuse to delete.
+const canonicalName = canonicalFolderKey;
 
 // Own keys only. Table and record names come off a directory listing, and a
 // plain `tables[name]` answers an inherited Object.prototype member for a

@@ -32,6 +32,7 @@ import {
 } from "./dataModel.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
+import { assignRecordFolderNames, setRecord } from "./recordFolderNames.js";
 
 type TableAPIRecord = Record<string, string>;
 type TableAPIResponse = { result: TableAPIRecord[] };
@@ -1058,34 +1059,6 @@ function buildRecordName(
   return safe;
 }
 
-/**
- * Stores a record under its on-disk name.
- *
- * `records[name] = record` looks total but is not: `records` is an object literal,
- * so assigning the one key `"__proto__"` invokes the inherited setter instead of
- * creating a property. The record then vanished — `Object.keys` did not list it, so
- * the manifest never mentioned it and the downloader never wrote it, while the
- * response had returned it and the run reported success. If it was the table's only
- * record the whole table disappeared from the result. `__proto__` is a perfectly
- * legal ServiceNow display name and a perfectly legal directory name (INJ-1's
- * isSafePathComponent accepts it), and it also arrives as a *supplied* manifest name
- * (JSON.parse makes `"__proto__"` an own property, so buildManifestRecordNames
- * passes it straight through). defineProperty stores it as the own, enumerable,
- * JSON-serializable property every consumer already expects.
- */
-function setRecord(
-  records: SN.TableConfigRecords,
-  name: string,
-  record: SN.MetaRecord
-): void {
-  Object.defineProperty(records, name, {
-    value: record,
-    enumerable: true,
-    writable: true,
-    configurable: true,
-  });
-}
-
 // Builds the Table API `sysparm_fields` list for a record query. buildRecordName
 // derives the on-disk name from the default display field, an optional
 // tableOptions.displayField override, and an optional differentiator field — so
@@ -1188,7 +1161,6 @@ async function getRecordsForTable(
         return {
           sysId,
           name,
-          normalized: name.normalize("NFC").toLowerCase(),
           files: filesForRow(row),
         };
       })
@@ -1208,24 +1180,12 @@ async function getRecordsForTable(
         `Table ${tableName}: skipped ${unusableRows} record(s) the instance returned without a usable sys_id.`
       );
     }
-    const sysIdsByNormalized = new Map<string, Set<string>>();
+    // One naming rule for every producer (recordFolderNames): colliding groups
+    // get a `_<sys_id>` suffix, decided over the whole result set so row order
+    // never moves a folder, with one warning per group.
+    const folders = assignRecordFolderNames(tableName, entries);
     for (const entry of entries) {
-      let group = sysIdsByNormalized.get(entry.normalized);
-      if (!group) {
-        group = new Set<string>();
-        sysIdsByNormalized.set(entry.normalized, group);
-      }
-      group.add(entry.sysId);
-    }
-
-    for (const entry of entries) {
-      const collides = (sysIdsByNormalized.get(entry.normalized)?.size ?? 0) > 1;
-      const name = collides ? `${entry.name}_${entry.sysId}` : entry.name;
-      if (collides) {
-        logger.warn(
-          `Record name collision in ${tableName}: "${entry.name}" is used by more than one record; storing it as "${name}" so no record is overwritten.`
-        );
-      }
+      const name = folders.get(entry.sysId) as string;
       setRecord(records, name, {
         sys_id: entry.sysId,
         name,

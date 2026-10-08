@@ -161,6 +161,45 @@ A `sys_properties` `value` field file is also always fetched through the Table
 API, which reads each property's `type` with the row; the scoped endpoint cannot
 tell a password property from any other.
 
+## Record folder names
+
+These rules apply to every table, not only to the data-model tables above. A
+record's folder (or, in the flat layout, its file prefix) is its name in the
+manifest, and the same names are used to download, refresh, push, watch and
+repair. They apply in the same way whether the manifest comes from the scoped
+endpoint or from the Table API.
+
+- **Collisions.** Two names collide when they are equal after Unicode NFC
+  normalisation, lower-casing and removing trailing dots and spaces. On
+  APFS, NTFS and SMB shares such names are one folder. Every member of a
+  colliding group gets the suffix `_<sys_id>`, for example `Util_<sys_id>` and
+  `util_<sys_id>`. The result depends only on the set of records, not on the
+  order the instance returns them in. The CLI prints one warning per group.
+- **Records that do not collide** keep their names exactly as before.
+
+### Upgrading an existing checkout
+
+The scoped endpoint used to name records by display value only. On a
+case-insensitive volume, two records whose names differed only by case or
+normal form were written into one folder and overwrote each other. On the
+first `refresh` or `download` with these rules:
+
+- Folders of records that do not collide stay where they are. Folders that an
+  earlier Table API build had already suffixed also stay.
+- A colliding record whose old folder belonged to it alone, which happens on a
+  case-sensitive volume or when only one member was ever downloaded, has that
+  folder renamed to the suffixed name. Local edits move with it, and the CLI
+  prints `Renamed "<table>/<old>" to "<table>/<new>"`. Commit the rename.
+- A folder that several colliding records shared cannot be assigned to one of
+  them. It is left in place with a `Left "<table>/<old>" in place` warning, and
+  each record is downloaded fresh into its new folder. Review the old folder,
+  then delete it; `syncrona repair` lists its files as orphans.
+- No folder is moved when the destination already exists. The old folder is
+  left in place, with a warning.
+
+After the upgrade, push and watch resolve only the new paths. A file left in
+an old folder is no longer matched to a record.
+
 ## Child tables
 
 Records on a child table are independent records. A dictionary override, a
