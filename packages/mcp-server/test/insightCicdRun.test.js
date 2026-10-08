@@ -940,7 +940,8 @@ test('handleInsightTool dispatches sync_cicd_run', async () => {
 // Review finding 4: the ATF verdict allow-list — identical to core's cicdCommand
 // ---------------------------------------------------------------------------
 
-const ZERO = { rolledup_test_failure_count: 0, rolledup_test_error_count: 0 };
+// Zero failures and errors over a suite that did run tests (a stated success count).
+const ZERO = { rolledup_test_success_count: 1, rolledup_test_failure_count: 0, rolledup_test_error_count: 0 };
 
 test('ATF allow-lists are the exact sets core uses', () => {
   assert.deepEqual([...ATF_PASSING_STATUSES].sort(), ['success', 'success_with_warnings']);
@@ -956,12 +957,20 @@ test('strictAtfCount accepts only non-negative integers', () => {
   }
 });
 
-test('atfSuiteVerdict: passed only for a passing status with both counts stated as 0', () => {
+test('atfSuiteVerdict: passed only for a passing status with both counts stated as 0 and a test run', () => {
   const cases = [
     [{ test_suite_status: 'success', ...ZERO }, 'passed'],
     [{ test_suite_status: '  SUCCESS ', ...ZERO }, 'passed'],
     [{ test_suite_status: 'success_with_warnings', ...ZERO }, 'passed'],
-    [{ test_suite_status: 'success', rolledup_test_failure_count: '0', rolledup_test_error_count: ' 0 ' }, 'passed'],
+    [{ test_suite_status: 'success', rolledup_test_success_count: '3', rolledup_test_failure_count: '0', rolledup_test_error_count: ' 0 ' }, 'passed'],
+    [{ test_suite_status: 'success', ...ZERO, rolledup_test_success_count: 0 }, 'no_tests'],
+    [{ test_suite_status: 'success_with_warnings', ...ZERO, rolledup_test_success_count: ' 0 ' }, 'no_tests'],
+    [{ test_suite_status: 'success', ...ZERO, rolledup_test_success_count: 0, rolledup_test_skip_count: 4 }, 'no_tests'],
+    [{ test_suite_status: 'failure', ...ZERO, rolledup_test_success_count: 0 }, 'failed'],
+    [{ test_suite_status: 'canceled', ...ZERO, rolledup_test_success_count: 0 }, 'unknown'],
+    [{ test_suite_status: 'success', rolledup_test_failure_count: 0, rolledup_test_error_count: 0 }, 'unknown'],
+    [{ test_suite_status: 'success', ...ZERO, rolledup_test_success_count: 'n/a' }, 'unknown'],
+    [{ test_suite_status: 'success', ...ZERO, rolledup_test_success_count: -1 }, 'unknown'],
     [{ test_suite_status: 'failure ', ...ZERO }, 'failed'],
     [{ test_suite_status: 'ERROR', ...ZERO }, 'failed'],
     [{ test_suite_status: 'success', rolledup_test_failure_count: 1, rolledup_test_error_count: 0 }, 'failed'],
@@ -1026,6 +1035,7 @@ test('handleCicdRun run-suite: a successful tracker over an unclear result → i
       { test_suite_status: 'failed', ...ZERO },
       { test_suite_status: 'success' },
       { test_suite_status: 'success', rolledup_test_failure_count: 'n/a', rolledup_test_error_count: 0 },
+      { test_suite_status: 'success', rolledup_test_failure_count: 0, rolledup_test_error_count: 0 },
     ]) {
       const res = await runSuiteOver(result);
       const body = payloadOf(res);
@@ -1046,6 +1056,26 @@ test('handleCicdRun run-suite: a trailing-space failure status → failed', asyn
     const body = payloadOf(await runSuiteOver({ test_suite_status: 'failure ', ...ZERO }));
     assert.equal(body.outcome, 'failed');
     assert.equal(body.exitCode, 2);
+  });
+});
+
+test('handleCicdRun run-suite: a passing suite that ran zero tests → failed / exitCode 2, not succeeded', async () => {
+  await withEnv(async () => {
+    for (const status of ['success', 'success_with_warnings']) {
+      const res = await runSuiteOver({
+        test_suite_status: status,
+        rolledup_test_success_count: 0,
+        rolledup_test_failure_count: 0,
+        rolledup_test_error_count: 0,
+        rolledup_test_skip_count: 2,
+      });
+      const body = payloadOf(res);
+      assert.equal(res.isError, true, status);
+      assert.equal(body.outcome, 'failed', status);
+      assert.equal(body.exitCode, 2, status);
+      assert.deepEqual(body.atf, { suiteStatus: fenced(status), passed: 0, failed: 0, errored: 0, skipped: 2 });
+      assert.equal(body.message, fenced('The suite ran no tests (0 passed, 0 failed, 0 errored), which is not a pass.'));
+    }
   });
 });
 
@@ -1124,14 +1154,43 @@ test('handleCicdRun resume: a results link without an id still marks an ATF trac
   });
 });
 
-test('handleCicdRun resume: a successful app-repo tracker resumed as an ATF action → incomplete', async () => {
+test('handleCicdRun resume: an app-repo tracker resumed as an ATF action → incomplete, whatever its status', async () => {
   await withEnv(async () => {
     for (const action of ['run-suite', 'run-test']) {
-      mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2') });
-      const body = payloadOf(await handleCicdRun({ action, progressId: RESUME_ID }, makeContext()));
-      assert.equal(body.outcome, 'incomplete', action);
-      assert.match(body.message, /links no ATF result record/);
+      for (const [status, label] of [['2', 'Successful'], ['3', 'Failed'], ['4', 'Canceled']]) {
+        const calls = mockFetch({
+          [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress(status, { status_message: 'Install failed' }),
+        });
+        const context = makeContext();
+        const res = await handleCicdRun({ action, progressId: RESUME_ID }, context);
+        const body = payloadOf(res);
+        // Never succeeded (a pass) nor failed (failing tests): the tracker says nothing about tests.
+        assert.equal(res.isError, true, `${action}/${status}`);
+        assert.equal(body.outcome, 'incomplete', `${action}/${status}`);
+        assert.equal(body.exitCode, 1, `${action}/${status}`);
+        assert.equal(body.atf, undefined);
+        assert.match(
+          body.message,
+          new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended ${label}\\)`)
+        );
+        assert.match(body.message, /Resume it with the install, publish or rollback action/);
+        assert.equal(body.tracker.status, status);
+        assert.equal(calls.length, 1);
+        assert.equal(context.audits.at(-1).outcome.outcome, 'incomplete');
+      }
     }
+  });
+});
+
+test('handleCicdRun: a dispatched ATF run whose tracker failed before linking a result stays failed', async () => {
+  await withEnv(async () => {
+    mockFetch({
+      'POST /api/sn_cicd/testsuite/run': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress('3', { status_message: 'Suite not found' }),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'failed');
+    assert.equal(body.exitCode, 2);
   });
 });
 
