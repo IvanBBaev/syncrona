@@ -109,9 +109,14 @@ list in `includes`. An `includes` entry cannot lift the password, journal,
 collection and image filter: such a column is dropped with a warning, whether
 the manifest comes from the scoped endpoint or the Table API fallback, on
 `init`, `refresh` and `download` alike — its value is never written and never
-requested. If its dictionary type cannot be read (no dictionary row, an empty
-`internal_type`, or a failed lookup), it is kept and a warning names it once per
-build; a column that does not exist then leaves the table reported incomplete on
+requested. The type is compared after trimming and lower-casing, so
+`Password2` is a credential type too. If its dictionary type cannot be read (no
+dictionary row, an empty `internal_type`, or a failed lookup), it is kept and a
+warning names it once per build. When the table's parent hierarchy cannot be
+read (a `sys_db_object` lookup fails, or an ACL hides the row), a column the
+table inherits has no dictionary row either; it is kept the same way, and the
+warning says the parent table hierarchy could not be read and names the table
+where the walk stopped. A column that does not exist leaves the table reported incomplete on
 `refresh` and `download`. `tableOptions.<table>.metaFields` replaces discovery for a
 table, just as it does for any other sidecar.
 
