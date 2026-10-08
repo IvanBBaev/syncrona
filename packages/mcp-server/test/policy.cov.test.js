@@ -14,6 +14,7 @@ const {
 
 const {
   isMutatingTool,
+  isLocalMutatingTool,
   isDestructiveWorkspaceCommand,
   findSyncroCliSubcommand,
   isUnsafeWorkspaceCommand,
@@ -316,6 +317,39 @@ test('shouldEnforcePreflight: falls back to top-level enforcePreflightForMutatio
     const configFalse = parseGuardrailConfig({ enforcePreflightForMutations: false });
     assert.equal(shouldEnforcePreflight(configFalse, 'sync_push'), false);
   });
+});
+
+test('shouldEnforcePreflight: a local mutating tool is exempt from the blanket mutation flags', () => {
+  // sync_fluent_build never reaches the instance, so the instance preflight
+  // (session scope / update set) says nothing about it. The blanket flags —
+  // top-level and environment-level — must not route it to the instance.
+  withEnv(SYNCRONA_ENV_KEY, undefined, () => {
+    const topLevel = parseGuardrailConfig({ enforcePreflightForMutations: true });
+    assert.equal(isMutatingTool('sync_fluent_build'), true, 'it stays a mutating tool');
+    assert.equal(shouldEnforcePreflight(topLevel, 'sync_fluent_build'), false);
+    assert.equal(shouldEnforcePreflight(topLevel, 'sync_push'), true, 'an instance write keeps its preflight');
+
+    const envLevel = parseGuardrailConfig({
+      policy: { activeEnvironment: 'prod', environments: { prod: { enforcePreflightForMutations: true } } },
+    });
+    assert.equal(shouldEnforcePreflight(envLevel, 'sync_fluent_build'), false);
+  });
+});
+
+test('shouldEnforcePreflight: an explicit per-tool requirePreflight still gates a local mutating tool', () => {
+  withEnv(SYNCRONA_ENV_KEY, undefined, () => {
+    const config = parseGuardrailConfig({
+      policy: { tools: { sync_fluent_build: { requirePreflight: true } } },
+    });
+    assert.equal(shouldEnforcePreflight(config, 'sync_fluent_build'), true);
+  });
+});
+
+test('isLocalMutatingTool names only mutating tools that never reach the instance', () => {
+  assert.equal(isLocalMutatingTool('sync_fluent_build'), true);
+  for (const name of ['sync_push', 'sync_cicd_run', 'sn_create_record', 'run_workspace_command', 'sync_get_session_context']) {
+    assert.equal(isLocalMutatingTool(name), false, name);
+  }
 });
 
 test('shouldEnforcePreflight: unknown tool with no policy defaults to top-level flag', () => {

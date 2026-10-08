@@ -109,9 +109,27 @@ const MUTATING_TOOLS = new Set([
   // SDK-F6 review: never reaches the instance, but it overwrites the project's
   // dist/ and executes the project's installed adapter and build-time code
   // in-process with the server's full environment — so it takes the same
-  // policy, preflight and mutating-audit gates as any other write.
+  // policy and mutating-audit gates as any other write. It is also a
+  // LOCAL_MUTATING_TOOLS entry: the blanket instance preflight skips it.
   "sync_fluent_build",
 ]);
+
+// Mutating tools that never reach the instance: they keep the policy check and
+// the mutating audit, but the blanket `enforcePreflightForMutations` flags do not
+// route them through the instance preflight (session scope / update set), which
+// says nothing about a local write and would refuse it whenever the instance is
+// unreachable — the same reason run_workspace_command's purely local commands are
+// kept off that gate. An explicit per-tool `requirePreflight` still applies.
+// Every entry must also be in MUTATING_TOOLS.
+const LOCAL_MUTATING_TOOLS = new Set([
+  // Builds the project's dist/ in-process; no instance call.
+  "sync_fluent_build",
+]);
+
+/** True for a mutating tool whose writes stay local, so the instance preflight is not blanket-enforced on it. */
+export function isLocalMutatingTool(toolName: string): boolean {
+  return LOCAL_MUTATING_TOOLS.has(toolName) && MUTATING_TOOLS.has(toolName);
+}
 
 // SEC-6 follow-up (REV-151): tools whose handler actually BRANCHES on `dryRun` and returns
 // a plan instead of doing the work. The audit record and the semantic-index invalidation

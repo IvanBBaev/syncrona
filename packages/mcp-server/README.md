@@ -305,6 +305,13 @@ Create `sync.mcp.guardrails.json` in project root:
 
 When enforcement is enabled, mutating tools are blocked if preflight fails.
 
+The preflight reads the instance session (current scope and update set), so it
+is skipped for local mutating tools, which never call the instance:
+`sync_fluent_build` is exempt from `enforcePreflightForMutations` (top-level or
+per environment) and runs even when the instance is unreachable. It still goes
+through the tool policy and the mutating audit trail. To preflight it anyway,
+set `policy.tools.sync_fluent_build.requirePreflight: true`.
+
 ## Dry-run support
 
 Mutating tools support `dryRun=true` and return planned actions without applying changes.
