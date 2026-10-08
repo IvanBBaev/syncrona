@@ -281,19 +281,86 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
 // answer "what changed against a ref" for push, while prune needs the opposite
 // question — which files are byte-identical to a committed blob — and a cwd of
 // the source directory rather than the process's.
-const runGit = (cwd: string, args: string[]): Promise<string> =>
+//
+// The variables an outer git process exports (a hook, `git rebase -x`, a
+// worktree script) would override discovery: with GIT_DIR set, git takes the cwd
+// as the top of the work tree, so every committed path gains a prefix the orphan
+// paths lack and nothing lines up — or another repository entirely answers.
+// The repository that holds the source directory is the only one whose evidence
+// counts, so discovery always starts from it.
+const DISCOVERY_OVERRIDES = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX",
+];
+
+const gitEnv = (): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+  for (const key of DISCOVERY_OVERRIDES) {
+    delete env[key];
+  }
+  return env;
+};
+
+/** A failed git call: `message` is git's own reason, `stdout` what it printed first. */
+class GitError extends Error {
+  constructor(
+    message: string,
+    readonly stdout: string
+  ) {
+    super(message);
+    this.name = "GitError";
+  }
+}
+
+// git's reason for a failure: its `fatal:` line, else its last non-empty stderr
+// line. Never the command line — for hash-object that would be the path list.
+const gitReason = (args: string[], err: { code?: unknown }, stderr: string): string => {
+  if (err.code === "ENOENT") {
+    return "git is not installed or not on PATH";
+  }
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  return (
+    lines.find((line) => line.startsWith("fatal:")) ??
+    lines[lines.length - 1] ??
+    `git ${args[0]} exited with code ${String(err.code)}`
+  );
+};
+
+const runGit = (cwd: string, args: string[], input?: string): Promise<string> =>
   new Promise<string>((resolve, reject) => {
-    cp.execFile(
+    const child = cp.execFile(
       "git",
       args,
-      { cwd, maxBuffer: 256 * 1024 * 1024 },
-      (err, stdout) => (err ? reject(err) : resolve(stdout))
+      { cwd, env: gitEnv(), maxBuffer: 256 * 1024 * 1024 },
+      (err, stdout, stderr) =>
+        err
+          ? reject(new GitError(gitReason(args, err, String(stderr)), String(stdout)))
+          : resolve(String(stdout))
     );
+    if (input !== undefined) {
+      // A git that exits before reading all of stdin (a fatal on one path)
+      // closes the pipe: that EPIPE is the failure the callback already reports.
+      child.stdin?.on("error", () => undefined);
+      child.stdin?.end(input);
+    }
   });
 
-// `hash-object` takes its paths on the command line; chunking keeps one call
-// well under every platform's argument-length limit.
-const HASH_CHUNK = 200;
+// hash-object --stdin-paths reads one path per line and C-unquotes a line that
+// starts with a double quote; quoting such a path keeps it literal.
+const stdinPath = (full: string): string =>
+  full.startsWith('"') ? `"${full.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : full;
+
+/** What git says about the orphans: the ones it can restore, and the ones it could not read. */
+type GitEvidence = { restorable: Set<string>; unreadable: Map<string, string> };
 
 /**
  * The orphans git can give back: files whose content is exactly a blob of the
@@ -310,15 +377,46 @@ const HASH_CHUNK = 200;
  * Content is compared by hash (`hash-object` applies the same clean/eol filters
  * a commit does) rather than read from `git status`, so neither an index flag
  * (assume-unchanged, skip-worktree) nor a stale stat cache can make an edited
- * file look clean. Throws when git cannot answer: git missing, the source
- * directory outside a repository, or a repository with no commit yet.
+ * file look clean.
+ *
+ * Line endings, decided deliberately: because the clean filter runs, a working
+ * copy that differs from its blob only in line terminators (a CRLF copy of an
+ * LF blob under `text=auto` or `core.autocrlf`) hashes to the committed blob and
+ * is prunable. Its restore is byte-for-byte whenever the repository's eol policy
+ * writes the terminators the file had (`core.autocrlf=true` checks a CRLF copy
+ * out as CRLF); otherwise the checkout writes the policy's terminators. Either
+ * way every line of text comes back — only the terminators can differ, and they
+ * are the ones the repository itself chose — so no content is lost and the rule
+ * stays "git can restore it".
+ *
+ * Names: git with `core.precomposeunicode` (macOS's default) records a name in
+ * NFC while the file system hands back the NFD a tool may have written, so with
+ * that setting both sides are compared in NFC. Without it, NFC and NFD names are
+ * distinct paths to git and are compared as they are.
+ *
+ * One file git cannot read (permissions, a file locked on Windows) is kept with
+ * git's reason and the rest are still judged. Throws when git cannot answer at
+ * all: git missing, the source directory outside a repository, or a repository
+ * with no commit yet.
  */
-async function restorableFromGit(sourcePath: string, files: string[]): Promise<Set<string>> {
+async function restorableFromGit(sourcePath: string, files: string[]): Promise<GitEvidence> {
+  // `--show-toplevel` and `--show-prefix` print one line each, the prefix with a
+  // trailing slash (or an empty line at the top level).
+  const [toplevel, prefix = ""] = (
+    await runGit(sourcePath, ["rev-parse", "--show-toplevel", "--show-prefix"])
+  )
+    .replace(/\r?\n$/, "")
+    .split(/\r?\n/);
+  const precompose =
+    (await runGit(sourcePath, ["config", "--bool", "core.precomposeunicode"]).catch(() => ""))
+      .trim() === "true";
+  const key = (name: string): string => (precompose ? name.normalize("NFC") : name);
+
   const committed = new Map<string, string>();
-  // From a subdirectory ls-tree lists that subtree only, with paths relative to
-  // it — the same relativization the orphan paths get below, so a source
-  // directory reached through a symlink still lines up. `-z` turns quoting off.
-  const listing = await runGit(sourcePath, ["ls-tree", "-r", "-z", "HEAD"]);
+  // `--full-name` lists paths from the top of the repository whatever the cwd;
+  // `-z` turns quoting off. Run from the source directory, it still lists only
+  // that subtree.
+  const listing = await runGit(sourcePath, ["ls-tree", "-r", "-z", "--full-name", "HEAD"]);
   for (const entry of listing.split("\0")) {
     const tab = entry.indexOf("\t");
     if (tab < 0) {
@@ -328,30 +426,76 @@ async function restorableFromGit(sourcePath: string, files: string[]): Promise<S
     // Regular files only: a symlink or a submodule is not something a download
     // writes, and its "content" is not what hash-object would read.
     if (type === "blob" && (mode === "100644" || mode === "100755")) {
-      committed.set(entry.slice(tab + 1), blob);
+      committed.set(key(entry.slice(tab + 1)), blob);
     }
   }
-  const candidates = files
+  // The orphan paths are made relative to the source directory as given (so one
+  // reached through a symlink still lines up), then prefixed to a full name.
+  // A name holding a line break cannot travel one-per-line on stdin; it is
+  // simply not vouched for, so it is kept.
+  let queue = files
     .map((file) => ({
       file,
-      rel: path.relative(sourcePath, file).split(path.sep).join("/"),
+      full: prefix + path.relative(sourcePath, file).split(path.sep).join("/"),
     }))
-    .filter(({ rel }) => committed.has(rel));
+    .filter(({ full }) => !/[\r\n]/.test(full) && committed.has(key(full)));
+
   const restorable = new Set<string>();
-  for (let i = 0; i < candidates.length; i += HASH_CHUNK) {
-    const chunk = candidates.slice(i, i + HASH_CHUNK);
-    const hashes = (
-      await runGit(sourcePath, ["hash-object", "--", ...chunk.map(({ rel }) => rel)])
-    )
-      .trim()
-      .split(/\r?\n/);
-    chunk.forEach(({ file, rel }, index) => {
-      if (hashes[index] === committed.get(rel)) {
+  const unreadable = new Map<string, string>();
+  const take = (batch: typeof queue, hashes: string[]): void => {
+    batch.forEach(({ file, full }, index) => {
+      if (hashes[index] === committed.get(key(full))) {
         restorable.add(file);
       }
     });
+  };
+  const hashesOf = (stdout: string): string[] => stdout.split(/\r?\n/).filter((h) => h !== "");
+  // Paths go to git on stdin, not as arguments, so no command-line length limit
+  // (32,767 characters on Windows) applies however many orphans there are. Run
+  // from the top level: --stdin-paths names are read from there.
+  while (queue.length > 0) {
+    const input = queue.map(({ full }) => stdinPath(full)).join("\n") + "\n";
+    try {
+      take(queue, hashesOf(await runGit(toplevel, ["hash-object", "--stdin-paths"], input)));
+      break;
+    } catch (e) {
+      // git hashes in order and stops at the first path it cannot read: the
+      // hashes it printed belong to the paths before it.
+      const done = e instanceof GitError ? hashesOf(e.stdout) : [];
+      const culprit = queue[done.length];
+      const reason = e instanceof Error ? e.message : String(e);
+      // A failure that does not name the next path is not about one file: git
+      // cannot answer, and nothing is vouched for.
+      if (!culprit || !key(reason).includes(key(culprit.full))) {
+        throw e;
+      }
+      take(queue.slice(0, done.length), done);
+      unreadable.set(culprit.file, reason);
+      queue = queue.slice(done.length + 1);
+    }
   }
-  return restorable;
+  return { restorable, unreadable };
+}
+
+// POSIX single-quoting, only where a path needs it, so the common case stays
+// readable and a name with spaces or `$` still pastes into a shell as written.
+const shellQuote = (arg: string): string =>
+  /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`;
+
+// Up to this many deleted files are named in the printed restore command;
+// beyond that it would be a wall of text, so a template is printed instead.
+const RESTORE_LIST_LIMIT = 10;
+
+/** The command that brings pruned files back, from the commit that vouched for them. */
+function restoreHint(sourcePath: string, deleted: string[]): string {
+  const base = `git -C ${shellQuote(sourcePath)} checkout HEAD --`;
+  if (deleted.length <= RESTORE_LIST_LIMIT) {
+    const rels = deleted.map((file) =>
+      shellQuote(path.relative(sourcePath, file).split(path.sep).join("/"))
+    );
+    return `Restore them with: ${base} ${rels.join(" ")}`;
+  }
+  return `Restore any of them with: ${base} <file> (paths relative to the source directory, as listed above).`;
 }
 
 /**
@@ -551,6 +695,7 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       incompleteTables = (await AppUtils.processMissingFiles(manifest)) ?? [];
     }
 
+    let pruned = 0;
     if (orphans.length > 0 && args.prune === true) {
       // Refuse to prune when the source directory IS the project root (a
       // `sourceDirectory` of "." or ""): the shape filter alone would still put
@@ -563,11 +708,12 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
         process.exitCode = 1;
         return;
       }
-      let restorable: Set<string>;
+      const sourcePath = path.resolve(ConfigManager.getSourcePath());
+      let evidence: GitEvidence;
       try {
-        restorable = await restorableFromGit(path.resolve(ConfigManager.getSourcePath()), orphans);
+        evidence = await restorableFromGit(sourcePath, orphans);
       } catch (e) {
-        const reason = e instanceof Error ? e.message.split("\n")[0] : String(e);
+        const reason = e instanceof Error ? e.message : String(e);
         logger.error(
           `Refusing to prune: git cannot show which orphans are committed and unchanged (${reason}). ` +
             "`--prune` deletes only files git can restore, so an orphan that is new local work " +
@@ -577,13 +723,18 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
         process.exitCode = 1;
         return;
       }
+      const { restorable, unreadable } = evidence;
       const pendingCreate = await awaitingCreate(orphans);
       const prunable = orphans.filter(
         (orphan) => restorable.has(orphan) && !pendingCreate.has(orphan)
       );
       const keptPending = orphans.filter((orphan) => pendingCreate.has(orphan));
+      const keptUnreadable = orphans.filter(
+        (orphan) => unreadable.has(orphan) && !pendingCreate.has(orphan)
+      );
       const keptLocal = orphans.filter(
-        (orphan) => !restorable.has(orphan) && !pendingCreate.has(orphan)
+        (orphan) =>
+          !restorable.has(orphan) && !pendingCreate.has(orphan) && !unreadable.has(orphan)
       );
       if (keptPending.length > 0) {
         logger.warn(
@@ -592,6 +743,13 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
             "work, and `--prune` never deletes them, committed or not. Run `syncrona push --create` " +
             "to create them; if one is the leftover of a record deleted on the instance, delete it by hand:\n" +
             keptPending.map((f) => `  ${f}`).join("\n")
+        );
+      }
+      if (keptUnreadable.length > 0) {
+        logger.warn(
+          `Kept ${keptUnreadable.length} orphan file(s) git could not read, so it cannot vouch ` +
+            "for their content:\n" +
+            keptUnreadable.map((f) => `  ${f}: ${unreadable.get(f)}`).join("\n")
         );
       }
       if (keptLocal.length > 0) {
@@ -611,7 +769,9 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
               {
                 type: "confirm",
                 name: "confirmed",
-                message: `Delete ${prunable.length} orphan file(s)? This cannot be undone.`,
+                message:
+                  `Delete ${prunable.length} orphan file(s)? Git holds each one committed and ` +
+                  "unchanged, so `git checkout HEAD -- <file>` restores it.",
                 default: false,
               },
             ])
@@ -626,18 +786,22 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
         // swallowed: `.catch(() => undefined)` reported "Pruned N file(s)" even
         // when every unlink failed (permissions, read-only mount, EBUSY), so a
         // repair that changed nothing looked like a success.
-        let pruned = 0;
+        const deleted: string[] = [];
         const failures: string[] = [];
         for (const orphan of prunable) {
           try {
             await fsp.unlink(orphan);
-            pruned += 1;
+            deleted.push(orphan);
           } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             failures.push(`  ${orphan}: ${message}`);
           }
         }
+        pruned = deleted.length;
         logger.info(`Pruned ${pruned} orphan file(s).`);
+        if (deleted.length > 0) {
+          logger.info(restoreHint(sourcePath, deleted));
+        }
         if (failures.length > 0) {
           logger.error(
             `Failed to delete ${failures.length} orphan file(s):\n${failures.join("\n")}`
@@ -690,6 +854,18 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
     if (consistent && restoredExempt === 0) {
       // Every absent governed value was a withheld secret: nothing changed.
       logger.success("Workspace is consistent with the manifest. Nothing to repair. ✅");
+      return;
+    }
+    // The last line answers "is the workspace repaired?": orphans left on disk
+    // (kept by the git rule, a declined prompt, no `--prune`, a failed delete)
+    // mean it is not, whatever else this run fixed.
+    const leftOrphans = orphans.length - pruned;
+    if (leftOrphans > 0) {
+      const fixed = missingCount > 0 || restoredExempt > 0 || pruned > 0;
+      logger.warn(
+        `${fixed ? "Repair partly complete" : "Nothing repaired"}: ` +
+          `${leftOrphans} orphan file(s) left in place (listed above).`
+      );
       return;
     }
     logger.success("Repair complete. ✅");

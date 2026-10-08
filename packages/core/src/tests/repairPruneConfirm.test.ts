@@ -163,7 +163,8 @@ describe("repair --prune confirmation", () => {
   });
 
   // The prompt itself is the safety mechanism: it has to state how many files
-  // are about to go and that the deletion is final, and it must default to NO —
+  // are about to go and how to get them back (git holds each one), and it must
+  // default to NO —
   // a bare Enter on a `confirm` that defaults to yes deletes the files.
   it("asks a no-by-default confirm that states the number of files at stake", async () => {
     orphans = seed(3);
@@ -180,7 +181,9 @@ describe("repair --prune confirmation", () => {
       {
         type: "confirm",
         name: "confirmed",
-        message: "Delete 3 orphan file(s)? This cannot be undone.",
+        message:
+          "Delete 3 orphan file(s)? Git holds each one committed and unchanged, so " +
+          "`git checkout HEAD -- <file>` restores it.",
         default: false,
       },
     ]);
