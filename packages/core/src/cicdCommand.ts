@@ -17,7 +17,10 @@
  * - 1 — the work could not be run to completion: bad usage, no credentials, a
  *   network or HTTP failure (including the instance rejecting the dispatch, and
  *   a 403 for a missing `sn_cicd` role), or the poll timing out. The answer to
- *   "did it pass?" is unknown.
+ *   "did it pass?" is unknown. A poll answered with a client error (400, 401,
+ *   403, 404, ...) fails at once, naming the status and the request; no
+ *   response, 429 and 5xx are retried a few times; a timeout says where to
+ *   check the tracker and how to resume waiting for it.
  * - 2 — the work ran to its end and the instance reported a failure: ATF tests
  *   failed or errored, or the tracker ended in error or was cancelled.
  *
@@ -289,8 +292,12 @@ export function parseProgressIdFlag(value: unknown): string | undefined {
   return id;
 }
 
-/** Sends the dispatch POST and returns the id of the progress tracker it started. */
-async function dispatch(client: CicdClient, action: CicdAction, request: CicdRequest): Promise<string> {
+/** Sends the dispatch POST and returns the tracker it started: its id, and its URL when given. */
+async function dispatch(
+  client: CicdClient,
+  action: CicdAction,
+  request: CicdRequest
+): Promise<{ id: string; url?: string }> {
   logger.info(`POST api/sn_cicd/${request.path}`);
   const dispatched = resultOf(await client.cicdPost(request.path, request.params), action);
   const progressId = linkId(dispatched, "progress");
@@ -304,7 +311,7 @@ async function dispatch(client: CicdClient, action: CicdAction, request: CicdReq
         : `The instance accepted cicd ${action} but returned no progress id to follow.`
     );
   }
-  return progressId;
+  return { id: progressId, url: linkUrl(dispatched, "progress") };
 }
 
 /** A positive finite number, or the fallback. */
@@ -344,48 +351,118 @@ function statusLabel(progress: JsonObject): string {
  */
 export const CICD_MAX_POLL_FAILURES = 3;
 
-/** A poll failure worth retrying: no response at all, 429, or a 5xx. */
-function isTransientPollError(err: unknown): boolean {
-  if (err instanceof CicdCliError) return false;
+/** The HTTP status an axios error carries, or undefined when there was no response. */
+function httpStatusOf(err: unknown): number | undefined {
   const status = (err as { response?: { status?: unknown } } | null)?.response?.status;
-  if (status === undefined) return true;
-  return typeof status === "number" && (status === 429 || status >= 500);
+  return typeof status === "number" ? status : undefined;
 }
 
-/** Polls the tracker until a terminal status; throws {@link CicdCliError} on timeout. */
+/**
+ * A poll failure worth retrying: no response at all (a reset or refused
+ * connection, a DNS blip), 429, or a 5xx. Every other status — 400, 401, 403,
+ * 404 and the rest of 4xx — is the instance's settled answer to this request,
+ * and asking again until the timeout would only delay the same failure.
+ */
+function isTransientPollError(err: unknown): boolean {
+  if (err instanceof CicdCliError) return false;
+  const status = httpStatusOf(err);
+  if (status === undefined) return true;
+  return status === 429 || status >= 500;
+}
+
+/** What a permanent poll status most likely means, for the error message. */
+const PERMANENT_POLL_HINTS: Record<number, string> = {
+  400: "the instance rejected the request as malformed",
+  401: "the instance rejected the credentials",
+  403: "the user may not read CI/CD progress",
+  404: "the instance has no such progress tracker (check the id and the instance profile)",
+};
+
+/**
+ * A failed poll, re-raised with a message that names the request and why it was
+ * not (or no longer) retried. The original `response`, `config` and `code` are
+ * kept, so the caller still appends the instance's error envelope and the error
+ * taxonomy still picks its hint (the sn_cicd 403 missing-role one included).
+ */
+export class CicdPollError extends Error {
+  readonly response?: unknown;
+  readonly config?: unknown;
+  readonly code?: unknown;
+  constructor(message: string, cause: unknown) {
+    super(message, { cause });
+    this.name = "CicdPollError";
+    const source = asObject(cause);
+    this.response = source?.response;
+    this.config = source?.config;
+    this.code = source?.code;
+  }
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Polls the tracker until a terminal status. A permanent HTTP answer fails at
+ * once, transient failures are retried one `pollMs` apart up to
+ * {@link CICD_MAX_POLL_FAILURES} in a row, and running out of `timeoutMs` —
+ * whether the last poll answered or failed — ends with the timeout error, which
+ * names the tracker, where to check it, and how to resume waiting.
+ */
 async function pollProgress(
   deps: CicdCommandDeps,
   client: CicdClient,
   progressId: string,
   pollMs: number,
-  timeoutMs: number
+  timeoutMs: number,
+  progressUrl?: string
 ): Promise<JsonObject> {
   const startedAt = deps.now();
+  const request = `GET api/sn_cicd/progress/${progressId}`;
   let lastStatus: string | undefined;
+  let lastProgress: JsonObject | undefined;
   let failures = 0;
+  const timedOut = (lastError?: unknown): CicdCliError => {
+    const where = linkUrl(lastProgress, "progress") ?? progressUrl ?? `${request} on the instance`;
+    const last = lastProgress ? statusLabel(lastProgress) : "never read";
+    const error = lastError === undefined ? "" : `; last poll error: ${errorText(lastError)}`;
+    return new CicdCliError(
+      `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for progress ${progressId} (last status: ${last}${error}). ` +
+        `The work may still be running on the instance; check it at ${where} and resume waiting with --progress-id ${progressId} (and a longer --timeout).`
+    );
+  };
   for (;;) {
     let response: AxiosResponse<unknown>;
     try {
       response = await client.cicdGet(`progress/${encodeURIComponent(progressId)}`);
     } catch (err) {
       failures += 1;
-      if (
-        !isTransientPollError(err) ||
-        failures >= CICD_MAX_POLL_FAILURES ||
-        deps.now() - startedAt >= timeoutMs
-      ) {
-        throw err;
+      const status = httpStatusOf(err);
+      if (!isTransientPollError(err)) {
+        const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
+        throw new CicdPollError(
+          `${request} answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried. ${errorText(err)}`,
+          err
+        );
+      }
+      if (deps.now() - startedAt >= timeoutMs) {
+        throw timedOut(err);
+      }
+      if (failures >= CICD_MAX_POLL_FAILURES) {
+        throw new CicdPollError(
+          `${request} failed ${failures} times in a row (last: ${status === undefined ? "no response" : `HTTP ${status}`}). ${errorText(err)}`,
+          err
+        );
       }
       logger.warn(
-        `Progress ${progressId}: poll failed (${failures}/${CICD_MAX_POLL_FAILURES}), retrying: ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `Progress ${progressId}: poll failed (${failures}/${CICD_MAX_POLL_FAILURES}), retrying: ${errorText(err)}`
       );
       await deps.sleep(pollMs);
       continue;
     }
     failures = 0;
     const progress = resultOf(response, "progress");
+    lastProgress = progress;
     const status = String(progress.status ?? "");
     if (status !== lastStatus) {
       const percent =
@@ -397,9 +474,7 @@ async function pollProgress(
       return progress;
     }
     if (deps.now() - startedAt >= timeoutMs) {
-      throw new CicdCliError(
-        `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for progress ${progressId} (last status: ${statusLabel(progress)}). The work may still be running on the instance; resume waiting with --progress-id ${progressId} (and a longer --timeout).`
-      );
+      throw timedOut();
     }
     await deps.sleep(pollMs);
   }
@@ -571,12 +646,15 @@ async function runAction(
   if (resumeId) {
     logger.info(`Resuming cicd ${action} from progress ${resumeId} (nothing is dispatched).`);
   }
-  const progressId = resumeId ?? (await dispatch(client, action, request as CicdRequest));
+  const tracker: { id: string; url?: string } = resumeId
+    ? { id: resumeId }
+    : await dispatch(client, action, request as CicdRequest);
+  const progressId = tracker.id;
   // Known from here on, so a later failure (a timeout, a failed poll) can still
   // tell a --json caller which progress to resume with --progress-id.
   state.progressId = progressId;
 
-  const progress = await pollProgress(deps, client, progressId, pollMs, timeoutMs);
+  const progress = await pollProgress(deps, client, progressId, pollMs, timeoutMs, tracker.url);
   const status = String(progress.status);
   const isAtfAction = action === "run-suite" || action === "run-test";
   // A resume takes the action from the caller, so it is checked against the
@@ -725,7 +803,7 @@ export async function cicdCommand(
       ? `cicd ${action} failed: ${message} — ${instanceMessage}`
       : `cicd ${action} failed: ${message || "unknown error"}`;
     logger.error(error);
-    if (state.progressId && !error.includes(state.progressId)) {
+    if (state.progressId && !error.includes(`--progress-id ${state.progressId}`)) {
       // warn, not info: the resume id is the one thing a quiet (--log-level warn)
       // CI run needs from a failure, and info would hide it.
       logger.warn(`The work was dispatched as progress ${state.progressId}; resume with --progress-id ${state.progressId}.`);
