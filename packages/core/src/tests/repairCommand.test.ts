@@ -16,6 +16,10 @@ jest.unstable_mockModule("../appUtils.js", () => ({
 jest.unstable_mockModule("../FileUtils.js", () => ({
   getPathsInPath: jest.fn(),
   getFileContextFromPath: jest.fn(),
+  // undefined: no orphan here names a record `push --create` would create, so
+  // each is judged by the git evidence alone (repairPruneGitEvidence covers the
+  // records awaiting creation against the real parser).
+  parseUnmappedPath: jest.fn(),
 }));
 
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, promises as fsp } from "fs";
