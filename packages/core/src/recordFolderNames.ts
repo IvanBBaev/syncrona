@@ -1,0 +1,404 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The single mapping from a table's records to their local folder names.
+//
+// A record lives at `<sourceDir>/<table>/<folder>/<field>.<ext>` (or, in the
+// flat layout, `<sourceDir>/<table>/<folder>~<field>.<ext>`), and the manifest
+// stores that folder name as both the record's key and its `name`. Every
+// consumer — the download writer, the refresh missing-file probe, the push/dev
+// path -> record lookup and repair's orphan scan — reads the name back off the
+// manifest, so the manifest is the only place a folder name is decided. This
+// module is the only code that decides it: the Table API build, the scoped
+// endpoint's manifest and the scoped endpoint's missing-file answer all pass
+// through it, so no producer can name a record differently from another.
+//
+// Rules, in order:
+//   1. Names that are the same on disk collide. "The same on disk" is decided by
+//      canonicalFolderKey — NFC, lower-case, trailing dots/spaces dropped — which
+//      covers APFS/NTFS case-insensitivity, HFS+/SMB normalisation and Windows'
+//      trailing-dot stripping.
+//   2. Every member of a colliding group (two or more distinct sys_ids) gets the
+//      suffix `_<sys_id>`. The decision depends on the SET of records only, never
+//      on the order the instance returned them, so a refresh does not move
+//      folders. A record that does not collide keeps its name byte for byte, so
+//      existing checkouts keep their folders.
+//   3. One warning per colliding group, not per member.
+import { SN } from "@syncrona/types";
+import fs, { promises as fsp } from "fs";
+import path from "path";
+import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
+import { isSafePathComponent } from "./genericUtils.js";
+import { logger } from "./Logger.js";
+
+/**
+ * The form in which two folder names are "the same name" on some filesystem a
+ * checkout may live on. `toLowerCase`, never `toLocaleLowerCase`: the latter is
+ * locale-dependent (Turkish dotless ı) and would make naming depend on the
+ * operator's locale. repairCommand compares on-disk names to manifest names
+ * with this same function.
+ */
+export const canonicalFolderKey = (name: string): string =>
+  name.normalize("NFC").toLowerCase().replace(/[.\s]+$/u, "");
+
+/**
+ * Stores a record under its folder name.
+ *
+ * `records[name] = record` is not total: on an object literal the one key
+ * `"__proto__"` invokes the inherited setter and the record vanishes.
+ * `__proto__` is a legal display name and a legal directory name, so the
+ * property is defined instead — own, enumerable and JSON-serialisable.
+ */
+export function setRecord(
+  records: SN.TableConfigRecords,
+  name: string,
+  record: SN.MetaRecord
+): void {
+  Object.defineProperty(records, name, {
+    value: record,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+export interface FolderNameEntry {
+  sysId: string;
+  /** The record's on-disk name before disambiguation. */
+  name: string;
+}
+
+const collisionSuffix = (sysId: string): string => `_${sysId}`;
+
+/**
+ * The folder name of every record of one table, keyed by sys_id.
+ *
+ * Pure apart from the warning: the same set of entries always yields the same
+ * map, whatever order they arrive in.
+ */
+export function assignRecordFolderNames(
+  tableName: string,
+  entries: readonly FolderNameEntry[]
+): Map<string, string> {
+  // One name per sys_id (a duplicated row is the same record twice); the lowest
+  // name wins so the choice does not depend on row order either.
+  const nameBySysId = new Map<string, string>();
+  for (const { sysId, name } of entries) {
+    const prior = nameBySysId.get(sysId);
+    if (prior === undefined || name < prior) nameBySysId.set(sysId, name);
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const [sysId, name] of nameBySysId) {
+    const key = canonicalFolderKey(name);
+    const group = groups.get(key);
+    if (group) group.push(sysId);
+    else groups.set(key, [sysId]);
+  }
+
+  const result = new Map<string, string>();
+  const taken = new Set<string>();
+  const colliding: string[][] = [];
+  // Records that do not collide are placed first and keep their names, so a
+  // suffixed name can never displace one of them.
+  for (const [key, sysIds] of groups) {
+    if (sysIds.length === 1) {
+      result.set(sysIds[0], nameBySysId.get(sysIds[0]) as string);
+      taken.add(key);
+    } else {
+      colliding.push([...sysIds].sort());
+    }
+  }
+  colliding.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+
+  for (const sysIds of colliding) {
+    const names = [...new Set(sysIds.map((id) => nameBySysId.get(id) as string))].sort();
+    const stored: string[] = [];
+    for (const sysId of sysIds) {
+      let folder = `${nameBySysId.get(sysId)}${collisionSuffix(sysId)}`;
+      // A display name may literally be `<other name>_<sys_id>`. Repeating the
+      // suffix is deterministic and terminates: every round lengthens the name.
+      while (taken.has(canonicalFolderKey(folder))) {
+        folder = `${folder}${collisionSuffix(sysId)}`;
+      }
+      taken.add(canonicalFolderKey(folder));
+      result.set(sysId, folder);
+      stored.push(folder);
+    }
+    logger.warn(
+      `Record name collision in ${tableName}: ${sysIds.length} records share the folder name ` +
+        `${names.map((n) => JSON.stringify(n)).join(", ")} on case-insensitive or ` +
+        `Unicode-normalizing filesystems; storing them as ` +
+        `${stored.map((n) => JSON.stringify(n)).join(", ")} so no record overwrites another.`
+    );
+  }
+  return result;
+}
+
+/**
+ * Re-keys one table's records by their assigned folder names. Records without a
+ * usable sys_id cannot be disambiguated (the suffix is the sys_id) and keep
+ * their key; the download writer refuses an unsafe one loudly.
+ */
+function assignTableFolderNames(
+  tableName: string,
+  records: SN.TableConfigRecords
+): SN.TableConfigRecords {
+  const entries = Object.entries(records);
+  const named = entries.filter(([, record]) => isSafePathComponent(record?.sys_id));
+  const folders = assignRecordFolderNames(
+    tableName,
+    named.map(([key, record]) => ({ sysId: record.sys_id, name: record.name || key }))
+  );
+  const changed = named.some(([key, record]) => folders.get(record.sys_id) !== key);
+  if (!changed) return records;
+  const next: SN.TableConfigRecords = {};
+  for (const [key, record] of entries) {
+    const folder = isSafePathComponent(record?.sys_id)
+      ? (folders.get(record.sys_id) as string)
+      : key;
+    setRecord(next, folder, folder === key ? record : { ...record, name: folder });
+  }
+  return next;
+}
+
+/**
+ * Applies the folder-name rules to a manifest some other producer named — the
+ * scoped `sinc/getManifest` endpoint names records by display value only. Works
+ * in place and is idempotent: a manifest already named by these rules (the
+ * Table API build) comes back unchanged.
+ */
+export function assignManifestFolderNames(manifest: SN.AppManifest): SN.AppManifest {
+  for (const [tableName, table] of Object.entries(manifest.tables ?? {})) {
+    if (!table || typeof table.records !== "object" || table.records === null) continue;
+    const records = assignTableFolderNames(tableName, table.records);
+    if (records !== table.records) table.records = records;
+  }
+  return manifest;
+}
+
+/**
+ * Re-keys a fetched table map onto the manifest's folder names (table -> sys_id
+ * -> name). The scoped bulk endpoint names the records it returns by display
+ * value, so without this a disambiguated record would be written at the
+ * colliding path the manifest just moved it away from.
+ */
+export function applyManifestFolderNames(
+  tables: SN.TableMap,
+  namesBySysId: Record<string, Record<string, string>>
+): SN.TableMap {
+  for (const [tableName, table] of Object.entries(tables ?? {})) {
+    const names = Object.prototype.hasOwnProperty.call(namesBySysId, tableName)
+      ? namesBySysId[tableName]
+      : undefined;
+    if (!names || !table?.records) continue;
+    const entries = Object.entries(table.records);
+    const target = (key: string, record: SN.MetaRecord): string => {
+      const sysId = record?.sys_id;
+      const name =
+        typeof sysId === "string" && Object.prototype.hasOwnProperty.call(names, sysId)
+          ? names[sysId]
+          : undefined;
+      return typeof name === "string" && name.length > 0 ? name : key;
+    };
+    if (entries.every(([key, record]) => target(key, record) === key)) continue;
+    const records: SN.TableConfigRecords = {};
+    for (const [key, record] of entries) {
+      const folder = target(key, record);
+      setRecord(records, folder, folder === key ? record : { ...record, name: folder });
+    }
+    table.records = records;
+  }
+  return tables;
+}
+
+/**
+ * True when a folder name changed because of the naming rules rather than
+ * because the record was renamed on the instance: the new name is the old one
+ * with the collision suffix.
+ */
+export function isRuleDrivenRename(oldName: string, newName: string, sysId: string): boolean {
+  let candidate = `${oldName}${collisionSuffix(sysId)}`;
+  for (let round = 0; round < 4; round += 1) {
+    if (candidate === newName) return true;
+    candidate = `${candidate}${collisionSuffix(sysId)}`;
+  }
+  return false;
+}
+
+const exists = async (target: string): Promise<boolean> => {
+  try {
+    await fsp.access(target, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** True when both paths exist and are the same filesystem entry. */
+const sameEntry = async (a: string, b: string): Promise<boolean> => {
+  try {
+    const [sa, sb] = await Promise.all([fsp.stat(a), fsp.stat(b)]);
+    return sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch {
+    return false;
+  }
+};
+
+const SHARED_REASON =
+  "records whose names collide shared it, so its files cannot be attributed to one of them";
+
+const recordNameOf = (key: string, record: SN.MetaRecord): string =>
+  record?.name || key;
+
+/** The flat-layout files of one record: `<name>~<field>.<ext>` in the table dir. */
+const flatFilesOf = async (tableDir: string, recordName: string): Promise<string[]> => {
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(tableDir);
+  } catch {
+    return [];
+  }
+  const prefix = `${recordName}${FLAT_FIELD_SEPARATOR}`;
+  // A field name never contains the separator, so the remainder must not either:
+  // that keeps record "Foo" from claiming the files of record "Foo~Bar".
+  return entries.filter(
+    (entry) =>
+      entry.startsWith(prefix) &&
+      entry.length > prefix.length &&
+      !entry.slice(prefix.length).includes(FLAT_FIELD_SEPARATOR)
+  );
+};
+
+export interface FolderMigrationResult {
+  moved: Array<{ table: string; from: string; to: string }>;
+  leftBehind: Array<{ table: string; folder: string; reason: string }>;
+}
+
+/**
+ * Upgrade step for an existing checkout: when a refresh or download renames a
+ * record's folder because of the naming rules, move the folder the previous
+ * manifest wrote instead of downloading a second copy beside an orphan. Local,
+ * unpushed edits in the folder move with it.
+ *
+ * A folder is moved only when the move is unambiguous: the previous manifest
+ * gave the folder to exactly one record, no record of the new manifest still
+ * claims it, and nothing exists at the destination yet. A folder that two
+ * records shared before (the overwrite this naming fixes) cannot be attributed
+ * to either one; it is left in place with a warning, the records are downloaded
+ * fresh into their new folders, and `syncrona repair` reports the old folder's
+ * files as orphans. Never throws: a failed move is a warning, not a failed run.
+ */
+export async function migrateRenamedRecordFolders(
+  previous: SN.AppManifest | undefined,
+  next: SN.AppManifest,
+  sourcePath: string,
+  flat: boolean
+): Promise<FolderMigrationResult> {
+  const result: FolderMigrationResult = { moved: [], leftBehind: [] };
+  if (!previous || previous.scope !== next.scope) return result;
+  const hasOwn = (map: object, key: string) => Object.prototype.hasOwnProperty.call(map, key);
+
+  for (const [tableName, table] of Object.entries(next.tables ?? {})) {
+    if (!hasOwn(previous.tables ?? {}, tableName)) continue;
+    if (!isSafePathComponent(tableName)) continue;
+    const prevRecords = previous.tables[tableName]?.records ?? {};
+    const prevNameBySysId = new Map<string, string>();
+    // canonical key -> the exact names the previous manifest gave it.
+    const prevClaims = new Map<string, Set<string>>();
+    for (const [key, record] of Object.entries(prevRecords)) {
+      const name = recordNameOf(key, record);
+      prevNameBySysId.set(record?.sys_id, name);
+      const canonical = canonicalFolderKey(name);
+      const claims = prevClaims.get(canonical) ?? new Set<string>();
+      claims.add(name);
+      prevClaims.set(canonical, claims);
+    }
+    const nextClaims = new Set(
+      Object.entries(table?.records ?? {}).map(([key, record]) =>
+        canonicalFolderKey(recordNameOf(key, record))
+      )
+    );
+    const tableDir = path.join(sourcePath, tableName);
+    const reported = new Set<string>();
+
+    for (const [key, record] of Object.entries(table?.records ?? {})) {
+      const newName = recordNameOf(key, record);
+      const oldName = prevNameBySysId.get(record?.sys_id);
+      if (oldName === undefined || oldName === newName) continue;
+      if (!isRuleDrivenRename(oldName, newName, record.sys_id)) continue;
+      if (!isSafePathComponent(oldName) || !isSafePathComponent(newName)) continue;
+      const oldKey = canonicalFolderKey(oldName);
+      const leave = (reason: string) => {
+        if (reported.has(oldKey)) return;
+        reported.add(oldKey);
+        result.leftBehind.push({ table: tableName, folder: oldName, reason });
+        logger.warn(
+          `Left "${path.join(tableName, oldName)}" in place: ${reason}. Its records are ` +
+            `downloaded into their new folders; review the old one and delete it ` +
+            `(\`syncrona repair\` lists its files as orphans).`
+        );
+      };
+      if (nextClaims.has(oldKey)) continue; // still a live folder of another record
+      // Names that differ only by case or normal form ("Foo" and "foo") were
+      // two folders on a case-sensitive volume but ONE on APFS/NTFS, where both
+      // records wrote into it. The filesystem answers which: the other spelling
+      // resolving to the same entry means the folder was shared.
+      const otherNames = [...(prevClaims.get(oldKey) ?? [])].filter((n) => n !== oldName);
+
+      try {
+        if (flat) {
+          const files = await flatFilesOf(tableDir, oldName);
+          if (files.length === 0) continue;
+          const moves = files.map((file) => ({
+            from: path.join(tableDir, file),
+            to: path.join(tableDir, `${newName}${file.slice(oldName.length)}`),
+          }));
+          let shared = false;
+          for (const file of files) {
+            const suffix = file.slice(oldName.length);
+            for (const other of otherNames) {
+              if (await sameEntry(path.join(tableDir, file), path.join(tableDir, `${other}${suffix}`))) {
+                shared = true;
+              }
+            }
+          }
+          if (shared) {
+            leave(SHARED_REASON);
+            continue;
+          }
+          const blocked = [];
+          for (const move of moves) if (await exists(move.to)) blocked.push(move.to);
+          if (blocked.length > 0) {
+            leave(`files of the new name "${newName}" already exist`);
+            continue;
+          }
+          for (const move of moves) await fsp.rename(move.from, move.to);
+        } else {
+          const from = path.join(tableDir, oldName);
+          const to = path.join(tableDir, newName);
+          if (!(await exists(from))) continue;
+          let shared = false;
+          for (const other of otherNames) {
+            if (await sameEntry(from, path.join(tableDir, other))) shared = true;
+          }
+          if (shared) {
+            leave(SHARED_REASON);
+            continue;
+          }
+          if (await exists(to)) {
+            leave(`the new folder "${newName}" already exists`);
+            continue;
+          }
+          await fsp.rename(from, to);
+        }
+        result.moved.push({ table: tableName, from: oldName, to: newName });
+        logger.warn(
+          `Renamed "${path.join(tableName, oldName)}" to "${path.join(tableName, newName)}" ` +
+            `(record ${record.sys_id}) to follow the folder naming rules; commit the rename.`
+        );
+      } catch (e) {
+        leave(`moving it failed (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+  }
+  return result;
+}
