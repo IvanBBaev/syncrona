@@ -22,11 +22,17 @@
 //      folders. A record that does not collide keeps its name byte for byte, so
 //      existing checkouts keep their folders.
 //   3. One warning per colliding group, not per member.
+//   4. Before any of that, a name is made storable (sanitizeRecordFolderName):
+//      control characters are replaced and an overlong name is cut on a code
+//      point boundary and given a hash of the whole name, so the folder fits
+//      the 255-byte segment limit with room for the collision suffix and, in the
+//      flat layout, the `~<field>.<ext>` tail.
 import { SN } from "@syncrona/types";
+import { createHash } from "crypto";
 import fs, { promises as fsp } from "fs";
 import path from "path";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
-import { isSafePathComponent } from "./genericUtils.js";
+import { isSafePathComponent, MAX_PATH_SEGMENT_BYTES } from "./genericUtils.js";
 import { logger } from "./Logger.js";
 
 /**
@@ -60,6 +66,45 @@ export function setRecord(
   });
 }
 
+/**
+ * The byte budget of a record name before its collision suffix. 255 is the
+ * segment limit; 180 leaves 33 bytes for `_<sys_id>` and the rest for a flat
+ * layout's `~<field>.<ext>`.
+ */
+export const MAX_RECORD_NAME_BYTES = 180;
+const HASH_HEX_LENGTH = 8;
+
+/**
+ * Makes a record's display name storable as one path segment, deterministically
+ * and only when it has to: a name that is already storable is returned as is.
+ *   - C0/C1 control characters and DEL become `_`. NUL truncates the name in every
+ *     OS call; the rest are refused by Windows or break terminals and git.
+ *   - A lone UTF-16 surrogate becomes U+FFFD, which is what Node would write in
+ *     its place anyway — so the manifest names the file that is actually on disk.
+ *   - A name over MAX_RECORD_NAME_BYTES of UTF-8 is cut at the last whole code
+ *     point that fits and gets `_<first 8 hex of sha256(whole name)>`, so two long
+ *     names that share a prefix still differ, and the same name always maps to
+ *     the same folder. Separators are not handled here; buildRecordName maps
+ *     them to `〳` the way the server does.
+ */
+export function sanitizeRecordFolderName(name: string): string {
+  const cleaned = name
+    .replace(/[\u0000-\u001f\u007f-\u009f]/gu, "_")
+    .replace(/[\ud800-\udfff]/gu, "\ufffd");
+  if (Buffer.byteLength(cleaned, "utf8") <= MAX_RECORD_NAME_BYTES) return cleaned;
+  const hash = createHash("sha256").update(cleaned, "utf8").digest("hex").slice(0, HASH_HEX_LENGTH);
+  const budget = MAX_RECORD_NAME_BYTES - HASH_HEX_LENGTH - 1;
+  let kept = "";
+  let bytes = 0;
+  for (const codePoint of cleaned) {
+    const size = Buffer.byteLength(codePoint, "utf8");
+    if (bytes + size > budget) break;
+    kept += codePoint;
+    bytes += size;
+  }
+  return `${kept}_${hash}`;
+}
+
 export interface FolderNameEntry {
   sysId: string;
   /** The record's on-disk name before disambiguation. */
@@ -81,7 +126,9 @@ export function assignRecordFolderNames(
   // One name per sys_id (a duplicated row is the same record twice); the lowest
   // name wins so the choice does not depend on row order either.
   const nameBySysId = new Map<string, string>();
-  for (const { sysId, name } of entries) {
+  for (const entry of entries) {
+    const { sysId } = entry;
+    const name = sanitizeRecordFolderName(entry.name);
     const prior = nameBySysId.get(sysId);
     if (prior === undefined || name < prior) nameBySysId.set(sysId, name);
   }
@@ -213,10 +260,12 @@ export function applyManifestFolderNames(
 /**
  * True when a folder name changed because of the naming rules rather than
  * because the record was renamed on the instance: the new name is the old one
- * with the collision suffix.
+ * made storable (sanitizeRecordFolderName), with or without the collision suffix.
  */
 export function isRuleDrivenRename(oldName: string, newName: string, sysId: string): boolean {
-  let candidate = `${oldName}${collisionSuffix(sysId)}`;
+  const base = sanitizeRecordFolderName(oldName);
+  if (base !== oldName && base === newName) return true;
+  let candidate = `${base}${collisionSuffix(sysId)}`;
   for (let round = 0; round < 4; round += 1) {
     if (candidate === newName) return true;
     candidate = `${candidate}${collisionSuffix(sysId)}`;
@@ -287,6 +336,22 @@ export interface FolderMigrationResult {
  * fresh into their new folders, and `syncrona repair` reports the old folder's
  * files as orphans. Never throws: a failed move is a warning, not a failed run.
  */
+// The folder an older checkout wrote for a name the current rules no longer
+// store verbatim. A tab or newline was a legal file name on macOS and Linux, so
+// such a folder exists and must be movable; everything isSafePathComponent
+// refuses for traversal (separators, dot-only names) or that no call could have
+// created (NUL, a lone surrogate, over 255 bytes) is still refused.
+function isMovableOldFolder(name: string): boolean {
+  return (
+    typeof name === "string" &&
+    name.length > 0 &&
+    !/^\.+$/u.test(name) &&
+    !/[/\\]/u.test(name) &&
+    !/\u0000|[\ud800-\udfff]/u.test(name) &&
+    Buffer.byteLength(name, "utf8") <= MAX_PATH_SEGMENT_BYTES
+  );
+}
+
 export async function migrateRenamedRecordFolders(
   previous: SN.AppManifest | undefined,
   next: SN.AppManifest,
@@ -325,7 +390,7 @@ export async function migrateRenamedRecordFolders(
       const oldName = prevNameBySysId.get(record?.sys_id);
       if (oldName === undefined || oldName === newName) continue;
       if (!isRuleDrivenRename(oldName, newName, record.sys_id)) continue;
-      if (!isSafePathComponent(oldName) || !isSafePathComponent(newName)) continue;
+      if (!isMovableOldFolder(oldName) || !isSafePathComponent(newName)) continue;
       const oldKey = canonicalFolderKey(oldName);
       const leave = (reason: string) => {
         if (reported.has(oldKey)) return;

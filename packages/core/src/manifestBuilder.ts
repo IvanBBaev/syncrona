@@ -32,7 +32,11 @@ import {
 } from "./dataModel.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import { logger } from "./Logger.js";
-import { assignRecordFolderNames, setRecord } from "./recordFolderNames.js";
+import {
+  assignRecordFolderNames,
+  sanitizeRecordFolderName,
+  setRecord,
+} from "./recordFolderNames.js";
 
 type TableAPIRecord = Record<string, string>;
 type TableAPIResponse = { result: TableAPIRecord[] };
@@ -1040,8 +1044,10 @@ function buildRecordName(
     }
   }
 
-  // Match server-side: replace path separators
-  const safe = (name || sysId).replace(/[/\\]/g, "〳");
+  // Match server-side: replace path separators. Then make the name storable —
+  // control characters replaced, an overlong name cut and hashed — the same way
+  // assignRecordFolderNames does for a scoped manifest.
+  const safe = sanitizeRecordFolderName((name || sysId).replace(/[/\\]/g, "〳"));
   // Never let a record materialize as "." / ".." (or any all-dots name): those
   // resolve to the current/parent directory, so the record's field files would
   // land outside its own folder and then get deleted by `repair --apply --prune`.
