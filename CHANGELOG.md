@@ -157,6 +157,10 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 
 ### Security
 
+- The update notifier only accepts a complete semantic version from the npm
+  registry or its cache file. A version with trailing text, such as terminal
+  escape sequences, is ignored instead of being written to stderr.
+
 - Secret columns no longer reach the working tree. Columns are now classified
   in one place on every manifest path, and an unsafe column is dropped with a
   warning naming the table and column; a column whose type cannot be read is

@@ -53,7 +53,12 @@ export type UpdateNotifierDeps = {
 // --- pure helpers (unit-tested) -------------------------------------------
 
 export function parseSemver(value: string): ParsedSemver | null {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(value).trim());
+  // Anchored at both ends: the version comes from the registry or the cache file
+  // and ends up on stderr, so trailing text (terminal escape sequences included)
+  // must make it unparseable rather than ride along into the notice.
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
+    String(value).trim()
+  );
   if (!match) {
     return null;
   }

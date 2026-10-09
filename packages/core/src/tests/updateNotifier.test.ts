@@ -33,6 +33,10 @@ describe("updateNotifier pure helpers", () => {
 
     it("returns null for unparseable input", () => {
       expect(parseSemver("not-a-version")).toBeNull();
+      expect(parseSemver("1.2.3+build.5")).toEqual({ major: 1, minor: 2, patch: 3, pre: "" });
+      // Trailing text — e.g. an escape sequence from a hostile registry — must not parse.
+      expect(parseSemver("9.9.9\u001b[2J")).toBeNull();
+      expect(parseSemver("9.9.9 garbage")).toBeNull();
       expect(parseSemver("")).toBeNull();
     });
   });
@@ -128,6 +132,11 @@ describe("updateNotifier pure helpers", () => {
         latestVersion: "2.0.0",
         notifiedVersion: "2.0.0",
       };
+      expect(selectNotice({ current: "1.0.0", cache })).toBeNull();
+    });
+
+    it("prints nothing for a cached version carrying terminal escape sequences", () => {
+      const cache: UpdateCache = { lastCheckMs: 1, latestVersion: "9.9.9\u001b]0;pwned\u0007" };
       expect(selectNotice({ current: "1.0.0", cache })).toBeNull();
     });
   });
