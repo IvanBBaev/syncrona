@@ -213,6 +213,47 @@ describe("wizard", () => {
     );
   });
 
+  it("reloads the configs after generating sync.config.js, before downloading into the chosen source directory", async () => {
+    mockGetManifest.mockReturnValue(undefined);
+    mockCheckConfigPath.mockReturnValue(false);
+    mockResolveCredentialsFromStore.mockResolvedValue({
+      instance: "dev123.service-now.com",
+      user: "stored.user",
+      password: "stored.pass",
+    });
+    mockPrompt
+      .mockResolvedValueOnce({ sourceDirectory: "custom-src" })
+      .mockResolvedValueOnce({ app: "x_demo" });
+    mockUnwrapSNResponse
+      .mockResolvedValueOnce([{ scope: "x_demo", displayName: "Demo App" }])
+      .mockResolvedValueOnce({
+        scope: "x_demo",
+        tables: {
+          sys_script_include: {
+            records: {
+              "Demo Script": { sys_id: "1", name: "Demo Script", files: [{ name: "script", type: "js" }] },
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({ scope: "x_demo" });
+
+    const { startWizard } = await import("../wizard.js");
+    await expect(startWizard()).resolves.toBe(true);
+
+    expect(mockGetDefaultConfigFile).toHaveBeenCalledWith("custom-src");
+    const configWrite = mockWriteFile.mock.calls.findIndex(([p]) =>
+      String(p).endsWith("sync.config.js")
+    );
+    expect(configWrite).toBeGreaterThanOrEqual(0);
+    const writeOrder = mockWriteFile.mock.invocationCallOrder[configWrite];
+    expect(mockLoadConfigs).toHaveBeenCalled();
+    expect(mockProcessManifest).toHaveBeenCalled();
+    const reloadOrder = mockLoadConfigs.mock.invocationCallOrder[0];
+    expect(reloadOrder).toBeGreaterThan(writeOrder);
+    expect(reloadOrder).toBeLessThan(mockProcessManifest.mock.invocationCallOrder[0]);
+  });
+
   it("fails fast and asks for login when no active CredentialStore instance exists", async () => {
     mockGetActiveInstance.mockResolvedValue(null);
 

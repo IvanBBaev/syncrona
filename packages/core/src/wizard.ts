@@ -117,6 +117,10 @@ export async function startWizard(): Promise<boolean> {
     if (!hasConfig) {
       logger.info("Generating config...");
       await writeDefaultConfig(hasConfig, sourceDirectory);
+      // The configs loaded at startup predate the file just written, so the
+      // download below would land in the default `src` rather than the source
+      // directory the user chose. Reload before anything resolves a path.
+      await ConfigManager.loadConfigs();
     }
 
     const man = ConfigManager.getManifest(true);
