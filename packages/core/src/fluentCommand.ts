@@ -526,10 +526,63 @@ async function resolveProjectDir(
 }
 
 /**
+ * `now.config.json` text reduced to plain JSON the way the SDK's JSON5 reader
+ * accepts it: a leading byte-order mark, `//` and `/* *\/` comments and trailing
+ * commas are removed, outside of strings only. Other JSON5 syntax (single quotes,
+ * unquoted keys, hex numbers) is left as is, so `JSON.parse` still refuses it.
+ */
+export function stripJsonExtensions(text: string): string {
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  // Pass 1: comments become spaces (newlines kept), strings are copied verbatim.
+  let plain = "";
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < source.length && source[j] !== ch && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
+      plain += source.slice(i, j + 1);
+      i = j;
+    } else if (ch === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") i++;
+      plain += "\n";
+    } else if (ch === "/" && source[i + 1] === "*") {
+      const end = source.indexOf("*/", i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      plain += source.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop - 1;
+    } else {
+      plain += ch;
+    }
+  }
+  // Pass 2: drop a comma that only whitespace separates from a closing bracket.
+  let out = "";
+  for (let i = 0; i < plain.length; i++) {
+    const ch = plain[i];
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < plain.length && plain[j] !== ch && plain[j] !== "\n") j += plain[j] === "\\" ? 2 : 1;
+      out += plain.slice(i, j + 1);
+      i = j;
+      continue;
+    }
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < plain.length && /\s/.test(plain[j])) j++;
+      if (plain[j] === "}" || plain[j] === "]") continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
  * The `scope` the project's `now.config.json` sets, or `undefined` when it sets
- * none (no key, an empty or non-string value, or a document that is not an
- * object). A file that cannot be read or parsed is an error naming it: the real
- * run and `--dry-run` must not go on as if the project had no scope.
+ * none (no key, a blank or non-string value, or a document that is not an
+ * object). The file is read as the SDK reads it, with a byte-order mark, comments
+ * and trailing commas allowed (see `stripJsonExtensions`), and the scope is
+ * trimmed, so a whitespace-only one counts as none. A file that cannot be read or
+ * parsed is an error naming it: the real run and `--dry-run` must not go on as if
+ * the project had no scope.
  */
 async function configuredScope(deps: FluentCommandDeps, projectDir: string): Promise<string | undefined> {
   const file = path.join(projectDir, NOW_CONFIG);
@@ -541,13 +594,14 @@ async function configuredScope(deps: FluentCommandDeps, projectDir: string): Pro
   }
   let config: unknown;
   try {
-    config = JSON.parse(text);
+    config = JSON.parse(stripJsonExtensions(text));
   } catch (e) {
     throw new FluentCliError(`${file} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (typeof config !== "object" || config === null || Array.isArray(config)) return undefined;
   const scope = (config as { scope?: unknown }).scope;
-  return typeof scope === "string" && scope ? scope : undefined;
+  const trimmed = typeof scope === "string" ? scope.trim() : "";
+  return trimmed || undefined;
 }
 
 /**
