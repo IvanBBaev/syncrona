@@ -1382,3 +1382,56 @@ test('handleCicdRun resume: a successful app-repo resume notes the action is tak
     assert.match(body.message, /does not record which app-repo action started it; reported as rollback/);
   });
 });
+
+// Review round 7, finding 4 (parity with core's --json): an additive `verdict`
+// tells "could not be followed" (incomplete) apart from "finished, but the ATF
+// result is unreadable or unclear" (unknown); both stay outcome incomplete.
+test('handleCicdRun: every finished call carries the verdict core reports', async () => {
+  await withEnv(async () => {
+    const suiteBody = (body) => ({
+      'POST /api/sn_cicd/testsuite/run': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress('2', withResults),
+      [`GET /api/sn_cicd/testsuite/results/${RESULT_ID}`]:
+        body instanceof Object && 'status' in body && 'text' in body ? body : mkResponse(200, { result: body }),
+    });
+    const runSuite = async (routes) => {
+      mockFetch(routes);
+      return payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
+    };
+    const counts = (passed, failed) => ({
+      rolledup_test_success_count: passed,
+      rolledup_test_failure_count: failed,
+      rolledup_test_error_count: 0,
+    });
+
+    const passed = await runSuite(suiteBody({ test_suite_status: 'success', ...counts(2, 0) }));
+    assert.deepEqual([passed.outcome, passed.exitCode, passed.verdict], ['succeeded', 0, 'passed']);
+
+    const failed = await runSuite(suiteBody({ test_suite_status: 'failure', ...counts(1, 1) }));
+    assert.deepEqual([failed.outcome, failed.exitCode, failed.verdict], ['failed', 2, 'failed']);
+
+    const empty = await runSuite(suiteBody({ test_suite_status: 'success', ...counts(0, 0) }));
+    assert.deepEqual([empty.outcome, empty.exitCode, empty.verdict], ['failed', 2, 'no_tests']);
+
+    const unclear = await runSuite(suiteBody({ test_suite_status: 'canceled' }));
+    assert.deepEqual([unclear.outcome, unclear.exitCode, unclear.verdict], ['incomplete', 1, 'unknown']);
+
+    const unreadable = await runSuite(suiteBody(mkResponse(401, { error: { message: 'User Not Authenticated' } })));
+    assert.deepEqual([unreadable.outcome, unreadable.exitCode, unreadable.verdict], ['incomplete', 1, 'unknown']);
+
+    mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: progress('3', { status_message: 'Install failed' }),
+    });
+    const appFailed = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.deepEqual([appFailed.outcome, appFailed.verdict], ['failed', 'failed']);
+
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(403, { error: { message: 'User Not Authorized' } }) });
+    const denied = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.deepEqual([denied.outcome, denied.exitCode, denied.verdict], ['incomplete', 1, 'incomplete']);
+
+    mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2') });
+    const refused = payloadOf(await handleCicdRun({ action: 'run-test', progressId: RESUME_ID }, makeContext()));
+    assert.deepEqual([refused.outcome, refused.verdict], ['incomplete', 'incomplete']);
+  });
+});

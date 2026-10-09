@@ -359,11 +359,21 @@ class Budget {
   }
 }
 
+/**
+ * The verdict next to the outcome, the same values as core's `cicd --json`:
+ * `passed`, `failed` and `no_tests` are what the instance reported;
+ * `incomplete` means the run could not be followed to its end, and `unknown`
+ * that the tracker finished but its ATF result was unreadable or unclear (both
+ * outcome `incomplete`, exit code 1).
+ */
+export type CicdRunVerdict = "passed" | "failed" | "no_tests" | "incomplete" | "unknown";
+
 /** A step that could not produce a usable answer — outcome `incomplete`. */
 class CicdRunIncomplete extends Error {
   constructor(
     message: string,
-    readonly httpStatus?: number
+    readonly httpStatus?: number,
+    readonly verdict: Extract<CicdRunVerdict, "incomplete" | "unknown"> = "incomplete"
   ) {
     super(message);
     this.name = "CicdRunIncomplete";
@@ -680,6 +690,7 @@ export async function handleCicdRun(
   const budget = new Budget(context.timeoutMs);
   const pollMs = pollIntervalOf(args.pollMs);
   let outcome: CicdRunOutcome = "incomplete";
+  let verdict: CicdRunVerdict = "incomplete";
   let progressId: string | undefined = resumeId;
   let progress: JsonObject | undefined;
   let atf: AtfOutcome | undefined;
@@ -729,20 +740,29 @@ export async function handleCicdRun(
             `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. ` +
               (resumeId && read.notFound
                 ? atfKindMismatchHint(action, progressId)
-                : `Resume with progressId ${progressId} to read the result again.`)
+                : `Resume with progressId ${progressId} to read the result again.`),
+            undefined,
+            "unknown"
           );
         }
       } else {
         atf = read;
         if (trackerSucceeded && read.verdict === "unknown") {
           throw new CicdRunIncomplete(
-            `progress ${progressId} finished, but the ATF result does not clearly report a pass or a failure, so whether the tests passed is unknown. Resume with progressId ${progressId} to read the result again.`
+            `progress ${progressId} finished, but the ATF result does not clearly report a pass or a failure, so whether the tests passed is unknown. Resume with progressId ${progressId} to read the result again.`,
+            undefined,
+            "unknown"
           );
         }
       }
     }
     const succeeded = trackerSucceeded && (!isAtfAction || atf?.verdict === "passed");
     outcome = succeeded ? "succeeded" : "failed";
+    verdict = succeeded
+      ? "passed"
+      : trackerSucceeded && atf?.verdict === "no_tests"
+        ? "no_tests"
+        : "failed";
     if (!succeeded && trackerSucceeded) {
       message =
         atf?.verdict === "no_tests"
@@ -755,6 +775,7 @@ export async function handleCicdRun(
     }
   } catch (e) {
     outcome = "incomplete";
+    verdict = e instanceof CicdRunIncomplete ? e.verdict : "incomplete";
     message = e instanceof Error ? e.message : String(e);
     httpStatus = e instanceof CicdRunIncomplete ? e.httpStatus : undefined;
   }
@@ -787,6 +808,7 @@ export async function handleCicdRun(
       action,
       outcome,
       exitCode,
+      verdict,
       ...(resumeId ? { resumed: true } : {}),
       request: { method, path: `api/sn_cicd/${request.path}`, params: request.params },
       progressId: progressId ?? null,
