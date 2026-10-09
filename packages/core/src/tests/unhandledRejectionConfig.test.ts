@@ -81,8 +81,11 @@ describe("unhandled rejection handling", () => {
     const { stdout, stderr } = runFixture(false);
     const out = `${stdout}${stderr}`;
     // Node's fatal banner, and no reporter summary at all — the run does not
-    // end, it stops.
-    expect(out).toContain("[Error: fixture rejection]");
+    // end, it stops. The error itself is printed either inspected
+    // (`[Error: fixture rejection]`) or with its stack depending on the Jest
+    // version, so the banner is matched by Node's version line instead.
+    expect(out).toContain("Error: fixture rejection");
+    expect(out).toMatch(/^Node\.js v\d+/m);
     expect(out).not.toContain("Tests:");
   });
 });
