@@ -272,19 +272,59 @@ describe("loginCommand", () => {
     expect(mockSetActiveInstance).not.toHaveBeenCalled();
   });
 
-  it("prompts to switch active instance when different instance is already active", async () => {
-    mockGetActiveInstance.mockResolvedValue("prod.service-now.com");
-    mockPrompt
-      .mockResolvedValueOnce({ user: "admin", password: "secret" })
-      .mockResolvedValueOnce({ switchActive: true });
+  describe("when a different instance is already active", () => {
+    let isTTYDescriptor: PropertyDescriptor | undefined;
 
-    await loginCommand({
-      ...BASE_ARGS,
-      instance: "dev123.service-now.com",
-      authMethod: "basic",
+    beforeEach(() => {
+      isTTYDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+      mockGetActiveInstance.mockResolvedValue("prod.service-now.com");
     });
 
-    expect(mockSetActiveInstance).toHaveBeenCalledWith("dev123.service-now.com");
+    afterEach(() => {
+      if (isTTYDescriptor) {
+        Object.defineProperty(process.stdin, "isTTY", isTTYDescriptor);
+      } else {
+        delete (process.stdin as { isTTY?: boolean }).isTTY;
+      }
+    });
+
+    const setStdinTTY = (value: boolean | undefined) =>
+      Object.defineProperty(process.stdin, "isTTY", { value, configurable: true, writable: true });
+
+    it("prompts to switch on an interactive terminal", async () => {
+      setStdinTTY(true);
+      mockPrompt
+        .mockResolvedValueOnce({ user: "admin", password: "secret" })
+        .mockResolvedValueOnce({ switchActive: true });
+
+      await loginCommand({
+        ...BASE_ARGS,
+        instance: "dev123.service-now.com",
+        authMethod: "basic",
+      });
+
+      expect(mockSetActiveInstance).toHaveBeenCalledWith("dev123.service-now.com");
+    });
+
+    // A scripted login has no one to answer the confirm prompt; it used to ask
+    // anyway. Keep the current active instance and point at `syncrona use`.
+    it("keeps the current active instance without prompting when stdin is not a terminal", async () => {
+      setStdinTTY(undefined);
+
+      await loginCommand({
+        ...BASE_ARGS,
+        instance: "dev123.service-now.com",
+        authMethod: "api-key",
+        apiKey: "KEY-123",
+      });
+
+      expect(mockPrompt).not.toHaveBeenCalled();
+      expect(mockSetActiveInstance).not.toHaveBeenCalled();
+      expect(mockSaveCredentials).toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("syncrona use dev123.service-now.com")
+      );
+    });
   });
 
   it("logs in non-interactively with an inbound REST API key (no prompts)", async () => {

@@ -441,7 +441,14 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
     logger.success(`Logged in to ${normalizedInstance} and set as active instance.`);
   } else {
     logger.success(`Logged in to ${normalizedInstance}.`);
-    if (existingActive !== normalizedInstance) {
+    if (existingActive !== normalizedInstance && process.stdin.isTTY !== true) {
+      // A scripted login (every field from flags, stdin piped or closed) cannot
+      // answer a confirm prompt. Keep the current active instance and say how
+      // to switch, rather than blocking on a question no one can answer.
+      logger.info(
+        `Active instance is still ${existingActive}. Run \`syncrona use ${normalizedInstance}\` to switch.`
+      );
+    } else if (existingActive !== normalizedInstance) {
       const { switchActive } = await inquirer.prompt<{ switchActive: boolean }>([
         {
           type: "confirm",
