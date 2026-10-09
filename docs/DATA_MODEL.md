@@ -185,7 +185,7 @@ endpoint or from the Table API.
   and removing trailing dots and spaces. On APFS, NTFS and SMB shares such
   names are one folder. Every member of a
   colliding group gets the suffix `_<sys_id>`, for example `Util_<sys_id>` and
-  `util_<sys_id>`. The suffix counts toward the same 180-byte budget as the
+  `util_<sys_id>`. The suffix counts toward the same 160-byte budget as the
   name: a long name is cut further, with its hash, so that `_<sys_id>` fits.
   The result depends only on the set of records, not on the order the instance
   returns them in. The CLI prints one warning per group.
@@ -195,12 +195,14 @@ endpoint or from the Table API.
 - **Records that do not collide** keep their names exactly as before.
 - **Names no filesystem stores as written.** A NUL, another control character
   (C0, DEL, C1) or a tab in a record name is replaced with `_`, and a lone
-  UTF-16 surrogate with U+FFFD. A name longer than 180 UTF-8 bytes is cut at
+  UTF-16 surrogate with U+FFFD. A name longer than 160 UTF-8 bytes is cut at
   the last whole code point that fits and gets `_<hash>`, the first 8 hex
   digits of the SHA-256 of the whole name. Two long names with the same prefix
   therefore get different folders, and the result is the same on every run.
-  The 75 bytes left below the 255-byte segment limit hold the flat layout's
-  `~<field>.<ext>`. The cut keeps whole code points, so
+  The 95 bytes left below the 255-byte segment limit hold the flat layout's
+  `~<field>.<ext>`: a field name of up to 80 characters, the ServiceNow
+  column limit, and an extension of up to 13 bytes. A longer tail stops the
+  download with the segment-length error instead of being cut. The cut keeps whole code points, so
   it can still separate an emoji from a combining mark that follows it.
 - **Names Windows cannot store.** Trailing dots and spaces are removed, since
   Windows would drop them, for example `Report.` becomes `Report`. A Windows
@@ -234,7 +236,7 @@ first `refresh` or `download` with these rules:
   them. It is left in place with a `Left "<table>/<old>" in place` warning, and
   each record is downloaded fresh into its new folder. Review the old folder,
   then delete it; `syncrona repair` lists its files as orphans.
-- A record whose name was stored verbatim but is now made to fit (181 to 255
+- A record whose name was stored verbatim but is now made to fit (161 to 255
   bytes, or a tab or other control character) has its folder renamed in the
   same way, with the same `Renamed` warning. So does a folder with a trailing
   dot or space, a Windows device name, or a whitespace-only name.
@@ -244,8 +246,9 @@ first `refresh` or `download` with these rules:
   If a folder with the plain name already exists, the suffixed one is left in
   place with a `Left ... in place` warning.
 - A colliding long name that an earlier version suffixed on top of the
-  180-byte budget (up to 213 bytes) has its folder renamed to the cut form
-  that fits, in the same way.
+  former 180-byte budget (up to 213 bytes) has its folder renamed to the cut
+  form that fits, in the same way. So does a name an earlier version cut at
+  180 bytes, now that the budget is 160.
 - No folder is moved when the destination already exists. The old folder is
   left in place, with a warning.
 
