@@ -2301,7 +2301,9 @@ export async function applyIncludeTypeRulesToManifest(
  * list was judged when it was built; this guards a hand-edited or older one.
  * Best effort: a failed lookup answers undefined and the sidecar is written
  * from the list as recorded — failing the download over a defence-in-depth
- * read would turn a restricted sys_dictionary into a broken refresh.
+ * read would turn a restricted sys_dictionary into a broken refresh. Not
+ * silent, though: the failure is a warning, once per table per download (this
+ * runs once per table), naming that the columns went unverified.
  */
 const readSidecarColumnTypes = async (
   client: SNClient,
@@ -2313,9 +2315,10 @@ const readSidecarColumnTypes = async (
     const tableNameQuery = hierarchy.tables.map((name) => `name=${name}`).join("^OR");
     return await readColumnTypes(client, tableName, tableNameQuery, columns);
   } catch (e) {
-    logger.debug(
-      `Table ${tableName}: could not read the sidecar column types ` +
-        `(${e instanceof Error ? e.message : String(e)}); writing the manifest's metaFields as recorded.`
+    logger.warn(
+      `Table ${tableName}: could not verify the dictionary types of the sidecar columns ` +
+        `(${e instanceof Error ? e.message : String(e)}); writing the manifest's metaFields as recorded, ` +
+        "so an unsafe column may be written."
     );
     return undefined;
   }

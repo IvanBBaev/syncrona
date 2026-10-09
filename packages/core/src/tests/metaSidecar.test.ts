@@ -853,17 +853,27 @@ describe("bulk download of the sidecar", () => {
       }
       return (base as (...args: unknown[]) => unknown)(table, query, ...rest);
     });
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const tableMap = await buildBulkDownloadFromTableAPI(
+        missingWithMeta(),
+        createClient(tableAPIGet),
+        {},
+        undefined,
+        { sys_script_include: ["api_name"] }
+      );
 
-    const tableMap = await buildBulkDownloadFromTableAPI(
-      missingWithMeta(),
-      createClient(tableAPIGet),
-      {},
-      undefined,
-      { sys_script_include: ["api_name"] }
-    );
-
-    const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
-    expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+      const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
+      expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+      // Fail-open, but never silent: one warning for the table, saying what
+      // went unchecked.
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+        "Table sys_script_include: could not verify the dictionary types of the sidecar columns " +
+          "(Forbidden); writing the manifest's metaFields as recorded, so an unsafe column may be written.",
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
