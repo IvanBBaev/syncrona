@@ -321,6 +321,29 @@ describe("table policy", () => {
       'sys_db_object answered without a result list for table "x"'
     );
   });
+
+  // A result list whose first entry is not a record carries no super_class
+  // either; reading it as "no parent" is the same decision on no evidence.
+  it.each<[string, unknown[]]>([
+    ["null", [null]],
+    ["a number", [1]],
+    ["a string", ["x"]],
+    ["a nested array", [[]]],
+  ])("refuses to judge a table from a first row that is %s", async (_label, result) => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(() => ok(result));
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).rejects.toThrow(
+      'sys_db_object answered with a result that is not a record for table "x"'
+    );
+  });
+
+  it("still reads an empty result list as a table without a parent", async () => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(() => ok([]));
+    const missing = new Set<string>();
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x", new Map(), missing)).resolves.toBe(false);
+    expect([...missing]).toEqual(["x"]);
+  });
 });
 
 describe("resolveScopeId", () => {
@@ -607,6 +630,26 @@ describe("planRecordCreation safety", () => {
     });
     expect(plan.plans[0].action).toBe("error");
     expect(plan.plans[0].message).toMatch(/sys_db_object answered without a result list for table "u_odd"/);
+    expect(lookupCalls(client)).toEqual([]);
+  });
+
+  it.each<[string, unknown[]]>([
+    ["null", [null]],
+    ["a number", [1]],
+    ["a string", ["x"]],
+    ["a nested array", [[]]],
+  ])("refuses a create when the first sys_db_object row is %s", async (_label, result) => {
+    mockGetConfig.mockReturnValue({ createTables: ["u_odd"] });
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(async (table: string) =>
+      table === "sys_db_object" ? { data: { result: result as unknown } } : { data: { result: [] as unknown } }
+    );
+    const plan = await Pipeline.planRecordCreation([candidate("u_odd", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/sys_db_object answered with a result that is not a record for table "u_odd"/);
     expect(lookupCalls(client)).toEqual([]);
   });
 
