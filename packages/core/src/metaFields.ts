@@ -132,10 +132,19 @@ export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
  * them through NON_META_INTERNAL_TYPES; the data-field fallback
  * (`SYNCRONA_DATA_TABLES` / `SYNCRONA_INCLUDE_DATA_FIELDS`), which turns every
  * column into a `.txt` field file, excludes them through this set directly.
+ *
+ * The secret-holding types: `password` (one-way hash), `password2` (two-way
+ * encrypted), `glide_encrypted` (the "Encrypted Text" type of column-level
+ * encryption), `encrypted_text` and `masked`. A name in this set that an
+ * instance does not use costs nothing; a secret type missing from it is
+ * written to disk, so the set errs on the side of listing it.
  */
 export const UNSAFE_VALUE_INTERNAL_TYPES: ReadonlySet<string> = new Set([
   "password",
   "password2",
+  "glide_encrypted",
+  "encrypted_text",
+  "masked",
   "journal",
   "journal_input",
   "journal_list",
@@ -150,8 +159,9 @@ export const UNSAFE_VALUE_INTERNAL_TYPES: ReadonlySet<string> = new Set([
  * SN_TYPE_MAP's own keys are the file types: a field of that type either IS a
  * field file already, or was deliberately removed from the file list by a config
  * `excludes` rule — and a user who excluded `script` did not ask for it back as
- * a JSON string. The rest are excluded for their own reasons: `password` and
- * `password2` are credentials and must never reach the working tree, the
+ * a JSON string. The rest are excluded for their own reasons: `password`,
+ * `password2` and the encrypted and masked types hold secrets and must never
+ * reach the working tree, the
  * `journal*` family is an append-only activity stream that would churn the file
  * on every pull, and `image`/`user_image`/`collection` have no useful string
  * form at all.
@@ -404,6 +414,47 @@ export const classifyColumn = (
   return type === "" ? "unknown" : "safe";
 };
 
+/**
+ * The dictionary type of `column` in `types` (element → internal_type), matched
+ * case-insensitively. An operator's `U_SECRET` and the dictionary's `u_secret`
+ * are one column to the instance, and an exact match would leave the entry
+ * untyped — "unknown", and so kept — whatever its real type. When several
+ * case variants match, an unsafe type (UNSAFE_VALUE_INTERNAL_TYPES) on any of
+ * them wins: they are one column to the instance, so a safe `U_S` must not hide
+ * an unsafe `u_s`. Otherwise an exact match wins when there is one, then the
+ * first variant. manifestBuilder's dictionaryColumnTypes applies the same rule
+ * to the map it builds.
+ */
+export const columnTypeOf = (
+  types: ReadonlyMap<string, string> | undefined,
+  column: string
+): string | undefined => {
+  if (!types) {
+    return undefined;
+  }
+  const wanted = column.toLowerCase();
+  let first: string | undefined;
+  for (const [element, type] of types) {
+    if (element.toLowerCase() !== wanted) {
+      continue;
+    }
+    if (UNSAFE_VALUE_INTERNAL_TYPES.has(dictionaryInternalType(type))) {
+      return type;
+    }
+    first ??= type;
+  }
+  return types.get(column) ?? first;
+};
+
+/**
+ * True for a dot-walked column name (`manager.user_password`). It reads a
+ * column of ANOTHER record, so this table's dictionary has no row for it and
+ * classifyColumn could only call it "unknown" — which keeps it. The sidecar
+ * holds this record's own columns; a dot-walked name is never requested and
+ * never written, whatever listed it.
+ */
+export const isDotWalkedColumn = (column: string): boolean => column.includes(".");
+
 /** A value with a single unambiguous column form. */
 const isColumnScalar =(raw: unknown): boolean =>
   typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean";
@@ -455,13 +506,27 @@ export const metaValueText = (raw: unknown): string => {
  * Table API gives no column ordering guarantee, so without the sort a re-pull of
  * an unchanged record would still produce a diff and a workspace that re-pulls on
  * every refresh would never stop churning git.
+ *
+ * `columnTypes` (column → `sys_dictionary.internal_type`), when the caller has
+ * it, is the last line of the unsafe-type rule: a column classifyColumn rules
+ * unsafe is never written, whatever listed it. The manifest's `metaFields` is
+ * normally filtered already, but it is a committed, hand-editable file, and a
+ * list written before the explicit-list filter existed can still name a
+ * credential column. A dot-walked name (isDotWalkedColumn) is never written for
+ * the same reason, and needs no type to be refused.
  */
 export const serializeMetaFields = (
   row: Record<string, unknown>,
   fields: string[],
-  table?: string
+  table?: string,
+  columnTypes?: ReadonlyMap<string, string>
 ): string => {
   const secret = new Set(metaSecretColumns(table, row));
+  for (const field of fields) {
+    if (classifyColumn(table, field, columnTypeOf(columnTypes, field)) === "unsafe") {
+      secret.add(field);
+    }
+  }
   // Null-prototype: `body["__proto__"] = "x"` on a plain object hits the
   // Object.prototype setter, which ignores a non-object — no own property, and
   // the column vanishes from a file whose whole contract is "every tracked
@@ -469,7 +534,7 @@ export const serializeMetaFields = (
   // name an ordinary key.
   const body: Record<string, string> = Object.create(null);
   for (const field of [...new Set(fields)].sort()) {
-    if (!rowHasColumn(row, field) || secret.has(field)) {
+    if (isDotWalkedColumn(field) || !rowHasColumn(row, field) || secret.has(field)) {
       continue;
     }
     body[field] = metaValueText(row[field]);

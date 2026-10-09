@@ -12,7 +12,11 @@
 //   - x_demo_cred.u_ghost  — an `includes` entry with no dictionary row
 //                            (kept, with a warning that the type is unknown);
 //   - sys_properties x_demo.api_key  — a password2 property (value withheld);
-//   - sys_properties x_demo.endpoint — a string property (value written).
+//   - sys_properties x_demo.endpoint — a string property (value written);
+//   - x_demo_cred metaFields ["u_token", "u_notes", "name"] — an explicit
+//                            sidecar list naming the password2 column and a
+//                            journal column: both dropped with a warning,
+//                            `name` kept.
 // repair runs over a project each source built, after the string value is deleted.
 // No instance is contacted: the client is a fake injected through snClient.
 import { jest } from "@jest/globals";
@@ -26,6 +30,7 @@ type Mode = "scoped" | "tableapi";
 const SECRET = "S3CR3T-PROPERTY-VALUE";
 const ENDPOINT = "https://example.test";
 const TOKEN = "T0KEN-PASSWORD2-VALUE";
+const NOTES = "J0URNAL-ENTRY-VALUE";
 const SCRIPT = "gs.info('cred');";
 const A = "a".repeat(32);
 const B = "b".repeat(32);
@@ -43,7 +48,7 @@ const ROWS: Record<string, Row[]> = {
     { sys_id: A, name: "x_demo.api_key", type: "password2", value: SECRET },
     { sys_id: B, name: "x_demo.endpoint", type: "string", value: ENDPOINT },
   ],
-  x_demo_cred: [{ sys_id: C, name: "cred-one", script: SCRIPT, u_token: TOKEN }],
+  x_demo_cred: [{ sys_id: C, name: "cred-one", script: SCRIPT, u_token: TOKEN, u_notes: NOTES }],
 };
 const DICTIONARY: Record<string, Row[]> = {
   sys_properties: [
@@ -55,6 +60,7 @@ const DICTIONARY: Record<string, Row[]> = {
     { element: "name", internal_type: "string" },
     { element: "script", internal_type: "script_plain" },
     { element: "u_token", internal_type: "password2" },
+    { element: "u_notes", internal_type: "journal" },
   ],
 };
 const CONTENT: Record<string, Record<string, string>> = {
@@ -210,6 +216,9 @@ const isIncludeWarning = (message: string): boolean =>
 const UNSAFE_WARNING =
   'Table x_demo_cred: ignoring the includes entry for column "u_token" — its dictionary type is ' +
   "password2, and a value of that type is never written to the working tree.";
+const metaFieldsWarning = (column: string, type: string): string =>
+  `Table x_demo_cred: ignoring the metaFields entry for column "${column}" — its dictionary type is ` +
+  `${type}, and a value of that type is never written to the working tree.`;
 const UNTYPED_WARNING =
   "Table x_demo_cred: could not read the dictionary type of included column(s) u_ghost " +
   "(no dictionary row or an empty internal_type); they are kept without the unsafe-type check.";
@@ -228,6 +237,9 @@ const enterFixture = async (manifestSource: Mode): Promise<Fixture> => {
     "includes:{}",
     "includes:{ sys_properties: { value: { type: \"txt\" } }, " +
       'x_demo_cred: { u_token: { type: "txt" }, u_ghost: { type: "txt" } } }'
+  ).replace(
+    "tableOptions:{}",
+    'tableOptions:{ x_demo_cred: { metaFields: ["u_token", "u_notes", "name"] } }'
   );
   fs.writeFileSync(path.join(tmp, "sync.config.js"), config);
   fs.mkdirSync(path.join(tmp, "src"));
@@ -326,10 +338,31 @@ describe.each<[Command, Mode]>([
     expect(writtenHolding(tmp, ENDPOINT)).toEqual(["src/sys_properties/x_demo.endpoint/value.txt"]);
     expect(writtenHolding(tmp, SECRET)).toEqual([]);
     expect(writtenHolding(tmp, TOKEN)).toEqual([]);
+    expect(writtenHolding(tmp, NOTES)).toEqual([]);
     // Nothing that was withheld reaches the manifest on disk either.
     const manifestText = fs.readFileSync(path.join(tmp, "sync.manifest.json"), "utf8");
     expect(manifestText).not.toContain(SECRET);
     expect(manifestText).not.toContain(TOKEN);
+
+    // The explicit metaFields list keeps its safe column and loses the
+    // password2 and journal ones, on both sources. init writes no sidecar
+    // (it writes the content the manifest carries), and over the scoped
+    // endpoint it does not enrich the manifest with the metadata layer either.
+    const sidecarPath = path.join(tmp, "src/x_demo_cred/cred-one/.meta.json");
+    const discoversMeta = command !== "init" || manifestSource === "tableapi";
+    expect(fs.existsSync(sidecarPath)).toBe(command !== "init");
+    if (command !== "init") {
+      expect(JSON.parse(fs.readFileSync(sidecarPath, "utf8"))).toEqual({ name: "cred-one" });
+    }
+    const manifestTables = (JSON.parse(manifestText) as { tables: Record<string, { metaFields?: string[] }> })
+      .tables;
+    expect(manifestTables.x_demo_cred.metaFields).toEqual(discoversMeta ? ["name"] : undefined);
+    const metaWarnings = warn.mock.calls
+      .map((call) => String(call[0]))
+      .filter((message) => message.includes("the metaFields entry"));
+    expect(metaWarnings).toEqual(
+      discoversMeta ? [metaFieldsWarning("u_token", "password2"), metaFieldsWarning("u_notes", "journal")] : []
+    );
 
     // Manifest record files: the unsafe include is never listed; the untyped
     // one is kept (it has no value anywhere, so nothing is written for it).
@@ -387,6 +420,7 @@ describe.each<[Mode]>([["scoped"], ["tableapi"]])("secret columns: repair over t
     expect(fs.existsSync(endpointValue())).toBe(false);
     expect(writtenHolding(fixture.tmp, SECRET)).toEqual([]);
     expect(writtenHolding(fixture.tmp, TOKEN)).toEqual([]);
+    expect(writtenHolding(fixture.tmp, NOTES)).toEqual([]);
   });
 
   it("--apply restores the non-secret value and never writes or requests a secret", async () => {
@@ -396,6 +430,7 @@ describe.each<[Mode]>([["scoped"], ["tableapi"]])("secret columns: repair over t
     expect(writtenHolding(fixture.tmp, ENDPOINT)).toEqual(["src/sys_properties/x_demo.endpoint/value.txt"]);
     expect(writtenHolding(fixture.tmp, SECRET)).toEqual([]);
     expect(writtenHolding(fixture.tmp, TOKEN)).toEqual([]);
+    expect(writtenHolding(fixture.tmp, NOTES)).toEqual([]);
     const manifestText = fs.readFileSync(path.join(fixture.tmp, "sync.manifest.json"), "utf8");
     expect(manifestText).not.toContain(SECRET);
     expect(manifestText).not.toContain(TOKEN);
