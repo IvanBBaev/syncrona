@@ -74,7 +74,10 @@ export function resolveInstanceProfile(args: { instanceProfile?: string }): stri
 }
 
 export function setLogLevel(args: Sync.SharedCmdArgs) {
-  logger.setLogLevel(args.logLevel);
+  // Commands registered without the shared options (login, logout, instances,
+  // use) have no --log-level, so args.logLevel is undefined there. That is the
+  // default level, not a typo: don't let the Logger warn about it.
+  logger.setLogLevel(args.logLevel ?? "info");
   const profile = resolveInstanceProfile(args);
   if (profile && !args.instanceProfile) {
     logger.debug(`Using instance profile "${profile}" from ${LOCAL_CONFIG_FILE}`);
