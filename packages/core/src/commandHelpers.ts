@@ -107,15 +107,28 @@ export function logErrorHint(e: unknown): void {
 
 export async function scopeCheck(
   successFunc: () => void | Promise<void>,
-  swapScopes: boolean = false
+  swapScopes: boolean = false,
+  options: { dryRun?: boolean } = {}
 ) {
+  const dryRun = options.dryRun === true;
   // Keep the scope check and the command body in separate try blocks so a
   // command failure is never misreported as a scope-configuration problem.
   let scopeMatches: boolean;
   try {
-    const scopeCheckResult = await AppUtils.checkScope(swapScopes);
+    // A dry run must not write anything, and a scope swap writes the user's
+    // sys_user_preference. So a dry run never swaps, and a mismatch only warns:
+    // the preview reads records through the Table API, which does not depend on
+    // the session scope. Refusing used to leave no way to preview a push
+    // without first writing the scope preference through --scopeSwap.
+    const scopeCheckResult = await AppUtils.checkScope(swapScopes && !dryRun);
     scopeMatches = scopeCheckResult.match;
-    if (!scopeMatches) {
+    if (!scopeMatches && dryRun) {
+      logger.warn(
+        `Dry run: your user's scope is ${scopeCheckResult.sessionScope} but this project is configured for ${scopeCheckResult.manifestScope}. ` +
+          "Previewing anyway; the real run needs the scope switched in ServiceNow (or --scopeSwap where the command offers it)."
+      );
+      scopeMatches = true;
+    } else if (!scopeMatches) {
       scopeCheckMessage(scopeCheckResult);
     }
   } catch (e) {

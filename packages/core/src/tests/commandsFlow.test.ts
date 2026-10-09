@@ -674,6 +674,118 @@ describe("command flows", () => {
     process.env.SN_INSTANCE = oldInstance;
   });
 
+  // Found live (SDK-F1): a user/project scope mismatch refused `push --dry-run`
+  // before it previewed anything, and the only way past it was --scopeSwap,
+  // which writes the user's scope preference on the instance. A dry run now
+  // warns and previews, never swaps, and a real run still refuses.
+  describe("scope mismatch", () => {
+    const mismatch = { match: false, sessionScope: "global", manifestScope: "x_test" };
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushArgs = {
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    };
+    let oldInstance: string | undefined;
+    let oldExitCode: typeof process.exitCode;
+
+    beforeEach(() => {
+      oldInstance = process.env.SN_INSTANCE;
+      oldExitCode = process.exitCode;
+      process.env.SN_INSTANCE = "instance.service-now.com";
+      process.exitCode = undefined;
+      mockCheckScope.mockResolvedValue(mismatch);
+      mockGetAppFileList.mockResolvedValue(appFileList);
+      mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    });
+
+    afterEach(() => {
+      process.exitCode = oldExitCode;
+      process.env.SN_INSTANCE = oldInstance;
+    });
+
+    const warnedAboutScope = () =>
+      mockLoggerWarn.mock.calls.some(
+        ([message]) =>
+          String(message).includes("global") && String(message).includes("x_test")
+      );
+
+    it("pushCommand dry-run warns and previews anyway", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, dryRun: true });
+
+      expect(warnedAboutScope()).toBe(true);
+      expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+      expect(mockGetAppFileList).toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith("1 files to push.");
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("pushCommand dry-run never swaps scopes, even with --scopeSwap", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, scopeSwap: true, dryRun: true });
+
+      expect(mockCheckScope).toHaveBeenCalledTimes(1);
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("pushCommand without --dry-run still refuses with exit 1", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand(pushArgs);
+
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(warnedAboutScope()).toBe(false);
+      expect(mockCheckConnection).not.toHaveBeenCalled();
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+
+    it("pushCommand without --dry-run still swaps with --scopeSwap", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, scopeSwap: true });
+
+      expect(mockCheckScope).toHaveBeenCalledWith(true);
+    });
+
+    it("deployCommand dry-run warns and previews anyway", async () => {
+      const { deployCommand } = await import("../commands.js");
+
+      await deployCommand({ logLevel: "info", dryRun: true });
+      await flushPromises();
+
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(warnedAboutScope()).toBe(true);
+      expect(mockGetAppFileList).toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Dry run: would deploy 1 records to instance.service-now.com, skipping remote push."
+      );
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("deployCommand without --dry-run still refuses with exit 1", async () => {
+      const { deployCommand } = await import("../commands.js");
+
+      await deployCommand({ logLevel: "info" });
+      await flushPromises();
+
+      expect(warnedAboutScope()).toBe(false);
+      expect(mockCheckConnection).not.toHaveBeenCalled();
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+  });
+
   it("deployCommand exits early when no target server is configured", async () => {
     const oldInstance = process.env.SN_INSTANCE;
     delete process.env.SN_INSTANCE;
