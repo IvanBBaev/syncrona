@@ -830,11 +830,17 @@ export type CreatePolicyResult =
  * True when `table` extends sys_metadata, walked through sys_db_object one
  * `super_class` at a time. Every table visited is cached with the answer, so a
  * push creating many records in sibling tables walks each chain once.
+ *
+ * A table the instance answers no sys_db_object row for is added to `missing`
+ * when the caller passes one: "not a sys_metadata descendant" and "no such
+ * table" are both a false here, and only the caller can tell them apart. Keep
+ * one `missing` set alongside one `cache`, since a cached answer skips the read.
  */
 export const extendsSysMetadata = async (
   client: SNClient,
   table: string,
-  cache: Map<string, boolean> = new Map()
+  cache: Map<string, boolean> = new Map(),
+  missing?: Set<string>
 ): Promise<boolean> => {
   // sys_metadata itself is not a "descendant": raw sys_metadata rows are not
   // application files any tool round-trips.
@@ -862,6 +868,7 @@ export const extendsSysMetadata = async (
         1
       )
     );
+    if (Array.isArray(rows) && rows.length === 0) missing?.add(current);
     const parent = Array.isArray(rows) ? rows[0]?.["super_class.name"] : undefined;
     if (typeof parent !== "string" || parent === "") break;
     current = parent;
@@ -878,7 +885,8 @@ export const extendsSysMetadata = async (
 export const checkCreateTablePolicy = async (
   client: SNClient,
   table: string,
-  cache: Map<string, boolean> = new Map()
+  cache: Map<string, boolean> = new Map(),
+  missing?: Set<string>
 ): Promise<CreatePolicyResult> => {
   const config = ConfigManager.getConfig() as Sync.Config;
   const extraAllowed = Array.isArray(config.createTables) ? config.createTables : [];
@@ -893,7 +901,7 @@ export const checkCreateTablePolicy = async (
     };
   }
   if (classification === "allowlisted") return { allowed: true };
-  if (await extendsSysMetadata(client, table, cache)) return { allowed: true };
+  if (await extendsSysMetadata(client, table, cache, missing)) return { allowed: true };
   return {
     allowed: false,
     reason: describeUnlistedCreateTable(
@@ -1103,6 +1111,7 @@ export const planRecordCreation = async (
   // is matched by the same columns its name was built from.
   const allTableOptions = applyDataModelTableOptions(config);
   const hierarchyCache = new Map<string, boolean>();
+  const missingTables = new Set<string>();
   const plans: PlannedCreation[] = [];
   const owners = manifestOwners();
   // An adoption is refused when the sys_id already belongs to a manifest
@@ -1191,12 +1200,35 @@ export const planRecordCreation = async (
       lookup = resolved;
     }
     try {
-      const policy = await checkCreateTablePolicy(client, candidate.table, hierarchyCache);
+      const policy = await checkCreateTablePolicy(
+        client,
+        candidate.table,
+        hierarchyCache,
+        missingTables
+      );
+      // A denied table is refused before any request, so it never reaches the
+      // walk. Every other table is walked here (a no-op when the policy already
+      // did), which is what tells a missing table from an unscoped one: an
+      // allowlisted name the instance does not have would otherwise be planned
+      // as a create of a record in no table at all.
+      const scoped = policy.allowed
+        ? await extendsSysMetadata(client, candidate.table, hierarchyCache, missingTables)
+        : false;
+      if (missingTables.has(candidate.table)) {
+        plans.push(
+          plan("error", {
+            message:
+              `table ${candidate.table} does not exist on the instance (no sys_db_object ` +
+              `record is named "${candidate.table}"), so no record can be created in it. ` +
+              "Check the table folder name, and that this user can read sys_db_object.",
+          })
+        );
+        continue;
+      }
       if (!policy.allowed) {
         plans.push(plan("error", { message: policy.reason }));
         continue;
       }
-      const scoped = await extendsSysMetadata(client, candidate.table, hierarchyCache);
       const natural = scoped ? undefined : UNSCOPED_NATURAL_KEYS[candidate.table];
       if (natural) {
         const resolved = await compositeLookupValues(
@@ -1215,10 +1247,24 @@ export const planRecordCreation = async (
         ...(scoped ? {} : { scoped: false }),
       };
       const hits = await findExisting(client, { candidate, nameField, nameValue, ...extra }, scopeId);
-      if (hits.length === 0) {
+      const foreign = hits.length === 1 ? hits[0].scope : undefined;
+      if (foreign !== undefined && foreign !== "" && foreign !== scopeId) {
+        // The lookup of a table outside sys_metadata carries no sys_scope
+        // term, so the row's own scope is checked here: adopting another
+        // application's record would PATCH it from this one's files.
+        plans.push(
+          plan("error", {
+            ...extra,
+            message:
+              `the matching ${candidate.table} record ${hits[0].sysId} belongs to scope ` +
+              `"${foreign}", not to this application (${scopeId}); refusing to adopt it. ` +
+              "Rename the local record, or change it in its own application.",
+          })
+        );
+      } else if (hits.length === 0) {
         plans.push(plan("create", extra));
       } else if (hits.length === 1) {
-        plans.push(adoptOrRefuse(plan, candidate, hits[0], extra));
+        plans.push(adoptOrRefuse(plan, candidate, hits[0].sysId, extra));
       } else {
         plans.push(
           plan("error", {
@@ -1303,8 +1349,10 @@ const returnedColumnValue = (raw: unknown): string | undefined => {
 };
 
 /**
- * The sys_ids of the records whose columns equal `values`, in `scopeId` when
- * one is given (undefined for a table whose records have no sys_scope column).
+ * The records whose columns equal `values`, in `scopeId` when one is given
+ * (undefined for a table outside the sys_metadata hierarchy). Without a scope
+ * term each hit also carries its `sys_scope` (undefined when the table has no
+ * such column), for the caller to refuse another application's record.
  *
  * The instance drops a query term on a column the table does not have, so the
  * lookup alone cannot be trusted: a wrong naming column would match unrelated
@@ -1314,12 +1362,18 @@ const returnedColumnValue = (raw: unknown): string | undefined => {
  * condition separator, has no escape, so it fails the lookup too rather than
  * being looked up as something else.
  */
+interface LookupHit {
+  sysId: string;
+  /** The row's sys_scope, read only for a lookup without a scope term. */
+  scope?: string;
+}
+
 const findRecordByColumns = async (
   client: SNClient,
   table: string,
   values: Record<string, string>,
   scopeId: string | undefined
-): Promise<string[]> => {
+): Promise<LookupHit[]> => {
   const entries = Object.entries(values);
   for (const [column, value] of entries) {
     if (column.includes("^") || value.includes("^")) {
@@ -1338,11 +1392,17 @@ const findRecordByColumns = async (
     ),
     ...(scopeId === undefined ? [] : [`sys_scope=${escapeQueryValue(scopeId)}`]),
   ].join("^");
-  const fields = [...new Set(["sys_id", ...entries.map(([column]) => column)])].join(",");
+  const fields = [
+    ...new Set([
+      "sys_id",
+      ...entries.map(([column]) => column),
+      ...(scopeId === undefined ? ["sys_scope"] : []),
+    ]),
+  ].join(",");
   const records = await unwrapSNResponse<Record<string, unknown>[]>(
     client.tableAPIGet(table, query, fields, 2)
   );
-  const sysIds: string[] = [];
+  const hits: LookupHit[] = [];
   for (const record of Array.isArray(records) ? records : []) {
     const sysId = record?.sys_id;
     if (typeof sysId !== "string" || sysId === "") continue;
@@ -1364,9 +1424,13 @@ const findRecordByColumns = async (
         );
       }
     }
-    sysIds.push(sysId);
+    hits.push(
+      scopeId === undefined
+        ? { sysId, scope: returnedColumnValue(record.sys_scope) }
+        : { sysId }
+    );
   }
-  return sysIds;
+  return hits;
 };
 
 /**
@@ -1378,7 +1442,7 @@ const findExisting = (
   client: SNClient,
   plan: Pick<PlannedCreation, "candidate" | "nameField" | "nameValue" | "lookup" | "scoped">,
   scopeId: string
-): Promise<string[]> => {
+): Promise<LookupHit[]> => {
   const { table } = plan.candidate;
   const scope = plan.scoped === false ? undefined : scopeId;
   return findRecordByColumns(
@@ -1499,7 +1563,9 @@ const postWithLookup = async (
       );
       await wait(retryWaitMs);
       const hits = await findExisting(client, plan, scopeId);
-      if (hits.length === 1) return hits[0];
+      // No scope check here: the record found may be the one the failed POST
+      // created, which the instance files under the session's scope.
+      if (hits.length === 1) return hits[0].sysId;
       if (hits.length > 1) {
         throw new Error(
           `more than one ${table} record ${describeTarget(plan.lookup, plan.nameValue)} exists after a failed create.`
