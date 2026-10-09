@@ -99,7 +99,8 @@ describe("assignRecordFolderNames", () => {
     expect(names.get("n1")).toBe("Café_n1");
     expect(names.get("n2")).toBe("Café_n2");
     expect(names.get("d1")).toBe("Report_d1");
-    expect(names.get("d2")).toBe("Report._d2");
+    // The trailing dot Windows would drop is dropped before the suffix.
+    expect(names.get("d2")).toBe("Report_d2");
   });
 
   it("does not depend on the order the instance returned the records", () => {

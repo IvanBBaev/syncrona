@@ -176,6 +176,69 @@ describe("sanitizeRecordFolderName", () => {
   });
 });
 
+describe("sanitizeRecordFolderName makes names portable to Windows", () => {
+  it.each([
+    ["CON", "CON_"],
+    ["con", "con_"],
+    ["Prn", "Prn_"],
+    ["aux.txt", "aux_.txt"],
+    ["NUL.tar.gz", "NUL_.tar.gz"],
+    ["COM1", "COM1_"],
+    ["com0", "com0_"],
+    ["LPT9.log", "LPT9_.log"],
+    ["COM¹", "COM¹_"],
+    ["lpt³", "lpt³_"],
+    ["CON .txt", "CON_ .txt"],
+  ])("escapes the reserved device name %j", (name, expected) => {
+    expect(sanitizeRecordFolderName(name)).toBe(expected);
+    expect(sanitizeRecordFolderName(expected)).toBe(expected);
+  });
+
+  it.each(["CONSOLE", "AUXILIARY", "COM10", "LPT", "COM", "my CON", "CON_", "nul_.txt", "xCOM1"])(
+    "leaves %j alone: it is not a reserved name",
+    (name) => {
+      expect(sanitizeRecordFolderName(name)).toBe(name);
+    }
+  );
+
+  it.each([
+    ["foo.", "foo"],
+    ["foo ", "foo"],
+    ["foo. . ", "foo"],
+    ["CON.", "CON_"],
+    ["aux .", "aux_"],
+  ])("drops the trailing dots and spaces Windows would drop: %j", (name, expected) => {
+    expect(sanitizeRecordFolderName(name)).toBe(expected);
+    expect(sanitizeRecordFolderName(expected)).toBe(expected);
+  });
+
+  it.each(["", " ", "   ", ".", "..", ". .", "　"])(
+    "returns no name for %j, so the record falls back to its sys_id",
+    (name) => {
+      expect(sanitizeRecordFolderName(name)).toBe("");
+    }
+  );
+
+  it("names a record without a usable display name by its sys_id, as buildRecordName does", () => {
+    const names = assignRecordFolderNames("t", [
+      { sysId: "s1", name: "   " },
+      { sysId: "s2", name: ".." },
+      { sysId: "s3", name: "CON" },
+    ]);
+    expect(Object.fromEntries(names)).toEqual({ s1: "s1", s2: "s2", s3: "CON_" });
+    for (const folder of names.values()) expect(isSafePathComponent(folder)).toBe(true);
+  });
+
+  it("treats the portable form of an old folder as a rule-driven rename", () => {
+    expect(isRuleDrivenRename("foo.", "foo", "s1")).toBe(true);
+    expect(isRuleDrivenRename("aux", "aux_", "s1")).toBe(true);
+    expect(isRuleDrivenRename("   ", "s1", "s1")).toBe(true);
+    expect(isRuleDrivenRename("foo._s1", "foo_s1", "s1")).toBe(true);
+    expect(isRuleDrivenRename("   ", "s2", "s1")).toBe(false);
+    expect(isRuleDrivenRename("foo.", "bar", "s1")).toBe(false);
+  });
+});
+
 describe("isSafePathComponent refuses what no filesystem stores as written", () => {
   it.each([
     ["NUL", "sys_\u0000script"],

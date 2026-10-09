@@ -277,7 +277,8 @@ describe("buildRecordName sanitization: win32-shaped display values", () => {
       script: "x",
     });
     const [recordName] = Object.keys(result.sys_script_include.records);
-    expect(recordName).toBe("..〳..");
+    // The trailing dots Windows would drop are dropped from the name too.
+    expect(recordName).toBe("..〳");
     expect(isSafePathComponent(recordName)).toBe(true);
   });
 });

@@ -128,13 +128,34 @@ function fitToBytes(name: string, limit: number): string {
  *     names that share a prefix still differ, and the same name always maps to
  *     the same folder. Separators are not handled here; buildRecordName maps
  *     them to `〳` the way the server does.
+ *   - Trailing dots and spaces are dropped: Windows drops them when it creates
+ *     the folder, so the manifest would name a folder that is not on disk.
+ *   - A Windows device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9 and the
+ *     superscript ¹²³ variants, in any case, alone or before an extension) gets
+ *     `_` after the device stem: `CON` -> `CON_`, `aux.txt` -> `aux_.txt`.
+ *     Windows cannot create such a folder at all.
+ *   - A name that is empty or only whitespace (after the steps above, so `..`
+ *     too) yields `""`: it is no name, and the caller uses the sys_id instead.
  */
 export function sanitizeRecordFolderName(name: string): string {
   const cleaned = name
     .replace(/[\u0000-\u001f\u007f-\u009f]/gu, "_")
-    .replace(/[\ud800-\udfff]/gu, "\ufffd");
-  return fitToBytes(cleaned, MAX_RECORD_NAME_BYTES);
+    .replace(/[\ud800-\udfff]/gu, "\ufffd")
+    .replace(/[. ]+$/u, "");
+  if (cleaned.trim() === "") return "";
+  return fitToBytes(cleaned.replace(WINDOWS_DEVICE_NAME, "$1_"), MAX_RECORD_NAME_BYTES);
 }
+
+/**
+ * A Windows device stem at the start of a name that is nothing else, or that
+ * continues only with spaces and an extension. Trailing dots and spaces are
+ * already gone when it is applied, so `CON.` is caught as `CON`.
+ */
+const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?= *(?:\..*)?$)/isu;
+
+/** The folder base of a record: its storable display name, else its sys_id. */
+const folderBaseOf = (name: string, sysId: string): string =>
+  sanitizeRecordFolderName(name) || sanitizeRecordFolderName(sysId) || sysId;
 
 export interface FolderNameEntry {
   sysId: string;
@@ -180,7 +201,7 @@ export function assignRecordFolderNames(
   const nameBySysId = new Map<string, string>();
   for (const entry of entries) {
     const { sysId } = entry;
-    const name = sanitizeRecordFolderName(entry.name);
+    const name = folderBaseOf(entry.name, sysId);
     const prior = nameBySysId.get(sysId);
     if (prior === undefined || name < prior) nameBySysId.set(sysId, name);
   }
@@ -360,7 +381,7 @@ const cutPrefix = (core: string, whole: string): string | undefined => {
  *     on the instance to a long one does not pass for a rule.
  */
 export function isRuleDrivenRename(oldName: string, newName: string, sysId: string): boolean {
-  const base = sanitizeRecordFolderName(oldName);
+  const base = folderBaseOf(oldName, sysId);
   if (base !== oldName && base === newName) return true;
   if (suffixedForms(base, sysId).includes(newName)) return true;
   const oldCore = stripCollisionSuffixes(oldName, sysId);
