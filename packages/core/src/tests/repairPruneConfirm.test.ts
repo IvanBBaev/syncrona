@@ -183,7 +183,7 @@ describe("repair --prune confirmation", () => {
         name: "confirmed",
         message:
           "Delete 3 orphan file(s)? Git holds each one committed and unchanged, so " +
-          "`git checkout HEAD -- <file>` restores it.",
+          "`git --literal-pathspecs checkout HEAD -- <file>` restores it.",
         default: false,
       },
     ]);

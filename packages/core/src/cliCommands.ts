@@ -311,7 +311,9 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       prune: {
         type: "boolean",
         default: false,
-        describe: "With --apply, also delete orphan files that no manifest record claims",
+        describe:
+          "With --apply, also delete orphan files git holds committed and unchanged; new or edited " +
+          "files and records awaiting push --create are kept",
       },
       ci: {
         type: "boolean",
@@ -322,7 +324,11 @@ export const CLI_COMMANDS: CliCommandModule[] = [
     examples: [
       ["$0 repair", "Report missing and orphan files without changing anything"],
       ["$0 repair --apply", "Re-download files the manifest expects but are missing locally"],
-      ["$0 repair --apply --prune --ci", "Re-download missing files and delete orphans without prompting"],
+      ["$0 repair --apply --prune --dry-run", "Preview which orphans a prune would delete and keep"],
+      [
+        "$0 repair --apply --prune --ci",
+        "Re-download missing files and delete committed, unchanged orphans without prompting",
+      ],
     ],
     handler: typedHandler<Sync.SharedCmdArgs & { apply?: boolean; prune?: boolean; ci?: boolean }>(
       (args) => repairCommand(args)

@@ -2,7 +2,8 @@
 // The edges of the git evidence `repair --apply --prune` deletes by: how a git
 // failure is reported, one file git cannot read, names macOS stores decomposed
 // while git stores them precomposed, an exported GIT_DIR, long path lists, line
-// endings, and what the prompt and the final line tell the user.
+// endings and clean filters, glob-like names, the dry-run preview, and what the
+// prompt and the final line tell the user.
 import { jest } from "@jest/globals";
 
 jest.unstable_mockModule("../config.js", () => ({
@@ -32,6 +33,7 @@ import {
   rmSync,
   writeFileSync,
 } from "fs";
+import { execSync } from "child_process";
 import os from "os";
 import path from "path";
 import { git, initRepo } from "./helpers/gitFixture.js";
@@ -177,6 +179,40 @@ describe("a git failure names git's own reason", () => {
     expect(process.exitCode).toBe(1);
     expect(logged(errorSpy)).toContain("(git is not installed or not on PATH)");
   });
+
+  // A stand-in git on PATH that fails every call: the reason git gives is the
+  // only thing varied, so each fallback is exercised on every platform.
+  const posix = process.platform === "win32" ? test.skip : test;
+  const failingGit = (stderr: string): void => {
+    const bin = path.join(tmp, "fake-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, "git"), `#!/bin/sh\nprintf '%s' '${stderr}' >&2\nexit 3\n`, {
+      mode: 0o755,
+    });
+    process.env.PATH = bin;
+  };
+
+  posix("without a fatal line the reason is git's last stderr line", async () => {
+    const leftover = write("sys_script/Gone/script.js");
+    failingGit("warning: first\nerror: the last word\n");
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(logged(errorSpy)).toContain("(error: the last word)");
+  });
+
+  posix("with no stderr at all the reason is the subcommand and its exit code", async () => {
+    const leftover = write("sys_script/Gone/script.js");
+    failingGit("");
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(logged(errorSpy)).toContain("(git rev-parse exited with code 3)");
+  });
 });
 
 describe("one file git cannot read", () => {
@@ -213,6 +249,20 @@ describe("Unicode normalization of file names", () => {
     const file = write(`sys_script/Gone/${nfd}`);
     git(tmp, "init", "-q");
     git(tmp, "config", "core.precomposeunicode", "true");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(file)).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
+  });
+
+  test("without core.precomposeunicode names are compared as they are", async () => {
+    // Set explicitly: git init turns it on on macOS and leaves it unset elsewhere.
+    const nfc = "café.js";
+    const file = write(`sys_script/Gone/${nfc}`);
+    git(tmp, "init", "-q");
+    git(tmp, "config", "core.precomposeunicode", "false");
     initRepo(tmp);
 
     await repairCommand(PRUNE);
@@ -280,12 +330,13 @@ describe("many orphans", () => {
   });
 });
 
-describe("line endings", () => {
-  test("a CRLF copy of an LF blob under text=auto counts as unchanged, and checkout restores its text", async () => {
-    // Decision (see restorableFromGit): the clean filter maps CRLF to the LF the
-    // commit holds, so git calls the file unchanged. Deleting it loses no text:
-    // a checkout writes it back with the line endings the repository's own eol
-    // policy picks. Only the terminators can differ, never the content.
+describe("content is compared byte for byte, before any git conversion", () => {
+  // Decision (see restorableFromGit): a file is prunable only when its raw bytes
+  // are the HEAD blob. A match that needs git's clean filter or line-ending
+  // conversion is kept: the checkout would not write those bytes back.
+  const KEPT_CONVERTED = "matches HEAD only after git's clean filter or line-ending conversion";
+
+  test("a CRLF copy of an LF blob under text=auto is kept", async () => {
     writeFileSync(path.join(tmp, ".gitattributes"), "* text=auto\n");
     const leftover = write("sys_script/Gone/script.js", "a\nb\n");
     initRepo(tmp);
@@ -293,9 +344,183 @@ describe("line endings", () => {
 
     await repairCommand(PRUNE);
 
+    expect(readFileSync(leftover, "utf8")).toBe("a\r\nb\r\n");
+    expect(logged(warnSpy)).toContain(KEPT_CONVERTED);
+    expect(logged(warnSpy)).toContain(leftover);
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining("Pruned"));
+  });
+
+  test("a CRLF copy of an LF blob under core.autocrlf is kept", async () => {
+    git(tmp, "init", "-q");
+    git(tmp, "config", "core.autocrlf", "true");
+    const leftover = write("sys_script/Gone/script.js", "a\nb\n");
+    initRepo(tmp);
+    writeFileSync(leftover, "a\r\nb\r\n");
+
+    await repairCommand(PRUNE);
+
+    expect(readFileSync(leftover, "utf8")).toBe("a\r\nb\r\n");
+    expect(logged(warnSpy)).toContain(KEPT_CONVERTED);
+  });
+
+  test("an LF file identical to its blob under text=auto is still pruned", async () => {
+    writeFileSync(path.join(tmp, ".gitattributes"), "* text=auto\n");
+    const leftover = write("sys_script/Gone/script.js", "a\nb\n");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
     expect(existsSync(leftover)).toBe(false);
-    git(sourceDir, "-c", "core.autocrlf=false", "checkout", "HEAD", "--", "sys_script/Gone/script.js");
-    expect(readFileSync(leftover, "utf8").replace(/\r\n/g, "\n")).toBe("a\nb\n");
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
+  });
+
+  const posix = process.platform === "win32" ? test.skip : test;
+
+  posix("a lossy clean filter cannot make an unrestorable file look committed", async () => {
+    // filter.redact.clean stores SECRET as REDACTED: the filtered hash of the
+    // work-tree file is the blob, but a checkout would write REDACTED back.
+    git(tmp, "init", "-q");
+    git(tmp, "config", "filter.redact.clean", "sed s/SECRET/REDACTED/");
+    git(tmp, "config", "filter.redact.smudge", "cat");
+    writeFileSync(path.join(tmp, ".gitattributes"), "*.js filter=redact\n");
+    const leftover = write("sys_script/Gone/script.js", "token = SECRET\n");
+    initRepo(tmp);
+    expect(git(tmp, "show", "HEAD:src/sys_script/Gone/script.js")).toBe("token = REDACTED\n");
+
+    await repairCommand(PRUNE);
+
+    expect(readFileSync(leftover, "utf8")).toBe("token = SECRET\n");
+    expect(logged(warnSpy)).toContain(KEPT_CONVERTED);
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining("Pruned"));
+  });
+
+  test("an edit hidden behind assume-unchanged or skip-worktree is kept", async () => {
+    const assumed = write("sys_script/Gone/script.js", "v1");
+    const skipped = write("sys_script/Other/script.js", "v1");
+    initRepo(tmp);
+    git(tmp, "update-index", "--assume-unchanged", "src/sys_script/Gone/script.js");
+    git(tmp, "update-index", "--skip-worktree", "src/sys_script/Other/script.js");
+    writeFileSync(assumed, "v2 — local edit");
+    writeFileSync(skipped, "v2 — local edit");
+
+    await repairCommand(PRUNE);
+
+    expect(readFileSync(assumed, "utf8")).toBe("v2 — local edit");
+    expect(readFileSync(skipped, "utf8")).toBe("v2 — local edit");
+    expect(logged(warnSpy)).toContain("Kept 2 orphan file(s) git cannot restore");
+  });
+});
+
+describe("paths reach git literally, never as pathspec globs", () => {
+  test("the printed restore of `Approval [old]` leaves a live `Approval o` edit alone", async () => {
+    // `[old]` is a glob character class matching `o`: a plain
+    // `git checkout HEAD -- 'sys_script/Approval [old]/script.js'` also resets
+    // the live record's file and discards its unpushed edit.
+    (ConfigManager.getManifest as jest.Mock).mockReturnValue({
+      scope: "x_app",
+      tables: { sys_script: { records: { "Approval o": record("Approval o") } } },
+    });
+    writeFileSync(
+      path.join(tmp, "sync.manifest.json"),
+      JSON.stringify({
+        scope: "x_app",
+        tables: {
+          sys_script: {
+            records: { "Approval o": record("Approval o"), "Approval [old]": record("Approval [old]") },
+          },
+        },
+      })
+    );
+    const pruned = write("sys_script/Approval [old]/script.js", "old record");
+    const live = write("sys_script/Approval o/script.js", "live v1");
+    initRepo(tmp);
+    writeFileSync(live, "live v2 — unpushed edit");
+    mockPrompt.mockResolvedValue({ confirmed: true });
+
+    await repairCommand({ logLevel: "info", apply: true, prune: true } as never);
+
+    expect(existsSync(pruned)).toBe(false);
+    const [[questions]] = mockPrompt.mock.calls as unknown as [[{ message: string }[]]];
+    expect(questions[0].message).toContain("git --literal-pathspecs checkout HEAD -- <file>");
+    const restore = logged(infoSpy)
+      .split("\n")
+      .find((line) => line.includes("checkout HEAD --"));
+    expect(restore).toContain("--literal-pathspecs checkout HEAD -- 'sys_script/Approval [old]/script.js'");
+    // Run the printed command exactly as a user would paste it.
+    execSync(restore!.slice(restore!.indexOf("git -C")), { cwd: tmp, shell: "/bin/sh" });
+    expect(readFileSync(pruned, "utf8")).toBe("old record");
+    expect(readFileSync(live, "utf8")).toBe("live v2 — unpushed edit");
+  });
+
+  test("the restore template for many files is literal too", async () => {
+    const names = Array.from({ length: 11 }, (_, i) => `Leftover [${i}]`);
+    useManifests(names);
+    names.forEach((name) => write(`sys_script/${name}/script.js`));
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(logged(infoSpy)).toContain("--literal-pathspecs checkout HEAD -- <file>");
+  });
+});
+
+describe("--apply --prune --dry-run previews the prune", () => {
+  test("names the files a run would delete and the ones it would keep, and deletes nothing", async () => {
+    const leftover = write("sys_script/Gone/script.js");
+    initRepo(tmp);
+    const newWork = write("sys_script/NewRule/script.js", "work in progress");
+    (AppUtils.findMissingFiles as jest.Mock<() => Promise<unknown>>).mockResolvedValue({
+      sys_script: { id_Kept: [{ name: "script", type: "js" }] },
+    });
+
+    await repairCommand({ logLevel: "info", apply: true, prune: true, dryRun: true } as never);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(existsSync(newWork)).toBe(true);
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(AppUtils.processMissingFiles).not.toHaveBeenCalled();
+    const info = logged(infoSpy);
+    expect(info).not.toContain("Report only");
+    expect(info).toContain("Dry run: would re-download 1 missing file(s).");
+    expect(info).toMatch(/Dry run: would delete 1 orphan file\(s\)[^\n]*\n {2}\S*Gone/);
+    expect(info).not.toMatch(/would delete[^]*NewRule/);
+    expect(logged(warnSpy)).toContain(newWork);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  test("says so when a run would delete nothing", async () => {
+    initRepo(tmp);
+    const newWork = write("sys_script/NewRule/script.js");
+
+    await repairCommand({ logLevel: "info", apply: true, prune: true, dryRun: true } as never);
+
+    expect(existsSync(newWork)).toBe(true);
+    expect(logged(infoSpy)).toContain("Dry run: Nothing to prune");
+  });
+
+  test("reports the same refusal a run would", async () => {
+    write("sys_script/Gone/script.js");
+    git(tmp, "init", "-q");
+
+    await repairCommand({ logLevel: "info", apply: true, prune: true, dryRun: true } as never);
+
+    expect(logged(errorSpy)).toContain("Refusing to prune");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("files of a record awaiting push --create", () => {
+  test("the warning does not tell the user to recreate a record that may have been deleted", async () => {
+    initRepo(tmp);
+    write("sys_script/NewRule/script.js");
+
+    await repairCommand(PRUNE);
+
+    const warning = logged(warnSpy);
+    expect(warning).toContain("no sys_id mapping");
+    expect(warning).toContain("would create these records on the instance");
+    expect(warning).toContain("deleted on the instance, delete its files by hand");
+    expect(warning).not.toContain("Run `syncrona push --create`");
   });
 });
 
