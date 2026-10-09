@@ -28,10 +28,16 @@ const { MCP_TOOLS } = require('../dist/toolSchemas.js');
 const {
   clearServiceNowSecretsCache,
   clearScopedApiPrefixCache,
+  clearTokenManagerCache,
 } = require('../dist/servicenowCore.js');
 
 // Instance-authored strings come back fenced as untrusted data.
 const fenced = (value) => wrapUntrustedData(value, 'servicenow');
+
+// undici reports a socket reset (and a malformed answer) as `TypeError: fetch
+// failed`; the system or parser code sits on `cause`.
+const fetchFailed = (code) =>
+  new TypeError('fetch failed', { cause: Object.assign(new Error(`fetch cause ${code}`), { code }) });
 
 const SUITE_ID = 'a'.repeat(32);
 const TEST_ID = 'b'.repeat(32);
@@ -731,7 +737,7 @@ test('handleCicdRun: a failing progress poll → incomplete with the progress id
 
 test('handleCicdRun: a network failure → incomplete', async () => {
   await withEnv(async () => {
-    mockFetch({ 'POST /api/sn_cicd/app_repo/install': new Error('ECONNRESET') });
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': fetchFailed('ECONNRESET') });
     const res = await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext());
     const body = payloadOf(res);
     assert.equal(res.isError, true);
@@ -753,7 +759,11 @@ for (const [label, failure] of [
   ['a 408', () => mkResponse(408, 'Request Timeout')],
   ['a 425', () => mkResponse(425, 'Too Early')],
   ['a 429', () => mkResponse(429, {})],
-  ['a network failure', () => new Error('ECONNRESET')],
+  ['a socket reset', () => fetchFailed('ECONNRESET')],
+  ['a refused connection', () => fetchFailed('ECONNREFUSED')],
+  ['an undici socket error', () => fetchFailed('UND_ERR_SOCKET')],
+  ['a connect timeout', () => fetchFailed('ETIMEDOUT')],
+  ['a request timeout', () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })],
 ]) {
   test(`handleCicdRun: ${label} on a poll is polled again, one request per poll → succeeded`, async () => {
     await withEnv(async () => {
@@ -805,6 +815,81 @@ test('handleCicdRun: a 401 on a poll is not polled again', async () => {
     const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
     assert.equal(body.outcome, 'incomplete');
     assert.equal(pollCalls(calls), 1);
+  });
+});
+
+// Round 8o, L3 (parity with core): only a network failure, judged by its code
+// (own or on `cause`), and a transient status are polled again. A bug in the
+// client, a malformed answer and a rejected token fail at once.
+for (const [label, failure] of [
+  ['a TypeError bug', () => new TypeError("Cannot read properties of undefined (reading 'x')")],
+  ['a malformed HTTP answer', () => fetchFailed('HPE_INVALID_CONSTANT')],
+  ['an invalid argument', () => fetchFailed('ERR_INVALID_ARG_TYPE')],
+]) {
+  test(`handleCicdRun: ${label} on a poll is not polled again → incomplete`, async () => {
+    await withEnv(async () => {
+      const calls = mockFetch({
+        'POST /api/sn_cicd/app_repo/install': dispatched(),
+        [POLL_PATH]: [failure(), progress('2')],
+      });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete');
+      assert.equal(body.exitCode, 1);
+      assert.equal(pollCalls(calls), 1);
+    });
+  });
+}
+
+const TOKEN_PATH = 'POST /oauth_token.do';
+const tokenCalls = (calls) => calls.filter((c) => `${c.method} ${c.path}` === TOKEN_PATH).length;
+// The token poster reads `ok` and `statusText`, which the cicd mocks do not need.
+const tokenAnswer = (status, statusText, payload) => ({ ...mkResponse(status, payload), ok: status < 300, statusText });
+const token = () => tokenAnswer(200, 'OK', { access_token: 'at', refresh_token: 'rt', expires_in: 1800 });
+
+// Fake, test-only OAuth client — never a real credential.
+function withOAuthEnv(fn) {
+  const keys = ['SN_OAUTH_CLIENT_ID', 'SN_OAUTH_CLIENT_SECRET'];
+  const old = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  process.env.SN_OAUTH_CLIENT_ID = 'test-client';
+  process.env.SN_OAUTH_CLIENT_SECRET = 'test-secret';
+  clearTokenManagerCache();
+  return withEnv(fn).finally(() => {
+    for (const k of keys) {
+      if (old[k] === undefined) delete process.env[k];
+      else process.env[k] = old[k];
+    }
+    clearTokenManagerCache();
+  });
+}
+
+test('handleCicdRun: a token endpoint 401 during a poll fails at once, its refresh not multiplied by the poll retry', async () => {
+  await withOAuthEnv(async () => {
+    const calls = mockFetch({
+      [TOKEN_PATH]: [token(), tokenAnswer(401, 'Unauthorized', { error: 'invalid_client' })],
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: mkResponse(401, { error: { message: 'User Not Authenticated' } }),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.exitCode, 1);
+    assert.match(body.message, /OAuth token request failed \(401/);
+    assert.equal(pollCalls(calls), 1, 'one poll, not three');
+    assert.equal(tokenCalls(calls), 3, 'the first grant, then one refresh and its fallback grant');
+  });
+});
+
+test('handleCicdRun: a token endpoint 503 during a poll is polled again, as in core', async () => {
+  await withOAuthEnv(async () => {
+    const calls = mockFetch({
+      [TOKEN_PATH]: [token(), tokenAnswer(503, 'Service Unavailable', 'down'), tokenAnswer(503, 'Service Unavailable', 'down'), token()],
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: [mkResponse(401, { error: { message: 'User Not Authenticated' } }), progress('2')],
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'succeeded');
+    assert.equal(body.exitCode, 0);
+    assert.equal(pollCalls(calls), 2);
+    assert.equal(tokenCalls(calls), 3);
   });
 });
 

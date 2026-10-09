@@ -634,6 +634,55 @@ describe("cicd poll retry", () => {
     expect(errors[0]).toContain("failed 3 times in a row (last: no response). socket hang up");
   });
 
+  // Review round 8-o, finding 4 (parity with sync_cicd_run): only a network
+  // failure is "no response". It is told apart by its code, on the error or on
+  // the `cause` fetch wraps it in, never by its class: undici reports a socket
+  // reset and a malformed answer alike as `TypeError: fetch failed`.
+  const fetchFailed = (code: string) =>
+    new TypeError("fetch failed", { cause: Object.assign(new Error(`read ${code}`), { code }) });
+
+  it.each([
+    ["an undici socket reset", () => fetchFailed("ECONNRESET")],
+    ["an undici refused connection", () => fetchFailed("ECONNREFUSED")],
+    ["an undici socket error", () => fetchFailed("UND_ERR_SOCKET")],
+    ["an ETIMEDOUT", () => fetchFailed("ETIMEDOUT")],
+    ["an axios timeout", () => Object.assign(new Error("timeout of 1000ms exceeded"), { code: "ECONNABORTED" })],
+    ["an axios network error", () => Object.assign(new Error("Network Error"), { code: "ERR_NETWORK" })],
+    ["a timeout abort", () => Object.assign(new Error("The operation was aborted"), { name: "TimeoutError" })],
+  ])("still retries %s as no response", async (_label, failure) => {
+    const h = harness({ progress: [failure, failure, () => progress("2")] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(0);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(3);
+  });
+
+  it.each([
+    ["a TypeError bug", () => new TypeError("Cannot read properties of undefined (reading 'status')")],
+    ["a plain error", () => new Error("OAuth token response was not valid JSON: <html>")],
+    ["a malformed answer", () => fetchFailed("HPE_INVALID_CONSTANT")],
+    ["an argument error", () => Object.assign(new TypeError("bad header"), { code: "ERR_INVALID_ARG_TYPE" })],
+  ])("fails at once on %s, which is not a network failure", async (_label, failure) => {
+    const h = harness({ progress: [failure] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    expect(warnings.some((w) => /retrying/.test(w))).toBe(false);
+    expect(errors[0]).toContain(
+      "GET api/sn_cicd/progress/prog-1 failed without an HTTP answer and not in the network (a client-side error); it is not retried."
+    );
+  });
+
+  it("fails at once when the token endpoint rejects the credentials, and retries its 5xx", async () => {
+    const tokenFailure = (status: number) => httpError(status, "oauth_token.do", { error: "access_denied" });
+    const rejected = harness({ progress: [() => tokenFailure(401)] });
+    expect(await run(rejected, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
+    expect(rejected.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+
+    const flaky = harness({ progress: [() => tokenFailure(503), () => progress("2")] });
+    expect(await run(flaky, "install", { scope: "x_app", pollMs: 1000 })).toBe(0);
+    expect(flaky.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(2);
+  });
+
   it.each([
     [400, "the instance rejected the request as malformed"],
     [401, "the instance rejected the credentials"],

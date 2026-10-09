@@ -437,16 +437,40 @@ function httpStatusOf(err: unknown): number | undefined {
 }
 
 /**
+ * Whether a request failed in the network, with no answer at all: a timeout
+ * abort, or a system/transport error code (`ECONNRESET`, `ECONNREFUSED`,
+ * `ETIMEDOUT`, `ENOTFOUND`, axios's `ECONNABORTED` and `ERR_NETWORK`, undici's
+ * `UND_ERR_*`), on the error itself or on its `cause` (fetch wraps it in a
+ * `TypeError("fetch failed")`). A bare `TypeError` or any other error without
+ * such a code is a bug or a malformed answer, not a dropped connection. Must
+ * match `isNetworkError` in the mcp-server's `insightCicdRun.ts`.
+ */
+function isNetworkError(err: unknown): boolean {
+  const source = asObject(err);
+  const name = source?.name;
+  if (name === "AbortError" || name === "TimeoutError") return true;
+  const pattern = /^(E[A-Z]+|ERR_NETWORK|UND_ERR_[A-Z_]+)$/;
+  const code = source?.code;
+  const causeCode = asObject(source?.cause)?.code;
+  return (
+    (typeof code === "string" && pattern.test(code)) || (typeof causeCode === "string" && pattern.test(causeCode))
+  );
+}
+
+/**
  * A poll failure worth retrying: no response at all (a reset or refused
- * connection, a DNS blip), 408 (the request timed out), 425 (too early), 429, or a 5xx. Every
- * other status — 400, 401, 403, 404 and the rest of 4xx, and a 3xx redirect —
- * is the instance's settled answer to this request, and asking again until the
- * timeout would only delay the same failure.
+ * connection, a DNS blip, a timeout; see {@link isNetworkError}), 408 (the
+ * request timed out), 425 (too early), 429, or a 5xx. Every other status — 400,
+ * 401, 403, 404 and the rest of 4xx, and a 3xx redirect — is the instance's
+ * settled answer to this request, and asking again until the timeout would only
+ * delay the same failure; an error with neither a status nor a network code (a
+ * bug, a malformed answer) fails at once too. Must match `isTransientPollError`
+ * in the mcp-server's `insightCicdRun.ts`.
  */
 function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdCliError) return false;
   const status = httpStatusOf(err);
-  if (status === undefined) return true;
+  if (status === undefined) return isNetworkError(err);
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
@@ -466,7 +490,10 @@ function permanentPollReason(status: number | undefined, err: unknown): string {
   if (status !== undefined && status >= 300 && status < 400) {
     return unexpectedRedirectReason(status, err);
   }
-  const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
+  if (status === undefined) {
+    return "failed without an HTTP answer and not in the network (a client-side error); it is not retried.";
+  }
+  const hint = PERMANENT_POLL_HINTS[status];
   return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
 }
 

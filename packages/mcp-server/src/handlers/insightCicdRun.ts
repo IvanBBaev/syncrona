@@ -488,16 +488,40 @@ async function cicdCall(
 export const CICD_MAX_POLL_FAILURES = 3;
 
 /**
- * No response, 408, 425, 429 and 5xx are worth another poll (core's rule); a
- * 3xx, auth, 404, any other 4xx, non-JSON and HTML answers, and a redirect loop
- * are not.
+ * Whether a request failed in the network, with no answer at all: a timeout
+ * abort, or a system/transport error code (`ECONNRESET`, `ECONNREFUSED`,
+ * `ETIMEDOUT`, `ENOTFOUND`, undici's `UND_ERR_*`, axios's `ECONNABORTED` and
+ * `ERR_NETWORK`), on the error itself or on its `cause`. undici reports a socket
+ * reset and a malformed answer alike as `TypeError("fetch failed")`, so only the
+ * cause's code tells them apart; a bare `TypeError` (a bug) is not a network
+ * failure. Must match `isNetworkError` in core's `cicdCommand.ts`.
+ */
+function isNetworkError(err: unknown): boolean {
+  const source = asObject(err);
+  const name = source?.name;
+  if (name === "AbortError" || name === "TimeoutError") return true;
+  const pattern = /^(E[A-Z]+|ERR_NETWORK|UND_ERR_[A-Z_]+)$/;
+  const code = source?.code;
+  const causeCode = asObject(source?.cause)?.code;
+  return (typeof code === "string" && pattern.test(code)) || (typeof causeCode === "string" && pattern.test(causeCode));
+}
+
+/**
+ * Core's rule: no response (a network failure, see {@link isNetworkError}),
+ * 408, 425, 429 and 5xx are worth another poll. A 3xx, auth, 404, any other
+ * 4xx, non-JSON and HTML answers, a redirect loop, and an error with neither a
+ * status nor a network code (a bug, a malformed answer) are not. A token
+ * endpoint failure carries its `httpStatus` and is judged by it, as core judges
+ * its token client's axios error: a rejected credential fails at once, so a 401
+ * refresh is not multiplied by the poll retries, and a 5xx is retried.
  */
 function isTransientPollError(err: unknown): boolean {
-  if (err instanceof CicdRunIncomplete) {
-    const status = err.httpStatus;
-    return status === 408 || status === 425 || status === 429 || (status !== undefined && status >= 500);
+  const raw = err instanceof CicdRunIncomplete ? err.httpStatus : asObject(err)?.httpStatus;
+  const status = typeof raw === "number" ? raw : undefined;
+  if (status === undefined) {
+    return !(err instanceof CicdRunIncomplete) && isNetworkError(err);
   }
-  return true;
+  return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 /**
