@@ -207,6 +207,13 @@ function isSdkMissing(e: unknown): boolean {
  * the server's code, and is refused like any other escape. So is a package of
  * the server's own `node_modules` whose resolved entry (a `main` that climbs out,
  * or an entry file symlinked elsewhere) leaves the package directory.
+ *
+ * The package directory is compared by its own real path, so a package whose
+ * whole directory is a symlink in the server's `node_modules` loads as
+ * `source: "server"` wherever the link points. That is intended for workspace
+ * links (npm workspaces link `node_modules/<name>` to the package's source),
+ * and placing such a link requires write access to the server's
+ * `node_modules`, which already controls the server's own code.
  */
 export function loadFluentModule(
   projectDir: string,
