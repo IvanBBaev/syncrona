@@ -175,6 +175,11 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
   a CLI flag. A git ref never starts with `-`; the legitimate values refused
   are a target path or an update-set name that does (a path can still be
   passed as `./-name`). No tool was removed or renamed.
+- Dependabot no longer proposes `undici` majors. The MCP server hands its
+  undici dispatchers (mutual TLS, custom CA, proxy) to Node's global `fetch`,
+  which runs on the undici bundled with Node. With undici 8 on Node 22, every
+  mutual-TLS request failed with "fetch failed". `undici` moves to a new major
+  together with the Node baseline that bundles it.
 
 ## [1.0.0] - 2026-08-25
 
