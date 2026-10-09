@@ -24,27 +24,35 @@ export const resetDotWalkedFieldFileWarnings = (): void => {
 };
 
 // The `.meta` sidecar pseudo-file names no column (its dot is a prefix, not a
-// walk), so it is never refused here.
-const refused = (tableName: string, column: string): boolean =>
-  !isMetaFieldName(column) && isDotWalkedColumn(column) && !isPermittedDottedField(tableName, column);
+// walk), so it is never refused here. A name that is not a string at all is
+// refused: the manifest is hand-editable JSON, and an array such as
+// `["sys_created_by.user_password"]` stringifies into the `fields` list as the
+// dot-walk itself while a substring test on the array finds no dot in it.
+const refused = (tableName: string, column: unknown): boolean =>
+  typeof column !== "string" ||
+  (!isMetaFieldName(column) && isDotWalkedColumn(column) && !isPermittedDottedField(tableName, column));
 
-const warnRefused = (tableName: string, column: string): void => {
-  const key = `${tableName}.${column}`;
+const warnRefused = (tableName: string, name: unknown): void => {
+  const column = typeof name === "string" ? name : JSON.stringify(name) ?? String(name);
+  const key = `${typeof name}:${tableName}.${column}`;
   if (warned.has(key)) {
     return;
   }
   warned.add(key);
   logger.warn(
-    `Table ${tableName}: ignoring the manifest files entry for column "${column}" — ` +
-      "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
-      "so it is never written to the working tree."
+    typeof name === "string"
+      ? `Table ${tableName}: ignoring the manifest files entry for column "${column}" — ` +
+          "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
+          "so it is never written to the working tree."
+      : `Table ${tableName}: ignoring a manifest files entry whose name is not a string (${column}) — ` +
+          "it names no column of this table, so it is never fetched or written to the working tree."
   );
 };
 
 /**
  * A missing-file map without the field files a hand-edited manifest lists under
- * a dot-walked name (`sys_created_by.user_password` is the creator's password);
- * the ATF step script is kept. Applied where refresh and download build the map
+ * a dot-walked name (`sys_created_by.user_password` is the creator's password)
+ * or under a name that is not a string; the ATF step script is kept. Applied where refresh and download build the map
  * of files to fetch (findMissingFiles, buildFullMissingMap) and again by the
  * Table API download itself, so no fetch path — the scoped endpoint, the Table
  * API, or the fallback between them — is ever asked for another record's

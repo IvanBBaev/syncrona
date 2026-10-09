@@ -248,6 +248,7 @@ describe("a manifest files entry the shared refusal must not read as a plain col
               name: "one",
               sys_id: "s1",
               files: [
+                { name: [WALKED], type: "txt" },
                 { name: "script", type: "js" },
                 { name: "inputs.script", type: "js" },
                 { name: "sys_created_by.meta", type: "txt" },
@@ -280,6 +281,7 @@ describe("a manifest files entry the shared refusal must not read as a plain col
     expect(written.filter((n) => n === "inputs.script")).toHaveLength(1);
     expect(allWarnings()).toEqual(
       expect.arrayContaining([
+        expect.stringContaining(`whose name is not a string (${JSON.stringify([WALKED])})`),
         expect.stringContaining('ignoring the manifest files entry for column "inputs.script"'),
         expect.stringContaining('ignoring the manifest files entry for column "sys_created_by.meta"'),
         expect.stringContaining('ignoring the manifest files entry for column "foo.meta"'),
