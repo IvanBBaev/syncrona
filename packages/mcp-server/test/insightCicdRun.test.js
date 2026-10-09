@@ -300,6 +300,24 @@ test('handleCicdRun: unknown action and usage errors make no request', async () 
   assert.equal(calls.length, 0);
 });
 
+// The tool description promises it: a rejected call returns only an error
+// text, never the outcome/verdict/reason/exitCode payload of a run.
+test('handleCicdRun: a rejected call returns plain error text with no verdict, reason or exitCode', async () => {
+  mockFetch({});
+  for (const args of [
+    { action: 'deploy', confirmDestructive: true },
+    { action: 'install', progressId: 'not-a-sys-id', confirmDestructive: true },
+    { action: 'rollback', scope: 'x_a', confirmDestructive: true },
+    { action: 'install', scope: 'x_a' },
+  ]) {
+    const res = await handleCicdRun(args, makeContext());
+    assert.equal(res.isError, true, JSON.stringify(args));
+    assert.equal(res.content.length, 1);
+    assert.throws(() => JSON.parse(res.content[0].text), SyntaxError, JSON.stringify(args));
+    assert.doesNotMatch(res.content[0].text, /verdict|exitCode|"reason"/);
+  }
+});
+
 test('handleCicdRun: refuses without confirmDestructive and makes no request', async () => {
   const calls = mockFetch({});
   const context = makeContext();
