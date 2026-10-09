@@ -677,6 +677,12 @@ describe("cicd poll retry", () => {
     const rejected = harness({ progress: [() => tokenFailure(401)] });
     expect(await run(rejected, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
     expect(rejected.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    // It names the token endpoint, not the progress request it never sent.
+    expect(errors[0]).toBe(
+      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401), so the token endpoint " +
+        "rejected the OAuth client or the credentials; it is not retried. Request failed with status code 401"
+    );
+    expect(errors[0]).not.toMatch(/answered HTTP 401/);
 
     const flaky = harness({ progress: [() => tokenFailure(503), () => progress("2")] });
     expect(await run(flaky, "install", { scope: "x_app", pollMs: 1000 })).toBe(0);
