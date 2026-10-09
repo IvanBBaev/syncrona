@@ -887,6 +887,76 @@ test('a NODE_PATH that points inside the server install still loads the server c
   assert.equal(result.loaded, true, result.message);
 });
 
+/**
+ * Runs `fn` in this process with NODE_PATH set to `nodePath`, so the server
+ * requirer's global-folder lookup is measured here rather than in a child.
+ * Module.globalPaths is rebuilt from the environment and restored afterwards.
+ */
+function withNodePath(nodePath, fn) {
+  const Module = require('node:module');
+  const saved = process.env.NODE_PATH;
+  process.env.NODE_PATH = nodePath;
+  Module._initPaths();
+  try {
+    return fn();
+  } finally {
+    if (saved === undefined) delete process.env.NODE_PATH;
+    else process.env.NODE_PATH = saved;
+    Module._initPaths();
+  }
+}
+
+test('in process: an adapter only NODE_PATH resolves is refused and never runs', () => {
+  // The project requirer sees the same global folders as the server's, so it finds
+  // the NODE_PATH copy first and its workspace refusal is what surfaces.
+  const ws = mkWorkspace();
+  const outside = mkWorkspace();
+  writeFixturePackage(outside, '@fixture/fluent-np-inproc', 'globalThis.__fluentNpInprocRan = true;');
+  withNodePath(path.join(outside, 'node_modules'), () => {
+    assert.throws(
+      () => loadFluentAdapter(ws, '@fixture/fluent-np-inproc'),
+      (e) => e instanceof FluentAdapterOutsideWorkspaceError && e.message.includes('from outside the workspace')
+    );
+  });
+  assert.equal(globalThis.__fluentNpInprocRan, undefined, 'the NODE_PATH adapter never ran');
+});
+
+test('in process: a resolution error of the server fallback is rethrown, unless a refusal is pending', () => {
+  // A NODE_PATH package whose `exports` hides its entry makes the server requirer
+  // throw a real resolution error instead of reporting the package as missing.
+  const outside = mkWorkspace();
+  const hidden = path.join(outside, 'node_modules', '@fixture', 'fluent-np-hidden');
+  fs.mkdirSync(hidden, { recursive: true });
+  fs.writeFileSync(path.join(hidden, 'package.json'), JSON.stringify({ name: '@fixture/fluent-np-hidden', exports: {} }));
+  const ws = mkWorkspace();
+  // The same name hoisted above an app workspace gives a pending refusal.
+  const repo = mkWorkspace();
+  const appDir = mkProject(repo, 'packages/app');
+  writeFixturePackage(repo, '@fixture/fluent-np-hidden', 'globalThis.__fluentNpHiddenRan = true;');
+  withNodePath(path.join(outside, 'node_modules'), () => {
+    assert.throws(
+      () => loadFluentAdapter(ws, '@fixture/fluent-np-hidden'),
+      (e) => !(e instanceof FluentNotInstalledError) && !(e instanceof FluentAdapterOutsideWorkspaceError)
+    );
+    assert.throws(
+      () => loadFluentAdapter(appDir, '@fixture/fluent-np-hidden', appDir),
+      (e) => e instanceof FluentAdapterOutsideWorkspaceError && /start the server from the workspace root/.test(e.message)
+    );
+  });
+  assert.equal(globalThis.__fluentNpHiddenRan, undefined, 'the hoisted code never ran');
+});
+
+test('loadFluentAdapter reports an adapter outside any package by its real file path', () => {
+  // An absolute specifier names a file with no enclosing package of that name, so
+  // the manifest walk reaches the filesystem root and reports the file itself.
+  const ws = mkWorkspace();
+  const file = path.join(ws, 'adapter.js');
+  fs.writeFileSync(file, 'exports.createFluentEngine = () => "bare";');
+  const loaded = loadFluentAdapter(ws, file);
+  assert.equal(loaded.module.createFluentEngine(), 'bare');
+  assert.deepEqual(loaded.adapter, { source: 'project', path: fs.realpathSync.native(file) });
+});
+
 /** Asserts the project adapter `specifier` is refused and its code never ran (`flag` stays unset). */
 function assertRefusedUnrun(projectDir, specifier, workspaceDir, flag) {
   assert.throws(() => loadFluentModule(projectDir, specifier, workspaceDir), FluentAdapterOutsideWorkspaceError);
