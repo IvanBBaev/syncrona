@@ -184,8 +184,13 @@ endpoint or from the Table API.
   normalisation, lower-casing and removing trailing dots and spaces. On
   APFS, NTFS and SMB shares such names are one folder. Every member of a
   colliding group gets the suffix `_<sys_id>`, for example `Util_<sys_id>` and
-  `util_<sys_id>`. The result depends only on the set of records, not on the
-  order the instance returns them in. The CLI prints one warning per group.
+  `util_<sys_id>`. The suffix counts toward the same 180-byte budget as the
+  name: a long name is cut further, with its hash, so that `_<sys_id>` fits.
+  The result depends only on the set of records, not on the order the instance
+  returns them in. The CLI prints one warning per group.
+- **Stable under re-naming.** Every folder name these rules produce comes back
+  unchanged when it passes through them again, so the scoped endpoint and the
+  Table API give the same records the same folders.
 - **Records that do not collide** keep their names exactly as before.
 - **Names no filesystem stores as written.** A NUL, another control character
   (C0, DEL, C1) or a tab in a record name is replaced with `_`, and a lone
@@ -193,8 +198,8 @@ endpoint or from the Table API.
   the last whole code point that fits and gets `_<hash>`, the first 8 hex
   digits of the SHA-256 of the whole name. Two long names with the same prefix
   therefore get different folders, and the result is the same on every run.
-  The 75 bytes left below the 255-byte segment limit hold a collision suffix
-  and the flat layout's `~<field>.<ext>`. The cut keeps whole code points, so
+  The 75 bytes left below the 255-byte segment limit hold the flat layout's
+  `~<field>.<ext>`. The cut keeps whole code points, so
   it can still separate an emoji from a combining mark that follows it.
 - **Other path segments are refused, not altered.** A table, field, type or
   scope name with a separator, a control character, a lone surrogate or more
@@ -224,6 +229,9 @@ first `refresh` or `download` with these rules:
 - A record whose name was stored verbatim but is now made to fit (181 to 255
   bytes, or a tab or other control character) has its folder renamed in the
   same way, with the same `Renamed` warning.
+- A colliding long name that an earlier version suffixed on top of the
+  180-byte budget (up to 213 bytes) has its folder renamed to the cut form
+  that fits, in the same way.
 - No folder is moved when the destination already exists. The old folder is
   left in place, with a warning.
 

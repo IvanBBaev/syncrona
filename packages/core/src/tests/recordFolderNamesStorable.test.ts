@@ -163,6 +163,8 @@ describe("sanitizeRecordFolderName", () => {
     const folder = names.get("a".repeat(32)) as string;
     expect(folder).toMatch(/_[0-9a-f]{8}_a{32}$/u);
     expect(names.get("b".repeat(32))).toMatch(/_[0-9a-f]{8}_b{32}$/u);
+    // The suffix is budgeted inside the record name, not on top of it.
+    expect(bytes(folder)).toBeLessThanOrEqual(MAX_RECORD_NAME_BYTES);
     expect(bytes(`${folder}~message.txt`)).toBeLessThanOrEqual(MAX_PATH_SEGMENT_BYTES);
   });
 
