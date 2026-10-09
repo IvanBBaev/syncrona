@@ -51,10 +51,11 @@ test('SN_MAX_RPS=2 spaces consecutive requests by about 500ms', async () => {
       }
     });
     assert.equal(arrivals.length, 3);
-    // Two 500ms gaps. Arrivals are stamped server-side, after connection setup,
-    // so the first one can land late; 900ms still sits far above the default
-    // cap's ~100ms spread.
-    assert.ok(arrivals[2] - arrivals[0] >= 900, `spread was ${arrivals[2] - arrivals[0]}ms`);
+    // Arrivals are stamped server-side, after connection setup, so the first
+    // one can land late and shrink the first gap. Only the warm gap between
+    // the second and third request is asserted; 450ms still sits far above
+    // the default cap's ~100ms spread.
+    assert.ok(arrivals[2] - arrivals[1] >= 450, `warm gap was ${arrivals[2] - arrivals[1]}ms`);
   } finally {
     await close(server);
   }
