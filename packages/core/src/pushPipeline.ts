@@ -1833,6 +1833,12 @@ export const findPruneCandidates = async (
       const missingFiles = Object.prototype.hasOwnProperty.call(missingInTable, record.sys_id)
         ? missingInTable[record.sys_id]
         : [];
+      // findMissingFiles drops the field files a hand-edited manifest lists
+      // under a dot-walked or non-string name (withoutDotWalkedFieldFiles), so
+      // a record listing one never counts every file missing and is never a
+      // candidate. That is deliberate and fail-safe: a manifest the CLI would
+      // not have written keeps its record rather than deleting it on the
+      // instance.
       if (missingFiles.length < files.length) continue;
       const recordName = record.name || recordKey;
       if (deletedRecords && !deletedRecords.has(`${table}\u0000${record.sys_id}`)) continue;
