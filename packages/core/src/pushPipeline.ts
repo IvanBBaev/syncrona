@@ -846,7 +846,9 @@ const describeReceived = (row: Record<string, unknown>, key: string): string => 
  *
  * A table the instance answers no sys_db_object row for is added to `missing`
  * when the caller passes one: "not a sys_metadata descendant" and "no such
- * table" are both a false here, and only the caller can tell them apart. Keep
+ * table" are both a false here, and only the caller can tell them apart. That
+ * holds for `table` only: a parent with no row, or a parent name with
+ * surrounding whitespace, is a broken chain and throws. Keep
  * one `missing` set alongside one `cache`, since a cached answer skips the read.
  * A reply without a result list throws: it is neither answer.
  */
@@ -902,6 +904,16 @@ export const extendsSysMetadata = async (
       );
     }
     if (rows.length === 0) {
+      // Only the table asked about can be "no such table". A parent that a row
+      // names but the instance has no record for is a broken chain, not an
+      // answer: reading it as "not a sys_metadata descendant" planned an
+      // allowlisted table as an unscoped create on no evidence.
+      if (depth > 0) {
+        throw new Error(
+          `sys_db_object has no record for table "${current}", the parent of "${visited[depth - 1]}", ` +
+            "so the hierarchy cannot be checked; refusing to plan a create in it."
+        );
+      }
       missing?.add(current);
       break;
     }
@@ -922,6 +934,14 @@ export const extendsSysMetadata = async (
       throw new Error(
         `sys_db_object answered with a record that does not describe table "${current}" ` +
           `(${mismatch}), so its hierarchy cannot be checked; refusing to plan a create in it.`
+      );
+    }
+    // A table name never carries surrounding whitespace, and a parent that does
+    // would be looked up as another, missing table: the same broken chain.
+    if (parent !== parent.trim()) {
+      throw new Error(
+        `sys_db_object names the parent of table "${current}" as ${JSON.stringify(parent)}, with ` +
+          "surrounding whitespace, so the hierarchy cannot be checked; refusing to plan a create in it."
       );
     }
     if (parent === "") break;
