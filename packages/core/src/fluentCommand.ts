@@ -48,10 +48,11 @@
  *
  * `--dry-run` prints the orchestrator call each action would make and stops.
  * It never resolves credentials, reaches the instance or prompts, and it fails
- * wherever the real run's local checks would. It loads the adapter only for a
- * plain `fluent types`, to check whether the adapter and the SDK are installed
- * (the same resolution the real run makes), so it reports the native fallback
- * when the real run would take it.
+ * wherever the real run's local checks would. Every action but
+ * `types --native` loads the adapter and asks it for the SDK version, the same
+ * resolution the real run makes: a missing adapter or SDK fails the preview with
+ * the install hint, as it fails the run, and a plain `fluent types` reports the
+ * native fallback when the real run would take it.
  *
  * `install` and `move-to-app` read the `scope` from `now.config.json`; a file
  * that cannot be parsed, or that sets no scope, is refused with an error naming
@@ -704,10 +705,11 @@ function assertConsentReachable(deps: FluentCommandDeps, action: FluentAction, a
 }
 
 /**
- * Whether plain `fluent types` would fall back to the native generator: the
- * adapter and the SDK are resolved exactly as the real run resolves them, and
- * nothing reads the credential store or reaches the instance. Any failure other
- * than "not installed" surfaces, as it would in the real run.
+ * Whether the adapter or the SDK is missing, resolved exactly as the real run
+ * resolves them; nothing reads the credential store or reaches the instance.
+ * `--dry-run` uses it to fail where the real run would (and to report the
+ * native fallback of a plain `fluent types`). Any failure other than "not
+ * installed" surfaces, as it would in the real run.
  */
 async function sdkMissing(deps: FluentCommandDeps, projectDir: string): Promise<boolean> {
   let fluent: SN.FluentModule;
@@ -741,7 +743,12 @@ async function dryRun(deps: FluentCommandDeps, action: FluentAction, plan: Fluen
     return;
   }
   const { projectDir } = await checkLocalPreconditions(deps, action, args);
-  if (canFallBackToNative(action, args) && (await sdkMissing(deps, projectDir))) {
+  // Every non-native action loads the adapter and the SDK in the real run, which
+  // exits 1 with the install hint when either is missing; the preview probes them
+  // the same way, so it never passes where the run would fail.
+  const missing = await sdkMissing(deps, projectDir);
+  if (missing && !canFallBackToNative(action, args)) throw new FluentNotInstalledError();
+  if (missing) {
     const native: FluentPlan = { method: "nativeTypes", options: nativeTypesOptions(args), instance: true };
     await resolveNativeTypesTarget(deps, args, native.options);
     writeDryRun(
