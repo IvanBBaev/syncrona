@@ -680,7 +680,7 @@ describe("cicd poll retry", () => {
     // It names the token endpoint, not the progress request it never sent.
     expect(errors[0]).toBe(
       "cicd install failed: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401), so the token endpoint " +
-        "rejected the OAuth client or the credentials; it is not retried. Request failed with status code 401"
+        "rejected the OAuth client or the credentials; it is not retried."
     );
     expect(errors[0]).not.toMatch(/answered HTTP 401/);
 
@@ -767,6 +767,23 @@ describe("cicd poll retry", () => {
     );
     expect(errors[0]).not.toMatch(/status code|\.,/);
   });
+
+  it.each(["oauth_token.do", "/oauth_token.do"])(
+    "names the token endpoint when the ATF result read cannot get its OAuth token (%s)",
+    async (url) => {
+      const h = harness({
+        progress: [() => progress("2", { links: { results: { id: "r" } } })],
+        results: () => httpError(401, url, { error: "access_denied" }),
+      });
+
+      expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(1);
+      expect(errors[0]).toContain(
+        "progress prog-1 finished, but ATF result r could not be read: OAuth token request failed (401), so the token " +
+          "endpoint rejected the OAuth client or the credentials, so whether the tests passed is unknown."
+      );
+      expect(errors[0]).not.toMatch(/status code|access_denied/);
+    }
+  );
 
   // An SSO gateway that answers 200 with its login page, or a redirect that
   // loops back on itself, is a session/authentication failure: asking again
