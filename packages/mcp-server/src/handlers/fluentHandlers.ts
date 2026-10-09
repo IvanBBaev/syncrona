@@ -204,7 +204,9 @@ function isSdkMissing(e: unknown): boolean {
  * is inside a package directory that ancestry holds. Node's requirer also
  * searches `NODE_PATH` and the global folders (`~/.node_modules`,
  * `~/.node_libraries`, `<prefix>/lib/node`); an adapter found only there is not
- * the server's code, and is refused like any other escape.
+ * the server's code, and is refused like any other escape. So is a package of
+ * the server's own `node_modules` whose resolved entry (a `main` that climbs out,
+ * or an entry file symlinked elsewhere) leaves the package directory.
  */
 export function loadFluentModule(
   projectDir: string,
@@ -293,7 +295,7 @@ function isServerInstall(specifier: string, resolved: string): boolean {
 
 function notServerInstall(specifier: string, resolved: string): FluentAdapterOutsideWorkspaceError {
   return new FluentAdapterOutsideWorkspaceError(
-    `Refusing to load ${specifier} from ${JSON.stringify(canonicalRealpath(resolved))}: it is neither in the workspace nor in the server's own install (Node found it through NODE_PATH or a global folder). Install it in the project.`
+    `Refusing to load ${specifier} from ${JSON.stringify(canonicalRealpath(resolved))}: it resolves outside both the workspace and the server's own install — through NODE_PATH, a global folder, or a package entry that leaves its directory. Install it in the project.`
   );
 }
 
