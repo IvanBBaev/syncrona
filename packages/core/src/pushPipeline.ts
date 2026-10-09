@@ -1479,8 +1479,17 @@ const findRecordByColumns = async (
   const records = await unwrapSNResponse<Record<string, unknown>[]>(
     client.tableAPIGet(table, query, fields, 2)
   );
+  // An answer without a result list says nothing about whether the record
+  // exists. Reading it as "no match" would plan a create (or re-POST after a
+  // timed-out create) and duplicate the record, so it fails the lookup instead.
+  if (!Array.isArray(records)) {
+    throw new Error(
+      `the ${table} lookup answered without a result list, so it cannot tell whether the ` +
+        "record already exists; nothing was adopted or created."
+    );
+  }
   const hits: LookupHit[] = [];
-  for (const record of Array.isArray(records) ? records : []) {
+  for (const record of records) {
     const sysId = record?.sys_id;
     if (typeof sysId !== "string" || sysId === "") continue;
     for (const [column, expected] of entries) {
