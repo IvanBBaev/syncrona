@@ -606,16 +606,34 @@ function trackerLinksAtfResult(progress: JsonObject): boolean {
 }
 
 /**
+ * The hint for a resumed ATF tracker whose result 404s: the same action can
+ * never read it, so it names the other ATF kind and the action that reads it.
+ */
+function atfKindMismatchHint(action: CicdAction, progressId: string): string {
+  const [kind, path, other] =
+    action === "run-test"
+      ? ["a suite run rather than a single test", "tests/test/results/<id>", "run-suite"]
+      : ["a single-test run rather than a suite", "testsuite/results/<id>", "run-test"];
+  return (
+    `progress ${progressId} may belong to ${kind} (${action} reads ${path}); ` +
+    `resume it with --progress-id ${progressId} and the ${other} action instead.`
+  );
+}
+
+/**
  * Reads the suite or test result linked from the finished tracker. A tracker
  * with no result link, or a result read that fails, comes back as `unreadable`
  * with the reason: for a tracker that reports success, the caller turns that
  * into exit 1 (the answer to "did the tests pass?" is unknown), never exit 0.
+ * `notFound` marks a 404 on the read: on a resume it usually means the tracker
+ * belongs to the other ATF kind (a suite result read as a test result, or the
+ * reverse), which a re-read with the same action can never fix.
  */
 async function fetchAtfOutcome(
   client: CicdClient,
   action: CicdAction,
   progress: JsonObject
-): Promise<AtfOutcome | { unreadable: string }> {
+): Promise<AtfOutcome | { unreadable: string; notFound?: boolean }> {
   const resultId = linkId(progress, "results");
   if (!resultId) {
     return { unreadable: "the tracker links no ATF result record" };
@@ -631,7 +649,10 @@ async function fetchAtfOutcome(
     const reason =
       extractCicdErrorMessage(errorResponseBody(e)) ?? (e instanceof Error ? e.message : String(e));
     logger.debug(`Could not fetch ATF result ${resultId}: ${reason}`);
-    return { unreadable: `ATF result ${resultId} could not be read: ${reason}` };
+    return {
+      unreadable: `ATF result ${resultId} could not be read: ${reason}`,
+      notFound: httpStatusOf(e) === 404,
+    };
   }
   const url = linkUrl(body, "results") ?? linkUrl(progress, "results");
   if (action === "run-suite") {
@@ -742,7 +763,9 @@ async function runAction(
     if (read && "unreadable" in read) {
       throw new CicdCliError(
         `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. ` +
-          `Re-run with --progress-id ${progressId} to read the result again.`
+          (resumeId && read.notFound
+            ? atfKindMismatchHint(action, progressId)
+            : `Re-run with --progress-id ${progressId} to read the result again.`)
       );
     }
     if (atf?.verdict === "unknown") {
