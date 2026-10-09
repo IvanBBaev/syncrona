@@ -83,6 +83,10 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 
 ### Fixed
 
+- `init` without a `sync.config.js` now downloads the scope into the source
+  directory chosen at the prompt; it reloaded the configuration only after the
+  download, so the files landed in the default `src`.
+
 - `refresh` no longer fails on a scope that owns no records yet when the
   companion scoped endpoint answers without a `tables` key. The manifest was
   written without `tables`, and the missing-file check then stopped with
