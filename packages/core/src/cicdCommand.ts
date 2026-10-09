@@ -56,6 +56,7 @@ import type { Sync } from "@syncrona/types";
 import type { AxiosResponse } from "axios";
 import { logger } from "./Logger.js";
 import { setLogLevel, logErrorHint, resolveInstanceProfile } from "./commandHelpers.js";
+import { OAUTH_TOKEN_PATH } from "./oauth.js";
 import { defaultClient, resolveCredentials } from "./snClient.js";
 
 /** The subcommands, in the order the docs list them. */
@@ -493,8 +494,19 @@ function permanentPollReason(status: number | undefined, err: unknown): string {
   if (status === undefined) {
     return "failed without an HTTP answer and not in the network (a client-side error); it is not retried.";
   }
+  if (isTokenEndpointError(err)) {
+    // The progress request was never sent: getting its OAuth token failed.
+    // Named as sync_cicd_run's token poster words it.
+    return `failed: OAuth token request failed (${String(status)}), so the token endpoint rejected the OAuth client or the credentials; it is not retried.`;
+  }
   const hint = PERMANENT_POLL_HINTS[status];
   return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
+}
+
+/** Whether an axios error came from the OAuth token endpoint, not from sn_cicd. */
+function isTokenEndpointError(err: unknown): boolean {
+  const url = (err as { config?: { url?: unknown } } | null)?.config?.url;
+  return typeof url === "string" && url.replace(/^\//, "").startsWith(OAUTH_TOKEN_PATH);
 }
 
 /** Why a 3xx answer is not retried; see {@link permanentPollReason}. */
