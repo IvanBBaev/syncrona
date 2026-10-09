@@ -108,5 +108,9 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
     expect(res.code).toBe(0);
     expect(out).toContain("sourceDirectory");
     expect(out).toMatch(/default (include|exclude) table rules/);
+    // The table names themselves, not only their counts: the empty-scope error
+    // sends users here to find which tables are excluded by default.
+    expect(out).toContain("sys_dictionary");
+    expect(out).toContain("content_css");
   }, 30000);
 });

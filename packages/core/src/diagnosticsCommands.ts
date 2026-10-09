@@ -496,8 +496,12 @@ export async function configCommand(
     logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
     logger.info(`  refreshInterval: ${def.refreshInterval}s`);
     logger.info(`  dataModelLayout: ${def.dataModelLayout ?? "records"}`);
-    logger.info(`  default include table rules: ${Object.keys(def.includes ?? {}).length}`);
-    logger.info(`  default exclude table rules: ${Object.keys(def.excludes ?? {}).length}`);
+    const includeTables = Object.keys(def.includes ?? {});
+    const excludeTables = Object.keys(def.excludes ?? {});
+    logger.info(`  default include table rules: ${includeTables.length}`);
+    for (const line of wrapTableNames(includeTables)) logger.info(line);
+    logger.info(`  default exclude table rules: ${excludeTables.length}`);
+    for (const line of wrapTableNames(excludeTables)) logger.info(line);
     logger.info(
       "Override any of these in sync.config.js (includes/excludes merge on top of these defaults) — see the README Configuration section."
     );
@@ -511,6 +515,28 @@ export async function configCommand(
     `Unknown config action "${action}". Supported actions: show-defaults, add-plugin.`
   );
   process.exitCode = 1;
+}
+
+const TABLE_LIST_INDENT = "    ";
+const TABLE_LIST_WIDTH = 100;
+
+// Sorted table names as comma-separated lines of at most TABLE_LIST_WIDTH
+// columns (a single longer name still gets a line of its own).
+function wrapTableNames(names: string[]): string[] {
+  if (names.length === 0) return [`${TABLE_LIST_INDENT}(none)`];
+  const lines: string[] = [];
+  let current = "";
+  for (const name of [...names].sort()) {
+    const candidate = current ? `${current}, ${name}` : name;
+    if (current && TABLE_LIST_INDENT.length + candidate.length + 1 > TABLE_LIST_WIDTH) {
+      lines.push(`${TABLE_LIST_INDENT}${current},`);
+      current = name;
+    } else {
+      current = candidate;
+    }
+  }
+  lines.push(`${TABLE_LIST_INDENT}${current}`);
+  return lines;
 }
 
 // True when the named package exists under the project's node_modules.

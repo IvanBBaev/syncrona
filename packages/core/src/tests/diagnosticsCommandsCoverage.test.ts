@@ -582,6 +582,31 @@ describe("configCommand", () => {
     );
   });
 
+  it("lists the default include and exclude table names, sorted and wrapped", async () => {
+    const excludes: Record<string, boolean> = {};
+    // 12 names of 20+ characters cannot fit one 100-column line.
+    for (let i = 11; i >= 0; i--) excludes[`x_long_table_name_${String(i).padStart(2, "0")}`] = true;
+    mockGetDefaultConfig.mockReturnValue({
+      sourceDirectory: "src",
+      buildDirectory: "build",
+      pushConcurrency: 4,
+      refreshInterval: 30,
+      includes: { zeta: {}, alpha: {} },
+      excludes,
+    });
+    const { configCommand } = await import("../diagnosticsCommands.js");
+    await configCommand({ logLevel: "info", action: "show-defaults" } as never);
+    const lines = mockLoggerInfo.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain("    alpha, zeta");
+    const start = lines.findIndex((l) => l.includes("default exclude table rules: 12"));
+    expect(start).toBeGreaterThanOrEqual(0);
+    const listed = lines.slice(start + 1).filter((l) => l.startsWith("    "));
+    expect(listed.length).toBeGreaterThan(1);
+    for (const line of listed) expect(line.length).toBeLessThanOrEqual(100);
+    const names = listed.join(" ").split(/[\s,]+/).filter(Boolean);
+    expect(names).toEqual(Object.keys(excludes).sort());
+  });
+
   it("counts zero default include/exclude rules when the defaults omit them (lines 421-422)", async () => {
     mockGetDefaultConfig.mockReturnValue({
       sourceDirectory: "src",
@@ -597,6 +622,7 @@ describe("configCommand", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("default exclude table rules: 0")
     );
+    expect(mockLoggerInfo).toHaveBeenCalledWith("    (none)");
   });
 
   it("treats a missing action as an unknown action (line 413)", async () => {
