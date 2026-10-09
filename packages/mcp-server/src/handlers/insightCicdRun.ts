@@ -39,10 +39,12 @@
  * result record an ATF tracker links to, and the dispatch arguments are ignored.
  * The action is bound to the tracker both ways: a tracker that links an ATF
  * result resumed as install/publish/rollback is `incomplete`, and so is an ATF
- * action resumed over a tracker without a result link, whatever its status (an
- * app-repo failure is not a test failure). The tracker does not
- * record which app-repo action started it, so install, publish and rollback are
- * indistinguishable on a resume and reported on the caller's word (with a note).
+ * action resumed over a successful tracker without a result link. A failed or
+ * cancelled one is `failed` with "no test results were reported", exactly as
+ * when it was dispatched (an ATF run can end before it links its result). The
+ * tracker does not record which app-repo action started it, so install, publish
+ * and rollback are indistinguishable on a resume and reported on the caller's
+ * word (with a note).
  *
  * The ATF verdict is the same allow-list as core ({@link ATF_PASSING_STATUSES}):
  * a successful tracker over a result that is neither clearly passing nor clearly
@@ -536,6 +538,21 @@ function trackerSummary(progress: JsonObject): JsonObject {
   };
 }
 
+/**
+ * The message for an ATF tracker that failed or was cancelled before it linked
+ * a result record (core's wording). On a resume it adds that an app-repo
+ * tracker would be reported under its own action.
+ */
+function endedWithoutAtfResult(progress: JsonObject, resumeId: string | undefined): string {
+  const instanceReason = extractCicdErrorMessage({ result: progress });
+  const ended =
+    `The tracker ended ${statusLabel(progress)}${instanceReason ? ` (${instanceReason})` : ""} ` +
+    "before linking an ATF result record, so no test results were reported";
+  return resumeId
+    ? `${ended}; if progress ${resumeId} is an install, publish or rollback run rather than an ATF run, resume it with that action to report it under its own name.`
+    : `${ended}.`;
+}
+
 /** Sends the dispatch POST and returns the id of the progress tracker it started. */
 async function dispatchAction(action: CicdRunAction, endpoint: string, budget: Budget): Promise<string> {
   const dispatched = await cicdCall("POST", endpoint, action, budget);
@@ -645,10 +662,13 @@ export async function handleCicdRun(
         `progress ${progressId} links an ATF result, so it looks like a test run rather than ${action}. Resume it with the run-suite or run-test action to read the test verdict.`
       );
     }
-    if (resumeId && isAtfAction && !trackerLinksAtfResult(progress)) {
-      // The other direction: an app-repo tracker resumed as an ATF action links
-      // no result. Whatever its status it says nothing about tests, so a failed
-      // install must not read as failing tests, nor a successful one as a pass.
+    // The other direction: an app-repo tracker resumed as an ATF action links no
+    // result. Only a SUCCESSFUL one is refused (it must not read as a pass): an
+    // ATF run cancelled or failed before it linked its result looks exactly like
+    // a failed app-repo run, and a dispatched one in that state is `failed`, so a
+    // resume of it is too — reported as a run that ended before any test result.
+    const atfWithoutResult = isAtfAction && !trackerLinksAtfResult(progress);
+    if (resumeId && atfWithoutResult && trackerSucceeded) {
       throw new CicdRunIncomplete(
         `progress ${progressId} links no ATF result record, so it looks like an app-repo run rather than ${action} (it ended ${statusLabel(progress)}). Resume it with the install, publish or rollback action that started it; it does not say whether any tests passed.`
       );
@@ -677,6 +697,8 @@ export async function handleCicdRun(
         atf?.verdict === "no_tests"
           ? "The suite ran no tests (0 passed, 0 failed, 0 errored), which is not a pass."
           : "ATF reported failing tests.";
+    } else if (!trackerSucceeded && atfWithoutResult) {
+      message = endedWithoutAtfResult(progress, resumeId);
     } else if (succeeded && resumeId && !isAtfAction) {
       message = `The tracker does not record which app-repo action started it; reported as ${action} on the caller's word.`;
     }
