@@ -84,12 +84,14 @@ export function setRecord(
 
 /**
  * The byte budget of a record folder name, collision suffix included. 255 is the
- * segment limit; the bytes above 180 are left for a flat layout's
- * `~<field>.<ext>`. A colliding name is cut further so that `_<sys_id>` fits
+ * segment limit; the 95 bytes above 160 are left for a flat layout's
+ * `~<field>.<ext>`: `~`, a field name of up to 80 characters (the ServiceNow
+ * column name limit) and an extension of up to 13 bytes with its dot. A longer
+ * tail is refused by the writer's segment check rather than written cut. A colliding name is cut further so that `_<sys_id>` fits
  * inside this budget too: every name the rules produce is at most this long, so
  * passing it through the rules again leaves it alone.
  */
-export const MAX_RECORD_NAME_BYTES = 180;
+export const MAX_RECORD_NAME_BYTES = 160;
 const HASH_HEX_LENGTH = 8;
 
 const shortHash = (value: string): string =>

@@ -168,9 +168,33 @@ describe("sanitizeRecordFolderName", () => {
     expect(bytes(`${folder}~message.txt`)).toBeLessThanOrEqual(MAX_PATH_SEGMENT_BYTES);
   });
 
+  it("leaves room in the flat layout for the longest field name and a common extension", () => {
+    // ServiceNow column names are at most 80 characters (ASCII); `.json`,
+    // `.ts`, `.html` and `.xml` are the extensions field files get.
+    const field = "f".repeat(80);
+    for (const name of ["Ü".repeat(200), "x".repeat(400), "😀".repeat(100)]) {
+      const folder = sanitizeRecordFolderName(name);
+      expect(bytes(`${folder}~${field}.json`)).toBeLessThanOrEqual(MAX_PATH_SEGMENT_BYTES);
+    }
+    const suffixed = assignRecordFolderNames("t", [
+      { sysId: "a".repeat(32), name: "Ü".repeat(200) },
+      { sysId: "b".repeat(32), name: "Ü".repeat(200) },
+    ]);
+    for (const folder of suffixed.values()) {
+      expect(bytes(`${folder}~${field}.json`)).toBeLessThanOrEqual(MAX_PATH_SEGMENT_BYTES);
+    }
+  });
+
   it("treats the storable form of an old name as a rule-driven rename", () => {
     const old = "x".repeat(220);
     expect(isRuleDrivenRename(old, sanitizeRecordFolderName(old), "s1")).toBe(true);
+    // Stored verbatim under the earlier 180-byte budget, cut under this one.
+    const verbatim = "y".repeat(170);
+    expect(isRuleDrivenRename(verbatim, sanitizeRecordFolderName(verbatim), "s1")).toBe(true);
+    // Cut under the earlier budget: 171 bytes kept, then the hash.
+    const oldCut = `${"z".repeat(171)}_0123abcd`;
+    expect(isRuleDrivenRename(oldCut, sanitizeRecordFolderName("z".repeat(300)), "s1")).toBe(true);
+    expect(isRuleDrivenRename(oldCut, sanitizeRecordFolderName("w".repeat(300)), "s1")).toBe(false);
     expect(isRuleDrivenRename("a\tb", "a_b_s1", "s1")).toBe(true);
     expect(isRuleDrivenRename("a\tb", "a b", "s1")).toBe(false);
   });
