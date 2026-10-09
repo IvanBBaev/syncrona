@@ -46,6 +46,14 @@ const entrySets: Array<[string, Array<{ sysId: string; name: string }>]> = [
     ],
   ],
   [
+    "names Windows cannot store",
+    [
+      { sysId: S1, name: "CON" },
+      { sysId: S2, name: "Report." },
+      { sysId: S3, name: "   " },
+    ],
+  ],
+  [
     "plain names",
     [
       { sysId: S1, name: "Util" },

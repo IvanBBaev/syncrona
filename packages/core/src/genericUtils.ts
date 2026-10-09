@@ -15,6 +15,13 @@ import { Sync } from "@syncrona/types";
 // Record names are made to fit first (recordFolderNames.sanitizeRecordFolderName);
 // every other segment — table, field, type, scope — is instance data that must
 // be refused rather than altered, because it also addresses the instance.
+//
+// Windows-only restrictions — device names (CON, AUX, COM1, ...), trailing dots
+// and spaces — are deliberately not refused here. Record names are made portable
+// by the naming function instead. Refusing a table, field or scope name over a
+// rule that only Windows applies would stop downloads on every other platform,
+// where such a segment is stored as written. Table, field, type and scope names
+// are ServiceNow identifiers, which do not take those forms.
 export const MAX_PATH_SEGMENT_BYTES = 255;
 
 export interface UnsafePathComponent {

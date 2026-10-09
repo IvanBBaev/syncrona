@@ -202,6 +202,13 @@ endpoint or from the Table API.
   The 75 bytes left below the 255-byte segment limit hold the flat layout's
   `~<field>.<ext>`. The cut keeps whole code points, so
   it can still separate an emoji from a combining mark that follows it.
+- **Names Windows cannot store.** Trailing dots and spaces are removed, since
+  Windows would drop them, for example `Report.` becomes `Report`. A Windows
+  device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9` and
+  the `¹²³` variants, in any case, alone or with an extension) gets `_` after
+  the device stem: `CON` becomes `CON_`, `aux.txt` becomes `aux_.txt`. A
+  record whose name is empty, only whitespace or only dots is named by its
+  `sys_id`.
 - **Other path segments are refused, not altered.** A table, field, type or
   scope name with a separator, a control character, a lone surrogate or more
   than 255 bytes stops the download with a `Refusing to download: unsafe ...`
@@ -229,7 +236,8 @@ first `refresh` or `download` with these rules:
   then delete it; `syncrona repair` lists its files as orphans.
 - A record whose name was stored verbatim but is now made to fit (181 to 255
   bytes, or a tab or other control character) has its folder renamed in the
-  same way, with the same `Renamed` warning.
+  same way, with the same `Renamed` warning. So does a folder with a trailing
+  dot or space, a Windows device name, or a whitespace-only name.
 - When a collision dissolves, because the other members were deleted on the
   instance, the remaining record's suffixed folder is renamed back to the plain
   name, for example `Foo_<sys_id>` to `Foo`, with the same `Renamed` warning.
