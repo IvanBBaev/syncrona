@@ -418,8 +418,12 @@ export const classifyColumn = (
  * The dictionary type of `column` in `types` (element → internal_type), matched
  * case-insensitively. An operator's `U_SECRET` and the dictionary's `u_secret`
  * are one column to the instance, and an exact match would leave the entry
- * untyped — "unknown", and so kept — whatever its real type. An exact match
- * wins when there is one.
+ * untyped — "unknown", and so kept — whatever its real type. When several
+ * case variants match, an unsafe type (UNSAFE_VALUE_INTERNAL_TYPES) on any of
+ * them wins: they are one column to the instance, so a safe `U_S` must not hide
+ * an unsafe `u_s`. Otherwise an exact match wins when there is one, then the
+ * first variant. manifestBuilder's dictionaryColumnTypes applies the same rule
+ * to the map it builds.
  */
 export const columnTypeOf = (
   types: ReadonlyMap<string, string> | undefined,
@@ -428,17 +432,18 @@ export const columnTypeOf = (
   if (!types) {
     return undefined;
   }
-  const exact = types.get(column);
-  if (exact !== undefined) {
-    return exact;
-  }
   const wanted = column.toLowerCase();
+  let first: string | undefined;
   for (const [element, type] of types) {
-    if (element.toLowerCase() === wanted) {
+    if (element.toLowerCase() !== wanted) {
+      continue;
+    }
+    if (UNSAFE_VALUE_INTERNAL_TYPES.has(dictionaryInternalType(type))) {
       return type;
     }
+    first ??= type;
   }
-  return undefined;
+  return types.get(column) ?? first;
 };
 
 /**

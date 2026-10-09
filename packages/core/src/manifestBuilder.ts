@@ -388,7 +388,10 @@ async function getTableNamesFromDictionary(
  * column: a hierarchy query returns the base entry and a child override in no
  * guaranteed order, and either may carry the unsafe type, so an unsafe type on
  * any row wins; otherwise the first readable one does. A column whose rows all
- * carry an empty type is absent, exactly like one with no row.
+ * carry an empty type is absent, exactly like one with no row. Case variants of
+ * one element (`U_S`, `u_s`) are one column to the instance, so each variant is
+ * given the type columnTypeOf resolves across them: an unsafe type on any
+ * variant wins, and a safe `U_S` cannot hide an unsafe `u_s`.
  */
 const dictionaryColumnTypes = (
   tableName: string,
@@ -407,7 +410,7 @@ const dictionaryColumnTypes = (
       types.set(row.element, internalType);
     }
   }
-  return types;
+  return new Map([...types.keys()].map((element) => [element, columnTypeOf(types, element) as string]));
 };
 
 /** The columns of `types` classifyColumn rules unsafe, mapped to their type. */
