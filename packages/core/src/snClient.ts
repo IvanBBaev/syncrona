@@ -51,6 +51,12 @@ import { normalizeInstanceHost } from "./instanceHost.js";
 export const REQUEST_TIMEOUT_ENV = "SN_REQUEST_TIMEOUT";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 
+// The redirect cap for the sn_cicd calls. follow-redirects (axios) defaults to
+// 21, while the native fetch (undici) that `sync_cicd_run` uses stops at 20, so
+// the same redirect chain could pass on one side and fail on the other. 20 keeps
+// the CLI and the MCP tool on the same limit.
+export const CICD_MAX_REDIRECTS = 20;
+
 export function resolveRequestTimeout(): number {
   const raw = String(process.env[REQUEST_TIMEOUT_ENV] ?? "").trim();
   if (raw === "") {
@@ -639,10 +645,13 @@ export const snClient = (
   // stay trivially mockable. sn_cicd reads its arguments from the QUERY STRING
   // (as now-sdk sends them), not from a JSON body, so a POST carries no body.
   const cicdPost = <T = unknown>(path: string, params: Record<string, string> = {}) =>
-    client.post<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`, undefined, { params });
+    client.post<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`, undefined, {
+      params,
+      maxRedirects: CICD_MAX_REDIRECTS,
+    });
 
   const cicdGet = <T = unknown>(path: string) =>
-    client.get<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`);
+    client.get<T>(`api/sn_cicd/${path.replace(/^\/+/, "")}`, { maxRedirects: CICD_MAX_REDIRECTS });
 
   // WP-3 (R3): the instance's application vendor prefix, as App Creator and
   // now-sdk read it. A platform (Java) REST resource, not a scripted API; the

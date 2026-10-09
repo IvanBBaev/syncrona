@@ -250,15 +250,19 @@ describe("snClient request wrappers", () => {
     await client.cicdPost("/testsuite/run", { test_suite_name: "Smoke" });
     expect(mockPost).toHaveBeenCalledWith("api/sn_cicd/testsuite/run", undefined, {
       params: { test_suite_name: "Smoke" },
+      maxRedirects: 20,
     });
     await client.cicdPost("app_repo/publish");
-    expect(mockPost).toHaveBeenLastCalledWith("api/sn_cicd/app_repo/publish", undefined, { params: {} });
+    expect(mockPost).toHaveBeenLastCalledWith("api/sn_cicd/app_repo/publish", undefined, {
+      params: {},
+      maxRedirects: 20,
+    });
   });
 
   it("cicdGet GETs under api/sn_cicd (WP-5)", async () => {
     const client = await makeClient();
     await client.cicdGet("//progress/abc");
-    expect(mockGet).toHaveBeenCalledWith("api/sn_cicd/progress/abc");
+    expect(mockGet).toHaveBeenCalledWith("api/sn_cicd/progress/abc", { maxRedirects: 20 });
   });
 
   it("tableAPIGet includes a sysparm_offset only when offset > 0", async () => {
