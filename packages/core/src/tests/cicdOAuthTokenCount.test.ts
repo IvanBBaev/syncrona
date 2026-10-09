@@ -70,6 +70,29 @@ describe("cicd OAuth token request counts match sync_cicd_run", () => {
     }
   });
 
+  it("a token endpoint 401 that would succeed on a second grant still rejects, and no token JSON comes back as data", async () => {
+    // Without the token-error mark, the response interceptor answered the token
+    // endpoint's 401 with a forced grant (200) and re-sent the token request
+    // itself through the data client: the cicd call then resolved with the
+    // token endpoint's JSON as its sn_cicd answer.
+    const target = await startServer([401, 200], 200);
+    try {
+      let resolved: unknown;
+      let caught: unknown;
+      try {
+        resolved = await client(target).cicdPost("app_repo/install", { scope: "x_a" });
+      } catch (e) {
+        caught = e;
+      }
+      expect(resolved).toBeUndefined();
+      expect(caught).toMatchObject({ response: { status: 401 } });
+      expect(target.token).toBe(1);
+      expect(target.data).toBe(0);
+    } finally {
+      await stopServer(target);
+    }
+  });
+
   it("a data 401 forces one refresh: the refresh POST and its fallback grant, and no re-sent request", async () => {
     const target = await startServer([200, 401], 401);
     try {
