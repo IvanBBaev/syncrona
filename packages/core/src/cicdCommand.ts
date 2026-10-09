@@ -590,7 +590,11 @@ async function pollProgress(
       failures += 1;
       const status = httpStatusOf(err);
       if (!isTransientPollError(err)) {
-        throw new CicdPollError(`${request} ${permanentPollReason(status, err)} ${errorText(err)}`, err);
+        // A 3xx reason is whole, as sync_cicd_run words it: axios's own
+        // "Request failed with status code 30x" would only repeat the status.
+        const redirect = status !== undefined && status >= 300 && status < 400;
+        const tail = redirect ? "" : ` ${errorText(err)}`;
+        throw new CicdPollError(`${request} ${permanentPollReason(status, err)}${tail}`, err);
       }
       if (deps.now() - startedAt >= timeoutMs) {
         throw timedOut(err);
