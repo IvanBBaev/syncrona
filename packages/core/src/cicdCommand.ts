@@ -1073,16 +1073,21 @@ export async function cicdCommand(
   } catch (e) {
     const instanceMessage = extractCicdErrorMessage(errorResponseBody(e));
     const message = e instanceof Error ? e.message : String(e);
+    // Exit 1 is never "failed" (that is exit 2, a run that ended badly): the
+    // run could not be followed to its end, or its result is unclear. Word it
+    // as the --json verdict and sync_cicd_run's outcome do.
+    const verdict = e instanceof CicdCliError ? e.verdict : "incomplete";
+    const label = `cicd ${action} ${verdict === "unknown" ? "result unknown" : "incomplete"}`;
     const error = instanceMessage
-      ? `cicd ${action} failed: ${message} — ${instanceMessage}`
-      : `cicd ${action} failed: ${message || "unknown error"}`;
+      ? `${label}: ${message} — ${instanceMessage}`
+      : `${label}: ${message || "unknown error"}`;
     logger.error(error);
     if (state.progressId && !error.includes(`--progress-id ${state.progressId}`)) {
       // warn, not info: the resume id is the one thing a quiet (--log-level warn)
       // CI run needs from a failure, and info would hide it.
       logger.warn(`The work was dispatched as progress ${state.progressId}; resume with --progress-id ${state.progressId}.`);
     }
-    writeJsonFailure(error, state.progressId, e instanceof CicdCliError ? e.verdict : "incomplete");
+    writeJsonFailure(error, state.progressId, verdict);
     // The original error goes to the taxonomy, so a 403 on an sn_cicd URL gets
     // the missing-role hint instead of the generic "re-run login" one.
     logErrorHint(e);
