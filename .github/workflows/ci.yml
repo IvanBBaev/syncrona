@@ -79,8 +79,10 @@ jobs:
       # This is NOT a threshold chosen to accommodate existing debt: on 2026-08-25
       # the FULL tree was brought to 0 vulnerabilities (brace-expansion and js-yaml
       # via in-range lockfile bumps; stryker's pinned ajv / @babel/core / tmp via
-      # the scoped `overrides` in the root package.json). So `high` has the same
-      # kind of headroom `moderate` has on the production side.
+      # scoped `overrides`, dropped again when Stryker 10 resolved them upstream;
+      # the one left, `typed-rest-client > qs`, is explained in SECURITY.md).
+      # So `high` has the same kind of headroom `moderate` has on the production
+      # side.
       #
       # Not a scheduled job that files an issue: this workflow deliberately runs
       # under `permissions: contents: read`, and issue-filing needs `issues: write`.

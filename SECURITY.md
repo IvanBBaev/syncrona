@@ -190,14 +190,15 @@ npm audit --omit=dev --audit-level=moderate   # production gate
 npm audit --audit-level=high                  # dev + production gate
 ```
 
-**Known residuals.** None as of 2026-08-25 — both trees are at zero. Three
-scoped `overrides` in the root `package.json` keep them there by lifting
-dependencies that `@stryker-mutator/*@8.7.1` pins below their patched versions
-(`ajv`, `@babel/core`, and `tmp` via `external-editor`). They are scoped to those
-parents specifically, so unrelated copies elsewhere in the tree — notably
-eslint's `ajv@6` and the build plugins' `@babel/core@8` — are not affected. If
-you upgrade Stryker past 8.7.1, re-check whether the overrides are still needed;
-`@stryker-mutator/core@10` resolves all three upstream.
+**Known residuals.** Until 2026-10-10 three scoped `overrides` in the root
+`package.json` lifted dependencies that `@stryker-mutator/*@8.7.1` pinned below
+their patched versions (`ajv`, `@babel/core`, and `tmp` via `external-editor`).
+Stryker 10 resolves all three upstream, so they were removed with that upgrade;
+the `@babel/core` one would now pin the Babel 8 instrumenter back to Babel 7.
+One scoped override remains: `typed-rest-client > qs`, because the
+`typed-rest-client` that `@stryker-mutator/core@10` pulls in pins `qs` to a
+version below the patched 6.16. Scoped to that parent, it leaves every other
+`qs` in the tree alone. Re-check it whenever Stryker is upgraded.
 
 Advisories in a dependency we ship are handled through the reporting process at
 the top of this document, the same as a vulnerability in our own code.

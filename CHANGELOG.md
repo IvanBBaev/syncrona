@@ -175,6 +175,13 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
   a CLI flag. A git ref never starts with `-`; the legitimate values refused
   are a target path or an update-set name that does (a path can still be
   passed as `./-name`). No tool was removed or renamed.
+- Mutation testing runs on Stryker 10 (`@stryker-mutator/core` and
+  `jest-runner`, from 8.7.1). The three scoped `overrides` that patched
+  Stryker 8's pinned `ajv`, `@babel/core` and `tmp` are gone, because Stryker
+  10 ships patched versions itself. The `@babel/core` one would have forced
+  the Babel 8 instrumenter back onto Babel 7. One new scoped override,
+  `typed-rest-client > qs`, lifts the `qs` that Stryker 10 brings in past
+  GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g.
 - Dependabot no longer proposes `undici` majors. The MCP server hands its
   undici dispatchers (mutual TLS, custom CA, proxy) to Node's global `fetch`,
   which runs on the undici bundled with Node. With undici 8 on Node 22, every
