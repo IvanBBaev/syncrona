@@ -544,8 +544,13 @@ function getTokenManager(config: SNConfig, baseUrl: string): TokenManager {
       // The token endpoint returns 4xx/5xx with an error body (often HTML on a
       // gateway failure). Surface a clear error instead of letting JSON.parse
       // throw a cryptic SyntaxError or — worse — caching `Bearer undefined`.
-      throw new Error(
-        `OAuth token request failed (${res.status} ${res.statusText}): ${text.slice(0, 200)}`
+      // `httpStatus` lets a caller tell a rejected credential (4xx) from a
+      // transient token-endpoint failure (5xx), as core reads its axios error.
+      throw Object.assign(
+        new Error(
+          `OAuth token request failed (${res.status} ${res.statusText}): ${text.slice(0, 200)}`
+        ),
+        { httpStatus: res.status }
       );
     }
     try {
