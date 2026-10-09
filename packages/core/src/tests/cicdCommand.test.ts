@@ -679,7 +679,7 @@ describe("cicd poll retry", () => {
     expect(rejected.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     // It names the token endpoint, not the progress request it never sent.
     expect(errors[0]).toBe(
-      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401), so the token endpoint " +
+      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401): the token endpoint " +
         "rejected the OAuth client or the credentials; it is not retried."
     );
     expect(errors[0]).not.toMatch(/answered HTTP 401/);
@@ -778,12 +778,40 @@ describe("cicd poll retry", () => {
 
       expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(1);
       expect(errors[0]).toContain(
-        "progress prog-1 finished, but ATF result r could not be read: OAuth token request failed (401), so the token " +
+        "progress prog-1 finished, but ATF result r could not be read: OAuth token request failed (401): the token " +
           "endpoint rejected the OAuth client or the credentials, so whether the tests passed is unknown."
       );
       expect(errors[0]).not.toMatch(/status code|access_denied/);
     }
   );
+
+  it("does not blame the credentials when the ATF read's token endpoint is down", async () => {
+    const outage = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(503, "oauth_token.do", "Service Unavailable"),
+    });
+    expect(await run(outage, "run-suite", { suiteId: "s1" })).toBe(1);
+    expect(errors[0]).toContain(
+      "progress prog-1 finished, but ATF result r could not be read: OAuth token request failed (503): no OAuth token " +
+        "could be obtained, so whether the tests passed is unknown."
+    );
+    expect(errors[0]).not.toMatch(/rejected|credentials/);
+
+    errors.length = 0;
+    const network = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:443."), {
+      code: "ECONNREFUSED",
+      config: { url: "oauth_token.do" },
+    });
+    const unreachable = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => network,
+    });
+    expect(await run(unreachable, "run-suite", { suiteId: "s1" })).toBe(1);
+    expect(errors[0]).toContain(
+      "could not be read: OAuth token request failed (connect ECONNREFUSED 127.0.0.1:443): no OAuth token could be " +
+        "obtained, so whether the tests passed is unknown."
+    );
+  });
 
   // An SSO gateway that answers 200 with its login page, or a redirect that
   // loops back on itself, is a session/authentication failure: asking again
