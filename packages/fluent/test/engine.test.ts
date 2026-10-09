@@ -536,6 +536,58 @@ describe("defaultSdkLoader", () => {
     expect((thrown as Error).message).toContain("zz-missing-transitive-dep");
   });
 
+  // Node's error for each not-found shape, raised by hand from the credentials
+  // entry: for an export target that is absent, jest's registry quotes the
+  // specifier where Node quotes the target's absolute path, so the shape Node
+  // produces is built here. `pkg` is the sdk-api package directory. Node leaves
+  // `requireStack` off the target's own error; here it is an empty array,
+  // because jest fills in a missing one by walking the parent chain, which
+  // loops (see the test above).
+  function credentialsRaising(name: (pkg: string) => string, requireStack: (file: string) => string[] = () => []) {
+    write("package.json", JSON.stringify({ name: "proj" }));
+    write(
+      "node_modules/@servicenow/sdk/package.json",
+      JSON.stringify({ name: "@servicenow/sdk", version: "4.13.3", exports: { "./api": { default: "./dist/api/index.js" } } }),
+    );
+    write("node_modules/@servicenow/sdk/dist/api/index.js", "exports.Project = function Project() {};\n");
+    write(
+      "node_modules/@servicenow/sdk-api/package.json",
+      JSON.stringify({ name: "@servicenow/sdk-api", exports: { "./credentials": "./dist/credentials.js" } }),
+    );
+    write("node_modules/@servicenow/sdk-api/node_modules/dep/package.json", JSON.stringify({ name: "dep" }));
+    const pkg = fs.realpathSync(path.join(tmp, "node_modules/@servicenow/sdk-api"));
+    const file = path.join(pkg, "dist/credentials.js");
+    write(
+      "node_modules/@servicenow/sdk-api/dist/credentials.js",
+      `const e = new Error(${JSON.stringify(`Cannot find module '${name(pkg)}'`)});\n` +
+        `e.code = 'MODULE_NOT_FOUND';\ne.requireStack = ${JSON.stringify(requireStack(file))};\nthrow e;\n`,
+    );
+    try {
+      defaultSdkLoader(tmp);
+    } catch (e) {
+      return e;
+    }
+    throw new Error("defaultSdkLoader did not throw");
+  }
+
+  it("reports the SDK missing when sdk-api is present but the file its credentials export maps to is not", () => {
+    const thrown = credentialsRaising((pkg) => path.join(pkg, "dist/credentials.js"));
+    expect(thrown).toBeInstanceOf(FluentSdkMissingError);
+    expect((thrown as Error).message).toContain("@servicenow/sdk-api/credentials cannot be loaded");
+  });
+
+  it.each([
+    ["a package file the credentials module requires", (pkg: string) => path.join(pkg, "dist/helper.js"), (file: string) => [file]],
+    ["a file of a dependency nested in sdk-api", (pkg: string) => path.join(pkg, "node_modules/dep/index.js"), undefined],
+    ["an absolute path outside sdk-api", () => path.join(path.parse(tmp).root, "zz-nowhere", "index.js"), undefined],
+    ["a relative request", () => "./zz-helper", undefined],
+    ["nothing", () => "", undefined],
+  ])("rethrows a not-found error naming %s instead of reporting the SDK missing", (_label, name, stack) => {
+    const thrown = credentialsRaising(name, stack);
+    expect(thrown).not.toBeInstanceOf(FluentSdkMissingError);
+    expect((thrown as { code?: unknown }).code).toBe("MODULE_NOT_FOUND");
+  });
+
   it("isSupportedSdkVersion accepts 4.13.x only", () => {
     expect(["4.13.0", "4.13.3", " 4.13.10 ", "4.13.1-beta.2"].every(isSupportedSdkVersion)).toBe(true);
     expect(["4.12.2", "4.14.0", "5.13.0", "4.130.1", "latest"].some(isSupportedSdkVersion)).toBe(false);
