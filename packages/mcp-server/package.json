@@ -32,7 +32,7 @@
     "@syncrona/redaction": "^1.0.0",
     "@syncrona/sn-transport": "^1.0.0",
     "undici": "^6.29.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^8.7.1",
