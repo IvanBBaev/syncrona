@@ -231,6 +231,26 @@ describe("getAppFileListWithCandidates", () => {
     expect(out.candidates[0].conflict).toContain('field "script"');
   });
 
+  // Live finding (1.1.0): under the records layout the column's sidecar came
+  // first and its create was refused, the table not existing yet.
+  it("orders a new table before its column and its choice under the records layout", async () => {
+    const out = await Pipeline.getAppFileListWithCandidates(
+      [
+        "/proj/src/sys_choice/x_demo_t.u_a.1/meta.json",
+        "/proj/src/sys_dictionary/x_demo_t.u_a/meta.json",
+        "/proj/src/sys_script_include/New/script.js",
+        "/proj/src/sys_db_object/x_demo_t/meta.json",
+      ],
+      { create: true }
+    );
+    expect(out.candidates.map((c) => c.table)).toEqual([
+      "sys_db_object",
+      "sys_dictionary",
+      "sys_choice",
+      "sys_script_include",
+    ]);
+  });
+
   it("never parses unmapped paths without create, and resolves encoded paths", async () => {
     mockEncodedPathsToFilePaths.mockImplementation(async () => [
       "/proj/src/sys_script_include/New/script.js",

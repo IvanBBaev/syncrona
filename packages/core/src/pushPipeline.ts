@@ -264,27 +264,20 @@ export const getAppFileListWithCandidates = async (
 };
 
 /**
- * SDK-F2: under the composite layout a table is created before its columns,
- * and a column before its choices — a dictionary row naming a table the
- * instance does not have yet is refused. Stable, so every other record keeps
- * the order the paths were listed in.
+ * A table is created before its columns, and a column before its choices — a
+ * dictionary row naming a table the instance does not have yet is refused.
+ * That holds under either data-model layout: per-record sidecars list in path
+ * order, which puts sys_dictionary ahead of sys_db_object. Stable, so every
+ * other record keeps the order the paths were listed in.
  */
-const orderCreateCandidates = (candidates: CreateCandidate[]): CreateCandidate[] => {
-  let layout: string;
-  try {
-    layout = getDataModelLayout(ConfigManager.getConfig());
-  } catch (_e) {
-    return candidates;
-  }
-  if (layout !== "composite") return candidates;
-  return candidates
+const orderCreateCandidates = (candidates: CreateCandidate[]): CreateCandidate[] =>
+  candidates
     .map((candidate, index) => ({ candidate, index }))
     .sort(
       (a, b) =>
         compositeTier(a.candidate.table) - compositeTier(b.candidate.table) || a.index - b.index
     )
     .map(({ candidate }) => candidate);
-};
 
 /** One path to push: a file on disk, or an entry of a data-model document. */
 interface PushPathItem {
