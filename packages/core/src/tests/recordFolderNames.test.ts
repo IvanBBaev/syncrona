@@ -220,6 +220,13 @@ describe("isRuleDrivenRename", () => {
     expect(isRuleDrivenRename("Util", "Utility", "s1")).toBe(false);
     expect(isRuleDrivenRename("Util", "Util_s2", "s1")).toBe(false);
   });
+
+  it("accepts dropping the suffix when a collision dissolves", () => {
+    expect(isRuleDrivenRename("Foo_s1", "Foo", "s1")).toBe(true);
+    expect(isRuleDrivenRename("dup_b_b", "dup", "b")).toBe(true);
+    expect(isRuleDrivenRename("Foo_s1", "Foo", "s2")).toBe(false);
+    expect(isRuleDrivenRename("Foo_s1", "Bar", "s1")).toBe(false);
+  });
 });
 
 describe("migrateRenamedRecordFolders", () => {
@@ -287,6 +294,41 @@ describe("migrateRenamedRecordFolders", () => {
       )
     ).toEqual({ moved: [], leftBehind: [] });
     expect(fs.existsSync(path.join(root, "t/Solo/script.js"))).toBe(true);
+  });
+
+  it.each([
+    ["folder", false, "t/Foo_s1/script.js", "t/Foo/script.js"],
+    ["flat", true, "t/Foo_s1~script.js", "t/Foo~script.js"],
+  ])(
+    "moves a suffixed folder back when its collision dissolves (%s layout)",
+    async (_layout, flat, from, to) => {
+      write(from, "local edit");
+      const result = await migrateRenamedRecordFolders(
+        manifestOf("x", [["Foo_s1", "s1"], ["foo_s2", "s2"]]),
+        manifestOf("x", [["Foo", "s1"]]), // s2 was deleted on the instance
+        root,
+        flat
+      );
+      expect(result).toEqual({ moved: [{ table: "t", from: "Foo_s1", to: "Foo" }], leftBehind: [] });
+      expect(fs.readFileSync(path.join(root, to), "utf8")).toBe("local edit");
+      expect(fs.existsSync(path.join(root, from))).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Renamed "t/Foo_s1" to "t/Foo"'));
+    }
+  );
+
+  it("leaves a dissolved collision's folder, with a warning, when the plain name exists", async () => {
+    write("t/Foo_s1/script.js", "local edit");
+    write("t/Foo/script.js", "someone else");
+    const result = await migrateRenamedRecordFolders(
+      manifestOf("x", [["Foo_s1", "s1"], ["foo_s2", "s2"]]),
+      manifestOf("x", [["Foo", "s1"]]),
+      root,
+      false
+    );
+    expect(result.moved).toEqual([]);
+    expect(result.leftBehind).toEqual([expect.objectContaining({ table: "t", folder: "Foo_s1" })]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Left "t/Foo_s1" in place'));
+    expect(fs.readFileSync(path.join(root, "t/Foo_s1/script.js"), "utf8")).toBe("local edit");
   });
 
   it("reports a failed move as left behind instead of throwing", async () => {
