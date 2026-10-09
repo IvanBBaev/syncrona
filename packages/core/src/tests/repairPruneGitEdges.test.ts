@@ -4,6 +4,7 @@
 // while git stores them precomposed, an exported GIT_DIR, long path lists, line
 // endings, and what the prompt and the final line tell the user.
 import { jest } from "@jest/globals";
+import { execFileSync } from "child_process";
 
 jest.unstable_mockModule("../config.js", () => ({
   getManifest: jest.fn(),
@@ -177,6 +178,56 @@ describe("a git failure names git's own reason", () => {
     expect(process.exitCode).toBe(1);
     expect(logged(errorSpy)).toContain("(git is not installed or not on PATH)");
   });
+
+  // A git wrapper on PATH that fails `ls-tree` the way a test asks and hands
+  // every other call to the real git. Which real git failure lacks a `fatal:`
+  // line differs by platform and git version, so without the wrapper the two
+  // platforms measured different branches of the reason formatter.
+  const failLsTree = (stderr: string, code: number): void => {
+    const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+    const bin = path.join(tmp, "fake-bin");
+    mkdirSync(bin, { recursive: true });
+    const script = path.join(bin, "git");
+    writeFileSync(
+      script,
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "ls-tree" ]; then',
+        stderr === "" ? "  :" : `  printf '%s\\n' '${stderr}' >&2`,
+        `  exit ${code}`,
+        "fi",
+        `exec '${realGit}' "$@"`,
+        "",
+      ].join("\n")
+    );
+    chmodSync(script, 0o755);
+    process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ""}`;
+  };
+  const posixOnly = process.platform === "win32" ? test.skip : test;
+
+  posixOnly("without a fatal line the reason is git's last stderr line", async () => {
+    const leftover = write("sys_script/Gone/script.js");
+    initRepo(tmp);
+    failLsTree("error: object file is empty", 128);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(logged(errorSpy)).toContain("(error: object file is empty)");
+  });
+
+  posixOnly("a git failure with no stderr at all names the command and its exit code", async () => {
+    const leftover = write("sys_script/Gone/script.js");
+    initRepo(tmp);
+    failLsTree("", 3);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(leftover)).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(logged(errorSpy)).toContain("(git ls-tree exited with code 3)");
+  });
 });
 
 describe("one file git cannot read", () => {
@@ -237,6 +288,7 @@ describe("Unicode normalization of file names", () => {
     expect(existsSync(nfc)).toBe(false);
     expect(infoSpy).toHaveBeenCalledWith("Pruned 2 orphan file(s).");
   });
+
 });
 
 describe("the repository is found from the source directory", () => {
