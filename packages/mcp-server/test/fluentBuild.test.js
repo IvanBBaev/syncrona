@@ -753,6 +753,71 @@ test('a project adapter hoisted above the workspace stays refused when the serve
   assert.equal(globalThis.__fluentAboveLoaded, undefined, 'the hoisted code never ran');
 });
 
+/**
+ * Runs loadFluentModule in a child process with `env` (NODE_PATH and HOME are
+ * read once, at startup, into Module.globalPaths) and reports what happened.
+ */
+function loadInChild(projectDir, specifier, env) {
+  const { spawnSync } = require('node:child_process');
+  const script = `
+    const { loadFluentModule } = require(${JSON.stringify(path.resolve(__dirname, '../dist/handlers/fluentHandlers.js'))});
+    let result;
+    try {
+      loadFluentModule(${JSON.stringify(projectDir)}, ${JSON.stringify(specifier)});
+      result = { loaded: true };
+    } catch (e) {
+      result = { loaded: false, code: e.code, name: e.name, message: e.message };
+    }
+    result.ran = globalThis.__fluentOutsideRan === true;
+    process.stdout.write(JSON.stringify(result));
+  `;
+  const child = spawnSync(process.execPath, ['-e', script], {
+    env: { ...process.env, NODE_PATH: '', ...env },
+    encoding: 'utf8',
+  });
+  assert.equal(child.status, 0, child.stderr);
+  return JSON.parse(child.stdout);
+}
+
+test('loadFluentModule never loads an adapter that only NODE_PATH resolves', () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const outside = mkWorkspace();
+  writeFixturePackage(
+    outside,
+    '@fixture/fluent-nodepath',
+    'globalThis.__fluentOutsideRan = true; exports.createFluentEngine = () => "outside";'
+  );
+  const result = loadInChild(ws, '@fixture/fluent-nodepath', { NODE_PATH: path.join(outside, 'node_modules') });
+  assert.equal(result.ran, false, 'the NODE_PATH adapter never ran');
+  assert.equal(result.loaded, false);
+  assert.equal(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+});
+
+test('loadFluentModule never loads an adapter from a global folder (~/.node_modules)', () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const home = mkWorkspace();
+  const dir = path.join(home, '.node_modules', '@fixture', 'fluent-global');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: '@fixture/fluent-global', main: 'index.js' }));
+  fs.writeFileSync(path.join(dir, 'index.js'), 'globalThis.__fluentOutsideRan = true; exports.createFluentEngine = () => "global";');
+  const result = loadInChild(ws, '@fixture/fluent-global', { HOME: home, USERPROFILE: home });
+  assert.equal(result.ran, false, 'the global-folder adapter never ran');
+  assert.equal(result.loaded, false);
+  assert.equal(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+});
+
+test('a NODE_PATH that points inside the server install still loads the server copy', () => {
+  // The server's own install stays trusted however Node reached it: here NODE_PATH
+  // names the monorepo's own node_modules, which is also in the server's ancestry.
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const repoNodeModules = path.resolve(__dirname, '../../../node_modules');
+  const result = loadInChild(ws, 'zod', { NODE_PATH: repoNodeModules });
+  assert.equal(result.loaded, true, result.message);
+});
+
 /** Asserts the project adapter `specifier` is refused and its code never ran (`flag` stays unset). */
 function assertRefusedUnrun(projectDir, specifier, workspaceDir, flag) {
   assert.throws(() => loadFluentModule(projectDir, specifier, workspaceDir), FluentAdapterOutsideWorkspaceError);
