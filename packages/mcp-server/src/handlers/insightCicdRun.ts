@@ -610,7 +610,8 @@ async function fetchAtfOutcome(
     body = await cicdCall("GET", cicdEndpoint(path), "ATF result", budget);
   } catch (e) {
     return {
-      unreadable: `ATF result ${resultId} could not be read: ${e instanceof Error ? e.message : String(e)}`,
+      // The trailing period is dropped: the reason is quoted mid-sentence.
+      unreadable: `ATF result ${resultId} could not be read: ${(e instanceof Error ? e.message : String(e)).replace(/\.$/, "")}`,
       notFound: e instanceof CicdRunIncomplete && e.httpStatus === 404,
     };
   }
