@@ -372,6 +372,11 @@ function spawnServer(cwd, serverEntry) {
     }
   }
   env.SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES = "false";
+  // The audit state dir is not a credential source. Keep it, so a test run that
+  // isolates it does not have the server write markers into the real home.
+  if (process.env.SYNCRONA_AUDIT_STATE_DIR) {
+    env.SYNCRONA_AUDIT_STATE_DIR = process.env.SYNCRONA_AUDIT_STATE_DIR;
+  }
   return spawn(process.execPath, [serverEntry], {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],

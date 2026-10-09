@@ -4,7 +4,7 @@
   "packageManager": "npm",
   "testRunner": "command",
   "commandRunner": {
-    "command": "cd packages/mcp-server && npx tsc && node --test test/*.test.js"
+    "command": "cd packages/mcp-server && npx tsc && node --require ./test/isolate-state.cjs --test test/*.test.js"
   },
   "coverageAnalysis": "off",
   "mutate": [
