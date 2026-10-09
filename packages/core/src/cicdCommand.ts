@@ -40,8 +40,10 @@
  * still given, because it decides which result record an ATF tracker links to;
  * the dispatch flags are ignored. A tracker that links an ATF result is refused
  * (exit 1) when resumed as install/publish/rollback, and an ATF action over a
- * tracker that links no result is refused (exit 1) on a resume, never read as
- * a test failure or a pass. The tracker does not record
+ * successful tracker that links no result is refused (exit 1) on a resume,
+ * never read as a pass. An ATF tracker that ended in error or was cancelled
+ * before linking a result exits 2 whether it was dispatched or resumed, with a
+ * message that reports no tests rather than failing ones. The tracker does not record
  * which app-repo action started it, so install, publish and rollback cannot be
  * told apart on a resume: that one is taken on the caller's word, with a warning.
  *
@@ -654,6 +656,25 @@ async function fetchAtfOutcome(
   };
 }
 
+/**
+ * Why an ATF tracker that ended in error or cancelled without linking a result
+ * failed. It never claims failing tests. On a resume the tracker kind is the
+ * caller's word, and a failed app-repo tracker has the same shape, so the
+ * message names that possibility instead of asserting either one.
+ */
+function endedWithoutAtfResult(
+  progress: JsonObject,
+  instanceReason: string | undefined,
+  resumeId: string | undefined
+): string {
+  const ended =
+    `the tracker ended ${statusLabel(progress)}${instanceReason ? ` (${instanceReason})` : ""} ` +
+    "before linking an ATF result record, so no test results were reported";
+  return resumeId
+    ? `${ended}; if progress ${resumeId} is an install, publish or rollback run rather than an ATF run, resume it with that action to report it under its own name`
+    : ended;
+}
+
 /** Runs one action end to end and returns its exit code. */
 async function runAction(
   deps: CicdCommandDeps,
@@ -692,9 +713,9 @@ async function runAction(
   // tracker in both directions before any verdict. A tracker that links an ATF
   // result is a test run: reporting it as an app-repo action would skip the
   // pass/fail read, whatever its status. The other direction (an app tracker
-  // resumed as an ATF action) links no result: whatever its status, it says
-  // nothing about tests, so a failed install must not read as failing tests nor
-  // a successful one as a pass. Install, publish and rollback trackers look the
+  // resumed as an ATF action) links no result: a successful one must not read
+  // as a pass, and a failed one is reported as a run that ended before any test
+  // result, never as failing tests. Install, publish and rollback trackers look the
   // same, so a resumed app action is reported on the caller's word (warned).
   if (resumeId && !isAtfAction && trackerLinksAtfResult(progress)) {
     throw new CicdCliError(
@@ -702,7 +723,11 @@ async function runAction(
         "Resume it with the run-suite or run-test action to read whether the tests passed."
     );
   }
-  if (resumeId && isAtfAction && !trackerLinksAtfResult(progress)) {
+  // Only a SUCCESSFUL tracker is refused: an ATF run that was cancelled or failed
+  // before it linked its result looks exactly like a failed app-repo run, and a
+  // dispatched ATF run in that state exits 2, so a resume of it must too.
+  const atfWithoutResult = isAtfAction && !trackerLinksAtfResult(progress);
+  if (resumeId && atfWithoutResult && status === CicdProgressStatus.SUCCESSFUL) {
     throw new CicdCliError(
       `progress ${progressId} links no ATF result record, so it looks like an app-repo run rather than ${action} ` +
         `(it ended ${statusLabel(progress)}). Resume it with the install, publish or rollback action that started it; ` +
@@ -767,13 +792,16 @@ async function runAction(
   if (succeeded) {
     logger.success(`cicd ${action} completed successfully. ✅`);
   } else {
+    const instanceReason = extractCicdErrorMessage({ result: progress });
     const reason =
-      extractCicdErrorMessage({ result: progress }) ??
-      (status !== CicdProgressStatus.SUCCESSFUL
-        ? statusLabel(progress)
-        : atf?.verdict === "no_tests"
-          ? "the suite ran no tests, which is not a pass"
-          : "ATF reported failing tests");
+      status !== CicdProgressStatus.SUCCESSFUL && atfWithoutResult
+        ? endedWithoutAtfResult(progress, instanceReason, resumeId)
+        : (instanceReason ??
+          (status !== CicdProgressStatus.SUCCESSFUL
+            ? statusLabel(progress)
+            : atf?.verdict === "no_tests"
+              ? "the suite ran no tests, which is not a pass"
+              : "ATF reported failing tests"));
     logger.error(`cicd ${action} finished with failures: ${reason}`);
   }
   return exitCode;
