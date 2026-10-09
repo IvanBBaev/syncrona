@@ -19,12 +19,14 @@ const http = (status: number) =>
     response: { status, data: {} },
   });
 
-let endpointMode: "missing" | "empty" = "missing";
+let endpointMode: "missing" | "empty" | "tableless" = "missing";
 const fake = {
   getManifest: jest.fn((scope: string) =>
     endpointMode === "missing"
       ? (Promise.reject(http(404)) as Promise<never>)
-      : ok({ scope, tables: {} })
+      : endpointMode === "tableless"
+        ? ok({ scope })
+        : ok({ scope, tables: {} })
   ),
   tableAPIGet: jest.fn((table: string, query: string) => {
     if ((table === "sys_app" || table === "sys_scope") && /^scope=/.test(query)) {
@@ -144,6 +146,16 @@ describe("`syncrona refresh` keeps the scopeId init --new wrote", () => {
     await ConfigManager.loadConfigs();
     const { syncManifest } = await import("../downloadPipeline.js");
     await expect(syncManifest()).resolves.toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(path.join(tmp, "sync.manifest.json"), "utf8"));
+    expect(manifest).toEqual({ scope: "x_acme_asset_track", scopeId: SCOPE_ID, tables: {} });
+  });
+
+  it("succeeds when the scoped endpoint answers without a tables key", async () => {
+    endpointMode = "tableless";
+    await ConfigManager.loadConfigs();
+    const { syncManifest } = await import("../downloadPipeline.js");
+    await expect(syncManifest()).resolves.toBe(true);
+    expect(logger.error).not.toHaveBeenCalled();
     const manifest = JSON.parse(fs.readFileSync(path.join(tmp, "sync.manifest.json"), "utf8"));
     expect(manifest).toEqual({ scope: "x_acme_asset_track", scopeId: SCOPE_ID, tables: {} });
   });

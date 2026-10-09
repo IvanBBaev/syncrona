@@ -479,6 +479,13 @@ export const syncManifest = async (): Promise<boolean> => {
         throw e;
       }
     }
+    // The scoped endpoint may answer a scope it finds nothing in without a
+    // `tables` key at all. The empty-scope message below tolerated that, but the
+    // manifest was then written without `tables` and the missing-file probe died
+    // on Object.keys(undefined), failing the refresh of a freshly created scope.
+    if (!newManifest.tables) {
+      newManifest = { ...newManifest, tables: {} };
+    }
     if (fromScopedEndpoint) {
       // The scoped endpoint lists an included column whatever its dictionary
       // type, and processMissingFiles would then ask it for the value. Filtered

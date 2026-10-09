@@ -83,6 +83,11 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 
 ### Fixed
 
+- `refresh` no longer fails on a scope that owns no records yet when the
+  companion scoped endpoint answers without a `tables` key. The manifest was
+  written without `tables`, and the missing-file check then stopped with
+  "Cannot convert undefined or null to object". The answer now counts as an
+  empty table map, the same as `{ tables: {} }`.
 - With OAuth, when the token endpoint rejected the first token request and
   then granted a second one, a core CLI command received the token endpoint's
   JSON in place of the instance's answer, and the request it was meant to send
