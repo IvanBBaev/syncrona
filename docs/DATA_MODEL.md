@@ -229,6 +229,11 @@ first `refresh` or `download` with these rules:
 - A record whose name was stored verbatim but is now made to fit (181 to 255
   bytes, or a tab or other control character) has its folder renamed in the
   same way, with the same `Renamed` warning.
+- When a collision dissolves, because the other members were deleted on the
+  instance, the remaining record's suffixed folder is renamed back to the plain
+  name, for example `Foo_<sys_id>` to `Foo`, with the same `Renamed` warning.
+  If a folder with the plain name already exists, the suffixed one is left in
+  place with a `Left ... in place` warning.
 - A colliding long name that an earlier version suffixed on top of the
   180-byte budget (up to 213 bytes) has its folder renamed to the cut form
   that fits, in the same way.

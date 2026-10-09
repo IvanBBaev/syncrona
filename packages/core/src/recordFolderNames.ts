@@ -416,7 +416,8 @@ export interface FolderMigrationResult {
  * Upgrade step for an existing checkout: when a refresh or download renames a
  * record's folder because of the naming rules, move the folder the previous
  * manifest wrote instead of downloading a second copy beside an orphan. Local,
- * unpushed edits in the folder move with it.
+ * unpushed edits in the folder move with it. That includes a collision that
+ * dissolved — the other member was deleted, so `Foo_<sys_id>` becomes `Foo`.
  *
  * A folder is moved only when the move is unambiguous: the previous manifest
  * gave the folder to exactly one record, no record of the new manifest still
