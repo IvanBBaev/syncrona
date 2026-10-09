@@ -425,16 +425,22 @@ describe("push --create for data-model records (R4)", () => {
     );
   });
 
-  it("does not discover columns for a table that is not a data-model table", async () => {
+  // Live finding (1.1.0): a new scope owns no records, so its tables never reach
+  // the manifest and the first sidecar create on an ordinary table failed.
+  it("discovers columns for a table that is not a data-model table", async () => {
     mockGetConfig.mockReturnValue({ pushConcurrency: 1, dataModelTables: [] });
+    mockDiscover.mockImplementation(async () => ({ fields: ["active", "name"], readOnly: [] }));
     const client = makeClient();
     const plan = await planFor(client, [
-      sidecarCandidate("x_demo_rule", "Rule", { name: "Rule" }),
+      sidecarCandidate("x_demo_rule", "Rule", { name: "Rule", active: "false" }),
     ]);
-    const outcome = await Pipeline.createRecords(plan, { client: asClient(client) });
-    expect(mockDiscover).not.toHaveBeenCalled();
-    // Without metaFields the sidecar still fails as before.
-    expect(outcome.results[0].success).toBe(false);
+    const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    expect(mockDiscover).toHaveBeenCalledTimes(1);
+    expect(mockDiscover.mock.calls[0][1]).toBe("x_demo_rule");
+    expect(outcome.results[0].success).toBe(true);
+    expect(client.createRecord.mock.calls[0][1]).toMatchObject({ name: "Rule", active: "false" });
+    const tables = manifest.tables as Record<string, Record<string, unknown>>;
+    expect(tables.x_demo_rule.metaFields).toEqual(["active", "name"]);
   });
 });
 

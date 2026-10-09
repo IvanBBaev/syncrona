@@ -30,7 +30,6 @@ import {
 import {
   applyDataModelTableOptions,
   getDataModelTables,
-  isDataModelTable,
   isPruneDeniedTable,
   nameFieldColumn,
 } from "./dataModel.js";
@@ -1587,10 +1586,12 @@ export interface CreationOutcome {
 }
 
 /**
- * R4: discover the sidecar columns of a data-model table the manifest does not
- * know yet. Undefined when discovery does not apply: no sidecar, a table the
- * manifest already describes, or a table that is not a data-model table (whose
- * sidecar keeps failing on the degraded-manifest check, as before).
+ * R4: discover the sidecar columns of a table the manifest does not know yet.
+ * Any table qualifies, not only data-model ones: a new scope owns no records,
+ * so `refresh` leaves its tables out of the manifest and the first sidecar
+ * create on, say, sys_script would otherwise fail the degraded-manifest check.
+ * Undefined when discovery does not apply: no sidecar, sidecar push turned
+ * off, or a table the manifest already describes.
  */
 const discoverCreateMeta = async (
   client: SNClient,
@@ -1599,7 +1600,6 @@ const discoverCreateMeta = async (
   if (!candidate.files.some((file) => file.isSidecar)) return undefined;
   const config = ConfigManager.getConfig() as Sync.Config;
   if (config.meta === false || config.metaPush === false) return undefined;
-  if (!isDataModelTable(candidate.table, config)) return undefined;
   const known = readManifest().tables?.[candidate.table];
   if (known?.metaFields?.length) return undefined;
   // Loaded on demand: the manifest builder is a large module, and this branch
