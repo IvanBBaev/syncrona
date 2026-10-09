@@ -687,6 +687,19 @@ test('handleCicdRun: a redirect loop on the dispatch is reported the same way', 
   });
 });
 
+test('handleCicdRun: an axios-style redirect code or message is a redirect loop too', async () => {
+  const byCode = Object.assign(new Error('request failed'), { code: 'ERR_FR_TOO_MANY_REDIRECTS' });
+  const byMessage = new Error('Maximum number of redirects exceeded');
+  for (const failure of [byCode, byMessage]) {
+    await withEnv(async () => {
+      mockFetch({ 'POST /api/sn_cicd/app_repo/install': failure });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete');
+      assert.equal(body.message, fenced(redirectLoop('install')));
+    });
+  }
+});
+
 test('handleCicdRun: a failing progress poll → incomplete with the progress id kept', async () => {
   await withEnv(async () => {
     mockFetch({
