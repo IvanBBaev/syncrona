@@ -102,6 +102,12 @@ describe.each(["missing", "empty"] as const)(
       const refusal = errors.find((m) => m.startsWith("No tables discovered"));
       expect(refusal).toMatch(/No tables discovered for scope "x_acme_asset_track"/);
       expect(refusal).toMatch(/owns no records yet, there is nothing to download/);
+      // The scope exists, so `init --new` (which refuses an existing scope and
+      // points back at `download`) must not be the advice: that loop has no exit.
+      expect(refusal).not.toMatch(/init --new/);
+      expect(refusal).toMatch(/excludes: \{ <table>: false \}/);
+      expect(refusal).toMatch(/syncrona config show-defaults/);
+      expect(refusal).toMatch(/dataModelTables/);
       expect(fs.existsSync(path.join(tmp, "sync.manifest.json"))).toBe(false);
     });
   }

@@ -1848,7 +1848,8 @@ export async function buildManifestFromTableAPI(
   const scopeId = await getScopeId(client, scopeName);
   if (!scopeId) {
     throw new Error(
-      `Scope "${scopeName}" not found on this instance. Check the scope code.`
+      `Scope "${scopeName}" not found on this instance. Check the scope code, or create the application ` +
+        "with `syncrona init --new`, which binds the new, empty scope."
     );
   }
   const ctx = tableEnumerationContext(client, scopeId, config);
@@ -1876,11 +1877,18 @@ export async function buildManifestFromTableAPI(
     // A populated scope never has zero discoverable tables; an empty result
     // here almost always means connectivity/ACL trouble. Refuse to build an
     // empty manifest that would overwrite a previously good one.
+    //
+    // The scope exists (getScopeId found it), so `init --new` is no way out
+    // here: it refuses an existing scope and sends the user back to `download`.
+    // The advice is what can change the result for an existing scope: a record
+    // in it, or opting a default-excluded table back in.
     throw new Error(
       `No tables discovered for scope "${scopeName}". ` +
         "Refusing to build an empty manifest (check connectivity, credentials, and ACLs). " +
-        "If the scope is new and owns no records yet, there is nothing to download: create a record " +
-        "in it on the instance first, or create the application with `syncrona init --new`, which binds an empty scope."
+        "If the scope owns no records yet, there is nothing to download: create a record in it on the " +
+        "instance first. Records only in tables excluded by default are not counted either (list them with " +
+        "`syncrona config show-defaults`); opt such a table in with `excludes: { <table>: false }` in " +
+        "sync.config.js, or list a data-model table (e.g. sys_dictionary, sys_choice) in `dataModelTables`."
     );
   }
   // R4: an opted-in table is enumerated even when the sys_metadata sweep did
