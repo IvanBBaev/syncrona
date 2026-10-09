@@ -407,8 +407,10 @@ function isRedirectLoopError(err: unknown): boolean {
 /**
  * Whether a 2xx body is an HTML page: it starts with `<`. sn_cicd only answers
  * JSON, so this is an SSO/login (or hibernation) page served in place of the
- * API. Core also checks a `text/html` content type; `snRequest` returns no
- * headers, so the body is the only signal here.
+ * API. The body is the only signal (`snRequest` returns no headers), and a body
+ * that parsed as JSON is a JSON answer whatever its content type said. Must
+ * match `isHtmlAnswer` in core's `cicdCommand.ts`, which ignores the content
+ * type for the same reason.
  */
 function isHtmlBody(data: unknown): boolean {
   return typeof data === "string" && data.trimStart().startsWith("<");

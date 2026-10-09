@@ -640,6 +640,22 @@ test('handleCicdRun: an HTML page instead of JSON → incomplete, as a session/a
   });
 });
 
+// Review round 8-o, finding 1 (parity with core): the body decides, not the
+// content type. A JSON body served as text/html is a JSON answer on both sides.
+test('handleCicdRun: a JSON body under a text/html content type → passed', async () => {
+  await withEnv(async () => {
+    const asHtml = (response) => ({ ...response, headers: new Headers({ 'content-type': 'text/html; charset=UTF-8' }) });
+    mockFetch({
+      'POST /api/sn_cicd/app_repo/install': asHtml(dispatched()),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: asHtml(progress('2')),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'succeeded');
+    assert.equal(body.exitCode, 0);
+    assert.equal(body.verdict, 'passed');
+  });
+});
+
 test('handleCicdRun: a non-JSON answer that is not HTML → incomplete without a JSON result', async () => {
   await withEnv(async () => {
     mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(200, 'Bad gateway') });
