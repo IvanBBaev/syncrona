@@ -674,8 +674,7 @@ test('handleCicdRun: a redirect loop on a poll is a session/authentication failu
     assert.equal(body.exitCode, 1);
     assert.equal(body.message, fenced(redirectLoop('progress')));
     assert.equal(body.progressId, PROGRESS_ID);
-    // One poll; snRequest's own attempts are the transport's (see the retry tests).
-    assert.ok(calls.filter((c) => c.path === `/api/sn_cicd/progress/${PROGRESS_ID}`).length <= 3);
+    assert.equal(calls.filter((c) => c.path === `/api/sn_cicd/progress/${PROGRESS_ID}`).length, 1);
   });
 });
 
@@ -712,49 +711,59 @@ test('handleCicdRun: a network failure → incomplete', async () => {
   });
 });
 
-// A poll that fails after snRequest's own sub-second retries is tried again,
-// one pollMs apart, up to CICD_MAX_POLL_FAILURES times in a row.
+// Review round 8, finding 2 (parity with core): every sn_cicd request is sent
+// once, as core's axios client sends it, and only the poll loop retries a
+// transient failure, one pollMs apart, up to CICD_MAX_POLL_FAILURES times in a
+// row. A persistent failure therefore costs the same number of requests on both
+// sides.
 const POLL_PATH = `GET /api/sn_cicd/progress/${PROGRESS_ID}`;
 const pollCalls = (calls) => calls.filter((c) => `${c.method} ${c.path}` === POLL_PATH).length;
 
-test('handleCicdRun: a 503 poll that outlasts the transport retries is polled again → succeeded', async () => {
-  await withEnv(async () => {
-    const down = mkResponse(503, 'Service Unavailable');
-    const calls = mockFetch({
-      'POST /api/sn_cicd/app_repo/install': dispatched(),
-      [POLL_PATH]: [down, down, down, progress('2')],
+for (const [label, failure] of [
+  ['a 503', () => mkResponse(503, 'Service Unavailable')],
+  ['a 408', () => mkResponse(408, 'Request Timeout')],
+  ['a 425', () => mkResponse(425, 'Too Early')],
+  ['a 429', () => mkResponse(429, {})],
+  ['a network failure', () => new Error('ECONNRESET')],
+]) {
+  test(`handleCicdRun: ${label} on a poll is polled again, one request per poll → succeeded`, async () => {
+    await withEnv(async () => {
+      const calls = mockFetch({
+        'POST /api/sn_cicd/app_repo/install': dispatched(),
+        [POLL_PATH]: [failure(), failure(), progress('2')],
+      });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'succeeded');
+      assert.equal(body.exitCode, 0);
+      assert.equal(pollCalls(calls), 3, 'two failed polls and the one that answered, no transport retry');
     });
-    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
-    assert.equal(body.outcome, 'succeeded');
-    assert.equal(body.exitCode, 0);
-    assert.equal(pollCalls(calls), 4);
   });
-});
+}
 
-test('handleCicdRun: a network failure on a poll is polled again → succeeded', async () => {
-  await withEnv(async () => {
-    const reset = new Error('ECONNRESET');
-    const calls = mockFetch({
-      'POST /api/sn_cicd/app_repo/install': dispatched(),
-      [POLL_PATH]: [reset, reset, reset, progress('2')],
+for (const [status, text] of [[503, 'Service Unavailable'], [408, 'Request Timeout'], [425, 'Too Early']]) {
+  test(`handleCicdRun: a persistent ${status} on a poll → incomplete after 3 requests, as in core`, async () => {
+    await withEnv(async () => {
+      const calls = mockFetch({
+        'POST /api/sn_cicd/app_repo/install': dispatched(),
+        [POLL_PATH]: mkResponse(status, text),
+      });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete');
+      assert.equal(body.exitCode, 1);
+      assert.equal(body.progressId, PROGRESS_ID);
+      assert.match(body.message, new RegExp(`progress request failed with HTTP ${status}`));
+      assert.equal(pollCalls(calls), 3, '3 polls x 1 request');
     });
-    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
-    assert.equal(body.outcome, 'succeeded');
-    assert.equal(pollCalls(calls), 4);
   });
-});
+}
 
-test('handleCicdRun: three failed polls in a row → incomplete with the progress id kept', async () => {
+test('handleCicdRun: a 503 on the dispatch is sent once → incomplete', async () => {
   await withEnv(async () => {
-    const calls = mockFetch({
-      'POST /api/sn_cicd/app_repo/install': dispatched(),
-      [POLL_PATH]: mkResponse(503, 'Service Unavailable'),
-    });
-    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    const calls = mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(503, 'Service Unavailable') });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
     assert.equal(body.outcome, 'incomplete');
-    assert.equal(body.progressId, PROGRESS_ID);
-    assert.match(body.message, /progress request failed with HTTP 503/);
-    assert.equal(pollCalls(calls), 9, '3 polls x 3 transport attempts');
+    assert.equal(body.exitCode, 1);
+    assert.equal(calls.length, 1);
   });
 });
 
@@ -770,21 +779,8 @@ test('handleCicdRun: a 401 on a poll is not polled again', async () => {
   });
 });
 
-// Review round 7, finding 3 (parity with core): 408 is retryable like 429 and
-// 5xx, and a 3xx is an unexpected redirect, not a client error.
-test('handleCicdRun: a 408 on a poll is polled again → succeeded', async () => {
-  await withEnv(async () => {
-    const slow = mkResponse(408, 'Request Timeout');
-    const calls = mockFetch({
-      'POST /api/sn_cicd/app_repo/install': dispatched(),
-      [POLL_PATH]: [slow, slow, slow, progress('2')],
-    });
-    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
-    assert.equal(body.outcome, 'succeeded');
-    assert.ok(pollCalls(calls) >= 2, 'the 408 poll was retried');
-  });
-});
-
+// Review round 7, finding 3 (parity with core): a 3xx is an unexpected
+// redirect, not a client error.
 // fetch follows a redirect itself, so a 3xx reaches the handler only as a 304,
 // a redirect without a Location, or one fetch did not follow: the message makes
 // no claim about following and names no target.

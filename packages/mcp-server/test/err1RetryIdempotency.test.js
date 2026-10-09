@@ -117,3 +117,85 @@ test('POST IS retried on a pre-send ECONNREFUSED (never reached the server)', as
     assert.equal(calls, 3, 'a pre-send connection failure is safe to retry');
   });
 });
+
+// Review round 8, finding 2: `retryTransient: false` sends each request once,
+// like core's axios client, so a caller with its own retry loop (sync_cicd_run's
+// poll) owns every retry. The OAuth 401 refresh is not a transient retry and
+// stays.
+const { snRequestWithConfig } = servicenowCore;
+const BASIC_CONFIG = { instance: 'dev123.service-now.com', user: 'admin', password: 'secret' };
+const OAUTH_CONFIG = { ...BASIC_CONFIG, clientId: 'cid-once', clientSecret: 'secret' };
+const NO_RETRY = { retryTransient: false };
+const resetError = () => Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+
+test('retryTransient: false sends a GET once on a retryable 503', async () => {
+  await withEnv(BASIC_ENV, async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls += 1;
+      return mkResponse(503, 'Service Unavailable');
+    };
+    const res = await snRequestWithConfig(BASIC_CONFIG, 'GET', 'api/sn_cicd/progress/p', undefined, 5000, NO_RETRY);
+    assert.equal(res.status, 503);
+    assert.equal(calls, 1);
+  });
+});
+
+test('retryTransient: false does not re-send a GET after a network error', async () => {
+  await withEnv(BASIC_ENV, async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls += 1;
+      throw resetError();
+    };
+    await assert.rejects(
+      snRequestWithConfig(BASIC_CONFIG, 'GET', 'api/sn_cicd/progress/p', undefined, 5000, NO_RETRY),
+      /fetch failed/
+    );
+    assert.equal(calls, 1);
+  });
+});
+
+test('retryTransient: false does not retry a failed OAuth token fetch', async () => {
+  await withEnv(BASIC_ENV, async () => {
+    let apiCalls = 0;
+    let tokenCalls = 0;
+    global.fetch = async (input) => {
+      if (String(input).endsWith('oauth_token.do')) {
+        tokenCalls += 1;
+        throw resetError();
+      }
+      apiCalls += 1;
+      return mkResponse(200, { result: {} });
+    };
+    await assert.rejects(
+      snRequestWithConfig(OAUTH_CONFIG, 'GET', 'api/sn_cicd/progress/p', undefined, 5000, NO_RETRY)
+    );
+    const once = tokenCalls;
+    clearTokenManagerCache();
+    tokenCalls = 0;
+    await assert.rejects(snRequestWithConfig(OAUTH_CONFIG, 'GET', 'api/sn_cicd/progress/p', undefined, 5000));
+    assert.equal(apiCalls, 0);
+    assert.ok(once >= 1);
+    assert.equal(tokenCalls, once * 3, 'the default retries the token fetch per attempt; false tries it once');
+  });
+});
+
+test('retryTransient: false still refreshes an OAuth token once on a 401', async () => {
+  await withEnv(BASIC_ENV, async () => {
+    let apiCalls = 0;
+    let tokenCalls = 0;
+    global.fetch = async (input) => {
+      if (String(input).endsWith('oauth_token.do')) {
+        tokenCalls += 1;
+        const token = { access_token: `tok-${tokenCalls}`, refresh_token: 'r', expires_in: 1800 };
+        return { ...mkResponse(200, token), ok: true };
+      }
+      apiCalls += 1;
+      return apiCalls === 1 ? mkResponse(401, 'unauthorized') : mkResponse(200, { result: { ok: true } });
+    };
+    const res = await snRequestWithConfig(OAUTH_CONFIG, 'GET', 'api/sn_cicd/progress/p', undefined, 5000, NO_RETRY);
+    assert.equal(res.status, 200);
+    assert.equal(apiCalls, 2);
+  });
+});
