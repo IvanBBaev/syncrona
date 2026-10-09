@@ -299,11 +299,16 @@ const DISCOVERY_OVERRIDES = [
   "GIT_PREFIX",
 ];
 
+// GIT_LITERAL_PATHSPECS: every path repair hands git names one file, never a
+// pattern. A record name such as `Approval [old]` is a glob to git (`[old]`
+// matches one of `o`, `l`, `d`), so a pathspec reading of it reaches another
+// record's file.
 const gitEnv = (): NodeJS.ProcessEnv => {
   const env = { ...process.env };
   for (const key of DISCOVERY_OVERRIDES) {
     delete env[key];
   }
+  env.GIT_LITERAL_PATHSPECS = "1";
   return env;
 };
 
@@ -359,11 +364,67 @@ const runGit = (cwd: string, args: string[], input?: string): Promise<string> =>
 const stdinPath = (full: string): string =>
   full.startsWith('"') ? `"${full.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : full;
 
-/** What git says about the orphans: the ones it can restore, and the ones it could not read. */
-type GitEvidence = { restorable: Set<string>; unreadable: Map<string, string> };
+/**
+ * What git says about the orphans: the ones it can restore byte for byte, the
+ * ones whose content matches HEAD only through a conversion (a clean filter or
+ * line-ending normalization), and the ones it could not read.
+ */
+type GitEvidence = {
+  restorable: Set<string>;
+  converted: Set<string>;
+  unreadable: Map<string, string>;
+};
+
+type HashEntry = { file: string; full: string };
 
 /**
- * The orphans git can give back: files whose content is exactly a blob of the
+ * `git hash-object --stdin-paths [extra]` over `entries`, run from the top
+ * level (--stdin-paths names are read from there). Paths go to git on stdin,
+ * not as arguments, so no command-line length limit (32,767 characters on
+ * Windows) applies however many orphans there are. One file git cannot read
+ * (permissions, a file locked on Windows) lands in `unreadable` with git's
+ * reason and the rest are still hashed; a failure that is not about one file
+ * throws.
+ */
+async function hashPaths(
+  toplevel: string,
+  entries: HashEntry[],
+  extra: string[],
+  key: (name: string) => string,
+  unreadable: Map<string, string>
+): Promise<Map<string, string>> {
+  const hashes = new Map<string, string>();
+  const take = (batch: HashEntry[], printed: string[]): void => {
+    batch.forEach(({ file }, index) => hashes.set(file, printed[index]));
+  };
+  const hashesOf = (stdout: string): string[] => stdout.split(/\r?\n/).filter((h) => h !== "");
+  let queue = entries;
+  while (queue.length > 0) {
+    const input = queue.map(({ full }) => stdinPath(full)).join("\n") + "\n";
+    try {
+      take(queue, hashesOf(await runGit(toplevel, ["hash-object", ...extra, "--stdin-paths"], input)));
+      break;
+    } catch (e) {
+      // git hashes in order and stops at the first path it cannot read: the
+      // hashes it printed belong to the paths before it.
+      const done = e instanceof GitError ? hashesOf(e.stdout) : [];
+      const culprit = queue[done.length];
+      const reason = e instanceof Error ? e.message : String(e);
+      // A failure that does not name the next path is not about one file: git
+      // cannot answer, and nothing is vouched for.
+      if (!culprit || !key(reason).includes(key(culprit.full))) {
+        throw e;
+      }
+      take(queue.slice(0, done.length), done);
+      unreadable.set(culprit.file, reason);
+      queue = queue.slice(done.length + 1);
+    }
+  }
+  return hashes;
+}
+
+/**
+ * The orphans git can give back: files whose bytes are exactly a blob of the
  * HEAD commit at the same path. That is the whole rule `--prune` deletes by.
  *
  * "No manifest record claims it" describes two very different files: the
@@ -374,30 +435,29 @@ type GitEvidence = { restorable: Set<string>; unreadable: Map<string, string> };
  * deleting it loses nothing. Everything else — untracked, ignored, staged but
  * never committed, or edited since HEAD (staged or not) — is kept.
  *
- * Content is compared by hash (`hash-object` applies the same clean/eol filters
- * a commit does) rather than read from `git status`, so neither an index flag
- * (assume-unchanged, skip-worktree) nor a stale stat cache can make an edited
- * file look clean.
+ * Content is compared by hash rather than read from `git status`, so neither an
+ * index flag (assume-unchanged, skip-worktree) nor a stale stat cache can make
+ * an edited file look clean.
  *
- * Line endings, decided deliberately: because the clean filter runs, a working
- * copy that differs from its blob only in line terminators (a CRLF copy of an
- * LF blob under `text=auto` or `core.autocrlf`) hashes to the committed blob and
- * is prunable. Its restore is byte-for-byte whenever the repository's eol policy
- * writes the terminators the file had (`core.autocrlf=true` checks a CRLF copy
- * out as CRLF); otherwise the checkout writes the policy's terminators. Either
- * way every line of text comes back — only the terminators can differ, and they
- * are the ones the repository itself chose — so no content is lost and the rule
- * stays "git can restore it".
+ * The hash is of the raw bytes (`hash-object --no-filters`), not of what a
+ * commit would store. A clean filter can be lossy — one that redacts a secret
+ * turns `SECRET` into the `REDACTED` the commit holds — and then the filtered
+ * hash matches the blob while a checkout writes back `REDACTED`: the file is
+ * not restorable, it only looks committed. Line-ending normalization is the
+ * common case of the same thing: a CRLF copy of an LF blob (`text=auto`,
+ * `core.autocrlf`) matches only after conversion. Such a file is kept and
+ * reported as "matches HEAD only after conversion", never pruned: the safe
+ * direction, at the cost of keeping a CRLF checkout git could arguably have
+ * reproduced. A second, filtered hash of the raw mismatches tells that case
+ * apart from a real edit, for the report only.
  *
  * Names: git with `core.precomposeunicode` (macOS's default) records a name in
  * NFC while the file system hands back the NFD a tool may have written, so with
  * that setting both sides are compared in NFC. Without it, NFC and NFD names are
  * distinct paths to git and are compared as they are.
  *
- * One file git cannot read (permissions, a file locked on Windows) is kept with
- * git's reason and the rest are still judged. Throws when git cannot answer at
- * all: git missing, the source directory outside a repository, or a repository
- * with no commit yet.
+ * Throws when git cannot answer at all: git missing, the source directory
+ * outside a repository, or a repository with no commit yet.
  */
 async function restorableFromGit(sourcePath: string, files: string[]): Promise<GitEvidence> {
   // `--show-toplevel` and `--show-prefix` print one line each, the prefix with a
@@ -433,48 +493,38 @@ async function restorableFromGit(sourcePath: string, files: string[]): Promise<G
   // reached through a symlink still lines up), then prefixed to a full name.
   // A name holding a line break cannot travel one-per-line on stdin; it is
   // simply not vouched for, so it is kept.
-  let queue = files
+  const candidates = files
     .map((file) => ({
       file,
       full: prefix + path.relative(sourcePath, file).split(path.sep).join("/"),
     }))
     .filter(({ full }) => !/[\r\n]/.test(full) && committed.has(key(full)));
+  const blobOf = ({ full }: HashEntry): string | undefined => committed.get(key(full));
 
-  const restorable = new Set<string>();
   const unreadable = new Map<string, string>();
-  const take = (batch: typeof queue, hashes: string[]): void => {
-    batch.forEach(({ file, full }, index) => {
-      if (hashes[index] === committed.get(key(full))) {
-        restorable.add(file);
-      }
-    });
-  };
-  const hashesOf = (stdout: string): string[] => stdout.split(/\r?\n/).filter((h) => h !== "");
-  // Paths go to git on stdin, not as arguments, so no command-line length limit
-  // (32,767 characters on Windows) applies however many orphans there are. Run
-  // from the top level: --stdin-paths names are read from there.
-  while (queue.length > 0) {
-    const input = queue.map(({ full }) => stdinPath(full)).join("\n") + "\n";
-    try {
-      take(queue, hashesOf(await runGit(toplevel, ["hash-object", "--stdin-paths"], input)));
-      break;
-    } catch (e) {
-      // git hashes in order and stops at the first path it cannot read: the
-      // hashes it printed belong to the paths before it.
-      const done = e instanceof GitError ? hashesOf(e.stdout) : [];
-      const culprit = queue[done.length];
-      const reason = e instanceof Error ? e.message : String(e);
-      // A failure that does not name the next path is not about one file: git
-      // cannot answer, and nothing is vouched for.
-      if (!culprit || !key(reason).includes(key(culprit.full))) {
-        throw e;
-      }
-      take(queue.slice(0, done.length), done);
-      unreadable.set(culprit.file, reason);
-      queue = queue.slice(done.length + 1);
+  const raw = await hashPaths(toplevel, candidates, ["--no-filters"], key, unreadable);
+  const restorable = new Set<string>();
+  const mismatched: HashEntry[] = [];
+  for (const entry of candidates) {
+    if (unreadable.has(entry.file)) {
+      continue;
+    }
+    if (raw.get(entry.file) === blobOf(entry)) {
+      restorable.add(entry.file);
+    } else {
+      mismatched.push(entry);
     }
   }
-  return { restorable, unreadable };
+  const converted = new Set<string>();
+  if (mismatched.length > 0) {
+    const filtered = await hashPaths(toplevel, mismatched, [], key, unreadable);
+    for (const entry of mismatched) {
+      if (!unreadable.has(entry.file) && filtered.get(entry.file) === blobOf(entry)) {
+        converted.add(entry.file);
+      }
+    }
+  }
+  return { restorable, converted, unreadable };
 }
 
 // POSIX single-quoting, only where a path needs it, so the common case stays
@@ -486,9 +536,15 @@ const shellQuote = (arg: string): string =>
 // beyond that it would be a wall of text, so a template is printed instead.
 const RESTORE_LIST_LIMIT = 10;
 
+// The restore command as printed. `--literal-pathspecs` because checkout reads
+// each path as a pathspec: `sys_script/Approval [old]/script.js` is a glob that
+// also matches `Approval o/script.js`, and a plain checkout would reset that
+// live file too, discarding its unpushed edit.
+const RESTORE_COMMAND = "git --literal-pathspecs checkout HEAD --";
+
 /** The command that brings pruned files back, from the commit that vouched for them. */
 function restoreHint(sourcePath: string, deleted: string[]): string {
-  const base = `git -C ${shellQuote(sourcePath)} checkout HEAD --`;
+  const base = `git -C ${shellQuote(sourcePath)} --literal-pathspecs checkout HEAD --`;
   if (deleted.length <= RESTORE_LIST_LIMIT) {
     const rels = deleted.map((file) =>
       shellQuote(path.relative(sourcePath, file).split(path.sep).join("/"))
@@ -563,6 +619,136 @@ async function awaitingCreate(orphans: string[]): Promise<Set<string>> {
     pending
       .filter(({ table, recordName }) => !tracksInstanceRecord(committed, table, recordName))
       .map(({ file }) => file)
+  );
+}
+
+/** Which orphans `--prune` deletes, and why each of the others is kept. */
+type PrunePlan = {
+  sourcePath: string;
+  prunable: string[];
+  keptPending: string[];
+  keptUnreadable: string[];
+  keptConverted: string[];
+  keptLocal: string[];
+  unreadable: Map<string, string>;
+};
+
+/**
+ * Sorts the orphans into the ones `--prune` deletes and the ones it keeps. The
+ * same plan drives the real run and `--apply --prune --dry-run`, so the preview
+ * names exactly the files a run would delete. Logs the refusal, sets the exit
+ * code and answers undefined when nothing may be pruned at all.
+ */
+async function planPrune(orphans: string[]): Promise<PrunePlan | undefined> {
+  // Refuse to prune when the source directory IS the project root (a
+  // `sourceDirectory` of "." or ""): the shape filter alone would still put
+  // every top-level `<dir>/<dir>/<file.ext>` in the repo — including the
+  // manifest's sibling packages — within deletion range.
+  if (path.resolve(ConfigManager.getSourcePath()) === path.resolve(ConfigManager.getRootDir())) {
+    logger.error(
+      "Refusing to prune: the source directory is the project root. Set a dedicated `sourceDirectory` in sync.config.js first."
+    );
+    process.exitCode = 1;
+    return undefined;
+  }
+  const sourcePath = path.resolve(ConfigManager.getSourcePath());
+  let evidence: GitEvidence;
+  try {
+    evidence = await restorableFromGit(sourcePath, orphans);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    logger.error(
+      `Refusing to prune: git cannot show which orphans are committed and unchanged (${reason}). ` +
+        "`--prune` deletes only files git can restore, so an orphan that is new local work " +
+        "(a script or column not pushed yet) is never lost. Commit the source directory to a " +
+        "git repository first, or delete the orphans listed above by hand."
+    );
+    process.exitCode = 1;
+    return undefined;
+  }
+  const { restorable, converted, unreadable } = evidence;
+  const pendingCreate = await awaitingCreate(orphans);
+  const judged = orphans.filter((orphan) => !pendingCreate.has(orphan));
+  return {
+    sourcePath,
+    prunable: judged.filter((orphan) => restorable.has(orphan)),
+    keptPending: orphans.filter((orphan) => pendingCreate.has(orphan)),
+    keptUnreadable: judged.filter((orphan) => unreadable.has(orphan)),
+    keptConverted: judged.filter((orphan) => converted.has(orphan)),
+    keptLocal: judged.filter(
+      (orphan) => !restorable.has(orphan) && !unreadable.has(orphan) && !converted.has(orphan)
+    ),
+    unreadable,
+  };
+}
+
+/** One warning per reason an orphan is kept. */
+function reportKept(plan: PrunePlan): void {
+  const list = (files: string[]): string => files.map((f) => `  ${f}`).join("\n");
+  if (plan.keptPending.length > 0) {
+    // Not "run push --create": a record deleted on the instance after the
+    // committed manifest was refreshed lands here too, and creating it would
+    // bring back what someone deleted.
+    logger.warn(
+      `Kept ${plan.keptPending.length} orphan file(s) of record(s) with no sys_id mapping ` +
+        "(awaiting `push --create`): neither the manifest nor the one HEAD committed maps them " +
+        "to an instance record, and `--prune` never deletes them, committed or not. " +
+        "`syncrona push --create` would create these records on the instance; if a record was " +
+        "deleted on the instance, delete its files by hand instead:\n" +
+        list(plan.keptPending)
+    );
+  }
+  if (plan.keptUnreadable.length > 0) {
+    logger.warn(
+      `Kept ${plan.keptUnreadable.length} orphan file(s) git could not read, so it cannot vouch ` +
+        "for their content:\n" +
+        plan.keptUnreadable.map((f) => `  ${f}: ${plan.unreadable.get(f)}`).join("\n")
+    );
+  }
+  if (plan.keptConverted.length > 0) {
+    logger.warn(
+      `Kept ${plan.keptConverted.length} orphan file(s) whose content matches HEAD only after ` +
+        "git's clean filter or line-ending conversion: a checkout would not write these exact " +
+        "bytes back, so git cannot restore them. Delete these by hand if they are not needed:\n" +
+        list(plan.keptConverted)
+    );
+  }
+  if (plan.keptLocal.length > 0) {
+    logger.warn(
+      `Kept ${plan.keptLocal.length} orphan file(s) git cannot restore ` +
+        "(untracked, ignored, staged but never committed, or edited since HEAD). " +
+        "`--prune` deletes only files git holds committed and unchanged; delete these by hand " +
+        "if they are not needed:\n" +
+        list(plan.keptLocal)
+    );
+  }
+}
+
+const NOTHING_TO_PRUNE =
+  "Nothing to prune: no orphan is committed unchanged in git outside a record awaiting `push --create`.";
+
+/**
+ * `--apply --prune --dry-run`: names the files a real run would delete and,
+ * through the same warnings, the ones it would keep and why. Deletes nothing,
+ * re-downloads nothing, never prompts.
+ */
+async function previewPrune(orphans: string[], missingCount: number): Promise<void> {
+  const plan = await planPrune(orphans);
+  if (!plan) {
+    return;
+  }
+  reportKept(plan);
+  if (missingCount > 0) {
+    logger.info(`Dry run: would re-download ${missingCount} missing file(s).`);
+  }
+  if (plan.prunable.length === 0) {
+    logger.info(`Dry run: ${NOTHING_TO_PRUNE}`);
+    return;
+  }
+  logger.info(
+    `Dry run: would delete ${plan.prunable.length} orphan file(s) git holds committed and unchanged ` +
+      "(nothing was deleted):\n" +
+      plan.prunable.map((f) => `  ${f}`).join("\n")
   );
 }
 
@@ -675,6 +861,12 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
     }
 
     if (!apply) {
+      if (args.apply === true && args.prune === true && orphans.length > 0) {
+        // `--apply --prune --dry-run`: the same plan a real run acts on, with
+        // nothing deleted and nothing re-downloaded.
+        await previewPrune(orphans, missingCount);
+        return;
+      }
       const hints: string[] = [];
       if (missingCount > 0) hints.push("`--apply` re-downloads missing files");
       if (orphans.length > 0) hints.push("`--apply --prune` also deletes orphans");
@@ -697,70 +889,12 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
 
     let pruned = 0;
     if (orphans.length > 0 && args.prune === true) {
-      // Refuse to prune when the source directory IS the project root (a
-      // `sourceDirectory` of "." or ""): the shape filter alone would still put
-      // every top-level `<dir>/<dir>/<file.ext>` in the repo — including the
-      // manifest's sibling packages — within deletion range.
-      if (path.resolve(ConfigManager.getSourcePath()) === path.resolve(ConfigManager.getRootDir())) {
-        logger.error(
-          "Refusing to prune: the source directory is the project root. Set a dedicated `sourceDirectory` in sync.config.js first."
-        );
-        process.exitCode = 1;
+      const plan = await planPrune(orphans);
+      if (!plan) {
         return;
       }
-      const sourcePath = path.resolve(ConfigManager.getSourcePath());
-      let evidence: GitEvidence;
-      try {
-        evidence = await restorableFromGit(sourcePath, orphans);
-      } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e);
-        logger.error(
-          `Refusing to prune: git cannot show which orphans are committed and unchanged (${reason}). ` +
-            "`--prune` deletes only files git can restore, so an orphan that is new local work " +
-            "(a script or column not pushed yet) is never lost. Commit the source directory to a " +
-            "git repository first, or delete the orphans listed above by hand."
-        );
-        process.exitCode = 1;
-        return;
-      }
-      const { restorable, unreadable } = evidence;
-      const pendingCreate = await awaitingCreate(orphans);
-      const prunable = orphans.filter(
-        (orphan) => restorable.has(orphan) && !pendingCreate.has(orphan)
-      );
-      const keptPending = orphans.filter((orphan) => pendingCreate.has(orphan));
-      const keptUnreadable = orphans.filter(
-        (orphan) => unreadable.has(orphan) && !pendingCreate.has(orphan)
-      );
-      const keptLocal = orphans.filter(
-        (orphan) =>
-          !restorable.has(orphan) && !pendingCreate.has(orphan) && !unreadable.has(orphan)
-      );
-      if (keptPending.length > 0) {
-        logger.warn(
-          `Kept ${keptPending.length} orphan file(s) of record(s) awaiting \`push --create\`: ` +
-            "neither the manifest nor the one HEAD committed tracks them, so they are new local " +
-            "work, and `--prune` never deletes them, committed or not. Run `syncrona push --create` " +
-            "to create them; if one is the leftover of a record deleted on the instance, delete it by hand:\n" +
-            keptPending.map((f) => `  ${f}`).join("\n")
-        );
-      }
-      if (keptUnreadable.length > 0) {
-        logger.warn(
-          `Kept ${keptUnreadable.length} orphan file(s) git could not read, so it cannot vouch ` +
-            "for their content:\n" +
-            keptUnreadable.map((f) => `  ${f}: ${unreadable.get(f)}`).join("\n")
-        );
-      }
-      if (keptLocal.length > 0) {
-        logger.warn(
-          `Kept ${keptLocal.length} orphan file(s) git cannot restore ` +
-            "(untracked, ignored, staged but never committed, or edited since HEAD). " +
-            "`--prune` deletes only files git holds committed and unchanged; delete these by hand " +
-            "if they are not needed:\n" +
-            keptLocal.map((f) => `  ${f}`).join("\n")
-        );
-      }
+      reportKept(plan);
+      const { prunable, sourcePath } = plan;
       const confirmed =
         prunable.length > 0 &&
         (args.ci === true ||
@@ -771,16 +905,13 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
                 name: "confirmed",
                 message:
                   `Delete ${prunable.length} orphan file(s)? Git holds each one committed and ` +
-                  "unchanged, so `git checkout HEAD -- <file>` restores it.",
+                  `unchanged, so \`${RESTORE_COMMAND} <file>\` restores it.`,
                 default: false,
               },
             ])
           ).confirmed);
       if (prunable.length === 0) {
-        logger.info(
-          "Nothing to prune: no orphan is both a leftover of a record the committed manifest tracked " +
-            "and committed unchanged in git."
-        );
+        logger.info(NOTHING_TO_PRUNE);
       } else if (confirmed) {
         // Deletions are irreversible, so failures must be reported, not
         // swallowed: `.catch(() => undefined)` reported "Pruned N file(s)" even
