@@ -269,7 +269,20 @@ export const snClient = (
       timeout: requestTimeout,
       ...(httpsAgent ? { httpsAgent } : {}),
     });
-    const poster: TokenPoster = async (path, body) => (await tokenHttp.post(path, body)).data;
+    // A token request that fails in the request interceptor rejects the data
+    // request with the token endpoint's own axios error, which the response
+    // interceptor below would read as a data 401: it forced a second grant and
+    // could re-send the token request through `base`. Such an error is marked
+    // so it is passed on as is — one token POST, as sync_cicd_run sends.
+    const tokenErrors = new WeakSet<object>();
+    const poster: TokenPoster = async (path, body) => {
+      try {
+        return (await tokenHttp.post(path, body)).data;
+      } catch (e) {
+        if (e !== null && typeof e === "object") tokenErrors.add(e);
+        throw e;
+      }
+    };
     const tokens = createTokenManager({ username, password }, oauth, poster);
 
     base.interceptors.request.use(async (config) => {
@@ -281,7 +294,7 @@ export const snClient = (
       const cfg = error.config as
         | (InternalAxiosRequestConfig & { _oauthRetried?: boolean })
         | undefined;
-      if (error.response?.status === 401 && cfg && !cfg._oauthRetried) {
+      if (error.response?.status === 401 && cfg && !cfg._oauthRetried && !tokenErrors.has(error)) {
         cfg._oauthRetried = true;
         (cfg.headers as Record<string, string>).Authorization = `Bearer ${await tokens.forceRefresh()}`;
         return base.request(cfg);
