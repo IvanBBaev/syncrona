@@ -20,6 +20,7 @@ const {
   handleFluentBuild,
   handleFluentTool,
   listOutputFiles,
+  loadFluentAdapter,
   loadFluentModule,
   resolveFluentProjectDir,
 } = require('../dist/handlers/fluentHandlers.js');
@@ -708,6 +709,74 @@ test('the default loader loads a hoisted adapter in the workspace and never runs
   }
   if (serverHasAdapter) assert.notEqual(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
   else assert.equal(result.code, 'FLUENT_ADAPTER_OUTSIDE_WORKSPACE');
+});
+
+test('loadFluentAdapter reports a project adapter with its real package directory and version', () => {
+  const ws = mkWorkspace();
+  writeFixturePackage(ws, '@fixture/fluent-info', 'exports.createFluentEngine = () => "info";');
+  const pkgDir = path.join(ws, 'node_modules', '@fixture', 'fluent-info');
+  const manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ ...manifest, version: '9.8.7' }));
+  const loaded = loadFluentAdapter(ws, '@fixture/fluent-info');
+  assert.equal(loaded.module.createFluentEngine(), 'info');
+  assert.deepEqual(loaded.adapter, { source: 'project', path: fs.realpathSync.native(pkgDir), version: '9.8.7' });
+});
+
+test('loadFluentAdapter reports a package without a version, and a nested entry, by its package directory', () => {
+  const ws = mkWorkspace();
+  const pkgDir = path.join(ws, 'node_modules', '@fixture', 'fluent-nover');
+  fs.mkdirSync(path.join(pkgDir, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: '@fixture/fluent-nover', main: 'lib/index.js' }));
+  // A nested manifest that names another package is skipped on the way up.
+  fs.writeFileSync(path.join(pkgDir, 'lib', 'package.json'), JSON.stringify({ type: 'commonjs' }));
+  fs.writeFileSync(path.join(pkgDir, 'lib', 'index.js'), 'exports.createFluentEngine = () => "nover";');
+  const { adapter } = loadFluentAdapter(ws, '@fixture/fluent-nover');
+  assert.deepEqual(adapter, { source: 'project', path: fs.realpathSync.native(pkgDir) });
+});
+
+test('loadFluentAdapter reports the server install as the source of a fallback', () => {
+  const ws = mkWorkspace();
+  const { adapter } = loadFluentAdapter(ws, 'zod');
+  const serverZod = path.dirname(require.resolve('zod/package.json', { paths: [path.resolve(__dirname, '..')] }));
+  assert.equal(adapter.source, 'server');
+  assert.equal(adapter.path, fs.realpathSync.native(serverZod));
+  assert.equal(adapter.version, JSON.parse(fs.readFileSync(path.join(serverZod, 'package.json'), 'utf8')).version);
+});
+
+test('the build response and audit name the adapter the default loader loaded', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  writeFixturePackage(
+    ws,
+    '@syncrona/fluent',
+    'exports.createFluentEngine = () => ({ build: async () => ({ success: true, errors: [], warnings: [] }) });'
+  );
+  const pkgDir = path.join(ws, 'node_modules', '@syncrona', 'fluent');
+  fs.writeFileSync(
+    path.join(pkgDir, 'package.json'),
+    JSON.stringify({ name: '@syncrona/fluent', version: '1.2.3', main: 'index.js' })
+  );
+  const { context, calls } = makeContext(ws);
+  const payload = payloadOf(await handleFluentBuild({}, context));
+  const expected = { source: 'project', path: fs.realpathSync.native(pkgDir), version: '1.2.3' };
+  assert.equal(payload.outcome, 'succeeded');
+  assert.deepEqual(payload.adapter, expected);
+  assert.deepEqual(calls.audit[0][2].adapter, expected);
+});
+
+test('an injected loader, a refused or a missing adapter reports no adapter', async () => {
+  const ws = mkWorkspace();
+  mkProject(ws);
+  const injected = makeContext(ws, { loadFluent: fakeFluent(async () => ({ success: true, errors: [], warnings: [] })).loader });
+  const payload = payloadOf(await handleFluentBuild({}, injected.context));
+  assert.equal('adapter' in payload, false);
+  assert.equal('adapter' in injected.calls.audit[0][2], false);
+  const refused = makeContext(ws, {
+    loadFluent: () => {
+      throw new FluentAdapterOutsideWorkspaceError('Refusing to load @syncrona/fluent from outside the workspace.');
+    },
+  });
+  assert.equal('adapter' in payloadOf(await handleFluentBuild({}, refused.context)), false);
 });
 
 test('loadFluentModule falls back to the server install and rethrows other resolution errors', () => {
