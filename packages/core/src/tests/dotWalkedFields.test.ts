@@ -14,6 +14,7 @@ import {
   buildManifestFromTableAPI,
 } from "../manifestBuilder.js";
 import { logger } from "../Logger.js";
+import { resetDotWalkedFieldFileWarnings } from "../dotWalkedFieldFiles.js";
 
 type Row = Record<string, unknown>;
 type Get = jest.Mock<Promise<{ data: { result: Row[] } }>, [string, string, string, number?, number?]>;
@@ -237,6 +238,68 @@ describe("a dot-walked field file a hand-edited manifest lists (bulk download)",
 
     expect(tableMap.sys_atf_step.records["step-one"].files.map((f) => f.name)).toEqual(["inputs.script"]);
     expect(dotWalkWarnings()).toEqual([walkedWarning("manifest files", "sys_atf_step")]);
+  });
+});
+
+describe("a manifest files entry whose name is not a string (bulk download)", () => {
+  const notString = (shown: string, table = "sys_script_include") =>
+    `Table ${table}: ignoring a manifest files entry whose name is not a string (${shown}) — ` +
+    "it names no column of this table, so it is never fetched or written to the working tree.";
+  const nameWarnings = () => warnings().filter((m) => m.includes("whose name is not a string"));
+  beforeEach(resetDotWalkedFieldFileWarnings);
+
+  // The review's reproduction: an array stringifies into `fields` as the very
+  // dot-walk the string refusal stops, while `includes(".")` on the array is false.
+  it("never requests an array name that stringifies into a dot-walk", async () => {
+    const tableAPIGet = fakeInstance({
+      records: {
+        sys_script_include: [{ sys_id: "s1", name: "one", script: "gs.info(1)", [WALKED]: "hunter2" }],
+      },
+    });
+    const missing = {
+      sys_script_include: { s1: [{ name: [WALKED], type: "txt" }, { name: "script", type: "js" }] },
+    } as unknown as SN.MissingFileTableMap;
+
+    const tableMap = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {}, {
+      sys_script_include: { s1: "one" },
+    });
+
+    expect(tableMap.sys_script_include.records.one.files.map((f) => f.name)).toEqual(["script"]);
+    expect(JSON.stringify(tableMap)).not.toMatch(/hunter/);
+    expect(requested(tableAPIGet)).not.toContain("user_password");
+    expect(nameWarnings()).toEqual([notString(JSON.stringify([WALKED]))]);
+  });
+
+  it.each<[string, unknown, string]>([
+    ["a number", 7, "7"],
+    ["null", null, "null"],
+    ["an object", { value: "script" }, '{"value":"script"}'],
+    ["a missing name", undefined, "undefined"],
+  ])("refuses %s as a name, once per table and name", async (_label, name, shown) => {
+    const tableAPIGet = fakeInstance({
+      records: {
+        sys_script_include: [
+          { sys_id: "s1", name: "one", script: "gs.info(1)" },
+          { sys_id: "s2", name: "two", script: "x" },
+        ],
+      },
+    });
+    const missing = {
+      sys_script_include: {
+        s1: [{ name, type: "txt" }, { name: "script", type: "js" }],
+        s2: [{ name: "script", type: "js" }, { name, type: "txt" }],
+      },
+    } as unknown as SN.MissingFileTableMap;
+
+    const tableMap = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {}, {
+      sys_script_include: { s1: "one", s2: "two" },
+    });
+
+    for (const record of ["one", "two"]) {
+      expect(tableMap.sys_script_include.records[record].files.map((f) => f.name)).toEqual(["script"]);
+    }
+    expect(nameWarnings()).toEqual([notString(shown)]);
+    expect(dotWalkWarnings()).toEqual([]);
   });
 });
 
