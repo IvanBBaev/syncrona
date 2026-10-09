@@ -1017,3 +1017,102 @@ describe("createRecords", () => {
     expect(client.createRecord).not.toHaveBeenCalled();
   });
 });
+
+// CR26: the idempotency lookup's edge answers. Each one decides between create,
+// adopt and refuse, so an unreadable answer must never read as "no record".
+describe("idempotency lookup edge answers", () => {
+  const SYS_KNOWN = "d".repeat(32);
+  const answerLookup = (client: FakeClient, result: unknown) =>
+    client.tableAPIGet.mockImplementation(async (table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.replace(/^name=/, "");
+        return { data: { result: [{ name, "super_class.name": HIERARCHY[name] ?? "" }] as unknown } };
+      }
+      return { data: { result } };
+    });
+
+  it.each<[string, unknown]>([
+    ["no result at all", undefined],
+    ["an object", { sys_id: "ex-1", name: "Existing" }],
+    ["null", null],
+  ])("refuses to plan a create when the lookup answers %s", async (_label, result) => {
+    const client = makeClient();
+    answerLookup(client, result);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Existing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(
+      /the sys_script_include lookup answered without a result list/
+    );
+  });
+
+  it("does not POST again after a timeout when the lookup answers without a result list", async () => {
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("create");
+    answerLookup(client, undefined);
+    client.createRecord.mockRejectedValueOnce(new Error("ETIMEDOUT"));
+    const outcome = await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    expect(client.createRecord).toHaveBeenCalledTimes(1);
+    expect(outcome.results).toEqual([
+      {
+        success: false,
+        message: expect.stringContaining("lookup answered without a result list"),
+      },
+    ]);
+    expect(outcome.failedTables).toEqual(["sys_script_include"]);
+  });
+
+  it("reads a null lookup column as empty and refuses the mismatch", async () => {
+    const client = makeClient();
+    answerLookup(client, [{ sys_id: "ex-1", name: null }]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Existing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/matched record ex-1, whose name is ""/);
+  });
+
+  it("matches a numeric lookup column by its text", async () => {
+    const client = makeClient();
+    answerLookup(client, [{ sys_id: "ex-1", name: 42 }]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "42")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "ex-1" });
+  });
+
+  it("fails closed on a reference column that carries no value", async () => {
+    const client = makeClient();
+    answerLookup(client, [{ sys_id: "ex-1", name: { link: "https://x" } }]);
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "Existing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/matched record ex-1, which carries no "name" column/);
+  });
+
+  it("names a tracked record without a name by its manifest key, and tolerates odd manifest entries", async () => {
+    manifest.tables = {
+      sys_script: { records: { "Other key": { sys_id: SYS_KNOWN, files: [] } } },
+      sys_ui_script: {},
+      sys_script_include: { records: { Blank: { name: "Blank", sys_id: "", files: [] } } },
+    };
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "New")], {
+      persistScopeId: false,
+      known: { "sys_script_include:New": SYS_KNOWN },
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "error", sysId: SYS_KNOWN });
+    expect(plan.plans[0].message).toContain("tracked in the manifest as sys_script > Other key;");
+  });
+});
