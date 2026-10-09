@@ -153,8 +153,19 @@ export interface CicdCommandDeps {
  * timeout). All map to exit 1; the class only keeps them apart from transport
  * errors, whose HTTP status still drives the error-taxonomy hint.
  */
+/**
+ * The `--json` verdict: `passed`, `failed` and `no_tests` are what the instance
+ * reported; `incomplete` means the run could not be followed to its end (usage,
+ * HTTP, timeout, a refused resume), and `unknown` that the tracker finished but
+ * its ATF result was unreadable or unclear. Both of the last two exit 1.
+ */
+export type CicdJsonVerdict = "passed" | "failed" | "no_tests" | "incomplete" | "unknown";
+
 export class CicdCliError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly verdict: Extract<CicdJsonVerdict, "incomplete" | "unknown"> = "incomplete"
+  ) {
     super(message);
     this.name = "CicdCliError";
   }
@@ -765,14 +776,16 @@ async function runAction(
         `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. ` +
           (resumeId && read.notFound
             ? atfKindMismatchHint(action, progressId)
-            : `Re-run with --progress-id ${progressId} to read the result again.`)
+            : `Re-run with --progress-id ${progressId} to read the result again.`),
+        "unknown"
       );
     }
     if (atf?.verdict === "unknown") {
       throw new CicdCliError(
         `progress ${progressId} finished, but the ATF result does not clearly report a pass or a failure ` +
           `(${atf.summary}), so whether the tests passed is unknown. ` +
-          `Re-run with --progress-id ${progressId} to read the result again.`
+          `Re-run with --progress-id ${progressId} to read the result again.`,
+        "unknown"
       );
     }
     if (resumeId && !isAtfAction) {
@@ -785,6 +798,22 @@ async function runAction(
     status === CicdProgressStatus.SUCCESSFUL && (!isAtfAction || atf?.verdict === "passed");
   const exitCode: CicdExitCode = succeeded ? CICD_EXIT_SUCCESS : CICD_EXIT_FAILED;
   const resultsUrl = atf?.url ?? linkUrl(progress, "results");
+  const instanceReason = extractCicdErrorMessage({ result: progress });
+  const verdict: CicdJsonVerdict = succeeded
+    ? "passed"
+    : status === CicdProgressStatus.SUCCESSFUL && atf?.verdict === "no_tests"
+      ? "no_tests"
+      : "failed";
+  const reason = succeeded
+    ? (atf?.summary ?? `the tracker ended ${statusLabel(progress)}`)
+    : status !== CicdProgressStatus.SUCCESSFUL && atfWithoutResult
+      ? endedWithoutAtfResult(progress, instanceReason, resumeId)
+      : (instanceReason ??
+        (status !== CicdProgressStatus.SUCCESSFUL
+          ? statusLabel(progress)
+          : verdict === "no_tests"
+            ? "the suite ran no tests, which is not a pass"
+            : "ATF reported failing tests"));
 
   if (args.json === true) {
     deps.write(
@@ -793,6 +822,8 @@ async function runAction(
           command: "cicd",
           action,
           exitCode,
+          verdict,
+          reason,
           ...(resumeId ? { resumed: true } : {}),
           progressId,
           progress,
@@ -815,16 +846,6 @@ async function runAction(
   if (succeeded) {
     logger.success(`cicd ${action} completed successfully. ✅`);
   } else {
-    const instanceReason = extractCicdErrorMessage({ result: progress });
-    const reason =
-      status !== CicdProgressStatus.SUCCESSFUL && atfWithoutResult
-        ? endedWithoutAtfResult(progress, instanceReason, resumeId)
-        : (instanceReason ??
-          (status !== CicdProgressStatus.SUCCESSFUL
-            ? statusLabel(progress)
-            : atf?.verdict === "no_tests"
-              ? "the suite ran no tests, which is not a pass"
-              : "ATF reported failing tests"));
     logger.error(`cicd ${action} finished with failures: ${reason}`);
   }
   return exitCode;
@@ -862,7 +883,11 @@ export async function cicdCommand(
 
   // `--json` promises one JSON document on stdout, failures included: a caller
   // parsing stdout must not get an empty string when the run could not finish.
-  const writeJsonFailure = (error: string, progressId?: string): void => {
+  const writeJsonFailure = (
+    error: string,
+    progressId?: string,
+    verdict: Extract<CicdJsonVerdict, "incomplete" | "unknown"> = "incomplete"
+  ): void => {
     if (args.json !== true) return;
     deps.write(
       JSON.stringify(
@@ -870,6 +895,8 @@ export async function cicdCommand(
           command: "cicd",
           action: String(args.action ?? ""),
           exitCode: CICD_EXIT_INCOMPLETE,
+          verdict,
+          reason: error,
           ...(progressId ? { progressId } : {}),
           error,
         },
@@ -902,7 +929,7 @@ export async function cicdCommand(
       // CI run needs from a failure, and info would hide it.
       logger.warn(`The work was dispatched as progress ${state.progressId}; resume with --progress-id ${state.progressId}.`);
     }
-    writeJsonFailure(error, state.progressId);
+    writeJsonFailure(error, state.progressId, e instanceof CicdCliError ? e.verdict : "incomplete");
     // The original error goes to the taxonomy, so a 403 on an sn_cicd URL gets
     // the missing-role hint instead of the generic "re-run login" one.
     logErrorHint(e);
