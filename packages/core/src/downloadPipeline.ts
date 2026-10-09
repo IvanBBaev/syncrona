@@ -6,6 +6,7 @@ import * as fUtils from "./FileUtils.js";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
 import * as ConfigManager from "./config.js";
 import { defaultClient, unwrapSNResponse } from "./snClient.js";
+import { withoutDotWalkedFieldFiles } from "./dotWalkedFieldFiles.js";
 import type { SNClient } from "./snClient.js";
 import {
   applyIncludeTypeRulesToManifest,
@@ -727,8 +728,10 @@ export const findMissingFiles = async (
     flat
   );
   await reconcileCompositeMissing(missing, tables, missingTableFunc);
-  // missing gets mutated along the way as things get processed
-  return missing;
+  // missing gets mutated along the way as things get processed. A field file
+  // listed under a dot-walked name is never fetched (withoutDotWalkedFieldFiles),
+  // so it is not reported missing either.
+  return withoutDotWalkedFieldFiles(missing);
 };
 
 // SDK-F2: under dataModelLayout "composite" the sidecar of a sys_db_object,
@@ -1065,7 +1068,8 @@ export const buildFullMissingMap = (
       }));
     }
   }
-  return missing;
+  // Same rule as findMissingFiles: no fetch path is asked for a dot-walked field.
+  return withoutDotWalkedFieldFiles(missing);
 };
 
 // Stable digest of the work a download run has to do: every table, every
