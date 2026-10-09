@@ -323,8 +323,8 @@ describe("the dot-walk exemptions are exactly the ATF step script and the .meta 
     expect(dotWalkWarnings()).toEqual([walkedWarning("manifest files", "sys_script_include", "inputs.script")]);
   });
 
-  it.each(["sys_created_by.meta", "foo.meta"])(
-    "refuses %s, a dotted name that only ends like the sidecar",
+  it.each(["sys_created_by.meta", "foo.meta", ".meta.sys_created_by.user_password", ".metax.y"])(
+    "refuses %s, a dotted name that only looks like the sidecar",
     async (column) => {
       const tableAPIGet = fakeInstance({
         records: { [TABLE]: [{ sys_id: "c1", name: "cred-one", script: "gs.info(1)", [column]: "leak" }] },

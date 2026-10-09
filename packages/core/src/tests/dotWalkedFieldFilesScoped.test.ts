@@ -253,6 +253,8 @@ describe("a manifest files entry the shared refusal must not read as a plain col
                 { name: "inputs.script", type: "js" },
                 { name: "sys_created_by.meta", type: "txt" },
                 { name: "foo.meta", type: "txt" },
+                { name: ".meta.sys_created_by.user_password", type: "txt" },
+                { name: ".metax.y", type: "txt" },
               ],
             },
           },
@@ -285,6 +287,8 @@ describe("a manifest files entry the shared refusal must not read as a plain col
         expect.stringContaining('ignoring the manifest files entry for column "inputs.script"'),
         expect.stringContaining('ignoring the manifest files entry for column "sys_created_by.meta"'),
         expect.stringContaining('ignoring the manifest files entry for column "foo.meta"'),
+        expect.stringContaining('ignoring the manifest files entry for column ".meta.sys_created_by.user_password"'),
+        expect.stringContaining('ignoring the manifest files entry for column ".metax.y"'),
       ])
     );
     expect(allWarnings().filter((m) => m.startsWith("Table sys_atf_step"))).toEqual([]);
