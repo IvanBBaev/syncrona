@@ -20,7 +20,7 @@ const p = (...segs: string[]) => segs.join(path.sep);
 // Dots are allowed — the doc guarantees records/fields may contain them.
 const SEG_CHARS = "abAB01._-".split("");
 const safeSeg = fc
-  .stringOf(fc.constantFrom(...SEG_CHARS), { minLength: 1, maxLength: 8 })
+  .string({ unit: fc.constantFrom(...SEG_CHARS), minLength: 1, maxLength: 8 })
   .filter((s) => s !== "." && s !== ".." && !s.includes("~"));
 
 // Field files carry an extension, matching the documented <field>.<ext> layout;

@@ -30,6 +30,9 @@ import {
 import { isSafePathComponent } from "../genericUtils.js";
 import { logger } from "../Logger.js";
 
+// fast-check 4 dropped `hexaString`; a hex-unit string is the portable spelling.
+const HEX_CHAR = fc.constantFrom(..."0123456789abcdef");
+
 // The table under test has a known display field ("name"), so the properties can
 // state what the builder is expected to read.
 const TABLE = "sys_script_include";
@@ -52,7 +55,7 @@ function createClient(rows: Row[]): import("../snClient").SNClient {
  */
 const referenceLinkValue = fc.record({
   link: fc.constant("https://dev.service-now.com/api/now/table/sys_user/abc"),
-  value: fc.hexaString({ minLength: 32, maxLength: 32 }),
+  value: fc.string({ unit: HEX_CHAR, minLength: 32, maxLength: 32 }),
 });
 
 const rowValue = fc.oneof(
