@@ -20,7 +20,7 @@ code. (Companion to [BUSINESS_ANALYSIS.md](BUSINESS_ANALYSIS.md) §4.)
 | Quality gates / tests / audit shipped | ✅ | n/a | n/a | partial | ❌ |
 | First-party support & SLA | ❌ | ✅ | ✅ | ❌ | n/a |
 | OAuth / SSO auth | ✅ CLI (OAuth 2.0) · ⏳ MCP | ✅ OAuth · UI-session "basic" | ✅ | ❌ | ✅ |
-| API key / mutual TLS | ✅ (not in the `fluent` tier) | ❌ | n/a (in-platform) | ❌ | n/a |
+| API key / mutual TLS | ✅ (API key not in the `fluent` tier) | ❌ | n/a (in-platform) | ❌ | n/a |
 | Maintained / active | ✅ | ✅ | ✅ | ⚠️ legacy | n/a |
 
 ✅ yes · ⏳ planned · ⚠️ caveat · ❌ no
@@ -72,9 +72,11 @@ Versus the ServiceNow SDK specifically:
   tracked as separate sidecars, or as one document per table with
   `dataModelLayout: "composite"` (opt-in `dataModelTables`, see
   [DATA_MODEL.md](DATA_MODEL.md)). The live round-trip is still pending.
-- **API-key and mutual-TLS profiles do not reach the `fluent` tier.** The SDK's
-  install, reinstall and update-set export endpoints accept only a UI session,
-  so only Basic and OAuth profiles work for instance-side `fluent` actions.
+- **API-key profiles do not reach the `fluent` tier.** The SDK's install,
+  reinstall and update-set export endpoints accept only a UI session, so only
+  Basic and OAuth profiles work for instance-side `fluent` actions. A mutual-TLS
+  client certificate works with either; it has not yet been verified against an
+  instance that enforces inbound mutual authentication.
 - **Script and Fluent type definitions come from the SDK.** `fluent types
   --native` generates table types from `sys_dictionary` without it, but the
   `--scripts` / `--fluent` definitions still need the SDK, and so do

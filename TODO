@@ -57,10 +57,16 @@ mocked tests. These items close what it deliberately left open.
   adapter or the SDK is missing (unless `--scripts`/`--fluent` asks for
   SDK-only definitions). Works with API-key and mutual-TLS profiles. Covered by
   mocked Table API tests; not yet run against a live instance.
-- [ ] **SDK-F4. API-key and mutual-TLS profiles in the Fluent tier** — today
-  instance-side `fluent` actions refuse these profiles because the SDK's
-  install, reinstall and update-set export endpoints accept only a UI session.
-  Revisit when the SDK exposes a token-based path.
+- [ ] **SDK-F4. API-key profiles in the Fluent tier** — instance-side `fluent`
+  actions refuse API-key profiles because the SDK's install, reinstall and
+  update-set export endpoints accept only a UI session. Revisit when the SDK's
+  `ResolvedAuth` gains an API-key or other token-based credential type.
+  Mutual TLS is done on the syncrona side: a client certificate rides along
+  with a Basic or OAuth profile as `tls`, the OAuth token request presents it,
+  and the engine installs a TLS-configured global fetch dispatcher for each
+  instance-side action (restored afterwards). Covered by mocked tests; still
+  needs live verification on an instance that enforces inbound mutual
+  authentication.
 - [x] **SDK-F5. `explain` counterpart** — decided to wrap both SDK commands as
   `fluent` actions rather than point to the SDK docs, because each is reachable
   through a public SDK entry point. `fluent explain [topic]` (`--list`, `--peek`)

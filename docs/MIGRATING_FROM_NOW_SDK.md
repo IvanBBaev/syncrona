@@ -131,7 +131,10 @@ The SDK and syncrona authenticate differently:
   - An **OAuth** profile hands its bearer token to the SDK, which bootstraps
     the session's CSRF token itself. That bootstrap reads `sys_user_session`,
     so the integration user needs read access to it.
-  - **API-key and mutual-TLS profiles are refused** for every `fluent` action
+  - A **mutual-TLS** client certificate (`SN_CLIENT_CERT` / `SN_CLIENT_KEY`)
+    works with either a Basic or an OAuth profile: the UI login, the token
+    request and the SDK's own requests all present it.
+  - **API-key profiles are refused** for every `fluent` action
     that contacts the instance (`install`, `status`, `types`, `dependencies`,
     `init --from`, and the instance-side `transform` modes), with an error that
     names the reason. The exception is `fluent types --native`, which reads the
@@ -191,9 +194,10 @@ Beyond what the SDK covers:
 
 Being honest about the gaps:
 
-- **API-key and mutual-TLS profiles in the Fluent tier.** The SDK's
-  session-only endpoints cannot use them, so these profiles are refused for
-  instance-side `fluent` actions. Use a Basic or OAuth profile for Fluent work.
+- **API-key profiles in the Fluent tier.** The SDK's session-only endpoints
+  cannot use them, so these profiles are refused for instance-side `fluent`
+  actions. Use a Basic or OAuth profile for Fluent work; a mutual-TLS client
+  certificate works with either.
 - **Composite data-model documents are opt-in.** By default, data-model
   records (a table and its columns, a choice list) are independent sidecar
   records. `dataModelLayout: "composite"` keeps a table, its columns and their

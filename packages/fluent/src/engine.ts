@@ -260,12 +260,63 @@ export const defaultSdkDocsLoader: SdkDocsLoader = (projectDir) => {
   return { docs, docsDir, fs: nodeDocsFs };
 };
 
+// --- TLS dispatcher --------------------------------------------------------------
+//
+// The SDK calls the global `fetch` without a dispatcher, and the UI-session
+// login does too, so a mutual-TLS client certificate can only reach them
+// through the global dispatcher. Node's bundled undici reads it from this
+// symbol on every request. Each engine call that may talk to the instance
+// installs a dispatcher carrying the TLS settings for its own duration and
+// restores the previous one afterwards, so nothing outside the call sees it.
+
+/** Where Node's bundled undici keeps the dispatcher its global `fetch` uses. */
+export const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+/** The slice of an undici dispatcher the engine handles. */
+export interface FluentDispatcher {
+  close?(): Promise<unknown>;
+}
+
+export type FluentDispatcherFactory = (tls: SN.FluentTlsOptions) => FluentDispatcher;
+
+export class FluentTlsUnavailableError extends Error {
+  readonly code = "FLUENT_TLS_UNAVAILABLE";
+  constructor(found: string) {
+    super(
+      `Cannot attach the TLS settings to the ServiceNow SDK's requests: Node's default fetch dispatcher is ${found}, not an undici Agent.`,
+    );
+    this.name = "FluentTlsUnavailableError";
+  }
+}
+
+/**
+ * An undici `Agent` that carries `tls` on every connection. Node does not
+ * export its bundled undici, and this package adds no undici dependency, so the
+ * `Agent` class is taken from the default dispatcher Node installs when it
+ * loads undici; touching a fetch global (`Response`) loads it. `host` is a
+ * parameter only so tests can stand in for the global object.
+ */
+export function createTlsDispatcher(tls: SN.FluentTlsOptions, host: object = globalThis): FluentDispatcher {
+  void (host as { Response?: unknown }).Response;
+  const current = (host as Record<symbol, unknown>)[GLOBAL_DISPATCHER];
+  const Agent = (current as { constructor?: unknown } | undefined)?.constructor;
+  if (typeof Agent !== "function" || Agent.name !== "Agent") {
+    throw new FluentTlsUnavailableError(typeof Agent === "function" ? `a ${Agent.name}` : "missing");
+  }
+  const { cert, key, passphrase, ca, rejectUnauthorized } = tls;
+  return new (Agent as new (options: unknown) => FluentDispatcher)({
+    connect: { cert, key, passphrase, ca, rejectUnauthorized },
+  });
+}
+
 // --- Engine --------------------------------------------------------------------
 
 export interface FluentEngineDeps {
   loadSdk?: SdkLoader;
   loadDocs?: SdkDocsLoader;
   fileSystem?: unknown;
+  /** Builds the dispatcher an engine call installs when `tls` is set. */
+  createDispatcher?: FluentDispatcherFactory;
 }
 
 function docTopic(doc: SdkDocFile): SN.FluentDocTopic {
@@ -321,7 +372,8 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
   const loadSdk = deps.loadSdk ?? defaultSdkLoader;
   const loadDocs = deps.loadDocs ?? defaultSdkDocsLoader;
   const fileSystem = deps.fileSystem ?? fs;
-  const { projectDir, instanceUrl, auth, logger } = options;
+  const createDispatcher = deps.createDispatcher ?? createTlsDispatcher;
+  const { projectDir, instanceUrl, auth, tls, logger } = options;
   let sdk: LoadedSdk | undefined;
   let orchestrator: SdkOrchestrator | undefined;
   let credential: unknown;
@@ -363,9 +415,29 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
     return orchestrator;
   };
 
+  /**
+   * Runs `call` with a dispatcher carrying `tls` installed as the global one,
+   * so the UI-session login and every SDK request inside it present the client
+   * certificate; the previous dispatcher is back once `call` settles.
+   */
+  const withTls = async <T>(call: () => Promise<T>): Promise<T> => {
+    if (!tls) return call();
+    const host = globalThis as Record<symbol, unknown>;
+    const dispatcher = createDispatcher(tls);
+    const previous = host[GLOBAL_DISPATCHER];
+    host[GLOBAL_DISPATCHER] = dispatcher;
+    try {
+      return await call();
+    } finally {
+      host[GLOBAL_DISPATCHER] = previous;
+      // Lets idle keep-alive sockets go; nothing waits on it.
+      dispatcher.close?.().catch(() => undefined);
+    }
+  };
+
   return {
     async build(opts) {
-      const result = await orch().build({ ...opts });
+      const result = await withTls(() => orch().build({ ...opts }));
       const { errors, warnings } = splitDiagnostics(result.diagnostics);
       return { success: result.success && errors.length === 0, errors, warnings };
     },
@@ -387,12 +459,12 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
         default:
           request = { method: "complete" };
       }
-      const result = await orch().transform(request);
+      const result = await withTls(() => orch().transform(request));
       return { changedFiles: (result.changedFiles ?? []).map(filePath), handledPaths: result.handledPaths ?? [] };
     },
 
     async pack(opts) {
-      return orch().pack(opts.packagePath);
+      return withTls(() => orch().pack(opts.packagePath));
     },
 
     async install(opts) {
@@ -400,27 +472,27 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
       const request: Record<string, unknown> = { ...rest };
       if (skipFlowActivation) request.skipFlags = { skipFlowActivation: true };
       requireCredential("install");
-      const result = await orch().install(request);
+      const result = await withTls(() => orch().install(request));
       return result ?? {};
     },
 
     async installStatus() {
       requireCredential("status");
-      return orch().installStatus();
+      return withTls(() => orch().installStatus());
     },
 
     async types(opts) {
       requireCredential("types");
-      await orch().types({ ...opts });
+      await withTls(() => orch().types({ ...opts }));
     },
 
     async addDependency(opts) {
       requireCredential("dependencies");
-      await orch().addDependency(opts);
+      await withTls(() => orch().addDependency(opts));
     },
 
     async run(opts) {
-      await orch().run(opts);
+      await withTls(() => orch().run(opts));
     },
     async explain(opts) {
       return explainDocs(loadDocs(projectDir), opts);
@@ -428,7 +500,7 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
 
     async moveToApp(opts) {
       requireCredential("move-to-app");
-      const result = await orch().moveToApp({ sysIds: [...opts.sysIds] });
+      const result = await withTls(() => orch().moveToApp({ sysIds: [...opts.sysIds] }));
       if (!result) return { moved: false, changedFiles: [], handledPaths: [] };
       return {
         moved: true,
@@ -463,10 +535,12 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
       const factory = new api.ProjectFactory(fileSystem);
       // The SDK takes the project version from the app's sys_app record, but
       // defaults the "@servicenow/sdk" range to "latest" — pin it as init does.
-      await factory.createProjectFromApp(projectDir, opts.scopeId, connector, {
-        sdkVersion: version ?? SUPPORTED_SDK_RANGE,
-        ...(opts.packageName ? { packageName: opts.packageName } : {}),
-      });
+      await withTls(() =>
+        factory.createProjectFromApp(projectDir, opts.scopeId, connector, {
+          sdkVersion: version ?? SUPPORTED_SDK_RANGE,
+          ...(opts.packageName ? { packageName: opts.packageName } : {}),
+        }),
+      );
     },
 
     async sdkVersion() {

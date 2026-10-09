@@ -17,9 +17,12 @@
  * 2. **Credentials.** Core resolves the active profile and hands the adapter
  *    a `SN.FluentCredentialInput`. A Basic profile becomes a UI-session login
  *    inside the adapter. An OAuth profile becomes a token getter, and the token
- *    is minted here with core's token manager. API-key and mutual-TLS profiles
- *    cannot reach the SDK's session-only endpoints, so they are refused up front
- *    for every action that talks to the instance.
+ *    is minted here with core's token manager. An API-key profile cannot reach
+ *    the SDK's session-only endpoints, so it is refused up front for every
+ *    action that talks to the instance, with or without a client certificate.
+ *    Mutual TLS is a transport setting: with Basic or OAuth, core hands the
+ *    adapter the TLS material and the adapter attaches it to the action's
+ *    requests (the OAuth token POST here uses it too).
  *
  * 3. **Consent and exit codes.** `install` and `move-to-app` change an
  *    instance, so they ask first unless `--ci` is given; without a terminal to
@@ -63,10 +66,16 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
-import { CLIENT_CERT_ENV, SYS_ID_RE } from "@syncrona/sn-transport";
+import { SYS_ID_RE } from "@syncrona/sn-transport";
 import { logger } from "./Logger.js";
 import { setLogLevel, logErrorHint, resolveInstanceProfile } from "./commandHelpers.js";
-import { resolveCredentials, buildClientAuth, defaultClient } from "./snClient.js";
+import {
+  resolveCredentials,
+  buildClientAuth,
+  defaultClient,
+  resolveTlsMaterial,
+  buildFetchDispatcher,
+} from "./snClient.js";
 import type { NativeTypesClient, NativeTypesOptions, NativeTypesResult } from "./fluentNativeTypes.js";
 import { createTokenManager, type OAuthTokenResponse, type TokenPoster } from "./oauth.js";
 
@@ -234,25 +243,37 @@ async function nodeResolveCredential(profile?: string): Promise<FluentCredential
     );
   }
   const instanceUrl = `https://${credentials.instance}/`;
-  if (process.env[CLIENT_CERT_ENV]) {
-    return { instanceUrl, input: { kind: "unsupported", method: "mutual-TLS" } };
-  }
   const { oauth, apiKey } = buildClientAuth(credentials);
+  // An API key is refused with or without a client certificate: the SDK's
+  // session-only endpoints accept a UI session or a bearer token, never a key.
   if (apiKey) {
     return { instanceUrl, input: { kind: "unsupported", method: "api-key" } };
   }
+  // Mutual TLS is a transport setting, not an auth method: the client
+  // certificate rides along with the Basic login or the OAuth token, and the
+  // adapter attaches it (with any CA bundle or verification opt-out) to every
+  // request of the action.
+  const tls = resolveTlsMaterial();
   if (!oauth) {
     return {
       instanceUrl,
-      input: { kind: "basic", username: credentials.user, password: credentials.password },
+      input: {
+        kind: "basic",
+        username: credentials.user,
+        password: credentials.password,
+        ...(tls ? { tls } : {}),
+      },
     };
   }
+  // The token POST goes over the same TLS settings as the action itself.
+  const dispatcher = tls ? buildFetchDispatcher(tls) : undefined;
   const post: TokenPoster = async (tokenPath, body) => {
     const response = await fetch(new URL(tokenPath, instanceUrl), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-    });
+      ...(dispatcher ? { dispatcher } : {}),
+    } as RequestInit);
     if (!response.ok) {
       throw new FluentCliError(
         `OAuth token request to ${credentials.instance} failed with HTTP ${response.status}. ` +
@@ -266,7 +287,10 @@ async function nodeResolveCredential(profile?: string): Promise<FluentCredential
     oauth,
     post
   );
-  return { instanceUrl, input: { kind: "oauth", getToken: () => tokens.getToken() } };
+  return {
+    instanceUrl,
+    input: { kind: "oauth", getToken: () => tokens.getToken(), ...(tls ? { tls } : {}) },
+  };
 }
 
 async function nodeConfirm(message: string): Promise<boolean> {
@@ -899,7 +923,8 @@ async function execute(
       throw new FluentCliError(
         `fluent ${action} cannot use a ${credential.input.method} profile: the ServiceNow SDK reaches ` +
           `${SESSION_ONLY_ENDPOINTS} with a UI session or a bearer token only. ` +
-          `Log in with a Basic or OAuth profile (\`syncrona login --auth-method\`)` +
+          `Log in with a Basic or OAuth profile (\`syncrona login --auth-method\`); ` +
+          `a mutual-TLS client certificate works with either` +
           (canFallBackToNative(action, args)
             ? ", or pass --native to generate table types without the SDK."
             : ".")
@@ -923,6 +948,9 @@ async function execute(
       ? {
           instanceUrl: credential.instanceUrl,
           auth: fluent.createFluentAuthResolver(credential.instanceUrl, credential.input),
+          ...(credential.input.kind !== "unsupported" && credential.input.tls
+            ? { tls: credential.input.tls }
+            : {}),
         }
       : {}),
   });

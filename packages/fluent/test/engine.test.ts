@@ -4,12 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import {
   createFluentEngine,
+  createTlsDispatcher,
   defaultSdkDocsLoader,
   defaultSdkLoader,
   explainDocs,
   findPackageVersion,
   FluentDocsUnavailableError,
   FluentSdkMissingError,
+  FluentTlsUnavailableError,
+  GLOBAL_DISPATCHER,
   isSupportedSdkVersion,
   LoadedSdk,
   LoadedSdkDocs,
@@ -310,6 +313,175 @@ describe("createFluentEngine", () => {
     (sdk.sdk as { version?: string }).version = undefined;
     expect(await engine(sdk).sdkVersion()).toBeUndefined();
     expect(logger.debug).toHaveBeenCalledWith("fluent: loaded @servicenow/sdk (unknown version)");
+  });
+});
+
+describe("TLS dispatcher", () => {
+  const tls: SN.FluentTlsOptions = { cert: "CERT", key: "KEY", passphrase: "pp", ca: "CA", rejectUnauthorized: true };
+  const host = globalThis as Record<symbol, unknown>;
+  const ORIGINAL = { original: true };
+  let savedSlot: unknown;
+
+  beforeEach(() => {
+    savedSlot = host[GLOBAL_DISPATCHER];
+    host[GLOBAL_DISPATCHER] = ORIGINAL;
+  });
+
+  afterEach(() => {
+    host[GLOBAL_DISPATCHER] = savedSlot;
+  });
+
+  // Every SDK method records the dispatcher it ran under.
+  function observingSdk(fail?: string) {
+    const seen: Array<{ method: string; dispatcher: unknown }> = [];
+    const results: Record<string, unknown> = {
+      build: { success: true, diagnostics: [] },
+      transform: { changedFiles: [], handledPaths: [] },
+      pack: "/p/target/app.zip",
+      install: { trackerId: "TRK", rollbackId: "RBK" },
+      installStatus: { finished: true, id: "TRK" },
+      types: undefined,
+      addDependency: undefined,
+      run: undefined,
+      moveToApp: { changedFiles: [], handledPaths: [] },
+      createProjectFromApp: {},
+    };
+    const overrides = Object.fromEntries(
+      Object.entries(results).map(([method, result]) => [
+        method,
+        () => {
+          seen.push({ method, dispatcher: host[GLOBAL_DISPATCHER] });
+          if (method === fail) throw new Error(`${method} failed`);
+          return result;
+        },
+      ]),
+    );
+    return { sdk: fakeSdk(overrides), seen };
+  }
+
+  function tlsEngine(sdk: ReturnType<typeof fakeSdk>, createDispatcher: (t: SN.FluentTlsOptions) => object) {
+    return createFluentEngine(
+      { projectDir: "/p", instanceUrl: "https://dev.example.invalid/", auth, logger, tls },
+      { loadSdk: sdk.loadSdk, fileSystem: "FS", createDispatcher },
+    );
+  }
+
+  it("installs a TLS dispatcher for each instance-side call and restores the previous one after", async () => {
+    const { sdk, seen } = observingSdk();
+    const made: Array<{ tls: unknown; close: jest.Mock }> = [];
+    const e = tlsEngine(sdk, (t) => {
+      const d = { tls: t, close: jest.fn(async () => undefined) };
+      made.push(d);
+      return d;
+    });
+    await e.build({});
+    await e.transform({ mode: "complete" });
+    await e.pack({});
+    await e.install({});
+    await e.installStatus();
+    await e.types({});
+    await e.addDependency({ table: "t", ids: [], scope: "s" });
+    await e.run({ script: "s" });
+    await e.moveToApp({ sysIds: ["a"] });
+    await e.createProjectFromApp({ scopeId: "S" });
+    expect(seen.map((s) => s.method)).toEqual([
+      "build",
+      "transform",
+      "pack",
+      "install",
+      "installStatus",
+      "types",
+      "addDependency",
+      "run",
+      "moveToApp",
+      "createProjectFromApp",
+    ]);
+    expect(made).toHaveLength(seen.length);
+    seen.forEach((s, i) => expect(s.dispatcher).toBe(made[i]));
+    for (const d of made) {
+      expect(d.tls).toBe(tls);
+      expect(d.close).toHaveBeenCalledTimes(1);
+    }
+    expect(host[GLOBAL_DISPATCHER]).toBe(ORIGINAL);
+  });
+
+  it("restores the previous dispatcher when the call throws", async () => {
+    const { sdk, seen } = observingSdk("install");
+    const dispatcher = {};
+    const e = tlsEngine(sdk, () => dispatcher);
+    await expect(e.install({})).rejects.toThrow("install failed");
+    expect(seen[0].dispatcher).toBe(dispatcher);
+    expect(host[GLOBAL_DISPATCHER]).toBe(ORIGINAL);
+  });
+
+  it("ignores a dispatcher whose close rejects", async () => {
+    const { sdk } = observingSdk();
+    const e = tlsEngine(sdk, () => ({ close: () => Promise.reject(new Error("closed twice")) }));
+    await expect(e.pack({})).resolves.toBe("/p/target/app.zip");
+    expect(host[GLOBAL_DISPATCHER]).toBe(ORIGINAL);
+  });
+
+  it("leaves the global dispatcher alone without TLS settings and for local-only calls", async () => {
+    const { sdk, seen } = observingSdk();
+    const createDispatcher = jest.fn(() => ({}));
+    await createFluentEngine(
+      { projectDir: "/p", instanceUrl: "https://dev.example.invalid/", auth, logger },
+      { loadSdk: sdk.loadSdk, fileSystem: "FS", createDispatcher },
+    ).build({});
+    expect(seen[0].dispatcher).toBe(ORIGINAL);
+    await tlsEngine(sdk, createDispatcher).sdkVersion();
+    expect(createDispatcher).not.toHaveBeenCalled();
+  });
+
+  it("uses createTlsDispatcher by default", async () => {
+    const { sdk } = observingSdk();
+    // ORIGINAL is a plain object, not an undici Agent.
+    const e = createFluentEngine(
+      { projectDir: "/p", instanceUrl: "https://dev.example.invalid/", auth, logger, tls },
+      { loadSdk: sdk.loadSdk, fileSystem: "FS" },
+    );
+    await expect(e.build({})).rejects.toThrow(FluentTlsUnavailableError);
+    expect(host[GLOBAL_DISPATCHER]).toBe(ORIGINAL);
+  });
+
+  describe("createTlsDispatcher", () => {
+    class Agent {
+      constructor(readonly options: unknown) {}
+    }
+
+    it("builds an Agent of the default dispatcher's class carrying the TLS settings", () => {
+      const fakeHost = { [GLOBAL_DISPATCHER]: new Agent({}) };
+      const dispatcher = createTlsDispatcher(tls, fakeHost);
+      expect(dispatcher).toBeInstanceOf(Agent);
+      expect((dispatcher as Agent).options).toEqual({
+        connect: { cert: "CERT", key: "KEY", passphrase: "pp", ca: "CA", rejectUnauthorized: true },
+      });
+    });
+
+    it("refuses when no default dispatcher is installed", () => {
+      expect(() => createTlsDispatcher(tls, {})).toThrow(
+        "Cannot attach the TLS settings to the ServiceNow SDK's requests: Node's default fetch dispatcher is missing, not an undici Agent.",
+      );
+    });
+
+    it("refuses a default dispatcher of another class, naming it", () => {
+      class EnvHttpProxyAgent {}
+      const error = (() => {
+        try {
+          createTlsDispatcher(tls, { [GLOBAL_DISPATCHER]: new EnvHttpProxyAgent() });
+        } catch (e) {
+          return e as FluentTlsUnavailableError;
+        }
+      })();
+      expect(error).toBeInstanceOf(FluentTlsUnavailableError);
+      expect(error?.code).toBe("FLUENT_TLS_UNAVAILABLE");
+      expect(error?.message).toContain("is a EnvHttpProxyAgent, not an undici Agent");
+    });
+
+    it("reads the global object by default", () => {
+      host[GLOBAL_DISPATCHER] = new Agent({});
+      expect(createTlsDispatcher(tls)).toBeInstanceOf(Agent);
+    });
   });
 });
 

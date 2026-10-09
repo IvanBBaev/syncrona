@@ -349,13 +349,29 @@ export namespace SN {
   }
 
   /**
+   * TLS settings for the connection to the instance: a mutual-TLS client
+   * certificate and key, a CA bundle, and whether the server certificate is
+   * verified. Core reads them from the same environment the rest of syncrona
+   * uses (`SN_CLIENT_CERT`, `SYNCRONA_CA_BUNDLE`, ...); PEM text or bytes.
+   */
+  interface FluentTlsOptions {
+    cert?: string | Uint8Array;
+    key?: string | Uint8Array;
+    passphrase?: string;
+    ca?: string | Uint8Array;
+    rejectUnauthorized: boolean;
+  }
+
+  /**
    * The credential core resolved for the active profile, in the form the
-   * adapter can bridge. API-key and mutual-TLS profiles cannot be expressed to
-   * the SDK, so they arrive as `unsupported` and the resolver refuses them.
+   * adapter can bridge. An API-key profile cannot be expressed to the SDK, so
+   * it arrives as `unsupported` and the resolver refuses it. Mutual TLS is a
+   * transport setting, not an auth method: it rides along as `tls` on a Basic
+   * or OAuth input.
    */
   type FluentCredentialInput =
-    | { kind: "basic"; username: string; password: string }
-    | { kind: "oauth"; getToken: () => Promise<string> }
+    | { kind: "basic"; username: string; password: string; tls?: FluentTlsOptions }
+    | { kind: "oauth"; getToken: () => Promise<string>; tls?: FluentTlsOptions }
     | { kind: "unsupported"; method: string };
 
   interface FluentLogger {
@@ -371,6 +387,11 @@ export namespace SN {
     instanceUrl?: string;
     /** Omitted for purely local actions; the SDK then runs without a credential. */
     auth?: FluentAuthResolver;
+    /**
+     * TLS settings for every request an engine call makes to the instance
+     * (the adapter's UI-session login and the SDK's own requests alike).
+     */
+    tls?: FluentTlsOptions;
     logger: FluentLogger;
   }
 
