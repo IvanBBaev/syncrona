@@ -337,6 +337,32 @@ describe("table policy", () => {
     );
   });
 
+  // A record that does not carry this table's super_class as a string, or names
+  // another table, is not the hierarchy asked for; a real root table answers
+  // `"super_class.name": ""`.
+  it.each<[string, unknown[]]>([
+    ["an empty record", [{}]],
+    ["a record without super_class.name", [{ name: "x" }]],
+    ["a numeric super_class.name", [{ name: "x", "super_class.name": 5 }]],
+    ["a null super_class.name", [{ name: "x", "super_class.name": null }]],
+    ["an object super_class.name", [{ name: "x", "super_class.name": { value: "sys_metadata" } }]],
+    ["another table's record", [{ name: "y", "super_class.name": "" }]],
+  ])("refuses to judge a table from %s", async (_label, result) => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(() => ok(result));
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).rejects.toThrow(
+      'sys_db_object answered with a record that does not describe table "x"'
+    );
+  });
+
+  it("reads an empty super_class.name as a root table, with or without the name field", async () => {
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(() => ok([{ name: "x", "super_class.name": "" }]));
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).resolves.toBe(false);
+    client.tableAPIGet.mockImplementation(() => ok([{ "super_class.name": "" }]));
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).resolves.toBe(false);
+  });
+
   it("still reads an empty result list as a table without a parent", async () => {
     const client = makeClient();
     client.tableAPIGet.mockImplementation(() => ok([]));
@@ -650,6 +676,28 @@ describe("planRecordCreation safety", () => {
     });
     expect(plan.plans[0].action).toBe("error");
     expect(plan.plans[0].message).toMatch(/sys_db_object answered with a result that is not a record for table "u_odd"/);
+    expect(lookupCalls(client)).toEqual([]);
+  });
+
+  it.each<[string, unknown[]]>([
+    ["an empty record", [{}]],
+    ["a record without super_class.name", [{ name: "u_odd" }]],
+    ["a numeric super_class.name", [{ name: "u_odd", "super_class.name": 5 }]],
+    ["a null super_class.name", [{ name: "u_odd", "super_class.name": null }]],
+    ["an object super_class.name", [{ name: "u_odd", "super_class.name": { value: "sys_metadata" } }]],
+    ["another table's record", [{ name: "u_other", "super_class.name": "" }]],
+  ])("refuses a create when the sys_db_object row is %s", async (_label, result) => {
+    mockGetConfig.mockReturnValue({ createTables: ["u_odd"] });
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(async (table: string) =>
+      table === "sys_db_object" ? { data: { result: result as unknown } } : { data: { result: [] as unknown } }
+    );
+    const plan = await Pipeline.planRecordCreation([candidate("u_odd", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/sys_db_object answered with a record that does not describe table "u_odd"/);
     expect(lookupCalls(client)).toEqual([]);
   });
 
