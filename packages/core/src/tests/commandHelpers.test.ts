@@ -16,11 +16,14 @@ jest.unstable_mockModule("../logMessages.js", () => ({
 let AppUtils: typeof import("../appUtils.js");
 let scopeCheck: typeof import("../commandHelpers.js").scopeCheck;
 let resolveInstanceProfile: typeof import("../commandHelpers.js").resolveInstanceProfile;
+let setLogLevel: typeof import("../commandHelpers.js").setLogLevel;
+let logger: typeof import("../Logger.js").logger;
 let checkScopeMock: jest.MockedFunction<typeof AppUtils.checkScope>;
 
 beforeAll(async () => {
   AppUtils = await import("../appUtils.js");
-  ({ scopeCheck, resolveInstanceProfile } = await import("../commandHelpers.js"));
+  ({ scopeCheck, resolveInstanceProfile, setLogLevel } = await import("../commandHelpers.js"));
+  ({ logger } = await import("../Logger.js"));
   checkScopeMock = AppUtils.checkScope as jest.MockedFunction<
     typeof AppUtils.checkScope
   >;
@@ -109,5 +112,37 @@ describe("resolveInstanceProfile", () => {
   it("returns undefined when no explicit flag and no local config exist", () => {
     // cwd here is the package root, which has no .syncrona-local.
     expect(resolveInstanceProfile({})).toBeUndefined();
+  });
+});
+
+describe("setLogLevel", () => {
+  let originalLevel: string;
+
+  beforeAll(() => {
+    originalLevel = logger.getLogLevel();
+  });
+
+  afterAll(() => {
+    logger.setLogLevel(originalLevel);
+  });
+
+  it("applies the requested --log-level", () => {
+    setLogLevel({ logLevel: "debug" } as Parameters<typeof setLogLevel>[0]);
+    expect(logger.getLogLevel()).toBe("debug");
+  });
+
+  // login, logout, instances and use are registered without the shared options,
+  // so they reach setLogLevel with no logLevel at all. That used to print
+  // 'Unknown log level "undefined"' on every run.
+  it("uses info without warning when the command has no --log-level option", () => {
+    logger.setLogLevel("error");
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      setLogLevel({} as Parameters<typeof setLogLevel>[0]);
+      expect(logger.getLogLevel()).toBe("info");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
