@@ -361,11 +361,19 @@ describe("fluentCommand: dispatch and exit codes", () => {
     expect(await run({}, deps)).toBe(1);
   });
 
-  it("prints the planned call on --dry-run without loading the adapter or prompting", async () => {
+  it("prints the planned call on --dry-run, only probing the adapter and never prompting", async () => {
     const { rec, deps } = harness();
     const loadFluent = jest.fn(deps.loadFluent!);
-    expect(await run({ action: "install", dryRun: true, reinstall: true }, { ...deps, loadFluent })).toBe(0);
-    expect(loadFluent).not.toHaveBeenCalled();
+    const resolveCredential = jest.fn(deps.resolveCredential!);
+    expect(
+      await run({ action: "install", dryRun: true, reinstall: true }, { ...deps, loadFluent, resolveCredential })
+    ).toBe(0);
+    // The probe resolves the adapter and the SDK as the real run does, and calls nothing else.
+    expect(loadFluent).toHaveBeenCalledWith(PROJECT);
+    expect(rec.engineOptions).toEqual([{ projectDir: PROJECT, logger: expect.anything() }]);
+    expect(rec.calls).toEqual([]);
+    expect(rec.authInputs).toEqual([]);
+    expect(resolveCredential).not.toHaveBeenCalled();
     expect(rec.prompts).toEqual([]);
     expect(rec.written).toEqual([
       '[dry-run] fluent install → engine.install({"clean":true}) against the active instance',
@@ -756,11 +764,61 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(rec.written).toEqual([]);
   });
 
-  it("--dry-run with an SDK-only flag never falls back, and does not probe the SDK", async () => {
+  it("--dry-run with an SDK-only flag never falls back: it probes the SDK and plans engine.types", async () => {
     const { rec, deps } = harness();
     const loadFluent = jest.fn(deps.loadFluent!);
     expect(await run({ action: "types", scripts: true, dryRun: true }, { ...deps, loadFluent })).toBe(0);
     expect(rec.written[0]).toContain("engine.types(");
+    expect(loadFluent).toHaveBeenCalledWith(PROJECT);
+    expect(rec.calls).toEqual([]);
+  });
+
+  it.each([
+    ["build", {}],
+    ["types --scripts", { action: "types", scripts: true }],
+    ["types --fluent", { action: "types", fluent: true }],
+    ["dependencies", { action: "dependencies" }],
+    ["transform", { action: "transform" }],
+    ["explain", { action: "explain", topic: "flow" }],
+    ["pack", { action: "pack" }],
+    ["status", { action: "status" }],
+    ["install --ci", { action: "install", ci: true }],
+  ])("--dry-run of %s without the adapter exits 1 with the install hint, as the real run does", async (_label, extra) => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const args = { action: "build", ...extra } as Record<string, unknown>;
+    const { rec, deps } = harness();
+    const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+    expect(await run(args, { ...deps, loadFluent })).toBe(1);
+    expect(await run({ ...args, dryRun: true }, { ...deps, loadFluent })).toBe(1);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT, FLUENT_INSTALL_HINT]);
+    expect(rec.written).toEqual([]);
+    expect(rec.generated).toEqual([]);
+  });
+
+  it("--dry-run of build exits 1 with the install hint when the adapter reports the SDK missing", async () => {
+    const sdkMissingError = () => Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
+    const { rec, deps } = harness({
+      engine: {
+        sdkVersion: async () => {
+          throw sdkMissingError();
+        },
+        build: async () => {
+          throw sdkMissingError();
+        },
+      },
+    });
+    expect(await run({ action: "build" }, deps)).toBe(1);
+    expect(await run({ action: "build", dryRun: true }, deps)).toBe(1);
+    expect(errors).toEqual([FLUENT_INSTALL_HINT, FLUENT_INSTALL_HINT]);
+    expect(rec.written).toEqual([]);
+  });
+
+  it("--dry-run without the adapter still fails its local checks first, as the real run does", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { deps } = harness({ files: {}, cwd: path.resolve("/elsewhere") });
+    const loadFluent = jest.fn(async () => Promise.reject(new FluentNotInstalledError()));
+    expect(await run({ action: "build", dryRun: true }, { ...deps, loadFluent })).toBe(1);
+    expect(errors[0]).toContain("No now.config.json found");
     expect(loadFluent).not.toHaveBeenCalled();
   });
 
@@ -1304,7 +1362,8 @@ describe("fluentCommand: explain", () => {
     const { rec, deps } = harness();
     expect(await run({ action: "explain", topic: "flow", dryRun: true }, deps)).toBe(0);
     expect(rec.written).toEqual(['[dry-run] fluent explain → engine.explain({"topic":"flow"}) (local only)']);
-    expect(rec.engineOptions).toEqual([]);
+    // Only the install probe ran: no explain call reached the engine.
+    expect(rec.calls).toEqual([]);
   });
 
   it("reports an SDK without bundled docs with the adapter's own message", async () => {
@@ -1473,7 +1532,7 @@ describe("fluentCommand: move-to-app", () => {
     expect(errors[0]).toContain("No now.config.json found");
   });
 
-  it("prints the planned call on --dry-run without credentials, prompts or the adapter", async () => {
+  it("prints the planned call on --dry-run without credentials or prompts, probing only the adapter", async () => {
     const { rec, deps } = harness({ files: GLOBAL_CONFIG });
     const resolveCredential = jest.fn(deps.resolveCredential!);
     expect(await run({ action: "move-to-app", ids: `${ID_A},${ID_B}`, dryRun: true }, { ...deps, resolveCredential })).toBe(0);
@@ -1482,7 +1541,9 @@ describe("fluentCommand: move-to-app", () => {
     ]);
     expect(resolveCredential).not.toHaveBeenCalled();
     expect(rec.prompts).toEqual([]);
-    expect(rec.engineOptions).toEqual([]);
+    expect(rec.engineOptions).toEqual([{ projectDir: PROJECT, logger: expect.anything() }]);
+    expect(rec.calls).toEqual([]);
+    expect(rec.authInputs).toEqual([]);
   });
 
   it("folds repeated ids, case-insensitively, before asking", async () => {

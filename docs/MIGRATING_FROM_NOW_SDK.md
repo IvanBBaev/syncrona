@@ -74,8 +74,10 @@ scope. [MONOREPO_GUIDE.md](MONOREPO_GUIDE.md) describes the layout, and
 Every `fluent` action takes `--project <dir>` (default: the nearest
 `now.config.json`), `--json` for the machine-readable result, and `--dry-run`,
 which prints the SDK call it would make without resolving any credentials or
-reaching the instance. Only a plain `fluent types --dry-run` loads the SDK, to
-check that it is installed, so it reports the native fallback when the real run
+reaching the instance. Every action but `types --native` loads the adapter and
+the SDK on `--dry-run`, to check that they are installed: when one is missing the
+preview prints the install hint and exits 1, as the real run does, and a plain
+`fluent types --dry-run` reports the native fallback instead when the real run
 would take it. `cicd` and `query` have no preview mode and refuse `--dry-run`
 instead of ignoring it.
 
