@@ -571,6 +571,73 @@ describe("planRecordCreation safety", () => {
     expect(plan.plans[0].message).toMatch(message);
   });
 
+  // A table the instance does not have used to pass straight through: the
+  // hierarchy walk found no sys_db_object row, read that as "outside
+  // sys_metadata", and an allowlisted name was planned as a create.
+  it.each([
+    ["listed under createTables", { createTables: ["u_ghost"] }],
+    ["not listed anywhere", {}],
+  ])("refuses a table that does not exist on the instance, %s", async (_label, config) => {
+    mockGetConfig.mockReturnValue(config);
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([candidate("u_ghost", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(
+      /table u_ghost does not exist on the instance \(no sys_db_object record is named "u_ghost"\)/
+    );
+    expect(lookupCalls(client)).toEqual([]);
+  });
+
+  // A table outside sys_metadata is looked up without a sys_scope term, so the
+  // returned row's own sys_scope is what keeps another application's record
+  // from being adopted.
+  const unscopedRows = (client: FakeClient, extra: Record<string, unknown>) =>
+    client.tableAPIGet.mockImplementation(async (table: string, query: string) => {
+      if (table === "sys_db_object") {
+        const name = query.replace(/^name=/, "");
+        return name in HIERARCHY
+          ? { data: { result: [{ name, "super_class.name": HIERARCHY[name] }] as unknown } }
+          : { data: { result: [] as unknown } };
+      }
+      const [, field, value] = /^([^=^]+)=([^^]*)/.exec(query) ?? [];
+      return { data: { result: [{ sys_id: "inc-1", [field]: value, ...extra }] as unknown } };
+    });
+
+  it("refuses to adopt a record of an unscoped table that belongs to another scope", async () => {
+    mockGetConfig.mockReturnValue({ createTables: ["incident"] });
+    const client = makeClient();
+    unscopedRows(client, { sys_scope: "other-scope" });
+    const plan = await Pipeline.planRecordCreation([candidate("incident", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "error", scoped: false });
+    expect(plan.plans[0].message).toMatch(
+      /matching incident record inc-1 belongs to scope "other-scope", not to this application \(scope-1\); refusing to adopt it/
+    );
+    const [[, query, fields]] = lookupCalls(client);
+    expect(query).not.toContain("sys_scope");
+    expect(String(fields).split(",")).toContain("sys_scope");
+  });
+
+  it.each([
+    ["this application's scope", { sys_scope: "scope-1" }],
+    ["an empty scope", { sys_scope: "" }],
+    ["no scope column", {}],
+  ])("adopts a record of an unscoped table with %s", async (_label, extra) => {
+    mockGetConfig.mockReturnValue({ createTables: ["incident"] });
+    const client = makeClient();
+    unscopedRows(client, extra);
+    const plan = await Pipeline.planRecordCreation([candidate("incident", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "adopt", sysId: "inc-1", scoped: false });
+  });
+
   it("refuses a name holding ^ before any lookup request on the table", async () => {
     const client = makeClient();
     const plan = await Pipeline.planRecordCreation([candidate("sys_script_include", "A^B")], {
