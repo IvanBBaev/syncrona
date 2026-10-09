@@ -782,6 +782,9 @@ for (const [label, failure] of [
   ['an undici socket error', () => fetchFailed('UND_ERR_SOCKET')],
   ['a connect timeout', () => fetchFailed('ETIMEDOUT')],
   ['a request timeout', () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })],
+  ['an abort', () => Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })],
+  // The code on the error itself, not on `cause` (axios-style, or a transport that does not wrap it).
+  ['a socket reset coded on the error itself', () => Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })],
 ]) {
   test(`handleCicdRun: ${label} on a poll is polled again, one request per poll → succeeded`, async () => {
     await withEnv(async () => {
@@ -843,6 +846,7 @@ for (const [label, failure] of [
   ['a TypeError bug', () => new TypeError("Cannot read properties of undefined (reading 'x')")],
   ['a malformed HTTP answer', () => fetchFailed('HPE_INVALID_CONSTANT')],
   ['an invalid argument', () => fetchFailed('ERR_INVALID_ARG_TYPE')],
+  ['a non-network code on the error itself', () => Object.assign(new Error('bad argument'), { code: 'ERR_INVALID_ARG_TYPE' })],
 ]) {
   test(`handleCicdRun: ${label} on a poll is not polled again → incomplete`, async () => {
     await withEnv(async () => {
