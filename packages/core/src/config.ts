@@ -459,9 +459,12 @@ export class ConfigStore {
       const configConsole = logger.isRoutedToStderr()
         ? new console.Console(process.stderr, process.stderr)
         : console;
+      // `exports` must alias `module.exports`, as in Node: a config written as
+      // `exports.includes = ...` assigns onto that shared object.
+      const configModule = { exports: {} as unknown };
       const sandbox = {
-        module: { exports: {} as unknown },
-        exports: {} as unknown,
+        module: configModule,
+        exports: configModule.exports,
         require: configRequire,
         __filename: configPath,
         __dirname: path.dirname(configPath),
@@ -469,16 +472,20 @@ export class ConfigStore {
         console: configConsole,
       };
       vm.runInNewContext(source, sandbox, { filename: configPath });
-      loaded = (sandbox.module as { exports: unknown }).exports || sandbox.exports;
+      loaded = configModule.exports;
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      // An error thrown by the config comes from the vm context's own Error, which
+      // fails `instanceof Error` here; String(e) would prefix it with "Error: ".
+      const message = types.isNativeError(e) ? e.message : String(e);
       // A present-but-broken config must fail hard: silently falling back to
       // defaults would run commands with the wrong includes/excludes/rules.
       throw new Error(`Failed to load config file ${configPath}: ${message}`);
     }
 
-    const loadedObj = (loaded ?? {}) as { default?: unknown };
-    const projectConfig: Sync.Config = (loadedObj.default || loadedObj) as Sync.Config;
+    // No `?? {}` fallback: `module.exports = null` is a broken config, and the
+    // shape check below must reject it rather than load the defaults.
+    const projectConfig = ((loaded as { default?: unknown } | null)?.default ||
+      loaded) as Sync.Config;
     validateConfigShape(projectConfig, configPath);
     const {
       includes: pIncludes = {},
