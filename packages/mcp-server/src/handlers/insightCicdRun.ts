@@ -425,11 +425,32 @@ function isTransientPollError(err: unknown): boolean {
   return true;
 }
 
+/**
+ * Polls the tracker to a terminal status within the budget. Every timeout, also
+ * one reached while polls are failing transiently, ends with the same actionable
+ * message as core: where to check the tracker (its own link, the dispatch
+ * answer's link, or the API path) and how to resume waiting on it.
+ */
 async function pollProgress(
   progressId: string,
   pollMs: number,
-  budget: Budget
+  budget: Budget,
+  timeoutMs: number,
+  progressUrl?: string
 ): Promise<JsonObject> {
+  const request = `GET api/sn_cicd/progress/${progressId}`;
+  let lastProgress: JsonObject | undefined;
+  const timedOut = (lastError?: unknown): CicdRunIncomplete => {
+    const where = (lastProgress && linkOf(lastProgress, "progress", "url")) ?? progressUrl ?? `${request} on the instance`;
+    const last = lastProgress ? statusLabel(lastProgress) : "never read";
+    // The trailing period is dropped: the error is quoted inside parentheses.
+    const errorText = lastError instanceof Error ? lastError.message : String(lastError);
+    const error = lastError === undefined ? "" : `; last poll error: ${errorText.replace(/\.$/, "")}`;
+    return new CicdRunIncomplete(
+      `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for progress ${progressId} (last status: ${last}${error}). ` +
+        `The work may still be running on the instance; check it at ${where} and resume waiting with progressId ${progressId} (and a larger timeoutMs).`
+    );
+  };
   let failures = 0;
   for (;;) {
     let progress: JsonObject;
@@ -443,21 +464,26 @@ async function pollProgress(
     } catch (e) {
       failures += 1;
       const left = budget.remaining();
-      if (!isTransientPollError(e) || failures >= CICD_MAX_POLL_FAILURES || left <= 0) {
+      if (!isTransientPollError(e)) {
+        throw e;
+      }
+      if (left <= 0) {
+        throw timedOut(e);
+      }
+      if (failures >= CICD_MAX_POLL_FAILURES) {
         throw e;
       }
       await sleep(Math.min(pollMs, left));
       continue;
     }
     failures = 0;
+    lastProgress = progress;
     if (TERMINAL_STATUSES.has(String(progress.status ?? ""))) {
       return progress;
     }
     const left = budget.remaining();
     if (left <= 0) {
-      throw new CicdRunIncomplete(
-        `Timed out waiting for progress ${progressId} (last status: ${statusLabel(progress)}). The work may still be running on the instance.`
-      );
+      throw timedOut();
     }
     await sleep(Math.min(pollMs, left));
   }
@@ -570,8 +596,12 @@ function endedWithoutAtfResult(progress: JsonObject, resumeId: string | undefine
     : `${ended}.`;
 }
 
-/** Sends the dispatch POST and returns the id of the progress tracker it started. */
-async function dispatchAction(action: CicdRunAction, endpoint: string, budget: Budget): Promise<string> {
+/** Sends the dispatch POST and returns the id (and URL) of the progress tracker it started. */
+async function dispatchAction(
+  action: CicdRunAction,
+  endpoint: string,
+  budget: Budget
+): Promise<{ id: string; url?: string }> {
   const dispatched = await cicdCall("POST", endpoint, action, budget);
   const progressId = linkOf(dispatched, "progress", "id");
   if (!progressId) {
@@ -584,7 +614,7 @@ async function dispatchAction(action: CicdRunAction, endpoint: string, budget: B
         : `The instance accepted ${action} but returned no progress id to follow.`
     );
   }
-  return progressId;
+  return { id: progressId, url: linkOf(dispatched, "progress", "url") };
 }
 
 /**
@@ -657,7 +687,8 @@ export async function handleCicdRun(
   let httpStatus: number | undefined;
 
   try {
-    progressId = resumeId ?? (await dispatchAction(action, endpoint, budget));
+    const tracker = resumeId ? { id: resumeId } : await dispatchAction(action, endpoint, budget);
+    progressId = tracker.id;
     if (!resumeId) {
       // The dispatch is audited before polling: a poll that outlives the MCP
       // call, or a crash, must not leave dispatched work without an audit line.
@@ -668,7 +699,7 @@ export async function handleCicdRun(
         Date.now() - context.startedAt
       );
     }
-    progress = await pollProgress(progressId, pollMs, budget);
+    progress = await pollProgress(progressId, pollMs, budget, context.timeoutMs, tracker.url);
     const trackerSucceeded = String(progress.status) === STATUS_SUCCESSFUL;
     const isAtfAction = action === "run-suite" || action === "run-test";
     if (resumeId && !isAtfAction && trackerLinksAtfResult(progress)) {
