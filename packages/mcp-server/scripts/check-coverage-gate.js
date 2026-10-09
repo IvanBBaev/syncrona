@@ -316,14 +316,23 @@ const MODULE_FLOORS = [
   //
   // Neither report prints branch counters, so the lower pair was re-measured the
   // way audit.js's was: `--test-reporter=lcov` under the gate's own flags, which
-  // renders darwin as 288/308 branches (287/307 before the sync_cicd_run poll-retry
+  // rendered darwin as 288/308 branches (287/307 before the sync_cicd_run poll-retry
   // tests drove one more range), 1040/1050 lines and 64/66 functions. The
   // higher pair is then forced, not guessed. Ubuntu's 98.48 is 65/66 — exactly one
   // more covered function range, the same +1 shape this file recorded the last two
   // times this module split — and 289/309 is the only pair that both renders 93.53
   // and moves numerator and denominator together the way an extra counted range
   // does (288/308 renders 93.51, 290/310 renders 93.55).
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.63
+  //
+  // Round eight (redirect-loop and HTML-login session failures, `retryTransient`)
+  // moved the module again, so both readings are re-based rather than dropped: the
+  // split is a property of V8's range counting on ubuntu, not of the old counters.
+  // Re-measured the same way, darwin renders 294/314 branches, 1043/1053 lines and
+  // 64/66 functions (99.05 / 93.63, uncovered `432-436 441-442 833 1035-1036`).
+  // The ubuntu pair is forced by the same +1/+1 rule — 295/315, which renders
+  // 93.65 — and has NOT been observed on CI yet: the first ubuntu run after this
+  // lands must confirm it, and replace it with the printed reading if it differs.
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.63 (also 99.05 / 93.65: V8 range granularity on ubuntu, 294/314 vs 295/315 branches, same uncovered lines 432-436 441-442 833 1035-1036, one extra covered function range at 98.48 against darwin's 96.97)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
