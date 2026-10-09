@@ -1186,31 +1186,72 @@ test('handleCicdRun resume: a results link without an id still marks an ATF trac
   });
 });
 
-test('handleCicdRun resume: an app-repo tracker resumed as an ATF action → incomplete, whatever its status', async () => {
+test('handleCicdRun resume: a successful tracker without a result link resumed as an ATF action → incomplete', async () => {
   await withEnv(async () => {
     for (const action of ['run-suite', 'run-test']) {
-      for (const [status, label] of [['2', 'Successful'], ['3', 'Failed'], ['4', 'Canceled']]) {
-        const calls = mockFetch({
-          [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress(status, { status_message: 'Install failed' }),
-        });
-        const context = makeContext();
-        const res = await handleCicdRun({ action, progressId: RESUME_ID }, context);
-        const body = payloadOf(res);
-        // Never succeeded (a pass) nor failed (failing tests): the tracker says nothing about tests.
-        assert.equal(res.isError, true, `${action}/${status}`);
-        assert.equal(body.outcome, 'incomplete', `${action}/${status}`);
-        assert.equal(body.exitCode, 1, `${action}/${status}`);
-        assert.equal(body.atf, undefined);
-        assert.match(
-          body.message,
-          new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended ${label}\\)`)
+      const calls = mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2') });
+      const context = makeContext();
+      const res = await handleCicdRun({ action, progressId: RESUME_ID }, context);
+      const body = payloadOf(res);
+      // Never succeeded (a pass): the tracker says nothing about tests.
+      assert.equal(res.isError, true, action);
+      assert.equal(body.outcome, 'incomplete', action);
+      assert.equal(body.exitCode, 1, action);
+      assert.equal(body.atf, undefined);
+      assert.match(
+        body.message,
+        new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended Successful\\)`)
+      );
+      assert.match(body.message, /Resume it with the install, publish or rollback action/);
+      assert.equal(calls.length, 1);
+      assert.equal(context.audits.at(-1).outcome.outcome, 'incomplete');
+    }
+  });
+});
+
+// Review round 7, finding 1 (parity with core): an ATF tracker that failed or
+// was cancelled before it linked a result is reported the same way whether it
+// was dispatched or resumed — failed / exitCode 2, no test results reported.
+test('handleCicdRun: an ATF tracker that ended before its result gets the same verdict fresh and resumed', async () => {
+  await withEnv(async () => {
+    for (const action of ['run-suite', 'run-test']) {
+      for (const [status, label] of [['3', 'Failed'], ['4', 'Canceled']]) {
+        const dispatchPath = action === 'run-suite' ? 'POST /api/sn_cicd/testsuite/run' : 'POST /api/sn_cicd/tests/run_test';
+        const ended = `The tracker ended ${label} before linking an ATF result record, so no test results were reported`;
+
+        mockFetch({ [dispatchPath]: dispatched(), [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress(status) });
+        const fresh = payloadOf(
+          await handleCicdRun(
+            { action, ...(action === 'run-suite' ? { suiteId: SUITE_ID } : { testId: TEST_ID }), confirmDestructive: true },
+            makeContext()
+          )
         );
-        assert.match(body.message, /Resume it with the install, publish or rollback action/);
-        assert.equal(body.tracker.status, status);
-        assert.equal(calls.length, 1);
-        assert.equal(context.audits.at(-1).outcome.outcome, 'incomplete');
+        assert.equal(fresh.outcome, 'failed', `fresh ${action}/${status}`);
+        assert.equal(fresh.exitCode, 2);
+        assert.equal(fresh.message, fenced(`${ended}.`));
+
+        const calls = mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress(status) });
+        const resumed = payloadOf(await handleCicdRun({ action, progressId: RESUME_ID }, makeContext()));
+        assert.equal(resumed.outcome, 'failed', `resumed ${action}/${status}`);
+        assert.equal(resumed.exitCode, 2);
+        assert.equal(
+          resumed.message,
+          fenced(
+            `${ended}; if progress ${RESUME_ID} is an install, publish or rollback run rather than an ATF run, resume it with that action to report it under its own name.`
+          )
+        );
+        assert.equal(calls.length, 1, 'no result read without a result link');
       }
     }
+  });
+});
+
+test('handleCicdRun resume: quotes the instance reason for an ATF tracker that failed before its result', async () => {
+  await withEnv(async () => {
+    mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('3', { status_message: 'Suite not found' }) });
+    const body = payloadOf(await handleCicdRun({ action: 'run-suite', progressId: RESUME_ID }, makeContext()));
+    assert.equal(body.outcome, 'failed');
+    assert.match(body.message, /The tracker ended Failed \(Suite not found\) before linking an ATF result record/);
   });
 });
 
@@ -1223,6 +1264,10 @@ test('handleCicdRun: a dispatched ATF run whose tracker failed before linking a 
     const body = payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
     assert.equal(body.outcome, 'failed');
     assert.equal(body.exitCode, 2);
+    assert.equal(
+      body.message,
+      fenced('The tracker ended Failed (Suite not found) before linking an ATF result record, so no test results were reported.')
+    );
   });
 });
 
