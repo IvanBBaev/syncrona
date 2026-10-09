@@ -170,16 +170,30 @@ function resolveSdkApi(projectDir: string): string {
   return apiPath;
 }
 
-const CREDENTIALS_SPECIFIER = "@servicenow/sdk-api/credentials";
+const SDK_API_PACKAGE = "@servicenow/sdk-api";
+const CREDENTIALS_SPECIFIER = `${SDK_API_PACKAGE}/credentials`;
 
 /**
- * Whether `e` is Node's not-found error for `specifier` itself, rather than for
- * some module `specifier` requires (whose error names that other module).
+ * Whether `e` says the credentials module itself cannot be found, rather than
+ * some module it requires (whose error names that other module).
+ *
+ * Node names the module two ways. With `@servicenow/sdk-api` absent it quotes
+ * the specifier. With the package present but the file its `./credentials`
+ * export maps to absent, it quotes that file's absolute path, and with no
+ * `requireStack`, since no module required it. A file inside the package that
+ * the credentials module itself requires carries a non-empty `requireStack`,
+ * and a file in the package's own `node_modules` belongs to a dependency, so
+ * both surface as the real error.
  */
-function isModuleNotFound(e: unknown, specifier: string): boolean {
-  const err = e as { code?: unknown; message?: unknown } | null;
-  if (err?.code !== "MODULE_NOT_FOUND") return false;
-  return typeof err.message === "string" && err.message.includes(`'${specifier}'`);
+function isCredentialsModuleMissing(e: unknown): boolean {
+  const err = e as { code?: unknown; message?: unknown; requireStack?: unknown } | null;
+  if (err?.code !== "MODULE_NOT_FOUND" || typeof err.message !== "string") return false;
+  if (err.message.includes(`'${CREDENTIALS_SPECIFIER}'`)) return true;
+  if ((err.requireStack as readonly unknown[] | undefined)?.length) return false;
+  const named = /^Cannot find module '([^']+)'/.exec(err.message)?.[1];
+  if (!named || !path.isAbsolute(named)) return false;
+  const pkg = findPackage(named, SDK_API_PACKAGE);
+  return pkg !== undefined && !path.relative(pkg.dir, named).split(path.sep).includes("node_modules");
 }
 
 /**
@@ -196,11 +210,11 @@ export const defaultSdkLoader: SdkLoader = (projectDir) => {
   try {
     ({ LazyCredential } = req(CREDENTIALS_SPECIFIER) as Pick<LoadedSdk, "LazyCredential">);
   } catch (e) {
-    // An SDK whose own @servicenow/sdk-api is missing is as unusable as no SDK
-    // at all; say so with the install hint, not a raw resolver error. Any other
+    // An SDK whose own @servicenow/sdk-api is missing, or ships without the file
+    // its credentials export maps to, is as unusable as no SDK at all; say so with the install hint, not a raw resolver error. Any other
     // not-found module (a missing transitive dependency of the credentials
     // module) is a broken install with its own cause, so it surfaces as is.
-    if (!isModuleNotFound(e, CREDENTIALS_SPECIFIER)) throw e;
+    if (!isCredentialsModuleMissing(e)) throw e;
     throw new FluentSdkMissingError(
       "The ServiceNow SDK (@servicenow/sdk) is incomplete: @servicenow/sdk-api/credentials cannot be loaded. " +
         "Reinstall @servicenow/sdk to use `syncrona fluent`.",
