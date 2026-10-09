@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --enable-source-maps --test test/*.test.js",
-    "test:coverage": "npm run build && node --enable-source-maps --test --experimental-test-coverage test/*.test.js",
+    "test": "npm run build && node --enable-source-maps --require ./test/isolate-state.cjs --test test/*.test.js",
+    "test:coverage": "npm run build && node --enable-source-maps --require ./test/isolate-state.cjs --test --experimental-test-coverage test/*.test.js",
     "test:coverage:gate": "npm run build && node scripts/check-coverage-gate.js --line-threshold 90 --branch-threshold 80",
     "test:coverage:gate100": "npm run build && node scripts/check-coverage-gate.js --line-threshold 100",
     "test:mutation": "cd ../.. && stryker run packages/mcp-server/stryker.conf.json",

@@ -69,9 +69,14 @@ describe("at-rest key resolution (AR2)", () => {
   let tempHome: string;
   let savedStoreKey: string | undefined;
   let savedUseKeychain: string | undefined;
+  let homedirSpy: ReturnType<typeof jest.spyOn>;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-store-key-"));
+    // The ESM `os` mock above never reaches the compiled CommonJS credential
+    // store, which would otherwise write into the developer's real ~/.syncrona.
+    // Spy on the shared `os` singleton too, as authStore.test.ts does.
+    homedirSpy = jest.spyOn(os, "homedir").mockReturnValue(tempHome);
     savedStoreKey = process.env.SYNCRONA_STORE_KEY;
     savedUseKeychain = process.env.SYNCRONA_USE_KEYCHAIN;
     // D5: the keychain is now the DEFAULT backend, so absence of the flag means
@@ -83,6 +88,7 @@ describe("at-rest key resolution (AR2)", () => {
   });
 
   afterEach(async () => {
+    homedirSpy.mockRestore();
     jest.dontMock("os");
     jest.resetModules();
     if (savedStoreKey === undefined) delete process.env.SYNCRONA_STORE_KEY;

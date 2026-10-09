@@ -285,6 +285,36 @@ test('REV-143 keeps the high-water marker in a per-user state dir, not os.tmpdir
   }
 });
 
+test('REV-143 falls back to ~/.syncrona/audit-integrity without an override or XDG_STATE_HOME', () => {
+  const root = mkTmpDir('syncrona-rev143-home-');
+  const auditDir = path.join(root, '.syncrona-mcp');
+  const auditFile = path.join(auditDir, 'audit.log');
+  const prevState = process.env.SYNCRONA_AUDIT_STATE_DIR;
+  const prevXdg = process.env.XDG_STATE_HOME;
+  const realHomedir = os.homedir;
+  delete process.env.SYNCRONA_AUDIT_STATE_DIR;
+  delete process.env.XDG_STATE_HOME;
+  // Point the home dir at the temp root so the fallback never touches the real ~/.syncrona.
+  os.homedir = () => root;
+  try {
+    assert.equal(writeAuditEvent(auditDir, auditFile, { event: 'x' }).ok, true);
+
+    const stateDir = path.join(root, '.syncrona', 'audit-integrity');
+    const marker = markerPath(stateDir, auditFile);
+    assert.equal(fs.existsSync(marker), true, 'high-water marker not written under the home dir');
+    assert.equal(JSON.parse(fs.readFileSync(marker, 'utf-8')).seq, 1);
+  } finally {
+    os.homedir = realHomedir;
+    if (prevXdg !== undefined) {
+      process.env.XDG_STATE_HOME = prevXdg;
+    }
+    if (prevState !== undefined) {
+      process.env.SYNCRONA_AUDIT_STATE_DIR = prevState;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('REV-143 refuses to write the high-water marker through a planted symlink', () => {
   withAuditWorkspace('syncrona-rev143-symlink-', ({ root, auditDir, auditFile, stateDir }) => {
     const victim = path.join(root, 'authorized_keys');
@@ -409,6 +439,7 @@ test('REV-146 concurrent writers keep the chain intact', async () => {
     }
     await Promise.all(runs);
 
+    const prevState = process.env.SYNCRONA_AUDIT_STATE_DIR;
     process.env.SYNCRONA_AUDIT_STATE_DIR = stateDir;
     try {
       const total = children * perChild;
@@ -418,7 +449,11 @@ test('REV-146 concurrent writers keep the chain intact', async () => {
       assert.equal(result.status, 'valid');
       assert.equal(result.totalLines, total);
     } finally {
-      delete process.env.SYNCRONA_AUDIT_STATE_DIR;
+      if (prevState === undefined) {
+        delete process.env.SYNCRONA_AUDIT_STATE_DIR;
+      } else {
+        process.env.SYNCRONA_AUDIT_STATE_DIR = prevState;
+      }
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -689,6 +689,8 @@ function runCoverage() {
   const result = spawnSync(
     process.execPath,
     [
+      '--require',
+      './test/isolate-state.cjs',
       '--test',
       '--experimental-test-coverage',
       '--test-coverage-include',
