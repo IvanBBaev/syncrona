@@ -251,6 +251,15 @@ function countOf(value: unknown): number {
 }
 
 /**
+ * A count for the `reason` text, the same as core's summary `countOf`: a
+ * missing count reads "0" and an unreadable one "?".
+ */
+function reasonCountOf(value: unknown): string {
+  const n = strictAtfCount(value);
+  return n === undefined ? (value === undefined ? "0" : "?") : String(n);
+}
+
+/**
  * The ATF verdict allow-list. It must stay identical to the copy in
  * `packages/core/src/cicdCommand.ts` (this package may not import core), and
  * both are table-tested against the same shapes.
@@ -556,6 +565,8 @@ async function pollProgress(
 interface AtfOutcome {
   verdict: AtfVerdict;
   summary: JsonObject;
+  /** Core's one-line ATF summary, the `reason` of a passing run (unfenced). */
+  reasonText: string;
   url?: string;
 }
 
@@ -618,12 +629,17 @@ async function fetchAtfOutcome(
         errored,
         skipped,
       },
+      reasonText:
+        `${suiteStatus ? `Suite ${suiteStatus}: ` : ""}${reasonCountOf(body.rolledup_test_success_count)} passed, ` +
+        `${reasonCountOf(body.rolledup_test_failure_count)} failed, ${reasonCountOf(body.rolledup_test_error_count)} errored, ` +
+        `${reasonCountOf(body.rolledup_test_skip_count)} skipped`,
       url,
     };
   }
   const testStatus = nonEmptyString(body.test_status);
   return {
     verdict: atfTestVerdict(body),
+    reasonText: `Test ${testStatus ?? "finished"}${nonEmptyString(body.output) ? `: ${String(body.output)}` : ""}`,
     // Step output is instance-authored free text — fence it as untrusted.
     summary: {
       testStatus: testStatus ? wrapUntrustedData(testStatus, "servicenow") : null,
@@ -646,18 +662,19 @@ function trackerSummary(progress: JsonObject): JsonObject {
 }
 
 /**
- * The message for an ATF tracker that failed or was cancelled before it linked
- * a result record (core's wording). On a resume it adds that an app-repo
- * tracker would be reported under its own action.
+ * Why an ATF tracker that failed or was cancelled before it linked a result
+ * record failed — core's `endedWithoutAtfResult` text exactly, which is the
+ * `reason`; the message is the same sentence, capitalized and closed. On a
+ * resume it adds that an app-repo tracker would be reported under its own action.
  */
 function endedWithoutAtfResult(progress: JsonObject, resumeId: string | undefined): string {
   const instanceReason = extractCicdErrorMessage({ result: progress });
   const ended =
-    `The tracker ended ${statusLabel(progress)}${instanceReason ? ` (${instanceReason})` : ""} ` +
+    `the tracker ended ${statusLabel(progress)}${instanceReason ? ` (${instanceReason})` : ""} ` +
     "before linking an ATF result record, so no test results were reported";
   return resumeId
-    ? `${ended}; if progress ${resumeId} is an install, publish or rollback run rather than an ATF run, resume it with that action to report it under its own name.`
-    : `${ended}.`;
+    ? `${ended}; if progress ${resumeId} is an install, publish or rollback run rather than an ATF run, resume it with that action to report it under its own name`
+    : ended;
 }
 
 /** Sends the dispatch POST and returns the id (and URL) of the progress tracker it started. */
@@ -749,6 +766,7 @@ export async function handleCicdRun(
   let progress: JsonObject | undefined;
   let atf: AtfOutcome | undefined;
   let message: string | undefined;
+  let reason = "";
   let httpStatus: number | undefined;
 
   try {
@@ -817,13 +835,28 @@ export async function handleCicdRun(
       : trackerSucceeded && atf?.verdict === "no_tests"
         ? "no_tests"
         : "failed";
+    const instanceReason = extractCicdErrorMessage({ result: progress });
+    // Core's `reason`, value for value, set in the same branches as core's.
+    if (succeeded) {
+      reason = atf?.reasonText ?? `the tracker ended ${statusLabel(progress)}`;
+    } else if (!trackerSucceeded && atfWithoutResult) {
+      reason = endedWithoutAtfResult(progress, resumeId);
+    } else {
+      reason =
+        instanceReason ??
+        (!trackerSucceeded
+          ? statusLabel(progress)
+          : verdict === "no_tests"
+            ? "the suite ran no tests, which is not a pass"
+            : "ATF reported failing tests");
+    }
     if (!succeeded && trackerSucceeded) {
       message =
         atf?.verdict === "no_tests"
           ? "The suite ran no tests (0 passed, 0 failed, 0 errored), which is not a pass."
           : "ATF reported failing tests.";
     } else if (!trackerSucceeded && atfWithoutResult) {
-      message = endedWithoutAtfResult(progress, resumeId);
+      message = `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
     } else if (succeeded && resumeId && !isAtfAction) {
       message = `The tracker does not record which app-repo action started it; reported as ${action} on the caller's word.`;
     }
@@ -831,6 +864,8 @@ export async function handleCicdRun(
     outcome = "incomplete";
     verdict = e instanceof CicdRunIncomplete ? e.verdict : "incomplete";
     message = e instanceof Error ? e.message : String(e);
+    // Core's reason for a run it could not finish is its error text.
+    reason = message;
     httpStatus = e instanceof CicdRunIncomplete ? e.httpStatus : undefined;
   }
 
@@ -863,6 +898,8 @@ export async function handleCicdRun(
       outcome,
       exitCode,
       verdict,
+      // Core's `cicd --json` reason; it can quote the instance, so it is fenced.
+      reason: wrapUntrustedData(reason, "servicenow"),
       ...(resumeId ? { resumed: true } : {}),
       request: { method, path: `api/sn_cicd/${request.path}`, params: request.params },
       progressId: progressId ?? null,

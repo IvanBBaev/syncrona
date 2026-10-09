@@ -1497,3 +1497,87 @@ test('handleCicdRun: every finished call carries the verdict core reports', asyn
     assert.deepEqual([refused.outcome, refused.verdict], ['incomplete', 'incomplete']);
   });
 });
+
+// Review round 8, finding 3 (parity with core's --json): a `reason` next to the
+// verdict, with the values core's `cicd --json` reports, set where core sets it.
+// It can quote instance-authored text, so it is fenced like the message.
+test('handleCicdRun: every call carries the reason core reports next to the verdict', async () => {
+  await withEnv(async () => {
+    const runSuite = async (result) => {
+      mockFetch({
+        'POST /api/sn_cicd/testsuite/run': dispatched(),
+        [POLL_PATH]: progress('2', withResults),
+        [`GET /api/sn_cicd/testsuite/results/${RESULT_ID}`]: mkResponse(200, { result }),
+      });
+      return payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
+    };
+    const counts = (passed, failed) => ({
+      rolledup_test_success_count: passed,
+      rolledup_test_failure_count: failed,
+      rolledup_test_error_count: 0,
+    });
+
+    const passed = await runSuite({ test_suite_status: 'success', ...counts(2, 0) });
+    assert.equal(passed.reason, fenced('Suite success: 2 passed, 0 failed, 0 errored, 0 skipped'));
+
+    // Core's summary counts: a missing count reads 0, an unreadable one "?".
+    const odd = await runSuite({ ...counts(2, 0), rolledup_test_skip_count: 'n/a', test_suite_status: 'success' });
+    assert.equal(odd.reason, fenced('Suite success: 2 passed, 0 failed, 0 errored, ? skipped'));
+
+    const failed = await runSuite({ test_suite_status: 'failure', ...counts(1, 1) });
+    assert.deepEqual([failed.verdict, failed.reason], ['failed', fenced('ATF reported failing tests')]);
+
+    const empty = await runSuite({ test_suite_status: 'success', ...counts(0, 0) });
+    assert.deepEqual([empty.verdict, empty.reason], ['no_tests', fenced('the suite ran no tests, which is not a pass')]);
+
+    mockFetch({
+      'POST /api/sn_cicd/tests/run_test': dispatched(),
+      [POLL_PATH]: progress('2', withResults),
+      [`GET /api/sn_cicd/tests/test/results/${RESULT_ID}`]: mkResponse(200, {
+        result: { test_status: 'success', output: 'All steps passed' },
+      }),
+    });
+    const single = payloadOf(await handleCicdRun({ action: 'run-test', testId: TEST_ID, confirmDestructive: true }, makeContext()));
+    assert.deepEqual([single.verdict, single.reason], ['passed', fenced('Test success: All steps passed')]);
+
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': dispatched(), [POLL_PATH]: progress('2') });
+    const installed = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.deepEqual([installed.verdict, installed.reason], ['passed', fenced('the tracker ended Successful')]);
+
+    mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: progress('3', { status_message: 'Install failed: boom' }),
+    });
+    const appFailed = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.deepEqual([appFailed.verdict, appFailed.reason], ['failed', fenced('Install failed: boom')]);
+
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': dispatched(), [POLL_PATH]: progress('4') });
+    const cancelled = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.deepEqual([cancelled.verdict, cancelled.reason], ['failed', fenced('Canceled')]);
+
+    // An ATF tracker that ended before its result: core's lowercase sentence,
+    // without the message's capital and closing period.
+    mockFetch({
+      'POST /api/sn_cicd/testsuite/run': dispatched(),
+      [POLL_PATH]: progress('3', { status_message: 'Suite not found' }),
+    });
+    const ended = payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
+    assert.deepEqual(
+      [ended.verdict, ended.reason],
+      [
+        'failed',
+        fenced('the tracker ended Failed (Suite not found) before linking an ATF result record, so no test results were reported'),
+      ]
+    );
+
+    // incomplete and unknown: the reason is the message, as core's is its error.
+    const unclear = await runSuite({ test_suite_status: 'canceled' });
+    assert.equal(unclear.verdict, 'unknown');
+    assert.equal(unclear.reason, unclear.message);
+
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(403, { error: { message: 'User Not Authorized' } }) });
+    const denied = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.equal(denied.verdict, 'incomplete');
+    assert.equal(denied.reason, denied.message);
+  });
+});
