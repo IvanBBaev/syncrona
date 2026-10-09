@@ -603,7 +603,10 @@ async function resolveNativeTypesTarget(
   const projectDir = needsProject
     ? await resolveProjectDir(deps, "types", args)
     : await findProjectDir(deps, deps.cwd);
-  const scope = options.scope ?? (projectDir ? await configuredScope(deps, projectDir) : undefined);
+  // `--table` names the tables outright, and the generator ignores a scope next
+  // to it, so the project's now.config.json is read only when the scope is needed.
+  const scope =
+    options.scope ?? (projectDir && !options.tables ? await configuredScope(deps, projectDir) : undefined);
   if (!options.tables && !scope) {
     throw new FluentCliError(
       `fluent types --native needs a scope: pass --scope or --table, or set "scope" in ${NOW_CONFIG}.`

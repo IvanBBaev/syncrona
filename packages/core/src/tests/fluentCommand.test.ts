@@ -526,7 +526,8 @@ describe("fluentCommand: types --native", () => {
     expect(Object.keys(rec.outputs)).toEqual([path.resolve(PROJECT, "src", "fluent", "types/t.d.ts")]);
 
     expect(await run({ action: "types", native: true, table: "incident,task" }, deps)).toBe(0);
-    expect(rec.generated[1].options).toEqual({ scope: "x_acme_app", tables: ["incident", "task"] });
+    // The generator ignores a scope next to --table, so the project's scope is not read for it.
+    expect(rec.generated[1].options).toEqual({ tables: ["incident", "task"] });
   });
 
   it("runs outside a project when --out and a scope or tables are given", async () => {
@@ -595,15 +596,43 @@ describe("fluentCommand: types --native", () => {
     expect(noProject.rec.outputs).toEqual({});
   });
 
-  it("refuses an unparseable now.config.json in the run and the dry run alike", async () => {
+  it("refuses an unparseable now.config.json in the run and the dry run alike when it needs the scope", async () => {
     for (const dryRun of [false, true]) {
       const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{oops" } });
-      expect(await run({ action: "types", native: true, table: "incident", dryRun }, deps)).toBe(1);
+      expect(await run({ action: "types", native: true, dryRun }, deps)).toBe(1);
       expect(rec.generated).toEqual([]);
       expect(rec.written).toEqual([]);
     }
     expect(errors).toHaveLength(2);
     for (const error of errors) expect(error).toContain(`${CONFIG_FILE} is not valid JSON`);
+  });
+
+  it("does not read now.config.json when --table or --scope makes its scope unnecessary", async () => {
+    for (const flags of [{ table: "incident" }, { scope: "x_other" }]) {
+      for (const dryRun of [false, true]) {
+        const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{oops" } });
+        const readFile = jest.fn(deps.readFile!);
+        expect(await run({ action: "types", native: true, ...flags, dryRun }, { ...deps, readFile })).toBe(0);
+        expect(readFile).not.toHaveBeenCalled();
+        if (dryRun) expect(rec.generated).toEqual([]);
+        else {
+          expect(rec.generated[0].options).toEqual("table" in flags ? { tables: ["incident"] } : { scope: "x_other" });
+          expect(Object.keys(rec.outputs)).toEqual([path.join(PROJECT, "@types", "syncrona", "tables.d.ts")]);
+        }
+      }
+    }
+    expect(errors).toEqual([]);
+  });
+
+  it("a plain types --table falls back to native without reading a malformed now.config.json", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    for (const dryRun of [false, true]) {
+      const { rec, deps } = harness({ files: { [CONFIG_FILE]: "{oops" } });
+      const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+      expect(await run({ action: "types", table: "incident", dryRun }, { ...deps, loadFluent })).toBe(0);
+      if (!dryRun) expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
+    }
+    expect(errors).toEqual([]);
   });
 
   it("--dry-run --json prints the native plan as JSON", async () => {
@@ -650,7 +679,8 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     const { rec, deps } = harness();
     const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
     expect(await run({ action: "types", table: "incident" }, { ...deps, loadFluent })).toBe(0);
-    expect(rec.generated[0].options).toEqual({ scope: "x_acme_app", tables: ["incident"] });
+    // --table names the tables outright; the project's scope is not read for it.
+    expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
     expect(infos[0]).toContain("@servicenow/sdk is not installed; generating table types natively");
     expect(errors).toEqual([]);
   });
