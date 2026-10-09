@@ -31,6 +31,10 @@ const AUTH_ENV_VARS = [
   "SN_OAUTH_CLIENT_SECRET",
   "SN_INSTANCE_PROFILE",
   "SN_CLIENT_CERT",
+  "SN_CLIENT_KEY",
+  "SN_CLIENT_KEY_PASSPHRASE",
+  "SYNCRONA_CA_BUNDLE",
+  "SYNCRONA_TLS_REJECT_UNAUTHORIZED",
 ] as const;
 
 const PROJECT = path.resolve("/work/app");
@@ -454,12 +458,26 @@ describe("fluentCommand: dispatch and exit codes", () => {
     expect(typeof rec.engineOptions[0].auth).toBe("function");
   });
 
-  it("refuses an API-key or mutual-TLS profile, naming the session-only endpoints", async () => {
+  it("refuses an API-key profile, naming the session-only endpoints", async () => {
     const { rec, deps } = harness({ credential: { kind: "unsupported", method: "api-key" } });
     expect(await run({ action: "status" }, deps)).toBe(1);
     expect(rec.calls).toEqual([]);
     expect(errors[0]).toContain("cannot use a api-key profile");
     expect(errors[0]).toContain("sn_appclient_upload_processor.do");
+    expect(errors[0]).toContain("a mutual-TLS client certificate works with either");
+  });
+
+  it("hands the credential's TLS settings to the engine", async () => {
+    const tls = { cert: "CERT", key: "KEY", rejectUnauthorized: true };
+    const { rec, deps } = harness({ credential: { kind: "basic", username: "admin", password: "pw", tls } });
+    expect(await run({ action: "status" }, deps)).toBe(0);
+    expect(rec.engineOptions[0].tls).toBe(tls);
+  });
+
+  it("passes no TLS settings to the engine when the credential has none", async () => {
+    const { rec, deps } = harness();
+    expect(await run({ action: "status" }, deps)).toBe(0);
+    expect(rec.engineOptions[0]).not.toHaveProperty("tls");
   });
 
   it("runs types, dependencies and run", async () => {
@@ -774,7 +792,7 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(errors[1]).not.toContain("--native");
   });
 
-  it.each(["api-key", "mutual-TLS"])(
+  it.each(["api-key"])(
     "falls back to native for plain types with a %s profile when the SDK is missing, as --dry-run reports",
     async (method) => {
       const { FluentNotInstalledError } = await import("../fluentCommand.js");
@@ -1274,22 +1292,137 @@ describe("default dependencies", () => {
     ]);
   });
 
-  it("marks API-key and mutual-TLS profiles unsupported", async () => {
+  async function clientCert(): Promise<{ cert: string; key: string }> {
+    const root = await newRoot();
+    const cert = path.join(root, "client.pem");
+    const key = path.join(root, "client.key");
+    await writeFile(cert, "CERT-PEM");
+    await writeFile(key, "KEY-PEM");
+    return { cert, key };
+  }
+
+  it("marks an API-key profile unsupported, with or without a client certificate", async () => {
     process.env.SN_INSTANCE = "dev1.service-now.com";
     process.env.SN_AUTH_METHOD = "api-key";
     process.env.SN_API_KEY = "key";
-    const { deps } = harness();
+    const { rec, deps } = harness();
     const { resolveCredential: _c, ...rest } = deps;
     expect(await run({ action: "types" }, rest)).toBe(1);
     expect(errors[0]).toContain("cannot use a api-key profile");
 
-    delete process.env.SN_AUTH_METHOD;
-    delete process.env.SN_API_KEY;
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    expect(await run({ action: "types" }, rest)).toBe(1);
+    expect(errors[1]).toContain("cannot use a api-key profile");
+    expect(errors[1]).toContain("a mutual-TLS client certificate works with either");
+    expect(rec.authInputs).toEqual([]);
+  });
+
+  it("bridges a Basic profile with a client certificate, carrying the TLS material", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
     process.env.SN_USER = "admin";
     process.env.SN_PASSWORD = "pw";
-    process.env.SN_CLIENT_CERT = "/certs/client.pem";
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    process.env.SN_CLIENT_KEY_PASSPHRASE = "phrase";
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "basic" }>;
+    expect(input).toMatchObject({ kind: "basic", username: "admin", password: "pw" });
+    expect(String(input.tls?.cert)).toBe("CERT-PEM");
+    expect(String(input.tls?.key)).toBe("KEY-PEM");
+    expect(input.tls?.passphrase).toBe("phrase");
+    expect(input.tls?.rejectUnauthorized).toBe(true);
+    expect(rec.engineOptions[0].tls).toBe(input.tls);
+  });
+
+  it("carries a verification opt-out without a client certificate", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    process.env.SYNCRONA_TLS_REJECT_UNAUTHORIZED = "0";
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "basic" }>;
+    expect(input.tls).toMatchObject({ rejectUnauthorized: false });
+    expect(input.tls?.cert).toBeUndefined();
+  });
+
+  it("presents the client certificate on the OAuth token request too", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "oauth-client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "client-1";
+    process.env.SN_OAUTH_CLIENT_SECRET = "client-secret";
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    // Jest's sandbox has no undici default dispatcher; stand one in whose class
+    // is named like undici's, so core builds its dispatcher from that class.
+    class Agent {
+      constructor(readonly options: { connect: Record<string, unknown> }) {}
+    }
+    const slot = Symbol.for("undici.globalDispatcher.1");
+    const host = globalThis as Record<symbol, unknown>;
+    const previous = host[slot];
+    host[slot] = new Agent({ connect: {} });
+    try {
+      const inits: Array<RequestInit & { dispatcher?: unknown }> = [];
+      jest.spyOn(globalThis, "fetch").mockImplementation(async (_input: unknown, init?: unknown) => {
+        inits.push(init as RequestInit);
+        return { ok: true, status: 200, json: async () => ({ access_token: "tok", expires_in: 1800 }) } as never;
+      });
+      const { rec, deps } = harness();
+      const { resolveCredential: _c, ...rest } = deps;
+      expect(await run({ action: "types" }, rest)).toBe(0);
+      const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "oauth" }>;
+      expect(String(input.tls?.cert)).toBe("CERT-PEM");
+      expect(rec.engineOptions[0].tls).toBe(input.tls);
+      expect(await input.getToken()).toBe("tok");
+      const dispatcher = inits[0].dispatcher as Agent;
+      expect(dispatcher).toBeInstanceOf(Agent);
+      expect(String(dispatcher.options.connect.cert)).toBe("CERT-PEM");
+      expect(String(dispatcher.options.connect.key)).toBe("KEY-PEM");
+    } finally {
+      host[slot] = previous;
+    }
+  });
+
+  it("sends the OAuth token request without a dispatcher when no TLS setting is configured", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "oauth-client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "client-1";
+    process.env.SN_OAUTH_CLIENT_SECRET = "client-secret";
+    const inits: RequestInit[] = [];
+    jest.spyOn(globalThis, "fetch").mockImplementation(async (_input: unknown, init?: unknown) => {
+      inits.push(init as RequestInit);
+      return { ok: true, status: 200, json: async () => ({ access_token: "tok", expires_in: 1800 }) } as never;
+    });
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "oauth" }>;
+    expect(input).not.toHaveProperty("tls");
+    await input.getToken();
+    expect(inits[0]).not.toHaveProperty("dispatcher");
+  });
+
+  it("refuses an OAuth profile with a client certificate when fetch's dispatcher is not an undici Agent", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "oauth-client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "client-1";
+    process.env.SN_OAUTH_CLIENT_SECRET = "client-secret";
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
     expect(await run({ action: "types" }, rest)).toBe(1);
-    expect(errors[1]).toContain("cannot use a mutual-TLS profile");
+    expect(errors[0]).toContain("not an undici Agent");
+    expect(rec.calls).toEqual([]);
   });
 
   it("mints OAuth tokens with core's token manager and hands over a getter", async () => {
@@ -1683,16 +1816,13 @@ describe("fluentCommand: move-to-app", () => {
     }
   });
 
-  it("refuses API-key and mutual-TLS profiles", async () => {
-    for (const method of ["api-key", "mutual-TLS"] as const) {
-      const { rec, deps } = harness({ files: GLOBAL_CONFIG, credential: { kind: "unsupported", method } });
-      expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(1);
-      expect(rec.calls).toEqual([]);
-      expect(rec.prompts).toEqual([]);
-    }
+  it("refuses an API-key profile", async () => {
+    const { rec, deps } = harness({ files: GLOBAL_CONFIG, credential: { kind: "unsupported", method: "api-key" } });
+    expect(await run({ action: "move-to-app", ids: ID_A, ci: true }, deps)).toBe(1);
+    expect(rec.calls).toEqual([]);
+    expect(rec.prompts).toEqual([]);
     expect(errors[0]).toContain("fluent move-to-app cannot use a api-key profile");
     expect(errors[0]).not.toContain("--native");
-    expect(errors[1]).toContain("cannot use a mutual-TLS profile");
   });
 
   it("requires a Fluent project", async () => {

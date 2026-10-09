@@ -29,8 +29,9 @@ install hint. No other command is affected.
     session-only endpoints work: `sn_appclient_upload_processor.do`,
     `xmlhttp.do` and `fluent_update_set_export.do`.
   - An OAuth profile hands over its bearer token.
-  - API-key and mutual-TLS profiles are refused, because the SDK cannot use
-    them.
+  - API-key profiles are refused, because the SDK cannot use them. A
+    mutual-TLS client certificate works with either Basic or OAuth: core hands
+    the adapter the TLS material as `tls`.
   - The resolver never memoizes. The SDK's own `LazyCredential` caches the
     result and re-resolves after an instance 401.
 - `loginUiSession(instanceUrl, user, password, fetch?)`: the two-step UI login.
@@ -43,9 +44,16 @@ install hint. No other command is affected.
 ## TLS
 
 The UI login, the OAuth token request and the SDK's own requests all use Node's
-native `fetch`. `SYNCRONA_CA_BUNDLE` and `SYNCRONA_TLS_REJECT_UNAUTHORIZED` do
-not apply to them; set `NODE_EXTRA_CA_CERTS` to a PEM bundle for a corporate or
-self-signed certificate authority.
+native `fetch`. When the credential carries `tls` (a client certificate from
+`SN_CLIENT_CERT` / `SN_CLIENT_KEY`, a CA bundle from `SYNCRONA_CA_BUNDLE`, or
+`SYNCRONA_TLS_REJECT_UNAUTHORIZED=0`), the engine installs a TLS-configured
+dispatcher as Node's global fetch dispatcher for the duration of each
+instance-side action and restores the previous one afterwards, even when the
+action throws. The dispatcher is built from the constructor of Node's default
+dispatcher, so no extra dependency is needed; when the default dispatcher is
+not an undici `Agent` (a proxy agent, for example), the action fails with
+`FluentTlsUnavailableError` instead of silently skipping the TLS settings.
+Because the slot is process-global, run one TLS-configured action at a time.
 
 `syncrona fluent run` runs a project script locally and passes it no instance
 credential.

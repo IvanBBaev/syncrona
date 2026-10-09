@@ -89,10 +89,21 @@ function endpointPrefixOrder(): string[] {
 // automatically by axios's Node adapter, so proxying needs no extra wiring. A
 // custom CA bundle (corporate / self-signed CA), an explicit verification
 // opt-out, or a mutual-TLS client certificate are applied here via a shared
-// https.Agent. Returns undefined when no non-default TLS setting is configured,
-// so the standard agent is used. TLS material is process-global (like the CA
-// bundle) — it is not per-profile suffixed.
-export function buildHttpsAgent(): https.Agent | undefined {
+// https.Agent. TLS material is process-global (like the CA bundle) — it is not
+// per-profile suffixed.
+
+/** The TLS settings read from the environment, ready for an agent or a dispatcher. */
+export interface TlsMaterial {
+  ca?: Buffer;
+  cert?: Buffer;
+  key?: Buffer;
+  passphrase?: string;
+  rejectUnauthorized: boolean;
+}
+
+// Reads the TLS environment. Returns undefined when no non-default TLS setting
+// is configured, so the standard agent is used.
+export function resolveTlsMaterial(): TlsMaterial | undefined {
   const policy = resolveTlsPolicy(
     process.env[CA_BUNDLE_ENV],
     process.env[TLS_REJECT_UNAUTHORIZED_ENV],
@@ -132,13 +143,39 @@ export function buildHttpsAgent(): https.Agent | undefined {
       `TLS certificate verification is DISABLED (${TLS_REJECT_UNAUTHORIZED_ENV}). Use only against trusted test instances.`
     );
   }
-  return new https.Agent({
+  return {
     ca,
     cert,
     key,
     ...(policy.clientKeyPassphrase ? { passphrase: policy.clientKeyPassphrase } : {}),
     rejectUnauthorized: policy.rejectUnauthorized,
-  });
+  };
+}
+
+export function buildHttpsAgent(): https.Agent | undefined {
+  const tls = resolveTlsMaterial();
+  return tls ? new https.Agent(tls) : undefined;
+}
+
+/** Where Node's bundled undici keeps the dispatcher its global `fetch` uses. */
+export const FETCH_GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+/**
+ * A dispatcher that carries `tls` to Node's global `fetch` (its `dispatcher`
+ * init option). Node does not export its bundled undici and core adds no
+ * undici dependency, so the `Agent` class is taken from the default dispatcher
+ * Node installs when it loads undici; touching a fetch global loads it.
+ */
+export function buildFetchDispatcher(tls: TlsMaterial): object {
+  void globalThis.Response;
+  const current = (globalThis as Record<symbol, unknown>)[FETCH_GLOBAL_DISPATCHER];
+  const Agent = (current as { constructor?: unknown } | undefined)?.constructor;
+  if (typeof Agent !== "function" || Agent.name !== "Agent") {
+    throw new Error(
+      "Cannot apply the TLS settings to fetch: Node's default fetch dispatcher is not an undici Agent."
+    );
+  }
+  return new (Agent as new (options: unknown) => object)({ connect: { ...tls } });
 }
 
 function isEndpointNotFound(error: unknown): boolean {

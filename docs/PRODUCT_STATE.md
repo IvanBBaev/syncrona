@@ -229,7 +229,8 @@ mindmap
    `fluent`, opt-in data-model records) are covered by mocked tests, but the
    instance writes have not yet been verified against a live instance (the
    WP-0 spike verified the read paths only). Still open past 1.1.0: API-key
-   and mutual-TLS profiles in the Fluent tier. The opt-in composite data-model
+   profiles in the Fluent tier (mutual TLS with a Basic or OAuth profile is
+   supported, but not yet verified against an instance that enforces it). The opt-in composite data-model
    layout (`dataModelLayout: "composite"`) has shipped. Native type generation from
    `sys_dictionary` (`fluent types --native`) and the `fluent explain` /
    `fluent move-to-app` counterparts have shipped, covered by mocked tests. See [MIGRATING_FROM_NOW_SDK.md](MIGRATING_FROM_NOW_SDK.md)

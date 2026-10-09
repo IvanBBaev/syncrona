@@ -215,7 +215,7 @@ module.exports = {
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 98.30 / 93.17
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.71 / 94.83
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 94.92
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.70 / 76.38
     // The instance-host normalizer both of the above go through (#20).
@@ -243,7 +243,7 @@ module.exports = {
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.01 / 95.65
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
-    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.71 / 98.46
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.71 / 98.50
     // Writes the native `.d.ts` from instance metadata: a regression here ships a
     // type file that silently mistypes columns or drops inherited ones.
     './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 95.93
