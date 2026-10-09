@@ -70,6 +70,26 @@ describe("sync.config.js shape validation (G2)", () => {
     ).rejects.toThrow(/Failed to load config file/);
   });
 
+  it("loads a config written against the CommonJS `exports` alias", async () => {
+    const store = await loadConfigFrom(
+      "exports.sourceDirectory = 'lib';\nexports.pushConcurrency = 3;\n"
+    );
+
+    expect(store.getConfig().sourceDirectory).toBe("lib");
+    expect(store.getConfig().pushConcurrency).toBe(3);
+  });
+
+  it("rejects `module.exports = null` instead of loading the defaults", async () => {
+    await expect(loadConfigFrom("module.exports = null;\n")).rejects.toThrow(
+      /expected module.exports to be an object/
+    );
+  });
+
+  it("reports an error thrown by the config by its message alone", async () => {
+    const failure = loadConfigFrom("throw new Error('boom');\n");
+    await expect(failure).rejects.toThrow(/sync\.config\.js: boom$/);
+  });
+
   it("accepts a fully valid config without warnings", async () => {
     const store = await loadConfigFrom(
       "module.exports = { sourceDirectory: 'src', buildDirectory: 'build', pushConcurrency: 5, rules: [], includes: {}, excludes: {}, tableOptions: {}, refreshInterval: 30 };\n"

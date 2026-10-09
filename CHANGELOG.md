@@ -83,6 +83,12 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 
 ### Fixed
 
+- `sync.config.js` written with the CommonJS `exports.<key> = ...` alias now
+  loads; `exports` was a separate object, so those settings were silently
+  dropped. `module.exports = null` is now rejected as an invalid config instead
+  of loading the defaults, and an error the config throws is reported by its
+  message without a doubled `Error:` prefix.
+
 - `init` without a `sync.config.js` now downloads the scope into the source
   directory chosen at the prompt; it reloaded the configuration only after the
   download, so the files landed in the default `src`.
