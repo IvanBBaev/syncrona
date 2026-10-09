@@ -505,6 +505,37 @@ describe("defaultSdkLoader", () => {
     expect(() => defaultSdkLoader(tmp)).toThrow("credentials exploded");
   });
 
+  it("rethrows a missing transitive dependency of the credentials module instead of reporting the SDK missing", () => {
+    write("package.json", JSON.stringify({ name: "proj" }));
+    write(
+      "node_modules/@servicenow/sdk/package.json",
+      JSON.stringify({ name: "@servicenow/sdk", version: "4.13.3", exports: { "./api": { default: "./dist/api/index.js" } } }),
+    );
+    write("node_modules/@servicenow/sdk/dist/api/index.js", "exports.Project = function Project() {};\n");
+    write(
+      "node_modules/@servicenow/sdk-api/package.json",
+      JSON.stringify({ name: "@servicenow/sdk-api", exports: { "./credentials": "./credentials.js" } }),
+    );
+    // The error Node raises for a dependency the credentials module cannot find,
+    // built by hand: jest's registry, which serves createRequire here, loops on
+    // the parent chain when it fills in the require stack of a real one.
+    write(
+      "node_modules/@servicenow/sdk-api/credentials.js",
+      "const e = new Error(\"Cannot find module 'zz-missing-transitive-dep'\\nRequire stack:\\n- \" + __filename);\n" +
+        "e.code = 'MODULE_NOT_FOUND';\ne.requireStack = [__filename];\nthrow e;\n",
+    );
+    let thrown: unknown;
+    try {
+      defaultSdkLoader(tmp);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeDefined();
+    expect(thrown).not.toBeInstanceOf(FluentSdkMissingError);
+    expect((thrown as { code?: unknown }).code).toBe("MODULE_NOT_FOUND");
+    expect((thrown as Error).message).toContain("zz-missing-transitive-dep");
+  });
+
   it("isSupportedSdkVersion accepts 4.13.x only", () => {
     expect(["4.13.0", "4.13.3", " 4.13.10 ", "4.13.1-beta.2"].every(isSupportedSdkVersion)).toBe(true);
     expect(["4.12.2", "4.14.0", "5.13.0", "4.130.1", "latest"].some(isSupportedSdkVersion)).toBe(false);
