@@ -835,6 +835,47 @@ test('handleCicdRun: a 3xx on a poll is an unexpected 3xx answer, not retried', 
   });
 });
 
+// Review round 8-o, finding 3 (parity with core): the dispatch and the ATF
+// result read word a 3xx the same way, and the ATF reason is quoted without its
+// own trailing period.
+const unexpected3xx = (what, status) =>
+  `The ${what} request answered HTTP ${status}, an unexpected 3xx answer: sn_cicd answers JSON directly, ` +
+  'so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried.';
+
+test('handleCicdRun: a 3xx on the dispatch is an unexpected 3xx answer, sent once', async () => {
+  for (const status of [302, 304]) {
+    await withEnv(async () => {
+      const calls = mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(status, '') });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete', String(status));
+      assert.equal(body.message, fenced(unexpected3xx('install', status)));
+      assert.equal(calls.length, 1);
+    });
+  }
+});
+
+test('handleCicdRun: a 3xx on the ATF result read reads as one sentence, like core', async () => {
+  for (const status of [302, 304]) {
+    await withEnv(async () => {
+      mockFetch({
+        'POST /api/sn_cicd/testsuite/run': dispatched(),
+        [POLL_PATH]: progress('2', withResults),
+        [`GET /api/sn_cicd/testsuite/results/${RESULT_ID}`]: mkResponse(status, ''),
+      });
+      const body = payloadOf(await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete', String(status));
+      const expected = unexpected3xx('ATF result', status).replace(/\.$/, '');
+      assert.ok(
+        body.message.includes(
+          `progress ${PROGRESS_ID} finished, but ATF result ${RESULT_ID} could not be read: ${expected}, so whether the tests passed is unknown.`
+        ),
+        body.message
+      );
+      assert.doesNotMatch(body.message, /\.,/);
+    });
+  }
+});
+
 test('handleCicdRun: the timeoutMs budget bounds the poll → incomplete, may still be running', async () => {
   await withEnv(async () => {
     const calls = mockFetch({

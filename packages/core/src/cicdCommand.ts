@@ -315,7 +315,13 @@ async function dispatch(
   request: CicdRequest
 ): Promise<{ id: string; url?: string }> {
   logger.info(`POST api/sn_cicd/${request.path}`);
-  const dispatched = resultOf(await send(() => client.cicdPost(request.path, request.params), action), action);
+  let response: AxiosResponse<unknown>;
+  try {
+    response = await send(() => client.cicdPost(request.path, request.params), action);
+  } catch (err) {
+    throw unexpectedRedirectError(err, action) ?? err;
+  }
+  const dispatched = resultOf(response, action);
   const progressId = linkId(dispatched, "progress");
   if (!progressId) {
     // A 200 can still carry a rejection in the sn_cicd envelope (status "3" +
@@ -458,15 +464,32 @@ function redirectLocationOf(err: unknown): string | undefined {
  */
 function permanentPollReason(status: number | undefined, err: unknown): string {
   if (status !== undefined && status >= 300 && status < 400) {
-    const location = redirectLocationOf(err);
-    return (
-      `answered HTTP ${status}${location ? ` (Location: ${location})` : ""}, an unexpected 3xx answer: ` +
-      "sn_cicd answers JSON directly, so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; " +
-      "it is not retried."
-    );
+    return unexpectedRedirectReason(status, err);
   }
   const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
   return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
+}
+
+/** Why a 3xx answer is not retried; see {@link permanentPollReason}. */
+function unexpectedRedirectReason(status: number, err: unknown): string {
+  const location = redirectLocationOf(err);
+  return (
+    `answered HTTP ${status}${location ? ` (Location: ${location})` : ""}, an unexpected 3xx answer: ` +
+    "sn_cicd answers JSON directly, so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; " +
+    "it is not retried."
+  );
+}
+
+/**
+ * The error for a dispatch or an ATF result read that answered a 3xx, or
+ * undefined for any other failure. axios would otherwise report it as a bare
+ * "Request failed with status code 304"; the text is the mcp-server's
+ * `sync_cicd_run` one (which has no headers, so it never names a Location).
+ */
+function unexpectedRedirectError(err: unknown, what: string): CicdCliError | undefined {
+  const status = httpStatusOf(err);
+  if (status === undefined || status < 300 || status >= 400) return undefined;
+  return new CicdCliError(`The ${what} request ${unexpectedRedirectReason(status, err)}`);
 }
 
 /** What a permanent poll status most likely means, for the error message. */
@@ -718,8 +741,13 @@ async function fetchAtfOutcome(
   try {
     body = resultOf(await send(() => client.cicdGet(path), "ATF result"), "ATF result");
   } catch (e) {
-    const reason =
-      extractCicdErrorMessage(errorResponseBody(e)) ?? (e instanceof Error ? e.message : String(e));
+    const redirect = unexpectedRedirectError(e, "ATF result");
+    // The trailing period is dropped: the reason is quoted mid-sentence.
+    const reason = (
+      redirect?.message ??
+      extractCicdErrorMessage(errorResponseBody(e)) ??
+      (e instanceof Error ? e.message : String(e))
+    ).replace(/\.$/, "");
     logger.debug(`Could not fetch ATF result ${resultId}: ${reason}`);
     return {
       unreadable: `ATF result ${resultId} could not be read: ${reason}`,

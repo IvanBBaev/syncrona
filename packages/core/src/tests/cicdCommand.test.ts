@@ -679,6 +679,35 @@ describe("cicd poll retry", () => {
     expect(errors[0]).not.toMatch(/Location|not followed|redirect/);
   });
 
+  // Review round 8-o, finding 3: the dispatch and the ATF result read word an
+  // unexpected 3xx like sync_cicd_run does, not as axios's bare
+  // "Request failed with status code 304".
+  const unexpected3xx = (what: string, status: number) =>
+    `The ${what} request answered HTTP ${status}, an unexpected 3xx answer: sn_cicd answers JSON directly, ` +
+    "so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried.";
+
+  it.each([304, 302])("reports a dispatch answered HTTP %i as an unexpected 3xx answer", async (status) => {
+    const h = harness({ post: () => httpError(status, "api/sn_cicd/app_repo/install", "") });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
+    expect(errors).toEqual([`cicd install failed: ${unexpected3xx("install", status)}`]);
+  });
+
+  it.each([304, 302])("reports an ATF result read answered HTTP %i as an unexpected 3xx answer", async (status) => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(status, "api/sn_cicd/testsuite/results/r", ""),
+    });
+
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(1);
+    const expected = unexpected3xx("ATF result", status).replace(/\.$/, "");
+    expect(errors[0]).toContain(
+      `progress prog-1 finished, but ATF result r could not be read: ${expected}, so whether the tests passed is unknown.`
+    );
+    expect(errors[0]).not.toMatch(/status code|\.,/);
+  });
+
   // An SSO gateway that answers 200 with its login page, or a redirect that
   // loops back on itself, is a session/authentication failure: asking again
   // until the timeout would only delay it.
