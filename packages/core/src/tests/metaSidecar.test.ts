@@ -385,6 +385,69 @@ describe("manifest metadata discovery", () => {
     ]);
   });
 
+  // Encrypted and masked columns hold a secret exactly as password2 does; the
+  // dictionary's own type is the only signal, so each must be in the set.
+  const ENCRYPTED_DICTIONARY = [
+    ...SCRIPT_INCLUDE_DICTIONARY,
+    { element: "u_cipher", internal_type: "glide_encrypted" },
+    { element: "u_enc_text", internal_type: "encrypted_text" },
+    { element: "u_masked", internal_type: "masked" },
+  ];
+  const ENCRYPTED_ROW = { ...SCRIPT_INCLUDE_ROW, u_cipher: "c", u_enc_text: "e", u_masked: "m" };
+
+  it.each(["glide_encrypted", "encrypted_text", "masked"])(
+    "never admits a %s column as a sidecar candidate",
+    (type) => {
+      expect(isMetaFieldCandidate("u_x", type)).toBe(false);
+    }
+  );
+
+  it("leaves encrypted and masked columns out of discovery", async () => {
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(dictionaryClient(ENCRYPTED_ROW, ENCRYPTED_DICTIONARY)),
+      baseConfig
+    );
+
+    expect(manifest.tables.sys_script_include.metaFields).toEqual([
+      "access",
+      "active",
+      "api_name",
+      "client_callable",
+      "description",
+    ]);
+  });
+
+  it("drops encrypted and masked columns an explicit metaFields list names", async () => {
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const manifest = await buildManifestFromTableAPI(
+        "x_demo",
+        createClient(dictionaryClient(ENCRYPTED_ROW, ENCRYPTED_DICTIONARY)),
+        {
+          ...baseConfig,
+          tableOptions: {
+            sys_script_include: {
+              query: "",
+              metaFields: ["api_name", "u_cipher", "u_enc_text", "u_masked"],
+            },
+          },
+        }
+      );
+
+      expect(manifest.tables.sys_script_include.metaFields).toEqual(["api_name"]);
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('metaFields entry for column "u_cipher" — its dictionary type is glide_encrypted'),
+          expect.stringContaining('metaFields entry for column "u_enc_text" — its dictionary type is encrypted_text'),
+          expect.stringContaining('metaFields entry for column "u_masked" — its dictionary type is masked'),
+        ])
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // The manifest pass records WHICH files a record has, never their content, so
   // it has no reason to select the metadata columns — the download pass does
   // that. What it must not do is leak the pseudo-file into sysparm_fields:
