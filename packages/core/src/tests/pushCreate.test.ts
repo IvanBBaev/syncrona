@@ -88,6 +88,7 @@ const HIERARCHY: Record<string, string> = {
   sys_script_include: "sys_metadata",
   sys_script: "sys_metadata",
   sys_ui_script: "sys_metadata",
+  sys_atf_step: "sys_metadata",
   incident: "task",
   task: "",
   loop_a: "loop_b",
@@ -1134,5 +1135,48 @@ describe("idempotency lookup edge answers", () => {
     });
     expect(plan.plans[0]).toMatchObject({ action: "error", sysId: SYS_KNOWN });
     expect(plan.plans[0].message).toContain("tracked in the manifest as sys_script > Other key;");
+  });
+});
+
+// Found live (ven03019): sys_atf_step has no name column, so a create that wrote
+// `name` was refused with HTTP 403. A step is named by sys_id instead.
+describe("a table without a name column (sys_atf_step)", () => {
+  const STEP = "b".repeat(32);
+  const step = (recordName: string) =>
+    candidate("sys_atf_step", recordName, [
+      { field: "inputs.script", filePath: `/proj/src/sys_atf_step/${recordName}/inputs.script.js` },
+    ]);
+
+  it("creates a step under its folder's sys_id and never writes a name column", async () => {
+    const client = makeClient();
+    client.createRecord.mockImplementation(async () => ({ sys_id: STEP }));
+    const plan = await Pipeline.planRecordCreation([step(STEP)], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0]).toMatchObject({ action: "create", nameField: "sys_id", nameValue: STEP });
+    expect(client.nameLookup).toHaveBeenCalledWith("sys_atf_step", "sys_id", STEP, "scope-1");
+
+    await Pipeline.createRecords(plan, { client: asClient(client), retryWaitMs: 0 });
+    const body = client.createRecord.mock.calls[0][1];
+    expect(body).toEqual({
+      "inputs.script": "gs.info('new');",
+      sys_id: STEP,
+      sys_scope: "scope-1",
+    });
+    expect(body).not.toHaveProperty("name");
+  });
+
+  it("refuses a folder name that is not a sys_id before any lookup", async () => {
+    const client = makeClient();
+    const plan = await Pipeline.planRecordCreation([step("Check login")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toContain("sys_atf_step has no name column");
+    expect(plan.plans[0].message).toContain('"Check login" is not a sys_id');
+    expect(client.nameLookup).not.toHaveBeenCalled();
+    expect(client.createRecord).not.toHaveBeenCalled();
   });
 });

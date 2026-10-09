@@ -45,6 +45,10 @@ mocked tests. These items close what it deliberately left open.
   - Found live: a poll of an unknown progress id reports `outcome: "incomplete"`
     from `sync_cicd_run` but "failed" from the CLI (both exit 1). Fixed: the CLI
     error line now reads `cicd <action> incomplete:`, as `--json` does.
+  - Found live: `push --create` on `sys_atf_step` failed with HTTP 403 because the
+    create wrote a `name` column the table lacks. Fixed: a step is named by sys_id
+    (as download already named it), a create sets that sys_id, and any other
+    folder name is refused before a request.
 - [x] **SDK-F2. Composite data-model documents** — one parent-plus-children
   document per table (table, columns, choices) on top of the independent
   sidecar records shipped in 1.1.0; push must stay idempotent and ordered.

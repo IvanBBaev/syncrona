@@ -32,7 +32,8 @@ export const TABLE_DISPLAY_FIELD: Record<string, string> = {
   sp_widget: "id",
   sp_theme: "name",
   sp_page: "id",
-  sys_atf_step: "name",
+  // No name column: a step is named by sys_id (download fell back to it anyway).
+  sys_atf_step: "sys_id",
   sys_app_customization: "name",
   sys_hub_action_type_definition: "name",
   sys_flow_context: "name",

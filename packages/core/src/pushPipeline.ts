@@ -1281,6 +1281,20 @@ export const planRecordCreation = async (
       );
       continue;
     }
+    if (nameField === "sys_id" && !/^[0-9a-f]{32}$/i.test(nameValue)) {
+      // A table without a name column (sys_atf_step) is named by sys_id, which
+      // the create then sets explicitly, so the folder name must be one: any
+      // other value would be written as the sys_id and rejected.
+      plans.push(
+        plan("error", {
+          message:
+            `${candidate.table} has no name column, so its records are named by sys_id; ` +
+            `"${nameValue}" is not a sys_id. Rename the folder to 32 hex characters ` +
+            "(e.g. the output of `openssl rand -hex 16`), which becomes the new record's sys_id.",
+        })
+      );
+      continue;
+    }
     let lookup: Record<string, string> | undefined;
     const nameFields = tableOptions?.displayField ? undefined : tableOptions?.nameFields;
     if (Array.isArray(nameFields) && nameFields.length > 0) {
