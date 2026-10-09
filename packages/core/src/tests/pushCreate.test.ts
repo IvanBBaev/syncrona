@@ -312,10 +312,14 @@ describe("table policy", () => {
     await expect(Pipeline.extendsSysMetadata(asClient(client), "loop_a")).resolves.toBe(false);
   });
 
-  it("tolerates a non-array sys_db_object answer", async () => {
+  // A reply without a result list says nothing about the table; reading it as
+  // "outside sys_metadata" let an allowlisted table be planned as a create.
+  it("refuses to judge a table from a non-array sys_db_object answer", async () => {
     const client = makeClient();
     client.tableAPIGet.mockImplementation(() => ok({}));
-    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).resolves.toBe(false);
+    await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).rejects.toThrow(
+      'sys_db_object answered without a result list for table "x"'
+    );
   });
 });
 
@@ -588,6 +592,21 @@ describe("planRecordCreation safety", () => {
     expect(plan.plans[0].message).toMatch(
       /table u_ghost does not exist on the instance \(no sys_db_object record is named "u_ghost"\)/
     );
+    expect(lookupCalls(client)).toEqual([]);
+  });
+
+  it("refuses a create when sys_db_object answers without a result list", async () => {
+    mockGetConfig.mockReturnValue({ createTables: ["u_odd"] });
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(async (table: string) =>
+      table === "sys_db_object" ? { data: {} as { result: unknown } } : { data: { result: [] as unknown } }
+    );
+    const plan = await Pipeline.planRecordCreation([candidate("u_odd", "Thing")], {
+      persistScopeId: false,
+      client: asClient(client),
+    });
+    expect(plan.plans[0].action).toBe("error");
+    expect(plan.plans[0].message).toMatch(/sys_db_object answered without a result list for table "u_odd"/);
     expect(lookupCalls(client)).toEqual([]);
   });
 

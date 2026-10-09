@@ -835,6 +835,7 @@ export type CreatePolicyResult =
  * when the caller passes one: "not a sys_metadata descendant" and "no such
  * table" are both a false here, and only the caller can tell them apart. Keep
  * one `missing` set alongside one `cache`, since a cached answer skips the read.
+ * A reply without a result list throws: it is neither answer.
  */
 export const extendsSysMetadata = async (
   client: SNClient,
@@ -868,8 +869,17 @@ export const extendsSysMetadata = async (
         1
       )
     );
-    if (Array.isArray(rows) && rows.length === 0) missing?.add(current);
-    const parent = Array.isArray(rows) ? rows[0]?.["super_class.name"] : undefined;
+    // A reply with no result list says nothing about the table. Reading it as
+    // "not a sys_metadata descendant" planned an allowlisted table as a create
+    // on no evidence; it fails closed like an unreadable reply instead.
+    if (!Array.isArray(rows)) {
+      throw new Error(
+        `sys_db_object answered without a result list for table "${current}", so its hierarchy ` +
+          "cannot be checked; refusing to plan a create in it."
+      );
+    }
+    if (rows.length === 0) missing?.add(current);
+    const parent = rows[0]?.["super_class.name"];
     if (typeof parent !== "string" || parent === "") break;
     current = parent;
   }
