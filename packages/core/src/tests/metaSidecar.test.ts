@@ -583,6 +583,30 @@ describe("manifest metadata discovery", () => {
     }
   });
 
+  // The dictionary answers `u_secret` for a query naming `U_SECRET`; matching
+  // the element exactly left the entry untyped, and so kept.
+  it("matches a metaFields entry to its dictionary element case-insensitively", async () => {
+    const tableAPIGet = dictionaryClient(
+      { ...SCRIPT_INCLUDE_ROW, U_SECRET: "hunter2" },
+      [...SCRIPT_INCLUDE_DICTIONARY, { element: "u_secret", internal_type: "password2" }]
+    );
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+        ...baseConfig,
+        tableOptions: { sys_script_include: { query: "", metaFields: ["U_SECRET", "api_name"] } },
+      });
+
+      expect(manifest.tables.sys_script_include.metaFields).toEqual(["api_name"]);
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        'Table sys_script_include: ignoring the metaFields entry for column "U_SECRET" — its ' +
+          "dictionary type is password2, and a value of that type is never written to the working tree."
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // The explicit list is the documented remedy for a user who cannot read
   // sys_dictionary, so a failed type lookup keeps it — with a warning.
   it("keeps an explicit metaFields list, warned, when the type lookup fails", async () => {
@@ -809,6 +833,24 @@ describe("bulk download of the sidecar", () => {
       {},
       undefined,
       { sys_script_include: ["api_name", "u_secret"] }
+    );
+
+    const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
+    expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+  });
+
+  it("never writes an unsafe column a manifest names in another case", async () => {
+    const tableAPIGet = dictionaryClient(
+      { ...SCRIPT_INCLUDE_ROW, U_SECRET: "hunter2" },
+      [...SCRIPT_INCLUDE_DICTIONARY, { element: "u_secret", internal_type: "password2" }]
+    );
+
+    const tableMap = await buildBulkDownloadFromTableAPI(
+      missingWithMeta(),
+      createClient(tableAPIGet),
+      {},
+      undefined,
+      { sys_script_include: ["api_name", "U_SECRET"] }
     );
 
     const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
