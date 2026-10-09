@@ -64,7 +64,7 @@
  * workspace. There is no process isolation: building a project means trusting it
  * as much as running `npm run build` in it with the server's environment.
  */
-import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "fs";
 import { createRequire } from "module";
 import path from "path";
 
@@ -211,12 +211,35 @@ export function loadFluentModule(
   specifier: string = FLUENT_PACKAGE,
   workspaceDir: string = projectDir
 ): FluentBuildModule {
+  return loadFluentAdapter(projectDir, specifier, workspaceDir).module;
+}
+
+/** Where the loaded adapter came from, reported in the build response and audit. */
+export type FluentAdapterInfo = {
+  /** `project`: resolved from the project; `server`: the server's own install. */
+  source: "project" | "server";
+  /** The real path of the adapter's package directory (of the resolved file when no `package.json` names it). */
+  path: string;
+  /** The `version` of that `package.json`, when it has one. */
+  version?: string;
+};
+
+export type LoadedFluentAdapter = { module: FluentBuildModule; adapter: FluentAdapterInfo };
+
+/** {@link loadFluentModule}, also reporting which install was loaded. */
+export function loadFluentAdapter(
+  projectDir: string,
+  specifier: string = FLUENT_PACKAGE,
+  workspaceDir: string = projectDir
+): LoadedFluentAdapter {
   const projectRequire = createRequire(path.join(projectDir, "package.json"));
   const fromProject = tryResolve(projectRequire, specifier);
   let refusal: FluentAdapterOutsideWorkspaceError | undefined;
   if (fromProject !== undefined) {
     refusal = adapterOutsideWorkspace(workspaceDir, specifier, fromProject);
-    if (!refusal) return loadResolved(projectRequire, fromProject);
+    if (!refusal) {
+      return { module: loadResolved(projectRequire, fromProject), adapter: adapterInfo("project", specifier, fromProject) };
+    }
   }
   const serverRequire = createRequire(__filename);
   let fromServer: string | undefined;
@@ -227,7 +250,9 @@ export function loadFluentModule(
     throw refusal ?? e;
   }
   if (fromServer !== undefined) {
-    if (isServerInstall(specifier, fromServer)) return loadResolved(serverRequire, fromServer);
+    if (isServerInstall(specifier, fromServer)) {
+      return { module: loadResolved(serverRequire, fromServer), adapter: adapterInfo("server", specifier, fromServer) };
+    }
     throw refusal ?? notServerInstall(specifier, fromServer);
   }
   throw refusal ?? new FluentNotInstalledError();
@@ -270,6 +295,38 @@ function notServerInstall(specifier: string, resolved: string): FluentAdapterOut
   return new FluentAdapterOutsideWorkspaceError(
     `Refusing to load ${specifier} from ${JSON.stringify(canonicalRealpath(resolved))}: it is neither in the workspace nor in the server's own install (Node found it through NODE_PATH or a global folder). Install it in the project.`
   );
+}
+
+/**
+ * Describes the adapter resolved at `resolved`: the nearest enclosing
+ * `package.json` whose `name` is `specifier` gives the package directory and its
+ * version. The walk stops at a `node_modules` directory, so it never reads a
+ * manifest outside the package.
+ */
+function adapterInfo(source: FluentAdapterInfo["source"], specifier: string, resolved: string): FluentAdapterInfo {
+  if (!path.isAbsolute(resolved)) return { source, path: resolved };
+  const real = canonicalRealpath(resolved);
+  let dir = path.dirname(real);
+  for (;;) {
+    if (path.basename(dir) === "node_modules") break;
+    const manifest = readPackageManifest(path.join(dir, "package.json"));
+    if (manifest && manifest.name === specifier) {
+      return { source, path: dir, ...(typeof manifest.version === "string" ? { version: manifest.version } : {}) };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { source, path: real };
+}
+
+function readPackageManifest(file: string): { name?: unknown; version?: unknown } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as { name?: unknown; version?: unknown }) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** `requireFrom.resolve(specifier)`, or undefined when the package itself is absent. */
@@ -533,6 +590,7 @@ export async function handleFluentBuild(
   let message: string | undefined;
   let code: string | undefined;
   let budgetExceeded = false;
+  let adapter: FluentAdapterInfo | undefined;
 
   // Loading the adapter and creating the engine run SDK code as well (module
   // top-level, engine constructor), so the guard covers them too, not only the
@@ -540,9 +598,15 @@ export async function handleFluentBuild(
   // timed-out build keeps running.
   const releaseConsoleGuard = acquireConsoleGuard();
   try {
-    const load: FluentModuleLoader =
-      context.loadFluent ?? ((dir) => loadFluentModule(dir, FLUENT_PACKAGE, context.workspaceDir));
-    const fluent = await load(projectDir);
+    let fluent: FluentBuildModule;
+    if (context.loadFluent) {
+      // An injected loader reports no install, so the response carries no `adapter`.
+      fluent = await context.loadFluent(projectDir);
+    } else {
+      const loaded = loadFluentAdapter(projectDir, FLUENT_PACKAGE, context.workspaceDir);
+      fluent = loaded.module;
+      adapter = loaded.adapter;
+    }
     if (!fluent || typeof fluent.createFluentEngine !== "function") {
       throw new Error(`${FLUENT_PACKAGE} does not export createFluentEngine; reinstall it.`);
     }
@@ -593,6 +657,7 @@ export async function handleFluentBuild(
       options,
       errorCount: result?.errors.length ?? 0,
       warningCount: result?.warnings.length ?? 0,
+      ...(adapter ? { adapter } : {}),
       ...(budgetExceeded ? { budgetExceeded: true } : {}),
       ...(code ? { code } : {}),
     },
@@ -605,6 +670,7 @@ export async function handleFluentBuild(
       exitCode,
       project,
       options,
+      ...(adapter ? { adapter } : {}),
       errors: errors.items,
       warnings: warnings.items,
       errorCount: result?.errors.length ?? 0,
