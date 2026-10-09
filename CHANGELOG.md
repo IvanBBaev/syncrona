@@ -4,6 +4,172 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+**now-sdk parity.** SyncroNow AI now covers the everyday ServiceNow SDK
+(`now-sdk`) workflow without giving up the file-based tier: `query`, `cicd`,
+`fluent`, `init --new` and `push --create` / `--prune` are new, and two MCP tools
+expose the CI/CD and Fluent build paths to AI clients. The guide for moving over
+is [`docs/MIGRATING_FROM_NOW_SDK.md`](docs/MIGRATING_FROM_NOW_SDK.md).
+
+Most of this release is the hardening that followed. The review rounds went
+after one failure signature: a value the CLI wrote, deleted or reported on
+evidence it had not checked. A password reached a `.meta.json` sidecar through a
+column whose type was never read. A missing table was read as "not
+`sys_metadata`" and planned as a create. A rejected OAuth grant was returned as
+the command's own result. Every case found now fails closed and says why.
+
+Not yet verified against a live instance: `push --create` / `--prune`, `cicd`
+and `sync_cicd_run`, `init --new`, and the Fluent commands that reach the
+instance or the SDK (`fluent explain`, `fluent move-to-app`, `sync_fluent_build`).
+They are covered by tests against mocked responses only, so try them on a
+development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md).
+
+### Added
+
+- `syncrona query <table>` reads records through the Table API with the
+  `now-sdk query` flag set, all but `--select` and `--auth` (`-q` is required).
+  It is read-only, and `-o json` prints the `now-sdk` envelope
+  `{ok, hasMore, nextOffset, records}`. The table name must be letters, digits
+  and underscores, and with `-o` the log goes to stderr so stdout stays
+  parseable, however the option is spelled.
+- `syncrona cicd <action>` drives the CI/CD REST API (`api/sn_cicd`) and follows
+  its progress tracker. `run-suite` and `run-test` run ATF; `install`, `publish`
+  and `rollback` act on an app-repo application. It exits 0 on success, 1 when
+  the run could not finish and 2 on failures. `--progress-id` resumes waiting on
+  a run that outlived `--timeout` without dispatching it again. Every `--json`
+  document carries a `verdict` (`passed`, `failed`, `no_tests`, `incomplete`,
+  `unknown`) and a `reason`. A suite passes only on an allow-listed status with
+  zero failures and errors, so an unknown status or count is reported as
+  could-not-finish, never as a pass. A suite that ran no tests is a failure.
+- `syncrona fluent <action>` drives Fluent (`.now.ts`) projects through the new
+  optional `@syncrona/fluent` package, with `@servicenow/sdk` (`~4.13`) as an
+  optional peer. It reuses the syncrona credential store for Basic and OAuth
+  profiles. The actions are `init`, `build`, `transform`, `pack`, `install`,
+  `types`, `dependencies`, `run`, `status`, `explain` (the SDK's bundled
+  documentation, offline) and `move-to-app`. `install` and `move-to-app` change
+  the instance, so they ask first unless `--ci`, and without a terminal or with
+  `--json` they exit 1 asking for `--ci`. `--dry-run` fails wherever the real
+  run would, including a missing package, and resolves no credentials.
+- `fluent types --native` generates table types from `sys_db_object`,
+  `sys_dictionary` and `sys_choice` without the SDK, with every profile, API key
+  and mutual TLS included. A plain `fluent types` uses the SDK when it is
+  installed and falls back to the native generator when it is missing or
+  incomplete, saying which and why.
+- `syncrona init --new --name "<display>"` creates a new scoped application on
+  the instance and binds the directory to it, even before the app owns a record.
+  `--dry-run` prints the `sys_app` body.
+- `syncrona push --create` creates or adopts records for local files the
+  manifest does not track yet (`createRecords` in `sync.config.js` sets the
+  default; `--no-create` overrides it). `push --prune` deletes in-scope records
+  whose tracked files git shows deleted. It confirms unless `--ci`, and above 25
+  deletions or 20% of the manifest it needs `--allow-mass-delete`. A record that
+  the same run adopts is held as a rename, never deleted, in the dry run and the
+  real run alike.
+- Opt-in `dataModelTables` tracks data-model records (tables, columns, choices)
+  as editable local files and fetches only the scope's `sys_choice` rows. Opt-in
+  `dataModelLayout: "composite"` keeps a table, its columns and choices as one
+  byte-stable `data-model/<table>.json`.
+- New MCP tools `sync_cicd_run` and `sync_fluent_build` (63 tools in all).
+  `sync_cicd_run` exposes the `cicd` actions behind `confirmDestructive`, with
+  `dryRun`, a `progressId` resume and the same `verdict` and `reason` as
+  `cicd --json`. `sync_fluent_build` runs `fluent build` for a project inside
+  the workspace. It is classed as mutating and confined to an adapter installed
+  in the project or the server's own `node_modules`. Responses report which
+  adapter was loaded.
+- `SN_MAX_RPS` lowers the 20 requests/second cap for the CLI and the MCP server
+  (a whole number from 1 to 20). An invalid value is an error, never a silent
+  full rate.
+- `syncrona config show-defaults` lists the default include and exclude tables
+  by name, not only their counts.
+
+### Fixed
+
+- With OAuth, when the token endpoint rejected the first token request and
+  then granted a second one, a core CLI command received the token endpoint's
+  JSON in place of the instance's answer, and the request it was meant to send
+  never went out. A `cicd` run read that as an answer without a result. The CLI
+  now sends one token request and fails with the token endpoint's rejection, as
+  `sync_cicd_run` does, and never treats token JSON as data.
+- `cicd` names the OAuth token endpoint when it fails during a poll or an ATF
+  result read, and ends the message at the reason. Only a 4xx answer is
+  reported as the endpoint rejecting the OAuth client or the credentials. A 5xx
+  or a network failure reads as "no OAuth token could be obtained" and is retried
+  like any transient poll failure, so an outage no longer blames your
+  credentials.
+- `cicd` and `sync_cicd_run` now agree on every wait outcome. They make the same
+  number of requests for a transient poll failure (a network failure, 408, 425,
+  429 or 5xx, retried up to 3 times). An HTML login page or a redirect loop ends
+  the run as a session/authentication redirect. A 3xx answer is reported as an
+  unexpected redirect, usually a proxy or SSO gateway. Every timeout says where
+  to check the tracker and how to resume with `--progress-id`. A resume of the
+  wrong ATF kind names the action to resume it with.
+- Records whose names collide on a case-insensitive or Unicode-normalising
+  volume (`Util` and `util`) get their own `<name>_<sys_id>` folders on every
+  download path. Before, they overwrote each other's files, and a push could
+  upload the wrong record. Names that no filesystem stores as written are made
+  storable too: control characters are replaced, long names are cut and hashed,
+  Windows device names are escaped, and an empty or dot-only name falls back to
+  the sys_id. The first `refresh` or `download` moves an affected folder and
+  keeps local edits. See `docs/DATA_MODEL.md`, "Record folder names".
+- `push --create` refuses to create in a table the instance does not have, and
+  refuses to adopt a record that belongs to another application.
+- The scoped-create check now fails with a message naming what is wrong, instead
+  of guessing "outside `sys_metadata`" and planning an unscoped create. It
+  covers a missing, malformed or inconsistent `sys_db_object` record: no result
+  list, a row that is not a record, a `super_class.name` that is absent or not a
+  string, another table's record, or a broken or whitespace-padded parent.
+- `repair --apply --prune` deletes only orphan files that git holds committed
+  and unchanged, so git can restore them. It never deletes the files of a
+  record awaiting `push --create`, and it has a `--dry-run` preview. It finds
+  the repository even with `GIT_DIR` / `GIT_WORK_TREE` exported, handles
+  decomposed names on macOS, and quotes git's own reason when it refuses.
+  `repair --apply` exits 1 when files are still missing after the re-download.
+- `download` and `refresh` of a scope that owns no records explain how to get
+  tables into it, instead of pointing at `init --new`. A `refresh` of a freshly
+  created empty scope exits 0, so `dev` no longer logs an error on every
+  interval.
+- A command line whose leading flag swallowed the command name
+  (`syncrona --dry-run status`) now names the flag and prints the corrected
+  order, instead of "Specify a command to run". It still refuses to run.
+- A refused path segment says why: traversal, a control character, or a segment
+  over 255 bytes. It no longer always says the name "would escape" its
+  directory.
+- `fluent` reads `now.config.json` the way the SDK does where it matters (a
+  byte-order mark, comments and trailing commas), refuses one it cannot parse
+  by name, and treats a whitespace-only `scope` as none.
+- `run_workspace_command` asks for confirmation before `cicd`, `dev`,
+  `refresh`, `init --new`, `repair --apply` and every `fluent` action that can
+  write.
+
+### Security
+
+- Secret columns no longer reach the working tree. Columns are now classified
+  in one place on every manifest path, and an unsafe column is dropped with a
+  warning naming the table and column; a column whose type cannot be read is
+  kept, and a warning says so. Before, a value leaked in three ways:
+  - a `password` / `password2` `sys_properties` value, into its `.meta.json`
+    sidecar or as a field file;
+  - an `includes` entry, an explicit `metaFields` list or the data-field
+    fallback naming a password, encrypted, masked, journal, collection or image
+    column;
+  - a column spelled in another letter case than the dictionary's.
+- Dot-walked field names (`sys_created_by.user_password`) are refused as local
+  files on `download`, `refresh` and `push`. Such a name reads a column of
+  another record, so the unsafe-type check could not see it, and the creator's
+  password was requested and written. The refusal covers an `includes` entry, a
+  `metaFields` entry and a field file a hand-edited manifest lists. It warns
+  once per table and column. The one exemption is the ATF step script
+  (`sys_atf_step` `inputs.script`).
+
+### Changed
+
+- `fluent --dry-run` now checks that `@syncrona/fluent` and `@servicenow/sdk`
+  are installed and exits 1 with the install hint when one is missing, where it
+  used to print a plan the real run could not carry out.
+- `sync_fluent_build` is classed as a mutating tool, so tool policy and the
+  mutating audit apply to it. The build never calls the instance, so it is
+  exempt from the instance preflight unless a policy asks for it explicitly.
+  `TOOL_CONTRACT_VERSION` is unchanged.
+
 ## [1.0.0] - 2026-08-25
 
 **First stable release.** 1.0.0 adds no features on top of 0.9.4. It draws a
