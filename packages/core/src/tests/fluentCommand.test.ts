@@ -1060,6 +1060,28 @@ describe("fluentCommand: stripJsonExtensions", () => {
     expect(stripJsonExtensions(plain)).toBe(plain);
     expect(JSON.parse(stripJsonExtensions('{"a": "\\"/*", /* c */ "b": 1,}'))).toEqual({ a: '"/*', b: 1 });
   });
+
+  it("still strips a trailing comma after an element, across comments and newlines", async () => {
+    const { stripJsonExtensions } = await import("../fluentCommand.js");
+    expect(JSON.parse(stripJsonExtensions('{"a": [1, 2,\n], /* c */ "b": {"c": 1, // x\n},\n}'))).toEqual({
+      a: [1, 2],
+      b: { c: 1 },
+    });
+  });
+
+  it.each(["{,}", "[,]", ",]", "{ /* c */ , }", "[\n,\n]", "[1,,]", '{"a": 1,,}'])(
+    "does not turn a comma with no element before it into valid JSON: %j",
+    async (text) => {
+      const { stripJsonExtensions } = await import("../fluentCommand.js");
+      expect(() => JSON.parse(stripJsonExtensions(text))).toThrow(SyntaxError);
+    }
+  );
+
+  it("refuses an unterminated block comment", async () => {
+    const { stripJsonExtensions } = await import("../fluentCommand.js");
+    expect(() => stripJsonExtensions('{"scope": "x_app"} /* tail')).toThrow(/Unterminated block comment/);
+    expect(() => stripJsonExtensions('{"scope": "x_app" /*')).toThrow(SyntaxError);
+  });
 });
 
 describe("fluentCommand: install without a terminal", () => {

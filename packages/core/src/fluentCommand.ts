@@ -529,7 +529,9 @@ async function resolveProjectDir(
  * `now.config.json` text reduced to plain JSON the way the SDK's JSON5 reader
  * accepts it: a leading byte-order mark, `//` and `/* *\/` comments and trailing
  * commas are removed, outside of strings only. Other JSON5 syntax (single quotes,
- * unquoted keys, hex numbers) is left as is, so `JSON.parse` still refuses it.
+ * unquoted keys, hex numbers) is left as is, so `JSON.parse` still refuses it,
+ * and so is a comma that trails no element (`{,}`). An unterminated block
+ * comment throws a `SyntaxError`, as the SDK's reader does.
  */
 export function stripJsonExtensions(text: string): string {
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -547,30 +549,38 @@ export function stripJsonExtensions(text: string): string {
       plain += "\n";
     } else if (ch === "/" && source[i + 1] === "*") {
       const end = source.indexOf("*/", i + 2);
-      const stop = end === -1 ? source.length : end + 2;
+      if (end === -1) throw new SyntaxError(`Unterminated block comment at position ${i}`);
+      const stop = end + 2;
       plain += source.slice(i, stop).replace(/[^\n]/g, " ");
       i = stop - 1;
     } else {
       plain += ch;
     }
   }
-  // Pass 2: drop a comma that only whitespace separates from a closing bracket.
+  // Pass 2: drop a comma that only whitespace separates from a closing bracket,
+  // when an element precedes it. A comma right after `{`, `[` or another comma
+  // trails nothing, so it stays and `JSON.parse` refuses `{,}` as JSON5 does.
   let out = "";
+  // The last non-whitespace character written to `out` ("" before any).
+  let last = "";
   for (let i = 0; i < plain.length; i++) {
     const ch = plain[i];
     if (ch === '"' || ch === "'") {
       let j = i + 1;
       while (j < plain.length && plain[j] !== ch && plain[j] !== "\n") j += plain[j] === "\\" ? 2 : 1;
       out += plain.slice(i, j + 1);
+      last = ch;
       i = j;
       continue;
     }
     if (ch === ",") {
       let j = i + 1;
       while (j < plain.length && /\s/.test(plain[j])) j++;
-      if (plain[j] === "}" || plain[j] === "]") continue;
+      const trailsElement = last !== "" && last !== "{" && last !== "[" && last !== ",";
+      if ((plain[j] === "}" || plain[j] === "]") && trailsElement) continue;
     }
     out += ch;
+    if (!/\s/.test(ch)) last = ch;
   }
   return out;
 }
