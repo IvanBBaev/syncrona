@@ -878,6 +878,16 @@ export const extendsSysMetadata = async (
           "cannot be checked; refusing to plan a create in it."
       );
     }
+    // The same holds for a first row that is not a record: `null`, a number, a
+    // string or a nested array carries no super_class, and reading it as "no
+    // parent" planned the create on no evidence just the same.
+    const first: unknown = rows[0];
+    if (rows.length > 0 && (typeof first !== "object" || first === null || Array.isArray(first))) {
+      throw new Error(
+        `sys_db_object answered with a result that is not a record for table "${current}", so its ` +
+          "hierarchy cannot be checked; refusing to plan a create in it."
+      );
+    }
     if (rows.length === 0) missing?.add(current);
     const parent = rows[0]?.["super_class.name"];
     if (typeof parent !== "string" || parent === "") break;
