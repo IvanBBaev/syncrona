@@ -95,6 +95,50 @@ function buildCommandBuilder(mod: CliCommandModule) {
   };
 }
 
+/** Every name a command answers to: its primary name and any alias. */
+function commandNames(mod: CliCommandModule): string[] {
+  const specs = Array.isArray(mod.command) ? mod.command : [mod.command];
+  return specs.map((spec) => spec.trim().split(/\s+/)[0]);
+}
+
+const isFlag = (token: string): boolean =>
+  token.startsWith("-") && token !== "-" && token !== "--";
+
+// Spellings that never take the next token as a value.
+const takesNoValue = (token: string): boolean =>
+  token.startsWith("--no-") || token.includes("=");
+
+// The flags the top-level parse does know: with one of them yargs prints help
+// or the version, which needs no correction.
+const isTopLevelFlag = (token: string): boolean => /^(--help|-h|--version)$/.test(token);
+
+/**
+ * The refusal for `syncrona --dry-run status`. Every option is declared per
+ * command, so the top-level parse does not know a leading `--dry-run` is a
+ * boolean: it takes the next token, the command name, as the flag's value, and
+ * yargs reports only "specify a command" (or the leftover arguments as
+ * unknown). Undefined unless the raw arguments open with flags whose last one
+ * swallows a known command name, and no later token names a command yargs
+ * could still run.
+ */
+function leadingFlagHint(raw: readonly string[], names: ReadonlySet<string>): string | undefined {
+  const index = raw.findIndex((token) => !isFlag(token));
+  if (index <= 0 || !names.has(raw[index])) return undefined;
+  const flags = raw.slice(0, index);
+  const swallowing = flags[flags.length - 1];
+  if (takesNoValue(swallowing) || flags.some(isTopLevelFlag)) {
+    return undefined;
+  }
+  const rest = raw.slice(index + 1);
+  if (rest.some((token) => names.has(token))) return undefined;
+  const command = raw[index];
+  const corrected = ["syncrona", command, ...flags, ...rest].join(" ");
+  return (
+    `Specify a command to run. Options go after the command: \`${swallowing}\` ` +
+    `took \`${command}\` as its value. Run \`${corrected}\` instead.`
+  );
+}
+
 // Interprets the CLI_COMMANDS registry. New commands are added by appending a
 // module entry in cliCommands.ts — this file should not need to change.
 //
@@ -106,6 +150,19 @@ function buildCommandBuilder(mod: CliCommandModule) {
 // test runner. yargs 18 is a pure factory (no shared singleton), so each call
 // yields an independent parser.
 export async function initCommands(argv?: string[]) {
+  // A leading flag that swallowed the command name leaves no command to run.
+  // The run is refused, as yargs would refuse it, but with the corrected order:
+  // running the command anyway would turn a mistyped `syncrona --dry-run push`
+  // into a real push the moment the guess about the user's intent was wrong.
+  const hint = leadingFlagHint(
+    argv ?? hideBin(process.argv),
+    new Set(CLI_COMMANDS.flatMap(commandNames))
+  );
+  if (hint) {
+    logger.error(hint);
+    process.exitCode = 1;
+    return;
+  }
   const base: Argv =
     argv === undefined ? yargs(hideBin(process.argv)) : yargs(argv);
   let cli = base.scriptName("syncrona");
