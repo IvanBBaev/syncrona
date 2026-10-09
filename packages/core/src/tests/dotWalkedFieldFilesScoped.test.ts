@@ -236,3 +236,70 @@ describe("a dot-walked field file never reaches any fetch path", () => {
     expect(walkedWarnings()).toEqual([]);
   });
 });
+
+describe("a manifest files entry the shared refusal must not read as a plain column", () => {
+  const odd = (): SN.AppManifest =>
+    ({
+      scope: "x_demo",
+      tables: {
+        sys_script_include: {
+          records: {
+            one: {
+              name: "one",
+              sys_id: "s1",
+              files: [
+                { name: "script", type: "js" },
+                { name: "inputs.script", type: "js" },
+                { name: "sys_created_by.meta", type: "txt" },
+                { name: "foo.meta", type: "txt" },
+              ],
+            },
+          },
+        },
+        sys_atf_step: {
+          records: {
+            step: { name: "step", sys_id: "a1", files: [{ name: "inputs.script", type: "js" }] },
+          },
+        },
+      },
+    }) as unknown as SN.AppManifest;
+
+  const allWarnings = (): string[] => warn.mock.calls.map((c) => String(c[0]));
+
+  it("refresh: sends only the record's own column and the ATF step script to the scoped endpoint", async () => {
+    const { findMissingFiles, processMissingFiles } = await import("../appUtils.js");
+
+    const missing = await findMissingFiles(odd());
+    expect(missing.sys_script_include.s1.map((f) => f.name)).toEqual(["script"]);
+    expect(missing.sys_atf_step.a1.map((f) => f.name)).toEqual(["inputs.script"]);
+
+    await processMissingFiles(odd());
+
+    const asked = JSON.stringify(getMissingFilesApi.mock.calls);
+    expect(asked).not.toMatch(/user_password|\.meta|sys_script_include[^\]]*inputs\.script/);
+    expect(written.filter((n) => n === "inputs.script")).toHaveLength(1);
+    expect(allWarnings()).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('ignoring the manifest files entry for column "inputs.script"'),
+        expect.stringContaining('ignoring the manifest files entry for column "sys_created_by.meta"'),
+        expect.stringContaining('ignoring the manifest files entry for column "foo.meta"'),
+      ])
+    );
+    expect(allWarnings().filter((m) => m.startsWith("Table sys_atf_step"))).toEqual([]);
+  });
+
+  it("download: never hands the odd names to the scoped endpoint or the Table API fallback", async () => {
+    getMissingFilesApi.mockImplementation(async () => {
+      throw Object.assign(new Error("not found"), { response: { status: 404 } });
+    });
+    const { buildFullMissingMap, downloadAllFiles } = await import("../appUtils.js");
+
+    expect(buildFullMissingMap(odd()).sys_script_include.s1.map((f) => f.name)).toEqual(["script"]);
+    await downloadAllFiles(odd());
+
+    expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalled();
+    const asked = JSON.stringify([getMissingFilesApi.mock.calls, mockBuildBulkDownloadFromTableAPI.mock.calls]);
+    expect(asked).not.toMatch(/user_password|\.meta/);
+    expect(requestedNames(mockBuildBulkDownloadFromTableAPI).sort()).toEqual(["inputs.script", "script"]);
+  });
+});

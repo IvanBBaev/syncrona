@@ -239,3 +239,44 @@ describe("a dot-walked field file a hand-edited manifest lists (bulk download)",
     expect(dotWalkWarnings()).toEqual([walkedWarning("manifest files", "sys_atf_step")]);
   });
 });
+
+describe("the dot-walk exemptions are exactly the ATF step script and the .meta sidecar (bulk download)", () => {
+  it("refuses inputs.script on a table other than sys_atf_step", async () => {
+    const tableAPIGet = fakeInstance({
+      records: {
+        sys_script_include: [{ sys_id: "s1", name: "one", script: "gs.info(1)", "inputs.script": "leak" }],
+      },
+    });
+    const missing = {
+      sys_script_include: { s1: [{ name: "inputs.script", type: "js" }, { name: "script", type: "js" }] },
+    } as unknown as SN.MissingFileTableMap;
+
+    const tableMap = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {}, {
+      sys_script_include: { s1: "one" },
+    });
+
+    expect(tableMap.sys_script_include.records.one.files.map((f) => f.name)).toEqual(["script"]);
+    expect(requested(tableAPIGet)).not.toContain("inputs.script");
+    expect(dotWalkWarnings()).toEqual([walkedWarning("manifest files", "sys_script_include", "inputs.script")]);
+  });
+
+  it.each(["sys_created_by.meta", "foo.meta"])(
+    "refuses %s, a dotted name that only ends like the sidecar",
+    async (column) => {
+      const tableAPIGet = fakeInstance({
+        records: { [TABLE]: [{ sys_id: "c1", name: "cred-one", script: "gs.info(1)", [column]: "leak" }] },
+      });
+      const missing = {
+        [TABLE]: { c1: [{ name: column, type: "txt" }, { name: "script", type: "js" }] },
+      } as unknown as SN.MissingFileTableMap;
+
+      const tableMap = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {}, {
+        [TABLE]: { c1: "cred-one" },
+      });
+
+      expect(tableMap[TABLE].records["cred-one"].files.map((f) => f.name)).toEqual(["script"]);
+      expect(requested(tableAPIGet)).not.toContain(column);
+      expect(dotWalkWarnings()).toEqual([walkedWarning("manifest files", TABLE, column)]);
+    }
+  );
+});
