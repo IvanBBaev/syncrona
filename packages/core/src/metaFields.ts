@@ -404,6 +404,15 @@ export const classifyColumn = (
   return type === "" ? "unknown" : "safe";
 };
 
+/**
+ * True for a dot-walked column name (`manager.user_password`). It reads a
+ * column of ANOTHER record, so this table's dictionary has no row for it and
+ * classifyColumn could only call it "unknown" — which keeps it. The sidecar
+ * holds this record's own columns; a dot-walked name is never requested and
+ * never written, whatever listed it.
+ */
+export const isDotWalkedColumn = (column: string): boolean => column.includes(".");
+
 /** A value with a single unambiguous column form. */
 const isColumnScalar =(raw: unknown): boolean =>
   typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean";
@@ -461,7 +470,8 @@ export const metaValueText = (raw: unknown): string => {
  * unsafe is never written, whatever listed it. The manifest's `metaFields` is
  * normally filtered already, but it is a committed, hand-editable file, and a
  * list written before the explicit-list filter existed can still name a
- * credential column.
+ * credential column. A dot-walked name (isDotWalkedColumn) is never written for
+ * the same reason, and needs no type to be refused.
  */
 export const serializeMetaFields = (
   row: Record<string, unknown>,
@@ -482,7 +492,7 @@ export const serializeMetaFields = (
   // name an ordinary key.
   const body: Record<string, string> = Object.create(null);
   for (const field of [...new Set(fields)].sort()) {
-    if (!rowHasColumn(row, field) || secret.has(field)) {
+    if (isDotWalkedColumn(field) || !rowHasColumn(row, field) || secret.has(field)) {
       continue;
     }
     body[field] = metaValueText(row[field]);

@@ -548,6 +548,41 @@ describe("manifest metadata discovery", () => {
     }
   });
 
+  // A dot-walked name reads a column of ANOTHER record: this table's dictionary
+  // has no row for it, so the type check would call it "unknown" and keep it —
+  // and `sys_created_by.user_password` is the creator's password.
+  it("refuses a dot-walked metaFields entry and never requests it", async () => {
+    const tableAPIGet = dictionaryClient();
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+        ...baseConfig,
+        tableOptions: {
+          sys_script_include: {
+            query: "",
+            metaFields: ["api_name", "sys_created_by.user_password", "manager.user_password"],
+          },
+        },
+      });
+
+      expect(manifest.tables.sys_script_include.metaFields).toEqual(["api_name"]);
+      const requested = tableAPIGet.mock.calls.map((call) => `${call[1]} ${call[2]}`).join("\n");
+      expect(requested).not.toContain("user_password");
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual(
+        expect.arrayContaining([
+          'Table sys_script_include: ignoring the metaFields entry for column "sys_created_by.user_password" — ' +
+            "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
+            "so it is never written to the working tree.",
+          'Table sys_script_include: ignoring the metaFields entry for column "manager.user_password" — ' +
+            "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
+            "so it is never written to the working tree.",
+        ])
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("lets tableOptions.metaFields replace discovery, minus the file fields", async () => {
     const tableAPIGet = dictionaryClient();
 
@@ -717,6 +752,35 @@ describe("bulk download of the sidecar", () => {
     expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
   });
 
+  it("never requests or writes a dot-walked column a manifest's metaFields names", async () => {
+    const tableAPIGet = dictionaryClient({
+      ...SCRIPT_INCLUDE_ROW,
+      "sys_created_by.user_password": "hunter2",
+    });
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const tableMap = await buildBulkDownloadFromTableAPI(
+        missingWithMeta(),
+        createClient(tableAPIGet),
+        {},
+        undefined,
+        { sys_script_include: ["api_name", "sys_created_by.user_password"] }
+      );
+
+      const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
+      expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+      const requested = tableAPIGet.mock.calls.map((call) => `${call[1]} ${call[2]}`).join("\n");
+      expect(requested).not.toContain("user_password");
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        'Table sys_script_include: ignoring the metaFields entry for column "sys_created_by.user_password" — ' +
+          "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
+          "so it is never written to the working tree."
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("still writes the sidecar when the column types cannot be read", async () => {
     const base = dictionaryClient();
     const tableAPIGet: TableApiGet = jest.fn();
@@ -794,6 +858,13 @@ describe("password-type system properties", () => {
     expect(
       JSON.parse(serializeMetaFields(row, ["user_password", "notes", "name"], "sys_user", types))
     ).toEqual({ name: "admin" });
+  });
+
+  it("never serializes a dot-walked column, whatever the row carries", () => {
+    const row = { name: "admin", "manager.user_password": "hunter2" };
+    expect(JSON.parse(serializeMetaFields(row, ["name", "manager.user_password"], "sys_user"))).toEqual({
+      name: "admin",
+    });
   });
 
   it("reports the classifier column a sidecar read must fetch", () => {

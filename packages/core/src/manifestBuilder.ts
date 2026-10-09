@@ -12,6 +12,7 @@ import {
   META_FILE_TYPE,
   classifyColumn,
   dictionaryInternalType,
+  isDotWalkedColumn,
   isMetaFieldCandidate,
   isMetaFile,
   isReadOnlyDictionaryRow,
@@ -470,6 +471,26 @@ const warnUnsafeInclude = (
 };
 
 /**
+ * The entries of a metaFields list that name this record's own columns. A
+ * dot-walked entry (isDotWalkedColumn) is dropped with a warning, once per
+ * table and column per build: its value belongs to another record, which this
+ * table's dictionary cannot type, so the unsafe-type check could only keep it.
+ * Applied where the manifest records the list and again where the download
+ * requests it, so a hand-edited manifest is refused too.
+ */
+const withoutDotWalkedMetaFields = (tableName: string, columns: string[]): string[] => {
+  const walked = columns.filter(isDotWalkedColumn);
+  for (const column of claimIncludeWarnings(tableName, walked, "metaFields")) {
+    logger.warn(
+      `Table ${tableName}: ignoring the metaFields entry for column "${column}" — ` +
+        "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
+        "so it is never written to the working tree."
+    );
+  }
+  return walked.length === 0 ? columns : columns.filter((column) => !isDotWalkedColumn(column));
+};
+
+/**
  * Names included columns kept without the unsafe-type check, because their
  * dictionary type could not be read: the lookup failed (`reason` is its error),
  * or it answered without a row or with an empty type for them. Not fail-closed
@@ -855,7 +876,7 @@ async function getMetaFieldsForTable(
   // binary column named here is dropped with a warning, exactly as an
   // `includes` entry is (withoutUnsafeMetaFields).
   if (Array.isArray(tableOptions?.metaFields)) {
-    const named = dropFileFields(tableOptions.metaFields);
+    const named = withoutDotWalkedMetaFields(tableName, dropFileFields(tableOptions.metaFields));
     const fields = await withoutUnsafeMetaFields(client, tableName, named, hierarchyTableNames);
     return { fields: fields.sort(), readOnly: [] };
   }
@@ -2358,7 +2379,7 @@ export async function buildBulkDownloadFromTableAPI(
           allFiles.set(f.name, f.type as SN.FileType);
         }
       }
-      const metaFields = metaFieldsByTable?.[tableName] ?? [];
+      const metaFields = withoutDotWalkedMetaFields(tableName, metaFieldsByTable?.[tableName] ?? []);
       const wantMeta = metaRequested && metaFields.length > 0;
       const metaColumnTypes = wantMeta
         ? await readSidecarColumnTypes(client, tableName, metaFields)
