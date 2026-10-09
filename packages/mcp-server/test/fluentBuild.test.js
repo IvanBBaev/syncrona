@@ -946,6 +946,38 @@ test('in process: a resolution error of the server fallback is rethrown, unless 
   assert.equal(globalThis.__fluentNpHiddenRan, undefined, 'the hoisted code never ran');
 });
 
+test('in process: a server-install package whose main leaves its directory is refused and never runs', () => {
+  // The package sits in a node_modules directory of the server's own ancestry
+  // (dist/node_modules), but its `main` points outside the package, so what the
+  // server requirer resolves is neither in the workspace nor in the server install.
+  const name = `zz-fluent-main-escape-${process.pid}`;
+  const nodeModules = path.resolve(__dirname, '../dist/node_modules');
+  const createdNodeModules = !fs.existsSync(nodeModules);
+  const pkgDir = path.join(nodeModules, name);
+  const elsewhere = mkWorkspace();
+  fs.writeFileSync(path.join(elsewhere, 'index.js'), 'globalThis.__fluentMainEscapeRan = true;');
+  try {
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, 'package.json'),
+      JSON.stringify({ name, main: path.relative(pkgDir, path.join(elsewhere, 'index.js')) })
+    );
+    const ws = mkWorkspace();
+    assert.throws(
+      () => loadFluentAdapter(ws, name),
+      (e) =>
+        e instanceof FluentAdapterOutsideWorkspaceError &&
+        e.message.includes("resolves outside both the workspace and the server's own install") &&
+        e.message.includes('a package entry that leaves its directory') &&
+        !e.message.includes('Node found it through')
+    );
+  } finally {
+    fs.rmSync(createdNodeModules ? nodeModules : pkgDir, { recursive: true, force: true });
+  }
+  assert.equal(globalThis.__fluentMainEscapeRan, undefined, 'the escaped entry never ran');
+  assert.equal(fs.existsSync(pkgDir), false, 'the fixture left nothing in dist');
+});
+
 test('loadFluentAdapter reports an adapter outside any package by its real file path', () => {
   // An absolute specifier names a file with no enclosing package of that name, so
   // the manifest walk reaches the filesystem root and reports the file itself.
