@@ -289,6 +289,27 @@ describe("Unicode normalization of file names", () => {
     expect(infoSpy).toHaveBeenCalledWith("Pruned 2 orphan file(s).");
   });
 
+  // The committed name is precomposed and the name on disk decomposed, set up by
+  // hand rather than by git's own precompose handling (macOS-only), so every
+  // platform sees the same pair. Without core.precomposeunicode they are two
+  // different paths to git: the decomposed file is not the committed one, and
+  // normalizing either side before the lookup would wrongly vouch for it.
+  test("without core.precomposeunicode a decomposed name does not match its precomposed commit", async () => {
+    const nfc = "café.js";
+    const nfd = nfc.normalize("NFD");
+    const committed = write(`sys_script/Gone/${nfc}`);
+    git(tmp, "init", "-q");
+    git(tmp, "config", "core.precomposeunicode", "false");
+    initRepo(tmp);
+    rmSync(committed);
+    const onDisk = write(`sys_script/Gone/${nfd}`);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(onDisk)).toBe(true);
+    expect(logged(infoSpy)).not.toContain("Pruned");
+    expect(logged(infoSpy) + logged(warnSpy)).toContain("Nothing to prune");
+  });
 });
 
 describe("the repository is found from the source directory", () => {
