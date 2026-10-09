@@ -470,16 +470,30 @@ interface AtfOutcome {
 }
 
 /**
+ * The hint for a resumed ATF tracker whose result 404s (core's wording): the
+ * same action can never read it, so it names the other ATF kind and action.
+ */
+function atfKindMismatchHint(action: CicdRunAction, progressId: string): string {
+  const [kind, path, other] =
+    action === "run-test"
+      ? ["a suite run rather than a single test", "tests/test/results/<id>", "run-suite"]
+      : ["a single-test run rather than a suite", "testsuite/results/<id>", "run-test"];
+  return `progress ${progressId} may belong to ${kind} (${action} reads ${path}); resume it with progressId ${progressId} and the ${other} action instead.`;
+}
+
+/**
  * Reads the suite or test result linked from the finished tracker. A tracker
  * that links no result, or a result that cannot be read, comes back as
  * `{ unreadable }`: the caller must not report a pass it could not see, so a
  * successful tracker then yields `incomplete` (like core's `syncrona cicd`).
+ * `notFound` marks a 404 on the read: on a resume it usually means the tracker
+ * belongs to the other ATF kind, which a re-read with the same action never fixes.
  */
 async function fetchAtfOutcome(
   action: CicdRunAction,
   progress: JsonObject,
   budget: Budget
-): Promise<AtfOutcome | { unreadable: string }> {
+): Promise<AtfOutcome | { unreadable: string; notFound?: boolean }> {
   const resultId = linkOf(progress, "results", "id");
   if (!resultId) {
     return { unreadable: "the tracker links no ATF result record" };
@@ -492,7 +506,10 @@ async function fetchAtfOutcome(
   try {
     body = await cicdCall("GET", cicdEndpoint(path), "ATF result", budget);
   } catch (e) {
-    return { unreadable: `ATF result ${resultId} could not be read: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      unreadable: `ATF result ${resultId} could not be read: ${e instanceof Error ? e.message : String(e)}`,
+      notFound: e instanceof CicdRunIncomplete && e.httpStatus === 404,
+    };
   }
   const url = linkOf(body, "results", "url") ?? linkOf(progress, "results", "url");
   if (action === "run-suite") {
@@ -678,7 +695,10 @@ export async function handleCicdRun(
       if ("unreadable" in read) {
         if (trackerSucceeded) {
           throw new CicdRunIncomplete(
-            `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. Resume with progressId ${progressId} to read the result again.`
+            `progress ${progressId} finished, but ${read.unreadable}, so whether the tests passed is unknown. ` +
+              (resumeId && read.notFound
+                ? atfKindMismatchHint(action, progressId)
+                : `Resume with progressId ${progressId} to read the result again.`)
           );
         }
       } else {

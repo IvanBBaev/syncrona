@@ -1271,6 +1271,58 @@ test('handleCicdRun: a dispatched ATF run whose tracker failed before linking a 
   });
 });
 
+// Review round 7, finding 2 (parity with core): a suite tracker resumed as
+// run-test reads tests/test/results/<suite result id>, which 404s; re-reading
+// can never succeed, so the message names the other ATF kind and action.
+test('handleCicdRun resume: a result that 404s names the other ATF kind', async () => {
+  await withEnv(async () => {
+    for (const [action, path, kind, other] of [
+      ['run-test', 'tests/test/results', 'a suite run rather than a single test', 'run-suite'],
+      ['run-suite', 'testsuite/results', 'a single-test run rather than a suite', 'run-test'],
+    ]) {
+      // No result route → the mock answers 404.
+      const calls = mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2', withResults) });
+      const body = payloadOf(await handleCicdRun({ action, progressId: RESUME_ID }, makeContext()));
+      assert.equal(body.outcome, 'incomplete', action);
+      assert.equal(body.exitCode, 1);
+      assert.equal(calls.at(-1).path, `/api/sn_cicd/${path}/${RESULT_ID}`);
+      assert.match(body.message, new RegExp(`ATF result ${RESULT_ID} could not be read: The ATF result request failed with HTTP 404`));
+      assert.ok(
+        body.message.includes(
+          `progress ${RESUME_ID} may belong to ${kind} (${action} reads ${path}/<id>); resume it with progressId ${RESUME_ID} and the ${other} action instead.`
+        ),
+        body.message
+      );
+      assert.doesNotMatch(body.message, /to read the result again/);
+    }
+  });
+});
+
+test('handleCicdRun resume: a result that fails with something other than 404 keeps the re-read hint', async () => {
+  await withEnv(async () => {
+    mockFetch({
+      [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2', withResults),
+      [`GET /api/sn_cicd/tests/test/results/${RESULT_ID}`]: mkResponse(401, { error: { message: 'User Not Authenticated' } }),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'run-test', progressId: RESUME_ID }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.match(body.message, new RegExp(`Resume with progressId ${RESUME_ID} to read the result again`));
+    assert.doesNotMatch(body.message, /may belong to/);
+  });
+});
+
+test('handleCicdRun: a dispatched run whose result 404s keeps the re-read hint', async () => {
+  await withEnv(async () => {
+    mockFetch({
+      'POST /api/sn_cicd/tests/run_test': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress('2', withResults),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'run-test', testId: TEST_ID, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.match(body.message, new RegExp(`Resume with progressId ${PROGRESS_ID} to read the result again`));
+  });
+});
+
 test('handleCicdRun resume: a successful app-repo resume notes the action is taken on the caller\'s word', async () => {
   await withEnv(async () => {
     mockFetch({ [`GET /api/sn_cicd/progress/${RESUME_ID}`]: progress('2') });
