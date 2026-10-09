@@ -103,6 +103,46 @@ afterEach(async () => {
 });
 
 describe("Watcher drain edges", () => {
+  it("does not requeue or retry a push that fails after the watcher stopped", async () => {
+    let release!: (r: Sync.PushResult[]) => void;
+    mockPushFiles.mockImplementationOnce(
+      () => new Promise<Sync.PushResult[]>((resolve) => (release = resolve))
+    );
+
+    change("/src/a.js");
+    await advance(DEBOUNCE);
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+
+    await stopWatching();
+    release([{ success: false, message: "503" }]);
+    await settle();
+    await advance(60_000);
+
+    // The failed file belonged to the stopped session: no retry pushes it later.
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not requeue a thrown push from a stopped session, but drains the new session's changes", async () => {
+    let reject!: (e: unknown) => void;
+    mockPushFiles.mockImplementationOnce(
+      () => new Promise<Sync.PushResult[]>((_resolve, rej) => (reject = rej))
+    );
+
+    change("/src/a.js");
+    await advance(DEBOUNCE);
+    await stopWatching();
+    startWatching("/src");
+    change("/src/b.js");
+    await advance(DEBOUNCE); // the stale drain still holds the lock
+
+    reject(new Error("socket hang up"));
+    await settle();
+    await advance(60_000);
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(2);
+    expect(pushedSysIds(1)).toEqual(["srcbjs"]);
+  });
+
   it("serializes a drain triggered while a push is in flight into the running drain", async () => {
     let release!: (r: Sync.PushResult[]) => void;
     mockPushFiles.mockImplementationOnce(

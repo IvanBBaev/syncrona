@@ -45,6 +45,10 @@ let warnedUntracked = new Set<string>();
 // SDK-F2: paths already reported as a stray per-record sidecar of a composite
 // table, for the same reason — one warning per path per session.
 let warnedStraySidecar = new Set<string>();
+// Bumped by stopWatching. A drain remembers the session it started in: a push
+// still in flight when the watcher stops belongs to a session that no longer
+// exists, so its files must not be requeued or retried into the next one.
+let session = 0;
 
 /**
  * True when `filePath` is a per-record sidecar of a table whose metadata the
@@ -96,6 +100,7 @@ const drainQueue = async (): Promise<void> => {
     return;
   }
   processing = true;
+  let drainSession = session;
   // Tracks the batch currently being pushed so it can be requeued if the push
   // throws — the queue is cleared before the push runs, so without this those
   // file changes would be silently dropped and never retried.
@@ -120,6 +125,13 @@ const drainQueue = async (): Promise<void> => {
       // each drain routes to the current record. A transient read failure
       // preserves the existing manifest (see ConfigManager.reloadManifest).
       await ConfigManager.reloadManifest();
+      if (drainSession !== session) {
+        // Stopped while the manifest was reloading: the batch is from the
+        // previous session. Drop it and carry on with whatever the new one queued.
+        inFlight = [];
+        drainSession = session;
+        continue;
+      }
       const pathContexts: { queuedPath: string; ctx: Sync.FileContext }[] = [];
       for (const queuedPath of toProcess) {
         if (skipStrayCompositeSidecar(queuedPath)) continue;
@@ -182,6 +194,11 @@ const drainQueue = async (): Promise<void> => {
       // Batch handed off — a later batch's throw must not requeue it
       // wholesale; per-record failures are requeued selectively below.
       inFlight = [];
+      if (drainSession !== session) {
+        // Stopped mid-push: the failures belong to the previous session.
+        drainSession = session;
+        continue;
+      }
       if (failedPaths.length > 0) {
         // pushFiles RESOLVES per-record failures (pushRec converts every
         // transport/HTTP error into a { success: false } result), so the
@@ -208,7 +225,9 @@ const drainQueue = async (): Promise<void> => {
   } catch (e) {
     // Requeue the in-flight batch (ahead of anything that arrived since) so the
     // failed changes are retried on the next drain instead of being lost.
-    if (inFlight.length > 0) {
+    // A batch from a session that has since stopped is dropped, not requeued.
+    const sameSession = drainSession === session;
+    if (sameSession && inFlight.length > 0) {
       pushQueue = Array.from(new Set([...inFlight, ...pushQueue]));
     }
     let message;
@@ -221,7 +240,9 @@ const drainQueue = async (): Promise<void> => {
     logger.error(message);
     // Drive the next drain ourselves: without a guaranteed future fs event the
     // requeued batch would otherwise never be retried.
-    scheduleRetry();
+    if (sameSession || pushQueue.length > 0) {
+      scheduleRetry();
+    }
   } finally {
     processing = false;
   }
@@ -312,6 +333,7 @@ export async function stopWatching(): Promise<void> {
     retryTimer = undefined;
   }
   retryAttempt = 0;
+  session += 1;
   // Drop queued/requeued paths as well: a watcher restarted in the same
   // process must not push stale changes from the previous session.
   pushQueue = [];
