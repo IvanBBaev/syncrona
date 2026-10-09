@@ -918,6 +918,47 @@ describe("cicd --progress-id tracker-kind binding", () => {
     expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
   });
 
+  // Review round 7, finding 2: a suite tracker resumed as run-test reads
+  // tests/test/results/<suite result id>, which 404s. Re-reading it can never
+  // succeed, so the message names the kind mismatch and the other action.
+  it.each([
+    ["run-test", "tests/test/results/r", "a suite run rather than a single test", "run-suite"],
+    ["run-suite", "testsuite/results/r", "a single-test run rather than a suite", "run-test"],
+  ])("names the kind mismatch when a result resumed as %s is not found (404)", async (action, path, kind, other) => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(404, `api/sn_cicd/${path}`, { error: { message: "No Record found" } }),
+    });
+
+    expect(await run(h, action, { progressId: RESUME_ID, json: true })).toBe(1);
+    expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`, path]);
+    expect(errors[0]).toContain(`progress ${RESUME_ID} finished, but ATF result r could not be read: No Record found`);
+    expect(errors[0]).toContain(
+      `progress ${RESUME_ID} may belong to ${kind} (${action} reads ${path.replace(/\/r$/, "/<id>")}); resume it with --progress-id ${RESUME_ID} and the ${other} action instead.`
+    );
+    expect(errors[0]).not.toMatch(/to read the result again/);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, progressId: RESUME_ID });
+  });
+
+  it("keeps the re-read hint for a resumed result that fails with something other than 404", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(500, "api/sn_cicd/tests/test/results/r", {}),
+    });
+    expect(await run(h, "run-test", { progressId: RESUME_ID })).toBe(1);
+    expect(errors[0]).toMatch(new RegExp(`Re-run with --progress-id ${RESUME_ID} to read the result again`));
+    expect(errors[0]).not.toMatch(/may belong to/);
+  });
+
+  it("keeps the re-read hint for a dispatched run whose result is not found", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(404, "api/sn_cicd/tests/test/results/r", {}),
+    });
+    expect(await run(h, "run-test", { testId: "t1" })).toBe(1);
+    expect(errors[0]).toMatch(/Re-run with --progress-id prog-1 to read the result again/);
+  });
+
   it("warns that a resumed app-repo action is taken on the caller's word", async () => {
     const h = harness({ progress: [() => progress("2")] });
     expect(await run(h, "rollback", { progressId: RESUME_ID })).toBe(0);
