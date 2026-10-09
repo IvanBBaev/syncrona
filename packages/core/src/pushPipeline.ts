@@ -888,9 +888,24 @@ export const extendsSysMetadata = async (
           "hierarchy cannot be checked; refusing to plan a create in it."
       );
     }
-    if (rows.length === 0) missing?.add(current);
-    const parent = rows[0]?.["super_class.name"];
-    if (typeof parent !== "string" || parent === "") break;
+    if (rows.length === 0) {
+      missing?.add(current);
+      break;
+    }
+    // A real row always carries `super_class.name` as a string (`""` for a
+    // root table). A row without it, with a non-string value, or naming another
+    // table is not this table's hierarchy, and reading it as "no parent" planned
+    // the create on no evidence.
+    const row = first as Record<string, unknown>;
+    const parent = row["super_class.name"];
+    if (typeof parent !== "string" || ("name" in row && row.name !== current)) {
+      throw new Error(
+        `sys_db_object answered with a record that does not describe table "${current}" ` +
+          "(no string super_class.name, or another table's name), so its hierarchy cannot be " +
+          "checked; refusing to plan a create in it."
+      );
+    }
+    if (parent === "") break;
     current = parent;
   }
   for (const name of visited) cache.set(name, result);
