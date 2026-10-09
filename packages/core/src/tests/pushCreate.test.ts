@@ -351,8 +351,8 @@ describe("table policy", () => {
       "its super_class.name is of type object, not a string",
     ],
     ["an array super_class.name", [{ name: "x", "super_class.name": ["sys_metadata"] }], "its super_class.name is an array, not a string"],
-    ["another table's record", [{ name: "y", "super_class.name": "" }], 'it is named "y"'],
-    ["a record with a non-string name", [{ name: 7, "super_class.name": "" }], "it is named of type number"],
+    ["another table's record", [{ name: "y", "super_class.name": "" }], 'its name is "y"'],
+    ["a record with a non-string name", [{ name: 7, "super_class.name": "" }], "its name is of type number"],
   ])("refuses to judge a table from %s, naming the check that failed", async (_label, result, why) => {
     const client = makeClient();
     client.tableAPIGet.mockImplementation(() => ok(result));
