@@ -866,20 +866,52 @@ describe("cicd --progress-id tracker-kind binding", () => {
   });
 
   it.each(["run-suite", "run-test"])(
-    "refuses an app-repo tracker resumed as %s, whatever its status",
+    "refuses a successful tracker without a result link resumed as %s",
     async (action) => {
-      for (const [status, label] of [["2", "Successful"], ["3", "Failed"], ["4", "Canceled"]]) {
-        errors.length = 0;
-        const h = harness({ progress: [() => progress(status)] });
-        // Exit 1 (could not finish), never 0 (a pass) nor 2 (failing tests).
-        expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
-        expect(errors[0]).toMatch(
-          new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended ${label}\\)`)
-        );
-        expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
-      }
+      const h = harness({ progress: [() => progress("2")] });
+      // Exit 1 (could not finish), never 0 (a pass) nor 2 (failing tests).
+      expect(await run(h, action, { progressId: RESUME_ID })).toBe(1);
+      expect(errors[0]).toMatch(
+        new RegExp(`progress ${RESUME_ID} links no ATF result record, so it looks like an app-repo run rather than ${action} \\(it ended Successful\\)`)
+      );
+      expect(h.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
     }
   );
+
+  // Review round 7, finding 1: an ATF run cancelled or failed before it linked a
+  // result exits 2 when dispatched, so resuming the same tracker must exit 2 too,
+  // with a message that neither claims failing tests nor sends the caller to an
+  // app-repo action as if that were certain.
+  it.each([
+    ["run-suite", "3", "Failed"],
+    ["run-suite", "4", "Canceled"],
+    ["run-test", "3", "Failed"],
+    ["run-test", "4", "Canceled"],
+  ])("gives a resumed %s over a tracker that ended %s without a result the fresh run's verdict", async (action, status, label) => {
+    const flags = action === "run-suite" ? { suiteId: "s1" } : { testId: "t1" };
+    const fresh = harness({ progress: [() => progress(status)] });
+    const freshCode = await run(fresh, action, flags);
+    const freshError = errors[0];
+    errors.length = 0;
+
+    const resumed = harness({ progress: [() => progress(status)] });
+    const resumedCode = await run(resumed, action, { progressId: RESUME_ID });
+
+    expect(freshCode).toBe(2);
+    expect(resumedCode).toBe(freshCode);
+    expect(resumed.calls.map((c) => c.path)).toEqual([`progress/${RESUME_ID}`]);
+    const expected = `cicd ${action} finished with failures: the tracker ended ${label} before linking an ATF result record, so no test results were reported`;
+    expect(freshError).toBe(expected);
+    expect(errors[0]).toMatch(new RegExp(`^${expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    expect(errors[0]).toMatch(/if progress e+ is an install, publish or rollback run rather than an ATF run/);
+    expect(errors[0]).not.toMatch(/failing tests/);
+  });
+
+  it("quotes the instance's reason for a resumed ATF tracker that failed before linking a result", async () => {
+    const h = harness({ progress: [() => progress("3", { status_message: "Suite not found" })] });
+    expect(await run(h, "run-suite", { progressId: RESUME_ID, json: true })).toBe(2);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 2, resumed: true, progressId: RESUME_ID });
+  });
 
   it("keeps exit 2 for a dispatched ATF run whose tracker failed before linking a result", async () => {
     const h = harness({ progress: [() => progress("3")] });
