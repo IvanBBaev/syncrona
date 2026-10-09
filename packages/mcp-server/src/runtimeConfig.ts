@@ -36,7 +36,7 @@ export function resolveServerVersion(
 }
 
 export const SERVER_VERSION = resolveServerVersion();
-export const TOOL_CONTRACT_VERSION = "1.0.0";
+export const TOOL_CONTRACT_VERSION = "1.1.0";
 // npm package identifier, not the brand display name: this value is passed to
 // `npx <pkg> <subcommand>`, and npm rejects names with spaces or uppercase.
 // Must stay in sync with the `name`/`bin` keys of packages/core/package.json.

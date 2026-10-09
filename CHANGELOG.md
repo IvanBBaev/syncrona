@@ -168,7 +168,13 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 - `sync_fluent_build` is classed as a mutating tool, so tool policy and the
   mutating audit apply to it. The build never calls the instance, so it is
   exempt from the instance preflight unless a policy asks for it explicitly.
-  `TOOL_CONTRACT_VERSION` is unchanged.
+- `TOOL_CONTRACT_VERSION` is now 1.1.0. Two tools were added (`sync_cicd_run`,
+  `sync_fluent_build`) and `sync_fluent_build` is classed as mutating. The
+  `target`, `diff` and `updateSet` inputs of `sync_push` and the `diff` input of
+  `sync_build` now reject a value that starts with `-`, so it cannot be read as
+  a CLI flag. A git ref never starts with `-`; the legitimate values refused
+  are a target path or an update-set name that does (a path can still be
+  passed as `./-name`). No tool was removed or renamed.
 
 ## [1.0.0] - 2026-08-25
 

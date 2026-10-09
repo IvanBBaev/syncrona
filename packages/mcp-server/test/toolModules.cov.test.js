@@ -122,7 +122,8 @@ test('health-planning module handles sync_tool_contract_info using real local de
   assert.ok(response);
   assert.equal(response.isError, false);
   const parsed = JSON.parse(response.content[0].text);
-  assert.equal(typeof parsed.contractVersion, 'string');
+  // Pins the real TOOL_CONTRACT_VERSION: a bump must be a deliberate, reviewed change.
+  assert.equal(parsed.contractVersion, '1.1.0');
   assert.equal(parsed.server.name, 'syncrona-mcp-server');
   assert.ok(Array.isArray(parsed.tools.names));
   assert.ok(parsed.tools.names.length > 0);
