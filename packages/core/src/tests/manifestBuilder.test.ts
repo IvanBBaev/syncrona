@@ -231,7 +231,10 @@ describe("manifestBuilder", () => {
         excludes: {},
         tableOptions: {},
       })
-    ).rejects.toThrow('Scope "x_missing" not found on this instance. Check the scope code.');
+    ).rejects.toThrow(
+      'Scope "x_missing" not found on this instance. Check the scope code, or create the application ' +
+        "with `syncrona init --new`, which binds the new, empty scope."
+    );
   });
 
   it("falls back to sys_db_object when sys_metadata is empty", async () => {
