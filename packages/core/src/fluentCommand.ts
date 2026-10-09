@@ -639,9 +639,22 @@ function isSdkMissing(e: unknown): boolean {
   return (e as { code?: unknown } | null)?.code === "FLUENT_SDK_MISSING";
 }
 
-function fallBackToNative(deps: FluentCommandDeps, args: FluentCmdArgs, profile: string | undefined): Promise<number> {
+/**
+ * Falls back to the native generator for a plain `types`. `cause` is the error
+ * that showed the SDK unusable, when there is one: an SDK that is installed but
+ * incomplete (its `@servicenow/sdk-api` missing) reads as missing too, so its
+ * own message is logged with the notice to tell the two apart.
+ */
+function fallBackToNative(
+  deps: FluentCommandDeps,
+  args: FluentCmdArgs,
+  profile: string | undefined,
+  cause?: unknown
+): Promise<number> {
+  const reason = cause instanceof Error ? cause.message.trim() : "";
   logger.info(
-    `${FLUENT_SDK_PACKAGE} is not installed; generating table types natively from sys_dictionary instead.`
+    `${FLUENT_SDK_PACKAGE} is not installed or is incomplete; generating table types natively from sys_dictionary instead.` +
+      (reason ? ` Reason: ${reason}` : "")
   );
   return executeNativeTypes(deps, args, profile, nativeTypesOptions(args));
 }
@@ -823,7 +836,7 @@ async function dryRun(deps: FluentCommandDeps, action: FluentAction, plan: Fluen
       action,
       native,
       args,
-      `[dry-run] fluent types → ${FLUENT_SDK_PACKAGE} is not installed; ${NATIVE_READS} ` +
+      `[dry-run] fluent types → ${FLUENT_SDK_PACKAGE} is not installed or is incomplete; ${NATIVE_READS} ` +
         `(${JSON.stringify(native.options)}) against the active instance`
     );
     return;
@@ -899,7 +912,7 @@ async function execute(
     fluent = await deps.loadFluent(projectDir);
   } catch (e) {
     if (e instanceof FluentNotInstalledError && canFallBackToNative(action, args)) {
-      return fallBackToNative(deps, args, profile);
+      return fallBackToNative(deps, args, profile, e);
     }
     throw e;
   }
@@ -1004,7 +1017,7 @@ async function execute(
       try {
         await engine.types(plan.options);
       } catch (e) {
-        if (isSdkMissing(e) && canFallBackToNative(action, args)) return fallBackToNative(deps, args, profile);
+        if (isSdkMissing(e) && canFallBackToNative(action, args)) return fallBackToNative(deps, args, profile, e);
         throw e;
       }
       emit({ exitCode: 0, mode: "sdk" }, () => logger.success("Fluent types and dependencies updated."));
