@@ -696,7 +696,10 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(await run({ action: "types", table: "incident" }, { ...deps, loadFluent })).toBe(0);
     // --table names the tables outright; the project's scope is not read for it.
     expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
-    expect(infos[0]).toContain("@servicenow/sdk is not installed; generating table types natively");
+    expect(infos[0]).toBe(
+      "@servicenow/sdk is not installed or is incomplete; generating table types natively from sys_dictionary instead. " +
+        `Reason: ${new FluentNotInstalledError().message}`
+    );
     expect(errors).toEqual([]);
   });
 
@@ -710,6 +713,27 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     });
     expect(await run({ action: "types" }, deps)).toBe(0);
     expect(rec.generated).toHaveLength(1);
+    expect(infos[0]).toBe(
+      "@servicenow/sdk is not installed or is incomplete; generating table types natively from sys_dictionary instead. " +
+        "Reason: sdk missing"
+    );
+  });
+
+  it("names an incomplete SDK's own reason when it falls back to native", async () => {
+    const reason =
+      "The ServiceNow SDK (@servicenow/sdk) is incomplete: @servicenow/sdk-api/credentials cannot be loaded. " +
+      "Reinstall @servicenow/sdk to use `syncrona fluent`.";
+    const { rec, deps } = harness({
+      engine: {
+        types: async () => {
+          throw Object.assign(new Error(reason), { code: "FLUENT_SDK_MISSING" });
+        },
+      },
+    });
+    expect(await run({ action: "types" }, deps)).toBe(0);
+    expect(rec.generated).toHaveLength(1);
+    expect(infos[0]).toContain("is not installed or is incomplete");
+    expect(infos[0]).toContain(`Reason: ${reason}`);
   });
 
   it("keeps the install hint when --scripts or --fluent needs the SDK", async () => {
@@ -779,6 +803,10 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
     expect(rec.authInputs).toEqual([]);
     expect(errors).toEqual([]);
+    // The probe only answers whether the SDK is usable, so no reason is named.
+    expect(infos[0]).toBe(
+      "@servicenow/sdk is not installed or is incomplete; generating table types natively from sys_dictionary instead."
+    );
   });
 
   it("still refuses an unsupported profile for SDK-only types when the SDK is missing", async () => {
@@ -824,7 +852,7 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     const resolveCredential = jest.fn(deps.resolveCredential!);
     expect(await run({ action: "types", dryRun: true }, { ...deps, resolveCredential })).toBe(0);
     expect(rec.written).toEqual([
-      "[dry-run] fluent types → @servicenow/sdk is not installed; read sys_db_object, sys_dictionary and sys_choice " +
+      "[dry-run] fluent types → @servicenow/sdk is not installed or is incomplete; read sys_db_object, sys_dictionary and sys_choice " +
         "({}) against the active instance",
     ]);
     expect(rec.engineOptions).toEqual([{ projectDir: PROJECT, logger: expect.anything() }]);
