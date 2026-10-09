@@ -17,7 +17,8 @@
 //      covers APFS/NTFS case-insensitivity, HFS+/SMB normalisation and Windows'
 //      trailing-dot stripping.
 //   2. Every member of a colliding group (two or more distinct sys_ids) gets the
-//      suffix `_<sys_id>`. The decision depends on the SET of records only, never
+//      suffix `_<sys_id>`, inside the same byte budget (a long name is cut
+//      further to make room). The decision depends on the SET of records only, never
 //      on the order the instance returned them, so a refresh does not move
 //      folders. A record that does not collide keeps its name byte for byte, so
 //      existing checkouts keep their folders.
@@ -25,8 +26,11 @@
 //   4. Before any of that, a name is made storable (sanitizeRecordFolderName):
 //      control characters are replaced and an overlong name is cut on a code
 //      point boundary and given a hash of the whole name, so the folder fits
-//      the 255-byte segment limit with room for the collision suffix and, in the
-//      flat layout, the `~<field>.<ext>` tail.
+//      the 255-byte segment limit with room for, in the flat layout, the
+//      `~<field>.<ext>` tail.
+//   5. The rules are a fixed point: every name they produce comes back unchanged
+//      when it passes through them again, so a manifest one producer named is
+//      named the same by the next (assignManifestFolderNames re-checks both).
 import { SN } from "@syncrona/types";
 import { createHash } from "crypto";
 import fs, { promises as fsp } from "fs";
@@ -67,16 +71,42 @@ export function setRecord(
 }
 
 /**
- * The byte budget of a record name before its collision suffix. 255 is the
- * segment limit; 180 leaves 33 bytes for `_<sys_id>` and the rest for a flat
- * layout's `~<field>.<ext>`.
+ * The byte budget of a record folder name, collision suffix included. 255 is the
+ * segment limit; the bytes above 180 are left for a flat layout's
+ * `~<field>.<ext>`. A colliding name is cut further so that `_<sys_id>` fits
+ * inside this budget too: every name the rules produce is at most this long, so
+ * passing it through the rules again leaves it alone.
  */
 export const MAX_RECORD_NAME_BYTES = 180;
 const HASH_HEX_LENGTH = 8;
 
+const shortHash = (value: string): string =>
+  createHash("sha256").update(value, "utf8").digest("hex").slice(0, HASH_HEX_LENGTH);
+
+/**
+ * `name` itself when it fits in `limit` UTF-8 bytes; otherwise the longest
+ * prefix that ends on a whole code point and leaves room for
+ * `_<first 8 hex of sha256(name)>`, followed by that hash. Deterministic, and a
+ * fixed point: the result always fits, so fitting it again returns it as is.
+ */
+function fitToBytes(name: string, limit: number): string {
+  if (Buffer.byteLength(name, "utf8") <= limit) return name;
+  const budget = Math.max(0, limit - HASH_HEX_LENGTH - 1);
+  let kept = "";
+  let bytes = 0;
+  for (const codePoint of name) {
+    const size = Buffer.byteLength(codePoint, "utf8");
+    if (bytes + size > budget) break;
+    kept += codePoint;
+    bytes += size;
+  }
+  return `${kept}_${shortHash(name)}`;
+}
+
 /**
  * Makes a record's display name storable as one path segment, deterministically
- * and only when it has to: a name that is already storable is returned as is.
+ * and only when it has to: a name that is already storable is returned as is,
+ * and so is every name this function returns (it is idempotent).
  *   - C0/C1 control characters and DEL become `_`. NUL truncates the name in every
  *     OS call; the rest are refused by Windows or break terminals and git.
  *   - A lone UTF-16 surrogate becomes U+FFFD, which is what Node would write in
@@ -91,18 +121,7 @@ export function sanitizeRecordFolderName(name: string): string {
   const cleaned = name
     .replace(/[\u0000-\u001f\u007f-\u009f]/gu, "_")
     .replace(/[\ud800-\udfff]/gu, "\ufffd");
-  if (Buffer.byteLength(cleaned, "utf8") <= MAX_RECORD_NAME_BYTES) return cleaned;
-  const hash = createHash("sha256").update(cleaned, "utf8").digest("hex").slice(0, HASH_HEX_LENGTH);
-  const budget = MAX_RECORD_NAME_BYTES - HASH_HEX_LENGTH - 1;
-  let kept = "";
-  let bytes = 0;
-  for (const codePoint of cleaned) {
-    const size = Buffer.byteLength(codePoint, "utf8");
-    if (bytes + size > budget) break;
-    kept += codePoint;
-    bytes += size;
-  }
-  return `${kept}_${hash}`;
+  return fitToBytes(cleaned, MAX_RECORD_NAME_BYTES);
 }
 
 export interface FolderNameEntry {
@@ -112,6 +131,27 @@ export interface FolderNameEntry {
 }
 
 const collisionSuffix = (sysId: string): string => `_${sysId}`;
+
+/** How many times the suffix is repeated before a counter is used instead. */
+const REPEATED_SUFFIX_ROUNDS = 4;
+
+/**
+ * The suffixes a colliding member of `sysId` tries, in order: `_<sys_id>`, then
+ * the suffix repeated (a display name may literally be `<other>_<sys_id>`), then
+ * `_<sys_id>_<n>`, so the suffix never outgrows the budget.
+ */
+function* collisionSuffixes(sysId: string): Generator<string> {
+  let suffix = "";
+  for (let round = 0; round < REPEATED_SUFFIX_ROUNDS; round += 1) {
+    suffix += collisionSuffix(sysId);
+    yield suffix;
+  }
+  for (let n = 2; ; n += 1) yield `${collisionSuffix(sysId)}_${n}`;
+}
+
+/** `base` cut so that `suffix` fits behind it inside MAX_RECORD_NAME_BYTES. */
+const withSuffix = (base: string, suffix: string): string =>
+  `${fitToBytes(base, MAX_RECORD_NAME_BYTES - Buffer.byteLength(suffix, "utf8"))}${suffix}`;
 
 /**
  * The folder name of every record of one table, keyed by sys_id.
@@ -160,11 +200,13 @@ export function assignRecordFolderNames(
     const names = [...new Set(sysIds.map((id) => nameBySysId.get(id) as string))].sort();
     const stored: string[] = [];
     for (const sysId of sysIds) {
-      let folder = `${nameBySysId.get(sysId)}${collisionSuffix(sysId)}`;
-      // A display name may literally be `<other name>_<sys_id>`. Repeating the
-      // suffix is deterministic and terminates: every round lengthens the name.
-      while (taken.has(canonicalFolderKey(folder))) {
-        folder = `${folder}${collisionSuffix(sysId)}`;
+      const base = nameBySysId.get(sysId) as string;
+      // The first suffixed name that is still free. Deterministic, and it
+      // terminates: the counter suffixes are all distinct.
+      let folder = "";
+      for (const suffix of collisionSuffixes(sysId)) {
+        folder = withSuffix(base, suffix);
+        if (!taken.has(canonicalFolderKey(folder))) break;
       }
       taken.add(canonicalFolderKey(folder));
       result.set(sysId, folder);
@@ -257,20 +299,68 @@ export function applyManifestFolderNames(
   return tables;
 }
 
+/** The first collision forms the rules can give `base` for `sysId`. */
+const suffixedForms = (base: string, sysId: string): string[] => {
+  const forms: string[] = [];
+  for (const suffix of collisionSuffixes(sysId)) {
+    forms.push(withSuffix(base, suffix));
+    if (forms.length >= REPEATED_SUFFIX_ROUNDS + 2) break;
+  }
+  return forms;
+};
+
+/** `name` without the trailing collision suffixes of `sysId`. */
+const stripCollisionSuffixes = (name: string, sysId: string): string => {
+  const suffix = collisionSuffix(sysId);
+  let core = name;
+  const counter = /_\d+$/u.exec(core);
+  if (counter && core.slice(0, counter.index).endsWith(suffix)) {
+    core = core.slice(0, counter.index);
+  }
+  while (core.length > suffix.length && core.endsWith(suffix)) {
+    core = core.slice(0, -suffix.length);
+  }
+  return core;
+};
+
+/**
+ * The kept prefix of a name fitToBytes cut, or undefined for an uncut name. A
+ * cut fills the budget to within one code point (at most 3 bytes short), which
+ * tells it apart from a short display name that happens to end in `_<8 hex>`.
+ */
+const cutPrefix = (core: string, whole: string): string | undefined => {
+  if (Buffer.byteLength(whole, "utf8") < MAX_RECORD_NAME_BYTES - 3) return undefined;
+  const match = /^(.+)_[0-9a-f]{8}$/su.exec(core);
+  return match ? match[1] : undefined;
+};
+
 /**
  * True when a folder name changed because of the naming rules rather than
- * because the record was renamed on the instance: the new name is the old one
- * made storable (sanitizeRecordFolderName), with or without the collision suffix.
+ * because the record was renamed on the instance:
+ *   - the new name is the old one made storable (sanitizeRecordFolderName), with
+ *     or without the collision suffix;
+ *   - the old name carried the collision suffix and the new one is its base
+ *     made storable, with or without a suffix (a collision that dissolved, or a
+ *     suffix earlier rules put on top of the budget);
+ *   - both are the same long name cut at different lengths: a cut name is the
+ *     only trace left of the display name, so the kept prefixes are compared.
+ *     A new cut name must keep a prefix of the old name, so a short name renamed
+ *     on the instance to a long one does not pass for a rule.
  */
 export function isRuleDrivenRename(oldName: string, newName: string, sysId: string): boolean {
   const base = sanitizeRecordFolderName(oldName);
   if (base !== oldName && base === newName) return true;
-  let candidate = `${base}${collisionSuffix(sysId)}`;
-  for (let round = 0; round < 4; round += 1) {
-    if (candidate === newName) return true;
-    candidate = `${candidate}${collisionSuffix(sysId)}`;
+  if (suffixedForms(base, sysId).includes(newName)) return true;
+  const oldCore = stripCollisionSuffixes(oldName, sysId);
+  if (oldCore !== oldName) {
+    const coreBase = sanitizeRecordFolderName(oldCore);
+    if (coreBase === newName || suffixedForms(coreBase, sysId).includes(newName)) return true;
   }
-  return false;
+  const newKept = cutPrefix(stripCollisionSuffixes(newName, sysId), newName);
+  if (newKept === undefined) return false;
+  const oldKept = cutPrefix(oldCore, oldName);
+  if (oldKept === undefined) return oldCore.startsWith(newKept);
+  return oldKept.startsWith(newKept) || newKept.startsWith(oldKept);
 }
 
 const exists = async (target: string): Promise<boolean> => {
