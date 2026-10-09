@@ -716,6 +716,9 @@ describe("cicd poll retry", () => {
           "sn_cicd answers JSON directly, so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried."
       );
       expect(errors[0]).not.toMatch(/client error|not followed|redirect/);
+      // Whole, as sync_cicd_run words it: no axios "Request failed with status code" tail.
+      expect(errors[0]).toMatch(/it is not retried\.$/);
+      expect(errors[0]).not.toMatch(/status code/);
     }
   );
 
@@ -726,6 +729,8 @@ describe("cicd poll retry", () => {
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     expect(errors[0]).toContain(`answered HTTP ${status}, an unexpected 3xx answer: sn_cicd answers JSON directly`);
     expect(errors[0]).not.toMatch(/Location|not followed|redirect/);
+    expect(errors[0]).toMatch(/it is not retried\.$/);
+    expect(errors[0]).not.toMatch(/status code/);
   });
 
   // Review round 8-o, finding 3: the dispatch and the ATF result read word an
