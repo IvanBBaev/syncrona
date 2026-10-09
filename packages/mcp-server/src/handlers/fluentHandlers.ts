@@ -57,7 +57,9 @@
  * the workspace — its real path, after following symlinks, must not leave it —
  * or it is not loaded from there: the server's own install is used when it has
  * the adapter (a monorepo hoists it above a package directory), and otherwise
- * the call is refused. That keeps a symlinked `node_modules` from pulling in
+ * the call is refused. The server's own install is its `node_modules` ancestry
+ * only: an adapter Node finds through `NODE_PATH` or a global folder is refused
+ * as well. That keeps a symlinked `node_modules` from pulling in
  * code from elsewhere on disk; it does not sandbox the code that is inside the
  * workspace. There is no process isolation: building a project means trusting it
  * as much as running `npm run build` in it with the server's environment.
@@ -189,13 +191,20 @@ function isSdkMissing(e: unknown): boolean {
  * An adapter found from the project is loaded only when its real path is inside
  * `workspaceDir` (default: the project itself), so a symlink cannot make the
  * server execute code from outside the workspace. The server's own install is
- * trusted as it is the server's code.
+ * trusted as it is the server's code — and only that install (see below).
  *
  * A project adapter outside the workspace is not refused on the spot: when the
  * server starts in a monorepo package directory, the adapter is hoisted above it
  * and the server's own requirer finds the same package. So the server requirer
  * is still tried, and only when it finds nothing is the escape refused. The
  * escaping path is never loaded through the project requirer.
+ *
+ * "The server's own install" means the `node_modules` ancestry of the server's
+ * package: what the server requirer resolves is loaded only when its real path
+ * is inside a package directory that ancestry holds. Node's requirer also
+ * searches `NODE_PATH` and the global folders (`~/.node_modules`,
+ * `~/.node_libraries`, `<prefix>/lib/node`); an adapter found only there is not
+ * the server's code, and is refused like any other escape.
  */
 export function loadFluentModule(
   projectDir: string,
@@ -217,8 +226,50 @@ export function loadFluentModule(
     // A pending refusal wins over a resolution error of the fallback.
     throw refusal ?? e;
   }
-  if (fromServer !== undefined) return loadResolved(serverRequire, fromServer);
+  if (fromServer !== undefined) {
+    if (isServerInstall(specifier, fromServer)) return loadResolved(serverRequire, fromServer);
+    throw refusal ?? notServerInstall(specifier, fromServer);
+  }
   throw refusal ?? new FluentNotInstalledError();
+}
+
+/**
+ * The package directories `specifier` can occupy in the server's own install:
+ * `<dir>/node_modules/<specifier>` for every ancestor of this file — the lookup
+ * Node's requirer makes before it falls back to `NODE_PATH` and the global folders.
+ */
+function serverInstallCandidates(specifier: string): string[] {
+  const candidates: string[] = [];
+  let dir = path.dirname(__filename);
+  for (;;) {
+    if (path.basename(dir) !== "node_modules") {
+      candidates.push(path.join(dir, "node_modules", ...specifier.split("/")));
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return candidates;
+    dir = parent;
+  }
+}
+
+/**
+ * Whether `resolved` (what the server requirer found) is inside a package
+ * directory of the server's own `node_modules` ancestry. Compared by real path,
+ * so a workspace-linked package (npm workspaces link `node_modules/<name>` to the
+ * package's source directory) still counts as installed.
+ */
+function isServerInstall(specifier: string, resolved: string): boolean {
+  // A builtin or other non-path resolution has no file to confine.
+  if (!path.isAbsolute(resolved)) return true;
+  const real = canonicalRealpath(resolved);
+  return serverInstallCandidates(specifier).some(
+    (candidate) => existsSync(candidate) && isWithin(canonicalRealpath(candidate), real)
+  );
+}
+
+function notServerInstall(specifier: string, resolved: string): FluentAdapterOutsideWorkspaceError {
+  return new FluentAdapterOutsideWorkspaceError(
+    `Refusing to load ${specifier} from ${JSON.stringify(canonicalRealpath(resolved))}: it is neither in the workspace nor in the server's own install (Node found it through NODE_PATH or a global folder). Install it in the project.`
+  );
 }
 
 /** `requireFrom.resolve(specifier)`, or undefined when the package itself is absent. */
