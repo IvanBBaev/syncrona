@@ -32,6 +32,15 @@ function skippableError(status: number): Error {
   });
 }
 
+// The three sys_dictionary reads a data-only table goes through, told apart the
+// way a real instance would answer them: file-field discovery filters on the
+// script-like internal types, the data-field (text) fallback selects
+// `element,internal_type` without that filter, and the sidecar discovery asks
+// for more columns (read_only, virtual).
+const isFileFieldQuery = (query: string): boolean => query.includes("^internal_type=");
+const isTextFieldQuery = (query: string, fields: string): boolean =>
+  fields === "element,internal_type" && !isFileFieldQuery(query);
+
 const emptyConfig: Pick<Sync.Config, "includes" | "excludes" | "tableOptions"> = {
   includes: {},
   excludes: {},
@@ -40,26 +49,29 @@ const emptyConfig: Pick<Sync.Config, "includes" | "excludes" | "tableOptions"> =
 
 // Preserve and restore the data-materialization env vars per test so the
 // suite stays hermetic regardless of the ambient environment.
-function withDataEnv(
+//
+// Runs `fn` and resolves when it settles. It used to RETURN a thunk, which every
+// callsite awaited (`await withDataEnv(...)`) — awaiting a function resolves to
+// the function itself, so those test bodies never ran and their assertions
+// passed vacuously. Running eagerly makes the natural callsite the correct one.
+async function withDataEnv(
   vars: Record<string, string | undefined>,
   fn: () => Promise<void>
-): () => Promise<void> {
-  return async () => {
-    const keys = Object.keys(vars);
-    const saved = keys.map((k) => [k, process.env[k]] as const);
-    for (const [k, v] of Object.entries(vars)) {
+): Promise<void> {
+  const keys = Object.keys(vars);
+  const saved = keys.map((k) => [k, process.env[k]] as const);
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [k, v] of saved) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
-    try {
-      await fn();
-    } finally {
-      for (const [k, v] of saved) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
+  }
 }
 
 describe("manifestBuilder coverage", () => {
@@ -286,15 +298,15 @@ describe("manifestBuilder coverage", () => {
     // uses excludes only (no includes) to reach getTextFieldsForTable.
     await withDataEnv({ SYNCRONA_INCLUDE_DATA_FIELDS: "true" }, async () => {
       const tableAPIGet: TableApiGet = jest.fn();
-      tableAPIGet.mockImplementation(async (table: string, _query: string, fields: string) => {
+      tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
         if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
         if (table === "sys_metadata")
           return { data: { result: [{ sys_class_name: "x_data" }] } };
         if (table === "sys_dictionary") {
           // No script-like fields → forces the text-field fallback.
-          if (fields === "element,internal_type") return { data: { result: [] } };
-          // Text-field query (fields === "element"): return a duplicate to
-          // exercise the dedup guard.
+          if (isFileFieldQuery(query)) return { data: { result: [] } };
+          if (!isTextFieldQuery(query, fields)) return { data: { result: [] } };
+          // Text-field query: return a duplicate to exercise the dedup guard.
           return {
             data: {
               result: [{ element: "u_name" }, { element: "u_name" }, { element: "u_code" }],
@@ -326,7 +338,7 @@ describe("manifestBuilder coverage", () => {
       expect(files).toEqual(["u_name", "u_code"]);
 
       const textQuery = tableAPIGet.mock.calls.find(
-        (c) => c[0] === "sys_dictionary" && c[2] === "element"
+        (c) => c[0] === "sys_dictionary" && isTextFieldQuery(c[1], c[2])
       );
       expect(textQuery).toBeDefined();
       expect(textQuery![1]).toContain("^element!=u_drop");
@@ -338,12 +350,13 @@ describe("manifestBuilder coverage", () => {
       { SYNCRONA_INCLUDE_DATA_FIELDS: "false", SYNCRONA_DATA_TABLES: "x_allow ,x_other" },
       async () => {
         const tableAPIGet: TableApiGet = jest.fn();
-        tableAPIGet.mockImplementation(async (table: string, _q: string, fields: string) => {
+        tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
           if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
           if (table === "sys_metadata")
             return { data: { result: [{ sys_class_name: "x_allow" }] } };
           if (table === "sys_dictionary") {
-            if (fields === "element,internal_type") return { data: { result: [] } };
+            if (isFileFieldQuery(query)) return { data: { result: [] } };
+            if (!isTextFieldQuery(query, fields)) return { data: { result: [] } };
             return { data: { result: [{ element: "u_label" }] } };
           }
           if (table === "x_allow") {
@@ -370,12 +383,13 @@ describe("manifestBuilder coverage", () => {
   it("propagates a non-skippable error from the text-field fallback (fails the table)", async () => {
     await withDataEnv({ SYNCRONA_INCLUDE_DATA_FIELDS: "true" }, async () => {
       const tableAPIGet: TableApiGet = jest.fn();
-      tableAPIGet.mockImplementation(async (table: string, _q: string, fields: string) => {
+      tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
         if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
         if (table === "sys_metadata")
           return { data: { result: [{ sys_class_name: "x_data" }] } };
         if (table === "sys_dictionary") {
-          if (fields === "element,internal_type") return { data: { result: [] } };
+          if (isFileFieldQuery(query)) return { data: { result: [] } };
+          if (!isTextFieldQuery(query, fields)) return { data: { result: [] } };
           // Text-field query fails with a network error → must propagate and
           // land the table in failedTables.
           throw new Error("socket hang up");
@@ -392,12 +406,13 @@ describe("manifestBuilder coverage", () => {
   it("swallows a skippable error from the text-field fallback (empty file set)", async () => {
     await withDataEnv({ SYNCRONA_INCLUDE_DATA_FIELDS: "true" }, async () => {
       const tableAPIGet: TableApiGet = jest.fn();
-      tableAPIGet.mockImplementation(async (table: string, _q: string, fields: string) => {
+      tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
         if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
         if (table === "sys_metadata")
           return { data: { result: [{ sys_class_name: "x_data" }] } };
         if (table === "sys_dictionary") {
-          if (fields === "element,internal_type") return { data: { result: [] } };
+          if (isFileFieldQuery(query)) return { data: { result: [] } };
+          if (!isTextFieldQuery(query, fields)) return { data: { result: [] } };
           throw skippableError(403);
         }
         return { data: { result: [] } };
@@ -854,7 +869,7 @@ describe("manifestBuilder coverage", () => {
       { SYNCRONA_INCLUDE_DATA_FIELDS: "off", SYNCRONA_DATA_TABLES: undefined },
       async () => {
         const tableAPIGet: TableApiGet = jest.fn();
-        tableAPIGet.mockImplementation(async (table: string, _q: string, fields: string) => {
+        tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
           if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
           if (table === "sys_metadata")
             return { data: { result: [{ sys_class_name: "x_data" }] } };
@@ -862,7 +877,8 @@ describe("manifestBuilder coverage", () => {
             // No script-like fields and materialization is OFF → the text
             // fallback must NOT run, so the table has zero file fields and is
             // dropped from the manifest.
-            if (fields === "element,internal_type") return { data: { result: [] } };
+            if (isFileFieldQuery(query)) return { data: { result: [] } };
+            if (!isTextFieldQuery(query, fields)) return { data: { result: [] } };
             throw new Error("text fallback must not be queried");
           }
           return { data: { result: [] } };
