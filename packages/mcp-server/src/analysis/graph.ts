@@ -508,21 +508,26 @@ export function renderDependencyGraphMermaid(
     selected.set(node.id, node);
   }
 
-  const edges = graph.edges.filter((edge) => selected.has(edge.from) && selected.has(edge.to));
+  // Every selected node gets an alias here, in id order, so neither the node
+  // lines nor the class lines need a "missing alias" fallback. The one lookup
+  // that can miss is an edge endpoint the node limit left out of the selection.
   const orderedNodes = [...selected.values()].sort((a, b) => a.id.localeCompare(b.id));
   const aliasById = new Map<string, string>();
-  orderedNodes.forEach((node, idx) => aliasById.set(node.id, `n${idx}`));
-
+  const aliasesByKind = new Map<GraphNode["kind"], string[]>();
   const lines: string[] = ["flowchart TD"];
-  for (const node of orderedNodes) {
-    const alias = aliasById.get(node.id) || "n0";
+  orderedNodes.forEach((node, idx) => {
+    const alias = `n${idx}`;
+    aliasById.set(node.id, alias);
     lines.push(`  ${alias}[\"${escapeMermaidLabel(node.label || node.id)}\"]`);
-  }
+    const list = aliasesByKind.get(node.kind) || [];
+    list.push(alias);
+    aliasesByKind.set(node.kind, list);
+  });
 
-  for (const edge of edges) {
+  for (const edge of graph.edges) {
     const from = aliasById.get(edge.from);
     const to = aliasById.get(edge.to);
-    if (!from || !to) {
+    if (from === undefined || to === undefined) {
       continue;
     }
     lines.push(`  ${from} -->|${escapeMermaidLabel(edge.relation)}| ${to}`);
@@ -536,21 +541,7 @@ export function renderDependencyGraphMermaid(
   lines.push("  classDef scheduled_job fill:#ede9fe,stroke:#6d28d9,color:#4c1d95;");
   lines.push("  classDef external_scope fill:#fecaca,stroke:#b91c1c,color:#7f1d1d;");
 
-  const aliasesByKind = new Map<GraphNode["kind"], string[]>();
-  for (const node of orderedNodes) {
-    const alias = aliasById.get(node.id);
-    if (!alias) {
-      continue;
-    }
-    const list = aliasesByKind.get(node.kind) || [];
-    list.push(alias);
-    aliasesByKind.set(node.kind, list);
-  }
-
   for (const [kind, aliases] of aliasesByKind.entries()) {
-    if (aliases.length === 0) {
-      continue;
-    }
     lines.push(`  class ${aliases.join(",")} ${kind}`);
   }
 

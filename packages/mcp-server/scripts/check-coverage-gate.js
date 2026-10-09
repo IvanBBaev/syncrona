@@ -370,6 +370,21 @@ const MODULE_FLOORS = [
   { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.63 / 94.03 (also 98.63 / 94.20: V8 range granularity, 63/67 vs 65/69 branches, same uncovered lines; darwin prints 63/67 under Node 22.23.0 and 22.23.2 alike, and 65/69 is the only pair within +-12 of both counters that renders the ubuntu 94.20)
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
   { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.77 / 92.86
+  // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
+  // Neither had a named floor because neither had a stable reading: the gate printed
+  // 3 different uncovered-line columns for graph.js and 9 for scopeKnowledge.js over
+  // an unchanged tree. Node's test runner merges per-process coverage in
+  // directory-read order, and its merge drops a never-executed range nested in a
+  // block that another process did not enter, so an arm no test reached showed up or
+  // vanished depending on file order alone. Replaying the merge over the raw V8
+  // files in 500 random orders reproduced every reading; each of those arms is now
+  // either removed (graph's three "missing alias" guards and its `|| "n0"`, plus two
+  // impact-path fallbacks in scopeKnowledge: no input could reach any of them) or
+  // driven on purpose
+  // (test/graphMermaidSelection.test.js, test/scopeKnowledgeSparseInput.test.js),
+  // and the same replay now yields one reading per file.
+  { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.48 / 95.73
+  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 95.85 / 89.16
 ];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
