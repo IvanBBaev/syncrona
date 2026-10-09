@@ -45,6 +45,24 @@ describe("canonicalFolderKey", () => {
     expect(canonicalFolderKey("Foo. ")).toBe("foo");
     expect(canonicalFolderKey(".hidden")).toBe(".hidden");
   });
+
+  it("folds the Greek final sigma the way case-insensitive volumes do", () => {
+    // "ΟΔΟΣ".toLowerCase() is "οδος" (final ς), while "οδοσ" keeps σ: one
+    // folder on APFS and NTFS, so one key.
+    expect(canonicalFolderKey("ΟΔΟΣ")).toBe(canonicalFolderKey("οδοσ"));
+    expect(canonicalFolderKey("ΟΔΟΣ")).toBe(canonicalFolderKey("οδος"));
+    expect(canonicalFolderKey("Σίσυφος")).toBe(canonicalFolderKey("ΣΊΣΥΦΟΣ"));
+    const names = assignRecordFolderNames("t", [
+      { sysId: "a", name: "ΟΔΟΣ" },
+      { sysId: "b", name: "οδοσ" },
+    ]);
+    expect([...names.values()].sort()).toEqual(["ΟΔΟΣ_a", "οδοσ_b"]);
+  });
+
+  it("does not fold what case-insensitive volumes keep apart", () => {
+    expect(canonicalFolderKey("straße")).not.toBe(canonicalFolderKey("strasse"));
+    expect(canonicalFolderKey("ı")).not.toBe(canonicalFolderKey("i"));
+  });
 });
 
 describe("assignRecordFolderNames", () => {

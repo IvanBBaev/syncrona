@@ -13,7 +13,8 @@
 //
 // Rules, in order:
 //   1. Names that are the same on disk collide. "The same on disk" is decided by
-//      canonicalFolderKey — NFC, lower-case, trailing dots/spaces dropped — which
+//      canonicalFolderKey — NFC, lower-case (final sigma folded to σ), trailing
+//      dots/spaces dropped — which
 //      covers APFS/NTFS case-insensitivity, HFS+/SMB normalisation and Windows'
 //      trailing-dot stripping.
 //   2. Every member of a colliding group (two or more distinct sys_ids) gets the
@@ -45,9 +46,20 @@ import { logger } from "./Logger.js";
  * locale-dependent (Turkish dotless ı) and would make naming depend on the
  * operator's locale. repairCommand compares on-disk names to manifest names
  * with this same function.
+ *
+ * `toLowerCase` alone is not quite the fold a case-insensitive volume applies:
+ * it lowers a word-final "Σ" to "ς", so "ΟΔΟΣ" and "οδοσ" would get two keys
+ * while APFS and NTFS store them as one folder. The final sigma is therefore
+ * folded to "σ". Nothing beyond that is folded — full case folding would also
+ * merge "ß" with "ss", which those volumes keep apart, and a false collision
+ * would rename folders for no reason.
  */
 export const canonicalFolderKey = (name: string): string =>
-  name.normalize("NFC").toLowerCase().replace(/[.\s]+$/u, "");
+  name
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/ς/gu, "σ")
+    .replace(/[.\s]+$/u, "");
 
 /**
  * Stores a record under its folder name.
