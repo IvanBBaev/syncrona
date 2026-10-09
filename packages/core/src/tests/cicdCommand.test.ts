@@ -577,6 +577,7 @@ describe("cicd poll retry", () => {
     ["a 502", () => httpError(502, "api/sn_cicd/progress/prog-1", "Bad Gateway")],
     ["a 503", () => httpError(503, "api/sn_cicd/progress/prog-1", "")],
     ["a 429", () => httpError(429, "api/sn_cicd/progress/prog-1", {})],
+    ["a 408", () => httpError(408, "api/sn_cicd/progress/prog-1", {})],
     ["a connection reset", () => networkError()],
   ])("retries %s one --poll-ms apart and finishes when the poll recovers", async (_label, failure) => {
     const h = harness({ progress: [failure, failure, () => progress("2")] });
@@ -625,6 +626,31 @@ describe("cicd poll retry", () => {
     expect(errors).toEqual([
       `cicd install failed: GET api/sn_cicd/progress/prog-1 answered HTTP ${status}${hint ? ` (${hint})` : ""}; a client error is not retried. Request failed with status code ${status}`,
     ]);
+  });
+
+  it.each([301, 302, 307])(
+    "reports HTTP %i as an unexpected redirect, not as a client error, and does not retry it",
+    async (status) => {
+      const redirect = Object.assign(httpError(status, "api/sn_cicd/progress/prog-1", ""), {
+        response: { status, data: "", headers: { location: "https://login.example/sso" } },
+      });
+      const h = harness({ progress: [() => redirect] });
+
+      expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+      expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain(
+        `GET api/sn_cicd/progress/prog-1 answered HTTP ${status}, an unexpected redirect to https://login.example/sso`
+      );
+      expect(errors[0]).not.toMatch(/client error/);
+    }
+  );
+
+  it("reports a redirect without a Location header as an unexpected redirect too", async () => {
+    const h = harness({ progress: [() => httpError(302, "api/sn_cicd/progress/prog-1", "")] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(errors[0]).toContain("answered HTTP 302, an unexpected redirect (");
   });
 
   it("keeps the instance's error envelope and the sn_cicd role hint on a permanent poll failure", async () => {
