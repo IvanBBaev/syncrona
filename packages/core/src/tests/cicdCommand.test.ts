@@ -692,14 +692,41 @@ describe("cicd poll retry", () => {
     Object.assign(new Error("Maximum number of redirects exceeded"), { code: "ERR_FR_TOO_MANY_REDIRECTS" });
 
   it.each([
-    ["a text/html content type", { data: "Please sign in", headers: { "content-type": "text/html; charset=UTF-8" } }],
     ["a body that starts with <", { data: "  <!DOCTYPE html><html><body>Login</body></html>" }],
+    [
+      "an HTML body under a text/html content type",
+      { data: "<html>Login</html>", headers: { "content-type": "text/html; charset=UTF-8" } },
+    ],
   ])("reports a 200 poll answered with %s as a session/authentication redirect, at once", async (_label, answer) => {
     const h = harness({ progress: [() => answer] });
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     expect(errors).toEqual([`cicd install failed: ${htmlPage("progress")}`]);
+  });
+
+  // Review round 8-o, finding 1 (parity with sync_cicd_run, which sees no
+  // headers): the body decides. A JSON body under a text/html content type is a
+  // JSON answer, and a non-JSON, non-HTML body is a missing `result`.
+  it("reads a JSON body under a text/html content type as JSON → passed", async () => {
+    const html = { "content-type": "text/html; charset=UTF-8" };
+    const h = harness({
+      post: () => ({ ...(dispatched() as object), headers: html }),
+      progress: [() => ({ ...(progress("2") as object), headers: html })],
+    });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000, json: true })).toBe(0);
+    expect(JSON.parse(h.written[0])).toMatchObject({ exitCode: 0, verdict: "passed" });
+    expect(errors).toEqual([]);
+  });
+
+  it("reports a non-HTML text body under a text/html content type as a missing JSON result", async () => {
+    const h = harness({
+      progress: [() => ({ data: "Please sign in", headers: { "content-type": "text/html; charset=UTF-8" } })],
+    });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(errors[0]).toContain("answered the progress request without a JSON `result`");
   });
 
   it("reports a dispatch answered with an HTML login page the same way", async () => {

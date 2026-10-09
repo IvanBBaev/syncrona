@@ -337,16 +337,14 @@ function positiveOr(value: unknown, fallback: number): number {
 }
 
 /**
- * Whether a 2xx answer is an HTML page: a `text/html` content type, or a body
- * that starts with `<`. sn_cicd only answers JSON, so this is an SSO/login page
- * (or a hibernation page) served in place of the API — a session problem that
- * asking again will not fix. Must match `isHtmlAnswer` in the mcp-server's
- * `insightCicdRun.ts`.
+ * Whether a 2xx answer is an HTML page: a body that starts with `<`. sn_cicd
+ * only answers JSON, so this is an SSO/login page (or a hibernation page) served
+ * in place of the API — a session problem that asking again will not fix. The
+ * content type is deliberately not consulted: a body that parsed as JSON is the
+ * real signal, whatever the header says, and the mcp-server sees no headers at
+ * all. Must match `isHtmlBody` in the mcp-server's `insightCicdRun.ts`.
  */
 function isHtmlAnswer(response: AxiosResponse<unknown>): boolean {
-  const headers = asObject(response?.headers);
-  const contentType = headers?.["content-type"] ?? headers?.["Content-Type"];
-  if (typeof contentType === "string" && /text\/html/i.test(contentType)) return true;
   return typeof response?.data === "string" && response.data.trimStart().startsWith("<");
 }
 
