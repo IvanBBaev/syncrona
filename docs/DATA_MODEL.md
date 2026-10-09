@@ -181,8 +181,9 @@ repair. They apply in the same way whether the manifest comes from the scoped
 endpoint or from the Table API.
 
 - **Collisions.** Two names collide when they are equal after Unicode NFC
-  normalisation, lower-casing and removing trailing dots and spaces. On
-  APFS, NTFS and SMB shares such names are one folder. Every member of a
+  normalisation, lower-casing (with the Greek final sigma `ς` folded to `σ`)
+  and removing trailing dots and spaces. On APFS, NTFS and SMB shares such
+  names are one folder. Every member of a
   colliding group gets the suffix `_<sys_id>`, for example `Util_<sys_id>` and
   `util_<sys_id>`. The suffix counts toward the same 180-byte budget as the
   name: a long name is cut further, with its hash, so that `_<sys_id>` fits.
