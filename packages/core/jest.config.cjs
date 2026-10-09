@@ -213,7 +213,7 @@ module.exports = {
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 98.08 / 91.30
+    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 98.30 / 93.17
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.70 / 94.75
     // Credentials: the keychain/file store and the auth-method picker.
@@ -238,12 +238,12 @@ module.exports = {
     './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.10
     // Drives api/sn_cicd: installs, publishes and rolls back applications, and
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
-    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.47 / 92.72
+    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.55 / 94.01
     // Reads records for `query -o json`, whose envelope scripts parse.
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.01 / 95.65
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
-    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.55 / 98.19
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.69 / 98.16
     // Writes the native `.d.ts` from instance metadata: a regression here ships a
     // type file that silently mistypes columns or drops inherited ones.
     './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 95.93
