@@ -866,6 +866,13 @@ async function execute(
   if (plan.instance) {
     credential = await deps.resolveCredential(profile);
     if (credential.input.kind === "unsupported") {
+      // A plain `types` without the SDK never reaches the SDK: it falls back to the
+      // native generator, which uses syncrona's own client and so takes any profile.
+      // Checking that first keeps this run in step with `--dry-run`, which reports
+      // the native fallback whenever the SDK is missing.
+      if (canFallBackToNative(action, args) && (await sdkMissing(deps, projectDir))) {
+        return fallBackToNative(deps, args, profile);
+      }
       throw new FluentCliError(
         `fluent ${action} cannot use a ${credential.input.method} profile: the ServiceNow SDK reaches ` +
           `${SESSION_ONLY_ENDPOINTS} with a UI session or a bearer token only. ` +
