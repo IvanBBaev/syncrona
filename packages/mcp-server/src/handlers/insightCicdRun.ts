@@ -381,6 +381,14 @@ async function cicdCall(
       response.status === 403
         ? ` Access denied by the CI/CD REST API: the user needs the ${CICD_ROLE} role (admin also passes).`
         : "";
+    if (response.status >= 300 && response.status <= 399) {
+      // sn_cicd answers JSON directly; a redirect the HTTP client hands back
+      // unfollowed is an SSO/login page or a proxy, never a client error.
+      throw new CicdRunIncomplete(
+        `The ${what} request answered HTTP ${response.status}, an unexpected redirect (sn_cicd answers JSON directly, so this usually means an SSO/login page or a proxy in front of the instance); a redirect is not followed or retried.`,
+        response.status
+      );
+    }
     throw new CicdRunIncomplete(
       `The ${what} request failed with HTTP ${response.status}${reason ? `: ${reason}` : ""}.${hint}`,
       response.status
@@ -403,11 +411,14 @@ async function cicdCall(
  */
 export const CICD_MAX_POLL_FAILURES = 3;
 
-/** No response, 429 and 5xx are worth another poll; auth, 404 and non-JSON answers are not. */
+/**
+ * No response, 408, 429 and 5xx are worth another poll (core's rule); a 3xx,
+ * auth, 404, any other 4xx and non-JSON answers are not.
+ */
 function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdRunIncomplete) {
     const status = err.httpStatus;
-    return status === 429 || (status !== undefined && status >= 500);
+    return status === 408 || status === 429 || (status !== undefined && status >= 500);
   }
   return true;
 }
