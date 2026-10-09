@@ -11,6 +11,7 @@ import {
   META_FILE_NAME,
   META_FILE_TYPE,
   classifyColumn,
+  columnTypeOf,
   dictionaryInternalType,
   isDotWalkedColumn,
   isMetaFieldCandidate,
@@ -569,7 +570,7 @@ const appendIncludedFields = (
       continue;
     }
     if (types) {
-      const type = types.get(fieldName);
+      const type = columnTypeOf(types, fieldName);
       const verdict = classifyColumn(tableName, fieldName, type);
       if (verdict === "unsafe") {
         warnUnsafeInclude(tableName, fieldName, type as string);
@@ -822,7 +823,7 @@ const withoutUnsafeMetaFields = async (
   const kept: string[] = [];
   const untyped: string[] = [];
   for (const column of columns) {
-    const type = types.get(column);
+    const type = columnTypeOf(types, column);
     const verdict = classifyColumn(tableName, column, type);
     if (verdict === "unsafe") {
       warnUnsafeInclude(tableName, column, type as string, "metaFields");
@@ -2272,7 +2273,7 @@ export async function applyIncludeTypeRulesToManifest(
       const unsafe = new Set<string>();
       const untyped: string[] = [];
       for (const column of columns) {
-        const type = types.get(column);
+        const type = columnTypeOf(types, column);
         const verdict = classifyColumn(tableName, column, type);
         if (verdict === "unsafe") {
           unsafe.add(column);

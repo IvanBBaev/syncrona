@@ -415,6 +415,33 @@ export const classifyColumn = (
 };
 
 /**
+ * The dictionary type of `column` in `types` (element → internal_type), matched
+ * case-insensitively. An operator's `U_SECRET` and the dictionary's `u_secret`
+ * are one column to the instance, and an exact match would leave the entry
+ * untyped — "unknown", and so kept — whatever its real type. An exact match
+ * wins when there is one.
+ */
+export const columnTypeOf = (
+  types: ReadonlyMap<string, string> | undefined,
+  column: string
+): string | undefined => {
+  if (!types) {
+    return undefined;
+  }
+  const exact = types.get(column);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const wanted = column.toLowerCase();
+  for (const [element, type] of types) {
+    if (element.toLowerCase() === wanted) {
+      return type;
+    }
+  }
+  return undefined;
+};
+
+/**
  * True for a dot-walked column name (`manager.user_password`). It reads a
  * column of ANOTHER record, so this table's dictionary has no row for it and
  * classifyColumn could only call it "unknown" — which keeps it. The sidecar
@@ -490,9 +517,9 @@ export const serializeMetaFields = (
   columnTypes?: ReadonlyMap<string, string>
 ): string => {
   const secret = new Set(metaSecretColumns(table, row));
-  for (const [column, type] of columnTypes ?? []) {
-    if (classifyColumn(table, column, type) === "unsafe") {
-      secret.add(column);
+  for (const field of fields) {
+    if (classifyColumn(table, field, columnTypeOf(columnTypes, field)) === "unsafe") {
+      secret.add(field);
     }
   }
   // Null-prototype: `body["__proto__"] = "x"` on a plain object hits the
