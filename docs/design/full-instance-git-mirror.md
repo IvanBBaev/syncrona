@@ -153,9 +153,10 @@ Measured baseline from the current code (all references verified 2026-08-12).
    (`manifestBuilder.ts`). At instance scale, ACL-variable visibility
    guarantees under-claiming; "not in manifest" must be decoupled from "delete it".
    *Since resolved for `repair`:* it now deletes an orphan only on git evidence —
-   committed and unchanged at HEAD, of a record the committed manifest tracked —
-   keeps records awaiting `push --create` and files of tables the manifest does
-   not list, and refuses outright without a git repository or commit.
+   a file git holds committed and unchanged, byte for byte, so git can restore
+   it — never the files of a record awaiting `push --create` and never files of
+   tables the manifest does not list, and refuses outright without a git
+   repository or commit. `--apply --prune --dry-run` previews the decision.
 
 ### 3.3 Transport gaps (13, measured)
 

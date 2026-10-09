@@ -129,8 +129,10 @@ function isTableSkippableError(e: unknown): boolean {
 // optimizer re-planning the query, replication lag — a row that crosses a page
 // boundary is returned twice or NOT AT ALL. The duplicate is harmless (records
 // are keyed by sys_id). The dropped row is not: it never reaches the manifest,
-// findOrphanFiles then finds a local file no manifest record claims, and
-// `repair --apply --prune` DELETES it, taking any unpushed local edit with it.
+// findOrphanFiles then finds a local file no manifest record claims, `repair`
+// reports it as an orphan, and `repair --apply --prune` deletes it when git holds
+// it committed and unchanged — a live record's file vanishes from the tree until
+// the next complete walk brings it back.
 //
 // ORDERBY makes the order total and stable, so an offset means the same thing on
 // every request of the walk. sys_id is the right key: every ServiceNow table has
