@@ -257,18 +257,43 @@ describe("Unicode normalization of file names", () => {
     expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
   });
 
-  test("without core.precomposeunicode names are compared as they are", async () => {
-    // Set explicitly: git init turns it on on macOS and leaves it unset elsewhere.
-    const nfc = "café.js";
-    const file = write(`sys_script/Gone/${nfc}`);
+  // git init sets core.precomposeunicode on macOS only, so without this the
+  // as-is comparison ran on Linux alone and the two platforms measured
+  // different branch coverage.
+  test("with core.precomposeunicode disabled, names are compared as they are", async () => {
+    const plain = write("sys_script/Gone/script.js");
+    const nfc = write("sys_script/Other/café.js");
     git(tmp, "init", "-q");
     git(tmp, "config", "core.precomposeunicode", "false");
     initRepo(tmp);
 
     await repairCommand(PRUNE);
 
-    expect(existsSync(file)).toBe(false);
-    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
+    expect(existsSync(plain)).toBe(false);
+    expect(existsSync(nfc)).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 2 orphan file(s).");
+  });
+
+  // The committed name is precomposed and the name on disk decomposed, set up by
+  // hand rather than by git's own precompose handling (macOS-only), so every
+  // platform sees the same pair. Without core.precomposeunicode they are two
+  // different paths to git: the decomposed file is not the committed one, and
+  // normalizing either side before the lookup would wrongly vouch for it.
+  test("without core.precomposeunicode a decomposed name does not match its precomposed commit", async () => {
+    const nfc = "café.js";
+    const nfd = nfc.normalize("NFD");
+    const committed = write(`sys_script/Gone/${nfc}`);
+    git(tmp, "init", "-q");
+    git(tmp, "config", "core.precomposeunicode", "false");
+    initRepo(tmp);
+    rmSync(committed);
+    const onDisk = write(`sys_script/Gone/${nfd}`);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(onDisk)).toBe(true);
+    expect(logged(infoSpy)).not.toContain("Pruned");
+    expect(logged(infoSpy) + logged(warnSpy)).toContain("Nothing to prune");
   });
 });
 
