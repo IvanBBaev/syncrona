@@ -220,6 +220,23 @@ describe("Unicode normalization of file names", () => {
     expect(existsSync(file)).toBe(false);
     expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
   });
+
+  // git init sets core.precomposeunicode on macOS only, so without this the
+  // as-is comparison ran on Linux alone and the two platforms measured
+  // different branch coverage.
+  test("with core.precomposeunicode disabled, names are compared as they are", async () => {
+    const plain = write("sys_script/Gone/script.js");
+    const nfc = write("sys_script/Other/café.js");
+    git(tmp, "init", "-q");
+    git(tmp, "config", "core.precomposeunicode", "false");
+    initRepo(tmp);
+
+    await repairCommand(PRUNE);
+
+    expect(existsSync(plain)).toBe(false);
+    expect(existsSync(nfc)).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 2 orphan file(s).");
+  });
 });
 
 describe("the repository is found from the source directory", () => {
