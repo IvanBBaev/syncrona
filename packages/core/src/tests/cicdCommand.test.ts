@@ -447,8 +447,10 @@ describe("cicd --json on the could-not-finish paths", () => {
       command: "cicd",
       action: "install",
       exitCode: 1,
+      verdict: "incomplete",
       progressId: "prog-1",
       error: expect.stringMatching(/^cicd install failed: Timed out after 5s/),
+      reason: expect.stringMatching(/^cicd install failed: Timed out after 5s/),
     });
   });
 
@@ -463,7 +465,9 @@ describe("cicd --json on the could-not-finish paths", () => {
       command: "cicd",
       action: "run-suite",
       exitCode: 1,
+      verdict: "incomplete",
       error: "cicd run-suite failed: Request failed with status code 403 — User Not Authorized",
+      reason: "cicd run-suite failed: Request failed with status code 403 — User Not Authorized",
     });
   });
 
@@ -839,6 +843,109 @@ describe("cicd ATF verdict allow-list", () => {
     });
     expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
     expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, progressId: "prog-1" });
+  });
+});
+
+// Review round 7, finding 4: a --json caller reads the verdict from the
+// document instead of re-deriving it from the exit code and the raw records.
+describe("cicd --json verdict and reason", () => {
+  const suite = (body: Record<string, unknown>) => ({
+    progress: [() => progress("2", { links: { results: { id: "r" } } })],
+    results: () => ok(body),
+  });
+  const doc = (h: Harness) => JSON.parse(h.written.join("\n")) as Record<string, unknown>;
+
+  it("reports passed with the ATF summary as the reason", async () => {
+    const h = harness(
+      suite({
+        test_suite_status: "success",
+        rolledup_test_success_count: 2,
+        rolledup_test_failure_count: 0,
+        rolledup_test_error_count: 0,
+      })
+    );
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(0);
+    expect(doc(h)).toMatchObject({
+      exitCode: 0,
+      verdict: "passed",
+      reason: "Suite success: 2 passed, 0 failed, 0 errored, 0 skipped",
+    });
+  });
+
+  it("reports passed for a successful app-repo action", async () => {
+    const h = harness();
+    expect(await run(h, "install", { scope: "x_app", json: true })).toBe(0);
+    expect(doc(h)).toMatchObject({ exitCode: 0, verdict: "passed", reason: "the tracker ended Successful" });
+  });
+
+  it("reports failed for failing tests", async () => {
+    const h = harness(
+      suite({
+        test_suite_status: "failure",
+        rolledup_test_success_count: 1,
+        rolledup_test_failure_count: 1,
+        rolledup_test_error_count: 0,
+      })
+    );
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(2);
+    expect(doc(h)).toMatchObject({ exitCode: 2, verdict: "failed", reason: "ATF reported failing tests" });
+  });
+
+  it("reports no_tests for a passing suite that ran nothing", async () => {
+    const h = harness(
+      suite({
+        test_suite_status: "success",
+        rolledup_test_success_count: 0,
+        rolledup_test_failure_count: 0,
+        rolledup_test_error_count: 0,
+      })
+    );
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(2);
+    expect(doc(h)).toMatchObject({
+      exitCode: 2,
+      verdict: "no_tests",
+      reason: "the suite ran no tests, which is not a pass",
+    });
+  });
+
+  it("reports failed with the instance's reason for a failed app-repo tracker", async () => {
+    const h = harness({ progress: [() => progress("3", { status_message: "Install failed: boom" })] });
+    expect(await run(h, "install", { scope: "x_app", json: true })).toBe(2);
+    expect(doc(h)).toMatchObject({ exitCode: 2, verdict: "failed", reason: "Install failed: boom" });
+  });
+
+  it("reports unknown when the tracker finished but the result is unclear", async () => {
+    const h = harness(suite({ test_suite_status: "canceled" }));
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    const d = doc(h);
+    expect(d).toMatchObject({ exitCode: 1, verdict: "unknown" });
+    expect(d.reason).toBe(d.error);
+    expect(String(d.reason)).toMatch(/whether the tests passed is unknown/);
+  });
+
+  it("reports unknown when the finished tracker's result cannot be read", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(500, "api/sn_cicd/testsuite/results/r", {}),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    expect(doc(h)).toMatchObject({ exitCode: 1, verdict: "unknown" });
+  });
+
+  it("reports incomplete when the run could not be followed to its end", async () => {
+    const h = harness({ progress: [() => httpError(403, "api/sn_cicd/progress/prog-1", {})] });
+    expect(await run(h, "run-suite", { suiteId: "s1", json: true })).toBe(1);
+    const d = doc(h);
+    expect(d).toMatchObject({ exitCode: 1, verdict: "incomplete", progressId: "prog-1" });
+    expect(d.reason).toBe(d.error);
+  });
+
+  it("reports incomplete for a usage error", async () => {
+    const h = harness();
+    expect(await run(h, "nope", { json: true })).toBe(1);
+    const d = doc(h);
+    expect(d).toMatchObject({ exitCode: 1, verdict: "incomplete" });
+    expect(d.reason).toBe(d.error);
   });
 });
 
