@@ -83,6 +83,11 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
 
 ### Fixed
 
+- `dev` no longer pushes changes from a stopped watch session. A push that
+  failed after the watcher stopped (Ctrl-C, or a `dev` restart in the same
+  process) requeued its files and armed a retry, which then pushed them about
+  half a second later.
+
 - `sync.config.js` written with the CommonJS `exports.<key> = ...` alias now
   loads; `exports` was a separate object, so those settings were silently
   dropped. `module.exports = null` is now rejected as an invalid config instead
