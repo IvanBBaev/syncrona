@@ -757,10 +757,52 @@ test('handleCicdRun: the timeoutMs budget bounds the poll → incomplete, may st
     const elapsed = Date.now() - started;
     assert.equal(body.outcome, 'incomplete');
     assert.equal(body.exitCode, 1);
-    assert.match(body.message, new RegExp(`Timed out waiting for progress ${PROGRESS_ID} \\(last status: Running\\)`));
+    assert.match(body.message, new RegExp(`Timed out after 1s waiting for progress ${PROGRESS_ID} \\(last status: Running\\)`));
     assert.match(body.message, /may still be running/);
+    // Review round 7, finding 5 (parity with core): every timeout names where
+    // to check the tracker and how to resume waiting on it.
+    assert.ok(
+      body.message.includes(
+        `check it at https://dev123.service-now.com/api/sn_cicd/progress/${PROGRESS_ID} and resume waiting with progressId ${PROGRESS_ID} (and a larger timeoutMs).`
+      ),
+      body.message
+    );
     assert.ok(elapsed < 3000, `bounded by the budget, took ${elapsed} ms`);
     assert.ok(calls.length >= 3, 'polled more than once');
+  });
+});
+
+test('handleCicdRun: a timeout prefers the tracker URL the progress record links', async () => {
+  await withEnv(async () => {
+    const own = 'https://dev123.service-now.com/api/sn_cicd/progress/own-link';
+    mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: progress('1', { status_label: 'Running', links: { progress: { id: PROGRESS_ID, url: own } } }),
+    });
+    const body = payloadOf(
+      await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext({ timeoutMs: 1000 }))
+    );
+    assert.equal(body.outcome, 'incomplete');
+    assert.ok(body.message.includes(`check it at ${own} and resume waiting`), body.message);
+  });
+});
+
+test('handleCicdRun: a poll failing transiently at the deadline ends with the timeout, not the transport error', async () => {
+  await withEnv(async () => {
+    mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: [progress('1', { status_label: 'Running' }), mkResponse(503, 'Service Unavailable')],
+    });
+    const body = payloadOf(
+      await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 1000, confirmDestructive: true }, makeContext({ timeoutMs: 1000 }))
+    );
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.progressId, PROGRESS_ID);
+    assert.match(
+      body.message,
+      new RegExp(`Timed out after 1s waiting for progress ${PROGRESS_ID} \\(last status: Running; last poll error: The progress request failed with HTTP 503\\)\\. `)
+    );
+    assert.match(body.message, new RegExp(`resume waiting with progressId ${PROGRESS_ID}`));
   });
 });
 
@@ -911,6 +953,13 @@ test('handleCicdRun resume: still running at the deadline → incomplete with th
     assert.equal(body.exitCode, 1);
     assert.equal(body.progressId, RESUME_ID);
     assert.match(body.message, /may still be running/);
+    // No dispatch answer and no link on the tracker: the API path is named.
+    assert.ok(
+      body.message.includes(
+        `check it at GET api/sn_cicd/progress/${RESUME_ID} on the instance and resume waiting with progressId ${RESUME_ID} (and a larger timeoutMs).`
+      ),
+      body.message
+    );
     assert.equal(context.audits[0].outcome.resumed, true);
   });
 });
