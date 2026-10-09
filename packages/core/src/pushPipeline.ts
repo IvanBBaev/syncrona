@@ -827,6 +827,19 @@ export type CreatePolicyResult =
   | { allowed: false; reason: string };
 
 /**
+ * How a refusal names what a sys_db_object row holds under `key`: absent, null,
+ * the string itself (JSON-quoted, so whitespace shows), or the value's type.
+ */
+const describeReceived = (row: Record<string, unknown>, key: string): string => {
+  if (!(key in row)) return "absent";
+  const value = row[key];
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) return "an array";
+  return `of type ${typeof value}`;
+};
+
+/**
  * True when `table` extends sys_metadata, walked through sys_db_object one
  * `super_class` at a time. Every table visited is cached with the answer, so a
  * push creating many records in sibling tables walks each chain once.
@@ -898,11 +911,17 @@ export const extendsSysMetadata = async (
     // the create on no evidence.
     const row = first as Record<string, unknown>;
     const parent = row["super_class.name"];
-    if (typeof parent !== "string" || ("name" in row && row.name !== current)) {
+    const mismatch =
+      typeof parent !== "string"
+        ? `its super_class.name is ${describeReceived(row, "super_class.name")}, not a string`
+        : "name" in row && row.name !== current
+          ? `it is named ${describeReceived(row, "name")}`
+          : undefined;
+    // The typeof test repeats the first arm only so the compiler narrows `parent`.
+    if (mismatch !== undefined || typeof parent !== "string") {
       throw new Error(
         `sys_db_object answered with a record that does not describe table "${current}" ` +
-          "(no string super_class.name, or another table's name), so its hierarchy cannot be " +
-          "checked; refusing to plan a create in it."
+          `(${mismatch}), so its hierarchy cannot be checked; refusing to plan a create in it.`
       );
     }
     if (parent === "") break;

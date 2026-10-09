@@ -340,18 +340,24 @@ describe("table policy", () => {
   // A record that does not carry this table's super_class as a string, or names
   // another table, is not the hierarchy asked for; a real root table answers
   // `"super_class.name": ""`.
-  it.each<[string, unknown[]]>([
-    ["an empty record", [{}]],
-    ["a record without super_class.name", [{ name: "x" }]],
-    ["a numeric super_class.name", [{ name: "x", "super_class.name": 5 }]],
-    ["a null super_class.name", [{ name: "x", "super_class.name": null }]],
-    ["an object super_class.name", [{ name: "x", "super_class.name": { value: "sys_metadata" } }]],
-    ["another table's record", [{ name: "y", "super_class.name": "" }]],
-  ])("refuses to judge a table from %s", async (_label, result) => {
+  it.each<[string, unknown[], string]>([
+    ["an empty record", [{}], "its super_class.name is absent, not a string"],
+    ["a record without super_class.name", [{ name: "x" }], "its super_class.name is absent, not a string"],
+    ["a numeric super_class.name", [{ name: "x", "super_class.name": 5 }], "its super_class.name is of type number, not a string"],
+    ["a null super_class.name", [{ name: "x", "super_class.name": null }], "its super_class.name is null, not a string"],
+    [
+      "an object super_class.name",
+      [{ name: "x", "super_class.name": { value: "sys_metadata" } }],
+      "its super_class.name is of type object, not a string",
+    ],
+    ["an array super_class.name", [{ name: "x", "super_class.name": ["sys_metadata"] }], "its super_class.name is an array, not a string"],
+    ["another table's record", [{ name: "y", "super_class.name": "" }], 'it is named "y"'],
+    ["a record with a non-string name", [{ name: 7, "super_class.name": "" }], "it is named of type number"],
+  ])("refuses to judge a table from %s, naming the check that failed", async (_label, result, why) => {
     const client = makeClient();
     client.tableAPIGet.mockImplementation(() => ok(result));
     await expect(Pipeline.extendsSysMetadata(asClient(client), "x")).rejects.toThrow(
-      'sys_db_object answered with a record that does not describe table "x"'
+      `sys_db_object answered with a record that does not describe table "x" (${why}), so its hierarchy`
     );
   });
 
