@@ -132,10 +132,19 @@ export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
  * them through NON_META_INTERNAL_TYPES; the data-field fallback
  * (`SYNCRONA_DATA_TABLES` / `SYNCRONA_INCLUDE_DATA_FIELDS`), which turns every
  * column into a `.txt` field file, excludes them through this set directly.
+ *
+ * The secret-holding types: `password` (one-way hash), `password2` (two-way
+ * encrypted), `glide_encrypted` (the "Encrypted Text" type of column-level
+ * encryption), `encrypted_text` and `masked`. A name in this set that an
+ * instance does not use costs nothing; a secret type missing from it is
+ * written to disk, so the set errs on the side of listing it.
  */
 export const UNSAFE_VALUE_INTERNAL_TYPES: ReadonlySet<string> = new Set([
   "password",
   "password2",
+  "glide_encrypted",
+  "encrypted_text",
+  "masked",
   "journal",
   "journal_input",
   "journal_list",
@@ -150,8 +159,9 @@ export const UNSAFE_VALUE_INTERNAL_TYPES: ReadonlySet<string> = new Set([
  * SN_TYPE_MAP's own keys are the file types: a field of that type either IS a
  * field file already, or was deliberately removed from the file list by a config
  * `excludes` rule — and a user who excluded `script` did not ask for it back as
- * a JSON string. The rest are excluded for their own reasons: `password` and
- * `password2` are credentials and must never reach the working tree, the
+ * a JSON string. The rest are excluded for their own reasons: `password`,
+ * `password2` and the encrypted and masked types hold secrets and must never
+ * reach the working tree, the
  * `journal*` family is an append-only activity stream that would churn the file
  * on every pull, and `image`/`user_image`/`collection` have no useful string
  * form at all.
