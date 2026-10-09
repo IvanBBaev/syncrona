@@ -497,10 +497,15 @@ function permanentPollReason(status: number | undefined, err: unknown): string {
   if (isTokenEndpointError(err)) {
     // The progress request was never sent: getting its OAuth token failed.
     // Named as sync_cicd_run's token poster words it.
-    return `failed: OAuth token request failed (${String(status)}), so the token endpoint rejected the OAuth client or the credentials; it is not retried.`;
+    return `failed: ${tokenEndpointReason(status)}; it is not retried.`;
   }
   const hint = PERMANENT_POLL_HINTS[status];
   return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
+}
+
+/** Why a token-endpoint answer failed the call, named as sync_cicd_run's token poster words it. */
+function tokenEndpointReason(status: number): string {
+  return `OAuth token request failed (${String(status)}), so the token endpoint rejected the OAuth client or the credentials`;
 }
 
 /** Whether an axios error came from the OAuth token endpoint, not from sn_cicd. */
@@ -602,10 +607,11 @@ async function pollProgress(
       failures += 1;
       const status = httpStatusOf(err);
       if (!isTransientPollError(err)) {
-        // A 3xx reason is whole, as sync_cicd_run words it: axios's own
-        // "Request failed with status code 30x" would only repeat the status.
+        // A 3xx or token-endpoint reason is whole, as sync_cicd_run words it:
+        // axios's own "Request failed with status code N" would only repeat the status.
         const redirect = status !== undefined && status >= 300 && status < 400;
-        const tail = redirect ? "" : ` ${errorText(err)}`;
+        const whole = redirect || (status !== undefined && isTokenEndpointError(err));
+        const tail = whole ? "" : ` ${errorText(err)}`;
         throw new CicdPollError(`${request} ${permanentPollReason(status, err)}${tail}`, err);
       }
       if (deps.now() - startedAt >= timeoutMs) {
@@ -785,16 +791,20 @@ async function fetchAtfOutcome(
     body = resultOf(await send(() => client.cicdGet(path), "ATF result"), "ATF result");
   } catch (e) {
     const redirect = unexpectedRedirectError(e, "ATF result");
+    const status = httpStatusOf(e);
+    // The read was never sent when its OAuth token could not be had.
+    const tokenReason = status !== undefined && isTokenEndpointError(e) ? tokenEndpointReason(status) : undefined;
     // The trailing period is dropped: the reason is quoted mid-sentence.
     const reason = (
       redirect?.message ??
+      tokenReason ??
       extractCicdErrorMessage(errorResponseBody(e)) ??
       (e instanceof Error ? e.message : String(e))
     ).replace(/\.$/, "");
     logger.debug(`Could not fetch ATF result ${resultId}: ${reason}`);
     return {
       unreadable: `ATF result ${resultId} could not be read: ${reason}`,
-      notFound: httpStatusOf(e) === 404,
+      notFound: status === 404,
     };
   }
   const url = linkUrl(body, "results") ?? linkUrl(progress, "results");
