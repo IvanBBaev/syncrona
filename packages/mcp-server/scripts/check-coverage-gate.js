@@ -265,8 +265,11 @@ const MODULE_FLOORS = [
   // run is 200/217 branch ranges (re-measured with `--test-reporter=lcov` under the
   // gate's own flags, which also renders the 96.74 as 861/890 lines), so the higher
   // run is 201/218: one more range counted, and it was already executing. Same
-  // shape as the pre-WP-M1 flicker, new denominators.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.17 (also 96.74 / 92.20: V8 range granularity, 200/217 vs 201/218 branches, same uncovered lines)
+  // shape as the pre-WP-M1 flicker, new denominators. The REV-143 home-dir fallback
+  // test moved the pair up: CI on the same commit then printed 92.20 on three jobs
+  // and 92.24 on one, again with an identical uncovered-line list. The lower run is
+  // 201/218 under lcov (twice, locally), so the higher run is 202/219.
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.20 (also 96.74 / 92.24: V8 range granularity, 201/218 vs 202/219 branches, same uncovered lines)
   // Preflight, dry-run and the mutating-tool wrappers.
   // DX17 moved this file's sync.config.js parsing out to `workspaceLayout.js` (the
   // flat/record-folder layout seam), so `getSourceDirectory` is now a one-line
