@@ -248,7 +248,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.42 / 96.15
   // sync_cicd_run installs, publishes and rolls back applications on the instance;
   // a lost branch here reports a failed or unknown run as succeeded.
-  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 97.03
+  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 90 }, // measured 100.00 / 97.03
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
   // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
