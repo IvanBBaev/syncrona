@@ -248,7 +248,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.42 / 96.15
   // sync_cicd_run installs, publishes and rolls back applications on the instance;
   // a lost branch here reports a failed or unknown run as succeeded.
-  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 96.92
+  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 97.03
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
   // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
@@ -330,9 +330,16 @@ const MODULE_FLOORS = [
   // Re-measured the same way, darwin renders 294/314 branches, 1043/1053 lines and
   // 64/66 functions (99.05 / 93.63, uncovered `432-436 441-442 833 1035-1036`).
   // The ubuntu pair is forced by the same +1/+1 rule — 295/315, which renders
-  // 93.65 — and has NOT been observed on CI yet: the first ubuntu run after this
-  // lands must confirm it, and replace it with the printed reading if it differs.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.63 (also 99.05 / 93.65: V8 range granularity on ubuntu, 294/314 vs 295/315 branches, same uncovered lines 432-436 441-442 833 1035-1036, one extra covered function range at 98.48 against darwin's 96.97)
+  // 93.65.
+  //
+  // The cicd parity follow-up (token-endpoint errors carry `httpStatus`, with new
+  // token-endpoint tests) moved it once more, so both readings are
+  // re-based again: darwin renders 295/314 branches, 1050/1055 lines and 64/66
+  // functions (99.53 / 93.95, uncovered `443-444 835 1037-1038`), and the forced
+  // ubuntu pair is 296/315, which renders 93.97. Neither forced pair has been
+  // observed on CI yet: the first ubuntu run after this lands must confirm it, and
+  // replace it with the printed reading if it differs.
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.53 / 93.95 (also 99.53 / 93.97: V8 range granularity on ubuntu, 295/314 vs 296/315 branches, same uncovered lines 443-444 835 1037-1038, one extra covered function range at 98.48 against darwin's 96.97)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75

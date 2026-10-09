@@ -215,7 +215,7 @@ module.exports = {
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 98.30 / 93.17
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.70 / 94.75
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.71 / 94.83
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 88, branches: 70 }, // measured 91.62 / 75.89
     // The instance-host normalizer both of the above go through (#20).
@@ -238,7 +238,7 @@ module.exports = {
     './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.10
     // Drives api/sn_cicd: installs, publishes and rolls back applications, and
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
-    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.64 / 94.17
+    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.75 / 94.95
     // Reads records for `query -o json`, whose envelope scripts parse.
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.01 / 95.65
     // Installs and reinstalls applications through the optional Fluent tier, and
