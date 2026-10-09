@@ -712,6 +712,38 @@ test('handleCicdRun: a 401 on a poll is not polled again', async () => {
   });
 });
 
+// Review round 7, finding 3 (parity with core): 408 is retryable like 429 and
+// 5xx, and a 3xx is an unexpected redirect, not a client error.
+test('handleCicdRun: a 408 on a poll is polled again → succeeded', async () => {
+  await withEnv(async () => {
+    const slow = mkResponse(408, 'Request Timeout');
+    const calls = mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [POLL_PATH]: [slow, slow, slow, progress('2')],
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'succeeded');
+    assert.ok(pollCalls(calls) >= 2, 'the 408 poll was retried');
+  });
+});
+
+test('handleCicdRun: a 3xx on a poll is an unexpected redirect, not retried', async () => {
+  await withEnv(async () => {
+    for (const status of [301, 302, 307]) {
+      const calls = mockFetch({
+        'POST /api/sn_cicd/app_repo/install': dispatched(),
+        [POLL_PATH]: mkResponse(status, ''),
+      });
+      const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+      assert.equal(body.outcome, 'incomplete', String(status));
+      assert.match(body.message, new RegExp(`The progress request answered HTTP ${status}, an unexpected redirect`));
+      assert.match(body.message, /SSO\/login page or a proxy/);
+      assert.doesNotMatch(body.message, /client error/);
+      assert.equal(pollCalls(calls), 1, String(status));
+    }
+  });
+});
+
 test('handleCicdRun: the timeoutMs budget bounds the poll → incomplete, may still be running', async () => {
   await withEnv(async () => {
     const calls = mockFetch({
