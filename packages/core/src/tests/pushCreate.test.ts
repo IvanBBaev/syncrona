@@ -747,6 +747,31 @@ describe("planRecordCreation safety", () => {
     expect(lookupCalls(client)).toEqual([]);
   });
 
+  // planRecordCreation shares one hierarchy cache across candidates. A table
+  // missing as a candidate of its own must not be cached as "false", or a later
+  // candidate whose parent it is reads that answer instead of failing closed.
+  it.each([
+    ["the missing table first", ["u_gone", "u_odd"]],
+    ["the missing table second", ["u_odd", "u_gone"]],
+  ])("refuses a create over a dangling parent that is also a candidate, %s", async (_label, order) => {
+    mockGetConfig.mockReturnValue({ createTables: ["u_odd"] });
+    const rows: Record<string, unknown[]> = { u_odd: [{ name: "u_odd", "super_class.name": "u_gone" }] };
+    const client = makeClient();
+    client.tableAPIGet.mockImplementation(async (table: string, query: string) =>
+      table === "sys_db_object"
+        ? { data: { result: (rows[String(query).replace(/^name=/, "")] ?? []) as unknown } }
+        : { data: { result: [] as unknown } }
+    );
+    const plan = await Pipeline.planRecordCreation(
+      order.map((table) => candidate(table, "Thing")),
+      { persistScopeId: false, client: asClient(client) }
+    );
+    const odd = plan.plans.find((p) => p.candidate.table === "u_odd");
+    expect(odd?.action).toBe("error");
+    expect(odd?.message).toMatch(/sys_db_object has no record for table "u_gone", the parent of "u_odd"/);
+    expect(plan.plans.find((p) => p.candidate.table === "u_gone")?.action).toBe("error");
+  });
+
   it.each<[string, Record<string, unknown[]>, RegExp]>([
     [
       "a parent with no sys_db_object record",

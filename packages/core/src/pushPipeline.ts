@@ -848,8 +848,8 @@ const describeReceived = (row: Record<string, unknown>, key: string): string => 
  * when the caller passes one: "not a sys_metadata descendant" and "no such
  * table" are both a false here, and only the caller can tell them apart. That
  * holds for `table` only: a parent with no row, or a parent name with
- * surrounding whitespace, is a broken chain and throws. Keep
- * one `missing` set alongside one `cache`, since a cached answer skips the read.
+ * surrounding whitespace, is a broken chain and throws. A missing table is
+ * therefore never cached: the same table met later as a parent must throw.
  * A reply without a result list throws: it is neither answer.
  */
 export const extendsSysMetadata = async (
@@ -914,8 +914,11 @@ export const extendsSysMetadata = async (
             "so the hierarchy cannot be checked; refusing to plan a create in it."
         );
       }
+      // Never cached: a cached false would answer a later walk that reaches
+      // this table as a parent before the dangling-parent check above, so a
+      // sibling candidate's broken chain would plan as an unscoped create.
       missing?.add(current);
-      break;
+      return false;
     }
     // A real row always carries `super_class.name` as a string (`""` for a
     // root table). A row without it, with a non-string value, or naming another
