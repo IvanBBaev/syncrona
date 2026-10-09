@@ -387,7 +387,7 @@ describe("cicd could-not-finish paths (exit 1)", () => {
 
     expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(1);
     expect(errors).toEqual([
-      "cicd run-suite failed: Request failed with status code 403 — User Not Authorized: Missing role",
+      "cicd run-suite incomplete: Request failed with status code 403 — User Not Authorized: Missing role",
     ]);
     expect(infos.some((line) => line.includes("sn_cicd.sys_ci_automation"))).toBe(true);
   });
@@ -455,8 +455,8 @@ describe("cicd --json on the could-not-finish paths", () => {
       exitCode: 1,
       verdict: "incomplete",
       progressId: "prog-1",
-      error: expect.stringMatching(/^cicd install failed: Timed out after 5s/),
-      reason: expect.stringMatching(/^cicd install failed: Timed out after 5s/),
+      error: expect.stringMatching(/^cicd install incomplete: Timed out after 5s/),
+      reason: expect.stringMatching(/^cicd install incomplete: Timed out after 5s/),
     });
   });
 
@@ -472,8 +472,8 @@ describe("cicd --json on the could-not-finish paths", () => {
       action: "run-suite",
       exitCode: 1,
       verdict: "incomplete",
-      error: "cicd run-suite failed: Request failed with status code 403 — User Not Authorized",
-      reason: "cicd run-suite failed: Request failed with status code 403 — User Not Authorized",
+      error: "cicd run-suite incomplete: Request failed with status code 403 — User Not Authorized",
+      reason: "cicd run-suite incomplete: Request failed with status code 403 — User Not Authorized",
     });
   });
 
@@ -556,6 +556,16 @@ describe("cicd --progress-id (resume, SDK-F7)", () => {
     expect(errors[0]).toMatch(new RegExp(`waiting for progress ${RESUME_ID}`));
   });
 
+  // Found live on SDK-F1: an unknown id answers 404. That is exit 1, which the
+  // --json verdict and sync_cicd_run call incomplete; the error line said "failed".
+  it("words an unknown id (404) as incomplete, as sync_cicd_run does", async () => {
+    const h = harness({ progress: [() => httpError(404, `api/sn_cicd/progress/${RESUME_ID}`, {})] });
+    expect(await run(h, "run-suite", { progressId: RESUME_ID, json: true })).toBe(1);
+    expect(errors[0]).toMatch(/^cicd run-suite incomplete: .*no such progress tracker/);
+    expect(errors[0]).not.toMatch(/failed:/);
+    expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, verdict: "incomplete" });
+  });
+
   it("rejects a malformed id before creating a client", async () => {
     const h = harness();
     expect(await run(h, "install", { progressId: "../table/sys_user" })).toBe(1);
@@ -609,7 +619,7 @@ describe("cicd poll retry", () => {
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 })).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(3);
     expect(errors).toEqual([
-      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed 3 times in a row (last: HTTP 503). Request failed with status code 503",
+      "cicd install incomplete: GET api/sn_cicd/progress/prog-1 failed 3 times in a row (last: HTTP 503). Request failed with status code 503",
     ]);
     // The resume id is a warning, so a --log-level warn run still sees it.
     expect(warnings).toContain("The work was dispatched as progress prog-1; resume with --progress-id prog-1.");
@@ -679,7 +689,7 @@ describe("cicd poll retry", () => {
     expect(rejected.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     // It names the token endpoint, not the progress request it never sent.
     expect(errors[0]).toBe(
-      "cicd install failed: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401): the token endpoint " +
+      "cicd install incomplete: GET api/sn_cicd/progress/prog-1 failed: OAuth token request failed (401): the token endpoint " +
         "rejected the OAuth client or the credentials; it is not retried."
     );
     expect(errors[0]).not.toMatch(/answered HTTP 401/);
@@ -702,7 +712,7 @@ describe("cicd poll retry", () => {
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     expect(warnings.some((w) => /retrying/.test(w))).toBe(false);
     expect(errors).toEqual([
-      `cicd install failed: GET api/sn_cicd/progress/prog-1 answered HTTP ${status}${hint ? ` (${hint})` : ""}; a client error is not retried. Request failed with status code ${status}`,
+      `cicd install incomplete: GET api/sn_cicd/progress/prog-1 answered HTTP ${status}${hint ? ` (${hint})` : ""}; a client error is not retried. Request failed with status code ${status}`,
     ]);
   });
 
@@ -751,7 +761,7 @@ describe("cicd poll retry", () => {
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
-    expect(errors).toEqual([`cicd install failed: ${unexpected3xx("install", status)}`]);
+    expect(errors).toEqual([`cicd install incomplete: ${unexpected3xx("install", status)}`]);
   });
 
   it.each([304, 302])("reports an ATF result read answered HTTP %i as an unexpected 3xx answer", async (status) => {
@@ -836,7 +846,7 @@ describe("cicd poll retry", () => {
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
-    expect(errors).toEqual([`cicd install failed: ${htmlPage("progress")}`]);
+    expect(errors).toEqual([`cicd install incomplete: ${htmlPage("progress")}`]);
   });
 
   // Review round 8-o, finding 1 (parity with sync_cicd_run, which sees no
@@ -868,7 +878,7 @@ describe("cicd poll retry", () => {
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
-    expect(errors).toEqual([`cicd install failed: ${htmlPage("install")}`]);
+    expect(errors).toEqual([`cicd install incomplete: ${htmlPage("install")}`]);
   });
 
   it.each([
@@ -880,7 +890,7 @@ describe("cicd poll retry", () => {
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
     expect(warnings.some((w) => /retrying/.test(w))).toBe(false);
-    expect(errors).toEqual([`cicd install failed: ${redirectLoop("progress")}`]);
+    expect(errors).toEqual([`cicd install incomplete: ${redirectLoop("progress")}`]);
   });
 
   it("reports a redirect loop on the dispatch the same way", async () => {
@@ -888,7 +898,7 @@ describe("cicd poll retry", () => {
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
-    expect(errors).toEqual([`cicd install failed: ${redirectLoop("install")}`]);
+    expect(errors).toEqual([`cicd install incomplete: ${redirectLoop("install")}`]);
   });
 
   it("keeps the instance's error envelope and the sn_cicd role hint on a permanent poll failure", async () => {
@@ -915,7 +925,7 @@ describe("cicd poll retry", () => {
     expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1000 }, 10_000)).toBe(1);
     expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(2);
     expect(errors).toEqual([
-      "cicd install failed: Timed out after 1s waiting for progress prog-1 (last status: Running; last poll error: socket hang up). " +
+      "cicd install incomplete: Timed out after 1s waiting for progress prog-1 (last status: Running; last poll error: socket hang up). " +
         "The work may still be running on the instance; check it at https://x/api/sn_cicd/progress/prog-1 and resume waiting with --progress-id prog-1 (and a longer --timeout).",
     ]);
   });
@@ -1155,6 +1165,7 @@ describe("cicd --json verdict and reason", () => {
     expect(d).toMatchObject({ exitCode: 1, verdict: "unknown" });
     expect(d.reason).toBe(d.error);
     expect(String(d.reason)).toMatch(/whether the tests passed is unknown/);
+    expect(errors[0]).toMatch(/^cicd run-suite result unknown: /);
   });
 
   it("reports unknown when the finished tracker's result cannot be read", async () => {
