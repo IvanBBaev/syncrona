@@ -15,6 +15,7 @@ import {
   buildBulkDownloadFromTableAPI,
 } from "../manifestBuilder.js";
 import { buildManifestMetaFields } from "../downloadPipeline.js";
+import { logger } from "../Logger.js";
 import {
   META_FILE_NAME,
   META_SIDECAR_FILE_NAME,
@@ -484,6 +485,69 @@ describe("manifest metadata discovery", () => {
 
   // The escape hatch for the blunt `sys_` rule, and for any column the default
   // type filter refuses.
+  // An explicit list replaces discovery, not the unsafe-type rule: the repro
+  // was `sys_user.metaFields: ["user_password", ...]` writing the password.
+  it("drops an unsafe column an explicit tableOptions.metaFields list names", async () => {
+    const tableAPIGet = dictionaryClient(
+      { ...SCRIPT_INCLUDE_ROW, u_secret: "hunter2", u_log: "entry" },
+      [
+        ...SCRIPT_INCLUDE_DICTIONARY,
+        { element: "u_secret", internal_type: "password2" },
+        { element: "u_log", internal_type: "journal" },
+      ]
+    );
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+        ...baseConfig,
+        tableOptions: {
+          sys_script_include: { query: "", metaFields: ["u_secret", "u_log", "api_name"] },
+        },
+      });
+
+      expect(manifest.tables.sys_script_include.metaFields).toEqual(["api_name"]);
+      const messages = warn.mock.calls.map((call) => String(call[0]));
+      expect(messages).toEqual(
+        expect.arrayContaining([
+          'Table sys_script_include: ignoring the metaFields entry for column "u_secret" — its ' +
+            "dictionary type is password2, and a value of that type is never written to the working tree.",
+          'Table sys_script_include: ignoring the metaFields entry for column "u_log" — its ' +
+            "dictionary type is journal, and a value of that type is never written to the working tree.",
+        ])
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // The explicit list is the documented remedy for a user who cannot read
+  // sys_dictionary, so a failed type lookup keeps it — with a warning.
+  it("keeps an explicit metaFields list, warned, when the type lookup fails", async () => {
+    const base = dictionaryClient();
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string, ...rest: unknown[]) => {
+      if (table === "sys_dictionary" && String(query).includes("elementIN")) {
+        throw new Error("Forbidden");
+      }
+      return (base as (...args: unknown[]) => unknown)(table, query, ...rest);
+    });
+    const warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+    try {
+      const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+        ...baseConfig,
+        tableOptions: { sys_script_include: { query: "", metaFields: ["api_name"] } },
+      });
+
+      expect(manifest.tables.sys_script_include.metaFields).toEqual(["api_name"]);
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        "Table sys_script_include: could not read the dictionary type of metaFields column(s) " +
+          "api_name (Forbidden); they are kept without the unsafe-type check."
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("lets tableOptions.metaFields replace discovery, minus the file fields", async () => {
     const tableAPIGet = dictionaryClient();
 
@@ -505,11 +569,15 @@ describe("manifest metadata discovery", () => {
       "api_name",
       "sys_overrides",
     ]);
-    // Explicit means explicit: no discovery query is issued at all.
-    const metaDiscovery = tableAPIGet.mock.calls.some(
-      (call) => call[0] === "sys_dictionary" && !String(call[1]).includes("internal_type=")
-    );
-    expect(metaDiscovery).toBe(false);
+    // Explicit means explicit: no discovery query is issued. The only
+    // dictionary read beyond the file-field query is the type lookup of the
+    // columns the list names, for the unsafe-type rule.
+    const dictionaryQueries = tableAPIGet.mock.calls
+      .filter((call) => call[0] === "sys_dictionary" && !String(call[1]).includes("internal_type="))
+      .map((call) => String(call[1]));
+    expect(dictionaryQueries).toEqual([
+      expect.stringContaining("^elementINsys_overrides,api_name"),
+    ]);
   });
 
   // Metadata is additive. A table whose metadata columns cannot be enumerated
@@ -627,6 +695,49 @@ describe("bulk download of the sidecar", () => {
     const files = tableMap.sys_script_include.records["Include A"].files;
     expect(files.some(isMetaFile)).toBe(false);
   });
+
+  // The manifest is a committed, hand-editable file, and one written before the
+  // explicit-list filter can still name a credential column. The writer checks
+  // the dictionary type itself.
+  it("never writes a password2 column a manifest's metaFields still names", async () => {
+    const tableAPIGet = dictionaryClient(
+      { ...SCRIPT_INCLUDE_ROW, u_secret: "hunter2" },
+      [...SCRIPT_INCLUDE_DICTIONARY, { element: "u_secret", internal_type: "password2" }]
+    );
+
+    const tableMap = await buildBulkDownloadFromTableAPI(
+      missingWithMeta(),
+      createClient(tableAPIGet),
+      {},
+      undefined,
+      { sys_script_include: ["api_name", "u_secret"] }
+    );
+
+    const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
+    expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+  });
+
+  it("still writes the sidecar when the column types cannot be read", async () => {
+    const base = dictionaryClient();
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string, ...rest: unknown[]) => {
+      if (table === "sys_dictionary") {
+        throw new Error("Forbidden");
+      }
+      return (base as (...args: unknown[]) => unknown)(table, query, ...rest);
+    });
+
+    const tableMap = await buildBulkDownloadFromTableAPI(
+      missingWithMeta(),
+      createClient(tableAPIGet),
+      {},
+      undefined,
+      { sys_script_include: ["api_name"] }
+    );
+
+    const sidecar = tableMap.sys_script_include.records["Include A"].files.find(isMetaFile);
+    expect(JSON.parse(String(sidecar?.content))).toEqual({ api_name: "x_demo.IncludeA" });
+  });
 });
 
 // A password property's secret lives in `sys_properties.value`, a plain string
@@ -671,6 +782,18 @@ describe("password-type system properties", () => {
         .value
     ).toBe("v");
     expect(JSON.parse(serializeMetaFields({ value: "v" }, ["value"])).value).toBe("v");
+  });
+
+  it("never serializes a column whose given dictionary type is unsafe", () => {
+    const types = new Map([
+      ["user_password", "password2"],
+      ["notes", "Journal "],
+      ["name", "string"],
+    ]);
+    const row = { user_password: "hunter2", notes: "entry", name: "admin" };
+    expect(
+      JSON.parse(serializeMetaFields(row, ["user_password", "notes", "name"], "sys_user", types))
+    ).toEqual({ name: "admin" });
   });
 
   it("reports the classifier column a sidecar read must fetch", () => {
