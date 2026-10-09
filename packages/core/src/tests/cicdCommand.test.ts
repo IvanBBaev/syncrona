@@ -415,8 +415,14 @@ describe("cicd could-not-finish paths (exit 1)", () => {
     expect(errors[0]).toContain("returned no progress id");
   });
 
-  it("a non-JSON answer exits 1", async () => {
+  it("an HTML answer exits 1 as a session/authentication redirect", async () => {
     const h = harness({ post: () => ({ data: "<html>login</html>" }) });
+    expect(await run(h, "publish", { scope: "x_app" })).toBe(1);
+    expect(errors[0]).toContain("answered the publish request with an HTML page instead of JSON");
+  });
+
+  it("a non-JSON answer that is not HTML exits 1", async () => {
+    const h = harness({ post: () => ({ data: "Bad gateway" }) });
     expect(await run(h, "publish", { scope: "x_app" })).toBe(1);
     expect(errors[0]).toContain("without a JSON `result`");
   });
@@ -633,7 +639,7 @@ describe("cicd poll retry", () => {
   });
 
   it.each([301, 302, 307])(
-    "reports HTTP %i as an unexpected redirect, not as a client error, and does not retry it",
+    "reports HTTP %i as an unexpected 3xx answer naming its Location, not as a client error, and does not retry it",
     async (status) => {
       const redirect = Object.assign(httpError(status, "api/sn_cicd/progress/prog-1", ""), {
         response: { status, data: "", headers: { location: "https://login.example/sso" } },
@@ -644,17 +650,71 @@ describe("cicd poll retry", () => {
       expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
       expect(errors).toHaveLength(1);
       expect(errors[0]).toContain(
-        `GET api/sn_cicd/progress/prog-1 answered HTTP ${status}, an unexpected redirect to https://login.example/sso`
+        `GET api/sn_cicd/progress/prog-1 answered HTTP ${status} (Location: https://login.example/sso), an unexpected 3xx answer: ` +
+          "sn_cicd answers JSON directly, so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried."
       );
-      expect(errors[0]).not.toMatch(/client error/);
+      expect(errors[0]).not.toMatch(/client error|not followed|redirect/);
     }
   );
 
-  it("reports a redirect without a Location header as an unexpected redirect too", async () => {
-    const h = harness({ progress: [() => httpError(302, "api/sn_cicd/progress/prog-1", "")] });
+  it.each([304, 302])("reports HTTP %i without a Location header without claiming a redirect target", async (status) => {
+    const h = harness({ progress: [() => httpError(status, "api/sn_cicd/progress/prog-1", "")] });
 
     expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
-    expect(errors[0]).toContain("answered HTTP 302, an unexpected redirect (");
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    expect(errors[0]).toContain(`answered HTTP ${status}, an unexpected 3xx answer: sn_cicd answers JSON directly`);
+    expect(errors[0]).not.toMatch(/Location|not followed|redirect/);
+  });
+
+  // An SSO gateway that answers 200 with its login page, or a redirect that
+  // loops back on itself, is a session/authentication failure: asking again
+  // until the timeout would only delay it.
+  const htmlPage = (what: string) =>
+    `The instance answered the ${what} request with an HTML page instead of JSON, likely a session/authentication redirect ` +
+    "to a login page (or a hibernating instance); check the credentials and the session, and that the instance is awake. It is not retried.";
+  const redirectLoop = (what: string) =>
+    `The ${what} request was redirected in a loop (too many redirects), likely a session/authentication redirect ` +
+    "to a login page; check the credentials and the session. It is not retried.";
+  const axiosLoop = () =>
+    Object.assign(new Error("Maximum number of redirects exceeded"), { code: "ERR_FR_TOO_MANY_REDIRECTS" });
+
+  it.each([
+    ["a text/html content type", { data: "Please sign in", headers: { "content-type": "text/html; charset=UTF-8" } }],
+    ["a body that starts with <", { data: "  <!DOCTYPE html><html><body>Login</body></html>" }],
+  ])("reports a 200 poll answered with %s as a session/authentication redirect, at once", async (_label, answer) => {
+    const h = harness({ progress: [() => answer] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    expect(errors).toEqual([`cicd install failed: ${htmlPage("progress")}`]);
+  });
+
+  it("reports a dispatch answered with an HTML login page the same way", async () => {
+    const h = harness({ post: () => ({ data: "<html>Login</html>", headers: { "content-type": "text/html" } }) });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
+    expect(errors).toEqual([`cicd install failed: ${htmlPage("install")}`]);
+  });
+
+  it.each([
+    ["an axios", axiosLoop],
+    ["a fetch", () => new TypeError("fetch failed", { cause: new Error("redirect count exceeded") })],
+  ])("reports %s redirect loop on a poll as a session/authentication failure, not as no response", async (_label, loop) => {
+    const h = harness({ progress: [loop] });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(1);
+    expect(warnings.some((w) => /retrying/.test(w))).toBe(false);
+    expect(errors).toEqual([`cicd install failed: ${redirectLoop("progress")}`]);
+  });
+
+  it("reports a redirect loop on the dispatch the same way", async () => {
+    const h = harness({ post: axiosLoop });
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 1000 }, 0)).toBe(1);
+    expect(h.calls.filter((c) => c.path.startsWith("progress/"))).toHaveLength(0);
+    expect(errors).toEqual([`cicd install failed: ${redirectLoop("install")}`]);
   });
 
   it("keeps the instance's error envelope and the sn_cicd role hint on a permanent poll failure", async () => {

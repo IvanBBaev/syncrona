@@ -380,13 +380,50 @@ class CicdRunIncomplete extends Error {
   }
 }
 
+/**
+ * Whether a request failed because its redirects looped: native fetch rejects
+ * with a "redirect count exceeded" cause, axios (core) with
+ * `ERR_FR_TOO_MANY_REDIRECTS`. A login gateway bouncing the request is the usual
+ * source, so it is a session failure, not a missing response. Must match
+ * `isRedirectLoopError` in core's `cicdCommand.ts`.
+ */
+function isRedirectLoopError(err: unknown): boolean {
+  if (asObject(err)?.code === "ERR_FR_TOO_MANY_REDIRECTS") return true;
+  const pattern = /redirect count exceeded|maximum number of redirects/i;
+  const message = err instanceof Error ? err.message : "";
+  const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : "";
+  return pattern.test(message) || pattern.test(cause);
+}
+
+/**
+ * Whether a 2xx body is an HTML page: it starts with `<`. sn_cicd only answers
+ * JSON, so this is an SSO/login (or hibernation) page served in place of the
+ * API. Core also checks a `text/html` content type; `snRequest` returns no
+ * headers, so the body is the only signal here.
+ */
+function isHtmlBody(data: unknown): boolean {
+  return typeof data === "string" && data.trimStart().startsWith("<");
+}
+
 async function cicdCall(
   method: "GET" | "POST",
   endpoint: string,
   what: string,
   budget: Budget
 ): Promise<JsonObject> {
-  const response = await snRequest(method, endpoint, undefined, budget.requestTimeout());
+  let response: Awaited<ReturnType<typeof snRequest>>;
+  try {
+    response = await snRequest(method, endpoint, undefined, budget.requestTimeout());
+  } catch (err) {
+    if (isRedirectLoopError(err)) {
+      // Same text as core's redirectLoopError.
+      throw new CicdRunIncomplete(
+        `The ${what} request was redirected in a loop (too many redirects), likely a session/authentication redirect ` +
+          "to a login page; check the credentials and the session. It is not retried."
+      );
+    }
+    throw err;
+  }
   if (response.status < 200 || response.status > 299) {
     const reason = extractCicdErrorMessage(response.data);
     const hint =
@@ -394,15 +431,26 @@ async function cicdCall(
         ? ` Access denied by the CI/CD REST API: the user needs the ${CICD_ROLE} role (admin also passes).`
         : "";
     if (response.status >= 300 && response.status <= 399) {
-      // sn_cicd answers JSON directly; a redirect the HTTP client hands back
-      // unfollowed is an SSO/login page or a proxy, never a client error.
+      // sn_cicd answers JSON directly. fetch follows a redirect itself, so a
+      // 3xx reaching here is a 304, a redirect without a Location, or one it
+      // did not follow: a proxy or SSO gateway took the request, never a
+      // client error. Same text as core's permanentPollReason.
       throw new CicdRunIncomplete(
-        `The ${what} request answered HTTP ${response.status}, an unexpected redirect (sn_cicd answers JSON directly, so this usually means an SSO/login page or a proxy in front of the instance); a redirect is not followed or retried.`,
+        `The ${what} request answered HTTP ${response.status}, an unexpected 3xx answer: sn_cicd answers JSON directly, ` +
+          "so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried.",
         response.status
       );
     }
     throw new CicdRunIncomplete(
       `The ${what} request failed with HTTP ${response.status}${reason ? `: ${reason}` : ""}.${hint}`,
+      response.status
+    );
+  }
+  if (isHtmlBody(response.data)) {
+    // Same text as core's htmlAnswerError.
+    throw new CicdRunIncomplete(
+      `The instance answered the ${what} request with an HTML page instead of JSON, likely a session/authentication redirect ` +
+        "to a login page (or a hibernating instance); check the credentials and the session, and that the instance is awake. It is not retried.",
       response.status
     );
   }
@@ -425,7 +473,7 @@ export const CICD_MAX_POLL_FAILURES = 3;
 
 /**
  * No response, 408, 429 and 5xx are worth another poll (core's rule); a 3xx,
- * auth, 404, any other 4xx and non-JSON answers are not.
+ * auth, 404, any other 4xx, non-JSON and HTML answers, and a redirect loop are not.
  */
 function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdRunIncomplete) {

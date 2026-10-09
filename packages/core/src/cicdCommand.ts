@@ -19,9 +19,10 @@
  *   a 403 for a missing `sn_cicd` role), or the poll timing out. The answer to
  *   "did it pass?" is unknown. A poll answered with a client error (400, 401,
  *   403, 404, ...) fails at once, naming the status and the request, and so
- *   does a redirect (3xx), reported as unexpected; no response, 408, 429 and
- *   5xx are retried a few times; a timeout says where to check the tracker and
- *   how to resume waiting for it.
+ *   does a 3xx answer, reported as unexpected; an HTML page in place of JSON
+ *   and a redirect loop fail at once too, as a session/authentication
+ *   redirect; no response, 408, 429 and 5xx are retried a few times; a timeout
+ *   says where to check the tracker and how to resume waiting for it.
  * - 2 — the work ran to its end and the instance reported a failure: ATF tests
  *   failed or errored, or the tracker ended in error or was cancelled.
  *
@@ -314,7 +315,7 @@ async function dispatch(
   request: CicdRequest
 ): Promise<{ id: string; url?: string }> {
   logger.info(`POST api/sn_cicd/${request.path}`);
-  const dispatched = resultOf(await client.cicdPost(request.path, request.params), action);
+  const dispatched = resultOf(await send(() => client.cicdPost(request.path, request.params), action), action);
   const progressId = linkId(dispatched, "progress");
   if (!progressId) {
     // A 200 can still carry a rejection in the sn_cicd envelope (status "3" +
@@ -335,8 +336,67 @@ function positiveOr(value: unknown, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/**
+ * Whether a 2xx answer is an HTML page: a `text/html` content type, or a body
+ * that starts with `<`. sn_cicd only answers JSON, so this is an SSO/login page
+ * (or a hibernation page) served in place of the API — a session problem that
+ * asking again will not fix. Must match `isHtmlAnswer` in the mcp-server's
+ * `insightCicdRun.ts`.
+ */
+function isHtmlAnswer(response: AxiosResponse<unknown>): boolean {
+  const headers = asObject(response?.headers);
+  const contentType = headers?.["content-type"] ?? headers?.["Content-Type"];
+  if (typeof contentType === "string" && /text\/html/i.test(contentType)) return true;
+  return typeof response?.data === "string" && response.data.trimStart().startsWith("<");
+}
+
+/** The error for an HTML answer; the same text as the mcp-server's. */
+function htmlAnswerError(what: string): CicdCliError {
+  return new CicdCliError(
+    `The instance answered the ${what} request with an HTML page instead of JSON, likely a session/authentication redirect ` +
+      "to a login page (or a hibernating instance); check the credentials and the session, and that the instance is awake. It is not retried."
+  );
+}
+
+/**
+ * Whether a request failed because its redirects looped: axios
+ * (follow-redirects) rejects with `ERR_FR_TOO_MANY_REDIRECTS`, and native fetch
+ * with a "redirect count exceeded" cause. A login gateway bouncing the request
+ * back and forth is the usual source, so it is a session failure, not a missing
+ * response. Must match `isRedirectLoopError` in the mcp-server.
+ */
+function isRedirectLoopError(err: unknown): boolean {
+  const source = asObject(err);
+  if (source?.code === "ERR_FR_TOO_MANY_REDIRECTS") return true;
+  const pattern = /redirect count exceeded|maximum number of redirects/i;
+  const message = err instanceof Error ? err.message : "";
+  const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : "";
+  return pattern.test(message) || pattern.test(cause);
+}
+
+/** The error for a redirect loop; the same text as the mcp-server's. */
+function redirectLoopError(what: string): CicdCliError {
+  return new CicdCliError(
+    `The ${what} request was redirected in a loop (too many redirects), likely a session/authentication redirect ` +
+      "to a login page; check the credentials and the session. It is not retried."
+  );
+}
+
+/** Sends one sn_cicd request, reporting a redirect loop as a session failure. */
+async function send(call: () => Promise<AxiosResponse<unknown>>, what: string): Promise<AxiosResponse<unknown>> {
+  try {
+    return await call();
+  } catch (err) {
+    if (isRedirectLoopError(err)) throw redirectLoopError(what);
+    throw err;
+  }
+}
+
 /** `result` of an sn_cicd response, or an error saying the body was not one. */
 function resultOf(response: AxiosResponse<unknown>, what: string): JsonObject {
+  if (isHtmlAnswer(response)) {
+    throw htmlAnswerError(what);
+  }
   const result = asObject(asObject(response?.data)?.result);
   if (!result) {
     throw new CicdCliError(
@@ -394,16 +454,17 @@ function redirectLocationOf(err: unknown): string | undefined {
 
 /**
  * Why a permanent poll status is not retried. A 3xx is not a client error:
- * sn_cicd answers JSON directly, so a redirect almost always means an SSO or
- * login page, or a proxy in front of the instance.
+ * sn_cicd answers JSON directly, so any 3xx the client hands back (a 304, a
+ * redirect without a `Location`, or one it did not follow) means something in
+ * front of the instance — a proxy or an SSO/login gateway — took the request.
  */
 function permanentPollReason(status: number | undefined, err: unknown): string {
   if (status !== undefined && status >= 300 && status < 400) {
     const location = redirectLocationOf(err);
     return (
-      `answered HTTP ${status}, an unexpected redirect${location ? ` to ${location}` : ""} ` +
-      "(sn_cicd answers JSON directly, so this usually means an SSO/login page or a proxy in front of the instance); " +
-      "a redirect is not followed or retried."
+      `answered HTTP ${status}${location ? ` (Location: ${location})` : ""}, an unexpected 3xx answer: ` +
+      "sn_cicd answers JSON directly, so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; " +
+      "it is not retried."
     );
   }
   const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
@@ -474,8 +535,10 @@ async function pollProgress(
   for (;;) {
     let response: AxiosResponse<unknown>;
     try {
-      response = await client.cicdGet(`progress/${encodeURIComponent(progressId)}`);
+      response = await send(() => client.cicdGet(`progress/${encodeURIComponent(progressId)}`), "progress");
     } catch (err) {
+      // Already a settled, named failure (a redirect loop): reported as is.
+      if (err instanceof CicdCliError) throw err;
       failures += 1;
       const status = httpStatusOf(err);
       if (!isTransientPollError(err)) {
@@ -655,7 +718,7 @@ async function fetchAtfOutcome(
       : `tests/test/results/${encodeURIComponent(resultId)}`;
   let body: JsonObject;
   try {
-    body = resultOf(await client.cicdGet(path), "ATF result");
+    body = resultOf(await send(() => client.cicdGet(path), "ATF result"), "ATF result");
   } catch (e) {
     const reason =
       extractCicdErrorMessage(errorResponseBody(e)) ?? (e instanceof Error ? e.message : String(e));

@@ -621,12 +621,70 @@ test('handleCicdRun: HTTP 500 without a readable body → incomplete, not retrie
   });
 });
 
-test('handleCicdRun: an HTML page instead of JSON → incomplete', async () => {
+// Same text as core's cicd (cicdCommand.test.ts): an HTML page on a 2xx and a
+// redirect loop are a session/authentication redirect, reported at once.
+const htmlPage = (what) =>
+  `The instance answered the ${what} request with an HTML page instead of JSON, likely a session/authentication redirect ` +
+  'to a login page (or a hibernating instance); check the credentials and the session, and that the instance is awake. It is not retried.';
+const redirectLoop = (what) =>
+  `The ${what} request was redirected in a loop (too many redirects), likely a session/authentication redirect ` +
+  'to a login page; check the credentials and the session. It is not retried.';
+const fetchRedirectLoop = () => new TypeError('fetch failed', { cause: new Error('redirect count exceeded') });
+
+test('handleCicdRun: an HTML page instead of JSON → incomplete, as a session/authentication redirect', async () => {
   await withEnv(async () => {
     mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(200, '<html><body>Instance hibernating</body></html>') });
     const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
     assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.message, fenced(htmlPage('install')));
+  });
+});
+
+test('handleCicdRun: a non-JSON answer that is not HTML → incomplete without a JSON result', async () => {
+  await withEnv(async () => {
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': mkResponse(200, 'Bad gateway') });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
     assert.match(body.message, /without a JSON `result`/);
+  });
+});
+
+test('handleCicdRun: a 200 poll answered with an HTML login page is not polled again', async () => {
+  await withEnv(async () => {
+    const calls = mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: mkResponse(200, '  <!DOCTYPE html><html><body>Login</body></html>'),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.exitCode, 1);
+    assert.equal(body.message, fenced(htmlPage('progress')));
+    assert.equal(calls.filter((c) => c.path === `/api/sn_cicd/progress/${PROGRESS_ID}`).length, 1);
+  });
+});
+
+test('handleCicdRun: a redirect loop on a poll is a session/authentication failure, not polled again', async () => {
+  await withEnv(async () => {
+    const calls = mockFetch({
+      'POST /api/sn_cicd/app_repo/install': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: fetchRedirectLoop(),
+    });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.exitCode, 1);
+    assert.equal(body.message, fenced(redirectLoop('progress')));
+    assert.equal(body.progressId, PROGRESS_ID);
+    // One poll; snRequest's own attempts are the transport's (see the retry tests).
+    assert.ok(calls.filter((c) => c.path === `/api/sn_cicd/progress/${PROGRESS_ID}`).length <= 3);
+  });
+});
+
+test('handleCicdRun: a redirect loop on the dispatch is reported the same way', async () => {
+  await withEnv(async () => {
+    mockFetch({ 'POST /api/sn_cicd/app_repo/install': fetchRedirectLoop() });
+    const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', confirmDestructive: true }, makeContext()));
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(body.message, fenced(redirectLoop('install')));
   });
 });
 
@@ -727,18 +785,26 @@ test('handleCicdRun: a 408 on a poll is polled again → succeeded', async () =>
   });
 });
 
-test('handleCicdRun: a 3xx on a poll is an unexpected redirect, not retried', async () => {
+// fetch follows a redirect itself, so a 3xx reaches the handler only as a 304,
+// a redirect without a Location, or one fetch did not follow: the message makes
+// no claim about following and names no target.
+test('handleCicdRun: a 3xx on a poll is an unexpected 3xx answer, not retried', async () => {
   await withEnv(async () => {
-    for (const status of [301, 302, 307]) {
+    for (const status of [301, 302, 304, 307]) {
       const calls = mockFetch({
         'POST /api/sn_cicd/app_repo/install': dispatched(),
         [POLL_PATH]: mkResponse(status, ''),
       });
       const body = payloadOf(await handleCicdRun({ action: 'install', scope: 'x_a', pollMs: 250, confirmDestructive: true }, makeContext()));
       assert.equal(body.outcome, 'incomplete', String(status));
-      assert.match(body.message, new RegExp(`The progress request answered HTTP ${status}, an unexpected redirect`));
-      assert.match(body.message, /SSO\/login page or a proxy/);
-      assert.doesNotMatch(body.message, /client error/);
+      assert.equal(
+        body.message,
+        fenced(
+          `The progress request answered HTTP ${status}, an unexpected 3xx answer: sn_cicd answers JSON directly, ` +
+            'so a proxy or an SSO/login gateway in front of the instance likely intercepted the request; it is not retried.'
+        )
+      );
+      assert.doesNotMatch(body.message, /client error|not followed|redirect/);
       assert.equal(pollCalls(calls), 1, String(status));
     }
   });
