@@ -180,7 +180,12 @@ describe("attachMetaFieldsToManifest (DX22 on the scoped-manifest path)", () => 
     // The file field is still dropped: an explicit list decides WHICH columns,
     // never that a column may claim two writers.
     expect(manifest.tables.sys_script_include.metaFields).toEqual(["description"]);
-    expect(client.tableAPIGet).not.toHaveBeenCalled();
+    // No discovery: the one dictionary read is the type lookup of the named
+    // column, for the unsafe-type rule.
+    const dictionaryQueries = (client.tableAPIGet as jest.Mock).mock.calls
+      .filter((call) => call[0] === "sys_dictionary")
+      .map((call) => String(call[1]));
+    expect(dictionaryQueries).toEqual([expect.stringContaining("^elementINdescription")]);
   });
 
   it("keeps the scripts when the dictionary cannot be read", async () => {

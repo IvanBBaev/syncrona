@@ -8,7 +8,7 @@ import { jest } from "@jest/globals";
 import { SN, Sync } from "@syncrona/types";
 import { applyIncludeTypeRulesToManifest, buildManifestFromTableAPI } from "../manifestBuilder.js";
 import { applyRecordSecretRulesToContent } from "../downloadPipeline.js";
-import { classifyColumn, isMetaFieldCandidate } from "../metaFields.js";
+import { classifyColumn, columnTypeOf, isMetaFieldCandidate } from "../metaFields.js";
 import { logger } from "../Logger.js";
 
 type Row = Record<string, unknown>;
@@ -515,5 +515,78 @@ describe("17b: an unreadable parent hierarchy is named as the reason a type is u
     expect(warnings().filter((m) => m.includes("included column"))).toEqual([
       hierarchyWarning("no sys_db_object row for x_demo_cred"),
     ]);
+  });
+});
+
+// Case variants of one element are one column to the instance. An exact-case
+// match used to win, so a safe `U_S` hid an unsafe `u_s` — and the value the
+// instance returns for `U_S` is the credential.
+describe("case variants of one column: an unsafe type on any variant wins", () => {
+  it.each<[string, Array<[string, string]>, string, string | undefined]>([
+    ["a safe exact match does not hide an unsafe variant", [["U_S", "string"], ["u_s", "password2"]], "U_S", "password2"],
+    ["the unsafe exact match wins over a safe variant", [["U_S", "password2"], ["u_s", "string"]], "u_s", "password2"],
+    ["the order of the map does not matter", [["u_s", "password2"], ["U_S", "string"]], "U_S", "password2"],
+    ["a mixed-case, padded unsafe type counts", [["U_S", "string"], ["u_s", " Password "]], "U_S", " Password "],
+    ["without an unsafe variant the exact match wins", [["U_S", "string"], ["u_s", "script"]], "u_s", "script"],
+    ["without an exact match the first variant answers", [["U_S", "string"], ["u_S", "script"]], "u_s", "string"],
+    ["no variant is no type", [["u_other", "password2"]], "u_s", undefined],
+  ])("%s", (_label, entries, column, expected) => {
+    expect(columnTypeOf(new Map(entries), column)).toBe(expected);
+  });
+
+  const variantRows: Row[] = [
+    { element: "U_S", internal_type: ref("string") },
+    { element: "u_s", internal_type: ref("password2") },
+  ];
+
+  it("an included U_S is dropped when its u_s variant is a credential", async () => {
+    const tableAPIGet = fakeInstance({
+      fileColumns: SCRIPT_ONLY,
+      includeLookup: () => variantRows,
+      records: { x_demo_cred: RECORDS },
+    });
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+      includes: { x_demo_cred: { U_S: { type: "txt" } } },
+      excludes: {},
+      tableOptions: {},
+      meta: false,
+    } as never);
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["script"]);
+    expect(warnings()).toContain(unsafeWarning("U_S", "password2"));
+  });
+
+  it("an included u_s is dropped when its U_S variant is the credential", async () => {
+    const tableAPIGet = fakeInstance({
+      fileColumns: SCRIPT_ONLY,
+      includeLookup: () => [
+        { element: "U_S", internal_type: ref("password2") },
+        { element: "u_s", internal_type: ref("string") },
+      ],
+      records: { x_demo_cred: RECORDS },
+    });
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+      includes: { x_demo_cred: { u_s: { type: "txt" } } },
+      excludes: {},
+      tableOptions: {},
+      meta: false,
+    } as never);
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["script"]);
+    expect(warnings()).toContain(unsafeWarning("u_s", "password2"));
+  });
+
+  it("the data-field fallback lists neither variant of a credential column", async () => {
+    process.env.SYNCRONA_DATA_TABLES = "x_demo_cred";
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(
+        fakeInstance({
+          fileColumns: [],
+          columns: [{ element: "name", internal_type: ref("string") }, ...variantRows],
+          records: { x_demo_cred: RECORDS },
+        })
+      ),
+      { includes: {}, excludes: {}, tableOptions: {}, meta: false } as never
+    );
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["name"]);
   });
 });

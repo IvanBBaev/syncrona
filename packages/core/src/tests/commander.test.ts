@@ -213,6 +213,79 @@ describe("commander --dry-run contract", () => {
     );
   });
 
+  // Every option is declared per command, so the top-level parse does not know
+  // a leading `--dry-run` is a boolean and takes the command name as its value.
+  // The run is still refused; the message now says why and what to type.
+  describe("a leading flag that swallowed the command name", () => {
+    let prevExit: typeof process.exitCode;
+    beforeEach(() => {
+      prevExit = process.exitCode;
+      process.exitCode = 0;
+    });
+    afterEach(() => {
+      process.exitCode = prevExit;
+    });
+
+    it("refuses the run and prints the corrected order", async () => {
+      register("canpreview");
+
+      await runArgv(["--dry-run", "canpreview"]);
+      await flush();
+
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "Specify a command to run. Options go after the command: `--dry-run` took " +
+          "`canpreview` as its value. Run `syncrona canpreview --dry-run` instead."
+      );
+    });
+
+    it("keeps every leading flag and the trailing arguments in the corrected order", async () => {
+      register("canpreview");
+
+      await runArgv(["-l", "--dry-run", "canpreview", "extra"]);
+      await flush();
+
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(String(mockLoggerError.mock.calls[0][0])).toContain(
+        "Run `syncrona canpreview -l --dry-run extra` instead."
+      );
+    });
+
+    it.each([
+      ["no command name follows the flags", ["--dry-run", "nosuchcommand"]],
+      ["the last flag carries its value", ["--dry-run=true", "canpreview"]],
+      ["the last flag is a negation", ["--no-dry-run", "canpreview"]],
+      ["a later token names the command yargs runs", ["--label", "canpreview", "other"]],
+    ])("leaves the parse to yargs when %s", async (_label, argv) => {
+      register("canpreview");
+      register("other");
+
+      try {
+        await runArgv(argv);
+      } catch {
+        // yargs' own refusal, if any, is not under test here.
+      }
+      await flush();
+
+      expect(mockLoggerError).not.toHaveBeenCalledWith(
+        expect.stringContaining("Options go after the command")
+      );
+    });
+
+    it("leaves --help in front of a command to yargs", async () => {
+      register("canpreview");
+      const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+      await runArgv(["--help", "canpreview"]);
+
+      logSpy.mockRestore();
+      expect(mockLoggerError).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(0);
+    });
+  });
+
   it("runs a no-preview command normally when the flag is absent", async () => {
     register("nopreview", false);
 
