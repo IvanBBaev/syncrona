@@ -429,7 +429,7 @@ const includedFieldNames = (includes: Sync.TablePropMap, tableName: string): str
  * naming a column, and neither lifts the rule that an unsafe value never
  * reaches the working tree; the warning names which setting to fix.
  */
-type ColumnSelector = "includes" | "metaFields";
+type ColumnSelector = "includes" | "metaFields" | "manifest files";
 
 /**
  * `selector:table.column` keys already warned about in this build — dropped as
@@ -472,24 +472,50 @@ const warnUnsafeInclude = (
 };
 
 /**
- * The entries of a metaFields list that name this record's own columns. A
+ * The one dot-walked field name the CLI itself requests: the ATF step script,
+ * which ServiceNow stores in the `inputs.script` variable of a sys_atf_step
+ * (see getFileFieldsForTable). It is that record's own value, not another
+ * record's, so it is exempt from the dot-walk refusal on the field-file paths.
+ */
+const isPermittedDottedField = (tableName: string, column: string): boolean =>
+  tableName === "sys_atf_step" && column === "inputs.script";
+
+/**
+ * The entries of a column list that name this record's own columns. A
  * dot-walked entry (isDotWalkedColumn) is dropped with a warning, once per
  * table and column per build: its value belongs to another record, which this
- * table's dictionary cannot type, so the unsafe-type check could only keep it.
- * Applied where the manifest records the list and again where the download
- * requests it, so a hand-edited manifest is refused too.
+ * table's dictionary cannot type, so the unsafe-type check could only keep it —
+ * `sys_created_by.user_password` is the creator's password. Applied to a
+ * metaFields list where the manifest records it and where the download
+ * requests it, to field-level `includes` where the manifest lists them, and to
+ * the field files a manifest's records list where the download requests them,
+ * so a hand-edited manifest is refused too. The field-file paths keep the ATF
+ * step script (isPermittedDottedField); a sidecar never holds a dotted name.
  */
-const withoutDotWalkedMetaFields = (tableName: string, columns: string[]): string[] => {
-  const walked = columns.filter(isDotWalkedColumn);
-  for (const column of claimIncludeWarnings(tableName, walked, "metaFields")) {
+const withoutDotWalkedColumns = (
+  tableName: string,
+  columns: string[],
+  selector: ColumnSelector
+): string[] => {
+  const refused = (column: string): boolean =>
+    isDotWalkedColumn(column) &&
+    !(selector !== "metaFields" && isPermittedDottedField(tableName, column));
+  const walked = columns.filter(refused);
+  if (walked.length === 0) {
+    return columns;
+  }
+  for (const column of claimIncludeWarnings(tableName, walked, selector)) {
     logger.warn(
-      `Table ${tableName}: ignoring the metaFields entry for column "${column}" — ` +
+      `Table ${tableName}: ignoring the ${selector} entry for column "${column}" — ` +
         "a dot-walked column reads another record's value, which this table's dictionary cannot type, " +
         "so it is never written to the working tree."
     );
   }
-  return walked.length === 0 ? columns : columns.filter((column) => !isDotWalkedColumn(column));
+  return columns.filter((column) => !refused(column));
 };
+
+const withoutDotWalkedMetaFields = (tableName: string, columns: string[]): string[] =>
+  withoutDotWalkedColumns(tableName, columns, "metaFields");
 
 /**
  * Names included columns kept without the unsafe-type check, because their
@@ -564,8 +590,12 @@ const appendIncludedFields = (
     return;
   }
   const tableIncludes = includes[tableName] as Sync.FieldMap;
+  const ownColumns = new Set(withoutDotWalkedColumns(tableName, Object.keys(tableIncludes), "includes"));
   const untyped: string[] = [];
   for (const [fieldName, fieldConfig] of Object.entries(tableIncludes)) {
+    if (!ownColumns.has(fieldName)) {
+      continue;
+    }
     if (files.some((f) => f.name === fieldName)) {
       continue;
     }
@@ -654,8 +684,10 @@ async function getFileFieldsForTable(
     // Apply field-level includes overrides. The query above only returns
     // file-typed columns, so an included column's dictionary type has to be
     // read separately before it can go through the unsafe-type filter.
+    // A dot-walked entry is not this table's column, so it is not looked up:
+    // appendIncludedFields refuses it with a warning.
     const pendingIncludes = includedFieldNames(includes, tableName).filter(
-      (fieldName) => !files.some((f) => f.name === fieldName)
+      (fieldName) => !isDotWalkedColumn(fieldName) && !files.some((f) => f.name === fieldName)
     );
     let includeTypes: Map<string, string> | undefined;
     if (pendingIncludes.length > 0) {
@@ -2258,7 +2290,20 @@ export async function applyIncludeTypeRulesToManifest(
   await mapWithConcurrency(
     pending,
     resolveManifestTableConcurrency(config),
-    async ({ tableName, records, columns }) => {
+    async ({ tableName, records, columns: listed }) => {
+      // A dot-walked entry reads another record's value: removed from every
+      // record before any lookup, exactly as an unsafe column is.
+      const columns = withoutDotWalkedColumns(tableName, listed, "includes");
+      if (columns.length < listed.length) {
+        const own = new Set(columns);
+        const walked = new Set(listed.filter((column) => !own.has(column)));
+        for (const record of records) {
+          record.files = (record.files || []).filter((file) => !walked.has(file.name));
+        }
+      }
+      if (columns.length === 0) {
+        return;
+      }
       let types: Map<string, string>;
       let untypedReason: string;
       try {
@@ -2381,6 +2426,14 @@ export async function buildBulkDownloadFromTableAPI(
             continue;
           }
           allFiles.set(f.name, f.type as SN.FileType);
+        }
+      }
+      // The manifest is hand-editable: a field file it lists under a dot-walked
+      // name would be requested and written with another record's value.
+      const ownFileFields = new Set(withoutDotWalkedColumns(tableName, [...allFiles.keys()], "manifest files"));
+      for (const fieldName of [...allFiles.keys()]) {
+        if (!ownFileFields.has(fieldName)) {
+          allFiles.delete(fieldName);
         }
       }
       const metaFields = withoutDotWalkedMetaFields(tableName, metaFieldsByTable?.[tableName] ?? []);

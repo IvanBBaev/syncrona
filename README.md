@@ -958,6 +958,13 @@ module.exports = {
 };
 ```
 
+A field-level `includes` entry names a column of the record itself. A
+dot-walked name (`sys_created_by.user_password`) reads another record's column,
+so it is dropped with a warning and never requested or written — and so is a
+field file a hand-edited `sync.manifest.json` lists under such a name. The ATF
+step script (`sys_atf_step` `inputs.script`) is the one dotted field the CLI
+keeps.
+
 ### Plugin Configuration
 
 Plugins are where the true 💪 **POWER** 💪 of SyncroNow AI comes from! The `rules` section is used to configure plugins. When configuring plugins, **Make sure to always put your rules in the order you want them matched! The first rule that gets matched will be the only one that runs!**
