@@ -497,15 +497,26 @@ function permanentPollReason(status: number | undefined, err: unknown): string {
   if (isTokenEndpointError(err)) {
     // The progress request was never sent: getting its OAuth token failed.
     // Named as sync_cicd_run's token poster words it.
-    return `failed: ${tokenEndpointReason(status)}; it is not retried.`;
+    return `failed: ${tokenEndpointReason(status, err)}; it is not retried.`;
   }
   const hint = PERMANENT_POLL_HINTS[status];
   return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
 }
 
-/** Why a token-endpoint answer failed the call, named as sync_cicd_run's token poster words it. */
-function tokenEndpointReason(status: number): string {
-  return `OAuth token request failed (${String(status)}), so the token endpoint rejected the OAuth client or the credentials`;
+/**
+ * Why a token-endpoint failure failed the call, named as sync_cicd_run's token
+ * poster words it. Only a 4xx is a rejection of the client or the credentials:
+ * a 5xx or a network failure is an outage, and blaming the credentials would
+ * send the user to fix ones that are fine.
+ */
+function tokenEndpointReason(status: number | undefined, err: unknown): string {
+  if (status === undefined) {
+    return `OAuth token request failed (${errorText(err).replace(/\.$/, "")}): no OAuth token could be obtained`;
+  }
+  const rejected = status >= 400 && status < 500;
+  return `OAuth token request failed (${String(status)}): ${
+    rejected ? "the token endpoint rejected the OAuth client or the credentials" : "no OAuth token could be obtained"
+  }`;
 }
 
 /** Whether an axios error came from the OAuth token endpoint, not from sn_cicd. */
@@ -793,7 +804,7 @@ async function fetchAtfOutcome(
     const redirect = unexpectedRedirectError(e, "ATF result");
     const status = httpStatusOf(e);
     // The read was never sent when its OAuth token could not be had.
-    const tokenReason = status !== undefined && isTokenEndpointError(e) ? tokenEndpointReason(status) : undefined;
+    const tokenReason = isTokenEndpointError(e) ? tokenEndpointReason(status, e) : undefined;
     // The trailing period is dropped: the reason is quoted mid-sentence.
     const reason = (
       redirect?.message ??
