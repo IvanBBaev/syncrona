@@ -102,6 +102,45 @@ describe("scopeCheck", () => {
     await scopeCheck(jest.fn(), true);
     expect(checkScopeMock).toHaveBeenCalledWith(true);
   });
+
+  // Found live (SDK-F1): `push --dry-run` refused on a scope mismatch before it
+  // previewed anything, and the only way past it was --scopeSwap, which writes
+  // the user's scope preference. A dry run must preview without writing.
+  it("previews on a scope mismatch in a dry run, with a warning and exit 0", async () => {
+    checkScopeMock.mockResolvedValue({
+      match: false,
+      sessionScope: "global",
+      manifestScope: "x_test_app",
+    });
+    const { logger } = await import("../Logger.js");
+    const warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => {});
+    const success = jest.fn();
+
+    await scopeCheck(success, false, { dryRun: true });
+
+    expect(success).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("x_test_app"));
+    warnSpy.mockRestore();
+  });
+
+  it("never swaps scopes in a dry run, even with swapScopes", async () => {
+    checkScopeMock.mockResolvedValue({ match: true } as Awaited<
+      ReturnType<typeof AppUtils.checkScope>
+    >);
+    await scopeCheck(jest.fn(), true, { dryRun: true });
+    expect(checkScopeMock).toHaveBeenCalledWith(false);
+  });
+
+  it("still refuses a scope mismatch outside a dry run", async () => {
+    checkScopeMock.mockResolvedValue({ match: false } as Awaited<
+      ReturnType<typeof AppUtils.checkScope>
+    >);
+    const success = jest.fn();
+    await scopeCheck(success, false, { dryRun: false });
+    expect(success).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("resolveInstanceProfile", () => {

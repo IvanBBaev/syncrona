@@ -224,7 +224,7 @@ module.exports = {
     './src/envFile.ts': { lines: 96, branches: 80 }, // measured 100.00 / 85.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 94, branches: 82 }, // measured 97.72 / 86.66
-    './src/commandHelpers.ts': { lines: 92, branches: 67 }, // measured 95.83 / 73.17
+    './src/commandHelpers.ts': { lines: 92, branches: 70 }, // measured 96.05 / 77.08
     './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.34 / 87.61
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 91.42

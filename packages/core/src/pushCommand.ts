@@ -1322,5 +1322,5 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         await releaseCollaborationLock();
       }
     }
-  }, args.scopeSwap);
+  }, args.scopeSwap, { dryRun: args.dryRun === true });
 }

@@ -611,5 +611,5 @@ export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
       process.exitCode = 1;
     }
     logPushResults(pushResults);
-  });
+  }, false, { dryRun: args.dryRun === true });
 }

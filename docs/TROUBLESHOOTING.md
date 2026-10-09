@@ -76,7 +76,7 @@ as network problems.
 | Saving an existing file does nothing, silently | The file is outside `sourceDirectory`, or an exclude rule filters its table/field. | Check `sourceDirectory` in `sync.config.js` and the effective excludes via `syncrona config show-defaults`; run with `--log-level debug` to see what the watcher sees. |
 | Saves push, but the built output is wrong | The wrong rule matches — the **first** matching rule in `rules` wins, so a broad pattern can shadow a specific one. | Run `syncrona build --check-config` to detect shadowed rules; reorder `rules`. |
 | New instance records take long to appear during dev | Manifest polling runs on `refreshInterval` (default 30 s). | Lower `refreshInterval`, pass `--refresh-interval <s>`, or set `0` to disable polling and refresh manually. Overlapping refreshes are skipped by design — slow instances just refresh less often. |
-| Push rejected due to scope mismatch | Your session's current application scope on the instance differs from the file's scope. | Push with `--scope-swap` to switch the session scope automatically, or fix the scope in the instance UI. |
+| Push rejected due to scope mismatch | Your session's current application scope on the instance differs from the file's scope. | Push with `--scope-swap` to switch the session scope automatically, or fix the scope in the instance UI. `--dry-run` only warns about the mismatch and previews anyway, without swapping. |
 
 ## Build rules (`rules` in `sync.config.js`)
 

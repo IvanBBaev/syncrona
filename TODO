@@ -40,9 +40,11 @@ mocked tests. These items close what it deliberately left open.
     describes the POST). Still open: every write path above.
   - Found live: `push --dry-run` refuses on a user/project scope mismatch (exit 1)
     before it previews anything, so a preview needs `--scopeSwap`, which writes
-    the user's scope preference. A poll of an unknown progress id reports
-    `outcome: "incomplete"` from `sync_cicd_run` but "failed" from the CLI (both
-    exit 1).
+    the user's scope preference. Fixed: a dry run (`push`, `deploy`) now warns on a
+    scope mismatch, previews anyway and never swaps.
+  - Found live: a poll of an unknown progress id reports `outcome: "incomplete"`
+    from `sync_cicd_run` but "failed" from the CLI (both exit 1). Fixed: the CLI
+    error line now reads `cicd <action> incomplete:`, as `--json` does.
 - [x] **SDK-F2. Composite data-model documents** — one parent-plus-children
   document per table (table, columns, choices) on top of the independent
   sidecar records shipped in 1.1.0; push must stay idempotent and ordered.
