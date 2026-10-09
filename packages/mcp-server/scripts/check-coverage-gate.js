@@ -248,7 +248,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/inputValidation.js', line: 97, branch: 93 }, // measured 99.42 / 96.15
   // sync_cicd_run installs, publishes and rolls back applications on the instance;
   // a lost branch here reports a failed or unknown run as succeeded.
-  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 96.83
+  { pattern: 'dist/handlers/insightCicdRun.js', line: 97, branch: 89 }, // measured 100.00 / 96.92
   // The audit trail is the tamper-evident record; a lost branch here is an event
   // that silently is not written.
   // WP-M1 moved the secret-detection helpers out to @syncrona/redaction (-117
@@ -323,7 +323,7 @@ const MODULE_FLOORS = [
   // times this module split — and 289/309 is the only pair that both renders 93.53
   // and moves numerator and denominator together the way an extra counted range
   // does (288/308 renders 93.51, 290/310 renders 93.55).
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.51 (also 99.05 / 93.53: V8 range granularity on ubuntu, 288/308 vs 289/309 branches, same uncovered lines 432-436 441-442 832 1032-1033, one extra covered function range at 98.48 against darwin's 96.97)
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.05 / 93.63
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
@@ -342,7 +342,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // SDK-F6: the Fluent build resolves a caller-supplied project path against the
   // workspace (symlinks included) and swaps the process console while it runs.
-  { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 99.52 / 93.27
+  { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.75
   // REV-213: process-lifetime state and on-disk telemetry. None of these three had a
   // named floor before, and each just rose a long way — the semantic index cache from
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
