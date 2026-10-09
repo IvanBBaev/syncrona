@@ -750,6 +750,47 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(errors[1]).not.toContain("--native");
   });
 
+  it.each(["api-key", "mutual-TLS"])(
+    "falls back to native for plain types with a %s profile when the SDK is missing, as --dry-run reports",
+    async (method) => {
+      const { FluentNotInstalledError } = await import("../fluentCommand.js");
+      const { rec, deps } = harness({ credential: { kind: "unsupported", method } });
+      const loadFluent = async () => Promise.reject(new FluentNotInstalledError());
+      expect(await run({ action: "types", table: "incident", dryRun: true, json: true }, { ...deps, loadFluent })).toBe(0);
+      expect(JSON.parse(rec.written[0]).method).toBe("nativeTypes");
+      expect(await run({ action: "types", table: "incident" }, { ...deps, loadFluent })).toBe(0);
+      expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
+      expect(rec.calls).toEqual([]);
+      expect(errors).toEqual([]);
+    }
+  );
+
+  it("falls back to native with an unsupported profile when the adapter reports the SDK missing", async () => {
+    const sdkMissingError = () => Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
+    const { rec, deps } = harness({
+      credential: { kind: "unsupported", method: "api-key" },
+      engine: {
+        sdkVersion: async () => {
+          throw sdkMissingError();
+        },
+      },
+    });
+    expect(await run({ action: "types", table: "incident" }, deps)).toBe(0);
+    expect(rec.generated[0].options).toEqual({ tables: ["incident"] });
+    expect(rec.authInputs).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  it("still refuses an unsupported profile for SDK-only types when the SDK is missing", async () => {
+    const { FluentNotInstalledError } = await import("../fluentCommand.js");
+    const { rec, deps } = harness({ credential: { kind: "unsupported", method: "api-key" } });
+    const loadFluent = jest.fn(async () => Promise.reject(new FluentNotInstalledError()));
+    expect(await run({ action: "types", scripts: true }, { ...deps, loadFluent })).toBe(1);
+    expect(errors[0]).toContain("cannot use a api-key profile");
+    expect(loadFluent).not.toHaveBeenCalled();
+    expect(rec.generated).toEqual([]);
+  });
+
   it("--dry-run reports the native generator when the adapter is not installed, without credentials", async () => {
     const { FluentNotInstalledError } = await import("../fluentCommand.js");
     const { rec, deps } = harness();

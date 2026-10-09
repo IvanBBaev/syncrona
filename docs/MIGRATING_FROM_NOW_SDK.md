@@ -135,7 +135,8 @@ The SDK and syncrona authenticate differently:
     that contacts the instance (`install`, `status`, `types`, `dependencies`,
     `init --from`, and the instance-side `transform` modes), with an error that
     names the reason. The exception is `fluent types --native`, which reads the
-    Table API with syncrona's own client and accepts every profile. The local actions (`build`, `pack`, `run`, plain `init`,
+    Table API with syncrona's own client and accepts every profile, as does a
+    plain `fluent types` that falls back to it because the SDK is not installed. The local actions (`build`, `pack`, `run`, plain `init`,
     `transform --paths`) need no credentials at all.
 - **One store for everything.** A login made with `syncrona login` serves the
   file-based commands, `query`, `cicd`, `fluent`, `mirror` and the MCP server.
