@@ -413,7 +413,11 @@ async function cicdCall(
 ): Promise<JsonObject> {
   let response: Awaited<ReturnType<typeof snRequest>>;
   try {
-    response = await snRequest(method, endpoint, undefined, budget.requestTimeout());
+    // Sent once, like core's axios client: the poll loop owns every retry, one
+    // pollMs apart, so a persistent failure costs the same requests on both sides.
+    response = await snRequest(method, endpoint, undefined, budget.requestTimeout(), undefined, {
+      retryTransient: false,
+    });
   } catch (err) {
     if (isRedirectLoopError(err)) {
       // Same text as core's redirectLoopError.
@@ -466,19 +470,21 @@ async function cicdCall(
 
 /**
  * Consecutive failed progress polls tolerated before the run is reported as
- * incomplete. `snRequest` already retries a GET for well under a second; this
- * rides out a longer blip, one `pollMs` apart (same limit as core's `syncrona cicd`).
+ * incomplete. Each poll is one request (`snRequest` does not retry it), so this
+ * is the only retry, one `pollMs` apart: the same limit and the same request
+ * count as core's `syncrona cicd`.
  */
 export const CICD_MAX_POLL_FAILURES = 3;
 
 /**
- * No response, 408, 429 and 5xx are worth another poll (core's rule); a 3xx,
- * auth, 404, any other 4xx, non-JSON and HTML answers, and a redirect loop are not.
+ * No response, 408, 425, 429 and 5xx are worth another poll (core's rule); a
+ * 3xx, auth, 404, any other 4xx, non-JSON and HTML answers, and a redirect loop
+ * are not.
  */
 function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdRunIncomplete) {
     const status = err.httpStatus;
-    return status === 408 || status === 429 || (status !== undefined && status >= 500);
+    return status === 408 || status === 425 || status === 429 || (status !== undefined && status >= 500);
   }
   return true;
 }

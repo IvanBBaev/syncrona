@@ -1047,14 +1047,27 @@ export async function getCurrentScopeWithFallback(
   return snScopedApiRequest("GET", "sinc/getCurrentScope", undefined, timeoutMs, projectDir);
 }
 
+/** Per-call transport options for {@link snRequest} / {@link snRequestWithConfig}. */
+export interface SnRequestOptions {
+  /**
+   * Whether a transient failure (a retryable status, a network error, a failed
+   * auth-header build) is re-sent here, a few sub-second backoffs apart.
+   * Default true. A caller with its own retry loop passes false so the request
+   * is sent once, like core's axios client, and its loop owns every retry. The
+   * OAuth 401 token refresh is not a transient retry and still happens.
+   */
+  retryTransient?: boolean;
+}
+
 export async function snRequest(
   method: string,
   endpoint: string,
   body: unknown,
   timeoutMs: number,
-  projectDir: string = process.cwd()
+  projectDir: string = process.cwd(),
+  options: SnRequestOptions = {}
 ): Promise<{ status: number; data: unknown; text: string }> {
-  return snRequestWithConfig(getServiceNowConfig(projectDir), method, endpoint, body, timeoutMs);
+  return snRequestWithConfig(getServiceNowConfig(projectDir), method, endpoint, body, timeoutMs, options);
 }
 
 export async function snRequestWithConfig(
@@ -1062,8 +1075,10 @@ export async function snRequestWithConfig(
   method: string,
   endpoint: string,
   body: unknown,
-  timeoutMs: number
+  timeoutMs: number,
+  options: SnRequestOptions = {}
 ): Promise<{ status: number; data: unknown; text: string }> {
+  const retryTransient = options.retryTransient !== false;
   const { instance } = config;
   const baseUrl = instanceToBaseUrl(instance);
   const startedAt = Date.now();
@@ -1110,7 +1125,7 @@ export async function snRequestWithConfig(
       authHeaders = await buildAuthHeaders();
     } catch (error) {
       lastError = error;
-      if (attempt >= MAX_REQUEST_ATTEMPTS) {
+      if (attempt >= MAX_REQUEST_ATTEMPTS || !retryTransient) {
         throw error;
       }
       await sleep(Math.min(BASE_RETRY_DELAY_MS * 2 ** (attempt - 1), 800));
@@ -1167,6 +1182,7 @@ export async function snRequestWithConfig(
       // would double-apply the write. A non-idempotent method returns its
       // response to the caller unretried. (ERR-1)
       if (
+        retryTransient &&
         attempt < MAX_REQUEST_ATTEMPTS &&
         shouldRetryStatus(response.status) &&
         isIdempotent
@@ -1191,7 +1207,7 @@ export async function snRequestWithConfig(
       const neverReachedServer = PRE_SEND_ERROR_CODES.has(
         preSendErrorCode(error) ?? ""
       );
-      const mayRetry = isIdempotent || neverReachedServer;
+      const mayRetry = retryTransient && (isIdempotent || neverReachedServer);
       if (attempt >= MAX_REQUEST_ATTEMPTS || !mayRetry) {
         throw error;
       }

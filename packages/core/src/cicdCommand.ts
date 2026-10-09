@@ -21,7 +21,7 @@
  *   403, 404, ...) fails at once, naming the status and the request, and so
  *   does a 3xx answer, reported as unexpected; an HTML page in place of JSON
  *   and a redirect loop fail at once too, as a session/authentication
- *   redirect; no response, 408, 429 and 5xx are retried a few times; a timeout
+ *   redirect; no response, 408, 425, 429 and 5xx are retried a few times; a timeout
  *   says where to check the tracker and how to resume waiting for it.
  * - 2 — the work ran to its end and the instance reported a failure: ATF tests
  *   failed or errored, or the tracker ended in error or was cancelled.
@@ -434,7 +434,7 @@ function httpStatusOf(err: unknown): number | undefined {
 
 /**
  * A poll failure worth retrying: no response at all (a reset or refused
- * connection, a DNS blip), 408 (the request timed out), 429, or a 5xx. Every
+ * connection, a DNS blip), 408 (the request timed out), 425 (too early), 429, or a 5xx. Every
  * other status — 400, 401, 403, 404 and the rest of 4xx, and a 3xx redirect —
  * is the instance's settled answer to this request, and asking again until the
  * timeout would only delay the same failure.
@@ -443,7 +443,7 @@ function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdCliError) return false;
   const status = httpStatusOf(err);
   if (status === undefined) return true;
-  return status === 408 || status === 429 || status >= 500;
+  return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 /** The `Location` header of a redirect answer, when the error carries one. */
