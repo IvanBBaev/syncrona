@@ -18,9 +18,10 @@
  *   network or HTTP failure (including the instance rejecting the dispatch, and
  *   a 403 for a missing `sn_cicd` role), or the poll timing out. The answer to
  *   "did it pass?" is unknown. A poll answered with a client error (400, 401,
- *   403, 404, ...) fails at once, naming the status and the request; no
- *   response, 429 and 5xx are retried a few times; a timeout says where to
- *   check the tracker and how to resume waiting for it.
+ *   403, 404, ...) fails at once, naming the status and the request, and so
+ *   does a redirect (3xx), reported as unexpected; no response, 408, 429 and
+ *   5xx are retried a few times; a timeout says where to check the tracker and
+ *   how to resume waiting for it.
  * - 2 — the work ran to its end and the instance reported a failure: ATF tests
  *   failed or errored, or the tracker ended in error or was cancelled.
  *
@@ -360,15 +361,40 @@ function httpStatusOf(err: unknown): number | undefined {
 
 /**
  * A poll failure worth retrying: no response at all (a reset or refused
- * connection, a DNS blip), 429, or a 5xx. Every other status — 400, 401, 403,
- * 404 and the rest of 4xx — is the instance's settled answer to this request,
- * and asking again until the timeout would only delay the same failure.
+ * connection, a DNS blip), 408 (the request timed out), 429, or a 5xx. Every
+ * other status — 400, 401, 403, 404 and the rest of 4xx, and a 3xx redirect —
+ * is the instance's settled answer to this request, and asking again until the
+ * timeout would only delay the same failure.
  */
 function isTransientPollError(err: unknown): boolean {
   if (err instanceof CicdCliError) return false;
   const status = httpStatusOf(err);
   if (status === undefined) return true;
-  return status === 429 || status >= 500;
+  return status === 408 || status === 429 || status >= 500;
+}
+
+/** The `Location` header of a redirect answer, when the error carries one. */
+function redirectLocationOf(err: unknown): string | undefined {
+  const headers = asObject(asObject(asObject(err)?.response)?.headers);
+  return nonEmptyString(headers?.location) ?? nonEmptyString(headers?.Location);
+}
+
+/**
+ * Why a permanent poll status is not retried. A 3xx is not a client error:
+ * sn_cicd answers JSON directly, so a redirect almost always means an SSO or
+ * login page, or a proxy in front of the instance.
+ */
+function permanentPollReason(status: number | undefined, err: unknown): string {
+  if (status !== undefined && status >= 300 && status < 400) {
+    const location = redirectLocationOf(err);
+    return (
+      `answered HTTP ${status}, an unexpected redirect${location ? ` to ${location}` : ""} ` +
+      "(sn_cicd answers JSON directly, so this usually means an SSO/login page or a proxy in front of the instance); " +
+      "a redirect is not followed or retried."
+    );
+  }
+  const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
+  return `answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried.`;
 }
 
 /** What a permanent poll status most likely means, for the error message. */
@@ -440,11 +466,7 @@ async function pollProgress(
       failures += 1;
       const status = httpStatusOf(err);
       if (!isTransientPollError(err)) {
-        const hint = status === undefined ? undefined : PERMANENT_POLL_HINTS[status];
-        throw new CicdPollError(
-          `${request} answered HTTP ${String(status)}${hint ? ` (${hint})` : ""}; a client error is not retried. ${errorText(err)}`,
-          err
-        );
+        throw new CicdPollError(`${request} ${permanentPollReason(status, err)} ${errorText(err)}`, err);
       }
       if (deps.now() - startedAt >= timeoutMs) {
         throw timedOut(err);
