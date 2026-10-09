@@ -859,7 +859,9 @@ given table records, list them explicitly — that replaces discovery for that
 table, so it can also re-add a column the default rules exclude. It does not lift
 the unsafe-type rule: a column the list names whose dictionary type is a
 credential, journal or binary (`password2`, `journal`, `image`, …) is dropped with
-a warning naming the table and column, exactly as an `includes` entry is. When the
+a warning naming the table and column, exactly as an `includes` entry is. A
+dot-walked name (`manager.user_password`) is always dropped with a warning: it
+reads another record's column, which this table's dictionary cannot type. When the
 types cannot be read (a user without `sys_dictionary` access, which is what the
 explicit list is for), the list is kept as written and the run warns that its
 columns went unchecked.
