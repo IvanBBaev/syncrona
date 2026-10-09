@@ -2072,6 +2072,22 @@ is incomplete), `dist/metricsStore.js` (2 readings; `41-42`). None carries a flo
 today, so none reddens the gate; adding a floor + annotation to any of them
 without first driving those arms would produce permanent red.
 
+Done (2026-10-10). The cause was Node 22's coverage merge, not load. Each test
+child writes its own V8 coverage file and the parent merges them in directory-read
+order; `mergeCoverageRanges` drops a never-run range nested in a block whenever it
+meets a process that never entered that block, so an unexercised arm shows as
+uncovered in some orders and vanishes in others (replaying the merge over the raw
+files in random orders reproduced the readings above exactly). The moving arms in
+`graph.ts` (`renderDependencyGraphMermaid`) and `scopeKnowledge.ts`
+(`summarizeTableImpactPaths`) were unreachable checks and are removed with
+behaviour unchanged; `graphMermaidSelection.test.js` and
+`scopeKnowledgeSparseInput.test.js` drive the remaining arms. Replay over the new
+raw data gives one reading per file across 500 orders, and four sequential
+`test:coverage:mcp` runs printed identical rows, so both files now carry floors in
+`MODULE_FLOORS`. `metricsStore.js` had already been settled by REV-213 (one
+reading; only the deliberately unreachable outer catch stays uncovered) and keeps
+its floor.
+
 ---
 
 ## Wave — REV-210..213: an adversarial pass that went looking for data loss (2026-08-09)

@@ -324,21 +324,29 @@ export function summarizeTableImpactPaths(
     }))
     .filter((edge) => edge.from.length > 0 && edge.to.startsWith("table:"));
 
+  // One pass collects every table each producer touches and keeps, per edge, a
+  // reference to that producer's list. The lists are complete before the path
+  // pass below reads them, so that pass needs no "unknown producer" fallback.
   const tableFromByProducer = new Map<string, string[]>();
+  const namedTableEdges: Array<{
+    edge: (typeof toTableEdges)[number];
+    targetTable: string;
+    producerTables: string[];
+  }> = [];
   for (const edge of toTableEdges) {
-    if (!edge.to.startsWith("table:")) {
-      continue;
-    }
-    const producer = edge.from;
     const targetTable = edge.to.slice("table:".length);
     if (!targetTable) {
       continue;
     }
-    const existing = tableFromByProducer.get(producer) || [];
-    if (!existing.includes(targetTable)) {
-      existing.push(targetTable);
-      tableFromByProducer.set(producer, existing);
+    let producerTables = tableFromByProducer.get(edge.from);
+    if (!producerTables) {
+      producerTables = [];
+      tableFromByProducer.set(edge.from, producerTables);
     }
+    if (!producerTables.includes(targetTable)) {
+      producerTables.push(targetTable);
+    }
+    namedTableEdges.push({ edge, targetTable, producerTables });
   }
 
   const aggregates = new Map<string, {
@@ -384,19 +392,13 @@ export function summarizeTableImpactPaths(
     aggregates.set(key, existing);
   };
 
-  for (const edge of toTableEdges) {
-    const targetTable = edge.to.slice("table:".length);
-    if (!targetTable) {
-      continue;
-    }
-
+  for (const { edge, targetTable, producerTables } of namedTableEdges) {
     if (edge.from.startsWith("table:")) {
       const sourceTable = edge.from.slice("table:".length);
       upsertPath(sourceTable, targetTable, edge.from, edge.why, true);
       continue;
     }
 
-    const producerTables = tableFromByProducer.get(edge.from) || [];
     for (const sourceTable of producerTables) {
       upsertPath(sourceTable, targetTable, edge.from, edge.why, false);
     }
