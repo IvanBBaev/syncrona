@@ -422,19 +422,31 @@ const includedFieldNames = (includes: Sync.TablePropMap, tableName: string): str
     : [];
 
 /**
- * `table.column` keys already warned about in this build — dropped as unsafe,
- * or kept without a readable type. A column judged on the file-field path is
- * judged again by the data-field fallback the same table may fall through to,
- * and `dev` rebuilds on every interval — one line per column per build is the
- * signal, more is noise. Cleared with the hierarchy memo
+ * What selected a column the type check judged: a field-level `includes` entry
+ * or an explicit `tableOptions.<table>.metaFields` list. Both are the operator
+ * naming a column, and neither lifts the rule that an unsafe value never
+ * reaches the working tree; the warning names which setting to fix.
+ */
+type ColumnSelector = "includes" | "metaFields";
+
+/**
+ * `selector:table.column` keys already warned about in this build — dropped as
+ * unsafe, or kept without a readable type. A column judged on the file-field
+ * path is judged again by the data-field fallback the same table may fall
+ * through to, and `dev` rebuilds on every interval — one line per column per
+ * build is the signal, more is noise. Cleared with the hierarchy memo
  * (resetTableHierarchyCache), i.e. once per build.
  */
 const warnedIncludes = new Set<string>();
 
 /** The entries of `columns` not yet warned about for `tableName`, now marked. */
-const claimIncludeWarnings = (tableName: string, columns: string[]): string[] =>
+const claimIncludeWarnings = (
+  tableName: string,
+  columns: string[],
+  selector: ColumnSelector = "includes"
+): string[] =>
   columns.filter((column) => {
-    const key = `${tableName}.${column}`;
+    const key = `${selector}:${tableName}.${column}`;
     if (warnedIncludes.has(key)) {
       return false;
     }
@@ -442,12 +454,17 @@ const claimIncludeWarnings = (tableName: string, columns: string[]): string[] =>
     return true;
   });
 
-const warnUnsafeInclude = (tableName: string, column: string, unsafeType: string): void => {
-  if (claimIncludeWarnings(tableName, [column]).length === 0) {
+const warnUnsafeInclude = (
+  tableName: string,
+  column: string,
+  unsafeType: string,
+  selector: ColumnSelector = "includes"
+): void => {
+  if (claimIncludeWarnings(tableName, [column], selector).length === 0) {
     return;
   }
   logger.warn(
-    `Table ${tableName}: ignoring the includes entry for column "${column}" — ` +
+    `Table ${tableName}: ignoring the ${selector} entry for column "${column}" — ` +
       `its dictionary type is ${unsafeType}, and a value of that type is never written to the working tree.`
   );
 };
@@ -460,13 +477,19 @@ const warnUnsafeInclude = (tableName: string, column: string, unsafeType: string
  * would make `includes` unusable on an instance that restricts sys_dictionary
  * reads — but never silent.
  */
-const warnUntypedIncludes = (tableName: string, columns: string[], reason: string): void => {
-  const fresh = claimIncludeWarnings(tableName, columns);
+const warnUntypedIncludes = (
+  tableName: string,
+  columns: string[],
+  reason: string,
+  selector: ColumnSelector = "includes"
+): void => {
+  const fresh = claimIncludeWarnings(tableName, columns, selector);
   if (fresh.length === 0) {
     return;
   }
+  const what = selector === "includes" ? "included column(s)" : "metaFields column(s)";
   logger.warn(
-    `Table ${tableName}: could not read the dictionary type of included column(s) ` +
+    `Table ${tableName}: could not read the dictionary type of ${what} ` +
       `${fresh.join(", ")} (${reason}); they are kept without the unsafe-type check.`
   );
 };
@@ -742,6 +765,58 @@ interface MetaFieldSet {
 const NO_META_FIELDS: MetaFieldSet = { fields: [], readOnly: [] };
 
 /**
+ * The entries of an explicit `metaFields` list that may be written, judged by
+ * classifyColumn against their dictionary types — the includes rule
+ * (appendIncludedFields) applied to the sidecar: an unsafe column (credential,
+ * journal, binary) is dropped with a warning naming the table and column, and
+ * one whose type cannot be read is kept with a warning. A failed lookup keeps
+ * every entry, warned: an explicit list is the documented remedy for a user
+ * who cannot read sys_dictionary, and failing it closed would take that remedy
+ * away. Order is preserved; the caller sorts.
+ */
+const withoutUnsafeMetaFields = async (
+  client: SNClient,
+  tableName: string,
+  columns: string[],
+  hierarchyTableNames: string[] | undefined
+): Promise<string[]> => {
+  if (columns.length === 0) {
+    return columns;
+  }
+  let types: Map<string, string>;
+  let untypedReason = NO_DICTIONARY_TYPE;
+  try {
+    let tables = hierarchyTableNames;
+    if (!tables) {
+      const hierarchy = await readTableHierarchy(client, tableName);
+      tables = hierarchy.tables;
+      untypedReason = untypedReasonFor(hierarchy);
+    }
+    const tableNameQuery = tables.map((name) => `name=${name}`).join("^OR");
+    types = await readColumnTypes(client, tableName, tableNameQuery, columns);
+  } catch (e) {
+    warnUntypedIncludes(tableName, columns, e instanceof Error ? e.message : String(e), "metaFields");
+    return columns;
+  }
+  const kept: string[] = [];
+  const untyped: string[] = [];
+  for (const column of columns) {
+    const type = types.get(column);
+    const verdict = classifyColumn(tableName, column, type);
+    if (verdict === "unsafe") {
+      warnUnsafeInclude(tableName, column, type as string, "metaFields");
+      continue;
+    }
+    if (verdict === "unknown") {
+      untyped.push(column);
+    }
+    kept.push(column);
+  }
+  warnUntypedIncludes(tableName, untyped, untypedReason, "metaFields");
+  return kept;
+};
+
+/**
  * What getMetaFieldsForTable returns when the dictionary read FAILED, as
  * opposed to a table that genuinely has no sidecar column. Same shape as
  * NO_META_FIELDS (callers that only need the lists see no difference); told
@@ -775,8 +850,14 @@ async function getMetaFieldsForTable(
   // the operator decided, so a column they named is a column they intend to
   // write. (The instance still has the final say — the Table API drops a
   // read-only value, and the push reports what it sent, not what stuck.)
+  //
+  // What it does NOT replace is the unsafe-type rule: a credential, journal or
+  // binary column named here is dropped with a warning, exactly as an
+  // `includes` entry is (withoutUnsafeMetaFields).
   if (Array.isArray(tableOptions?.metaFields)) {
-    return { fields: dropFileFields(tableOptions.metaFields).sort(), readOnly: [] };
+    const named = dropFileFields(tableOptions.metaFields);
+    const fields = await withoutUnsafeMetaFields(client, tableName, named, hierarchyTableNames);
+    return { fields: fields.sort(), readOnly: [] };
   }
 
   try {
@@ -2192,6 +2273,32 @@ export async function applyIncludeTypeRulesToManifest(
 }
 
 // ─── Public: buildBulkDownloadFromTableAPI ───────────────────────────────────
+
+/**
+ * The dictionary types of a manifest's `metaFields` for `tableName`, for the
+ * sidecar writer's last unsafe-type check (serializeMetaFields). The manifest
+ * list was judged when it was built; this guards a hand-edited or older one.
+ * Best effort: a failed lookup answers undefined and the sidecar is written
+ * from the list as recorded — failing the download over a defence-in-depth
+ * read would turn a restricted sys_dictionary into a broken refresh.
+ */
+const readSidecarColumnTypes = async (
+  client: SNClient,
+  tableName: string,
+  columns: string[]
+): Promise<Map<string, string> | undefined> => {
+  try {
+    const hierarchy = await readTableHierarchy(client, tableName);
+    const tableNameQuery = hierarchy.tables.map((name) => `name=${name}`).join("^OR");
+    return await readColumnTypes(client, tableName, tableNameQuery, columns);
+  } catch (e) {
+    logger.debug(
+      `Table ${tableName}: could not read the sidecar column types ` +
+        `(${e instanceof Error ? e.message : String(e)}); writing the manifest's metaFields as recorded.`
+    );
+    return undefined;
+  }
+};
 // Full equivalent of SincUtilsMS.processMissingFiles() using only Table API
 
 /**
@@ -2253,6 +2360,9 @@ export async function buildBulkDownloadFromTableAPI(
       }
       const metaFields = metaFieldsByTable?.[tableName] ?? [];
       const wantMeta = metaRequested && metaFields.length > 0;
+      const metaColumnTypes = wantMeta
+        ? await readSidecarColumnTypes(client, tableName, metaFields)
+        : undefined;
 
       // Same field list as the manifest path so record names stay in parity —
       // plus the sidecar columns, which only this path (not the manifest build)
@@ -2383,7 +2493,7 @@ export async function buildBulkDownloadFromTableAPI(
             files.push({
               name: META_FILE_NAME,
               type: META_FILE_TYPE,
-              content: serializeMetaFields(row, metaFields, tableName),
+              content: serializeMetaFields(row, metaFields, tableName, metaColumnTypes),
             });
           }
 

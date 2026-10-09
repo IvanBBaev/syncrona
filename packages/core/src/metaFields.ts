@@ -455,13 +455,26 @@ export const metaValueText = (raw: unknown): string => {
  * Table API gives no column ordering guarantee, so without the sort a re-pull of
  * an unchanged record would still produce a diff and a workspace that re-pulls on
  * every refresh would never stop churning git.
+ *
+ * `columnTypes` (column → `sys_dictionary.internal_type`), when the caller has
+ * it, is the last line of the unsafe-type rule: a column classifyColumn rules
+ * unsafe is never written, whatever listed it. The manifest's `metaFields` is
+ * normally filtered already, but it is a committed, hand-editable file, and a
+ * list written before the explicit-list filter existed can still name a
+ * credential column.
  */
 export const serializeMetaFields = (
   row: Record<string, unknown>,
   fields: string[],
-  table?: string
+  table?: string,
+  columnTypes?: ReadonlyMap<string, string>
 ): string => {
   const secret = new Set(metaSecretColumns(table, row));
+  for (const [column, type] of columnTypes ?? []) {
+    if (classifyColumn(table, column, type) === "unsafe") {
+      secret.add(column);
+    }
+  }
   // Null-prototype: `body["__proto__"] = "x"` on a plain object hits the
   // Object.prototype setter, which ignores a non-object — no own property, and
   // the column vanishes from a file whose whole contract is "every tracked
