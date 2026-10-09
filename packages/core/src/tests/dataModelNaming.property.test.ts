@@ -14,6 +14,9 @@ import fc from "fast-check";
 import { buildManifestFromTableAPI } from "../manifestBuilder.js";
 import { logger } from "../Logger.js";
 
+// fast-check 4 dropped `hexaString`; a hex-unit string is the portable spelling.
+const HEX_CHAR = fc.constantFrom(..."0123456789abcdef");
+
 type Row = Record<string, string>;
 
 const TABLE = "sys_choice";
@@ -67,7 +70,7 @@ const build = async (rows: Row[]): Promise<Record<string, string>> => {
 
 // A deliberately tiny alphabet so collisions — exact and case-only — are common.
 const choiceRow = fc.record({
-  sys_id: fc.hexaString({ minLength: 6, maxLength: 6 }),
+  sys_id: fc.string({ unit: HEX_CHAR, minLength: 6, maxLength: 6 }),
   name: fc.constantFrom("incident", "x_demo_task"),
   element: fc.constantFrom("state", "State", "priority", ""),
   value: fc.constantFrom("1", "2", ""),

@@ -13,7 +13,7 @@ import { synthesizeFilename, checkRuleOrder } from "../config.js";
 const LIT_CHARS = "abAB01._-".split("");
 // A literal safe to embed in a suffix-anchored pattern, matching the shape
 // checkRuleOrder actually feeds synthesizeFilename.
-const literal = fc.stringOf(fc.constantFrom(...LIT_CHARS), { minLength: 1, maxLength: 10 });
+const literal = fc.string({ unit: fc.constantFrom(...LIT_CHARS), minLength: 1, maxLength: 10 });
 const suffixRule = literal.map((lit) => ({ match: new RegExp(`${lit.replace(/\./g, "\\.")}$`) }));
 
 describe("synthesizeFilename (property, #20)", () => {
