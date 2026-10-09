@@ -930,7 +930,7 @@ export const extendsSysMetadata = async (
       typeof parent !== "string"
         ? `its super_class.name is ${describeReceived(row, "super_class.name")}, not a string`
         : "name" in row && row.name !== current
-          ? `it is named ${describeReceived(row, "name")}`
+          ? `its name is ${describeReceived(row, "name")}`
           : undefined;
     // The typeof test repeats the first arm only so the compiler narrows `parent`.
     if (mismatch !== undefined || typeof parent !== "string") {
