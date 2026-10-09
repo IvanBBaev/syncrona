@@ -198,9 +198,14 @@ function buildCorpus() {
       expectResponse: true,
     },
     {
+      // `JSON.parse` makes `__proto__` an own key here. zod before 4.6 did not see it, so
+      // the SDK answered the ping; zod 4.6 reports it as an unrecognized key and the
+      // strict envelope schema rejects the frame, which is then dropped like any other
+      // schema-invalid envelope above. Either is fine — liveness and the pollution
+      // check are what this frame guards.
       name: "proto-at-envelope-root",
       raw: '{"jsonrpc":"2.0","id":1017,"method":"ping","__proto__":{"polluted":true}}',
-      expectResponse: true,
+      expectResponse: false,
     },
 
     // --- tools/call shapes the validator must reject ------------------------
