@@ -269,7 +269,7 @@ const MODULE_FLOORS = [
   // test moved the pair up: CI on the same commit then printed 92.20 on three jobs
   // and 92.24 on one, again with an identical uncovered-line list. The lower run is
   // 201/218 under lcov (twice, locally), so the higher run is 202/219.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.83 / 92.54
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.83 / 92.51 (also 96.83 / 92.54: V8 range granularity, 210/227 vs 211/228 branches, same uncovered lines 51-52 66-67 112-113 125 184-188 221-222 295-296 325-326 346-347 506-507 647-648 662-663 685-687)
   // Preflight, dry-run and the mutating-tool wrappers.
   // DX17 moved this file's sync.config.js parsing out to `workspaceLayout.js` (the
   // flat/record-folder layout seam), so `getSourceDirectory` is now a one-line
@@ -288,7 +288,7 @@ const MODULE_FLOORS = [
   // The flicker reappeared on the new counters during WP-8 (1 of 4 runs, no change
   // to toolService): 153/168 vs 153/167 branch ranges, the denominator growing alone
   // as before. Lower reading first, per the annotation contract.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.47 / 91.62
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.47 / 91.07 (also 92.47 / 91.62: V8 range granularity, 153/168 vs 153/167 branches, same uncovered lines 469-505 559-563 567-574 595 664)
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.
