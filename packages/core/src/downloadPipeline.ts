@@ -1026,6 +1026,19 @@ export const processMissingFiles = async (
     } as SN.MissingFileTableMap);
     await processTablesInManifest(filesToProcess, false);
 
+    // A skippable 400/403/404 leaves the table out of the fetched map entirely,
+    // and collectUnfetchedFields below only looks at records that did come back,
+    // so a table the instance refused outright was reported as a clean refresh.
+    // Same rule as downloadTablesWithResume: nothing fetched means incomplete.
+    const fetchedRecordCount = Object.keys(filesToProcess[table]?.records ?? {}).length;
+    if (Object.keys(missing[table]).length > 0 && fetchedRecordCount === 0) {
+      incompleteTables.push(table);
+      logger.warn(
+        `Table ${table} could not be fetched (inaccessible or empty response) — its missing file(s) were not downloaded.`
+      );
+      continue;
+    }
+
     // REV-140 applied to the refresh/repair path. downloadTablesWithResume
     // already refuses to checkpoint a table whose field the instance withheld,
     // but this loop wrote whatever came back and its callers reported success.

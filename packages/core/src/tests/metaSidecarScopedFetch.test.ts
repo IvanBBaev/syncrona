@@ -464,8 +464,22 @@ describe("refresh enriches the scoped manifest", () => {
     };
     getManifest.mockImplementation(async () => ({ scope: "x_demo", tables: {} }));
     getManifestApi.mockImplementation(async () => ({ data: { result: scoped } }));
+    // The instance returns the record it was asked for: an empty answer is a
+    // table refresh reports as incomplete, which is not what this test is about.
     getMissingFilesApi.mockImplementation(async () => ({
-      data: { result: { sys_script_include: { records: {} } } },
+      data: {
+        result: {
+          sys_script_include: {
+            records: {
+              IncludeA: {
+                name: "IncludeA",
+                sys_id: "rec-1",
+                files: [{ name: "script", type: "js", content: "gs.info('a');" }],
+              },
+            },
+          },
+        },
+      },
     }));
 
     const { syncManifest } = await import("../downloadPipeline.js");
