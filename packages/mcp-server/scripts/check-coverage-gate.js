@@ -288,7 +288,7 @@ const MODULE_FLOORS = [
   // The flicker reappeared on the new counters during WP-8 (1 of 4 runs, no change
   // to toolService): 153/168 vs 153/167 branch ranges, the denominator growing alone
   // as before. Lower reading first, per the annotation contract.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.44 / 91.07 (also 92.44 / 91.62: V8 range granularity, 153/168 vs 153/167 branches, covered count unchanged)
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.47 / 91.62
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.
