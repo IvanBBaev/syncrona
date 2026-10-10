@@ -105,7 +105,9 @@ export async function startWizard(): Promise<boolean> {
           default: false,
         },
       ]);
+      // Nothing was set up: a zero exit would let `init && refresh` go on.
       if (!tryManual) {
+        process.exitCode = 1;
         return false;
       }
       const { manualScope } = await inquirer.prompt<{ manualScope: string }>([
@@ -136,6 +138,7 @@ export async function startWizard(): Promise<boolean> {
     if (!man) {
       const selectedApp = await showAppList(apps);
       if (!selectedApp) {
+        process.exitCode = 1;
         return false;
       }
       const downloadedManifest = await downloadApp(selectedApp, client);

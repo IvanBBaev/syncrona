@@ -168,6 +168,8 @@ describe("REV-161 startWizard reports cancellation", () => {
     const completed = await startWizard();
 
     expect(completed).toBe(false);
+    // Nothing was set up, so `init && refresh` must not go on.
+    expect(process.exitCode).toBe(1);
     expect(mockLoadConfigs).not.toHaveBeenCalled();
   });
 });

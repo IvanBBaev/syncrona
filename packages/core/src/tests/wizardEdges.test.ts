@@ -139,6 +139,7 @@ function questionAt(call: number): Question {
 }
 
 beforeEach(() => {
+  process.exitCode = undefined;
   jest.clearAllMocks();
   mockGetEnvPath.mockReturnValue("/tmp/project/.env");
   mockGetManifest.mockReturnValue(undefined);
@@ -223,6 +224,7 @@ describe("startWizard prompts", () => {
 
     expect(questionAt(3).choices![0].value).toBe("");
     expect(mockProcessManifest).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
   it("treats a cancelled prompt as an abort: exit code 130 and no error banner", async () => {
@@ -353,4 +355,8 @@ describe("downloadApp edges", () => {
 
     expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith("x_new", client, {}, { allowEmpty: false });
   });
+});
+
+afterAll(() => {
+  process.exitCode = undefined;
 });
