@@ -127,7 +127,7 @@ beforeEach(async () => {
   mockGetIssue.mockResolvedValue(SAMPLE_ISSUE);
   mockJiraCredentialHealth.mockReturnValue("missing");
   mockSaveJiraCredentials.mockResolvedValue(undefined);
-  mockRemoveJiraCredentials.mockResolvedValue(undefined);
+  mockRemoveJiraCredentials.mockResolvedValue(true);
   mockRemoveAllJiraCredentials.mockResolvedValue(2);
   stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
 });
@@ -541,5 +541,36 @@ describe("jiraLogoutCommand", () => {
     expect(mockRemoveAllJiraCredentials).toHaveBeenCalled();
     expect(mockRemoveJiraCredentials).not.toHaveBeenCalled();
     expect(mockLoggerSuccess).toHaveBeenCalledWith(expect.stringContaining("2 profile(s)"));
+  });
+
+  it("does not claim a removal when the profile had no stored credentials", async () => {
+    mockRemoveJiraCredentials.mockResolvedValue(false);
+    await jiraLogoutCommand({ ...BASE_ARGS, profile: "nope" });
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith('No stored Jira credentials for profile "nope".');
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("reports the removed profile on success", async () => {
+    await jiraLogoutCommand({ ...BASE_ARGS, profile: "work" });
+    expect(mockLoggerSuccess).toHaveBeenCalledWith('Removed Jira credentials for profile "work".');
+  });
+
+  it("fails when the credential file could not be deleted", async () => {
+    mockRemoveJiraCredentials.mockRejectedValue(new Error("permission denied"));
+    await jiraLogoutCommand({ ...BASE_ARGS, profile: "work" });
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      'Could not remove Jira credentials for profile "work": permission denied'
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("fails --all when some profiles are still on disk", async () => {
+    mockRemoveAllJiraCredentials.mockRejectedValue(new Error("2 could not be removed"));
+    await jiraLogoutCommand({ ...BASE_ARGS, all: true });
+    expect(mockLoggerSuccess).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith("2 could not be removed");
+    expect(process.exitCode).toBe(1);
   });
 });

@@ -829,20 +829,41 @@ export async function removeJiraCredentials(profile?: string): Promise<boolean> 
   try {
     await fsp.unlink(filePath);
     return true;
-  } catch {
-    // not found (or unlink failed) — report nothing removed
-    return false;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      // Already gone — nothing was deleted, but the token is not on disk either.
+      return false;
+    }
+    // Any other errno means the encrypted token is STILL there; swallowing it
+    // would let `jira-logout` report a removal that never happened.
+    throw e;
   }
 }
 
-/** Remove every stored profile; returns the count actually deleted. */
+/**
+ * Remove every stored profile; returns the count actually deleted.
+ *
+ * Best-effort across profiles, but a file that could not be deleted is reported
+ * by throwing, so a caller can never announce a purge while tokens remain on disk.
+ */
 export async function removeAllJiraCredentials(): Promise<number> {
   const profiles = await listJiraProfiles();
   let removed = 0;
+  const failures: string[] = [];
   for (const profile of profiles) {
-    if (await removeJiraCredentials(profile)) {
-      removed += 1;
+    try {
+      if (await removeJiraCredentials(profile)) {
+        removed += 1;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      failures.push(`${profile} (${message})`);
     }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Removed Jira credentials for ${removed} profile(s), but ${failures.length} could not be removed and are still on disk: ${failures.join("; ")}`
+    );
   }
   return removed;
 }

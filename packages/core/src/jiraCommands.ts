@@ -332,12 +332,34 @@ export async function jiraLogoutCommand(
   setLogLevel(args);
 
   if (args.all) {
-    const count = await removeAllJiraCredentials();
+    let count: number;
+    try {
+      count = await removeAllJiraCredentials();
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e));
+      process.exitCode = 1;
+      return;
+    }
     logger.success(`Removed Jira credentials for ${count} profile(s).`);
     return;
   }
 
   const profile = (args.profile || "").trim() || "default";
-  await removeJiraCredentials(profile);
-  logger.success(`Removed Jira credentials for profile "${profile}".`);
+  let removed: boolean;
+  try {
+    removed = await removeJiraCredentials(profile);
+  } catch (e) {
+    logger.error(
+      `Could not remove Jira credentials for profile "${profile}": ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (removed) {
+    logger.success(`Removed Jira credentials for profile "${profile}".`);
+  } else {
+    logger.info(`No stored Jira credentials for profile "${profile}".`);
+  }
 }
