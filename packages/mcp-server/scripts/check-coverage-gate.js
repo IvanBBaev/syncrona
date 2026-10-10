@@ -355,7 +355,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.10 / 77.27
   // Anything that starts a process or a listener, plus the handlers that actually
   // mutate the instance.
-  { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.08 / 91.89
+  { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.19 / 91.89
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
   { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00

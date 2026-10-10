@@ -125,22 +125,28 @@ export function runCommand(
       }, GIVE_UP_MS);
     }, timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    // Decode through the streams' own UTF-8 decoder: converting each Buffer chunk
+    // on its own turned a multi-byte character that straddles a chunk boundary
+    // (Cyrillic, accented or CJK record names, emoji) into two U+FFFD characters.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
+    child.stdout.on("data", (chunk: string) => {
       if (stdoutTruncated) {
         return;
       }
-      stdout += chunk.toString();
+      stdout += chunk;
       if (stdout.length > MAX_OUTPUT_CHARS) {
         stdout = stdout.slice(0, MAX_OUTPUT_CHARS);
         stdoutTruncated = true;
       }
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr.on("data", (chunk: string) => {
       if (stderrTruncated) {
         return;
       }
-      stderr += chunk.toString();
+      stderr += chunk;
       if (stderr.length > MAX_OUTPUT_CHARS) {
         stderr = stderr.slice(0, MAX_OUTPUT_CHARS);
         stderrTruncated = true;

@@ -18,3 +18,17 @@ test('a child that reads stdin sees end-of-input instead of hanging until the ti
   assert.equal(result.exitCode, 0);
   assert.ok(Date.now() - started < 2500, 'answers before the timeout fires');
 });
+
+// Writes the two UTF-8 bytes of U+00E9 in separate writes, so they reach the
+// parent as separate chunks, on stdout and on stderr.
+const SPLIT_MULTIBYTE =
+  "const b=Buffer.from('\\u00e9','utf8');" +
+  'process.stdout.write(b.subarray(0,1));process.stderr.write(b.subarray(0,1));' +
+  'setTimeout(()=>{process.stdout.write(b.subarray(1));process.stderr.write(b.subarray(1));},100);';
+
+test('a multi-byte character split across chunks is decoded intact', async () => {
+  const result = await runCommand(process.execPath, ['-e', SPLIT_MULTIBYTE], 5000);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdout, 'é');
+  assert.equal(result.stderr, 'é');
+});
