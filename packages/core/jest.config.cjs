@@ -216,7 +216,7 @@ module.exports = {
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 98.30 / 93.17
+    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 97.12 / 91.88
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 94.98
     // Credentials: the keychain/file store and the auth-method picker.

@@ -962,13 +962,40 @@ export async function repairCommand(args: RepairCmdArgs): Promise<void> {
       if (prunable.length === 0) {
         logger.info(NOTHING_TO_PRUNE);
       } else if (confirmed) {
+        // The prompt can sit open for as long as the user likes, and the git
+        // evidence was taken before it: a file edited (or HEAD moved) while it
+        // waited was deleted on the strength of a check that no longer held.
+        // Ask git again right before deleting, and keep whatever it no longer
+        // vouches for.
+        let stillRestorable: Set<string>;
+        try {
+          stillRestorable =
+            args.ci === true
+              ? new Set(prunable)
+              : (await restorableFromGit(sourcePath, prunable)).restorable;
+        } catch (e) {
+          logger.error(
+            `Refusing to prune: git can no longer show which orphans are committed and unchanged (${
+              e instanceof Error ? e.message : String(e)
+            }).`
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const changed = prunable.filter((orphan) => !stillRestorable.has(orphan));
+        if (changed.length > 0) {
+          logger.warn(
+            `Kept ${changed.length} orphan file(s) that changed while the prompt was open, so git ` +
+              `no longer holds them unchanged:\n${changed.map((f) => `  ${f}`).join("\n")}`
+          );
+        }
         // Deletions are irreversible, so failures must be reported, not
         // swallowed: `.catch(() => undefined)` reported "Pruned N file(s)" even
         // when every unlink failed (permissions, read-only mount, EBUSY), so a
         // repair that changed nothing looked like a success.
         const deleted: string[] = [];
         const failures: string[] = [];
-        for (const orphan of prunable) {
+        for (const orphan of prunable.filter((file) => stillRestorable.has(file))) {
           try {
             await fsp.unlink(orphan);
             deleted.push(orphan);
