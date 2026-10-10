@@ -148,6 +148,12 @@ export async function startHealthHttpServer(
     close: async () => {
       await new Promise<void>((resolve) => {
         httpServer.close(() => resolve());
+        // close() alone waits for every open connection, and only idle keep-alive
+        // sockets are dropped for it. A client that sent a partial request and went
+        // quiet held it open until the header timeout, and the graceful shutdown
+        // awaits this after its drain, so the process exit stalled with it. Every
+        // response here is written synchronously, so nothing in flight is cut short.
+        httpServer.closeAllConnections();
       });
       HEALTH_HTTP_STATUS = {
         enabled: false,
