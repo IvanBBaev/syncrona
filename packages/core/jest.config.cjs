@@ -223,7 +223,7 @@ module.exports = {
     './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 99.50
     // The instance-host normalizer both of the above go through (#20).
     './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/config.ts': { lines: 96, branches: 91 }, // measured 99.56 / 96.40
+    './src/config.ts': { lines: 96, branches: 91 }, // measured 99.58 / 96.62
     './src/envFile.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00

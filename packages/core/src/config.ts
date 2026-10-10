@@ -53,6 +53,8 @@ const isAppManifestShape = (value: unknown): value is SN.AppManifest => {
   );
 };
 
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
+
 const DEFAULT_CONFIG: Sync.Config = {
   sourceDirectory: "src",
   buildDirectory: "build",
@@ -61,7 +63,7 @@ const DEFAULT_CONFIG: Sync.Config = {
   includes,
   excludes,
   tableOptions: {},
-  refreshInterval: 30,
+  refreshInterval: DEFAULT_REFRESH_INTERVAL_SECONDS,
   // DX22: write the `.meta.json` sidecar unless a project opts out.
   meta: true,
   // DX22: and push local edits to it back, unless a project opts out. Separate
@@ -155,7 +157,7 @@ export const MAX_REFRESH_INTERVAL_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
  */
 export function normalizeRefreshInterval(value: unknown): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    return DEFAULT_CONFIG.refreshInterval ?? 30;
+    return DEFAULT_REFRESH_INTERVAL_SECONDS;
   }
   return Math.min(MAX_REFRESH_INTERVAL_SECONDS, Math.max(0, Math.floor(value)));
 }
@@ -535,7 +537,7 @@ export class ConfigStore {
       // is right there.
       this.state.manifest_error =
         `${this.getManifestPath()} is present but could not be read as JSON: ` +
-        `${e instanceof Error ? e.message : String(e)}. ` +
+        `${(e as Error).message}. ` +
         "Fix the file or run `syncrona refresh` to rebuild it.";
       logger.warn(this.state.manifest_error);
       return;

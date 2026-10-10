@@ -400,6 +400,19 @@ describe("config coverage", () => {
     expect(store.getConfig().sourceDirectory).toBe("from-root");
   });
 
+  (process.platform === "win32" ? it.skip : it)(
+    "fails on a sync.config.js it cannot stat for a reason other than absence",
+    async () => {
+      const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-eloop-"));
+      // A self-referencing symlink stats as ELOOP: a broken config, not a missing one.
+      fs.symlinkSync("sync.config.js", path.join(repoRoot, "sync.config.js"));
+      process.chdir(repoRoot);
+      const cfg = await import("../config.js");
+      const store = cfg.createConfigStore();
+      await expect(store.loadConfigs()).rejects.toMatchObject({ code: "ELOOP" });
+    }
+  );
+
   // Root ignores directory modes, so the walk cannot be made to fail there.
   const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
   (process.platform === "win32" || asRoot ? it.skip : it)(
