@@ -317,7 +317,11 @@ async function getTableNamesInScope(
       excludes
     );
     return fallbackTables;
-  } catch {
+  } catch (e) {
+    // Only a refused sys_metadata read falls back. sys_dictionary lists just the
+    // tables with dictionary rows in the scope, so falling back on an outage
+    // would quietly drop sys_script_include, sys_script and the rest.
+    if (!isTableSkippableError(e)) throw e;
     return getTableNamesFromDictionary(client, scopeName, scopeId, includes, excludes);
   }
 }
@@ -342,7 +346,8 @@ async function getTableNamesFromDbObject(
       10000
     );
     return filterUniqueTableNames(rows, includes, excludes);
-  } catch {
+  } catch (e) {
+    if (!isTableSkippableError(e)) throw e;
     return [];
   }
 }
@@ -369,7 +374,8 @@ async function getTableNamesFromDictionary(
     if (tables.length > 0) {
       return tables;
     }
-  } catch {
+  } catch (e) {
+    if (!isTableSkippableError(e)) throw e;
   }
 
   try {
@@ -381,7 +387,8 @@ async function getTableNamesFromDictionary(
       10000
     );
     return filterUniqueTableNames(rows, includes, excludes);
-  } catch {
+  } catch (e) {
+    if (!isTableSkippableError(e)) throw e;
     return [];
   }
 }
