@@ -143,6 +143,23 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" 
   dataModelLayout: "string",
 };
 
+// Node clamps a timer delay above 2^31-1 ms to 1 ms, so a "practically never"
+// interval would refresh the manifest back to back instead.
+export const MAX_REFRESH_INTERVAL_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
+/**
+ * The refresh interval `dev` polls with, in whole seconds. A missing, null or
+ * non-finite value takes the default (a destructuring default only covers
+ * `undefined`, so `null` used to disable polling), a negative one disables
+ * polling like 0, and anything past the timer limit is capped at it.
+ */
+export function normalizeRefreshInterval(value: unknown): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return DEFAULT_CONFIG.refreshInterval ?? 30;
+  }
+  return Math.min(MAX_REFRESH_INTERVAL_SECONDS, Math.max(0, Math.floor(value)));
+}
+
 export function validateConfigShape(config: unknown, configPath: string): void {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error(
@@ -543,8 +560,7 @@ export class ConfigStore {
   }
 
   private async loadRefresh(): Promise<void> {
-    const { refreshInterval = 30 } = this.getConfig();
-    this.state.refresh_interval = refreshInterval;
+    this.state.refresh_interval = normalizeRefreshInterval(this.getConfig().refreshInterval);
   }
 
   private async loadSourcePath(): Promise<void> {

@@ -132,6 +132,18 @@ describe("devCommands", () => {
       );
     });
 
+    it("caps a CLI interval above the timer limit instead of letting Node clamp it to 1 ms", async () => {
+      jest.spyOn(process, "once").mockImplementation((() => process) as any);
+      const spy = jest.spyOn(global, "setInterval");
+      await devCommand({ logLevel: "info", refreshInterval: 1e9 } as never);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("every 2147483 seconds")
+      );
+      expect(spy).toHaveBeenCalledWith(expect.any(Function), 2147483000);
+      clearInterval(spy.mock.results[0]?.value as never);
+      spy.mockRestore();
+    });
+
     it("falls back to the configured interval and wires a SIGINT shutdown", async () => {
       mockGetRefresh.mockReturnValue(10);
       let sigint: (() => void) | undefined;

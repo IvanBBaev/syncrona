@@ -193,6 +193,30 @@ describe("config coverage", () => {
     );
   });
 
+  // ---- refreshInterval normalisation -----------------------------------
+
+  it("keeps the default refresh interval for a null value instead of disabling polling", async () => {
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src', refreshInterval: null };\n"
+    );
+    expect(store.getRefresh()).toBe(30);
+  });
+
+  it("caps a refresh interval above the timer limit and floors a negative one at 0", async () => {
+    const cfg = await import("../config.js");
+    expect(cfg.MAX_REFRESH_INTERVAL_SECONDS).toBe(2147483);
+    expect(cfg.normalizeRefreshInterval(3e9)).toBe(2147483);
+    expect(cfg.normalizeRefreshInterval(Infinity)).toBe(2147483);
+    expect(cfg.normalizeRefreshInterval(-5)).toBe(0);
+    expect(cfg.normalizeRefreshInterval(12.7)).toBe(12);
+    expect(cfg.normalizeRefreshInterval(Number.NaN)).toBe(30);
+
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src', refreshInterval: 1e12 };\n"
+    );
+    expect(store.getRefresh()).toBe(2147483);
+  });
+
   // ---- DiffFileCorruptError constructor --------------------------------
 
   it("DiffFileCorruptError carries its message and name", async () => {
