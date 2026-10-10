@@ -380,6 +380,52 @@ describe("config coverage", () => {
     expect(fs.realpathSync(store.getRootDir())).toBe(fs.realpathSync(sibling));
   });
 
+  it("skips a directory named sync.config.js and keeps walking up to the real config", async () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-dirname-"));
+    const child = path.join(repoRoot, "child");
+    fs.mkdirSync(path.join(child, "sync.config.js"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoRoot, "sync.config.js"),
+      "module.exports = { sourceDirectory: 'from-root' };\n"
+    );
+
+    process.chdir(child);
+    const cfg = await import("../config.js");
+    const store = cfg.createConfigStore();
+    await store.loadConfigs();
+
+    expect(fs.realpathSync(store.getConfigPath())).toBe(
+      path.join(fs.realpathSync(repoRoot), "sync.config.js")
+    );
+    expect(store.getConfig().sourceDirectory).toBe("from-root");
+  });
+
+  // Root ignores directory modes, so the walk cannot be made to fail there.
+  const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  (process.platform === "win32" || asRoot ? it.skip : it)(
+    "walks through an ancestor it may traverse but not list",
+    async () => {
+      const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-config-xonly-"));
+      const middle = path.join(repoRoot, "middle");
+      const child = path.join(middle, "child");
+      fs.mkdirSync(child, { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, "sync.config.js"),
+        "module.exports = { sourceDirectory: 'from-root' };\n"
+      );
+      process.chdir(child);
+      fs.chmodSync(middle, 0o311);
+      try {
+        const cfg = await import("../config.js");
+        const store = cfg.createConfigStore();
+        await store.loadConfigs();
+        expect(store.getConfig().sourceDirectory).toBe("from-root");
+      } finally {
+        fs.chmodSync(middle, 0o755);
+      }
+    }
+  );
+
   // ---- module-level singleton wrappers ----------------------------------
   // Exercise the exported free functions that proxy defaultConfigStore.
 
