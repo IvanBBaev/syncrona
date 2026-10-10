@@ -76,6 +76,13 @@ describe("updateNotifier pure helpers", () => {
     it("refreshes once the interval has elapsed", () => {
       expect(shouldRefresh(now - UPDATE_CHECK_INTERVAL_MS, now)).toBe(true);
     });
+
+    it("refreshes when the last check is in the future", () => {
+      // A clock that once ran ahead (or a cache copied from another machine)
+      // left a future timestamp; waiting for it would stop the check for as
+      // long as the clock was wrong — months or years.
+      expect(shouldRefresh(now + 365 * UPDATE_CHECK_INTERVAL_MS, now)).toBe(true);
+    });
   });
 
   describe("buildUpdateNotice", () => {
