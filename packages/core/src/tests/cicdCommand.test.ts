@@ -286,6 +286,40 @@ describe("cicd run-suite", () => {
     expect(JSON.parse(h.written.join("\n"))).toMatchObject({ exitCode: 1, progressId: "prog-1" });
   });
 
+  it("retries a transient ATF result read, so a 502 after the run does not hide its verdict", async () => {
+    const answers = [
+      () => httpError(502, "api/sn_cicd/testsuite/results/r", "Bad Gateway"),
+      () => Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+      () =>
+        ok({
+          test_suite_status: "success",
+          rolledup_test_success_count: 2,
+          rolledup_test_failure_count: 0,
+          rolledup_test_error_count: 0,
+          rolledup_test_skip_count: 0,
+        }),
+    ];
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => (answers.shift() as () => unknown)(),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(0);
+    expect(h.calls.filter((c) => c.path === "testsuite/results/r")).toHaveLength(3);
+    expect(warnings).toEqual([
+      expect.stringMatching(/ATF result r: read failed \(1\/3\), retrying/),
+      expect.stringMatching(/ATF result r: read failed \(2\/3\), retrying/),
+    ]);
+  });
+
+  it("does not retry a settled ATF result answer such as a 404", async () => {
+    const h = harness({
+      progress: [() => progress("2", { links: { results: { id: "r" } } })],
+      results: () => httpError(404, "api/sn_cicd/testsuite/results/r", { error: { message: "No record" } }),
+    });
+    expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(1);
+    expect(h.calls.filter((c) => c.path === "testsuite/results/r")).toHaveLength(1);
+  });
+
   it("exits 1 when a successful ATF tracker links no result record", async () => {
     const h = harness({ progress: [() => progress("2")] });
     expect(await run(h, "run-test", { testId: "t1" })).toBe(1);

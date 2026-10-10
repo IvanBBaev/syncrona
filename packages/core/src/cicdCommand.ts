@@ -790,9 +790,11 @@ function atfKindMismatchHint(action: CicdAction, progressId: string): string {
  * reverse), which a re-read with the same action can never fix.
  */
 async function fetchAtfOutcome(
+  deps: CicdCommandDeps,
   client: CicdClient,
   action: CicdAction,
-  progress: JsonObject
+  progress: JsonObject,
+  pollMs: number
 ): Promise<AtfOutcome | { unreadable: string; notFound?: boolean }> {
   const resultId = linkId(progress, "results");
   if (!resultId) {
@@ -802,26 +804,38 @@ async function fetchAtfOutcome(
     action === "run-suite"
       ? `testsuite/results/${encodeURIComponent(resultId)}`
       : `tests/test/results/${encodeURIComponent(resultId)}`;
-  let body: JsonObject;
-  try {
-    body = resultOf(await send(() => client.cicdGet(path), "ATF result"), "ATF result");
-  } catch (e) {
-    const redirect = unexpectedRedirectError(e, "ATF result");
-    const status = httpStatusOf(e);
-    // The read was never sent when its OAuth token could not be had.
-    const tokenReason = isTokenEndpointError(e) ? tokenEndpointReason(status, e) : undefined;
-    // The trailing period is dropped: the reason is quoted mid-sentence.
-    const reason = (
-      redirect?.message ??
-      tokenReason ??
-      extractCicdErrorMessage(errorResponseBody(e)) ??
-      (e instanceof Error ? e.message : String(e))
-    ).replace(/\.$/, "");
-    logger.debug(`Could not fetch ATF result ${resultId}: ${reason}`);
-    return {
-      unreadable: `ATF result ${resultId} could not be read: ${reason}`,
-      notFound: status === 404,
-    };
+  let body: JsonObject | undefined;
+  for (let attempt = 1; body === undefined; attempt++) {
+    try {
+      body = resultOf(await send(() => client.cicdGet(path), "ATF result"), "ATF result");
+    } catch (e) {
+      // The run has finished, so a dropped connection or a 502 on this one read
+      // would otherwise turn a known pass or failure into exit 1; it gets the
+      // same transient retries as a progress poll.
+      if (isTransientPollError(e) && attempt < CICD_MAX_POLL_FAILURES) {
+        logger.warn(
+          `ATF result ${resultId}: read failed (${attempt}/${CICD_MAX_POLL_FAILURES}), retrying: ${errorText(e)}`
+        );
+        await deps.sleep(pollMs);
+        continue;
+      }
+      const redirect = unexpectedRedirectError(e, "ATF result");
+      const status = httpStatusOf(e);
+      // The read was never sent when its OAuth token could not be had.
+      const tokenReason = isTokenEndpointError(e) ? tokenEndpointReason(status, e) : undefined;
+      // The trailing period is dropped: the reason is quoted mid-sentence.
+      const reason = (
+        redirect?.message ??
+        tokenReason ??
+        extractCicdErrorMessage(errorResponseBody(e)) ??
+        (e instanceof Error ? e.message : String(e))
+      ).replace(/\.$/, "");
+      logger.debug(`Could not fetch ATF result ${resultId}: ${reason}`);
+      return {
+        unreadable: `ATF result ${resultId} could not be read: ${reason}`,
+        notFound: status === 404,
+      };
+    }
   }
   const url = linkUrl(body, "results") ?? linkUrl(progress, "results");
   if (action === "run-suite") {
@@ -927,7 +941,7 @@ async function runAction(
         "it does not say whether any tests passed."
     );
   }
-  const read = isAtfAction ? await fetchAtfOutcome(client, action, progress) : undefined;
+  const read = isAtfAction ? await fetchAtfOutcome(deps, client, action, progress, pollMs) : undefined;
   const atf = read && !("unreadable" in read) ? read : undefined;
   if (status === CicdProgressStatus.SUCCESSFUL) {
     // A successful tracker only says the run finished; the result record says
