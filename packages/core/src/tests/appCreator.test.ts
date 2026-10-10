@@ -60,7 +60,7 @@ const ok = (result: unknown) =>
 function fakeClient(options: {
   vendorPrefix?: unknown;
   vendorPrefixError?: Error;
-  existingApps?: Array<{ sys_id: string }>;
+  existingApps?: Array<{ sys_id?: unknown }>;
   createdSysId?: string;
 } = {}) {
   const calls: Call[] = [];
@@ -220,9 +220,20 @@ describe("sys_app helpers", () => {
     expect(hit.tableAPIGet).toHaveBeenCalledWith("sys_scope", "scope=x_acme_app", "sys_id", 1);
     const { client: miss } = fakeClient({ existingApps: [] });
     await expect(findExistingApp(miss, "x_acme_app")).resolves.toBeUndefined();
+  });
+
+  it("findExistingApp refuses to read an unusable sys_scope reply as a free scope", async () => {
     const { client: odd } = fakeClient();
     odd.tableAPIGet.mockImplementationOnce(() => ok({ not: "an array" }));
-    await expect(findExistingApp(odd, "x_acme_app")).resolves.toBeUndefined();
+    await expect(findExistingApp(odd, "x_acme_app")).rejects.toThrow(
+      /sys_scope lookup for "x_acme_app" answered without a result list/
+    );
+    for (const row of [{}, { sys_id: "" }, { sys_id: 7 }]) {
+      const { client: hidden } = fakeClient({ existingApps: [row] });
+      const failure = findExistingApp(hidden, "x_acme_app");
+      await expect(failure).rejects.toBeInstanceOf(AppCreatorError);
+      await expect(failure).rejects.toThrow(/matching row without a readable sys_id/);
+    }
   });
 
   it.each([
@@ -361,6 +372,14 @@ describe("initNewApp", () => {
     await expect(
       initNewApp({ logLevel: "info", new: true, name: "Asset Tracker" } as never, deps(client))
     ).rejects.toThrow(/already exists on dev1\.service-now\.com \(sys_id old-1\).*syncrona download x_acme_asset_track/);
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
+  });
+
+  it("creates nothing when the scope lookup hides the existing row's sys_id", async () => {
+    const { client, calls } = fakeClient({ existingApps: [{}] });
+    await expect(
+      initNewApp({ logLevel: "info", new: true, name: "Asset Tracker" } as never, deps(client))
+    ).rejects.toThrow(/without a readable sys_id/);
     expect(calls.filter((c) => c.method === "POST")).toEqual([]);
   });
 
