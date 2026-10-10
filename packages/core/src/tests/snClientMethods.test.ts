@@ -353,6 +353,58 @@ describe("snClient request wrappers", () => {
     expect(JSON.stringify(body)).toContain("step-1");
   });
 
+  it("updateRecord names the missing pushATFfile route and PATCHes nothing", async () => {
+    const client = await makeClient();
+    mockPost.mockReset();
+    mockPost
+      .mockRejectedValueOnce({ response: { status: 404 } })
+      .mockRejectedValueOnce({ response: { status: 400 } });
+    await expect(
+      client.updateRecord("sys_atf_step", "step-9", { "inputs.script": "gs.info(1);" })
+    ).rejects.toThrow(
+      "The instance has no pushATFfile endpoint under api/x_nuvo_sinc or api/x_nuvo_sync (HTTP 400)"
+    );
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("updateRecord passes a non-not-found pushATFfile error through unchanged", async () => {
+    const client = await makeClient();
+    mockPost.mockReset();
+    mockPost.mockRejectedValueOnce({ response: { status: 500 } });
+    await expect(
+      client.updateRecord("sys_atf_step", "step-9", { "inputs.script": "gs.info(1);" })
+    ).rejects.toEqual({ response: { status: 500 } });
+  });
+
+  it("createRecord reports a created step whose script could not be sent", async () => {
+    const client = await makeClient();
+    mockPost.mockReset();
+    mockPost
+      .mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-3" } } })
+      .mockRejectedValue({ response: { status: 400 } });
+    const error = await client
+      .createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" })
+      .then(() => undefined, (e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(
+      /^Created the sys_atf_step record step-3, but its script was not sent: The instance has no pushATFfile endpoint/
+    );
+  });
+
+  it("createRecord keeps a non-Error ATF rejection's text", async () => {
+    const client = await makeClient();
+    mockPost.mockReset();
+    mockPost
+      .mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-4" } } })
+      .mockRejectedValueOnce("socket hang up");
+    await expect(
+      client.createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" })
+    ).rejects.toThrow(
+      "Created the sys_atf_step record step-4, but its script was not sent: socket hang up"
+    );
+  });
+
   it("createRecord skips the ATF side-call for a step without a script", async () => {
     const client = await makeClient();
     mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-2" } } });
