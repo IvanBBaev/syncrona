@@ -73,15 +73,16 @@ test('getSemanticIndex: does NOT rebuild when every source file is older than th
 
     const builtAt = getSemanticIndexState().builtAt;
 
-    // Add a new symbol but back-date every source file BEFORE builtAt: with no
-    // dirty flag and nothing newer than the index, the cache must be reused as-is.
-    const deltaPath = writeSymbol(src, 'delta.ts', 'deltaSymbol');
+    // Rewrite the file in place (same file count) and back-date it BEFORE builtAt:
+    // with no dirty flag, nothing newer than the index and no file added or removed,
+    // the cache must be reused as-is. (Adding a file would change the count, which
+    // is a staleness signal of its own.)
+    writeSymbol(src, 'gamma.ts', 'deltaSymbol');
     const past = new Date(builtAt - 60000);
     fs.utimesSync(gammaPath, past, past);
-    fs.utimesSync(deltaPath, past, past);
 
     const second = getSemanticIndex(root);
-    assert.equal(hasSymbol(second, 'deltaSymbol'), false, 'no rebuild expected — the new file is older than the index');
+    assert.equal(hasSymbol(second, 'deltaSymbol'), false, 'no rebuild expected — the file is older than the index');
     assert.equal(hasSymbol(second, 'gammaSymbol'), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

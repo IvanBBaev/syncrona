@@ -208,9 +208,12 @@ function isSampleStale(sample: SourceTreeSample): boolean {
   if (!LAST_SEMANTIC_INDEX) {
     return false;
   }
+  // Any change in the count is stale, not only a drop: a file moved in with `mv`,
+  // copied with `cp -p` or unpacked from an archive keeps its older mtime, so a
+  // grown count is the only sign its symbols are missing from the index.
   if (
     LAST_SEMANTIC_INDEX_FILE_COUNT !== null &&
-    sample.fileCount < LAST_SEMANTIC_INDEX_FILE_COUNT
+    sample.fileCount !== LAST_SEMANTIC_INDEX_FILE_COUNT
   ) {
     return true;
   }
