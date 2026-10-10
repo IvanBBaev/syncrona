@@ -1155,6 +1155,20 @@ function renderExplain(
   return exitCode;
 }
 
+/** Sends console.log/info/debug to console.error; returns the function that undoes it. */
+function routeConsoleToStderr(): () => void {
+  const saved = { log: console.log, info: console.info, debug: console.debug };
+  const toStderr = (...parts: unknown[]): void => console.error(...parts);
+  console.log = toStderr;
+  console.info = toStderr;
+  console.debug = toStderr;
+  return () => {
+    console.log = saved.log;
+    console.info = saved.info;
+    console.debug = saved.debug;
+  };
+}
+
 /**
  * `syncrona fluent <action>`. Sets `process.exitCode` rather than calling
  * `process.exit()`, so buffered stdout is flushed before the process ends.
@@ -1181,6 +1195,11 @@ export async function fluentCommand(
     return;
   }
 
+  // routeAllToStderr() moves only the logger. The SDK (and a `run` script)
+  // print with console.log/info/debug, which would land on stdout around the
+  // document, so those are sent to stderr until the command ends. The document
+  // itself is written with process.stdout.write and is not affected.
+  const restoreConsole = args.json === true ? routeConsoleToStderr() : () => {};
   try {
     const plan = planFluentAction(action, args);
     if (args.dryRun === true) {
@@ -1199,5 +1218,7 @@ export async function fluentCommand(
     logger.error(message || "Fluent command failed with an unknown error.");
     logErrorHint(e);
     process.exitCode = 1;
+  } finally {
+    restoreConsole();
   }
 }

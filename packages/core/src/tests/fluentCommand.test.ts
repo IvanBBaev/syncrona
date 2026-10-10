@@ -422,6 +422,28 @@ describe("fluentCommand: dispatch and exit codes", () => {
     expect(route).toHaveBeenCalledTimes(1);
   });
 
+  it("sends the SDK's console output to stderr under --json and restores console after", async () => {
+    const original = console.log;
+    const stderr: string[] = [];
+    const errorSpy = jest.spyOn(console, "error").mockImplementation((...parts: unknown[]) => {
+      stderr.push(parts.map(String).join(" "));
+    });
+    const { rec, deps } = harness({
+      engine: {
+        build: async () => {
+          console.log("sdk: compiling");
+          console.info("sdk: done");
+          return { success: true, errors: [], warnings: [] };
+        },
+      },
+    });
+    expect(await run({ action: "build", json: true }, deps)).toBe(0);
+    expect(stderr).toEqual(["sdk: compiling", "sdk: done"]);
+    expect(() => JSON.parse(rec.written.join("\n"))).not.toThrow();
+    expect(console.log).toBe(original);
+    errorSpy.mockRestore();
+  });
+
   it("emits JSON for a build with --json", async () => {
     const { rec, deps } = harness();
     expect(await run({ action: "build", json: true }, deps)).toBe(0);
