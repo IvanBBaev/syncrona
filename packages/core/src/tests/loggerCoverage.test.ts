@@ -102,6 +102,48 @@ describe("Logger diagnostic file transport (G7)", () => {
     expect(fileTransport?.maxFiles).toBe(3);
   });
 
+  const posixIt = process.platform === "win32" ? it.skip : it;
+
+  posixIt("creates the syncrona and logs directories 0700 and cli.log 0600", (done) => {
+    // A first run with diagnostics on creates ~/.syncrona itself, so both
+    // directories must come out private, as the credential store makes them.
+    const home = path.join(tempRoot, "fresh-home");
+    syncronaDirOverride = home;
+    process.env[DIAG_KEY] = "1";
+    const previousUmask = process.umask(0o022);
+    try {
+      logger.setLogLevel("info");
+    } finally {
+      process.umask(previousUmask);
+    }
+    const marker = `private-marker-${Date.now()}`;
+    logger.info(marker);
+
+    const modeOf = (target: string): number => fs.statSync(target).mode & 0o777;
+    expect(modeOf(home)).toBe(0o700);
+    expect(modeOf(path.join(home, "logs"))).toBe(0o700);
+
+    const logFile = path.join(home, "logs", "cli.log");
+    const started = Date.now();
+    const check = (): void => {
+      if (fs.existsSync(logFile) && fs.readFileSync(logFile, "utf-8").includes(marker)) {
+        try {
+          expect(modeOf(logFile)).toBe(0o600);
+          done();
+        } catch (error) {
+          done(error as Error);
+        }
+        return;
+      }
+      if (Date.now() - started > 2000) {
+        done(new Error("diagnostic log file was not written"));
+        return;
+      }
+      setTimeout(check, 20);
+    };
+    check();
+  });
+
   it("falls back to no file transport when the logs directory cannot be created", () => {
     // Plant a regular FILE where the syncrona dir is expected, then point
     // getSyncronaDir at a path *under* that file. mkdirSync(<file>/logs) throws

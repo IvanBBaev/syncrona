@@ -34,10 +34,14 @@ function diagnosticFileTransport(): winston.transport | null {
     return null;
   }
   try {
+    // The log carries whatever the console showed (instance URLs, record
+    // names, user names), so it is private to the user, like the credential
+    // store: the directories this creates are 0700 and the file is 0600.
     const dir = path.join(getSyncronaDir(), "logs");
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     return new transports.File({
       filename: path.join(dir, "cli.log"),
+      options: { flags: "a", mode: 0o600 },
       maxsize: 1_000_000,
       maxFiles: 3,
       format: format.combine(
