@@ -908,7 +908,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         alias: "poll-ms",
         type: "number",
         default: 1000,
-        describe: "Milliseconds between progress polls",
+        describe: "Milliseconds between progress polls (250 to 60000)",
       },
       timeout: {
         type: "number",

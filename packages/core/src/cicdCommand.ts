@@ -99,6 +99,8 @@ const STATUS_LABELS: Record<string, string> = {
 export const DEFAULT_POLL_MS = 1000;
 /** The shortest `--poll-ms` honoured: a smaller value would hammer the instance. */
 export const MIN_POLL_MS = 250;
+/** The longest `--poll-ms` honoured, the same cap `sync_cicd_run` applies. */
+export const MAX_POLL_MS = 60_000;
 /** How long to wait for a terminal status; `--timeout` (seconds) overrides it. */
 export const DEFAULT_TIMEOUT_SECONDS = 3600;
 
@@ -599,6 +601,9 @@ async function pollProgress(
   let lastStatus: string | undefined;
   let lastProgress: JsonObject | undefined;
   let failures = 0;
+  // Never sleep past the deadline: the poll after a shortened pause is the last one.
+  const pause = (): Promise<void> =>
+    deps.sleep(Math.max(0, Math.min(pollMs, timeoutMs - (deps.now() - startedAt))));
   const timedOut = (lastError?: unknown): CicdCliError => {
     const where = linkUrl(lastProgress, "progress") ?? progressUrl ?? `${request} on the instance`;
     const last = lastProgress ? statusLabel(lastProgress) : "never read";
@@ -637,7 +642,7 @@ async function pollProgress(
       logger.warn(
         `Progress ${progressId}: poll failed (${failures}/${CICD_MAX_POLL_FAILURES}), retrying: ${errorText(err)}`
       );
-      await deps.sleep(pollMs);
+      await pause();
       continue;
     }
     failures = 0;
@@ -656,7 +661,7 @@ async function pollProgress(
     if (deps.now() - startedAt >= timeoutMs) {
       throw timedOut();
     }
-    await deps.sleep(pollMs);
+    await pause();
   }
 }
 
@@ -871,7 +876,10 @@ async function runAction(
   // Validated before the client exists, so a bad flag never reaches the instance.
   const resumeId = parseProgressIdFlag(args.progressId);
   const request = resumeId ? undefined : buildCicdRequest(action, args);
-  const pollMs = Math.max(MIN_POLL_MS, positiveOr(args.pollMs, DEFAULT_POLL_MS));
+  const pollMs = Math.min(
+    MAX_POLL_MS,
+    Math.max(MIN_POLL_MS, positiveOr(args.pollMs, DEFAULT_POLL_MS))
+  );
   if (args.timeout !== undefined && positiveOr(args.timeout, -1) === -1) {
     throw new CicdCliError(
       `--timeout must be a positive number of seconds, got "${String(args.timeout)}".`
