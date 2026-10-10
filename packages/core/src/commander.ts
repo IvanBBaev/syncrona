@@ -139,6 +139,23 @@ function leadingFlagHint(raw: readonly string[], names: ReadonlySet<string>): st
   );
 }
 
+/**
+ * The refusal for `--dry-run=<value>` with a value other than `true` or
+ * `false`. yargs parses every such value of a boolean as false, so
+ * `push --dry-run=1` (or `=yes`) would run for real while the user asked for a
+ * preview. Undefined when no such spelling appears before a `--` terminator.
+ */
+function dryRunValueHint(raw: readonly string[]): string | undefined {
+  const end = raw.indexOf("--");
+  for (const token of end === -1 ? raw : raw.slice(0, end)) {
+    const match = /^--(?:dry-run|dryRun)=(.*)$/.exec(token);
+    if (match && match[1] !== "true" && match[1] !== "false") {
+      return `\`${token}\` is not a dry-run switch: only --dry-run, --dry-run=true and --dry-run=false are accepted. Re-run with --dry-run to preview.`;
+    }
+  }
+  return undefined;
+}
+
 // Interprets the CLI_COMMANDS registry. New commands are added by appending a
 // module entry in cliCommands.ts — this file should not need to change.
 //
@@ -154,10 +171,9 @@ export async function initCommands(argv?: string[]) {
   // The run is refused, as yargs would refuse it, but with the corrected order:
   // running the command anyway would turn a mistyped `syncrona --dry-run push`
   // into a real push the moment the guess about the user's intent was wrong.
-  const hint = leadingFlagHint(
-    argv ?? hideBin(process.argv),
-    new Set(CLI_COMMANDS.flatMap(commandNames))
-  );
+  const raw = argv ?? hideBin(process.argv);
+  const hint =
+    dryRunValueHint(raw) ?? leadingFlagHint(raw, new Set(CLI_COMMANDS.flatMap(commandNames)));
   if (hint) {
     logger.error(hint);
     process.exitCode = 1;
