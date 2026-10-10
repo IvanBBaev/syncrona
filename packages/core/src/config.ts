@@ -524,10 +524,20 @@ export class ConfigStore {
     try {
       const manifestString = await fsp.readFile(this.getManifestPath(), "utf-8");
       parsed = JSON.parse(manifestString);
-    } catch (_) {
-      // Absent or unparseable: there is simply no manifest to work from, which
-      // every caller already handles by telling the user to refresh.
+    } catch (e) {
       this.state.manifest = undefined;
+      // Absent: there is simply no manifest to work from, which every caller
+      // already handles by telling the user to refresh.
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      // Present but unreadable or not JSON (e.g. merge-conflict markers) is the
+      // same "manifest we refuse to trust" as a wrong shape below, not "no
+      // manifest": say so instead of answering "run refresh" for a file that
+      // is right there.
+      this.state.manifest_error =
+        `${this.getManifestPath()} is present but could not be read as JSON: ` +
+        `${e instanceof Error ? e.message : String(e)}. ` +
+        "Fix the file or run `syncrona refresh` to rebuild it.";
+      logger.warn(this.state.manifest_error);
       return;
     }
     if (!isAppManifestShape(parsed)) {
