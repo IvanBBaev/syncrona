@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, promises as fsp, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -92,6 +92,32 @@ describe("jira credential store", () => {
 
   it("removing an unknown profile reports nothing removed", async () => {
     await expect(removeJiraCredentials("nope")).resolves.toBe(false);
+  });
+
+  it("surfaces a non-ENOENT unlink failure instead of reporting nothing removed", async () => {
+    await saveJiraCredentials(CLOUD);
+    const unlinkSpy = jest
+      .spyOn(fsp, "unlink")
+      .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+    // The token is still on disk, so `false` ("nothing stored") would be a lie.
+    await expect(removeJiraCredentials("default")).rejects.toThrow(/permission denied/);
+    unlinkSpy.mockRestore();
+    expect(await listJiraProfiles()).toEqual(["default"]);
+  });
+
+  it("removeAll reports the profiles it could not delete instead of under-counting silently", async () => {
+    await saveJiraCredentials(CLOUD);
+    await saveJiraCredentials(SERVER);
+    const unlinkSpy = jest
+      .spyOn(fsp, "unlink")
+      .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+    await expect(removeAllJiraCredentials()).rejects.toThrow(
+      /Removed Jira credentials for 0 profile\(s\), but 2 could not be removed/
+    );
+    unlinkSpy.mockRestore();
+    expect((await listJiraProfiles()).sort()).toEqual(["default", "work"]);
   });
 
   it("sync read mirrors the async read and is null for missing/unknown", async () => {
