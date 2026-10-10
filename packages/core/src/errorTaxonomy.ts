@@ -55,6 +55,7 @@ const NETWORK_CODES = new Set([
   "EHOSTUNREACH",
   "ENETUNREACH",
   "EPIPE",
+  "EPROTO",
 ]);
 
 function statusOf(error: unknown): number | undefined {
@@ -63,9 +64,13 @@ function statusOf(error: unknown): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
+// Node's fetch rejects with a bare "fetch failed" TypeError and puts the socket
+// error (ECONNREFUSED, ENOTFOUND, …) on its `cause`, so look one level down.
 function codeOf(error: unknown): string {
-  const code = (error as { code?: unknown } | null | undefined)?.code;
-  return typeof code === "string" ? code : "";
+  const e = error as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  if (typeof e?.code === "string") return e.code;
+  const causeCode = e?.cause?.code;
+  return typeof causeCode === "string" ? causeCode : "";
 }
 
 function requestUrlOf(error: unknown): string {
@@ -122,10 +127,11 @@ function categorize(error: unknown): ErrorCategory {
   if (/enoent|no such file/.test(msg)) {
     return "config";
   }
-  if (/not found|does not exist|no records|404/.test(msg)) {
+  // \b404\b: a bare "404" would also match inside a sys_id or a file name.
+  if (/not found|does not exist|no records|\b404\b/.test(msg)) {
     return "data";
   }
-  if (/timeout|timed out|network|socket|econn|getaddrinfo|dns|tls|certificate/.test(msg)) {
+  if (/timeout|timed out|network|socket|econn|getaddrinfo|dns|tls|\bssl|certificate/.test(msg)) {
     return "network";
   }
   return "unknown";

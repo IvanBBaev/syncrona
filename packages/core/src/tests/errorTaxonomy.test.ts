@@ -12,6 +12,23 @@ describe("classifyError", () => {
     }
   });
 
+  it("reads the socket code off a fetch failure's cause", () => {
+    const fetchFailed = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:443"), { code: "ECONNREFUSED" }),
+    });
+    expect(cat(fetchFailed)).toBe("network");
+  });
+
+  it("classifies a TLS protocol failure as network", () => {
+    expect(cat(Object.assign(new Error("write EPROTO"), { code: "EPROTO" }))).toBe("network");
+    expect(cat(new Error("ssl3_get_record:wrong version number"))).toBe("network");
+  });
+
+  it("does not read a 404 inside a sys_id as not-found", () => {
+    expect(cat(new Error("request for 9d4041c2a1b2 timed out"))).toBe("network");
+    expect(cat(new Error("Request failed with status code 404"))).toBe("data");
+  });
+
   it("uses HTTP status before message text", () => {
     expect(cat({ response: { status: 401 } })).toBe("auth");
     expect(cat({ response: { status: 403 } })).toBe("auth");
