@@ -69,8 +69,10 @@ Returns `null` when nothing is configured.
 
 `syncrona jira` (with no key argument) derives the issue key from the
 current git branch via `extractIssueKey`. It matches the first
-`([A-Z][A-Z0-9]+)-(\d+)` token (case-insensitively), so
-`feature/SCRUM-123-add-widget` resolves to `SCRUM-123`.
+`([A-Z][A-Z0-9_]+)-(\d+)` token (case-insensitively), so
+`feature/SCRUM-123-add-widget` resolves to `SCRUM-123` and `MY_PROJ-12` to
+`MY_PROJ-12`. Notation tokens such as `UTF-8` or `RFC-7231` are skipped, and a
+snake_case branch-type word in front of the key (`feature_abc-123`) is dropped.
 
 ## Programmatic use
 

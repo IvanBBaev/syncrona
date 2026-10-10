@@ -53,6 +53,18 @@ describe("branch.extractIssueKey", () => {
   it("skips a denylisted token and keeps the first genuine key", () => {
     expect(extractIssueKey("fix-utf-8-for-ABC-42")).toBe("ABC-42");
   });
+
+  it("keeps an underscore that is part of the project key", () => {
+    // `PROJ-12` would be an issue of a different project.
+    expect(extractIssueKey("MY_PROJ-12")).toBe("MY_PROJ-12");
+    expect(extractIssueKey("feature/my_proj-12-do-thing")).toBe("MY_PROJ-12");
+  });
+
+  it("drops a snake_case branch-type word in front of the key", () => {
+    expect(extractIssueKey("feature_abc-123")).toBe("ABC-123");
+    expect(extractIssueKey("bugfix_fix_my_proj-7")).toBe("MY_PROJ-7");
+    expect(extractIssueKey("release_2.0_abc-1")).toBe("ABC-1");
+  });
 });
 
 describe("deployment detection", () => {
