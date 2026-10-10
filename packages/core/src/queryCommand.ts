@@ -76,6 +76,10 @@ const defaultDeps: QueryDeps = {
 
 const TABLE_NAME_PATTERN = /^[a-z0-9_]+$/i;
 
+// The one spelling of the table the run reports: the request, the human summary
+// and the failure envelope all name the trimmed argument.
+const tableNameOf = (args: QueryCmdArgs): string => String(args.table ?? "").trim();
+
 function requireInteger(name: string, value: number, min: number): number {
   if (!Number.isInteger(value) || value < min) {
     throw new Error(`--${name} must be an integer >= ${min} (got ${String(value)}).`);
@@ -137,7 +141,7 @@ export async function runQuery(
   client: Pick<SNClient, "tableAPIGet">,
   args: QueryCmdArgs
 ): Promise<QuerySuccessEnvelope> {
-  const table = String(args.table ?? "").trim();
+  const table = tableNameOf(args);
   if (!table) {
     throw new Error("A table name is required, e.g. `syncrona query incident -q active=true`.");
   }
@@ -215,7 +219,7 @@ export async function queryCommand(
       // selection it prints the same compact envelope, and so does this.
       deps.write(JSON.stringify(envelope));
     } else {
-      logger.info(`Retrieved ${envelope.records.length} record(s) from table '${args.table}'`);
+      logger.info(`Retrieved ${envelope.records.length} record(s) from table '${tableNameOf(args)}'`);
       if (envelope.hasMore) {
         logger.info(`More records available. Use --offset ${envelope.nextOffset} to fetch the next page`);
       }
@@ -232,7 +236,7 @@ export async function queryCommand(
       error: {
         message: messageOf(e),
         ...(status !== undefined ? { status } : {}),
-        table: args.table,
+        table: tableNameOf(args),
       },
     };
     deps.write(JSON.stringify(failure));

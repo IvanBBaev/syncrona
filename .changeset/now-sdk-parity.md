@@ -178,3 +178,4 @@ now-sdk parity: SyncroNow AI covers the everyday ServiceNow SDK (`now-sdk`) work
 - `sync_generate_release_notes` in markdown format returns an error naming the HTTP status (and the instance's message) when the `sys_update_xml` request is rejected, instead of rendering "Total changes: 0" with no word of why.
 - `sn_create_record` refuses a missing, empty or non-object `record` (also as a dry run) instead of POSTing `{}` and creating a blank record: the input validator treated `record` as optional although the tool schema requires it.
 - `sync_validate_before_push` validates a table named twice in `tables` once, instead of reading it twice and listing and counting each of its scripts twice in `files`, `blockedCount` and `warningCount`.
+- `query -o json` now names the trimmed table in the failure envelope, and always as a string. Before, `syncrona query " incident " -o json` reported `" incident "`, and a run without a table left `error.table` out entirely.

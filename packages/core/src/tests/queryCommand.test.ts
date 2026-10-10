@@ -266,6 +266,22 @@ describe("queryCommand output", () => {
     expect(JSON.parse(io.lines[0])).toEqual({ ok: false, error: { message: "boom", table: "incident" } });
   });
 
+  it("names the trimmed table in the summary and the failure envelope", async () => {
+    const ok = capture(async () => respond({ result: rows(1) }));
+    await queryCommand(baseArgs({ table: " incident " }), ok.deps);
+    expect(logger.info).toHaveBeenCalledWith("Retrieved 1 record(s) from table 'incident'");
+
+    const failed = capture(async () => Promise.reject(new Error("boom")));
+    await queryCommand(baseArgs({ table: " incident ", output: "json" }), failed.deps);
+    expect(JSON.parse(failed.lines[0]).error.table).toBe("incident");
+  });
+
+  it("machine mode keeps the envelope's table a string when the argument is missing", async () => {
+    const io = capture(async () => respond({ result: [] }));
+    await queryCommand(baseArgs({ table: undefined as unknown as string, output: "json" }), io.deps);
+    expect(JSON.parse(io.lines[0]).error).toMatchObject({ message: expect.stringMatching(/table name is required/), table: "" });
+  });
+
   it("machine mode reports a validation failure as an envelope too", async () => {
     const io = capture(async () => respond({ result: [] }));
     await queryCommand(baseArgs({ output: "json", limit: 0 }), io.deps);
