@@ -3,6 +3,10 @@ import { jest } from "@jest/globals";
 export {};
 
 const mockPrompt = jest.fn();
+const mockBuildClientAuth = jest.fn((creds: { clientId?: string }) =>
+  creds.clientId ? { oauth: { clientId: creds.clientId } } : {}
+);
+const mockCredentialsFromStore = jest.fn((stored: unknown) => ({ mapped: stored }));
 const mockWriteFile = jest.fn();
 const mockAccess = jest.fn();
 const mockMkdir = jest.fn();
@@ -98,6 +102,8 @@ jest.unstable_mockModule("../snClient.js", () => ({
   })),
   unwrapSNResponse: (...args: unknown[]) => mockUnwrapSNResponse(...args),
   preloadStoredCredentials: jest.fn(async () => undefined),
+  buildClientAuth: (creds: { mapped: { clientId?: string } }) => mockBuildClientAuth(creds.mapped),
+  credentialsFromStore: (stored: unknown) => mockCredentialsFromStore(stored),
 }));
 
 jest.unstable_mockModule("../manifestBuilder.js", () => ({
@@ -175,6 +181,44 @@ describe("wizard", () => {
     process.env = oldEnv;
   });
 
+  // Re-saving the profile with only instance/user/password used to drop every
+  // other field `syncrona login` stored (OAuth client, API key, JWT), and the
+  // app listing used Basic auth whatever method the profile selected.
+  it("keeps the stored profile's auth fields and lists apps with its auth method", async () => {
+    const stored = {
+      instance: "https://dev123.service-now.com/",
+      user: "stored.user",
+      password: "stored.pass",
+      authMethod: "oauth-password",
+      clientId: "cid",
+      clientSecret: "SECRET",
+    };
+    mockResolveCredentialsFromStore.mockResolvedValue(stored);
+    mockPrompt.mockResolvedValueOnce({ sourceDirectory: "src" });
+    mockUnwrapSNResponse
+      .mockResolvedValueOnce([{ scope: "x_app", displayName: "App" }])
+      .mockResolvedValueOnce({ scope: "x_app" });
+
+    const { startWizard } = await import("../wizard.js");
+    const { snClient } = await import("../snClient.js");
+    await startWizard();
+
+    expect(mockSaveCredentials).toHaveBeenCalledWith(
+      "dev123.service-now.com",
+      "stored.user",
+      "stored.pass",
+      stored
+    );
+    expect(mockCredentialsFromStore).toHaveBeenCalledWith(stored);
+    expect(snClient).toHaveBeenCalledWith(
+      "https://dev123.service-now.com/",
+      "stored.user",
+      "stored.pass",
+      { clientId: "cid" },
+      undefined
+    );
+  });
+
   it("uses active CredentialStore credentials and prepares source directory", async () => {
     mockResolveCredentialsFromStore.mockResolvedValue({
       instance: "dev123.service-now.com",
@@ -195,7 +239,8 @@ describe("wizard", () => {
     expect(mockSaveCredentials).toHaveBeenCalledWith(
       "dev123.service-now.com",
       "stored.user",
-      "stored.pass"
+      "stored.pass",
+      expect.objectContaining({ user: "stored.user" })
     );
     expect(mockSetActiveInstance).toHaveBeenCalledWith("dev123.service-now.com");
     expect(mockWriteFile).toHaveBeenCalledWith(

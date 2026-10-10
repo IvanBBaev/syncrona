@@ -43,6 +43,8 @@ jest.unstable_mockModule("../scopeDocs.js", () => ({
 
 jest.unstable_mockModule("../snClient.js", () => ({
   snClient: jest.fn(),
+  buildClientAuth: () => ({}),
+  credentialsFromStore: (stored: unknown) => stored,
   preloadStoredCredentials: jest.fn(),
   getErrorResponseStatus: jest.fn(),
   getScopedEndpointPrefix: jest.fn(),

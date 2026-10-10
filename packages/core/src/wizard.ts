@@ -12,6 +12,8 @@ import {
   unwrapSNResponse,
   defaultClient,
   preloadStoredCredentials,
+  buildClientAuth,
+  credentialsFromStore,
   type SNClient,
 } from "./snClient.js";
 import {
@@ -26,6 +28,7 @@ import {
   setActiveInstance,
   getActiveInstance,
   resolveCredentialsFromStore,
+  type StoredCredentials,
 } from "./auth.js";
 import { writeDotEnv, ensureGitignored } from "./envFile.js";
 import { isPromptAbort } from "./errorTaxonomy.js";
@@ -54,17 +57,23 @@ function countManifestFiles(manifest: SN.AppManifest): number {
  */
 export async function startWizard(): Promise<boolean> {
   try {
-    const loginAnswers = await getWizardCredentials();
+    const { answers: loginAnswers, stored } = await getWizardCredentials();
     const { username, password, instance } = loginAnswers;
     let filesReady = 0;
     const sourceDirectory = await getSourceDirectorySelection();
     await ensureSourceDirectory(sourceDirectory);
 
-    await saveCredentials(instance, username, password);
+    // Re-save under the normalized instance, carrying the rest of the profile:
+    // without it the OAuth client, API key and JWT fields `syncrona login`
+    // stored were dropped, and every later command fell back to Basic auth.
+    await saveCredentials(instance, username, password, stored);
     await setActiveInstance(instance);
     await preloadStoredCredentials(instance);
 
-    const client = snClient(`https://${instance}/`, username, password);
+    // The app listing authenticates with the profile's method, as every other
+    // command does, rather than Basic auth an OAuth-only instance refuses.
+    const { oauth, apiKey } = buildClientAuth(credentialsFromStore(stored));
+    const client = snClient(`https://${instance}/`, username, password, oauth, apiKey);
     let apps: SN.App[];
     try {
       apps = await unwrapSNResponse(client.getAppList());
@@ -179,7 +188,10 @@ export async function startWizard(): Promise<boolean> {
   }
 }
 
-async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
+async function getWizardCredentials(): Promise<{
+  answers: Sync.LoginAnswers;
+  stored: StoredCredentials;
+}> {
   const activeInstance = await getActiveInstance();
   if (!activeInstance) {
     throw new Error(
@@ -202,10 +214,13 @@ async function getWizardCredentials(): Promise<Sync.LoginAnswers> {
   const normalizedInstance = normalizeInstance(storedCreds.instance);
   logger.info(`Using active CredentialStore profile for ${normalizedInstance}.`);
   return {
-    instance: normalizedInstance,
-    username: String(storedCreds.user || "").trim(),
-    // Do not trim the stored password — edge whitespace can be significant.
-    password: String(storedCreds.password || ""),
+    answers: {
+      instance: normalizedInstance,
+      username: String(storedCreds.user || "").trim(),
+      // Do not trim the stored password — edge whitespace can be significant.
+      password: String(storedCreds.password || ""),
+    },
+    stored: storedCreds,
   };
 }
 
