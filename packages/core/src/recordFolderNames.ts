@@ -531,11 +531,16 @@ export async function migrateRenamedRecordFolders(
       claims.add(name);
       prevClaims.set(canonical, claims);
     }
-    const nextClaims = new Set(
-      Object.entries(table?.records ?? {}).map(([key, record]) =>
-        canonicalFolderKey(recordNameOf(key, record))
-      )
-    );
+    // canonical key -> the sys_ids of the new manifest that name a folder so.
+    // Kept per record: "Foo." -> "Foo" keeps its canonical key, and the record's
+    // own new name must not count as another record still claiming the folder.
+    const nextClaims = new Map<string, Set<string>>();
+    for (const [key, record] of Object.entries(table?.records ?? {})) {
+      const canonical = canonicalFolderKey(recordNameOf(key, record));
+      const claimants = nextClaims.get(canonical) ?? new Set<string>();
+      claimants.add(record?.sys_id);
+      nextClaims.set(canonical, claimants);
+    }
     const tableDir = path.join(sourcePath, tableName);
     const reported = new Set<string>();
 
@@ -556,7 +561,9 @@ export async function migrateRenamedRecordFolders(
             `(\`syncrona repair\` lists its files as orphans).`
         );
       };
-      if (nextClaims.has(oldKey)) continue; // still a live folder of another record
+      const claimants = nextClaims.get(oldKey);
+      // Still a live folder of another record.
+      if (claimants && [...claimants].some((sysId) => sysId !== record.sys_id)) continue;
       // Names that differ only by case or normal form ("Foo" and "foo") were
       // two folders on a case-sensitive volume but ONE on APFS/NTFS, where both
       // records wrote into it. The filesystem answers which: the other spelling
@@ -603,6 +610,9 @@ export async function migrateRenamedRecordFolders(
             leave(SHARED_REASON);
             continue;
           }
+          // Windows dropped the trailing dot when it created the folder, so the
+          // old and new names already resolve to the one folder: nothing to move.
+          if (await sameEntry(from, to)) continue;
           if (await exists(to)) {
             leave(`the new folder "${newName}" already exists`);
             continue;

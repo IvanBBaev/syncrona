@@ -176,6 +176,47 @@ describe("migrateRenamedRecordFolders edge cases", () => {
     tables: { t: { records: Object.fromEntries(names.map(([n, id]) => [n, record(n, id)])) } },
   });
 
+  // "Foo." and "Foo" share a canonical key, so the record's OWN new name used
+  // to count as "another record still claims the old folder" and the move was
+  // skipped: the files were downloaded fresh into "Foo" beside an unreported
+  // "Foo." orphan holding the local edits.
+  it("moves a folder whose only change is a dropped trailing dot (folder layout)", async () => {
+    write("t/Foo./script.js", "local edit");
+    const result = await migrateRenamedRecordFolders(
+      manifestOf("x", [["Foo.", "s1"]]),
+      manifestOf("x", [["Foo", "s1"]]),
+      root,
+      false
+    );
+    expect(result).toEqual({ moved: [{ table: "t", from: "Foo.", to: "Foo" }], leftBehind: [] });
+    expect(listing("t")).toEqual(["Foo"]);
+    expect(read("t/Foo/script.js")).toBe("local edit");
+  });
+
+  it("moves the flat files of a record whose only change is a dropped trailing dot", async () => {
+    write("t/Foo.~script.js", "local edit");
+    const result = await migrateRenamedRecordFolders(
+      manifestOf("x", [["Foo.", "s1"]]),
+      manifestOf("x", [["Foo", "s1"]]),
+      root,
+      true
+    );
+    expect(result).toEqual({ moved: [{ table: "t", from: "Foo.", to: "Foo" }], leftBehind: [] });
+    expect(listing("t")).toEqual(["Foo~script.js"]);
+  });
+
+  it("still leaves a trailing-dot folder in place when another record claims its name", async () => {
+    write("t/Foo./script.js", "local edit");
+    const result = await migrateRenamedRecordFolders(
+      manifestOf("x", [["Foo.", "s1"]]),
+      manifestOf("x", [["Foo_s1", "s1"], ["foo", "s2"]]),
+      root,
+      false
+    );
+    expect(result.moved).toEqual([]);
+    expect(listing("t")).toEqual(["Foo."]);
+  });
+
   it("falls back to the manifest key when a record's name is empty", async () => {
     write("t/Solo/script.js", "local edit");
     const previous = { scope: "x", tables: { t: { records: { Solo: record("", "s1") } } } };
