@@ -151,6 +151,28 @@ describe("jiraCommand", () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it("strips terminal control characters from issue text but keeps tabs and line breaks", async () => {
+    mockGetIssue.mockResolvedValue({
+      ...SAMPLE_ISSUE,
+      summary: "Do\u001b[2J the thing",
+      assignee: "Ali\u009b31mce",
+      description: "line\u001b]0;pwned\u0007 one\r\nfake\rtwo\tok",
+      comments: [{ author: "Carol\u0000", created: "2026-01-03T00:00:00.000Z", body: "x\u007fy" }],
+    });
+    await jiraCommand({ ...BASE_ARGS, key: "ABC-1" });
+
+    const infos = mockLoggerInfo.mock.calls.map((c) => c[0] as string);
+    expect(mockLoggerSuccess).toHaveBeenCalledWith("ABC-1  Do[2J the thing");
+    expect(infos).toContain("Assignee: Ali31mce");
+    expect(infos).toContain("  line]0;pwned one");
+    expect(infos).toContain("  faketwo\tok");
+    expect(infos).toContain("  Carol — 2026-01-03T00:00:00.000Z");
+    expect(infos).toContain("  xy");
+    for (const line of [...infos, ...mockLoggerSuccess.mock.calls.map((c) => c[0] as string)]) {
+      expect(line).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    }
+  });
+
   it("renders the rich fields: parent, subtasks, links, description, comments", async () => {
     await jiraCommand({ ...BASE_ARGS, key: "ABC-1" });
 

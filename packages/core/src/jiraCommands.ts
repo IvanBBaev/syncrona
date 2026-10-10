@@ -27,16 +27,26 @@ import { setLogLevel } from "./commandHelpers.js";
 
 const DEFAULT_COMMENT_LIMIT = 5;
 
+/**
+ * Issue text is written by anyone who can edit the issue, and it goes straight
+ * to the terminal. Drop C0/C1 control characters (keeping tab and newline) so an
+ * escape sequence in a summary or comment cannot recolour, rewrite or hide the
+ * lines around it. `\r\n` becomes `\n` first so line structure survives.
+ */
+function terminalText(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
 /** Print one labelled line, but only when the value is non-empty. */
 function field(label: string, value: string): void {
   if (value && value.trim().length > 0) {
-    logger.info(`${label}: ${value}`);
+    logger.info(`${label}: ${terminalText(value)}`);
   }
 }
 
 /** Indent a (possibly multi-line) block under a header for readability. */
 function block(text: string): void {
-  const lines = text.split(/\r?\n/);
+  const lines = terminalText(text).split("\n");
   for (const ln of lines) {
     logger.info(`  ${ln}`);
   }
@@ -106,7 +116,7 @@ function logJiraErrorHint(e: unknown, authRecheckHint = jiraAuthRecheckHint()): 
 
 /** Human-readable rich rendering of a normalized issue. */
 function printIssue(issue: JiraIssue): void {
-  logger.success(`${issue.key}  ${issue.summary}`.trim());
+  logger.success(terminalText(`${issue.key}  ${issue.summary}`.trim()));
   field("URL", issue.url);
   field("Type", issue.type);
   const statusLine = issue.statusCategory
