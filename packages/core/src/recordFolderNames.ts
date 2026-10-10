@@ -13,7 +13,7 @@
 //
 // Rules, in order:
 //   1. Names that are the same on disk collide. "The same on disk" is decided by
-//      canonicalFolderKey — NFC, lower-case (final sigma folded to σ), trailing
+//      canonicalFolderKey — NFC, lower-case plus the simple folds it misses (ς/σ, µ/μ, ſ/s), trailing
 //      dots/spaces dropped — which
 //      covers APFS/NTFS case-insensitivity, HFS+/SMB normalisation and Windows'
 //      trailing-dot stripping.
@@ -48,17 +48,45 @@ import { logger } from "./Logger.js";
  * with this same function.
  *
  * `toLowerCase` alone is not quite the fold a case-insensitive volume applies:
- * it lowers a word-final "Σ" to "ς", so "ΟΔΟΣ" and "οδοσ" would get two keys
- * while APFS and NTFS store them as one folder. The final sigma is therefore
- * folded to "σ". Nothing beyond that is folded — full case folding would also
- * merge "ß" with "ss", which those volumes keep apart, and a false collision
- * would rename folders for no reason.
+ * it keeps "ς", "µ", "ſ", "ϑ" and a few more apart from "σ", "μ", "s", "θ",
+ * while APFS and NTFS compare them through their shared capital ("Σ", "Μ",
+ * "S", "Θ") and store each pair as one folder. Those characters — every simple
+ * case folding Unicode defines that `toLowerCase` does not already perform —
+ * are folded by the table below. Nothing else is folded: full case folding
+ * would also merge "ß" with "ss", which those volumes keep apart, and "ı" has
+ * no simple folding to "i"; a false collision would rename folders for no
+ * reason.
  */
+const EXTRA_CASE_FOLDS: Readonly<Record<string, string>> = {
+  "ς": "σ",
+  "µ": "μ",
+  "ſ": "s",
+  "\u0345": "ι",
+  "ϐ": "β",
+  "ϑ": "θ",
+  "ϕ": "φ",
+  "ϖ": "π",
+  "ϰ": "κ",
+  "ϱ": "ρ",
+  "ϵ": "ε",
+  "ᲀ": "в",
+  "ᲁ": "д",
+  "ᲂ": "о",
+  "ᲃ": "с",
+  "ᲄ": "т",
+  "ᲅ": "т",
+  "ᲆ": "ъ",
+  "ᲇ": "ѣ",
+  "ᲈ": "ꙋ",
+  "ẛ": "ṡ",
+};
+const EXTRA_CASE_FOLD_PATTERN = new RegExp(`[${Object.keys(EXTRA_CASE_FOLDS).join("")}]`, "gu");
+
 export const canonicalFolderKey = (name: string): string =>
   name
     .normalize("NFC")
     .toLowerCase()
-    .replace(/ς/gu, "σ")
+    .replace(EXTRA_CASE_FOLD_PATTERN, (c) => EXTRA_CASE_FOLDS[c] ?? c)
     .replace(/[.\s]+$/u, "");
 
 /**
