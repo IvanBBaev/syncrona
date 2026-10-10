@@ -194,14 +194,14 @@ describe("manifestBuilder coverage", () => {
     ]);
   });
 
-  it("falls back to the dictionary when the scoped metadata pager throws (outer catch)", async () => {
-    // The sys_metadata pager throws a non-skippable error; getTableNamesInScope's
-    // outer catch must route straight to getTableNamesFromDictionary.
+  it("falls back to the dictionary when the scoped metadata read is refused (outer catch)", async () => {
+    // The sys_metadata pager answers 403; getTableNamesInScope's outer catch
+    // must route straight to getTableNamesFromDictionary.
     const tableAPIGet: TableApiGet = jest.fn();
     tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
       if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
       if (table === "sys_metadata" && fields === "sys_class_name") {
-        throw new Error("metadata pager exploded");
+        throw skippableError(403);
       }
       if (table === "sys_dictionary") {
         if (fields === "name" && query.startsWith("sys_scope=")) {
@@ -227,6 +227,47 @@ describe("manifestBuilder coverage", () => {
 
     expect(manifest.tables.x_fleet).toBeDefined();
     expect(manifest.tables.x_fleet.records["Fleet A"]).toBeDefined();
+  });
+
+  // sys_dictionary lists only the tables with dictionary rows in the scope, so
+  // falling back on an outage narrowed the manifest to the custom tables and
+  // dropped sys_script_include, sys_script and the rest without a word.
+  it.each([
+    ["the sys_metadata sweep", "sys_metadata"],
+    ["the sys_db_object sweep", "sys_db_object"],
+    ["the sys_dictionary scope query", "sys_dictionary"],
+  ])("fails instead of narrowing the table list when %s hits an outage", async (_label, failing) => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
+      if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
+      if (table === failing && (fields === "sys_class_name" || fields === "name")) {
+        throw skippableError(503);
+      }
+      if (table === "sys_metadata" || table === "sys_db_object") return { data: { result: [] } };
+      if (table === "sys_dictionary" && fields === "name") {
+        return { data: { result: [{ name: "x_fleet" }] } };
+      }
+      return { data: { result: [] } };
+    });
+
+    await expect(
+      buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), emptyConfig)
+    ).rejects.toMatchObject({ response: { status: 503 } });
+  });
+
+  it("fails instead of returning no tables when the dictionary nameLIKE query hits an outage", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string, query: string, fields: string) => {
+      if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
+      if (table === "sys_dictionary" && fields === "name" && query.startsWith("nameLIKE")) {
+        throw skippableError(503);
+      }
+      return { data: { result: [] } };
+    });
+
+    await expect(
+      buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), emptyConfig)
+    ).rejects.toMatchObject({ response: { status: 503 } });
   });
 
   it("returns [] when the dictionary nameLIKE fallback also throws", async () => {
