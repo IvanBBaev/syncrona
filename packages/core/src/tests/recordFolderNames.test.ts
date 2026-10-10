@@ -59,6 +59,20 @@ describe("canonicalFolderKey", () => {
     expect([...names.values()].sort()).toEqual(["ΟΔΟΣ_a", "οδοσ_b"]);
   });
 
+  it("folds the other characters whose capital they share with a plain letter", () => {
+    // APFS and NTFS compare through the capital: µ/μ (Μ), ſ/s (S), ϑ/θ (Θ),
+    // ϕ/φ (Φ) are one folder each, so two records named this way must collide.
+    expect(canonicalFolderKey("µs")).toBe(canonicalFolderKey("μs"));
+    expect(canonicalFolderKey("ſtatus")).toBe(canonicalFolderKey("status"));
+    expect(canonicalFolderKey("ϑ")).toBe(canonicalFolderKey("θ"));
+    expect(canonicalFolderKey("ϕ")).toBe(canonicalFolderKey("Φ"));
+    const names = assignRecordFolderNames("t", [
+      { sysId: "a", name: "ſtatus" },
+      { sysId: "b", name: "status" },
+    ]);
+    expect([...names.values()].sort()).toEqual(["status_b", "ſtatus_a"]);
+  });
+
   it("does not fold what case-insensitive volumes keep apart", () => {
     expect(canonicalFolderKey("straße")).not.toBe(canonicalFolderKey("strasse"));
     expect(canonicalFolderKey("ı")).not.toBe(canonicalFolderKey("i"));
