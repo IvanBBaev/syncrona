@@ -46,10 +46,10 @@ const configSource = fs.readFileSync(CONFIG_PATH, "utf8");
 // The recorded ratchet. Raising these is the point; lowering one to turn a red
 // build green is the failure this pins.
 const GLOBAL_RATCHET: Required<Floor> = {
-  statements: 92,
-  branches: 79,
-  functions: 89,
-  lines: 92,
+  statements: 95,
+  branches: 88,
+  functions: 95,
+  lines: 95,
 };
 
 // A floor this far under the measured value is not a floor. The widest gap in the
