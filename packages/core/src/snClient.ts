@@ -966,42 +966,8 @@ function resolveCredentialsInternal(profile?: string): {
   // API key.
   const hasEnvCreds = !!(SN_USER || userFromProfile || clientId || apiKey);
   if (!hasEnvCreds && storedCredentialsCache && !normalizedProfile) {
-    const stored = storedCredentialsCache;
-    // Re-infer the method when the stored record predates the multi-method
-    // fields (legacy three-field logins have no authMethod), so old stores keep
-    // resolving to Basic / OAuth-password exactly as before.
-    const storedMethod = resolveAuthMethod({
-      explicit: stored.authMethod || "",
-      hasPassword: !!stored.password,
-      hasClientId: !!stored.clientId,
-      hasClientSecret: !!stored.clientSecret,
-      hasApiKey: !!stored.apiKey,
-      hasJwtKey: !!stored.jwtKeyPath,
-    });
-    // A store record normally comes from `syncrona login`'s method picker, but it
-    // can also be hand-edited or written by a newer version that knows a method
-    // this one does not — in which case the same silent fallback applies.
-    warnAboutAuthIssues(storedMethod, "credential store");
     return {
-      creds: {
-        user: stored.user,
-        password: stored.password,
-        instance: normalizeInstanceHostWithNotice(
-          stored.instance,
-          "credential store"
-        ),
-        profile: undefined,
-        clientId: stored.clientId || undefined,
-        clientSecret: stored.clientSecret || undefined,
-        authMethod: storedMethod.method,
-        apiKey: stored.apiKey || undefined,
-        apiKeyHeader: stored.apiKeyHeader || undefined,
-        jwtKey: stored.jwtKeyPath || undefined,
-        jwtKid: stored.jwtKid || undefined,
-        jwtIss: stored.jwtIss || undefined,
-        jwtSub: stored.jwtSub || undefined,
-        jwtAud: stored.jwtAud || undefined,
-      },
+      creds: credentialsFromStore(storedCredentialsCache),
       source: "credential store (syncrona login)",
     };
   }
@@ -1061,6 +1027,45 @@ function resolveCredentialsInternal(profile?: string): {
       : "environment (.env / shell SN_* vars)"
     : "none (credentials missing)";
   return { creds, source };
+}
+
+/**
+ * The client credentials a credential-store record stands for. Shared by the
+ * store fallback of credential resolution and by `init`, which reads the
+ * active profile directly and must authenticate with the same method.
+ */
+export function credentialsFromStore(stored: StoredCredentials): SNCredentials {
+  // Re-infer the method when the stored record predates the multi-method
+  // fields (legacy three-field logins have no authMethod), so old stores keep
+  // resolving to Basic / OAuth-password exactly as before.
+  const storedMethod = resolveAuthMethod({
+    explicit: stored.authMethod || "",
+    hasPassword: !!stored.password,
+    hasClientId: !!stored.clientId,
+    hasClientSecret: !!stored.clientSecret,
+    hasApiKey: !!stored.apiKey,
+    hasJwtKey: !!stored.jwtKeyPath,
+  });
+  // A store record normally comes from `syncrona login`'s method picker, but it
+  // can also be hand-edited or written by a newer version that knows a method
+  // this one does not — in which case the same silent fallback applies.
+  warnAboutAuthIssues(storedMethod, "credential store");
+  return {
+    user: stored.user,
+    password: stored.password,
+    instance: normalizeInstanceHostWithNotice(stored.instance, "credential store"),
+    profile: undefined,
+    clientId: stored.clientId || undefined,
+    clientSecret: stored.clientSecret || undefined,
+    authMethod: storedMethod.method,
+    apiKey: stored.apiKey || undefined,
+    apiKeyHeader: stored.apiKeyHeader || undefined,
+    jwtKey: stored.jwtKeyPath || undefined,
+    jwtKid: stored.jwtKid || undefined,
+    jwtIss: stored.jwtIss || undefined,
+    jwtSub: stored.jwtSub || undefined,
+    jwtAud: stored.jwtAud || undefined,
+  };
 }
 
 export function resolveCredentials(profile?: string): SNCredentials {

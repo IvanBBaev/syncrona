@@ -71,6 +71,8 @@ jest.unstable_mockModule("../Logger.js", () => ({
 }));
 
 jest.unstable_mockModule("../snClient.js", () => ({
+  buildClientAuth: () => ({}),
+  credentialsFromStore: (stored: unknown) => stored,
   snClient: jest.fn(() => ({
     getAppList: (...args: unknown[]) => mockGetAppList(...args),
     getCurrentScope: jest.fn(),

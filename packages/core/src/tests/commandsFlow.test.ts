@@ -114,6 +114,8 @@ jest.unstable_mockModule("../auth.js", () => ({
 
 jest.unstable_mockModule("../snClient.js", () => ({
   snClient: jest.fn(),
+  buildClientAuth: () => ({}),
+  credentialsFromStore: (stored: unknown) => stored,
   preloadStoredCredentials: jest.fn(),
   getErrorResponseStatus: jest.fn(),
   diagnoseCredentials: jest.fn(),
