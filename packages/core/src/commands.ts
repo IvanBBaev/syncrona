@@ -287,7 +287,11 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
   // a request without one — this phase only materialises the directories.
   await AppUtils.processManifest(man, false);
   logger.info("Fetching file contents...");
-  await AppUtils.downloadAllFiles(man, args.instanceProfile);
+  await AppUtils.downloadAllFiles(
+    man,
+    args.instanceProfile,
+    resolveCredentials(args.instanceProfile).instance
+  );
   await warnWithdrawnFieldFiles(previousManifest, man, () => ({
     sourcePath: ConfigManager.getSourcePath(),
     flat: config.flat === true,

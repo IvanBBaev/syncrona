@@ -107,4 +107,25 @@ describe("download checkpoint", () => {
     // scope-only behaviour, so the file format stays backward compatible.
     expect(await readDownloadCheckpoint("x_app")).not.toBeNull();
   });
+
+  // The same scope and manifest slice exist on every instance, so a checkpoint
+  // left by an interrupted pull of one instance made a pull of another skip the
+  // tables the first had delivered.
+  it("treats a checkpoint from another instance as stale", async () => {
+    await writeDownloadCheckpoint({
+      scope: "x_app",
+      fingerprint: "aaa",
+      instance: "dev.service-now.com",
+      completedTables: ["a"],
+    });
+    expect(await readDownloadCheckpoint("x_app", "aaa", "test.service-now.com")).toBeNull();
+    expect(
+      await readDownloadCheckpoint("x_app", "aaa", "https://DEV.service-now.com/")
+    ).not.toBeNull();
+  });
+
+  it("treats a checkpoint written before instances were recorded as stale", async () => {
+    await writeDownloadCheckpoint({ scope: "x_app", fingerprint: "aaa", completedTables: ["a"] });
+    expect(await readDownloadCheckpoint("x_app", "aaa", "dev.service-now.com")).toBeNull();
+  });
 });

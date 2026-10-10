@@ -21,6 +21,12 @@ export interface DownloadCheckpoint {
    * files, so a mismatch means stale.
    */
   fingerprint?: string;
+  /**
+   * Instance the tables were downloaded from. The same scope and manifest slice
+   * exist on dev and test alike, so without it a run against another instance
+   * skipped the tables an earlier, interrupted run had fetched elsewhere.
+   */
+  instance?: string;
   /** Tables fully fetched and written so far. */
   completedTables: string[];
 }
@@ -45,7 +51,8 @@ export function getDownloadCheckpointPath(): string {
  */
 export async function readDownloadCheckpoint(
   scope: string,
-  fingerprint?: string
+  fingerprint?: string,
+  instance?: string
 ): Promise<DownloadCheckpoint | null> {
   try {
     const raw = await fsp.readFile(getDownloadCheckpointPath(), "utf8");
@@ -66,10 +73,28 @@ export async function readDownloadCheckpoint(
     if (fingerprint !== undefined && parsed.fingerprint !== fingerprint) {
       return null;
     }
+    // Same rule for the instance: a checkpoint from another instance (or one
+    // written before the instance was recorded) does not describe this run.
+    if (
+      instance !== undefined &&
+      normalizeInstance(parsed.instance) !== normalizeInstance(instance)
+    ) {
+      return null;
+    }
     return parsed;
   } catch (_) {
     return null;
   }
+}
+
+// `ACME.service-now.com` and `https://acme.service-now.com/` name the same
+// instance; compare them without the scheme, trailing slash or case.
+function normalizeInstance(instance: string | undefined): string {
+  return (instance ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
 }
 
 export async function writeDownloadCheckpoint(
