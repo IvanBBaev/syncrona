@@ -268,6 +268,21 @@ describe("scopeDocs", () => {
     expect(body).not.toMatch(/(^|[^\\])<img/m);
   });
 
+  it("shows an empty file name as a dash and escapes the record name", () => {
+    const manifest: SN.AppManifest = {
+      scope: "x_acme_app",
+      tables: {
+        sys_script: {
+          records: {
+            r1: { name: "__init__ a &amp; b my_rule", sys_id: "1", files: [{ name: "", type: "js" }] },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
+    const body = buildScopeDocBody(summarizeManifest(manifest), new Date(0));
+    expect(body).toContain("| \\_\\_init\\_\\_ a \\&amp; b my\\_rule | — |");
+  });
+
   it("writes and then logically updates the scope doc file", async () => {
     const first = await generateScopeDocs(sampleManifest(), {
       outDir: tempDir,

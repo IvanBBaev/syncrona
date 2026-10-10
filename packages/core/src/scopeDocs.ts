@@ -79,6 +79,10 @@ function markdownText(value: string): string {
 /** Wraps a name in a code span whose fence is longer than any backtick run in it. */
 function inlineCode(value: string): string {
   const text = oneLine(value);
+  // Markdown has no empty code span: a bare pair of backticks is shown as is.
+  if (text.trim() === "") {
+    return "—";
+  }
   const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
   const fence = "`".repeat(longestRun + 1);
   const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
