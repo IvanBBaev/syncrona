@@ -200,7 +200,10 @@ export function readUpdateCache(cacheFile: string): UpdateCache | null {
 
 export function writeUpdateCache(cacheFile: string, cache: UpdateCache): void {
   try {
-    mkdirSync(path.dirname(cacheFile), { recursive: true });
+    // The cache shares ~/.syncrona with the credential store, which keeps that
+    // directory private (0700). On a first run this is what creates it, so it
+    // must not leave it readable by other users.
+    mkdirSync(path.dirname(cacheFile), { recursive: true, mode: 0o700 });
     writeFileSync(cacheFile, `${JSON.stringify(cache)}\n`, "utf-8");
   } catch (_) {
     // best-effort cache; ignore write failures
