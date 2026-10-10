@@ -20,6 +20,7 @@ const mockLoggerWarn = jest.fn();
 const mockFsStat = jest.fn();
 const mockFsWriteFile = jest.fn();
 const mockFsMkdir = jest.fn();
+const mockFsReadFile = jest.fn();
 
 // fs is a CommonJS core module, so requireActual loads it synchronously (unlike
 // an ESM source module). Spread the real surface and override only promises so
@@ -32,6 +33,7 @@ jest.unstable_mockModule("fs", () => {
     stat: (...args: unknown[]) => mockFsStat(...args),
     writeFile: (...args: unknown[]) => mockFsWriteFile(...args),
     mkdir: (...args: unknown[]) => mockFsMkdir(...args),
+    readFile: (...args: unknown[]) => mockFsReadFile(...args),
   };
   return { ...actual, promises, default: { ...actual, promises } };
 });
@@ -150,6 +152,15 @@ beforeEach(async () => {
   mockFsStat.mockResolvedValue({});
   mockFsWriteFile.mockResolvedValue(undefined);
   mockFsMkdir.mockResolvedValue(undefined);
+  // No workspace .env unless a test provides one.
+  // Other reads (the .gitignore check) go to the real file system.
+  mockFsReadFile.mockImplementation((...args: unknown[]) => {
+    if (String(args[0]).endsWith(".env")) {
+      return Promise.reject(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+    }
+    const actual = jest.requireActual("fs") as typeof import("fs");
+    return (actual.promises.readFile as (...a: unknown[]) => Promise<unknown>)(...args);
+  });
 });
 
 afterEach(() => {
@@ -353,6 +364,45 @@ describe("loginCommand", () => {
     // Verification client saw the API key in the process env.
     expect(process.env.SN_API_KEY).toBe("KEY-123");
     expect(process.env.SN_AUTH_METHOD).toBe("api-key");
+  });
+
+  // A later CLI run loads the .env, and an explicit SN_AUTH_METHOD wins over
+  // inference. Re-login with another method upserted the new keys but left the
+  // old method's selector and secrets in place, so the next command used the
+  // previous method's credentials instead of the ones login just verified.
+  it("drops the previous method's keys from .env when re-login switches method", async () => {
+    const files = new Map<string, string>();
+    files.set(
+      `${process.cwd()}/.env`,
+      "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_AUTH_METHOD=api-key\nSN_API_KEY=OLD-KEY\n"
+    );
+    // Already ignored, so the .gitignore check never appends to a real file.
+    files.set(`${process.cwd()}/.gitignore`, ".env\n");
+    mockFsReadFile.mockImplementation(async (p: unknown) => {
+      const content = files.get(String(p));
+      if (content === undefined) {
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }
+      return content;
+    });
+    mockFsWriteFile.mockImplementation(async (p: unknown, data: unknown) => {
+      files.set(String(p), String(data));
+    });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+      user: "admin",
+      password: "secret",
+    });
+
+    const env = files.get(`${process.cwd()}/.env`) ?? "";
+    expect(env).toContain("FOO=bar");
+    expect(env).toContain("SN_USER=admin");
+    expect(env).toContain("SN_PASSWORD=secret");
+    expect(env).not.toContain("SN_AUTH_METHOD");
+    expect(env).not.toContain("OLD-KEY");
   });
 
   it("logs in with the OAuth client-credentials grant from flags", async () => {

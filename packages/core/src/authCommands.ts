@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { Sync } from "@syncrona/types";
 import path from "path";
+import { promises as fsp } from "fs";
 import inquirer from "inquirer";
 import {
   AUTH_METHOD_ENV,
@@ -189,6 +190,30 @@ function applyLoginEnv(env: Record<string, string>): void {
     } else {
       delete process.env[key];
     }
+  }
+}
+
+// Remove the managed SN_* keys the new login does not set from an existing .env.
+// writeDotEnv only upserts, and a later CLI run honours an explicit
+// SN_AUTH_METHOD, so a method switch would otherwise keep authenticating with
+// the previous method's selector and secrets instead of the ones just verified.
+async function dropStaleAuthKeys(
+  envPath: string,
+  env: Record<string, string>
+): Promise<void> {
+  let existing: string;
+  try {
+    existing = await fsp.readFile(envPath, "utf8");
+  } catch {
+    return;
+  }
+  const lines = existing.split("\n");
+  const kept = lines.filter((line) => {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+    return !(match && MANAGED_AUTH_ENV.includes(match[1]) && env[match[1]] === undefined);
+  });
+  if (kept.length !== lines.length) {
+    await fsp.writeFile(envPath, kept.join("\n"), { encoding: "utf8", mode: 0o600 });
   }
 }
 
@@ -428,6 +453,7 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
   // JWT key and mTLS cert/key are written by path only.
   try {
     const envPath = path.join(process.cwd(), ".env");
+    await dropStaleAuthKeys(envPath, loginEnv);
     await writeDotEnv(envPath, loginEnv);
     await ensureGitignored(process.cwd(), ".env");
   } catch (e) {
