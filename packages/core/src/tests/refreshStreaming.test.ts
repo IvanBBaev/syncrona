@@ -181,3 +181,22 @@ describe("refresh streams table-by-table (REV-91)", () => {
     expect(events.indexOf("write")).toBeLessThan(events.lastIndexOf(fetches[2]));
   });
 });
+
+describe("refresh reports a table the instance returned nothing for", () => {
+  it("names the table as incomplete instead of reporting a clean refresh", async () => {
+    // The scoped endpoint answers, but leaves sys_ui_page out of its result —
+    // the shape a skipped 403/404 takes once it reaches this loop.
+    getMissingFilesApi.mockImplementation(async (missing: unknown) => {
+      const keys = Object.keys(missing as object);
+      if (keys.includes("sys_ui_page")) {
+        return { data: { result: {} } };
+      }
+      return { data: { result: missingToTableMap(missing as never) } };
+    });
+    const { processMissingFiles } = await import("../appUtils.js");
+
+    const incomplete = await processMissingFiles(threeTableManifest());
+
+    expect(incomplete).toEqual(["sys_ui_page"]);
+  });
+});
