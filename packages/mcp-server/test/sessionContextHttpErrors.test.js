@@ -51,6 +51,45 @@ test('listScopes surfaces a failed read rather than an empty scope list', async 
   assert.match(result.error.message, /500/);
 });
 
+// Answers every read with one plausible row; `write` decides the PUT/POST reply.
+function instance(write) {
+  return (method, endpoint) => {
+    if (method !== 'GET') {
+      return write(method, endpoint);
+    }
+    if (endpoint.includes('/sys_user_preference')) {
+      return { status: 200, data: { result: [{ sys_id: 'pref1', value: 'old' }] }, text: '' };
+    }
+    if (endpoint.includes('/sys_update_set')) {
+      return { status: 200, data: { result: [{ sys_id: 'us1', name: 'Dev', state: 'in progress' }] }, text: '' };
+    }
+    return { status: 200, data: { result: [{ sys_id: 'id1', scope: 'x_acme_app', name: 'Acme' }] }, text: '' };
+  };
+}
+
+const FORBIDDEN = () => ({
+  status: 403,
+  data: { error: { message: 'Operation Failed' } },
+  text: '',
+});
+
+test('setCurrentScope fails when the instance rejects the preference write', async () => {
+  const { result, calls } = await withTransport(instance(FORBIDDEN), () =>
+    sessionContext.setCurrentScope('x_acme_app', 1000)
+  );
+  assert.ok(calls.some((c) => c.method === 'PUT'), 'the preference write was attempted');
+  assert.ok(result.error instanceof Error, 'a rejected write must not report the scope as set');
+  assert.match(result.error.message, /403/);
+});
+
+test('setCurrentUpdateSet fails when the instance rejects the preference write', async () => {
+  const { result } = await withTransport(instance(FORBIDDEN), () =>
+    sessionContext.setCurrentUpdateSet({ updateSetSysId: 'us1' }, 1000)
+  );
+  assert.ok(result.error instanceof Error, 'a rejected write must not report the update set as set');
+  assert.match(result.error.message, /403/);
+});
+
 test('tableGet still returns the rows of a successful read', async () => {
   const { result } = await withTransport(
     () => ({ status: 200, data: { result: [{ sys_id: 'a' }] }, text: '' }),

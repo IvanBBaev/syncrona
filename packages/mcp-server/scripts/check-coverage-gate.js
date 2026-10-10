@@ -345,7 +345,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.53 / 93.95 (also 99.53 / 93.97: V8 range granularity on ubuntu, 295/314 vs 296/315 branches, same uncovered lines 443-444 835 1037-1038, one extra covered function range at 98.48 against darwin's 96.97)
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
-  { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 99.03 / 92.75
+  { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 100.00 / 95.00
   // A single reading, not a declared pair: the move from 99.04 was a source edit,
   // not range flicker. `wrapUntrustedData` gained seven comment lines explaining why
   // its zero-width space is written as `\u200b`, tsc emits comments, and seven more

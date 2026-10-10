@@ -111,6 +111,7 @@ async function upsertUserPreference(
       { value },
       timeoutMs
     );
+    assertOkResponse(updateResp, `Updating user preference ${prefName}`);
     return asRecord(asRecord(updateResp.data).result);
   }
 
@@ -125,6 +126,7 @@ async function upsertUserPreference(
     },
     timeoutMs
   );
+  assertOkResponse(createResp, `Creating user preference ${prefName}`);
   return asRecord(asRecord(createResp.data).result);
 }
 
@@ -324,6 +326,7 @@ export async function setCurrentUpdateSet(
         { name: updateSetNameInput },
         timeoutMs
       );
+      assertOkResponse(created, `Creating update set ${updateSetNameInput}`);
       targetUpdateSet = asRecord(asRecord(created.data).result);
     }
   }
