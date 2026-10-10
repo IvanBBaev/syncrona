@@ -367,7 +367,7 @@ const MODULE_FLOORS = [
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
   // once its prune's two load-bearing catches were driven on purpose. A module that
   // jumps and is not pinned can fall back just as far under the defaults.
-  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.63 / 94.03 (also 98.63 / 94.20: V8 range granularity, 63/67 vs 65/69 branches, same uncovered lines; darwin prints 63/67 under Node 22.23.0 and 22.23.2 alike, and 65/69 is the only pair within +-12 of both counters that renders the ubuntu 94.20)
+  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.74 / 94.52
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
   { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.93 / 93.62
   // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
