@@ -610,6 +610,18 @@ describe("writeMcpClientConfig", () => {
 
     expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
   });
+
+  it("merges into a config saved with a UTF-8 byte order mark instead of replacing it", async () => {
+    // Windows editors (Notepad among them) save JSON with a leading BOM.
+    // JSON.parse rejects it, so the file read as malformed and every other
+    // server registered in it was wiped.
+    seed(vsCodeConfig(), `\uFEFF${withExistingServer()}`);
+
+    await runMcp();
+
+    expect(serversIn(vsCodeConfig())).toEqual(["existing", "syncrona"]);
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
 });
 
 describe("writeMcpSecretsConfig", () => {
