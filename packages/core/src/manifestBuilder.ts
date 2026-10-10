@@ -2574,7 +2574,7 @@ export async function buildBulkDownloadFromTableAPI(
             files.push({
               name: fieldName,
               type: fieldType,
-              content: row[fieldName] ?? "",
+              content: fieldText(row[fieldName]),
             });
           }
 

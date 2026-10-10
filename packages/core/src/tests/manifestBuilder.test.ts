@@ -487,6 +487,37 @@ describe("manifestBuilder", () => {
     ]);
   });
 
+  // The Table API returns a reference column as `{ link, value }` (no
+  // sysparm_exclude_reference_link), so the raw cell used to be written as a
+  // JSON object instead of the referenced sys_id the manifest path writes.
+  it("buildBulkDownloadFromTableAPI writes a reference column's sys_id, not its link object", async () => {
+    const tableAPIGet: TableApiGet = jest.fn();
+    tableAPIGet.mockImplementation(async (table: string) =>
+      table === "sys_script_include"
+        ? {
+            data: {
+              result: [
+                {
+                  sys_id: "rec-1",
+                  name: "Include A",
+                  u_owner: { link: "https://x/api/now/table/sys_user/abc", value: "abc" },
+                },
+              ],
+            },
+          }
+        : { data: { result: [] } }
+    );
+
+    const missing: SN.MissingFileTableMap = {
+      sys_script_include: { "rec-1": [{ name: "u_owner", type: "txt" }] },
+    };
+
+    const tableMap = await buildBulkDownloadFromTableAPI(missing, createClient(tableAPIGet), {});
+    expect(tableMap.sys_script_include.records["Include A"].files).toEqual([
+      { name: "u_owner", type: "txt", content: "abc" },
+    ]);
+  });
+
   // buildRecordName applies the tableOptions.displayField override internally
   // (override -> default -> sys_id). The bulk-download path used to hand it the
   // already-resolved override as the fallback argument, collapsing that chain to
