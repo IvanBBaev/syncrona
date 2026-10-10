@@ -286,6 +286,63 @@ describe("commander --dry-run contract", () => {
     });
   });
 
+  // yargs parses any value of a boolean other than `true` as false, so
+  // `--dry-run=1` used to run the command for real.
+  describe("a --dry-run value other than true or false", () => {
+    let prevExit: typeof process.exitCode;
+    beforeEach(() => {
+      prevExit = process.exitCode;
+      process.exitCode = 0;
+    });
+    afterEach(() => {
+      process.exitCode = prevExit;
+    });
+
+    it.each([["--dry-run=1"], ["--dry-run=yes"], ["--dryRun=TRUE"], ["--dry-run="]])(
+      "refuses %s instead of running for real",
+      async (flag) => {
+        register("canpreview");
+
+        await runArgv(["canpreview", flag]);
+        await flush();
+
+        expect(handlerSpy).not.toHaveBeenCalled();
+        expect(process.exitCode).toBe(1);
+        expect(mockLoggerError).toHaveBeenCalledWith(
+          `\`${flag}\` is not a dry-run switch: only --dry-run, --dry-run=true and ` +
+            "--dry-run=false are accepted. Re-run with --dry-run to preview."
+        );
+      }
+    );
+
+    it.each([
+      ["--dry-run=true", true],
+      ["--dry-run=false", false],
+    ])("accepts %s", async (flag, expected) => {
+      register("canpreview");
+
+      await runArgv(["canpreview", flag]);
+      await flush();
+
+      expect(handlerSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: expected }));
+    });
+
+    it("ignores the spelling after a -- terminator", async () => {
+      register("canpreview");
+
+      try {
+        await runArgv(["canpreview", "--", "--dry-run=1"]);
+      } catch {
+        // yargs' own handling of the trailing argument is not under test here.
+      }
+      await flush();
+
+      expect(mockLoggerError).not.toHaveBeenCalledWith(
+        expect.stringContaining("is not a dry-run switch")
+      );
+    });
+  });
+
   it("runs a no-preview command normally when the flag is absent", async () => {
     register("nopreview", false);
 
