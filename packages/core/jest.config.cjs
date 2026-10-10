@@ -220,17 +220,17 @@ module.exports = {
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 94.98
     // Credentials: the keychain/file store and the auth-method picker.
-    './src/authCommands.ts': { lines: 88, branches: 71 }, // measured 92.09 / 78.43
+    './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
     './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/config.ts': { lines: 96, branches: 91 }, // measured 99.56 / 96.40
-    './src/envFile.ts': { lines: 96, branches: 80 }, // measured 100.00 / 85.00
+    './src/envFile.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/commandHelpers.ts': { lines: 92, branches: 70 }, // measured 96.05 / 77.08
+    './src/commandHelpers.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     './src/commands.ts': { lines: 96, branches: 94 }, // measured 99.55 / 99.04
     // Spawns plugin processes / watches the tree / drives the interactive setup.
-    './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 91.42
+    './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 97.87 / 96.42
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 93.02
@@ -238,7 +238,7 @@ module.exports = {
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
     // true of the engine — so it holds credential material for a whole sweep.
-    './src/mirrorCommand.ts': { lines: 96, branches: 84 }, // measured 100.00 / 90.10
+    './src/mirrorCommand.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.90
     // Drives api/sn_cicd: installs, publishes and rolls back applications, and
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
     './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.77 / 94.98
