@@ -613,8 +613,19 @@ async function runReport(
     );
   }
 
+  // The exit code is the last sweep's R1 verdict and the reason a CI job runs
+  // `mirror report`, so a report without one is refused rather than read as 0:
+  // `"exitCode": "2"` must not turn a sweep with partials into a green gate.
+  const verdict = (report as { exitCode?: unknown } | null)?.exitCode;
+  if (verdict !== 0 && verdict !== 1 && verdict !== 2) {
+    throw new MirrorCliError(
+      `${engine.COVERAGE_REL_PATH} in ${deps.root} carries no exit code of 0, 1 or 2; ` +
+        `it is committed output, so this means the file was edited or truncated.`
+    );
+  }
+
   deps.write(args.json === true ? text : engine.renderMirrorReport(report));
-  return typeof report.exitCode === "number" ? report.exitCode : 0;
+  return verdict;
 }
 
 /**

@@ -5,7 +5,7 @@ export {};
 // Edge branches of `syncrona mirror` that the main suites leave open: the
 // process-boundary fallbacks (a missing action, a non-Error throw, an empty
 // message, a non-string failure class), `verify --deep` sampling every record,
-// and `mirror report` over a coverage file that carries no numeric exit code.
+// and `mirror report` over a coverage file that carries no valid exit code.
 // Each test asserts the outcome a user sees — the exit code and the printed
 // line — not merely that the line executed.
 
@@ -155,7 +155,7 @@ describe("mirror verify --deep", () => {
   });
 });
 
-describe("mirror report over a coverage file without a numeric exitCode", () => {
+describe("mirror report over a coverage file without a valid exitCode", () => {
   const reportEngine = (json: string) => {
     const renderMirrorReport = jest.fn((_report: unknown) => "# Mirror report\n");
     return {
@@ -172,22 +172,25 @@ describe("mirror report over a coverage file without a numeric exitCode", () => 
     };
   };
 
-  it("exits 0 and still renders the report when exitCode is absent", async () => {
-    const { engine, renderMirrorReport } = reportEngine('{"sweepId":"s-1","tables":[]}');
-    await mirrorCommand(baseArgs({ action: "report" }), depsWith(engine));
-
-    expect(exitCode()).toBe(0);
-    expect(renderMirrorReport).toHaveBeenCalledWith({ sweepId: "s-1", tables: [] });
-    expect(written).toEqual(["# Mirror report\n"]);
-  });
-
-  it("exits 0 when exitCode is a non-number, and --json echoes the raw text", async () => {
-    const raw = '{"exitCode":"2","tables":[]}';
+  it.each([
+    ["absent", '{"sweepId":"s-1","tables":[]}'],
+    ["a string", '{"exitCode":"2","tables":[]}'],
+    ["out of range", '{"exitCode":3,"tables":[]}'],
+    ["not an object", "null"],
+  ])("exits 1 and prints nothing when the exit code is %s", async (_label, raw) => {
     const { engine, renderMirrorReport } = reportEngine(raw);
     await mirrorCommand(baseArgs({ action: "report", json: true }), depsWith(engine));
 
-    expect(exitCode()).toBe(0);
+    expect(exitCode()).toBe(1);
     expect(renderMirrorReport).not.toHaveBeenCalled();
-    expect(written).toEqual([raw]);
+    expect(written).toEqual([]);
+    expect(errors[0]).toContain("carries no exit code of 0, 1 or 2");
+  });
+
+  it("re-surfaces a valid exit code of 1", async () => {
+    const { engine } = reportEngine('{"exitCode":1,"tables":[]}');
+    await mirrorCommand(baseArgs({ action: "report" }), depsWith(engine));
+    expect(exitCode()).toBe(1);
+    expect(written).toEqual(["# Mirror report\n"]);
   });
 });
