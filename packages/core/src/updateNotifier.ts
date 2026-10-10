@@ -133,7 +133,9 @@ export function shouldRefresh(
   nowMs: number,
   intervalMs: number = UPDATE_CHECK_INTERVAL_MS
 ): boolean {
-  if (!Number.isFinite(lastCheckMs) || lastCheckMs <= 0) {
+  // A last check in the future means the clock ran ahead when it was recorded;
+  // waiting for that moment would stop the check for as long as it was wrong.
+  if (!Number.isFinite(lastCheckMs) || lastCheckMs <= 0 || lastCheckMs > nowMs) {
     return true;
   }
   return nowMs - lastCheckMs >= intervalMs;
