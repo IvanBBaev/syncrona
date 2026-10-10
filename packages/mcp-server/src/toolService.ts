@@ -470,7 +470,10 @@ export async function checkSyncronaCapabilities(
     getAppList: { method: "GET", route: "sinc/getAppList", body: undefined },
     getManifestSample: {
       method: "POST",
-      route: `sinc/getManifest/${resolvedScope}`,
+      // The scope is caller input and must stay one path segment: fetch resolves
+      // dot segments, so an unencoded `../../../now/table/sys_user` turned this
+      // read-only probe into a POST that creates a record through the Table API.
+      route: `sinc/getManifest/${encodeURIComponent(resolvedScope)}`,
       body: { includes: {}, excludes: {}, tableOptions: {}, withFiles: false },
     },
     runBackgroundScript: {

@@ -810,3 +810,23 @@ test('checkSyncronaCapabilities stringifies a non-Error probe rejection', async 
   );
   assert.equal(result.getAppList.error, 'socket hang up');
 });
+
+test('checkSyncronaCapabilities keeps the scope inside the getManifest route segment', async () => {
+  // fetch resolves dot segments, so an unencoded `../../../now/table/sys_user`
+  // turned the read-only manifest probe into a POST against the Table API.
+  const { calls } = await withProbes(
+    {
+      scopeProbe: () => {
+        throw new Error('must not be called');
+      },
+      request: () => ({ usedEndpoint: '/api/_sync', status: 200 }),
+    },
+    () => checkSyncronaCapabilities(5000, '../../../now/table/sys_user')
+  );
+  const manifestCall = calls.find(
+    (c) => c.kind === 'request' && c.route.startsWith('sinc/getManifest/')
+  );
+  const segment = manifestCall.route.slice('sinc/getManifest/'.length);
+  assert.equal(segment.includes('/'), false, `scope escaped its path segment: ${manifestCall.route}`);
+  assert.equal(decodeURIComponent(segment), '../../../now/table/sys_user');
+});
