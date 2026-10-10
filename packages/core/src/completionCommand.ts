@@ -105,6 +105,11 @@ export function renderZshCompletionScript(
     "  fi",
     "  return 0",
     "}",
+    // compdef exists only once compinit has run; a ~/.zshrc without it would
+    // otherwise fail with "command not found: compdef" on every new shell.
+    "if (( ! $+functions[compdef] )); then",
+    "  autoload -Uz compinit && compinit",
+    "fi",
     "compdef _syncrona_completions syncrona",
     "###-end-syncrona-completions-###",
   ].join("\n");

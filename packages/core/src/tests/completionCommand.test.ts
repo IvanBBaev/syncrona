@@ -102,6 +102,14 @@ describe("completionCommand", () => {
       );
     });
 
+    it("loads compinit before compdef when the shell has not run it", () => {
+      const script = renderZshCompletionScript(CLI_COMMANDS);
+      const guard = script.indexOf("if (( ! $+functions[compdef] )); then");
+      expect(guard).toBeGreaterThan(-1);
+      expect(script.indexOf("autoload -Uz compinit && compinit")).toBeGreaterThan(guard);
+      expect(script.indexOf("\ncompdef _syncrona_completions syncrona")).toBeGreaterThan(guard);
+    });
+
     it("escapes single quotes and colons inside command descriptions", () => {
       const synthetic: CliCommandModule[] = [
         {
