@@ -627,6 +627,11 @@ export async function mirrorCommand(
   overrides: Partial<MirrorCommandDeps> = {}
 ): Promise<void> {
   setLogLevel(args);
+  if (args.json === true) {
+    // stdout carries exactly one JSON document under --json; log lines, the
+    // error hint among them, go to stderr so `syncrona mirror ... --json | jq` parses.
+    logger.routeAllToStderr();
+  }
   const deps: MirrorCommandDeps = { ...defaultDeps(), ...overrides };
   const profile = resolveInstanceProfile(args);
   const action = String(args.action ?? "").trim() as MirrorAction;

@@ -676,6 +676,15 @@ describe("argument surface", () => {
     expect(await run(h, "sync")).toBe(1);
   });
 
+  it("routes every log line to stderr under --json, so stdout holds only the JSON", async () => {
+    // The routing is sticky on the shared logger, so it is observed, not engaged.
+    const route = jest.spyOn(logger, "routeAllToStderr").mockImplementation(() => {});
+    await run(harness(), "verify");
+    expect(route).not.toHaveBeenCalled();
+    await run(harness(), "verify", { json: true });
+    expect(route).toHaveBeenCalledTimes(1);
+  });
+
   it("--json emits one machine object per subcommand", async () => {
     for (const action of ["init", "sync", "status", "verify"]) {
       const h = harness();
