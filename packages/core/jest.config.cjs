@@ -92,11 +92,14 @@ module.exports = {
   // mutation run to its own modules.
   modulePathIgnorePatterns: ["<rootDir>/\\.stryker-tmp/"],
   coverageThreshold: {
+    // Measured 97.88 / 91.47 / 98.47 / 98.47 (statements / branches / functions /
+    // lines) when last raised; the floors keep a few points for the branch
+    // variance between macOS and Linux CI.
     global: {
-      statements: 92,
-      branches: 79,
-      functions: 89,
-      lines: 92,
+      statements: 95,
+      branches: 88,
+      functions: 95,
+      lines: 95,
     },
     // REV-95 (GATE-1): the global-only thresholds above are diluted by the
     // whole tree — a brand-new source file at 0% coverage barely moves the

@@ -2233,7 +2233,7 @@ bypass, both traced and refuted in earlier passes.
       returns 200 with an empty body and does NOT execute the script (no UI
       session / CSRF g_ck token). The fallback is now correctly reachable but
       remains non-executing under Basic auth, as the code/docs already warn.
-- [~] CR26 (follow-up): coverage thresholds ratcheted again 2026-06-24 to
+- [x] CR26 (follow-up): coverage thresholds ratcheted again 2026-06-24 to
       st 76 / br 63 / fn 71 / ln 76 (measured 77.8/64.9/72.8/77.5 after the
       logMessages, bootstrap, gitUtils and devCommands suites landed; up from the
       2026-06-21 floor of 72/60/65/72). Credential-store mutation score lifted in
@@ -2243,6 +2243,12 @@ bypass, both traced and refuted in earlier passes.
       design. Keep ratcheting toward 80 as tests are added; never down. Remaining
       core branch headroom (toward 70+) is concentrated in appUtils.ts IO/network
       paths (43% branch), addressed opportunistically.
+  - Done (2026-10-10): the global floors had fallen 6–12 points behind the
+    per-file work (92 / 79 / 89 / 92 against a measured 97.88 / 91.47 / 98.47 /
+    98.47), so a regression spread thinly across the tree could drop up to
+    twelve points of branch coverage and stay green. Raised to 95 / 88 / 95 / 95, with
+    `coverageFloors.test.ts` holding the new ratchet. appUtils.ts IO paths are
+    covered by `appUtilsIoPaths.test.ts`.
 
 ---
 
