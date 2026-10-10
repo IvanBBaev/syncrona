@@ -518,14 +518,14 @@ export function renderNativeTypes(schema: NativeSchema): NativeTypesResult {
       .filter(({ field, type }) => inherited.has(field.element) && inherited.get(field.element) !== signature(field, type))
       .map(({ field }) => JSON.stringify(field.element));
 
-    const doc = [`${commentText(table.label)} (\`${table.name}\`)`];
+    const doc = [`${commentText(table.label)} (\`${commentText(table.name)}\`)`];
     if (table.scope) doc.push(`Scope: \`${commentText(table.scope)}\``);
     if (cycleCuts.has(table.name)) {
       doc.push(
         `Extends \`${commentText(table.superClass as string)}\`, which leads back to this table: the cyclic super_class chain is cut here`
       );
     } else if (table.superClass && !parentName) {
-      doc.push(`Extends \`${table.superClass}\`, which could not be read`);
+      doc.push(`Extends \`${commentText(table.superClass)}\`, which could not be read`);
     }
     lines.push(`/**\n${doc.map((d) => ` * ${d}`).join("\n")}\n */`);
     const parentId = parentName ? (ids.get(parentName) as string) : undefined;

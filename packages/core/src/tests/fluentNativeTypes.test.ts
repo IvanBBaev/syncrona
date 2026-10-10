@@ -554,6 +554,17 @@ describe("renderNativeTypes", () => {
     expect(content).toContain("export interface x_same extends x_base {");
   });
 
+  it("keeps an unreadable parent's name inside the comment", async () => {
+    const content = await render({
+      sys_db_object: [{ name: "x_t", "super_class.name": "a*/ export const pwned = 1; /*", "sys_scope.scope": "x_s" }],
+      sys_dictionary: [{ name: "x_t", element: "f", internal_type: "string" }],
+      sys_choice: [],
+    }, "x_s");
+    expect(content).toContain(" * Extends `a*\\/ export const pwned = 1; /*`, which could not be read");
+    expect(content).not.toContain("a*/");
+    expect(await strictDiagnostics([content])).toEqual([]);
+  });
+
   it("generates a module that compiles under strict tsc", async () => {
     const modules = [
       await render(TASK_FIXTURE),
