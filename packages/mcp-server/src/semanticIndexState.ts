@@ -21,6 +21,8 @@ let LAST_SEMANTIC_INDEX_FILE_COUNT: number | null = null;
 // Without it, N requests arriving while the index is dirty each launch their own
 // full workspace walk (thundering herd); they collapse onto one build here.
 let SEMANTIC_INDEX_BUILD_IN_FLIGHT: Promise<SemanticSymbol[]> | null = null;
+// The invalidation epoch the in-flight build is guaranteed to cover.
+let SEMANTIC_INDEX_BUILD_EPOCH = 0;
 // REV-154: bumped by every invalidation so a build can tell whether the workspace
 // changed while it was running. See commitSemanticIndex.
 let INVALIDATION_EPOCH = 0;
@@ -282,13 +284,28 @@ export async function getSemanticIndexAsync(
     return LAST_SEMANTIC_INDEX;
   }
 
-  if (SEMANTIC_INDEX_BUILD_IN_FLIGHT) {
+  // Join the in-flight build only when nothing was invalidated since it started.
+  // A caller arriving after an invalidation (a tool call right after a push or a
+  // file write) was handed the older build and got symbols that predate the change.
+  if (SEMANTIC_INDEX_BUILD_IN_FLIGHT && SEMANTIC_INDEX_BUILD_EPOCH === INVALIDATION_EPOCH) {
     return SEMANTIC_INDEX_BUILD_IN_FLIGHT;
   }
 
-  SEMANTIC_INDEX_BUILD_IN_FLIGHT = (async () => {
-    // Snapshot the pre-build state BEFORE any await, so an invalidation raised
-    // while this build runs is observable at publish time. (REV-154)
+  // Chain behind the older build rather than run beside it, so builds publish in
+  // order and the older one can never overwrite this newer result.
+  const previous = SEMANTIC_INDEX_BUILD_IN_FLIGHT;
+  // Assigned right below; the finally only runs after an await, by which time it is.
+  let build: Promise<SemanticSymbol[]> | null = null;
+  build = (async () => {
+    if (previous) {
+      try {
+        await previous;
+      } catch (_) {
+        // Its caller sees that failure; this build runs regardless.
+      }
+    }
+    // Snapshot the pre-build state BEFORE any await of this build's own work, so
+    // an invalidation raised while it runs is observable at publish time. (REV-154)
     const startedAt = Date.now();
     const epoch = INVALIDATION_EPOCH;
     try {
@@ -297,11 +314,17 @@ export async function getSemanticIndexAsync(
       commitSemanticIndex(nextIndex, { startedAt, epoch, fileCount: sample.fileCount });
       return nextIndex;
     } finally {
-      SEMANTIC_INDEX_BUILD_IN_FLIGHT = null;
+      if (SEMANTIC_INDEX_BUILD_IN_FLIGHT === build) {
+        SEMANTIC_INDEX_BUILD_IN_FLIGHT = null;
+      }
     }
   })();
+  SEMANTIC_INDEX_BUILD_IN_FLIGHT = build;
+  // This build starts no earlier than now, so it covers every invalidation up to
+  // the current epoch; later callers with the same epoch can share it.
+  SEMANTIC_INDEX_BUILD_EPOCH = INVALIDATION_EPOCH;
 
-  return SEMANTIC_INDEX_BUILD_IN_FLIGHT;
+  return build;
 }
 
 export function getSemanticIndexState(): {
