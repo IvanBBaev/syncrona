@@ -19,6 +19,24 @@ function toStringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+// snRequest resolves with the status instead of throwing on 4xx/5xx. Unchecked,
+// a rejected read parsed as "no rows" (an expired password reported as "Scope not
+// found" or "no x_* scopes") and a rejected write as success.
+function assertOkResponse(
+  response: { status: number; data: unknown; text: string },
+  action: string
+): void {
+  if (response.status >= 200 && response.status < 300) {
+    return;
+  }
+  const detail =
+    toStringField(asRecord(asRecord(response.data).error).message) ||
+    response.text.trim().slice(0, 200);
+  throw new Error(
+    `${action} failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}`
+  );
+}
+
 export async function tableGet(
   table: string,
   opts: {
@@ -40,6 +58,7 @@ export async function tableGet(
     undefined,
     timeoutMs
   );
+  assertOkResponse(response, `Reading ${table}`);
   return toTableResultRows(response.data);
 }
 
