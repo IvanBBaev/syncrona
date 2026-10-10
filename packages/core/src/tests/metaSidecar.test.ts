@@ -280,6 +280,27 @@ describe("resolveMetaUpdate", () => {
     expect([...update.skipped].sort()).toEqual(["sys_package", "sys_policy", "sys_scope", "sys_update_name"]);
   });
 
+  // Writable in the dictionary too, and worse: a PATCH of sys_class_name
+  // reclassifies the record into another table, and sys_domain moves it into
+  // another domain.
+  it("never pushes the class and domain columns", () => {
+    const update = resolveMetaUpdate(
+      JSON.stringify({
+        sys_class_name: "sys_script",
+        sys_domain: "other-domain",
+        sys_domain_path: "!!!/",
+        active: "true",
+      }),
+      {
+        metaFields: [...known.metaFields, "sys_class_name", "sys_domain", "sys_domain_path"],
+        readOnlyFields: known.readOnlyFields,
+      }
+    );
+
+    expect(update.fields).toEqual({ active: "true" });
+    expect([...update.skipped].sort()).toEqual(["sys_class_name", "sys_domain", "sys_domain_path"]);
+  });
+
   // The whole point of the feature: ServiceNow answers 200 to an update naming a
   // column that does not exist, so a typo would otherwise be a "successful" push
   // that changed nothing.

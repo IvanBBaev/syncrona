@@ -115,7 +115,9 @@ export const META_FIELD_DENYLIST: ReadonlySet<string> = new Set([
  * The dictionary does not mark them read-only, so without this list an edited
  * (or stale) sidecar would PATCH them: `sys_scope` and `sys_package` would move
  * the record into another application, `sys_policy` would change its protection
- * policy, and `sys_update_name` would rename its update-set identity. None of
+ * policy, `sys_update_name` would rename its update-set identity,
+ * `sys_class_name` would reclassify the record into another table, and
+ * `sys_domain` / `sys_domain_path` would move it into another domain. None of
  * that is an edit of the record; the platform owns those columns. A key named
  * here is dropped from the update and reported like a read-only one.
  */
@@ -124,6 +126,9 @@ export const META_PUSH_PROTECTED_FIELDS: ReadonlySet<string> = new Set([
   "sys_package",
   "sys_policy",
   "sys_update_name",
+  "sys_class_name",
+  "sys_domain",
+  "sys_domain_path",
 ]);
 
 /**
