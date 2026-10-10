@@ -261,6 +261,42 @@ describe("buildManifestFromTableAPI with a refused read below the top-level quer
       expect.stringContaining("Kept the previously known records for: sys_script")
     );
   });
+
+  // The merge is keyed by record name, so a record renamed on the instance and
+  // returned by the accessible chunk came back under its new name AND was
+  // restored under its old one: one sys_id listed under two folders.
+  it("does not restore a previous record the partial read returned under a new name", async () => {
+    getManifest.mockReturnValue(PREVIOUS);
+    const ids = ["rec-1", ...Array.from({ length: 249 }, (_, i) => `md-${i}`)];
+
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(createRefusingClient((table, query, fields) => {
+        if (table === "sys_metadata" && fields === "sys_id,sys_class_name") {
+          return { data: { result: ids.map((sys_id) => ({ sys_id })) } };
+        }
+        if (table === "sys_script" && query.startsWith("sys_idIN")) {
+          const chunk = query.slice("sys_idIN".length).split(",");
+          if (!chunk.includes("rec-1")) return forbidden();
+          return {
+            data: {
+              result: chunk.map((sys_id) => ({
+                sys_id,
+                name: sys_id === "rec-1" ? "Renamed" : `Script-${sys_id}`,
+              })),
+            },
+          };
+        }
+        return undefined;
+      })),
+      emptyConfig
+    );
+
+    const records = manifest.tables.sys_script.records;
+    expect(records["Renamed"].sys_id).toBe("rec-1");
+    expect(records["Existing"]).toBeUndefined();
+    expect(Object.values(records).filter((r) => r.sys_id === "rec-1")).toHaveLength(1);
+  });
 });
 
 // `row[fieldName] || ""` cannot tell "the instance returned an empty value"

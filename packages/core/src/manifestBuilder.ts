@@ -1923,8 +1923,10 @@ async function enumerateTables(
         current && Object.keys(current).length > 0
           ? // Partial read: keep every record just enumerated (they are the
             // fresher truth) and restore only the ones the refused part of the
-            // read would have silently dropped.
-            { ...priorTable, records: { ...priorTable.records, ...current } }
+            // read would have silently dropped. A prior entry whose sys_id
+            // was just enumerated under another name (a rename) is stale and
+            // must not list the record a second time.
+            { ...priorTable, records: { ...priorRecordsNotIn(priorTable.records, current), ...current } }
           : priorTable;
       carried.push(tableName);
     }
@@ -1935,6 +1937,17 @@ async function enumerateTables(
           : "")
     );
   }
+}
+
+/** The prior records whose sys_id is not among the `current` records. */
+function priorRecordsNotIn(
+  prior: SN.TableConfigRecords,
+  current: SN.TableConfigRecords
+): SN.TableConfigRecords {
+  const seen = new Set(Object.values(current).map((record) => record.sys_id));
+  return Object.fromEntries(
+    Object.entries(prior).filter(([, record]) => !seen.has(record.sys_id))
+  );
 }
 
 type ManifestBuildConfig = Pick<
