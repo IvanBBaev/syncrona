@@ -151,6 +151,52 @@ function isClaimedUnderAnotherEncoding(
   return hasRecordNamed(records, key.record);
 }
 
+// The field a manifest-shaped path names: the file stem in folder mode, the
+// part of the stem after the LAST separator in flat mode.
+function fieldStemFromPath(sourcePath: string, filePath: string): string | undefined {
+  const segments = path
+    .relative(sourcePath, filePath)
+    .split(/[/\\]/)
+    .filter((seg) => seg.length > 0);
+  const name = segments[segments.length - 1];
+  if (segments.length === 3) {
+    return path.basename(name, path.extname(name));
+  }
+  if (segments.length === 2) {
+    const stem = path.basename(name, path.extname(name));
+    return stem.slice(stem.lastIndexOf(FLAT_FIELD_SEPARATOR) + FLAT_FIELD_SEPARATOR.length);
+  }
+  return undefined;
+}
+
+// True when a record of this path lists the file's field under another case
+// (or encoding) of its name: `Script.js` for field `script`. findFieldRepresentation
+// matches the field on a case-folded stem, so such a file is the field's local
+// copy — refresh never writes a second one beside it — yet the byte-exact
+// getFileContextFromPath lookup misses it, and `--prune` deleted the only copy.
+function isFieldClaimedUnderAnotherCase(
+  manifest: SN.AppManifest,
+  sourcePath: string,
+  filePath: string
+): boolean {
+  const key = recordKeyFromPath(sourcePath, filePath);
+  const field = fieldStemFromPath(sourcePath, filePath);
+  if (!key || field === undefined) {
+    return false;
+  }
+  const records = findTable(manifest, key.table)?.records;
+  if (!records) {
+    return false;
+  }
+  const recordName = canonicalName(key.record);
+  const fieldName = canonicalName(field);
+  return Object.entries(records).some(
+    ([name, record]) =>
+      canonicalName(name) === recordName &&
+      (record.files ?? []).some((file) => canonicalName(file.name) === fieldName)
+  );
+}
+
 // Batch 4b R3: what a `.meta.json` sidecar is to repair. A sidecar is kept when
 // the manifest holds its record (under any encoding of the name: the sidecar
 // belongs to the record, even when the manifest lost its metadata layer). It is
@@ -237,7 +283,10 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
     ) {
       continue;
     }
-    if (isClaimedUnderAnotherEncoding(manifest, sourcePath, file)) {
+    if (
+      isClaimedUnderAnotherEncoding(manifest, sourcePath, file) ||
+      isFieldClaimedUnderAnotherCase(manifest, sourcePath, file)
+    ) {
       encodingMismatches.push(file);
       continue;
     }
@@ -270,7 +319,7 @@ async function findOrphanFiles(manifest: SN.AppManifest): Promise<string[]> {
   }
   if (encodingMismatches.length > 0) {
     logger.warn(
-      `Kept ${encodingMismatches.length} tracked file(s) whose on-disk name differs from the manifest only in encoding (Unicode normalization or trailing dots/spaces):\n` +
+      `Kept ${encodingMismatches.length} tracked file(s) whose on-disk name differs from the manifest only in encoding (case, Unicode normalization or trailing dots/spaces):\n` +
         encodingMismatches.map((f) => `  ${f}`).join("\n")
     );
   }

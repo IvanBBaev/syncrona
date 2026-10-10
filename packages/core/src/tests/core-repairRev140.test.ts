@@ -207,4 +207,25 @@ describe("REV-140: prune keeps tracked files whose on-disk name is encoded diffe
 
     expect(existsSync(file)).toBe(false);
   });
+
+  // findFieldRepresentation matches a field on a case-folded stem, so `Script.js`
+  // IS the local copy of field `script` and refresh never writes a second one —
+  // but the byte-exact field lookup missed it and prune deleted the only copy.
+  test("does not delete a folder-layout field file whose name differs only in case", async () => {
+    getManifest.mockReturnValue(manifestWith({ Keeper: recordEntry("Keeper") }) as never);
+    const file = seed(["sys_script", "Keeper", "Script.js"]);
+
+    await repairCommand(pruneArgs);
+
+    expect(existsSync(file)).toBe(true);
+  });
+
+  test("does not delete a flat-layout field file whose name differs only in case", async () => {
+    getManifest.mockReturnValue(manifestWith({ Keeper: recordEntry("Keeper") }) as never);
+    const file = seed(["sys_script", "Keeper~SCRIPT.js"]);
+
+    await repairCommand(pruneArgs);
+
+    expect(existsSync(file)).toBe(true);
+  });
 });
