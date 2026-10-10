@@ -1161,7 +1161,8 @@ export interface DownloadTableDeps {
   writeTable: (files: SN.TableMap) => Promise<void>;
   readCheckpoint: (
     scope: string,
-    fingerprint: string
+    fingerprint: string,
+    instance?: string
   ) => Promise<DownloadCheckpoint | null>;
   writeCheckpoint: (checkpoint: DownloadCheckpoint) => Promise<void>;
   deleteCheckpoint: () => Promise<void>;
@@ -1173,7 +1174,8 @@ export interface DownloadTableDeps {
 export const downloadTablesWithResume = async (
   missing: SN.MissingFileTableMap,
   scope: string,
-  deps: DownloadTableDeps
+  deps: DownloadTableDeps,
+  instance?: string
 ): Promise<void> => {
   const allTables = Object.keys(missing);
   // DX21: report download volume so a slow pull is explainable.
@@ -1187,7 +1189,10 @@ export const downloadTablesWithResume = async (
   // records made the next download skip those tables as "already done", so the
   // new files were never fetched while the run still reported success.
   const fingerprint = computeMissingFingerprint(missing);
-  const checkpoint = await deps.readCheckpoint(scope, fingerprint);
+  // The instance too: the same scope and manifest slice exist on every
+  // instance, so a checkpoint from an interrupted pull of dev made a pull of
+  // test skip the tables dev had already delivered.
+  const checkpoint = await deps.readCheckpoint(scope, fingerprint, instance);
   const completed = new Set<string>(checkpoint?.completedTables ?? []);
   const pending = allTables.filter((table) => !completed.has(table));
 
@@ -1253,6 +1258,7 @@ export const downloadTablesWithResume = async (
     await deps.writeCheckpoint({
       scope,
       fingerprint,
+      ...(instance !== undefined ? { instance } : {}),
       completedTables: [...completed],
     });
   }
@@ -1278,7 +1284,8 @@ export const downloadTablesWithResume = async (
 // scoped endpoint is found to be unavailable.
 export const downloadAllFiles = async (
   manifest: SN.AppManifest,
-  instanceProfile?: string
+  instanceProfile?: string,
+  instance?: string
 ): Promise<void> => {
   const missing = buildFullMissingMap(manifest);
   // R4: see processMissingFiles.
@@ -1295,11 +1302,16 @@ export const downloadAllFiles = async (
     () => logger.info("Custom scope not found — fetching files from Table API...")
   );
 
-  await downloadTablesWithResume(missing, manifest.scope, {
-    fetchTable,
-    writeTable: (files) => processTablesInManifest(files, true),
-    readCheckpoint: readDownloadCheckpoint,
-    writeCheckpoint: writeDownloadCheckpoint,
-    deleteCheckpoint: deleteDownloadCheckpoint,
-  });
+  await downloadTablesWithResume(
+    missing,
+    manifest.scope,
+    {
+      fetchTable,
+      writeTable: (files) => processTablesInManifest(files, true),
+      readCheckpoint: readDownloadCheckpoint,
+      writeCheckpoint: writeDownloadCheckpoint,
+      deleteCheckpoint: deleteDownloadCheckpoint,
+    },
+    instance
+  );
 };

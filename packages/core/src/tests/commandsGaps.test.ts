@@ -569,6 +569,18 @@ describe("downloadCommand", () => {
     expect(mockDownloadAllFiles).toHaveBeenCalled();
   });
 
+  it("hands the download the instance it resumes against", async () => {
+    mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
+    mockIsScopedUnavailable.mockReturnValue(true);
+    const { downloadCommand } = await import("../commands.js");
+    await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
+    expect(mockDownloadAllFiles).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      "dev.service-now.com"
+    );
+  });
+
   it("rethrows a non-scoped manifest error", async () => {
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 500 } });
     mockIsScopedUnavailable.mockReturnValue(false);

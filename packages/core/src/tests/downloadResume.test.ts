@@ -174,6 +174,25 @@ describe("downloadTablesWithResume", () => {
     expect(seen).toEqual([expected]);
     expect(written).toEqual([expected, expected]);
   });
+
+  it("keys the checkpoint on the instance it was downloaded from", async () => {
+    const seen: Array<string | undefined> = [];
+    const written: Array<string | undefined> = [];
+    const { deps } = makeDeps({
+      readCheckpoint: async (_scope: string, _fingerprint: string, instance?: string) => {
+        seen.push(instance);
+        return null;
+      },
+      writeCheckpoint: async (cp) => {
+        written.push(cp.instance);
+      },
+    });
+
+    await downloadTablesWithResume(missingMap(["a"]), "x_app", deps, "dev.service-now.com");
+
+    expect(seen).toEqual(["dev.service-now.com"]);
+    expect(written).toEqual(["dev.service-now.com"]);
+  });
 });
 
 describe("computeMissingFingerprint", () => {
