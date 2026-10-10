@@ -209,16 +209,16 @@ module.exports = {
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
     './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.45 / 96.00
-    './src/downloadPipeline.ts': { lines: 94, branches: 81 }, // measured 99.54 / 85.88
+    './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.94 / 94.70
+    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.96 / 94.63
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75
     // Deletes local files under `repair --apply --prune`.
-    './src/repairCommand.ts': { lines: 93, branches: 88 }, // measured 97.12 / 91.88
+    './src/repairCommand.ts': { lines: 95, branches: 91 }, // measured 97.65 / 95.20
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 94.98
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 95.36
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
