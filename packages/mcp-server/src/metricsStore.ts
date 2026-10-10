@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -107,6 +110,24 @@ export function toRotatedMetricsPath(metricsFile: string, now: Date = new Date()
   return candidate;
 }
 
+// True when the file is non-empty and its last byte is not a newline, i.e. a writer was
+// killed mid-append and left a partial line behind. Appending straight onto it would glue
+// the next sample to the fragment, and the merged line fails to parse on every later load,
+// so the new sample would be lost along with the torn one.
+function endsWithPartialLine(metricsFile: string, size: number): boolean {
+  if (size === 0) {
+    return false;
+  }
+  const fd = openSync(metricsFile, "r");
+  try {
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function parseMetricLine(line: string): PersistedToolMetricEvent | null {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
@@ -145,12 +166,18 @@ export function appendMetricEvent(
       mkdirSync(metricsDir, { recursive: true });
     }
 
-    if (existsSync(metricsFile) && statSync(metricsFile).size >= maxBytes) {
-      renameSync(metricsFile, toRotatedMetricsPath(metricsFile));
-      pruneRotatedMetricsFiles(metricsFile, maxBackups);
+    let separator = "";
+    if (existsSync(metricsFile)) {
+      const size = statSync(metricsFile).size;
+      if (size >= maxBytes) {
+        renameSync(metricsFile, toRotatedMetricsPath(metricsFile));
+        pruneRotatedMetricsFiles(metricsFile, maxBackups);
+      } else if (endsWithPartialLine(metricsFile, size)) {
+        separator = "\n";
+      }
     }
 
-    appendFileSync(metricsFile, `${JSON.stringify(event)}\n`, "utf-8");
+    appendFileSync(metricsFile, `${separator}${JSON.stringify(event)}\n`, "utf-8");
   } catch (_) {
     // Best-effort persistence to keep runtime behavior stable.
   }
