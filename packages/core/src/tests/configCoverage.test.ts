@@ -138,6 +138,28 @@ describe("config coverage", () => {
     );
   });
 
+  it("refuses a manifest that is not JSON instead of reporting it as absent", async () => {
+    // A merge left conflict markers in the file: it is there, so "no manifest,
+    // run refresh" would send the user after the wrong problem.
+    const { store } = await loadStoreFrom(
+      "module.exports = { sourceDirectory: 'src' };\n",
+      { "sync.manifest.json": '<<<<<<< HEAD\n{"scope":"x_app","tables":{}}\n' }
+    );
+
+    expect(() => store.getManifest()).toThrow(/is present but could not be read as JSON/);
+    expect(store.getManifest(true)).toBeUndefined();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be read as JSON")
+    );
+  });
+
+  it("treats an absent manifest as absent, without a warning", async () => {
+    const { store } = await loadStoreFrom("module.exports = { sourceDirectory: 'src' };\n");
+
+    expect(() => store.getManifest()).toThrow("Error getting manifest");
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
   it("keeps a good in-memory manifest when a reload reads a shape-invalid file", async () => {
     // REV-110 already refuses to clobber the in-memory manifest on a transient
     // read/parse failure. A file that parses into the wrong shape is the same
