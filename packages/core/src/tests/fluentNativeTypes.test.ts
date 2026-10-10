@@ -414,12 +414,28 @@ const CYCLE_FIXTURE: Fixture = {
   sys_choice: [],
 };
 
+// The middle table narrows the inherited choices and the grandchild widens them
+// again, so the grandchild differs from its parent's overridden column.
+const GRANDCHILD_FIXTURE: Fixture = {
+  sys_db_object: [
+    { name: "x_base", "sys_scope.scope": "x_s" },
+    { name: "x_child", "super_class.name": "x_base", "sys_scope.scope": "x_s" },
+    { name: "x_gc", "super_class.name": "x_child", "sys_scope.scope": "x_s" },
+  ],
+  sys_dictionary: [{ name: "x_base", element: "state", internal_type: "string", choice: "3" }],
+  sys_choice: [
+    ...["a", "b", "c"].map((value) => ({ name: "x_base", element: "state", value })),
+    ...["a", "b"].map((value) => ({ name: "x_child", element: "state", value })),
+    ...["a", "b", "c"].map((value) => ({ name: "x_gc", element: "state", value })),
+  ],
+};
+
 /** Type-checks each generated module on its own under `strict`, in memory. */
 async function strictDiagnostics(modules: string[]): Promise<string[]> {
   const imported = await import("typescript");
   const ts = (imported as unknown as { default?: typeof imported }).default ?? imported;
   const files = new Map(modules.map((content, i) => [`/gen/types${i}.d.ts`, content]));
-  const options = { strict: true, noEmit: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022, types: [] };
+  const options = { strict: true, noEmit: true, skipLibCheck: false, target: ts.ScriptTarget.ES2022, types: [] };
   const host = ts.createCompilerHost(options);
   const { getSourceFile, fileExists, readFile } = host;
   // The generated modules live in memory; the standard library comes from disk.
@@ -565,11 +581,20 @@ describe("renderNativeTypes", () => {
     expect(await strictDiagnostics([content])).toEqual([]);
   });
 
+  it("compares a grandchild against the choices its parent overrides", async () => {
+    const content = await render(GRANDCHILD_FIXTURE, "x_s");
+    expect(content).toContain('export interface x_child extends Omit<x_base, "state"> {');
+    expect(content).toContain('  state?: "a" | "b";');
+    expect(content).toContain('export interface x_gc extends Omit<x_child, "state"> {');
+    expect(content).toContain('  state?: "a" | "b" | "c";');
+  });
+
   it("generates a module that compiles under strict tsc", async () => {
     const modules = [
       await render(TASK_FIXTURE),
       await render(OPTIONALITY_FIXTURE, "x_s"),
       await render(CYCLE_FIXTURE, "x_s"),
+      await render(GRANDCHILD_FIXTURE, "x_s"),
     ];
     expect(await strictDiagnostics(modules)).toEqual([]);
   });

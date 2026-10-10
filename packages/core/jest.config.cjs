@@ -249,7 +249,7 @@ module.exports = {
     './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.72 / 98.51
     // Writes the native `.d.ts` from instance metadata: a regression here ships a
     // type file that silently mistypes columns or drops inherited ones.
-    './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 95.93
+    './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 96.95
     // Rewrites third-party MCP client config files, writes the secrets file that
     // points the server at an instance, and spawns the server. It had no named
     // floor while it was the weakest file in the tree; that is what let it fail
