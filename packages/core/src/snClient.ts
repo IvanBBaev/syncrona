@@ -379,11 +379,24 @@ export const snClient = (
     return requestScopedEndpoint<AppListResponse>("get", "sinc/getAppList");
   };
 
-  const updateATFfile = (contents: string, sysId: string) => {
-    return requestScopedEndpoint("post", "pushATFfile", {
-      file: contents,
-      sys_id: sysId,
-    });
+  const updateATFfile = async (contents: string, sysId: string) => {
+    try {
+      return await requestScopedEndpoint("post", "pushATFfile", {
+        file: contents,
+        sys_id: sysId,
+      });
+    } catch (e) {
+      // Every scoped prefix answered "no such resource": the instance's
+      // Sincronia server app has no pushATFfile route, so no ATF step script
+      // can be sent. The bare axios error said only "status code 400".
+      if (!isEndpointNotFound(e)) throw e;
+      throw new Error(
+        `The instance has no pushATFfile endpoint under ${endpointPrefixOrder()
+          .map((prefix) => `api/${prefix}`)
+          .join(" or ")} (HTTP ${getErrorResponseStatus(e)}), so the ATF step script ` +
+          "cannot be sent. Install a Sincronia server app version that provides it."
+      );
+    }
   };
 
   const updateRecord = async (
@@ -456,7 +469,16 @@ export const snClient = (
     }
     const atfScript = fields["inputs.script"];
     if (table === "sys_atf_step" && typeof atfScript === "string") {
-      await updateATFfile(atfScript, sysId);
+      try {
+        await updateATFfile(atfScript, sysId);
+      } catch (e) {
+        // The insert already succeeded: say so, or the step reads as never
+        // created while it sits on the instance with its default script.
+        const reason = e instanceof Error ? e.message : String(e);
+        throw new Error(
+          `Created the ${table} record ${sysId}, but its script was not sent: ${reason}`
+        );
+      }
     }
     return { sys_id: sysId };
   };
