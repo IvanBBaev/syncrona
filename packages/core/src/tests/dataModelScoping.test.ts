@@ -115,6 +115,8 @@ interface Instance {
   choices?: Row[];
   /** table -> its super class. */
   parents?: Record<string, string>;
+  /** Tables whose sys_db_object row an ACL hides. */
+  hiddenTables?: string[];
   /** Tables that declare a sys_scope column themselves. */
   scopeColumnTables?: string[];
   /** Rows of any other table, as the scope filter or an operator query sees them. */
@@ -149,6 +151,7 @@ const fakeInstance = (instance: Instance = {}): TableApiGet => {
         return page(instance.ownedTables ?? []);
       }
       const name = /^name=([^^]+)/.exec(q)?.[1] ?? "";
+      if (instance.hiddenTables?.includes(name)) return page([]);
       return page([{ name, "super_class.name": instance.parents?.[name] ?? "" }]);
     }
     if (table === "sys_dictionary") {
@@ -560,6 +563,39 @@ describe("R4 scoping: a table the operator added to dataModelTables", () => {
     expect(recordIds(manifest, "x_lookup")).toEqual(["l1"]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Kept the previously known records for: x_lookup")
+    );
+  });
+
+  it("keeps the previous entry when an ancestor's sys_db_object row is hidden", async () => {
+    getManifest.mockReturnValue({
+      scope: "x_demo",
+      tables: {
+        x_demo_setting: {
+          records: {
+            alpha: { sys_id: "l1", name: "alpha", files: [{ name: ".meta", type: "json" }] },
+          },
+        },
+      },
+    });
+
+    // sys_metadata declares the column, but the row of x_demo_base between
+    // them cannot be read: the walk stops there, and the probe over the two
+    // tables it reached finds no column.
+    const { manifest, tableAPIGet } = await build(
+      {
+        parents: { x_demo_setting: "x_demo_base", x_demo_base: "sys_metadata" },
+        hiddenTables: ["x_demo_base"],
+        scopeColumnTables: ["sys_metadata"],
+        rows: { x_demo_setting: LOOKUP_ROWS },
+      },
+      { dataModelTables: ["x_demo_setting"] }
+    );
+
+    expect(queriesOn(tableAPIGet, "x_demo_setting")).toEqual([]);
+    expect(recordIds(manifest, "x_demo_setting")).toEqual(["l1"]);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("has no sys_scope column"));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Kept the previously known records for: x_demo_setting")
     );
   });
 

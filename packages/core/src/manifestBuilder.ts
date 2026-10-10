@@ -1074,18 +1074,6 @@ async function lookupTableParent(
 }
 
 /**
- * The parent of `tableName`, or undefined for a root table — and for a table
- * whose sys_db_object row did not come back (lookupTableParent tells the two
- * apart).
- */
-async function getTableParentName(
-  client: SNClient,
-  tableName: string
-): Promise<string | undefined> {
-  return (await lookupTableParent(client, tableName)).parent;
-}
-
-/**
  * A table and its ancestors, nearest first. `unreadable` is set when the walk
  * stopped short: a parent lookup threw, or answered with no row (what an ACL
  * on sys_db_object looks like). `tables` is then a prefix of the real
@@ -1676,11 +1664,17 @@ async function getScopeChoiceRows(
  * The walk is strict: unlike getTableHierarchyTableNames it does not swallow a
  * failed lookup, because a hierarchy cut short would report "no scope column"
  * for a table that inherits one, and the table would be dropped from the
- * manifest. The parent lookups are memoized, so after the file-field discovery
- * of the same table this costs the one dictionary request.
+ * manifest. For the same reason a lookup that answers with no row (what an ACL
+ * on sys_db_object looks like) makes a "no" unknown: undefined. The parent
+ * lookups are memoized, so after the file-field discovery of the same table
+ * this costs the one dictionary request.
  */
-async function tableHasScopeColumn(client: SNClient, tableName: string): Promise<boolean> {
+async function tableHasScopeColumn(
+  client: SNClient,
+  tableName: string
+): Promise<boolean | undefined> {
   const hierarchy: string[] = [];
+  let cutShort = false;
   let current: string | undefined = tableName;
   while (
     current &&
@@ -1688,7 +1682,9 @@ async function tableHasScopeColumn(client: SNClient, tableName: string): Promise
     hierarchy.length < MAX_TABLE_HIERARCHY_DEPTH
   ) {
     hierarchy.push(current);
-    current = await getTableParentName(client, current);
+    const lookup = await lookupTableParent(client, current);
+    cutShort ||= !lookup.found;
+    current = lookup.parent;
   }
   const names = hierarchy.filter(isQueryIdentifier);
   if (names.length === 0) {
@@ -1701,7 +1697,10 @@ async function tableHasScopeColumn(client: SNClient, tableName: string): Promise
     "name",
     1
   );
-  return extractResult(res.data).length > 0;
+  if (extractResult(res.data).length > 0) {
+    return true;
+  }
+  return cutShort ? undefined : false;
 }
 
 /**
@@ -1725,13 +1724,16 @@ async function resolveRecordScoping(
     return "scope-column";
   }
 
-  let hasScopeColumn: boolean;
+  let hasScopeColumn: boolean | undefined;
   try {
     hasScopeColumn = await tableHasScopeColumn(ctx.client, tableName);
   } catch (e) {
     if (!isTableSkippableError(e)) {
       throw e;
     }
+    hasScopeColumn = undefined;
+  }
+  if (hasScopeColumn === undefined) {
     // Unknown is not "no": report the skip so the previous entry is kept.
     onSkip();
     return undefined;
