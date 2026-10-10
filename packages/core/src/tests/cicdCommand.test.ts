@@ -341,6 +341,13 @@ describe("cicd run-suite", () => {
     expect(h.deps.createClient).not.toHaveBeenCalled();
   });
 
+  it.each([0, -5, "fast"])("rejects --poll-ms %p before any request", async (pollMs) => {
+    const h = harness();
+    expect(await run(h, "install", { scope: "x_app", pollMs })).toBe(1);
+    expect(errors[0]).toMatch(/--poll-ms must be a positive number of milliseconds/);
+    expect(h.deps.createClient).not.toHaveBeenCalled();
+  });
+
   it("emits the machine result with --json", async () => {
     const h = harness({
       progress: [() => progress("2", { links: { results: { id: "r" } } })],

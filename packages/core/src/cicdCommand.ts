@@ -890,6 +890,13 @@ async function runAction(
   // Validated before the client exists, so a bad flag never reaches the instance.
   const resumeId = parseProgressIdFlag(args.progressId);
   const request = resumeId ? undefined : buildCicdRequest(action, args);
+  // A positive value is clamped into range below; zero, a negative or a
+  // non-number is a mistake, refused like --timeout rather than replaced.
+  if (args.pollMs !== undefined && positiveOr(args.pollMs, -1) === -1) {
+    throw new CicdCliError(
+      `--poll-ms must be a positive number of milliseconds, got "${String(args.pollMs)}".`
+    );
+  }
   const pollMs = Math.min(
     MAX_POLL_MS,
     Math.max(MIN_POLL_MS, positiveOr(args.pollMs, DEFAULT_POLL_MS))
