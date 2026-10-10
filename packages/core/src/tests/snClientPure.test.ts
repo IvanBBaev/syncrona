@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import type { AxiosResponse } from "axios";
+import { AxiosError, AxiosHeaders, type AxiosResponse } from "axios";
 import {
   retryOnErr,
   processPushResponse,
@@ -68,6 +68,52 @@ describe("retryOnErr", () => {
       "fatal"
     );
     expect(f).toHaveBeenCalledTimes(1); // no retry attempted
+  });
+
+  it("waits for the server's Retry-After before retrying a throttled request", async () => {
+    jest.useFakeTimers();
+    try {
+      const throttled = new AxiosError("Too Many Requests", "ERR_BAD_REQUEST", undefined, undefined, {
+        status: 429,
+        headers: new AxiosHeaders({ "Retry-After": "2" }),
+      } as AxiosResponse);
+      const f = jest.fn<() => Promise<string>>().mockRejectedValueOnce(throttled).mockResolvedValue("ok");
+      const out = retryOnErr(f, 1, 10);
+      await jest.advanceTimersByTimeAsync(1_999);
+      expect(f).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(out).resolves.toBe("ok");
+      expect(f).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("reads Retry-After from plain lower-cased headers and ignores a non-text value", async () => {
+    jest.useFakeTimers();
+    try {
+      const withHeaders = (headers: Record<string, unknown>) =>
+        new AxiosError("Service Unavailable", "ERR_BAD_RESPONSE", undefined, undefined, {
+          status: 503,
+          headers,
+        } as unknown as AxiosResponse);
+      const f = jest
+        .fn<() => Promise<string>>()
+        .mockRejectedValueOnce(withHeaders({ "retry-after": "1" }))
+        .mockRejectedValueOnce(withHeaders({ "retry-after": 5 }))
+        .mockResolvedValue("ok");
+      const out = retryOnErr(f, 2, 10);
+      await jest.advanceTimersByTimeAsync(999);
+      expect(f).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(f).toHaveBeenCalledTimes(2);
+      // The numeric header is not a string, so the fixed 10 ms spacing applies.
+      await jest.advanceTimersByTimeAsync(10);
+      await expect(out).resolves.toBe("ok");
+      expect(f).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
