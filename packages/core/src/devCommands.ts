@@ -7,6 +7,11 @@ import { logger } from "./Logger.js";
 import { devModeLog } from "./logMessages.js";
 import { setLogLevel, scopeCheck } from "./commandHelpers.js";
 
+// Node clamps a timer delay above 2^31-1 ms to 1 ms; a larger interval would
+// refresh back to back. Mirrors config.ts MAX_REFRESH_INTERVAL_SECONDS, kept
+// local because the suites that mock config.js do not export it.
+const MAX_TIMER_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
 export async function devCommand(
   args: Sync.SharedCmdArgs & { refreshInterval?: number }
 ) {
@@ -36,7 +41,7 @@ export async function devCommand(
     // DX16: --refresh-interval overrides sync.config.js refreshInterval; 0 disables polling.
     const interval =
       typeof args.refreshInterval === "number" && Number.isFinite(args.refreshInterval)
-        ? Math.max(0, Math.floor(args.refreshInterval))
+        ? Math.min(MAX_TIMER_SECONDS, Math.max(0, Math.floor(args.refreshInterval)))
         : ConfigManager.getRefresh();
     let timer: ReturnType<typeof setInterval> | null = null;
     if (interval && interval > 0) {
