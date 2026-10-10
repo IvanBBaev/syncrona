@@ -350,7 +350,10 @@ export const snClient = (
     data?: unknown,
     config?: Record<string, unknown>
   ): Promise<AxiosResponse<T>> => {
-    let last404: unknown;
+    // A 400/403 comes from a namespace that exists and refused the call (its
+    // body says why); a 404 only says this prefix is not installed. The 404 of
+    // a later prefix used to replace that more telling error.
+    let notFound: unknown;
 
     for (const prefix of endpointPrefixOrder()) {
       const endpoint = `api/${prefix}/${route.replace(/^\/+/, "")}`;
@@ -367,11 +370,13 @@ export const snClient = (
         if (!isEndpointNotFound(error)) {
           throw error;
         }
-        last404 = error;
+        if (notFound === undefined || getErrorResponseStatus(notFound) === 404) {
+          notFound = error;
+        }
       }
     }
 
-    throw last404;
+    throw notFound;
   };
 
   const getAppList = () => {

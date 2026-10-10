@@ -515,6 +515,15 @@ describe("snClient request wrappers", () => {
     expect(mockGet).toHaveBeenCalledTimes(1); // did not try further prefixes
   });
 
+  it("requestScopedEndpoint keeps an earlier prefix's 400 over a later prefix's 404", async () => {
+    const client = await makeClient();
+    mockGet.mockReset();
+    const refused = { response: { status: 400, data: { error: { message: "bad scope" } } } };
+    mockGet.mockRejectedValueOnce(refused).mockRejectedValueOnce({ response: { status: 404 } });
+    await expect(client.getAppList()).rejects.toBe(refused);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
   it("checkConnection rethrows a non-404 scoped error instead of falling back", async () => {
     const client = await makeClient();
     mockGet.mockReset();
