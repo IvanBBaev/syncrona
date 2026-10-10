@@ -262,6 +262,32 @@ describe("snClient critical bugfixes", () => {
     expect(clientC).not.toBe(clientB);
   });
 
+  it.each([
+    ["SN_OAUTH_CLIENT_SECRET", "secret-b"],
+    ["SN_API_KEY_HEADER", "x-other-key"],
+    ["SN_JWT_KID", "kid-b"],
+    ["SN_JWT_ISS", "iss-b"],
+    ["SN_JWT_SUB", "sub-b"],
+    ["SN_JWT_AUD", "aud-b"],
+  ])("defaultClient rebuilds the client when %s changes", async (name, value) => {
+    const { defaultClient, resetClient } = await import("../snClient.js");
+    const saved = process.env[name];
+    process.env.SN_INSTANCE = "instance-a.service-now.com";
+    process.env.SN_USER = "user_a";
+    process.env.SN_PASSWORD = "pass_a";
+    process.env[name] = "value-a";
+    try {
+      resetClient();
+      const before = defaultClient();
+      process.env[name] = value;
+      // A cached client would keep authenticating with the old value.
+      expect(defaultClient()).not.toBe(before);
+    } finally {
+      if (saved === undefined) delete process.env[name];
+      else process.env[name] = saved;
+    }
+  });
+
   it("resolveCredentials uses profile-specific env vars with fallback to base vars", async () => {
     const { resolveCredentials } = await import("../snClient.js");
 

@@ -1138,9 +1138,15 @@ function credentialsKey(credentials: SNCredentials): string {
     credentials.user,
     credentials.password,
     credentials.clientId || "",
+    credentials.clientSecret || "",
     credentials.authMethod || "",
     credentials.apiKey || "",
+    credentials.apiKeyHeader || "",
     credentials.jwtKey || "",
+    credentials.jwtKid || "",
+    credentials.jwtIss || "",
+    credentials.jwtSub || "",
+    credentials.jwtAud || "",
   ].join("|");
 }
 
