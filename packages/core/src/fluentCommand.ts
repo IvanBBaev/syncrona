@@ -1164,6 +1164,11 @@ export async function fluentCommand(
   overrides: Partial<FluentCommandDeps> = {}
 ): Promise<void> {
   setLogLevel(args);
+  if (args.json === true) {
+    // stdout carries exactly one JSON document under --json; log lines and the
+    // SDK's own output go to stderr so `syncrona fluent ... --json | jq` parses.
+    logger.routeAllToStderr();
+  }
   const deps: FluentCommandDeps = { ...defaultDeps(), ...overrides };
   const profile = resolveInstanceProfile(args);
   const action = String(args.action ?? "").trim() as FluentAction;

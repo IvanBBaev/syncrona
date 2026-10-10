@@ -246,7 +246,7 @@ module.exports = {
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.01 / 95.65
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
-    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.71 / 98.50
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.72 / 98.51
     // Writes the native `.d.ts` from instance metadata: a regression here ships a
     // type file that silently mistypes columns or drops inherited ones.
     './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 95.93

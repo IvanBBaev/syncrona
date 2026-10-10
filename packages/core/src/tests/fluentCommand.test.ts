@@ -412,6 +412,16 @@ describe("fluentCommand: dispatch and exit codes", () => {
     expect(errors).toEqual(["e1", "e2", "Fluent build failed with 2 error(s)."]);
   });
 
+  it("routes every log line to stderr under --json, so stdout holds only the JSON", async () => {
+    // The routing is sticky on the shared logger, so it is observed, not engaged.
+    const route = jest.spyOn(logger, "routeAllToStderr").mockImplementation(() => {});
+    const { deps } = harness();
+    expect(await run({ action: "build" }, deps)).toBe(0);
+    expect(route).not.toHaveBeenCalled();
+    expect(await run({ action: "build", json: true }, deps)).toBe(0);
+    expect(route).toHaveBeenCalledTimes(1);
+  });
+
   it("emits JSON for a build with --json", async () => {
     const { rec, deps } = harness();
     expect(await run({ action: "build", json: true }, deps)).toBe(0);
