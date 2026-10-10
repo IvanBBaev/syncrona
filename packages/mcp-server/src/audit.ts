@@ -8,6 +8,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -385,6 +386,25 @@ function readChainTail(auditFile: string): {
   }
 }
 
+// True when the active log is non-empty and its last byte is not a newline: a writer was
+// killed mid-append (a second server on the same workspace, a short write on a full disk)
+// and left a partial line. The startup integrity check repairs that, but a record written
+// before the next check would otherwise be glued onto the fragment and become part of one
+// unparseable line, unreadable to every consumer although the write reported success.
+function endsWithPartialLine(auditFile: string, size: number): boolean {
+  if (size === 0) {
+    return false;
+  }
+  const fd = openSync(auditFile, "r");
+  try {
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 // SEC-6 (REV-87): decide whether a failed write belongs to a MUTATING tool. Mutating
 // records must fail loudly (logger.error), read-only/lifecycle records stay tolerant
 // (logger.debug). `auditToolCall` sets an explicit `mutating` flag; `auditMutatingTool`
@@ -617,7 +637,13 @@ export function writeAuditEvent(
       const record = { ...entry, seq, prevHash };
       const line = JSON.stringify(record);
 
-      appendFileSync(auditFile, `${line}\n`, "utf-8");
+      // A torn fragment keeps its own (malformed) line so the record after it stays whole;
+      // the integrity check then quarantines the log with both lines intact.
+      const separator =
+        !rotated && stat && stat.isFile() && endsWithPartialLine(auditFile, stat.size)
+          ? "\n"
+          : "";
+      appendFileSync(auditFile, `${separator}${line}\n`, "utf-8");
       // SEC-5 follow-up (REV-191): the chain walk tolerates a legacy prefix for backward
       // compatibility, so an attacker could PREPEND forged unchained records ("approved by
       // admin") to an intact chain and the integrity check still reported `valid` — nothing

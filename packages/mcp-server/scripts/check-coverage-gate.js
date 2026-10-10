@@ -269,7 +269,7 @@ const MODULE_FLOORS = [
   // test moved the pair up: CI on the same commit then printed 92.20 on three jobs
   // and 92.24 on one, again with an identical uncovered-line list. The lower run is
   // 201/218 under lcov (twice, locally), so the higher run is 202/219.
-  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.74 / 92.20 (also 96.74 / 92.24: V8 range granularity, 201/218 vs 202/219 branches, same uncovered lines)
+  { pattern: 'dist/audit.js', line: 94, branch: 88 }, // measured 96.83 / 92.54
   // Preflight, dry-run and the mutating-tool wrappers.
   // DX17 moved this file's sync.config.js parsing out to `workspaceLayout.js` (the
   // flat/record-folder layout seam), so `getSourceDirectory` is now a one-line
