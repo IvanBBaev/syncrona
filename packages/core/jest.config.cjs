@@ -264,6 +264,6 @@ module.exports = {
     // `init --new`: derives and validates the scope, resolves the vendor prefix
     // and inserts the sys_app row — the one command that creates an application
     // on the instance, so every refusal it makes before that POST is pinned.
-    './src/appCreator.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.61
+    './src/appCreator.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.64
   },
 }

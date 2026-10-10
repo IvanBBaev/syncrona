@@ -241,8 +241,24 @@ export async function findExistingApp(
   const rows = await unwrapSNResponse<Array<{ sys_id?: unknown }>>(
     client.tableAPIGet("sys_scope", `scope=${escapeQueryValue(scope)}`, "sys_id", 1)
   );
-  const sysId = Array.isArray(rows) ? rows[0]?.sys_id : undefined;
-  return typeof sysId === "string" && sysId !== "" ? sysId : undefined;
+  // Only an empty result list means the scope is free. A reply without a list, or
+  // a row whose sys_id the user cannot read, would otherwise be taken as "free"
+  // and lead to a second sys_app for a scope that is already in use.
+  if (!Array.isArray(rows)) {
+    throw new AppCreatorError(
+      `The sys_scope lookup for "${scope}" answered without a result list, so it cannot ` +
+        "tell whether the scope is taken; nothing was created."
+    );
+  }
+  if (rows.length === 0) return undefined;
+  const sysId = rows[0]?.sys_id;
+  if (typeof sysId !== "string" || sysId === "") {
+    throw new AppCreatorError(
+      `The sys_scope lookup for "${scope}" found a matching row without a readable sys_id ` +
+        "(an ACL may hide it), so the scope is taken; nothing was created. Choose another --scope."
+    );
+  }
+  return sysId;
 }
 
 export type InitNewDeps = {
