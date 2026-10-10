@@ -1038,6 +1038,9 @@ export async function cicdCommand(
   overrides: Partial<CicdCommandDeps> = {}
 ): Promise<void> {
   setLogLevel(args);
+  // `--json` stdout is a machine channel: the POST/progress/hint lines are
+  // info-level, which would otherwise land on stdout around the document.
+  if (args.json === true) logger.routeAllToStderr();
   const deps: CicdCommandDeps = { ...defaultDeps(), ...overrides };
   const profile = resolveInstanceProfile(args);
   const action = String(args.action ?? "").trim() as CicdAction;

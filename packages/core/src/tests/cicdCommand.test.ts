@@ -265,6 +265,15 @@ describe("cicd run-suite", () => {
     expect(await run(h, "run-suite", { suiteId: "s1" })).toBe(2);
   });
 
+  it("routes every log line to stderr under --json, so stdout holds only the JSON", async () => {
+    // The routing is sticky on the shared logger, so it is observed, not engaged.
+    const route = jest.spyOn(logger, "routeAllToStderr").mockImplementation(() => {});
+    expect(await run(harness(), "install", { scope: "x_app" })).toBe(0);
+    expect(route).not.toHaveBeenCalled();
+    expect(await run(harness(), "install", { scope: "x_app", json: true })).toBe(0);
+    expect(route).toHaveBeenCalledTimes(1);
+  });
+
   // Batch 4 item 5: a successful tracker without a readable result is not a pass.
   it("exits 1 with the progress id when the result fetch fails", async () => {
     const h = harness({
