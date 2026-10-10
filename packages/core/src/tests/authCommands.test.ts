@@ -526,6 +526,18 @@ describe("logoutCommand", () => {
     expect(mockLoggerSuccess).toHaveBeenCalled();
   });
 
+  // login stores the bare host of a URL pasted from the address bar, so logout
+  // must reduce the same paste to the same key, or it reports "No stored
+  // credentials" while the login stays on disk.
+  it("removes the bare host when the instance is pasted whole from the address bar", async () => {
+    await logoutCommand({
+      ...BASE_ARGS,
+      instance: "https://dev123.service-now.com/now/nav/ui/classic",
+    });
+
+    expect(mockRemoveCredentials).toHaveBeenCalledWith("dev123.service-now.com");
+  });
+
   it("removes all credentials when --all flag is set", async () => {
     await logoutCommand({ ...BASE_ARGS, all: true });
 
@@ -644,6 +656,17 @@ describe("useCommand", () => {
     mockListInstances.mockResolvedValue(["dev.service-now.com"]);
 
     await useCommand({ ...BASE_ARGS, instance: "https://dev.service-now.com" });
+
+    expect(mockSetActiveInstance).toHaveBeenCalledWith("dev.service-now.com");
+  });
+
+  it("reduces an address-bar URL to the bare host login stored", async () => {
+    mockListInstances.mockResolvedValue(["dev.service-now.com"]);
+
+    await useCommand({
+      ...BASE_ARGS,
+      instance: "https://dev.service-now.com/now/nav/ui/classic",
+    });
 
     expect(mockSetActiveInstance).toHaveBeenCalledWith("dev.service-now.com");
   });
