@@ -31,6 +31,7 @@ import {
   resolveAuthMethod,
   apiKeyHeaderName,
   buildJwtClaims,
+  computeRetryDelay,
   createJwtAssertion,
   shouldRetryStatus,
   type AuthMethod,
@@ -204,6 +205,26 @@ export function isRetryableRequestError(e: unknown): boolean {
   return shouldRetryStatus(status);
 }
 
+// How long the server asked the client to back off (a 429 or 503 carrying
+// `Retry-After`), bounded by the shared ceiling; 0 when it asked for nothing.
+// A zero `random` makes computeRetryDelay's backoff branch return 0, so only a
+// parsable header yields a non-zero delay.
+function serverRetryAfterMs(e: unknown): number {
+  if (!axios.isAxiosError(e)) {
+    return 0;
+  }
+  // Node lowercases response header names, but an AxiosHeaders instance keeps
+  // whatever case it was given; its get() matches case-insensitively. Checked
+  // by shape, not instanceof, so suites that mock axios keep working.
+  const headers = e.response?.headers;
+  const header: unknown =
+    typeof headers?.get === "function" ? headers.get("retry-after") : headers?.["retry-after"];
+  if (typeof header !== "string") {
+    return 0;
+  }
+  return computeRetryDelay(0, header, { random: () => 0 });
+}
+
 export const retryOnErr = async <T>(
   f: () => Promise<T>,
   allowedRetries: number,
@@ -224,7 +245,9 @@ export const retryOnErr = async <T>(
     if (onRetry) {
       onRetry(newRetries);
     }
-    await wait(msBetween);
+    // A throttled instance that names its own back-off wins over the fixed
+    // spacing: retrying sooner only earns another 429.
+    await wait(Math.max(msBetween, serverRetryAfterMs(e)));
     return retryOnErr(f, newRetries, msBetween, onRetry, shouldRetry);
   }
 };

@@ -218,7 +218,7 @@ module.exports = {
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 95, branches: 91 }, // measured 97.65 / 95.20
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 95.36
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.73 / 95.59
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
