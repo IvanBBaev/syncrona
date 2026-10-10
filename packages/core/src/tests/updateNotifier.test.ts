@@ -145,6 +145,18 @@ describe("updateNotifier cache IO", () => {
     expect(readUpdateCache(cacheFile)).toEqual(cache);
   });
 
+  // POSIX modes only; Windows does not apply them.
+  (process.platform === "win32" ? it.skip : it)(
+    "creates the cache directory private to the user, like the credential store does",
+    () => {
+      // The cache lives in ~/.syncrona, which also holds the credential store.
+      // On a first run the notifier creates that directory before any login, so
+      // whatever mode it uses is the one the store inherits.
+      writeUpdateCache(cacheFile, { lastCheckMs: 1, latestVersion: "1.0.0" });
+      expect(fs.statSync(path.dirname(cacheFile)).mode & 0o777).toBe(0o700);
+    }
+  );
+
   it("returns null for a missing or malformed cache file", () => {
     expect(readUpdateCache(path.join(tempDir, "missing.json"))).toBeNull();
     fs.writeFileSync(path.join(tempDir, "bad.json"), "{ not json");
