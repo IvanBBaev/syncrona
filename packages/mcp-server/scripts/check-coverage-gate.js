@@ -369,7 +369,7 @@ const MODULE_FLOORS = [
   // jumps and is not pinned can fall back just as far under the defaults.
   { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.63 / 94.03 (also 98.63 / 94.20: V8 range granularity, 63/67 vs 65/69 branches, same uncovered lines; darwin prints 63/67 under Node 22.23.0 and 22.23.2 alike, and 65/69 is the only pair within +-12 of both counters that renders the ubuntu 94.20)
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
-  { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.77 / 92.86
+  { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.93 / 93.62
   // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
   // Neither had a named floor because neither had a stable reading: the gate printed
   // 3 different uncovered-line columns for graph.js and 9 for scopeKnowledge.js over
