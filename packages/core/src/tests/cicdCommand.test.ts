@@ -503,6 +503,50 @@ describe("cicd --poll-ms floor", () => {
     const polls = h.calls.filter((c) => c.path.startsWith("progress/")).length;
     expect(polls).toBeLessThanOrEqual(6);
   });
+
+  // A virtual clock that only the injected sleep advances, so each wait is measured exactly.
+  const clocked = (h: Harness) => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const deps = {
+      ...h.deps,
+      now: () => clock,
+      sleep: jest.fn(async (ms: number) => {
+        sleeps.push(ms);
+        clock += ms;
+      }),
+    };
+    return { h: { ...h, deps }, sleeps };
+  };
+
+  it("never sleeps past --timeout, however long --poll-ms is", async () => {
+    const { h, sleeps } = clocked(harness({ progress: [() => progress("1")] }));
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 600_000 }, 0)).toBe(1);
+
+    expect(sleeps).toEqual([1000]);
+    expect(errors.join("\n")).toMatch(/Timed out after 1s/);
+  });
+
+  it("cuts a retry pause after a failed poll short at --timeout too", async () => {
+    const { h, sleeps } = clocked(
+      harness({
+        progress: [() => Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }), () => progress("1")],
+      })
+    );
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 2, pollMs: 1500 }, 0)).toBe(1);
+
+    expect(sleeps).toEqual([1500, 500]);
+  });
+
+  it("caps --poll-ms at 60000ms between polls, as sync_cicd_run does", async () => {
+    const { h, sleeps } = clocked(harness({ progress: [() => progress("1"), () => progress("2")] }));
+
+    expect(await run(h, "install", { scope: "x_app", pollMs: 600_000 }, 0)).toBe(0);
+
+    expect(sleeps).toEqual([60_000]);
+  });
 });
 
 describe("cicd --progress-id (resume, SDK-F7)", () => {
