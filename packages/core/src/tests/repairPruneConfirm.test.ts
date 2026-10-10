@@ -189,6 +189,27 @@ describe("repair --prune confirmation", () => {
     ]);
   });
 
+  // The git evidence is gathered before the prompt, and the prompt can stay open
+  // for as long as the user likes. A file edited in that window is no longer the
+  // committed copy `git checkout` would restore, so deleting it loses the edit.
+  it("keeps an orphan edited while the confirmation was open", async () => {
+    orphans = seed(2);
+    mockPrompt.mockImplementation(async () => {
+      writeFileSync(orphans[0], "edited while asked");
+      return { confirmed: true };
+    });
+
+    await repairCommand({
+      logLevel: "info",
+      apply: true,
+      prune: true,
+    } as never);
+
+    expect(existsSync(orphans[0])).toBe(true);
+    expect(existsSync(orphans[1])).toBe(false);
+    expect(infoSpy).toHaveBeenCalledWith("Pruned 1 orphan file(s).");
+  });
+
   it("never prompts under --ci", async () => {
     await repairCommand({
       logLevel: "info",
