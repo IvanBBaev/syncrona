@@ -189,6 +189,13 @@ describe("fetchNativeSchema", () => {
     expect(calls.every((c) => c.extra?.params?.sysparm_exclude_reference_link === "true")).toBe(true);
   });
 
+  it("matches --table names case-insensitively, as ServiceNow table names are lowercase", async () => {
+    const { client, calls } = fakeClient(TASK_FIXTURE);
+    const schema = await fetchNativeSchema(client, { tables: ["X_Acme_Ticket"] });
+    expect(schema.requested).toEqual(["x_acme_ticket"]);
+    expect(calls[0].query).toBe("nameINx_acme_ticket^ORDERBYsys_id");
+  });
+
   it("reads named tables instead of the scope and refuses unknown ones", async () => {
     const { client, calls } = fakeClient(TASK_FIXTURE);
     const schema = await fetchNativeSchema(client, { scope: "ignored", tables: [" x_acme_ticket ", "x_acme_ticket", ""] });

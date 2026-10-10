@@ -221,12 +221,15 @@ export async function fetchNativeSchema(
     pageSize: options.pageSize ?? DEFAULT_PAGE_SIZE,
     chunkSize: options.chunkSize ?? DEFAULT_CHUNK_SIZE,
   };
-  const explicit = [...new Set((options.tables ?? []).map((t) => t.trim()).filter(Boolean))].sort();
+  // Checked as typed, so the error quotes the input; then lowercased, as every
+  // ServiceNow table name is, so `--table Incident` finds `incident`.
+  const typed = (options.tables ?? []).map((t) => t.trim()).filter(Boolean);
+  typed.forEach((name) => assertName("table", name));
+  const explicit = [...new Set(typed.map((t) => t.toLowerCase()))].sort();
   const tables = new Map<string, TableRow>();
 
   let seed: Row[];
   if (explicit.length > 0) {
-    explicit.forEach((name) => assertName("table", name));
     seed = await readByNames(client, "sys_db_object", explicit, "", TABLE_FIELDS, paging);
   } else {
     const scope = assertName("scope", String(options.scope ?? "").trim());
