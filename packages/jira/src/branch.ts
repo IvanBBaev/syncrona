@@ -3,9 +3,10 @@
  * Extract a Jira issue key (e.g. `ABC-123`) from a git branch name.
  *
  * Pure and trivially unit-testable. Scans for Jira-style keys — a project prefix
- * of an uppercase letter followed by uppercase letters or digits, a hyphen, then
- * the issue number — and returns the *first* one whose prefix is not a well-known
- * non-project token: `feature/ABC-123-do-thing` → `ABC-123`.
+ * of an uppercase letter followed by uppercase letters, digits or underscores, a
+ * hyphen, then the issue number — and returns the *first* one whose prefix is not
+ * a well-known non-project token: `feature/ABC-123-do-thing` → `ABC-123`,
+ * `MY_PROJ-12` → `MY_PROJ-12` (not `PROJ-12`, which is a different project).
  *
  * Returns null when no key is present. The input is upper-cased first so a
  * lowercase branch (`feature/abc-123`) still resolves; Jira keys are always
@@ -22,15 +23,38 @@
  */
 const NON_KEY_PREFIXES = new Set(["UTF", "SHA", "RFC", "ISO", "CVE", "UTC"]);
 
+/**
+ * Branch-type words that snake_case branch names put in front of the key with an
+ * underscore (`feature_abc-123`). Since `_` is legal inside a project key, they
+ * would otherwise be read as part of it (`FEATURE_ABC-123`).
+ */
+const BRANCH_TYPE_SEGMENTS = new Set([
+  "FEATURE",
+  "FEAT",
+  "BUGFIX",
+  "FIX",
+  "HOTFIX",
+  "RELEASE",
+  "CHORE",
+]);
+
+function stripBranchTypeSegments(prefix: string): string {
+  const segments = prefix.split("_");
+  while (segments.length > 1 && BRANCH_TYPE_SEGMENTS.has(segments[0])) {
+    segments.shift();
+  }
+  return segments.join("_");
+}
+
 export function extractIssueKey(branch: string | null | undefined): string | null {
   if (!branch) {
     return null;
   }
-  const re = /([A-Z][A-Z0-9]+)-(\d+)/g;
+  const re = /([A-Z][A-Z0-9_]+)-(\d+)/g;
   const upper = branch.toUpperCase();
   let match: RegExpExecArray | null;
   while ((match = re.exec(upper)) !== null) {
-    const prefix = match[1];
+    const prefix = stripBranchTypeSegments(match[1]);
     if (!NON_KEY_PREFIXES.has(prefix)) {
       return `${prefix}-${match[2]}`;
     }
