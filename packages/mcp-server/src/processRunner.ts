@@ -47,6 +47,11 @@ export function runCommand(
         ...(extraEnv || {}),
       },
       shell: false,
+      // Nothing ever writes to the child's stdin. Left as an open pipe, a child
+      // that reads it (a confirmation prompt, `npx` asking to install) waits for
+      // input that never comes and the call burns its whole timeout; with stdin
+      // ignored it reads end-of-input at once and fails fast.
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
