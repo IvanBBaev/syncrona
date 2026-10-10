@@ -1261,8 +1261,13 @@ describe("command flows", () => {
     mockUnwrapSNResponse.mockResolvedValue({ scope: "x_demo" });
 
     const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
     const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
 
+    expect(exitCode).toBeUndefined();
     expect(result.ok).toBe(true);
     expect(result.instance).toBe("instance.service-now.com");
     expect(result.user).toBe("admin");
@@ -1289,8 +1294,13 @@ describe("command flows", () => {
     mockCheckConfigPath.mockReturnValue(false);
 
     const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
     const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
 
+    expect(exitCode).toBe(1);
     expect(result.ok).toBe(false);
     expect(result.scope).toBe("<unknown>");
     expect(result.envReady).toBe(false);
@@ -1316,8 +1326,13 @@ describe("command flows", () => {
     mockCheckConnection.mockRejectedValue(new Error("offline"));
 
     const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
     const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
 
+    expect(exitCode).toBe(1);
     expect(result.ok).toBe(false);
     expect(result.envReady).toBe(true);
     expect(result.connectivityOk).toBe(false);

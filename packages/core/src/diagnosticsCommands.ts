@@ -245,6 +245,12 @@ export async function statusCommand(
     await printCredentialDiagnostics(args.instanceProfile);
   }
 
+  // Like doctor and check-env: the handler never inspects `ok`, so without this
+  // `syncrona status && next-step` went on with no credentials or no connection.
+  if (!summary.ok) {
+    process.exitCode = 1;
+  }
+
   return summary;
 }
 
