@@ -117,7 +117,10 @@ async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string
   if (existingRaw !== null) {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(existingRaw);
+      // Windows editors often save JSON with a UTF-8 byte order mark, which
+      // JSON.parse rejects; reading it as malformed would wipe every other
+      // server in the file.
+      parsed = JSON.parse(existingRaw.replace(/^\uFEFF/, ""));
     } catch (_) {
       parsed = undefined;
     }
