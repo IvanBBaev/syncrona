@@ -235,53 +235,94 @@ export function wrapAutoSection(body: string): string {
   return `${DOCS_AUTO_START}\n${body}\n${DOCS_AUTO_END}`;
 }
 
-/** Finds `marker` as a whole line (surrounding blanks allowed) at or after `from`. */
-function findMarkerLine(
-  text: string,
-  marker: string,
-  from: number
-): { start: number; end: number } | null {
-  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // In multiline mode `$` also stops before a `\r`, so CRLF files match too.
-  const re = new RegExp(`^[ \\t]*${escaped}[ \\t]*$`, "gm");
-  re.lastIndex = from;
-  const match = re.exec(text);
-  return match ? { start: match.index, end: match.index + match[0].length } : null;
+interface MarkerLine {
+  marker: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The start/end marker lines of `text`: a marker counts only on a line of its
+ * own (surrounding blanks allowed) and outside fenced code, so a marker quoted
+ * in a generated name or in a code sample in the manual notes is not one.
+ * `unclosedFenceStart` reports a start marker line inside a fence that is never
+ * closed, where the fence may well be the mistake rather than the marker.
+ */
+function scanMarkerLines(text: string): { lines: MarkerLine[]; unclosedFenceStart: boolean } {
+  const lines: MarkerLine[] = [];
+  let fence: { char: string; length: number; hasStart: boolean } | null = null;
+  let offset = 0;
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/\r$/, "");
+    const lineStart = offset;
+    offset += rawLine.length + 1;
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      const run = fenceMatch?.[1];
+      if (run && run[0] === fence.char && run.length >= fence.length && fenceMatch[2].trim() === "") {
+        fence = null;
+      } else if (line.trim() === DOCS_AUTO_START) {
+        fence.hasStart = true;
+      }
+      continue;
+    }
+    if (fenceMatch && !(fenceMatch[1][0] === "`" && fenceMatch[2].includes("`"))) {
+      fence = { char: fenceMatch[1][0], length: fenceMatch[1].length, hasStart: false };
+      continue;
+    }
+    const trimmed = line.trim();
+    if (trimmed === DOCS_AUTO_START || trimmed === DOCS_AUTO_END) {
+      lines.push({ marker: trimmed, start: lineStart, end: lineStart + line.length });
+    }
+  }
+  return { lines, unclosedFenceStart: fence?.hasStart === true };
 }
 
 /**
  * Performs a logical update of existing doc content:
  * - If the markers exist, only the content between them is replaced. A marker
- *   counts only on a line of its own, and the block ends at the first end marker
- *   after the start marker, so a marker quoted in manual notes or in a generated
- *   name cannot cut the block short or swallow the notes after it.
+ *   counts only on a line of its own and outside fenced code, and the block ends
+ *   at the first end marker after the start marker, so a marker quoted in manual
+ *   notes or in a generated name cannot cut the block short or swallow the notes
+ *   after it.
  * - If no markers exist but content is present, the auto block is appended,
  *   preserving the manual content.
- * - A start marker without an end marker after it is refused: appending would
- *   leave that orphan start to pair with the new block's end marker on the next
- *   run, replacing every manual line between them.
  * - If there is no existing content, a titled document with the block is created.
+ *
+ * A file whose block cannot be told apart from the notes (a start marker with
+ * no end marker after it, more than one start marker, or a start marker inside
+ * an unclosed fence) is refused with an error and left as it is. Appending a
+ * second block there would leave an orphan start marker, and the run after it
+ * would replace everything from that marker on, manual notes included.
  */
 export function upsertDocsSection(
   existing: string,
   scope: string,
   autoBlock: string
 ): string {
-  const start = findMarkerLine(existing, DOCS_AUTO_START, 0);
-  const end = start ? findMarkerLine(existing, DOCS_AUTO_END, start.end) : null;
+  const { lines, unclosedFenceStart } = scanMarkerLines(existing);
+  const starts = lines.filter((line) => line.marker === DOCS_AUTO_START);
+  const start = starts[0];
+  const end = start
+    ? lines.find((line) => line.marker === DOCS_AUTO_END && line.start > start.start)
+    : undefined;
+  const fixIt = `Fix the ${DOCS_AUTO_START} / ${DOCS_AUTO_END} lines by hand, then run it again.`;
+
+  if (starts.length > 1) {
+    throw new Error(`The doc has ${starts.length} generated-block start markers, so it was left unchanged. ${fixIt}`);
+  }
+  if (start && !end) {
+    throw new Error(`The doc has a generated-block start marker with no end marker after it, so it was left unchanged. ${fixIt}`);
+  }
+  if (!start && unclosedFenceStart) {
+    throw new Error(`The doc has a generated-block start marker inside an unclosed code fence, so it was left unchanged. ${fixIt}`);
+  }
 
   if (start && end) {
     const before = existing.slice(0, start.start);
     const after = existing.slice(end.end);
     return `${before}${autoBlock}${after}`;
   }
-  if (start) {
-    throw new Error(
-      `the existing doc has a ${DOCS_AUTO_START} line but no ${DOCS_AUTO_END} line after it; ` +
-        "put the end marker back after the generated block so the notes below it are kept."
-    );
-  }
-
   if (existing.trim().length > 0) {
     return `${existing.trimEnd()}\n\n${autoBlock}\n`;
   }
@@ -350,8 +391,11 @@ export async function generateScopeDocs(
 
 /** The text between the auto markers of `existing`, or null when there is no complete block. */
 function existingAutoBody(existing: string): string | null {
-  const start = findMarkerLine(existing, DOCS_AUTO_START, 0);
-  const end = start ? findMarkerLine(existing, DOCS_AUTO_END, start.end) : null;
+  const { lines } = scanMarkerLines(existing);
+  const start = lines.find((line) => line.marker === DOCS_AUTO_START);
+  const end = start
+    ? lines.find((line) => line.marker === DOCS_AUTO_END && line.start > start.start)
+    : undefined;
   if (!start || !end) {
     return null;
   }

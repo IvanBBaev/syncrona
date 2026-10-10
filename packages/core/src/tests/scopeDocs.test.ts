@@ -193,13 +193,46 @@ describe("scopeDocs", () => {
       expect(out).toBe(`Notes:\n${DOCS_AUTO_END}\n\n${autoBlock}\n`);
     });
 
-    it("refuses a start marker without an end marker instead of appending a second block", () => {
-      // Appending kept the orphan start, which the next run paired with the new
-      // block's end marker, deleting the manual notes between them.
-      const existing = `# T\n\n${DOCS_AUTO_START}\nold\n\n## Notes\nmine\n`;
-      expect(() => upsertDocsSection(existing, "x_acme_app", autoBlock)).toThrow(
-        `no ${DOCS_AUTO_END} line after it`
+    it("ignores a marker line quoted in fenced code in the manual notes", () => {
+      // The quoted start marker used to open the block, so the update replaced
+      // the notes from it to the real end marker and left the fence unclosed.
+      const existing = `Notes:\n\`\`\`\n${DOCS_AUTO_START}\n\`\`\`\nmore notes\n\n~~~~\n${DOCS_AUTO_END}\n~~~~\n\n${DOCS_AUTO_START}\nOLD AUTO\n${DOCS_AUTO_END}\n`;
+      const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
+      expect(out).toBe(
+        `Notes:\n\`\`\`\n${DOCS_AUTO_START}\n\`\`\`\nmore notes\n\n~~~~\n${DOCS_AUTO_END}\n~~~~\n\n${autoBlock}\n`
       );
+    });
+
+    it("refuses a start marker with no end marker after it instead of appending a second block", () => {
+      // Appending left the orphan start marker in place, and the next run then
+      // replaced everything from it on, manual notes included.
+      const existing = `# Scope\n\n${DOCS_AUTO_START}\nOLD AUTO\n\n## My notes\nkeep me\n`;
+      expect(() => upsertDocsSection(existing, "x_acme_app", autoBlock)).toThrow(
+        /start marker with no end marker after it/
+      );
+    });
+
+    it("refuses more than one start marker", () => {
+      const existing = `${DOCS_AUTO_START}\nA\n${DOCS_AUTO_START}\nB\n${DOCS_AUTO_END}\n`;
+      expect(() => upsertDocsSection(existing, "x_acme_app", autoBlock)).toThrow(/2 generated-block start markers/);
+    });
+
+    it("refuses a start marker inside a fence that is never closed", () => {
+      const existing = `Notes:\n\`\`\`js\n${DOCS_AUTO_START}\nOLD AUTO\n${DOCS_AUTO_END}\n`;
+      expect(() => upsertDocsSection(existing, "x_acme_app", autoBlock)).toThrow(/unclosed code fence/);
+    });
+
+    it("does not take a backtick line with backticks in its info string as a fence", () => {
+      // CommonMark: such a line is inline code, not a fence opening.
+      const existing = `\`\`\` a \`b\` \`\`\`\n${DOCS_AUTO_START}\nOLD AUTO\n${DOCS_AUTO_END}\n`;
+      const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
+      expect(out).toBe(`\`\`\` a \`b\` \`\`\`\n${autoBlock}\n`);
+    });
+
+    it("updates a doc it generated itself, whose block holds a mermaid fence", () => {
+      const generated = upsertDocsSection("", "x_acme_app", wrapAutoSection("```mermaid\ngraph TD\n```\nOLD"));
+      const out = upsertDocsSection(`${generated}\nManual.\n`, "x_acme_app", autoBlock);
+      expect(out).toBe(`# Scope: x\\_acme\\_app\n\n${autoBlock}\n\nManual.\n`);
     });
 
     it("finds markers in a CRLF file", () => {
