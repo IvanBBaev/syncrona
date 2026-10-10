@@ -283,6 +283,11 @@ function fileAdded(path: string): void {
 }
 
 function fileUnlinked(path: string): void {
+  // A deleted file has nothing left to push. Left in the queue (a failed batch
+  // is requeued), it would fail every retry — and when it was the stale copy
+  // of an "Ambiguous push", block every other save, since later changes join
+  // the same batch. A re-created file comes back through "add" or "change".
+  pushQueue = pushQueue.filter((queued) => queued !== path);
   logger.warn(
     `File deleted locally: ${path} — delete propagation is not supported, so the instance record is unchanged. Run "syncrona repair" to reconcile the manifest.`
   );

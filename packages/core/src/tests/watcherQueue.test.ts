@@ -404,6 +404,46 @@ describe("Watcher queue behavior", () => {
     stopWatching();
   });
 
+  it("drops a requeued path once its file is deleted, so the retry is not stuck on it", async () => {
+    // Two layouts of one field make groupAppFiles throw "Ambiguous push ...
+    // Delete the stale copies and retry". The batch is requeued, so the
+    // deleted copy stayed in the queue: every retry (and every later save,
+    // which joins the same batch) failed on it until `dev` was restarted.
+    const flat = ctx("/tmp/sys_script/rec1~script.js", "sys_script", "rec_1", "script");
+    const folder = ctx("/tmp/sys_script/rec1/script.js", "sys_script", "rec_1", "script");
+    mockGetFileContextFromPath.mockImplementation((p: string) =>
+      p === flat.filePath ? flat : folder
+    );
+    mockGroupAppFiles.mockImplementation((ctxs: unknown) => {
+      if ((ctxs as Sync.FileContext[]).length > 1) {
+        throw new Error("Ambiguous push");
+      }
+      return [{ table: "sys_script", sysId: "rec_1", fields: {} }];
+    });
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+
+    const { startWatching, stopWatching } = await import("../Watcher.js");
+
+    startWatching("/tmp");
+    changeHandler(flat.filePath);
+    changeHandler(folder.filePath);
+    await flushDrain();
+    expect(mockLoggerError).toHaveBeenCalledWith("Ambiguous push");
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    // The user follows the advice and deletes the stale copy.
+    unlinkHandler(folder.filePath);
+    // The self-driving retry (RETRY_BASE_MS = 500) runs with only the kept file.
+    jest.advanceTimersByTime(500);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockGroupAppFiles).toHaveBeenLastCalledWith([flat]);
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+
+    await stopWatching();
+  });
+
   // Keep this test LAST: it deliberately leaves the failed batch requeued in
   // the module-level push queue (see the ordering note above the describe).
   it("does not throw when queue processing fails and logs error", async () => {

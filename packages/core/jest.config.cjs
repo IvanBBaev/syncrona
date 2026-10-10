@@ -231,7 +231,7 @@ module.exports = {
     './src/commands.ts': { lines: 93, branches: 81 }, // measured 97.34 / 87.61
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 96, branches: 84 }, // measured 100.00 / 91.42
-    './src/Watcher.ts': { lines: 91, branches: 76 }, // measured 95.34 / 82.60
+    './src/Watcher.ts': { lines: 91, branches: 76 }, // measured 95.38 / 82.60
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 95, branches: 68 }, // measured 98.65 / 75.58
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
