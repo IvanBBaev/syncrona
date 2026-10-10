@@ -557,9 +557,17 @@ export class ConfigStore {
 
   private async loadConfigPath(pth?: string): Promise<string | false> {
     const currentPath = pth || process.cwd();
-    const files = await fsp.readdir(currentPath);
-    if (files.includes("sync.config.js")) {
-      return path.join(currentPath, "sync.config.js");
+    const candidate = path.join(currentPath, "sync.config.js");
+    // stat, not readdir: a directory named sync.config.js is not a config, and
+    // an ancestor we may traverse but not list (mode --x) must not abort the
+    // walk with EACCES when the file itself is reachable.
+    try {
+      if ((await fsp.stat(candidate)).isFile()) return candidate;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR" && code !== "EACCES" && code !== "EPERM") {
+        throw e;
+      }
     }
 
     if (path.parse(currentPath).root === currentPath) {
