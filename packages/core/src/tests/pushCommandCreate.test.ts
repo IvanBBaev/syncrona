@@ -12,6 +12,7 @@ const mockCheckScope = jest.fn();
 const mockGetAppFileList = jest.fn();
 const mockGetAppFileListWithCandidates = jest.fn();
 const mockPlanRecordCreation = jest.fn();
+const mockCheckCreationBodies = jest.fn();
 const mockCreateRecords = jest.fn();
 const mockPushFiles = jest.fn();
 const mockCreateAndAssignUpdateSet = jest.fn();
@@ -32,6 +33,7 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
   getAppFileListWithCandidates: (...args: unknown[]) => mockGetAppFileListWithCandidates(...args),
   planRecordCreation: (...args: unknown[]) => mockPlanRecordCreation(...args),
+  checkCreationBodies: (...args: unknown[]) => mockCheckCreationBodies(...args),
   createRecords: (...args: unknown[]) => mockCreateRecords(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
   createAndAssignUpdateSet: (...args: unknown[]) => mockCreateAndAssignUpdateSet(...args),
@@ -170,6 +172,7 @@ describe("pushCommand --create", () => {
       scopeId: "scope-1",
       plans: [plan("New", "create"), plan("Existing", "adopt", { sysId: "ex-1" })],
     });
+    mockCheckCreationBodies.mockImplementation(async (creation: unknown) => creation);
     mockCreateRecords.mockImplementation(async (_creation: unknown, options: any) => {
       await options.onCreated("sys_script_include:New", "new-1");
       return {
@@ -243,6 +246,21 @@ describe("pushCommand --create", () => {
     expect(mockCreateRecords).not.toHaveBeenCalled();
     expect(mockPushFiles).not.toHaveBeenCalled();
     expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("dry run previews a create whose body the real run would refuse as an error", async () => {
+    mockGetAppFileListWithCandidates.mockResolvedValue({ records: [], candidates: [candidate("New")] });
+    const planned = { scopeId: "s", plans: [plan("New", "create")] };
+    mockPlanRecordCreation.mockResolvedValue(planned);
+    mockCheckCreationBodies.mockResolvedValue({
+      scopeId: "s",
+      plans: [plan("New", "error", { message: "no such column" })],
+    });
+    await runPush({ create: true, dryRun: true });
+
+    expect(mockCheckCreationBodies).toHaveBeenCalledWith(planned);
+    expect(mockLoggerWarn).toHaveBeenCalledWith("sys_script_include > New : no such column");
+    expect(mockCreateRecords).not.toHaveBeenCalled();
   });
 
   it("dry run with only new records still previews them", async () => {

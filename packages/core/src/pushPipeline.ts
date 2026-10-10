@@ -1641,6 +1641,36 @@ const buildCreateFields = async (
 };
 
 /**
+ * A dry run's check of the bodies createRecords would POST. Each planned create
+ * goes through the same sidecar discovery and body build, which are read-only
+ * (dictionary GETs and an in-memory build), so a create the real run would
+ * refuse, such as a sidecar column the dictionary does not list, is previewed
+ * as an error rather than as a create.
+ */
+export const checkCreationBodies = async (
+  creation: CreationPlan,
+  options: { client?: SNClient } = {}
+): Promise<CreationPlan> => {
+  if (!creation.plans.some((plan) => plan.action === "create")) return creation;
+  const client = options.client ?? defaultClient();
+  const plans: PlannedCreation[] = [];
+  for (const plan of creation.plans) {
+    if (plan.action !== "create") {
+      plans.push(plan);
+      continue;
+    }
+    try {
+      const discovered = await discoverCreateMeta(client, plan.candidate);
+      await buildCreateFields(plan, creation.scopeId, discovered);
+      plans.push(plan);
+    } catch (e) {
+      plans.push({ ...plan, action: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { ...creation, plans };
+};
+
+/**
  * POST one record. The client never retries a POST (it is not idempotent), so
  * the retry lives here, and every retry is preceded by the idempotency lookup:
  * a timeout can arrive after the instance inserted the row, and posting again

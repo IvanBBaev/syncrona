@@ -43,6 +43,7 @@ jest.unstable_mockModule("../appUtils.js", () => ({
   getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
   getAppFileListWithCandidates: (...args: unknown[]) => mockGetAppFileListWithCandidates(...args),
   planRecordCreation: (...args: unknown[]) => mockPlanRecordCreation(...args),
+  checkCreationBodies: async (creation: unknown) => creation,
   createRecords: (...args: unknown[]) => mockCreateRecords(...args),
   pushFiles: (...args: unknown[]) => mockPushFiles(...args),
   createAndAssignUpdateSet: (...args: unknown[]) => mockCreateAndAssignUpdateSet(...args),

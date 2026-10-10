@@ -953,10 +953,13 @@ export async function pushCommand(args: Sync.PushCmdArgs): Promise<void> {
         logger.info(`${fileList.length} files to push.`);
         // R1: the creation plan is read-only (GETs only, and the scope sys_id is
         // not persisted), so the preview can say exactly which records would be
-        // created and which adopted.
+        // created and which adopted. Each create's body is then built as the
+        // real run builds it, so a create the real run would refuse shows as one.
         const creation =
           candidates.length > 0
-            ? await AppUtils.planRecordCreation(candidates, { persistScopeId: false })
+            ? await AppUtils.checkCreationBodies(
+                await AppUtils.planRecordCreation(candidates, { persistScopeId: false })
+              )
             : undefined;
         // R2: the prune plan is read-only too (one GET per candidate, scope
         // sys_id not persisted). No DELETE is sent and the manifest is untouched.

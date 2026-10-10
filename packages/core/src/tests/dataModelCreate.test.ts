@@ -322,6 +322,39 @@ describe("push --create for data-model records (R4)", () => {
     expect(client.createRecord).not.toHaveBeenCalled();
   });
 
+  // Live finding (1.1.0): the dry run showed a create the real run refused,
+  // because discovery and the body build ran only in createRecords.
+  it("previews, posting nothing, a create the dictionary cannot back as an error", async () => {
+    mockDiscover.mockImplementation(async () => ({ fields: [], readOnly: [] }));
+    const client = makeClient();
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_dictionary", "x_demo_task.u_foo", DICTIONARY_ROW),
+    ]);
+    expect(plan.plans[0].action).toBe("create");
+    const checked = await Pipeline.checkCreationBodies(plan, { client: asClient(client) });
+    expect(checked.plans[0].action).toBe("error");
+    expect(checked.plans[0].message).toMatch(/could not read the columns of sys_dictionary/);
+    expect(client.createRecord).not.toHaveBeenCalled();
+    expect(manifest.tables).not.toHaveProperty("sys_dictionary.metaFields");
+  });
+
+  it("keeps a create whose body builds, and every plan that is not a create", async () => {
+    const client = makeClient();
+    client.lookupHits.push([], [{ sys_id: "ex-1" }]);
+    const plan = await planFor(client, [
+      sidecarCandidate("sys_dictionary", "x_demo_task.u_foo", DICTIONARY_ROW),
+      sidecarCandidate("sys_dictionary", "x_demo_task.u_bar", { ...DICTIONARY_ROW, element: "u_bar" }),
+    ]);
+    const checked = await Pipeline.checkCreationBodies(plan, { client: asClient(client) });
+    expect(checked.plans.map((p) => p.action)).toEqual(["create", "adopt"]);
+    expect(client.createRecord).not.toHaveBeenCalled();
+  });
+
+  it("returns a plan with no create unchanged", async () => {
+    const plan = { scopeId: "s", plans: [] };
+    expect(await Pipeline.checkCreationBodies(plan)).toBe(plan);
+  });
+
   it("adopts the one record the composite lookup finds", async () => {
     const client = makeClient();
     client.lookupHits.push([{ sys_id: "ex-1" }]);
