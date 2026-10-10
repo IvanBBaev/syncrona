@@ -58,8 +58,37 @@ export interface GenerateScopeDocsOptions {
   now?: Date;
 }
 
+/**
+ * Record, file, table and scope names come from the manifest — ultimately from
+ * the instance — so they are rendered as data, never as Markdown: a `|` used to
+ * split a table row, a line break ended the row, and `<`/backticks turned a name
+ * into HTML or broke out of its code span.
+ */
+function oneLine(value: string): string {
+  return String(value ?? "").replace(/[\r\n]+/g, " ");
+}
+
+/** Escapes a name for Markdown text (outside a code span). */
+function markdownText(value: string): string {
+  return oneLine(value).replace(/[\\`*<>[\]]/g, "\\$&");
+}
+
+/** Wraps a name in a code span whose fence is longer than any backtick run in it. */
+function inlineCode(value: string): string {
+  const text = oneLine(value);
+  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(longestRun + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** Escapes the pipes of a rendered fragment so it stays inside one table cell. */
+function tableCell(fragment: string): string {
+  return fragment.replace(/\|/g, "\\|");
+}
+
 function describeTable(table: string): string {
-  return TABLE_DESCRIPTIONS[table] || `Records from the \`${table}\` table.`;
+  return TABLE_DESCRIPTIONS[table] || `Records from the ${inlineCode(table)} table.`;
 }
 
 /** Builds a deterministic, sorted summary of a downloaded scope manifest. */
@@ -142,7 +171,7 @@ export function buildScopeDocBody(
   out.push("");
   out.push("## Overview");
   out.push("");
-  out.push(`- Scope: \`${summary.scope}\``);
+  out.push(`- Scope: ${inlineCode(summary.scope)}`);
   out.push(`- Tables: ${summary.tableCount}`);
   out.push(`- Records: ${summary.recordCount}`);
   out.push(`- Files: ${summary.fileCount}`);
@@ -162,14 +191,14 @@ export function buildScopeDocBody(
     out.push("| --- | --- | --- | --- |");
     for (const table of summary.tables) {
       out.push(
-        `| \`${table.table}\` | ${table.description} | ${table.recordCount} | ${table.fileCount} |`
+        `| ${tableCell(inlineCode(table.table))} | ${tableCell(table.description)} | ${table.recordCount} | ${table.fileCount} |`
       );
     }
   }
   out.push("");
 
   for (const table of summary.tables) {
-    out.push(`### \`${table.table}\``);
+    out.push(`### ${inlineCode(table.table)}`);
     out.push("");
     out.push(table.description);
     out.push("");
@@ -181,8 +210,9 @@ export function buildScopeDocBody(
     out.push("| Record | Files |");
     out.push("| --- | --- |");
     for (const record of table.records) {
-      const files = record.files.length > 0 ? record.files.map((f) => `\`${f}\``).join(", ") : "—";
-      out.push(`| ${record.name} | ${files} |`);
+      const files =
+        record.files.length > 0 ? record.files.map((f) => inlineCode(f)).join(", ") : "—";
+      out.push(`| ${tableCell(markdownText(record.name))} | ${tableCell(files)} |`);
     }
     out.push("");
   }
@@ -195,9 +225,26 @@ export function wrapAutoSection(body: string): string {
   return `${DOCS_AUTO_START}\n${body}\n${DOCS_AUTO_END}`;
 }
 
+/** Finds `marker` as a whole line (surrounding blanks allowed) at or after `from`. */
+function findMarkerLine(
+  text: string,
+  marker: string,
+  from: number
+): { start: number; end: number } | null {
+  const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // In multiline mode `$` also stops before a `\r`, so CRLF files match too.
+  const re = new RegExp(`^[ \\t]*${escaped}[ \\t]*$`, "gm");
+  re.lastIndex = from;
+  const match = re.exec(text);
+  return match ? { start: match.index, end: match.index + match[0].length } : null;
+}
+
 /**
  * Performs a logical update of existing doc content:
- * - If the markers exist, only the content between them is replaced.
+ * - If the markers exist, only the content between them is replaced. A marker
+ *   counts only on a line of its own, and the block ends at the first end marker
+ *   after the start marker, so a marker quoted in manual notes or in a generated
+ *   name cannot cut the block short or swallow the notes after it.
  * - If no markers exist but content is present, the auto block is appended,
  *   preserving the manual content.
  * - If there is no existing content, a titled document with the block is created.
@@ -207,12 +254,12 @@ export function upsertDocsSection(
   scope: string,
   autoBlock: string
 ): string {
-  const startIdx = existing.indexOf(DOCS_AUTO_START);
-  const endIdx = existing.indexOf(DOCS_AUTO_END);
+  const start = findMarkerLine(existing, DOCS_AUTO_START, 0);
+  const end = start ? findMarkerLine(existing, DOCS_AUTO_END, start.end) : null;
 
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    const before = existing.slice(0, startIdx);
-    const after = existing.slice(endIdx + DOCS_AUTO_END.length);
+  if (start && end) {
+    const before = existing.slice(0, start.start);
+    const after = existing.slice(end.end);
     return `${before}${autoBlock}${after}`;
   }
 
@@ -220,7 +267,7 @@ export function upsertDocsSection(
     return `${existing.trimEnd()}\n\n${autoBlock}\n`;
   }
 
-  return `# Scope: ${scope}\n\n${autoBlock}\n`;
+  return `# Scope: ${markdownText(scope)}\n\n${autoBlock}\n`;
 }
 
 /**

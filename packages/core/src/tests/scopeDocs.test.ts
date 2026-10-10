@@ -123,6 +123,54 @@ describe("scopeDocs", () => {
       expect(out).toContain("# My hand-written doc");
       expect(out).toContain("AUTO CONTENT");
     });
+
+    it("ignores a marker that is not on a line of its own", () => {
+      // A generated name quoting the end marker used to end the block early, so
+      // the next run kept the rest of the old block as if it were manual notes.
+      const existing = `${DOCS_AUTO_START}\n| \`${DOCS_AUTO_END}\` | — |\nOLD AUTO\n${DOCS_AUTO_END}\n\nManual.\n`;
+      const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
+      expect(out).toBe(`${autoBlock}\n\nManual.\n`);
+    });
+
+    it("ends the block at the first end marker after the start marker", () => {
+      // An end marker quoted in the notes above the block used to make the
+      // update append a second block instead of replacing the first.
+      const existing = `Notes:\n${DOCS_AUTO_END}\n\n${DOCS_AUTO_START}\nOLD AUTO\n${DOCS_AUTO_END}\n`;
+      const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
+      expect(out).toBe(`Notes:\n${DOCS_AUTO_END}\n\n${autoBlock}\n`);
+    });
+
+    it("finds markers in a CRLF file", () => {
+      const existing = `Manual.\r\n${DOCS_AUTO_START}\r\nOLD AUTO\r\n${DOCS_AUTO_END}\r\n`;
+      const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
+      expect(out).toBe(`Manual.\r\n${autoBlock}\r\n`);
+    });
+  });
+
+  it("renders instance-supplied names as data, not Markdown", () => {
+    const manifest: SN.AppManifest = {
+      scope: "x_acme_app",
+      tables: {
+        "x_t|bad": {
+          records: {
+            r1: {
+              name: "a|b\n<img src=x>*",
+              sys_id: "1",
+              files: [{ name: "x`|`y.js", type: "js" }],
+            },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
+    const body = buildScopeDocBody(summarizeManifest(manifest), new Date(0));
+    const rows = body.split("\n").filter((line) => line.startsWith("| "));
+    // One row per record and per table, each still two/four cells wide.
+    expect(rows).toContain("| a\\|b \\<img src=x\\>\\* | ``x`\\|`y.js`` |");
+    expect(rows).toContain(
+      "| `x_t\\|bad` | Records from the `x_t\\|bad` table. | 1 | 1 |"
+    );
+    expect(body).toContain("### `x_t|bad`");
+    expect(body).not.toMatch(/(^|[^\\])<img/m);
   });
 
   it("writes and then logically updates the scope doc file", async () => {
