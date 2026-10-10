@@ -178,6 +178,9 @@ export function buildFetchDispatcher(tls: TlsMaterial): object {
   return new (Agent as new (options: unknown) => object)({ connect: { ...tls } });
 }
 
+/** sys_id of the platform's "Me" dynamic filter option (the session user). */
+const CURRENT_USER_DYNAMIC_FILTER = "90d1921e5f510100a9ad2572f2b477fe";
+
 function isEndpointNotFound(error: unknown): boolean {
   return (
     axios.isAxiosError(error) &&
@@ -584,9 +587,16 @@ export const snClient = (
     const resolvedUserName = userName || resolveCredentials().user;
     const endpoint = "api/now/table/sys_user";
     type UserResponse = Sync.SNAPIResponse<SN.UserRecord[]>;
+    // API-key and client-credentials logins carry no user name, and
+    // `user_name=` matches every user whose name is empty — the scope and
+    // update-set preferences then went to an arbitrary one of them. Without a
+    // name, ask for the authenticated user through the "Me" dynamic filter.
+    const query = resolvedUserName
+      ? `user_name=${escapeQueryValue(resolvedUserName)}`
+      : `sys_idDYNAMIC${CURRENT_USER_DYNAMIC_FILTER}`;
     return client.get<UserResponse>(endpoint, {
       params: {
-        sysparm_query: `user_name=${escapeQueryValue(resolvedUserName)}`,
+        sysparm_query: query,
         sysparm_fields: "sys_id",
       },
     });

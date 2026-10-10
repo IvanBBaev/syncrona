@@ -102,6 +102,7 @@ const ENV_KEYS = [
   "SN_INSTANCE",
   "SN_OAUTH_CLIENT_ID",
   "SN_OAUTH_CLIENT_SECRET",
+  "SN_API_KEY",
 ] as const;
 
 describe("snClient request wrappers", () => {
@@ -159,6 +160,21 @@ describe("snClient request wrappers", () => {
     await client.getScopeId("x_acme_app^sys_id=ADMIN");
     expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_scope", {
       params: { sysparm_query: "scope=x_acme_app sys_id=ADMIN", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getUserSysId asks for the session user when no user name is configured", async () => {
+    // An API-key login has no user name, and `user_name=` would match every
+    // user whose name is empty.
+    delete process.env.SN_USER;
+    process.env.SN_API_KEY = "key-1";
+    const client = await makeClient();
+    await client.getUserSysId();
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user", {
+      params: {
+        sysparm_query: "sys_idDYNAMIC90d1921e5f510100a9ad2572f2b477fe",
+        sysparm_fields: "sys_id",
+      },
     });
   });
 
