@@ -542,10 +542,9 @@ export async function logoutCommand(
     process.exit(1);
   }
 
-  const normalizedInstance = targetInstance
-    .trim()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/$/, "");
+  // The same normalizer login used to key the store, so a pasted address-bar
+  // URL finds the login it created.
+  const normalizedInstance = normalizeInstanceHost(targetInstance);
 
   let removed: boolean;
   try {
@@ -604,10 +603,7 @@ export async function useCommand(
 ): Promise<void> {
   setLogLevel(args);
 
-  const normalizedInstance = args.instance
-    .trim()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/$/, "");
+  const normalizedInstance = normalizeInstanceHost(args.instance);
 
   const all = await listInstances();
   if (!all.includes(normalizedInstance)) {
