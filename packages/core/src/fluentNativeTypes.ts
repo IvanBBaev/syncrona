@@ -474,6 +474,22 @@ export function renderNativeTypes(schema: NativeSchema): NativeTypesResult {
   // from the inherited one is omitted from the parent, or the interface would
   // not compile (TS2430), whether the type or only the optionality changed.
   const signature = (field: NativeField, type: string): string => `${field.mandatory ? "" : "?"}: ${type}`;
+  const fieldOf = (name: string, element: string): NativeField | undefined => {
+    const table = byName.get(name) as NativeTable;
+    const parent = parentOf(name);
+    return table.fields.find((f) => f.element === element) ?? (parent ? fieldOf(parent, element) : undefined);
+  };
+  // Inherited columns whose choices a table overrides; the table redeclares them.
+  const choiceOverrides = (table: NativeTable, parent: string | undefined, inherited: Map<string, string>) => {
+    const own = new Set(table.fields.map((f) => f.element));
+    const overrides: NativeField[] = [];
+    for (const [element, values] of Object.entries(table.choices)) {
+      if (own.has(element) || !inherited.has(element)) continue;
+      const field = fieldOf(parent as string, element);
+      if (field && literalUnion(field, values) !== undefined) overrides.push(field);
+    }
+    return overrides;
+  };
   const resolved = new Map<string, Map<string, string>>();
   const resolve = (name: string): Map<string, string> => {
     const cached = resolved.get(name);
@@ -481,16 +497,12 @@ export function renderNativeTypes(schema: NativeSchema): NativeTypesResult {
     const table = byName.get(name) as NativeTable;
     const parent = parentOf(name);
     const fields = new Map(parent ? resolve(parent) : []);
-    for (const field of table.fields) {
+    // A grandchild compares against the overridden signature, not the original one.
+    for (const field of [...choiceOverrides(table, parent, fields), ...table.fields]) {
       fields.set(field.element, signature(field, fieldType(field, table.choices[field.element])));
     }
     resolved.set(name, fields);
     return fields;
-  };
-  const fieldOf = (name: string, element: string): NativeField | undefined => {
-    const table = byName.get(name) as NativeTable;
-    const parent = parentOf(name);
-    return table.fields.find((f) => f.element === element) ?? (parent ? fieldOf(parent, element) : undefined);
   };
 
   const blocks: string[] = [];
@@ -499,15 +511,7 @@ export function renderNativeTypes(schema: NativeSchema): NativeTypesResult {
     const id = ids.get(table.name) as string;
     const parentName = parentOf(table.name);
     const inherited = parentName ? resolve(parentName) : new Map<string, string>();
-    const own = new Set(table.fields.map((f) => f.element));
-
-    // Inherited columns whose choices this table overrides are redeclared here.
-    const overrides: NativeField[] = [];
-    for (const [element, values] of Object.entries(table.choices)) {
-      if (own.has(element) || !inherited.has(element)) continue;
-      const field = fieldOf(parentName as string, element);
-      if (field && literalUnion(field, values) !== undefined) overrides.push(field);
-    }
+    const overrides = choiceOverrides(table, parentName, inherited);
 
     const lines: string[] = [];
     const members: Array<{ field: NativeField; type: string }> = [
