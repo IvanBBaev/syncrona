@@ -234,6 +234,24 @@ test('diffInstanceRecords: identical rows produce no diffs', () => {
   assert.deepEqual(diff.different, []);
 });
 
+test('diffInstanceRecords: records sharing a name compare as a set, whatever order each side returns', () => {
+  const opts = { nameField: 'name', contentField: 'script' };
+  const rowsA = [
+    { name: 'Set defaults', script: 'one' },
+    { name: 'Set defaults', script: 'two' },
+  ];
+  // Same records, other order: no difference.
+  assert.deepEqual(diffInstanceRecords(rowsA, [...rowsA].reverse(), opts).different, []);
+  // The first copy changed on B, the last copy did not: still a difference.
+  const rowsB = [
+    { name: 'Set defaults', script: 'one-changed' },
+    { name: 'Set defaults', script: 'two' },
+  ];
+  assert.deepEqual(diffInstanceRecords(rowsA, rowsB, opts).different.map((d) => d.name), ['Set defaults']);
+  // A copy missing on B is a difference too.
+  assert.deepEqual(diffInstanceRecords(rowsA, [rowsA[1]], opts).different.map((d) => d.name), ['Set defaults']);
+});
+
 test('diffInstanceRecords: rows with empty/missing name field are skipped from maps', () => {
   const rowsA = [{ name: '', script: 'x' }, { script: 'no-name-field' }];
   const rowsB = [{ name: '', script: 'y' }];
