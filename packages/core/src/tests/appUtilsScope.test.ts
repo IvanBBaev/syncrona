@@ -230,6 +230,18 @@ describe("checkScope", () => {
     );
   });
 
+  it("does not mention a scope switch in the unverified-scope warning when none was asked for", async () => {
+    // A fresh module instance, so its once-per-process flag starts unset.
+    jest.resetModules();
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 400 } });
+    const { checkScope } = await import("../appUtils.js");
+    await checkScope(false);
+    expect(loggerWarn).toHaveBeenCalledTimes(1);
+    expect(loggerWarn).toHaveBeenCalledWith(expect.stringContaining("assuming it is x_app. "));
+    expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining("not switching"));
+  });
+
   it("treats a missing scoped endpoint as a match", async () => {
     getManifest.mockReturnValue({ scope: "x_app" });
     mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
