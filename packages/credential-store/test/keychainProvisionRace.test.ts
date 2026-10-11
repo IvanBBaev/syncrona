@@ -20,7 +20,7 @@
  * saveCredentials, loadCredentials/loadCredentialsSync) and fail on the
  * unfixed get-then-set code.
  */
-import { mkdirSync, mkdtempSync, rmSync, utimesSync } from "fs";
+import fs, { mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, statSync, utimesSync } from "fs";
 import os from "os";
 import path from "path";
 
@@ -156,6 +156,43 @@ describe("cross-process keychain provisioning race", () => {
     const store = loadStoreInstance();
     expect(store.getStoreKeySource()).toBe("keychain");
     expect(mockSetPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stale-lock steal that lost the race never removes the winner's freshly re-created lock", () => {
+    // Two waiters see the same stale lock. The other one steals it and
+    // re-acquires with a fresh mkdir in the window between OUR staleness stat
+    // and our removal. A stat-then-rmdir stealer would delete that fresh lock
+    // and provision a second random key alongside the live holder.
+    mkdirSync(provisionLockPath(), { recursive: true });
+    const past = (Date.now() - 60_000) / 1000;
+    utimesSync(provisionLockPath(), past, past);
+    const realStat = fs.statSync;
+    let raced = false;
+    const statSpy = jest.spyOn(fs, "statSync").mockImplementation(((p: fs.PathLike, o?: never) => {
+      const result = realStat(p, o);
+      if (!raced && String(p) === provisionLockPath()) {
+        raced = true;
+        // The rival waiter: steals the stale lock and takes a fresh one.
+        rmdirSync(provisionLockPath());
+        mkdirSync(provisionLockPath());
+      }
+      return result;
+    }) as typeof fs.statSync);
+    try {
+      const source = loadStoreInstance().getStoreKeySource();
+      expect(raced).toBe(true);
+      // The live holder keeps its lock, so this waiter must not provision a key.
+      expect(source).toBe("machine");
+      expect(mockSetPassword).not.toHaveBeenCalled();
+    } finally {
+      statSpy.mockRestore();
+    }
+    // The rival's fresh lock is still in place (not deleted, not left renamed aside).
+    expect(Date.now() - statSync(provisionLockPath()).mtimeMs).toBeLessThan(5000);
+    // No renamed-aside lock dir is left behind.
+    expect(readdirSync(path.join(tmpHome, ".syncrona")).filter((f) => f.startsWith("store-key.lock"))).toEqual([
+      "store-key.lock",
+    ]);
   });
 
   it("never writes an unserialized random key: a held lock falls back to the recoverable machine key", () => {

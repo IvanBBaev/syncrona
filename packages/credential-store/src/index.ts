@@ -29,6 +29,7 @@ import {
   mkdirSync,
   promises as fsp,
   readFileSync,
+  renameSync,
   rmdirSync,
   statSync,
 } from "fs";
@@ -244,6 +245,36 @@ function sleepSync(ms: number): void {
 }
 
 /**
+ * Remove `lockPath` only if it is still the stale lock we observed. A plain
+ * stat-then-rmdir is check-then-act: two waiters can both see the same stale
+ * lock, the first removes it and re-acquires with a fresh mkdir, and the
+ * second's rmdir then deletes that FRESH lock — both enter the critical section
+ * and each provisions its own random key, the exact clobber the lock exists to
+ * prevent. Instead the stealer atomically renames the lock dir to a name only
+ * it knows (so at most one stealer can take any given lock dir), then re-checks
+ * what it actually took: still stale → it was the abandoned lock, delete it;
+ * fresh → it was re-created after our stat by a live holder, so put it back
+ * untouched. Every failure (holder released, another stealer won the rename)
+ * just means "retry the mkdir".
+ */
+function stealStaleProvisionLock(lockPath: string): void {
+  try {
+    const seen = statSync(lockPath);
+    if (Date.now() - seen.mtimeMs <= PROVISION_LOCK_STALE_MS) return;
+    const taken = `${lockPath}.stale.${process.pid}.${randomBytes(6).toString("hex")}`;
+    renameSync(lockPath, taken);
+    const moved = statSync(taken);
+    if (moved.ino === seen.ino && Date.now() - moved.mtimeMs > PROVISION_LOCK_STALE_MS) {
+      rmdirSync(taken);
+    } else {
+      renameSync(taken, lockPath);
+    }
+  } catch {
+    // The holder released (or another steal raced ours) — just retry.
+  }
+}
+
+/**
  * Cross-process mutex around master-key provisioning. `mkdir` of the lock
  * directory is atomic on every platform, so exactly one process can hold it; a
  * lock left behind by a crashed provisioner is stolen once it is older than
@@ -266,13 +297,7 @@ function acquireProvisionLock(): boolean {
           return false;
         }
       } else {
-        try {
-          if (Date.now() - statSync(lockPath).mtimeMs > PROVISION_LOCK_STALE_MS) {
-            rmdirSync(lockPath);
-          }
-        } catch {
-          // The holder released (or another steal raced ours) — just retry.
-        }
+        stealStaleProvisionLock(lockPath);
       }
       if (Date.now() >= deadline) return false;
       sleepSync(PROVISION_LOCK_POLL_MS);
