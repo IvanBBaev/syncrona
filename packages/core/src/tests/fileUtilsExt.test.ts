@@ -54,6 +54,30 @@ describe("getFileContextFromPath extension handling", () => {
     expect(ctx?.sys_id).toBe("abc123");
   });
 
+  it.each([
+    ["a Finder .DS_Store in an ATF step folder", "sys_atf_step", "MyStep", ".DS_Store"],
+    ["a vim swap file in an ATF step folder", "sys_atf_step", "MyStep", ".inputs.script.js.swp"],
+    ["Windows folder metadata in an ATF step folder", "sys_atf_step", "MyStep", "Thumbs.db"],
+    ["an Emacs backup of a script", "sys_script_include", "MyUtil", "script.js~"],
+    ["a .bak copy of a script", "sys_script_include", "MyUtil", "script.bak"],
+  ])("does not resolve %s to a field", (_label, table, record, fileName) => {
+    getManifest.mockReturnValue({
+      scope: "x_test_app",
+      tables: {
+        sys_atf_step: {
+          records: { MyStep: { sys_id: "abc123", files: [{ name: "inputs.script", type: "js" }] } },
+        },
+        sys_script_include: {
+          records: { MyUtil: { sys_id: "def456", files: [{ name: "script", type: "js" }] } },
+        },
+      },
+    });
+    expect(getFileContextFromPath(path.join("/proj/src", table, record, fileName))).toBeUndefined();
+    // The real file next to it still resolves.
+    const real = table === "sys_atf_step" ? "inputs.script.js" : "script.js";
+    expect(getFileContextFromPath(path.join("/proj/src", table, record, real))).toBeDefined();
+  });
+
   it("handles plain single-extension field names", () => {
     getManifest.mockReturnValue({
       scope: "x_test_app",

@@ -422,6 +422,23 @@ const ownEntry = <T>(
     ? map[key]
     : undefined;
 
+// Files editors and the OS drop next to the real ones: dotfiles (.DS_Store, a
+// vim swap file), backups (`script.js~`, `.bak`, `.orig`) and Windows folder
+// metadata. The field is the file STEM — `script.js~` has stem `script` — and
+// every file of an ATF step folder maps to `inputs.script`, so without this a
+// swap file or `.DS_Store` resolved to a real field and was pushed into it.
+const EDITOR_ARTIFACT_NAME = /(?:~|\.(?:swp|swo|swx|bak|orig|tmp))$/i;
+const OS_METADATA_NAMES = new Set(["thumbs.db", "desktop.ini"]);
+const isEditorArtifactPath = (filePath: string): boolean => {
+  if (isMetaSidecarPath(filePath)) return false;
+  const base = filePath.split(/[/\\]/).filter((token) => token !== "").pop() || "";
+  return (
+    base.startsWith(".") ||
+    EDITOR_ARTIFACT_NAME.test(base) ||
+    OS_METADATA_NAMES.has(base.toLowerCase())
+  );
+};
+
 const getTargetFieldFromPath = (
   filePath: string,
   table: string,
@@ -435,6 +452,7 @@ const getTargetFieldFromPath = (
 export const getFileContextFromPath = (
   filePath: string
 ): Sync.FileContext | undefined => {
+  if (isEditorArtifactPath(filePath)) return undefined;
   const ext = getFileExtension(filePath);
   let tableName: string;
   let recordName: string;
@@ -565,6 +583,7 @@ export const parseUnmappedPath = (
   const rel = path.relative(path.resolve(sourcePath), path.resolve(filePath));
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
   const segments = rel.split(/[/\\]/).filter((token) => token !== "");
+  if (isEditorArtifactPath(filePath)) return undefined;
   const ext = getFileExtension(filePath);
   if (!ext) return undefined;
   const fileName = segments[segments.length - 1];
