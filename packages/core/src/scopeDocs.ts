@@ -319,11 +319,15 @@ export async function generateScopeDocs(
     );
   }
 
+  // Only a missing file starts a fresh doc: on any other read error (EISDIR,
+  // EACCES, EIO) the write would replace the manual notes it could not read.
   let existing = "";
   try {
     existing = await fsp.readFile(filePath, "utf8");
-  } catch {
-    existing = "";
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException | null)?.code !== "ENOENT") {
+      throw e;
+    }
   }
 
   const next = upsertDocsSection(existing, summary.scope, autoBlock);
