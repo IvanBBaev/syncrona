@@ -72,6 +72,22 @@ beforeAll(() => {
       },
     })
   );
+  // Exports without a subpath map: a condition object whose first matching
+  // condition yields nothing, a fallback array whose first entry yields nothing,
+  // and an array with no ESM entry at all.
+  for (const [name, exports] of [
+    ["fixture-esm-conditions", { node: { require: "./missing.cjs" }, default: "./main.js" }],
+    ["fixture-esm-fallbacks", [{ require: "./missing.cjs" }, "./main.js"]],
+    ["fixture-esm-require-only", [{ require: "./missing.cjs" }]],
+  ] as const) {
+    const dir = path.join(FIXTURE_ROOT, "node_modules", name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name, version: "1.0.0", type: "module", exports })
+    );
+    fs.writeFileSync(path.join(dir, "main.js"), ESM_RUN_SOURCE);
+  }
   fs.writeFileSync(path.join(subDir, "lib", "root.js"), ESM_RUN_SOURCE);
   fs.writeFileSync(path.join(subDir, "lib", "transform.js"), ESM_RUN_SOURCE);
 });
@@ -170,6 +186,8 @@ describe("PluginManager plugin specifier (REV-140)", () => {
   it.each([
     ["fixture-esm-subpaths", "lib/root.js"],
     ["fixture-esm-subpaths/transform", "lib/transform.js"],
+    ["fixture-esm-conditions", "../fixture-esm-conditions/main.js"],
+    ["fixture-esm-fallbacks", "../fixture-esm-fallbacks/main.js"],
   ])("follows exports arrays, subpaths and nested conditions for %s", async (name, entry) => {
     const { resolvePluginSpecifier } = await import("../PluginManager.js");
     const specifier = resolvePluginSpecifier(name);
@@ -179,7 +197,13 @@ describe("PluginManager plugin specifier (REV-140)", () => {
     );
   });
 
-  it.each(["fixture-esm-subpaths/types", "fixture-esm-subpaths/absent", "not-installed-anywhere"])(
+  it.each([
+    "fixture-esm-subpaths/types",
+    "fixture-esm-subpaths/absent",
+    "fixture-esm-conditions/extra",
+    "fixture-esm-require-only",
+    "not-installed-anywhere",
+  ])(
     "falls back to the bare specifier when %s has no ESM entry in the project",
     async (name) => {
       const { resolvePluginSpecifier } = await import("../PluginManager.js");

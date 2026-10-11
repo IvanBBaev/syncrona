@@ -49,6 +49,9 @@ beforeAll(() => {
   writePackage("returns-number-output", {
     "index.js": "exports.run = async () => ({ success: true, output: 42 });\n",
   });
+  writePackage("returns-string-success", {
+    "index.js": "exports.run = async () => ({ success: 'yes', output: 'x' });\n",
+  });
   writePackage("fails-without-output", {
     "index.js": "exports.run = async () => ({ success: false });\n",
   });
@@ -155,7 +158,12 @@ describe("PluginManager.runPlugins — plugin module shapes", () => {
     ).resolves.toEqual({ success: true, content: "ABC" });
   });
 
-  it.each(["returns-nothing", "returns-no-output", "returns-number-output"])(
+  it.each([
+    "returns-nothing",
+    "returns-no-output",
+    "returns-number-output",
+    "returns-string-success",
+  ])(
     "rejects a plugin that %s with a clear invalid-result error",
     async (name) => {
       await expect(
