@@ -118,7 +118,14 @@ export default function() {
           //do we have an alias?
           if (tags.has("moduleAlias")) {
             //expand with alias
-            const aliasName = tags.get("moduleAlias") as string;
+            const aliasName = tags.get("moduleAlias");
+            // A bare `@moduleAlias` carries no name; renaming to it produced
+            // `true.foo()`, which runs but references nothing.
+            if (typeof aliasName !== "string") {
+              throw path.buildCodeFrameError(
+                "@moduleAlias needs a name: write @moduleAlias=<name>."
+              );
+            }
             renameAllImports(aliasName, _imports, path);
           } else {
             //expand using module name

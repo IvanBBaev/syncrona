@@ -221,3 +221,12 @@ test('keeps a default-exported expression with side effects as a statement', asy
   assert.equal(await transform('export default init();'), 'init();');
   assert.equal(await transform('export default { a: 1 };'), '');
 });
+
+test('rejects a @moduleAlias without a name', async () => {
+  const source = [
+    '//@expandModule @moduleAlias',
+    'import { aliased } from "aliased-module";',
+    'aliased();',
+  ].join('\n');
+  await assert.rejects(transform(source), /@moduleAlias needs a name/);
+});
