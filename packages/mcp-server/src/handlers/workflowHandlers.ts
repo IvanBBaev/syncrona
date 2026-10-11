@@ -429,22 +429,6 @@ export async function handleWorkflowTool(
         };
       }
 
-      // SEC-3 follow-up (REV-150): this is the ONE mutating tool that never saw the
-      // request's dryRun flag — toolModules did not forward it, so the handler could not
-      // honor it. The result was worse than merely ignoring it: index.ts SKIPS the
-      // preflight gate for dry runs, so `dryRun: true` on sync_unified_change_workflow
-      // performed the real apply with one of its safety gates disabled. Stop before any
-      // mutation and report what would have happened.
-      if (context.dryRun) {
-        return context.makeDryRunAuditResponse(toolName, args, {
-          apply: true,
-          taskType,
-          executionMode,
-          riskLevel,
-          allowRemoteApply,
-        });
-      }
-
       // REV-88 (SEC-7): the approval gate above (`approvalOk`) is satisfied purely
       // from the caller-supplied `approval` object — a self-attestation a caller can
       // fabricate. Before any mutation is applied, confirm the approval against the
@@ -521,7 +505,26 @@ export async function handleWorkflowTool(
             ],
           };
         }
+      }
 
+      // SEC-3 follow-up (REV-150): this is the ONE mutating tool that never saw the
+      // request's dryRun flag — toolModules did not forward it, so the handler could not
+      // honor it. The result was worse than merely ignoring it: index.ts SKIPS the
+      // preflight gate for dry runs, so `dryRun: true` on sync_unified_change_workflow
+      // performed the real apply with one of its safety gates disabled. Stop before any
+      // mutation and report what would have happened — but only after the refusal gates
+      // above, so a dry run never plans an apply the real run would refuse.
+      if (context.dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          apply: true,
+          taskType,
+          executionMode,
+          riskLevel,
+          allowRemoteApply,
+        });
+      }
+
+      if (executionMode === "remote") {
         const remoteExecution = await context.runRemoteScript(
           remoteScript,
           timeoutMs,
