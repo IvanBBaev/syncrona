@@ -16,3 +16,15 @@ test('analyzeSecurity flags an encoded query concatenated with input', () => {
 test('analyzeSecurity does not flag a constant encoded query', () => {
   assert.ok(!ids(analyzeSecurity('gr.addEncodedQuery("active=true");')).includes('sec.encoded.query.concat'));
 });
+
+const { analyzeArchitecture } = require('../dist/analysis/scriptAnalysis.js');
+
+test('analyzeArchitecture flags an empty catch block', () => {
+  assert.ok(ids(analyzeArchitecture('try { run(); } catch (e) {}')).includes('arch.empty.catch'));
+  assert.ok(ids(analyzeArchitecture('try {\n  run();\n} catch (err) {\n}\n')).includes('arch.empty.catch'));
+  assert.ok(ids(analyzeArchitecture('try { run(); } catch {}')).includes('arch.empty.catch'));
+});
+
+test('analyzeArchitecture does not flag a catch block that handles the error', () => {
+  assert.ok(!ids(analyzeArchitecture('try { run(); } catch (e) { gs.error(e); }')).includes('arch.empty.catch'));
+});
