@@ -569,6 +569,37 @@ test('handleExportUpdateSet: writeFiles=true saves file and reports savedTo path
   }
 });
 
+test('handleExportUpdateSet: writeFiles=true does not save the error page of a rejected export', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'syncrona-export-rejected-'));
+  const originalCwd = process.cwd();
+  process.chdir(tmpDir);
+  try {
+    await withEnv(
+      { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+      async () => {
+        global.fetch = async (url) => {
+          const u = String(url);
+          if (u.includes('export_update_set.do')) {
+            return mkResponse(403, '<html>Access denied</html>');
+          }
+          return mkResponse(200, { result: [] });
+        };
+        const res = await handleExportUpdateSet({ updateSetSysId: 'set-1', writeFiles: true }, 1000);
+        assert.equal(res.isError, true);
+        const parsed = JSON.parse(res.content[0].text);
+        assert.equal(parsed.savedTo, null);
+        assert.equal(fs.existsSync(path.join(tmpDir, buildUpdateSetExportPath('set-1'))), false);
+      }
+    );
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('handleExportUpdateSet: writeFiles=true with an unwritable target path reports writeError', async () => {
   const fs = require('node:fs');
   const os = require('node:os');

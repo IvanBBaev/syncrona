@@ -46,7 +46,8 @@ export async function handleExportUpdateSet(
   const recordCount = toTableResultRows(countResponse.data).length;
 
   let savedTo: string | null = null;
-  if (args.writeFiles === true && xml.trim()) {
+  // A rejected export answers an error page, not the update set: never save it.
+  if (args.writeFiles === true && !isError) {
     const relativePath = buildUpdateSetExportPath(resolved.label);
     const absolutePath = path.join(process.cwd(), relativePath);
     try {
