@@ -79,6 +79,8 @@ export const createAndAssignUpdateSet = async (updateSetName = "") => {
   };
 };
 
+let warnedUnverifiedScope = false;
+
 export const checkScope = async (
   swap: boolean
 ): Promise<Sync.ScopeCheckResult> => {
@@ -90,6 +92,18 @@ export const checkScope = async (
       scopeObj = await unwrapSNResponse(client.getCurrentScope());
     } catch (e) {
       if (isScopedEndpointUnavailableError(e)) {
+        // Deliberate: the CLI works without the scoped endpoint. But the
+        // session scope is then unverified (and --scopeSwap is not applied),
+        // so say so — once, as dev mode re-checks on every refresh.
+        if (!warnedUnverifiedScope) {
+          warnedUnverifiedScope = true;
+          logger.warn(
+            `Could not verify the instance session scope (the scoped endpoint is unavailable); ` +
+              `assuming it is ${man.scope}` +
+              (swap ? " and not switching scopes" : "") +
+              `. Make sure the session is in ${man.scope} so changes are not recorded in another scope.`
+          );
+        }
         return {
           match: true,
           sessionScope: man.scope,
