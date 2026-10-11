@@ -163,9 +163,26 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
     }
   };
 
+  // A record without an id gets a generated `record:<n>` id. It must not reuse an
+  // id another record carries (before or after it), or that record's node would
+  // be dropped and its edges attached to the wrong node.
+  const explicitIds = new Set(
+    records
+      .map((raw) => asRecord(raw))
+      .map((rec) => toStringField(rec.id) || toStringField(rec.sys_id))
+      .filter((id) => id.length > 0)
+  );
+  const fallbackId = () => {
+    let seq = nodes.length + 1;
+    while (explicitIds.has(`record:${seq}`) || nodeIds.has(`record:${seq}`)) {
+      seq += 1;
+    }
+    return `record:${seq}`;
+  };
+
   for (const raw of records) {
     const rec = asRecord(raw);
-    const id = toStringField(rec.id) || toStringField(rec.sys_id) || `record:${nodes.length + 1}`;
+    const id = toStringField(rec.id) || toStringField(rec.sys_id) || fallbackId();
     const name = toStringField(rec.name) || id;
     const script = toStringField(rec.script);
     const table = toStringField(rec.table) || toStringField(rec.tableName);
