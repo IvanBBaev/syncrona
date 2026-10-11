@@ -12,6 +12,8 @@ import {
   jiraProfileToFilename,
   filenameToJiraProfile,
   jiraCredentialHealth,
+  encrypt,
+  getStoreKey,
   type StoredJiraCredentials,
 } from "../src/index";
 
@@ -147,6 +149,33 @@ describe("jira credential store", () => {
     expect((await listJiraProfiles()).sort()).toEqual(["work/a", "work_a"]);
     expect((await loadJiraCredentials("work/a"))?.deployment).toBe("cloud");
     expect((await loadJiraCredentials("work_a"))?.deployment).toBe("server");
+  });
+
+  it("leaves a missing or unknown stored deployment unset so @syncrona/jira detects it from the URL", async () => {
+    // A legacy record written before `deployment` existed. Forcing it to "server"
+    // made resolveJiraConfig skip detectDeployment and talk Server/DC to a Cloud site.
+    const jiraDir = path.join(tmpHome, ".syncrona", "jira");
+    await fsp.mkdir(jiraDir, { recursive: true });
+    const legacy = { profile: "default", baseUrl: CLOUD.baseUrl, email: CLOUD.email, token: "t" };
+    writeFileSync(
+      path.join(jiraDir, jiraProfileToFilename("default")),
+      encrypt(JSON.stringify(legacy), getStoreKey()),
+      "utf8"
+    );
+    const loaded = await loadJiraCredentials("default");
+    expect(loaded).toEqual(legacy);
+    expect(loaded).not.toHaveProperty("deployment");
+    expect(loadJiraCredentialsSync("default")).not.toHaveProperty("deployment");
+
+    await saveJiraCredentials({ ...SERVER, deployment: "bogus" as never });
+    expect(await loadJiraCredentials("work")).not.toHaveProperty("deployment");
+  });
+
+  it("keeps a recognised deployment case-insensitively", async () => {
+    await saveJiraCredentials({ ...CLOUD, deployment: " Cloud " as never });
+    expect((await loadJiraCredentials("default"))?.deployment).toBe("cloud");
+    await saveJiraCredentials({ ...SERVER, deployment: "SERVER" as never });
+    expect((await loadJiraCredentials("work"))?.deployment).toBe("server");
   });
 
   // POSIX permission bits are not meaningful on Windows — skip the mode assertion there.

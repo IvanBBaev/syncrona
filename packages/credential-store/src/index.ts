@@ -729,7 +729,12 @@ export type JiraDeploymentKind = "cloud" | "server";
 export type StoredJiraCredentials = {
   profile: string;
   baseUrl: string;
-  deployment: JiraDeploymentKind;
+  /**
+   * Explicit deployment flavour. Absent when none was stored (or the stored
+   * value is not a known kind) — `@syncrona/jira` then detects it from
+   * `baseUrl`, so a `*.atlassian.net` site still resolves to Cloud.
+   */
+  deployment?: JiraDeploymentKind;
   /** Account email — Cloud only. */
   email?: string;
   /** API token (Cloud) or personal access token (Server/DC). */
@@ -772,19 +777,24 @@ function normalizeStoredJira(
   data: Partial<StoredJiraCredentials>,
   profile: string
 ): StoredJiraCredentials {
-  // Coerce any non-"cloud" value to "server": that is the safe default for a
-  // self-hosted instance and matches `detectDeployment`'s fallback in
-  // `@syncrona/jira` (anything not on a known Cloud host is Server/DC). The
-  // value reaching `resolveJiraConfig` is therefore always a valid kind, so the
-  // two packages never disagree on a corrupted/legacy stored value.
-  const deployment: JiraDeploymentKind = data.deployment === "cloud" ? "cloud" : "server";
+  // Keep only a recognised kind (case-insensitively) and otherwise leave the
+  // field unset. Coercing a missing/legacy/corrupted value to "server" here
+  // looked safe but defeated `resolveJiraConfig`'s URL detection: it only calls
+  // `detectDeployment(baseUrl)` when the stored kind is absent or invalid, so a
+  // forced "server" made a `*.atlassian.net` profile talk REST v2 with a Bearer
+  // PAT header to Cloud and fail auth. Leaving it undefined lets the one
+  // detector decide from the URL (and it still falls back to Server/DC for any
+  // host that is not a known Cloud host).
+  const rawDeployment = String(data.deployment || "").trim().toLowerCase();
   const stored: StoredJiraCredentials = {
     profile: String(data.profile || profile || DEFAULT_JIRA_PROFILE),
     baseUrl: String(data.baseUrl || ""),
-    deployment,
     // Do not coerce/trim the token — surrounding whitespace can be significant.
     token: String(data.token || ""),
   };
+  if (rawDeployment === "cloud" || rawDeployment === "server") {
+    stored.deployment = rawDeployment;
+  }
   const email = String(data.email || "").trim();
   if (email) {
     stored.email = email;
