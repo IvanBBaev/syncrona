@@ -249,6 +249,16 @@ describe("scopeDocs", () => {
   // instance, and used to be interpolated straight into the filename. A scope
   // holding a separator or ".." wrote a Markdown file anywhere the process can
   // reach — outside outDir, over an existing file.
+  it("fails instead of overwriting a doc it could not read", async () => {
+    // A directory in the doc's place reads with EISDIR rather than ENOENT; the
+    // read error used to be taken as "no doc yet" and the write attempted anyway.
+    fs.mkdirSync(path.join(tempDir, "x_acme_app.md"));
+    await expect(generateScopeDocs(sampleManifest(), { outDir: tempDir })).rejects.toMatchObject({
+      code: "EISDIR",
+      syscall: "read",
+    });
+  });
+
   it("refuses to write a doc for a scope that is not a safe filename", async () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-docs-out-"));
     const victim = path.join(outsideDir, "escaped.md");
