@@ -33,11 +33,17 @@ export const gitDiffToChanges = async (diff: string): Promise<GitDiffChanges> =>
   return { changed: sourcePath, deleted: [] };
 };
 
+/**
+ * execFile's default 1 MiB stdout cap kills git mid-diff on a large change set
+ * (roughly ten thousand paths), which fails `push --diff` outright.
+ */
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+
 const execGit = (args: string[]): Promise<string> => {
   return new Promise<string>((resolve, reject) => {
     // execFile (no shell) keeps paths with spaces intact and rules out shell
     // injection through the diff target argument.
-    cp.execFile("git", args, (err, stdout) => {
+    cp.execFile("git", args, { maxBuffer: GIT_MAX_BUFFER }, (err, stdout) => {
       if (err) {
         reject(err);
       } else {

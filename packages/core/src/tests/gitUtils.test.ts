@@ -80,7 +80,7 @@ describe("gitUtils", () => {
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.
     mockExecFile.mockImplementation(
-      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
           cb(null, "/repo\n");
         } else {
@@ -131,7 +131,7 @@ describe("gitUtils", () => {
     it("reports D lines and renamed-from paths as deleted, keeping the changed side intact", async () => {
       mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
       mockExecFile.mockImplementation(
-        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
           if (args.includes("rev-parse")) {
             cb(null, "/repo\n");
           } else {
@@ -189,7 +189,7 @@ describe("gitUtils", () => {
     it("asks git for deletions against HEAD inside the source tree, renames split", async () => {
       mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
       mockExecFile.mockImplementation(
-        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
           if (args.includes("rev-parse")) cb(null, "/repo\n");
           else
             cb(
@@ -218,7 +218,7 @@ describe("gitUtils", () => {
 
     it("rejects when git cannot answer", async () => {
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
           cb(new Error("fatal: bad revision 'HEAD'"), "")
       );
       await expect(gitWorkingTreeDeletions()).rejects.toThrow("bad revision");
@@ -227,7 +227,7 @@ describe("gitUtils", () => {
 
   it("rejects when git exits with an error", async () => {
     mockExecFile.mockImplementation(
-      (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+      (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
         cb(new Error("fatal: not a git repository"), "")
     );
     await expect(gitDiffToEncodedPaths("HEAD")).rejects.toThrow(
@@ -244,7 +244,7 @@ describe("gitUtils", () => {
   it("keeps an in-scope file even when the diff path uses the foreign separator (#19)", async () => {
     mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
     mockExecFile.mockImplementation(
-      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
           cb(null, "/repo\n");
         } else {
@@ -268,7 +268,7 @@ describe("gitUtils", () => {
     // cwd == repo root -> relative scope is "".
     cwdSpy.mockReturnValue("/repo");
     mockExecFile.mockImplementation(
-      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
           cb(null, "/repo\n");
         } else {
@@ -302,7 +302,7 @@ describe("gitUtils", () => {
     mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
     const cyrillicPath = "packages/scope/src/sys_script_include/Тест/script.js";
     mockExecFile.mockImplementation(
-      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
           cb(null, "/repo\n");
         } else {
@@ -314,6 +314,16 @@ describe("gitUtils", () => {
 
     const result = await gitDiffToEncodedPaths("HEAD~1");
     expect(result).toContain(path.resolve("/repo", cyrillicPath));
+  });
+
+  it("lifts execFile's 1 MiB stdout cap so a large diff does not kill git", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    await gitDiffToEncodedPaths("HEAD~1");
+    for (const call of mockExecFile.mock.calls) {
+      expect((call[2] as { maxBuffer: number }).maxBuffer).toBeGreaterThanOrEqual(
+        64 * 1024 * 1024
+      );
+    }
   });
 
   // quotePath=false still C-quotes a path holding a double quote, backslash, tab
@@ -331,7 +341,7 @@ describe("gitUtils", () => {
     it("keeps paths with a quote, backslash, tab or newline on both sides of the diff", async () => {
       mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
       mockExecFile.mockImplementation(
-        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
           if (args.includes("rev-parse")) cb(null, "/repo\n");
           else
             cb(
@@ -363,7 +373,7 @@ describe("gitUtils", () => {
     it("reports a deleted path holding a quote as git evidence for --prune", async () => {
       mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
       mockExecFile.mockImplementation(
-        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+        (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
           if (args.includes("rev-parse")) cb(null, "/repo\n");
           else cb(null, ["D", odd.gone, ""].join("\0"));
         }
@@ -382,7 +392,7 @@ describe("gitUtils", () => {
   it("skips a blank line in the middle of the diff without dropping the files around it", async () => {
     mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
     mockExecFile.mockImplementation(
-      (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
           cb(null, "/repo\n");
         } else {
@@ -412,7 +422,7 @@ describe("gitUtils", () => {
   describe("getCurrentBranch", () => {
     it("returns the trimmed branch name from git rev-parse --abbrev-ref HEAD", async () => {
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
           cb(null, "feature/ABC-123-add-widget\n")
       );
 
@@ -428,7 +438,7 @@ describe("gitUtils", () => {
       // git reports "HEAD" when detached; treating that as a branch name would
       // send "HEAD" to the Jira key parser and produce a bogus lookup.
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
           cb(null, "HEAD\n")
       );
 
@@ -437,7 +447,7 @@ describe("gitUtils", () => {
 
     it("returns null when git prints nothing", async () => {
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
           cb(null, "   \n")
       );
 
@@ -448,7 +458,7 @@ describe("gitUtils", () => {
       // Not a repo / git not installed: the caller uses this for best-effort key
       // inference, so it must degrade to "no branch", never reject.
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], cb: (e: unknown, out: string) => void) =>
+        (_cmd: string, _args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) =>
           cb(new Error("fatal: not a git repository"), "")
       );
 
