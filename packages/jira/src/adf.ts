@@ -224,11 +224,24 @@ function renderListItem(item: AdfNode, marker: string, depth: number): string {
   return [`${marker}${first}`, ...rest].join("\n");
 }
 
+/**
+ * First number of an ordered list. ADF carries a list that continues an earlier
+ * one (or deliberately starts elsewhere) as `attrs.order`; anything that is not a
+ * non-negative safe integer falls back to the default start of 1.
+ */
+function orderedListStart(node: AdfNode): number {
+  const order = node.attrs?.order;
+  return typeof order === "number" && Number.isSafeInteger(order) && order >= 0
+    ? order
+    : 1;
+}
+
 function renderList(node: AdfNode, ordered: boolean, depth: number): string {
   const items = Array.isArray(node.content) ? node.content : [];
+  const start = ordered ? orderedListStart(node) : 1;
   return items
     .map((item, index) =>
-      renderListItem(item, ordered ? `${index + 1}. ` : "- ", depth)
+      renderListItem(item, ordered ? `${start + index}. ` : "- ", depth)
     )
     .filter((line) => line.trim().length > 0)
     .join("\n");
