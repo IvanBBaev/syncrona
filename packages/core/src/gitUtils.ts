@@ -60,6 +60,10 @@ const gitDiffChanges = async (
     "core.quotePath=false",
     "diff",
     "--name-status",
+    // NUL-separated, verbatim paths: quotePath=false still C-quotes a path
+    // holding a double quote, backslash, tab or newline, and that quoted form
+    // never matches a real file.
+    "-z",
     `${target}...`,
     "--",
     sourcePath,
@@ -80,6 +84,7 @@ export const gitWorkingTreeDeletions = async (): Promise<string[]> => {
     "core.quotePath=false",
     "diff",
     "--name-status",
+    "-z",
     "--no-renames",
     "--diff-filter=D",
     "HEAD",
@@ -128,16 +133,47 @@ export const clearDiff = async () => {
 };
 
 /**
+ * Rows of `git diff --name-status -z` output: a status token, then one path —
+ * two for a rename or copy — each NUL-terminated and never quoted.
+ */
+const parseNameStatusZ = (output: string): string[][] => {
+  const tokens = output.split("\0");
+  const rows: string[][] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const status = tokens[i];
+    if (status === "") {
+      i += 1;
+      continue;
+    }
+    const pathCount = /^[RC]/.test(status) ? 2 : 1;
+    rows.push(tokens.slice(i, i + 1 + pathCount));
+    i += 1 + pathCount;
+  }
+  return rows;
+};
+
+/** Rows of line-based `git diff --name-status` output, tab separated. */
+const parseNameStatusLines = (output: string): string[][] =>
+  output
+    .split(/\r?\n/)
+    .filter((line) => line !== "")
+    .map((line) => line.split("\t").map((column) => column.trim()));
+
+/**
  * Splits `git diff --name-status` output into the paths to push and the paths
- * the diff removed. Lines are tab separated: "M\tpath", "D\tpath",
- * "R100\told\tnew", "C75\tsrc\tcopy". The last column is always a path that
- * exists after the diff; for a rename the first path column no longer does, so
- * it is reported as deleted. A copy leaves its source in place.
+ * the diff removed. Rows are "M path", "D path", "R100 old new", "C75 src copy",
+ * either NUL separated (`-z`, what this module asks git for) or one per line
+ * with tab-separated columns. The last column is always a path that exists
+ * after the diff; for a rename the first path column no longer does, so it is
+ * reported as deleted. A copy leaves its source in place.
  */
 export const formatGitChanges = async (gitFiles: string): Promise<GitDiffChanges> => {
   const baseRepoPath = await getRepoRootDir();
   const workspaceDir = process.cwd();
-  const fileSplit = gitFiles.split(/\r?\n/);
+  const rows = gitFiles.includes("\0")
+    ? parseNameStatusZ(gitFiles)
+    : parseNameStatusLines(gitFiles);
   const fileArray: string[] = [];
   const deleted: string[] = [];
   const addIfInScope = (target: string[], filePath: string) => {
@@ -147,24 +183,20 @@ export const formatGitChanges = async (gitFiles: string): Promise<GitDiffChanges
     }
     return false;
   };
-  fileSplit.forEach((diffFile) => {
-    if (diffFile === "") {
-      return;
-    }
-    const columns = diffFile.split("\t");
+  rows.forEach((columns) => {
     if (columns.length < 2) {
       return;
     }
     const modCode = columns[0].charAt(0);
     if (modCode === "D") {
-      addIfInScope(deleted, columns[1].trim());
+      addIfInScope(deleted, columns[1]);
       return;
     }
     if (modCode === "R" && columns.length > 2) {
-      addIfInScope(deleted, columns[1].trim());
+      addIfInScope(deleted, columns[1]);
     }
-    if (addIfInScope(fileArray, columns[columns.length - 1].trim())) {
-      logger.info(diffFile);
+    if (addIfInScope(fileArray, columns[columns.length - 1])) {
+      logger.info(columns.join("\t"));
     }
   });
   return { changed: fileArray.join(PATH_DELIMITER), deleted };
