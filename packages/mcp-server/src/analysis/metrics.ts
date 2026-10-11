@@ -7,6 +7,12 @@ export type ToolMetricEvent = {
   correlationId?: string;
 };
 
+// A latency that is not a finite number (missing, a string, NaN) carries no
+// timing information; averaging it in would turn the whole aggregate into NaN.
+function isFiniteLatency(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function computeMetricTrend(
   previousWindow: Record<string, unknown>,
   currentWindow: Record<string, unknown>
@@ -49,8 +55,9 @@ export function summarizeMetricsWindows(
     const total = slice.length;
     const ok = slice.filter((e) => e.ok).length;
     const error = total - ok;
+    const latencies = slice.map((e) => e.latencyMs).filter(isFiniteLatency);
     const avgLatencyMs =
-      total === 0 ? 0 : slice.reduce((sum, e) => sum + e.latencyMs, 0) / total;
+      latencies.length === 0 ? 0 : latencies.reduce((sum, latency) => sum + latency, 0) / latencies.length;
 
     windows.push({
       start: slice[0]?.timestamp || "",
@@ -68,6 +75,7 @@ export function summarizeMetricsWindows(
 
 export function summarizeMetrics(events: ToolMetricEvent[]): Record<string, unknown> {
   const byTool: Record<string, { total: number; ok: number; error: number; avgLatencyMs: number }> = {};
+  const latencySamples: Record<string, number> = {};
 
   for (const ev of events) {
     if (!byTool[ev.tool]) {
@@ -80,7 +88,11 @@ export function summarizeMetrics(events: ToolMetricEvent[]): Record<string, unkn
     } else {
       item.error += 1;
     }
-    item.avgLatencyMs = ((item.avgLatencyMs * (item.total - 1)) + ev.latencyMs) / item.total;
+    if (isFiniteLatency(ev.latencyMs)) {
+      const samples = (latencySamples[ev.tool] ?? 0) + 1;
+      latencySamples[ev.tool] = samples;
+      item.avgLatencyMs = ((item.avgLatencyMs * (samples - 1)) + ev.latencyMs) / samples;
+    }
   }
 
   return {
