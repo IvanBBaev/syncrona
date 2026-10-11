@@ -619,7 +619,8 @@ function atfKindMismatchHint(action: CicdRunAction, progressId: string): string 
 async function fetchAtfOutcome(
   action: CicdRunAction,
   progress: JsonObject,
-  budget: Budget
+  budget: Budget,
+  pollMs: number
 ): Promise<AtfOutcome | { unreadable: string; notFound?: boolean }> {
   const resultId = linkOf(progress, "results", "id");
   if (!resultId) {
@@ -629,15 +630,25 @@ async function fetchAtfOutcome(
     action === "run-suite"
       ? `testsuite/results/${encodeURIComponent(resultId)}`
       : `tests/test/results/${encodeURIComponent(resultId)}`;
-  let body: JsonObject;
-  try {
-    body = await cicdCall("GET", cicdEndpoint(path), "ATF result", budget);
-  } catch (e) {
-    return {
-      // The trailing period is dropped: the reason is quoted mid-sentence.
-      unreadable: `ATF result ${resultId} could not be read: ${(e instanceof Error ? e.message : String(e)).replace(/\.$/, "")}`,
-      notFound: e instanceof CicdRunIncomplete && e.httpStatus === 404,
-    };
+  let body: JsonObject | undefined;
+  for (let attempt = 1; body === undefined; attempt++) {
+    try {
+      body = await cicdCall("GET", cicdEndpoint(path), "ATF result", budget);
+    } catch (e) {
+      // The run has finished, so a dropped connection or a 502 on this one read
+      // would otherwise turn a known pass or failure into `incomplete`; it gets
+      // the same transient retries as a progress poll, as in core.
+      const left = budget.remaining();
+      if (isTransientPollError(e) && attempt < CICD_MAX_POLL_FAILURES && left > 0) {
+        await sleep(Math.min(pollMs, left));
+        continue;
+      }
+      return {
+        // The trailing period is dropped: the reason is quoted mid-sentence.
+        unreadable: `ATF result ${resultId} could not be read: ${(e instanceof Error ? e.message : String(e)).replace(/\.$/, "")}`,
+        notFound: e instanceof CicdRunIncomplete && e.httpStatus === 404,
+      };
+    }
   }
   const url = linkOf(body, "results", "url") ?? linkOf(progress, "results", "url");
   if (action === "run-suite") {
@@ -832,7 +843,7 @@ export async function handleCicdRun(
       );
     }
     if (isAtfAction) {
-      const read = await fetchAtfOutcome(action, progress, budget);
+      const read = await fetchAtfOutcome(action, progress, budget, pollMs);
       if ("unreadable" in read) {
         if (trackerSucceeded) {
           throw new CicdRunIncomplete(

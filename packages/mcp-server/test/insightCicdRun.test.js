@@ -496,6 +496,49 @@ test('handleCicdRun: an unreadable ATF result on a failed tracker stays failed',
   });
 });
 
+test('handleCicdRun: a transient ATF result read is retried, so a 502 after the run does not hide its verdict', async () => {
+  await withEnv(async () => {
+    const resultPath = `GET /api/sn_cicd/testsuite/results/${RESULT_ID}`;
+    const calls = mockFetch({
+      'POST /api/sn_cicd/testsuite/run': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress('2', withResults),
+      [resultPath]: [
+        mkResponse(502, 'Bad Gateway'),
+        fetchFailed('ECONNRESET'),
+        mkResponse(200, {
+          result: {
+            test_suite_status: 'success',
+            rolledup_test_success_count: 2,
+            rolledup_test_failure_count: 0,
+            rolledup_test_error_count: 0,
+            rolledup_test_skip_count: 0,
+          },
+        }),
+      ],
+    });
+    const body = payloadOf(
+      await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, pollMs: 250, confirmDestructive: true }, makeContext())
+    );
+    assert.equal(body.outcome, 'succeeded');
+    assert.equal(body.exitCode, 0);
+    assert.equal(calls.filter((c) => `${c.method} ${c.path}` === resultPath).length, 3);
+  });
+});
+
+test('handleCicdRun: a settled ATF result answer such as a 404 is read once', async () => {
+  await withEnv(async () => {
+    const calls = mockFetch({
+      'POST /api/sn_cicd/testsuite/run': dispatched(),
+      [`GET /api/sn_cicd/progress/${PROGRESS_ID}`]: progress('2', withResults),
+    });
+    const body = payloadOf(
+      await handleCicdRun({ action: 'run-suite', suiteId: SUITE_ID, pollMs: 250, confirmDestructive: true }, makeContext())
+    );
+    assert.equal(body.outcome, 'incomplete');
+    assert.equal(calls.filter((c) => c.path.includes('/testsuite/results/')).length, 1);
+  });
+});
+
 test('handleCicdRun: a successful ATF tracker without a results link → incomplete', async () => {
   await withEnv(async () => {
     const calls = mockFetch({
