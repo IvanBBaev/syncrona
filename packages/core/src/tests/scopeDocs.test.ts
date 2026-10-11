@@ -140,6 +140,15 @@ describe("scopeDocs", () => {
       expect(out).toBe(`Notes:\n${DOCS_AUTO_END}\n\n${autoBlock}\n`);
     });
 
+    it("refuses a start marker without an end marker instead of appending a second block", () => {
+      // Appending kept the orphan start, which the next run paired with the new
+      // block's end marker, deleting the manual notes between them.
+      const existing = `# T\n\n${DOCS_AUTO_START}\nold\n\n## Notes\nmine\n`;
+      expect(() => upsertDocsSection(existing, "x_acme_app", autoBlock)).toThrow(
+        `no ${DOCS_AUTO_END} line after it`
+      );
+    });
+
     it("finds markers in a CRLF file", () => {
       const existing = `Manual.\r\n${DOCS_AUTO_START}\r\nOLD AUTO\r\n${DOCS_AUTO_END}\r\n`;
       const out = upsertDocsSection(existing, "x_acme_app", autoBlock);
