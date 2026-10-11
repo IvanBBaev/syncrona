@@ -424,6 +424,38 @@ async function ensureDirs(): Promise<void> {
 }
 
 /**
+ * Write `contents` to `target` atomically and owner-only. Writing the target in
+ * place (`writeFile(target, …, { mode: 0o600 })`) has two defects: it truncates
+ * first, so a crash or a concurrent reader mid-write sees an empty/partial
+ * file (an encrypted credential that no longer decrypts), and `mode` applies
+ * only when the file is CREATED — a pre-existing 0644 credential file (an old
+ * release, a restore from backup, a manual copy) stays world-readable forever.
+ * Instead write a fresh sibling temp file (`wx`, so it is always newly created
+ * with our mode), chmod it to 0600 explicitly (the create mode is filtered by
+ * the umask and ignored on some filesystems), then rename it over the target:
+ * rename is atomic on the same filesystem and the target inherits the temp
+ * file's inode — and therefore its 0600 mode. The random suffix keeps
+ * concurrent writers in the same process from colliding on one temp path (pid
+ * alone is not unique there). A failed write removes its temp file so no
+ * secret-bearing `.tmp` is left behind.
+ */
+async function writeFileAtomic(target: string, contents: string): Promise<void> {
+  const tmpPath = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await fsp.writeFile(tmpPath, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fsp.chmod(tmpPath, 0o600);
+    await fsp.rename(tmpPath, target);
+  } catch (e) {
+    try {
+      await fsp.rm(tmpPath, { force: true });
+    } catch {
+      // Best effort — the original write error is the one worth reporting.
+    }
+    throw e;
+  }
+}
+
+/**
  * Normalize a decoded credential record into the on-disk shape. The three core
  * fields are always present; the optional multi-method fields are only carried
  * through when set, so a legacy three-field store round-trips byte-for-byte and
@@ -497,8 +529,7 @@ export async function saveCredentials(
   );
   const data = JSON.stringify(record);
   const encrypted = encrypt(data, key);
-  const filePath = credentialFilePath(instance);
-  await fsp.writeFile(filePath, encrypted, { encoding: "utf8", mode: 0o600 });
+  await writeFileAtomic(credentialFilePath(instance), encrypted);
 }
 
 export async function loadCredentials(
@@ -609,18 +640,10 @@ async function loadGlobalConfig(): Promise<GlobalConfig> {
 
 async function saveGlobalConfig(config: GlobalConfig): Promise<void> {
   await ensureDirs();
-  const target = getConfigFile();
-  // Write to a sibling temp file then rename — rename is atomic on the same
-  // filesystem, so a crash or a concurrent reader mid-write can never observe a
-  // truncated/corrupt config.json (the previous version stays intact until the
-  // rename completes). The random suffix keeps concurrent writers in the same
-  // process from colliding on one temp path (pid alone is not unique there).
-  const tmpPath = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  await fsp.writeFile(tmpPath, JSON.stringify(config, null, 2), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  await fsp.rename(tmpPath, target);
+  // Temp file + rename (see writeFileAtomic): a crash or a concurrent reader
+  // mid-write can never observe a truncated/corrupt config.json — the previous
+  // version stays intact until the rename completes.
+  await writeFileAtomic(getConfigFile(), JSON.stringify(config, null, 2));
 }
 
 export async function setActiveInstance(instance: string): Promise<void> {
@@ -777,8 +800,7 @@ export async function saveJiraCredentials(
   const key = getStoreKey();
   const payload = normalizeStoredJira(creds, profile);
   const encrypted = encrypt(JSON.stringify(payload), key);
-  const filePath = jiraCredentialFilePath(profile);
-  await fsp.writeFile(filePath, encrypted, { encoding: "utf8", mode: 0o600 });
+  await writeFileAtomic(jiraCredentialFilePath(profile), encrypted);
 }
 
 export async function loadJiraCredentials(

@@ -270,3 +270,42 @@ test("saveCredentials drops an unrecognized authMethod so it can be re-inferred"
     password: "pw",
   });
 });
+
+// POSIX permission bits are not meaningful on Windows — skip the mode assertions there.
+const posixIt = process.platform === "win32" ? test.skip : test;
+
+posixIt("saveCredentials tightens a pre-existing world-readable credential file to 0600", async () => {
+  // A file created by an older release / a backup restore with 0644 must not stay
+  // readable by other users after a re-login: the old in-place writeFile only
+  // applied `mode` on create, so the existing 0644 survived every save.
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const file = path.join(credDir, readdirSync(credDir).find((f) => f.endsWith(".enc"))!);
+  await fsp.chmod(file, 0o644);
+  await saveCredentials(INSTANCE, "admin", "new");
+  expect((await fsp.stat(file)).mode & 0o777).toBe(0o600);
+  expect((await loadCredentials(INSTANCE)).password).toBe("new");
+});
+
+test("saveCredentials writes via a temp file + rename and leaves no temp file behind", async () => {
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const [name] = readdirSync(credDir);
+  const inodeBefore = (await fsp.stat(path.join(credDir, name))).ino;
+  await saveCredentials(INSTANCE, "admin", "new");
+  // A rename-over replaces the inode; an in-place truncate keeps it.
+  expect((await fsp.stat(path.join(credDir, name))).ino).not.toBe(inodeBefore);
+  expect(readdirSync(credDir)).toEqual([name]);
+});
+
+test("a failed credential write rethrows and removes its temp file", async () => {
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const [name] = readdirSync(credDir);
+  // Replace the credential file with a non-empty directory so the final rename
+  // over it fails after the temp file was already written.
+  rmSync(path.join(credDir, name));
+  mkdirSync(path.join(credDir, name, "occupied"), { recursive: true });
+  await expect(saveCredentials(INSTANCE, "admin", "new")).rejects.toThrow();
+  expect(readdirSync(credDir)).toEqual([name]);
+});

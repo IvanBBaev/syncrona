@@ -149,6 +149,21 @@ describe("jira credential store", () => {
     expect((await loadJiraCredentials("work_a"))?.deployment).toBe("server");
   });
 
+  // POSIX permission bits are not meaningful on Windows — skip the mode assertion there.
+  (process.platform === "win32" ? it.skip : it)(
+    "tightens a pre-existing world-readable profile file to 0600 and leaves no temp file",
+    async () => {
+      await saveJiraCredentials(CLOUD);
+      const jiraDir = path.join(tmpHome, ".syncrona", "jira");
+      const filePath = path.join(jiraDir, jiraProfileToFilename("default"));
+      await fsp.chmod(filePath, 0o644);
+      await saveJiraCredentials({ ...CLOUD, token: "rotated" });
+      expect((await fsp.stat(filePath)).mode & 0o777).toBe(0o600);
+      expect(await fsp.readdir(jiraDir)).toEqual([jiraProfileToFilename("default")]);
+      expect((await loadJiraCredentials("default"))?.token).toBe("rotated");
+    }
+  );
+
   describe("jiraCredentialHealth", () => {
     it("reports \"missing\" when no profile file exists", () => {
       expect(jiraCredentialHealth("ghost")).toBe("missing");
