@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -72,6 +73,43 @@ describe("scopeDocs", () => {
       "Alpha",
       "Beta",
     ]);
+  });
+
+  it("sorts tables, records and files by code unit, never by the machine's locale", () => {
+    // Under the "da" locale localeCompare sorts "aa" as "å", after "z".
+    const key = (v: string) => v.replace(/aa/g, "\uffff");
+    const spy = jest
+      .spyOn(String.prototype, "localeCompare")
+      .mockImplementation(function (this: string, other: string) {
+        return key(this) < key(other) ? -1 : key(this) > key(other) ? 1 : 0;
+      });
+    try {
+      const summary = summarizeManifest({
+        scope: "x_acme_app",
+        tables: {
+          u_zzz: { records: {} },
+          u_aaa: { records: {} },
+          u_ab: {
+            records: {
+              zz: { name: "zz", sys_id: "1", files: [] },
+              aab: {
+                name: "aab",
+                sys_id: "2",
+                files: [
+                  { name: "zz.js", type: "js" },
+                  { name: "aa.js", type: "js" },
+                ],
+              },
+            },
+          },
+        },
+      } as unknown as SN.AppManifest);
+      expect(summary.tables.map((t) => t.table)).toEqual(["u_aaa", "u_ab", "u_zzz"]);
+      expect(summary.tables[1].records.map((r) => r.name)).toEqual(["aab", "zz"]);
+      expect(summary.tables[1].records[0].files).toEqual(["aa.js", "zz.js"]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("renders a Mermaid flowchart linking the scope to each table", () => {

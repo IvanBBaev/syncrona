@@ -91,15 +91,20 @@ function describeTable(table: string): string {
   return TABLE_DESCRIPTIONS[table] || `Records from the ${inlineCode(table)} table.`;
 }
 
+// Plain code-unit order: localeCompare follows the process's ICU locale (under
+// "da", "aa" sorts as "å"), so two machines would regenerate the doc in a
+// different order and churn it in git.
+function byCodeUnit(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Builds a deterministic, sorted summary of a downloaded scope manifest. */
 export function summarizeManifest(manifest: SN.AppManifest): ScopeSummary {
   const tables: ScopeTableSummary[] = [];
   let totalRecords = 0;
   let totalFiles = 0;
 
-  const tableNames = Object.keys(manifest.tables || {}).sort((a, b) =>
-    a.localeCompare(b)
-  );
+  const tableNames = Object.keys(manifest.tables || {}).sort(byCodeUnit);
 
   for (const table of tableNames) {
     const tableConfig = manifest.tables[table];
@@ -107,9 +112,9 @@ export function summarizeManifest(manifest: SN.AppManifest): ScopeSummary {
     const records = recordEntries
       .map((record) => ({
         name: record.name,
-        files: (record.files || []).map((file) => file.name).sort((a, b) => a.localeCompare(b)),
+        files: (record.files || []).map((file) => file.name).sort(byCodeUnit),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => byCodeUnit(a.name, b.name));
 
     const fileCount = records.reduce((acc, record) => acc + record.files.length, 0);
     totalRecords += records.length;
