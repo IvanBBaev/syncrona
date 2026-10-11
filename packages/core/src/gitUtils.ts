@@ -176,7 +176,10 @@ const parseNameStatusLines = (output: string): string[][] =>
  */
 export const formatGitChanges = async (gitFiles: string): Promise<GitDiffChanges> => {
   const baseRepoPath = await getRepoRootDir();
-  const workspaceDir = process.cwd();
+  // The project root, not process.cwd(): the config lookup walks up, so a
+  // command run from a subdirectory of the source tree must still see the
+  // changes outside that subdirectory.
+  const workspaceDir = ConfigManager.getRootDir();
   const rows = gitFiles.includes("\0")
     ? parseNameStatusZ(gitFiles)
     : parseNameStatusLines(gitFiles);

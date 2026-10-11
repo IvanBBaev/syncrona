@@ -16,6 +16,7 @@ const mockWriteFile = jest.fn();
 const mockUnlink = jest.fn();
 const mockGetSourcePath = jest.fn();
 const mockGetDiffPath = jest.fn();
+const mockGetRootDir = jest.fn();
 const mockEncodedPathsToFilePaths = jest.fn();
 
 jest.unstable_mockModule("child_process", () => ({
@@ -39,6 +40,7 @@ jest.unstable_mockModule("fs", () => ({
 jest.unstable_mockModule("../config.js", () => ({
   getSourcePath: (...args: unknown[]) => mockGetSourcePath(...args),
   getDiffPath: (...args: unknown[]) => mockGetDiffPath(...args),
+  getRootDir: (...args: unknown[]) => mockGetRootDir(...args),
 }));
 
 jest.unstable_mockModule("../FileUtils.js", () => ({
@@ -78,6 +80,7 @@ describe("gitUtils", () => {
     } = await import("../gitUtils.js"));
     // Repo root "/repo", workspace inside it -> relative scope "packages/scope".
     cwdSpy = jest.spyOn(process, "cwd").mockReturnValue("/repo/packages/scope");
+    mockGetRootDir.mockReturnValue("/repo/packages/scope");
     // rev-parse returns the repo root; any other git call returns the diff text.
     mockExecFile.mockImplementation(
       (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
@@ -265,8 +268,9 @@ describe("gitUtils", () => {
   // silently empty for a repo whose scope lives at the repository root.
   it("keeps every changed file when the workspace is the repo root (#5)", async () => {
     mockGetSourcePath.mockReturnValue("/repo/src");
-    // cwd == repo root -> relative scope is "".
+    // project root == repo root -> relative scope is "".
     cwdSpy.mockReturnValue("/repo");
+    mockGetRootDir.mockReturnValue("/repo");
     mockExecFile.mockImplementation(
       (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
         if (args.includes("rev-parse")) {
@@ -314,6 +318,30 @@ describe("gitUtils", () => {
 
     const result = await gitDiffToEncodedPaths("HEAD~1");
     expect(result).toContain(path.resolve("/repo", cyrillicPath));
+  });
+
+  it("keeps changes outside the working directory when run from a subdirectory of the project", async () => {
+    mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+    cwdSpy.mockReturnValue("/repo/packages/scope/src/sys_script_include");
+    mockExecFile.mockImplementation(
+      (_cmd: string, args: string[], _opts: unknown, cb: (e: unknown, out: string) => void) => {
+        if (args.includes("rev-parse")) cb(null, "/repo\n");
+        else
+          cb(
+            null,
+            [
+              "M\tpackages/scope/src/sys_script_include/Util/script.js",
+              "M\tpackages/scope/src/sys_ui_page/Page/html.html",
+            ].join("\n")
+          );
+      }
+    );
+
+    const result = await gitDiffToEncodedPaths("HEAD~1");
+    expect(result.split(PATH_DELIMITER)).toEqual([
+      path.resolve("/repo", "packages/scope/src/sys_script_include/Util/script.js"),
+      path.resolve("/repo", "packages/scope/src/sys_ui_page/Page/html.html"),
+    ]);
   });
 
   it("lifts execFile's 1 MiB stdout cap so a large diff does not kill git", async () => {
