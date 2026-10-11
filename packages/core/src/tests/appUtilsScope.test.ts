@@ -37,6 +37,7 @@ const getFileContextFromPath = jest.fn((..._a: unknown[]) => undefined as unknow
 const encodedPathsToFilePaths = jest.fn(async (..._a: unknown[]) => [] as string[]);
 
 const loggerError = jest.fn();
+const loggerWarn = jest.fn();
 
 jest.unstable_mockModule("../snClient.js", () => ({
   defaultClient: jest.fn(() => mockClient),
@@ -89,7 +90,7 @@ jest.unstable_mockModule("../manifestBuilder.js", () => ({
 jest.unstable_mockModule("../Logger.js", () => ({
   logger: {
     info: jest.fn(),
-    warn: jest.fn(),
+    warn: (...a: unknown[]) => loggerWarn(...a),
     success: jest.fn(),
     error: (...a: unknown[]) => loggerError(...a),
     debug: jest.fn(),
@@ -207,6 +208,26 @@ describe("checkScope", () => {
     const { checkScope } = await import("../appUtils.js");
     const res = await checkScope(true);
     expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
+  });
+
+  // Must be the first test in this file to reach the unavailable-endpoint
+  // path: the warning is once per process.
+  it("warns once that the session scope is unverified when the scoped endpoint is unavailable", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockUnwrapSNResponse
+      .mockRejectedValueOnce({ response: { status: 403 } })
+      .mockRejectedValueOnce({ response: { status: 403 } });
+    const { checkScope } = await import("../appUtils.js");
+    await expect(checkScope(true)).resolves.toEqual({
+      match: true,
+      sessionScope: "x_app",
+      manifestScope: "x_app",
+    });
+    await checkScope(true);
+    expect(loggerWarn).toHaveBeenCalledTimes(1);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("assuming it is x_app and not switching scopes")
+    );
   });
 
   it("treats a missing scoped endpoint as a match", async () => {
