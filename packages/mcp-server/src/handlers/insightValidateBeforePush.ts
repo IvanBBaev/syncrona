@@ -49,6 +49,8 @@ export async function handleValidateBeforePush(
   const requestedTables = Array.isArray(args.tables)
     ? args.tables.filter((item): item is string => typeof item === "string")
     : [];
+  // A requested table this tool cannot read validated nothing, like sn_search_scripts.
+  const unknownTables = requestedTables.filter((table) => !(table in SCRIPT_SEARCH_TABLES));
   const tables = requestedTables.length > 0
     ? requestedTables.filter((table) => table in SCRIPT_SEARCH_TABLES)
     : Object.keys(SCRIPT_SEARCH_TABLES);
@@ -150,8 +152,9 @@ export async function handleValidateBeforePush(
   }));
 
   // A table query that failed analysed zero scripts, so its verdict is unknown —
-  // not clean. Only a run where every query succeeded can report a green gate.
-  const validated = errors.length === 0;
+  // not clean. Only a run where every query succeeded can report a green gate,
+  // and only over the tables asked for: an unknown table was never read.
+  const validated = errors.length === 0 && unknownTables.length === 0 && tables.length > 0;
   const ready = blockedCount === 0 && validated;
 
   return textResponse(
@@ -159,6 +162,7 @@ export async function handleValidateBeforePush(
       scope,
       ready,
       validated,
+      unknownTables,
       blockedCount,
       warningCount,
       fileCount: files.length,
