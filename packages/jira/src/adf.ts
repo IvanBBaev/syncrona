@@ -12,7 +12,9 @@
  * the intent, not to faithfully reconstruct formatting. Block nodes are separated
  * by blank lines, list items render their full block content (multi-paragraph and
  * nested lists included), tables collapse to ` | `-joined rows, code blocks are
- * fenced, and inline marks are dropped.
+ * fenced, and inline marks are dropped — except a `link` mark, whose URL would
+ * otherwise be lost: linked text renders as `text (href)` unless the text already
+ * is the URL.
  */
 
 type AdfNode = {
@@ -122,6 +124,33 @@ function dataUrl(node: AdfNode): string {
   return "";
 }
 
+/**
+ * Append a text node's `link` target. Every other mark is formatting and is
+ * dropped, but a link's `href` is content: without it "see the runbook" loses
+ * the one thing the reader needed. A bare pasted URL already reads as itself, so
+ * it is not repeated.
+ */
+function withLinkTarget(text: string, marks: unknown): string {
+  if (!Array.isArray(marks)) {
+    return text;
+  }
+  for (const mark of marks) {
+    if (!mark || typeof mark !== "object") {
+      continue;
+    }
+    const { type, attrs } = mark as { type?: unknown; attrs?: unknown };
+    if (type !== "link" || !attrs || typeof attrs !== "object") {
+      continue;
+    }
+    const href = (attrs as { href?: unknown }).href;
+    if (typeof href === "string" && href && href !== text) {
+      return `${text} (${href})`;
+    }
+    return text;
+  }
+  return text;
+}
+
 /** Inline nodes that compose a single line of text (no block separators). */
 function renderInline(nodes: AdfNode[] | undefined, depth = 0): string {
   if (!Array.isArray(nodes)) {
@@ -143,7 +172,7 @@ function renderInlineNode(node: AdfNode | undefined, depth = 0): string {
   }
   switch (node.type) {
     case "text":
-      return typeof node.text === "string" ? node.text : "";
+      return typeof node.text === "string" ? withLinkTarget(node.text, node.marks) : "";
     case "hardBreak":
       return "\n";
     case "mention":
