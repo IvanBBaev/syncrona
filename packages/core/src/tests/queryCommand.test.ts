@@ -72,6 +72,31 @@ describe("runQuery", () => {
     expect(envelope).toEqual({ ok: true, hasMore: false, nextOffset: null, records: rows(3) });
   });
 
+  it("keeps paging from the Link header when ACLs hid rows from a short page", async () => {
+    const link =
+      '<https://x.service-now.com/api/now/table/incident?sysparm_limit=11&sysparm_offset=0>;rel="first",' +
+      '<https://x.service-now.com/api/now/table/incident?sysparm_limit=11&sysparm_offset=11>;rel="next"';
+    const { client } = makeClient(async () => respond({ result: rows(7) }, { link }));
+    const envelope = await runQuery(client, baseArgs({ limit: 10 }));
+
+    expect(envelope).toEqual({ ok: true, hasMore: true, nextOffset: 11, records: rows(7) });
+  });
+
+  it("ignores a Link header without a forward rel=next page", async () => {
+    const link = '<https://x.service-now.com/api/now/table/incident?sysparm_offset=0>;rel="first"';
+    const { client } = makeClient(async () => respond({ result: rows(2) }, { link }));
+    const envelope = await runQuery(client, baseArgs({ limit: 10, offset: 5 }));
+
+    expect(envelope).toMatchObject({ hasMore: false, nextOffset: null });
+  });
+
+  it("ignores a rel=next link that carries no offset", async () => {
+    const link = '<https://x.service-now.com/api/now/table/incident?sysparm_limit=11>;rel="next"';
+    const { client } = makeClient(async () => respond({ result: rows(2) }, { link }));
+
+    expect(await runQuery(client, baseArgs({ limit: 10 }))).toMatchObject({ hasMore: false, nextOffset: null });
+  });
+
   it("passes fields and the full sysparm surface through", async () => {
     const { tableAPIGet, client } = makeClient(async () => respond({ result: [] }));
     await runQuery(
