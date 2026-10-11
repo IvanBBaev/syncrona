@@ -1103,18 +1103,20 @@ describe("known gaps (pinned, not endorsed)", () => {
     ).toBe(`${shardDirRelPath("global", "sys_script")}_${ID_A}`);
   });
 
-  it("KNOWN GAP: a NUL inside a name or a path is not rejected here", () => {
-    // Reported, not fixed here. `isSafePathComponent` (sn-transport, shared with
-    // v1's download pipeline) rejects empty, dots-only and separator-bearing
-    // names but not a C0 control, so such a name reaches `fs.writeFile` and is
-    // classified as a local-I/O failure (F8) rather than as the bad input it is.
-    // Widening the shared predicate changes v1 behaviour, which is why WP-M7
-    // pins the gap instead of closing it. Escapes only — never a literal byte.
-    expect(() => assertMirrorPathComponent("a\u0000b", "record name")).not.toThrow();
-    expect(isContainedRepoPath("instance/global/a\u0000b")).toBe(true);
+  it("rejects a NUL inside a record name, but not yet inside a repo path", () => {
+    // Mostly closed. `isSafePathComponent` (sn-transport) now rejects a NUL, so a
+    // record name carrying one is refused — by the path guard and by the shard
+    // manifest parser — as the bad input it is instead of reaching `fs.writeFile`
+    // as a local-I/O failure (F8). Repo-path containment does not screen C0
+    // controls yet; that remaining gap is reported, not fixed, and pinned here.
+    // Escapes only — never a literal byte.
+    expect(() => assertMirrorPathComponent("a\u0000b", "record name")).toThrow(
+      MirrorPathRejection
+    );
     expect(() =>
       parseShardManifest(withEntry({ name: "a\u0000b", path: "instance/a\u0000b" }), SHARD_PATH)
-    ).not.toThrow();
+    ).toThrow(ShardManifestCorrupt);
+    expect(isContainedRepoPath("instance/global/a\u0000b")).toBe(true);
   });
 
   it("KNOWN GAP: a contained path is not required to start at the instance directory", () => {

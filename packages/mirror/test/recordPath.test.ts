@@ -255,19 +255,14 @@ describe("RecordNameResolver — unusable display names", () => {
     expect(second.renames).toEqual([]);
   });
 
-  it("lets a display name carrying a NUL through (known gap, pinned not endorsed)", () => {
-    // `isSafePathComponent` is shared with v1's download pipeline and screens
-    // empty, dots-only and separator-bearing names, but not C0 controls. Such a
-    // name therefore reaches `fs.writeFile`, where Node rejects it with
-    // ERR_INVALID_ARG_VALUE — loud, and never a truncated path, but classified as
-    // a local I/O failure (F8) instead of as the bad input it is. The source
-    // documents this as sn-transport's call to make, so this test pins the
-    // current behaviour and goes red the day the predicate is widened, which is
-    // when the F-class of the failure changes. Escape, never a literal byte.
+  it("drops a NUL from a display name instead of handing it to the writer", () => {
+    // `foldNameComponent` strips the byte and `isSafePathComponent` rejects it, so
+    // such a name never reaches `fs.writeFile`, where Node would refuse it as a
+    // local I/O failure (F8) rather than as the bad input it is. Escape, never a
+    // literal byte.
     const resolver = new RecordNameResolver();
     const { name } = resolver.admit(ID_A, "bad\u0000name");
-    expect(name).toBe("bad\u0000name");
-    expect(name).not.toBe(ID_A);
+    expect(name).toBe("badname");
     expect(isSafePathComponent(name)).toBe(true);
   });
 

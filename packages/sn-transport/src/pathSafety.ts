@@ -43,12 +43,18 @@
  * direction. The `typeof` check stays even though the parameter is typed,
  * because the values reaching it come from JSON the instance sent, not from
  * TypeScript.
+ *
+ * Two tightenings over v1: a component of only dots and whitespace (`.. `,
+ * `. .`) is rejected too, because Windows strips trailing dots and spaces when
+ * it resolves a path, which turns `.. ` back into `..`; and a NUL byte is
+ * rejected, because Node refuses such a path at the write and the record would
+ * fail late instead of being reported as unusable here.
  */
 export const isSafePathComponent = (component: string): boolean =>
   typeof component === "string" &&
   component.length > 0 &&
-  !/^\.+$/.test(component) &&
-  !/[/\\]/.test(component);
+  !/^[.\s]+$/u.test(component) &&
+  !/[/\\\0]/.test(component);
 
 /** Which kind of component failed the check — shapes the error message. */
 export type UnsafeComponentKind = "table name" | "record name" | "field name" | "file type";
@@ -165,15 +171,19 @@ export function truncateToNameByteCap(name: string, maxBytes = MAX_NAME_BYTES): 
  *  3. The byte cap last, so truncation cannot chop a combining mark off the
  *     base character it was just composed onto.
  *
+ * A NUL byte is dropped with the separators, since no filesystem can store it.
+ *
  * Returns `""` for a name that is blank or only dots after folding — the same
  * signal `buildRecordName` uses in v1 to tell the caller to fall back to the
- * sys_id rather than write `..` as a directory.
+ * sys_id rather than write `..` as a directory. The final check is
+ * {@link isSafePathComponent} itself, so whatever this returns is a name the
+ * predicate accepts.
  */
 export function foldNameComponent(raw: string): string {
-  const separated = raw.replace(/[/\\]/g, SEPARATOR_REPLACEMENT);
+  const separated = raw.replace(/[/\\]/g, SEPARATOR_REPLACEMENT).replace(/\0/g, "");
   const normalized = separated.normalize("NFC");
   const capped = truncateToNameByteCap(normalized);
-  if (capped.trim() === "" || /^\.+$/.test(capped.trim())) {
+  if (capped.trim() === "" || !isSafePathComponent(capped.trim())) {
     return "";
   }
   return capped;

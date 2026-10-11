@@ -32,6 +32,17 @@ describe("isSafePathComponent: win32-shaped components", () => {
     expect(isSafePathComponent("sub〳dir")).toBe(true);
   });
 
+  it("rejects a component of only dots and whitespace, which Windows folds to dots", () => {
+    for (const bad of [".. ", ". .", " ..", "...\t", "  "]) {
+      expect(isSafePathComponent(bad)).toBe(false);
+    }
+    expect(isSafePathComponent(".. x")).toBe(true);
+  });
+
+  it("rejects a NUL byte instead of letting the write fail late", () => {
+    expect(isSafePathComponent("name\0.js")).toBe(false);
+  });
+
   it("accepts a bare drive designator (documented contract)", () => {
     // "C:" carries no separator and is not dots-only, so the containment rule
     // passes it. path.win32.join/resolve do NOT reinterpret a colon component
@@ -145,6 +156,17 @@ describe("foldNameComponent: raw ServiceNow name to on-disk form", () => {
     expect(foldNameComponent("   ")).toBe("");
     expect(foldNameComponent("..")).toBe("");
     expect(foldNameComponent(" ... ")).toBe("");
+    expect(foldNameComponent(". .")).toBe("");
+  });
+
+  it("only ever returns a name isSafePathComponent accepts", () => {
+    // The fold and the predicate must agree, or a caller that folds and then
+    // trusts the result (the mirror's name resolver) writes an unsafe name.
+    expect(foldNameComponent("bad\u0000name")).toBe("badname");
+    for (const raw of ["bad\u0000name", ". .", ".. ", "\u0000", "a/b"]) {
+      const folded = foldNameComponent(raw);
+      expect(folded === "" || isSafePathComponent(folded)).toBe(true);
+    }
   });
 });
 
