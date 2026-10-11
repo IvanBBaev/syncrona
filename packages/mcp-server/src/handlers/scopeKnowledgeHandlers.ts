@@ -344,11 +344,20 @@ export async function handleScopeKnowledgeTool(
 
       const buildEntityFiles = (entitiesByType: Record<string, Record<string, unknown>[]>) => {
         const files: Array<{ relativePath: string; content: string }> = [];
+        // Record names are not unique and normalization folds case and punctuation,
+        // so distinct entities can share a file name; suffix the later ones rather
+        // than letting them overwrite each other.
+        const usedPaths = new Set<string>();
         for (const [folder, rows] of Object.entries(entitiesByType)) {
           for (const row of rows) {
             const fileNameBase = normalizeScopeCode(toStringField(row.name) || toStringField(row.id) || "item");
+            let relativePath = `${folder}/${fileNameBase}.md`;
+            for (let suffix = 2; usedPaths.has(relativePath); suffix += 1) {
+              relativePath = `${folder}/${fileNameBase}_${suffix}.md`;
+            }
+            usedPaths.add(relativePath);
             files.push({
-              relativePath: `${folder}/${fileNameBase}.md`,
+              relativePath,
               content: renderEntityDoc(row, graphData.edges),
             });
           }
