@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { createTokenManager, OAuthTokenResponse, TokenPoster } from "../oauth.js";
 
 export {};
@@ -8,6 +9,18 @@ export {};
 describe("createTokenManager (OAuth)", () => {
   const creds = { username: "u", password: "p" };
   const oauth = { clientId: "cid", clientSecret: "secret" };
+
+  // A token is now cached for its own lifetime minus a skew capped at half the
+  // TTL, so even a 1-second token is reused until it expires — move the clock
+  // past it instead of relying on it being stale on arrival.
+  let clock = 1_000_000;
+  beforeEach(() => {
+    clock = 1_000_000;
+    jest.spyOn(Date, "now").mockImplementation(() => clock);
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   function poster(responses: OAuthTokenResponse[]): { post: TokenPoster; calls: string[] } {
     const calls: string[] = [];
@@ -33,17 +46,15 @@ describe("createTokenManager (OAuth)", () => {
 
   it("refreshes with the refresh_token when the access token has expired", async () => {
     const { post, calls } = poster([
-      // A 1-second lifetime is shorter than EXPIRY_SKEW_MS (30s), so the manager
-      // treats the token as already needing refresh on the next getToken. (A
-      // non-positive expires_in is no longer a valid expiry trick — it now falls
-      // back to the default TTL so a malformed server value can't force a refresh
-      // storm.)
+      // A non-positive expires_in is not a valid expiry trick — it falls back to
+      // the default TTL so a malformed server value can't force a refresh storm.
       { access_token: "A", refresh_token: "R", expires_in: 1 },
       { access_token: "B", refresh_token: "R2", expires_in: 3600 },
     ]);
     const tm = createTokenManager(creds, oauth, post);
 
     expect(await tm.getToken()).toBe("A"); // first acquire
+    clock += 1_000;
     expect(await tm.getToken()).toBe("B"); // expired → refresh
     expect(calls[1]).toContain("grant_type=refresh_token");
     expect(calls[1]).toContain("refresh_token=R");
@@ -65,7 +76,6 @@ describe("createTokenManager (OAuth)", () => {
     let call = 0;
     const post: TokenPoster = async (_p, body) => {
       call += 1;
-      // 1s lifetime < EXPIRY_SKEW_MS (30s) ⇒ treated as expired on the next call.
       if (call === 1) return { access_token: "A", refresh_token: "R", expires_in: 1 };
       if (body.includes("grant_type=refresh_token")) throw new Error("invalid_grant");
       return { access_token: "C", refresh_token: "R3", expires_in: 3600 };
@@ -73,6 +83,7 @@ describe("createTokenManager (OAuth)", () => {
     const tm = createTokenManager(creds, oauth, post);
 
     expect(await tm.getToken()).toBe("A");
+    clock += 1_000;
     expect(await tm.getToken()).toBe("C"); // expired → refresh throws → re-acquire with password
   });
 });

@@ -72,11 +72,14 @@ function mkFetchResponse(status, payload) {
   };
 }
 
-// Record the dispatcher attached to each oauth_token.do POST. `expires_in: 1` is
-// well inside the token manager's 30s expiry skew, so every request re-posts and
-// each POST is observable.
-function stubFetchRecordingTokenDispatchers() {
+// Record the dispatcher attached to each oauth_token.do POST. The token lives
+// `expires_in: 1` second and every non-token response moves the clock 5s on, so
+// every request finds its token expired, re-posts, and each POST is observable.
+function stubFetchRecordingTokenDispatchers(t) {
   const seen = [];
+  let skewMs = 0;
+  const realNow = Date.now.bind(Date);
+  t.mock.method(Date, 'now', () => realNow() + skewMs);
   global.fetch = async (url, init) => {
     if (String(url).includes('oauth_token.do')) {
       seen.push(init && init.dispatcher);
@@ -85,6 +88,7 @@ function stubFetchRecordingTokenDispatchers() {
         expires_in: 1,
       });
     }
+    skewMs += 5000;
     return mkFetchResponse(200, { result: [] });
   };
   return seen;
@@ -104,12 +108,12 @@ function oauthConfig(extra) {
   };
 }
 
-test('the token POST follows an in-place client-cert rotation instead of the Agent pinned at manager creation (REV-153)', async () => {
+test('the token POST follows an in-place client-cert rotation instead of the Agent pinned at manager creation (REV-153)', async (t) => {
   clearDispatcherCache();
   clearTokenManagerCache();
   const { certPath, keyPath } = mkTlsFixture('sn-rev153-rot-');
   const config = oauthConfig({ clientCertPath: certPath, clientKeyPath: keyPath });
-  const tokenDispatchers = stubFetchRecordingTokenDispatchers();
+  const tokenDispatchers = stubFetchRecordingTokenDispatchers(t);
 
   const first = await snRequestWithConfig(
     config,
@@ -159,7 +163,7 @@ test('the token POST follows an in-place client-cert rotation instead of the Age
   );
 });
 
-test('the token POST does not reuse an Agent the LRU already closed (REV-153)', async () => {
+test('the token POST does not reuse an Agent the LRU already closed (REV-153)', async (t) => {
   clearDispatcherCache();
   clearTokenManagerCache();
   const { caPath } = mkTlsFixture('sn-rev153-evict-');
@@ -167,7 +171,7 @@ test('the token POST does not reuse an Agent the LRU already closed (REV-153)', 
     caBundlePath: caPath,
     clientKeyPassphrase: 'pinned',
   });
-  const tokenDispatchers = stubFetchRecordingTokenDispatchers();
+  const tokenDispatchers = stubFetchRecordingTokenDispatchers(t);
 
   await snRequestWithConfig(config, 'GET', 'api/now/table/incident', undefined, 3000);
   assert.equal(tokenDispatchers.length, 1);
@@ -199,12 +203,12 @@ test('the token POST does not reuse an Agent the LRU already closed (REV-153)', 
   assert.notEqual(rebuilt.closed, true, 'the rebuilt Agent must be usable');
 });
 
-test('token managers are keyed by TLS material, so two client certs never share one poster (REV-153)', async () => {
+test('token managers are keyed by TLS material, so two client certs never share one poster (REV-153)', async (t) => {
   clearDispatcherCache();
   clearTokenManagerCache();
   const a = mkTlsFixture('sn-rev153-ident-a-');
   const b = mkTlsFixture('sn-rev153-ident-b-');
-  stubFetchRecordingTokenDispatchers();
+  stubFetchRecordingTokenDispatchers(t);
 
   // Same instance, user, client id and secrets — only the client certificate
   // differs, which is exactly the collision the old key could not see.

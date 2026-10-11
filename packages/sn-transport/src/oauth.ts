@@ -65,7 +65,10 @@ export function createTokenManager(
   oauth: OAuthConfig,
   post: TokenPoster
 ): TokenManager {
-  let cached: { accessToken: string; refreshToken?: string; expiresAt: number } | null = null;
+  // `staleAt` is when the cached token stops being served: its expiry minus a skew
+  // that is capped at half the TTL. A flat 30 s skew would make any token living
+  // 30 s or less stale on arrival, so every request would POST for a new one.
+  let cached: { accessToken: string; refreshToken?: string; staleAt: number } | null = null;
   // De-duplicates concurrent acquire/refresh: a burst of parallel requests that
   // all see an expired (or missing) token must trigger ONE token call, not N.
   let inFlight: Promise<string> | null = null;
@@ -91,7 +94,7 @@ export function createTokenManager(
     cached = {
       accessToken: token,
       refreshToken: res.refresh_token ?? cached?.refreshToken,
-      expiresAt: Date.now() + ttlMs,
+      staleAt: Date.now() + ttlMs - Math.min(EXPIRY_SKEW_MS, ttlMs / 2),
     };
     return token;
   };
@@ -179,13 +182,17 @@ export function createTokenManager(
       return store(res);
     } catch (_) {
       // Refresh token expired/revoked — fall back to a fresh grant acquisition.
+      // Forget it first: `store` keeps the previous refresh token when the new
+      // response carries none, so a dead one would otherwise be POSTed again
+      // before every later re-acquisition.
+      cached.refreshToken = undefined;
       return acquire();
     }
   };
 
   return {
     async getToken(): Promise<string> {
-      if (cached && Date.now() < cached.expiresAt - EXPIRY_SKEW_MS) {
+      if (cached && Date.now() < cached.staleAt) {
         return cached.accessToken;
       }
       return runExclusive(() => (cached ? refresh() : acquire()));

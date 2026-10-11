@@ -122,7 +122,13 @@ function respondAfter(delayMs, response, signal) {
   });
 }
 
-test('sys.scripts.do fallback: a slow token refresh must not consume the request timeout budget', async () => {
+test('sys.scripts.do fallback: a slow token refresh must not consume the request timeout budget', async (t) => {
+  // The first token is cached for half its 20s lifetime; the clock jumps past
+  // that when the custom endpoint answers, so the fallback's getToken() is
+  // forced back onto the network.
+  let skewMs = 0;
+  const realNow = Date.now.bind(Date);
+  t.mock.method(Date, 'now', () => realNow() + skewMs);
   await withOAuthEnv(async () => {
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-abort-order-proj-'));
     const timeoutMs = 250;
@@ -135,10 +141,9 @@ test('sys.scripts.do fallback: a slow token refresh must not consume the request
       if (u.includes('oauth_token.do')) {
         tokenCalls += 1;
         if (tokenCalls === 1) {
-          // expires_in 20s sits inside the token manager's 30s expiry skew, so
-          // the fallback's getToken() is forced back onto the network — the
-          // exact condition under which the old timer ordering aborted the
-          // request before it was sent.
+          // Re-fetching this token on the fallback is the exact condition
+          // under which the old timer ordering aborted the request before it
+          // was sent.
           return mkResponse(200, JSON.stringify({ access_token: 'tok-1', expires_in: 20 }));
         }
         return respondAfter(
@@ -148,6 +153,7 @@ test('sys.scripts.do fallback: a slow token refresh must not consume the request
         );
       }
       if (u.includes('/api/x_custom/run')) {
+        skewMs += 15000;
         return mkResponse(404, JSON.stringify({ error: { message: 'Not found' } }));
       }
       if (u.includes('sys.scripts.do')) {

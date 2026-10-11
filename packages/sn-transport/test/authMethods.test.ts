@@ -60,6 +60,40 @@ describe("createTokenManager — client_credentials grant", () => {
   });
 });
 
+describe("createTokenManager — token lifetime and refresh tokens", () => {
+  const oauth = { clientId: "cid", clientSecret: "csec" };
+
+  it("serves a short-lived token from the cache instead of re-posting on every call", async () => {
+    // A flat 30 s expiry skew made a token living 30 s or less stale on arrival.
+    const { post, bodies } = recordingPoster([{ access_token: "short", expires_in: 30 }]);
+    const mgr = createTokenManager({ username: "u", password: "p" }, oauth, post);
+    for (let i = 0; i < 5; i++) {
+      expect(await mgr.getToken()).toBe("short");
+    }
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("forgets a refresh token the server rejected instead of re-sending it on the next refresh", async () => {
+    const bodies: string[] = [];
+    const post = async (_path: string, body: string): Promise<OAuthTokenResponse> => {
+      bodies.push(body);
+      if (body.includes("grant_type=refresh_token")) {
+        throw new Error("invalid_grant");
+      }
+      // The password grant here returns no new refresh_token.
+      return bodies.length === 1
+        ? { access_token: "a1", refresh_token: "dead", expires_in: 3600 }
+        : { access_token: `a${bodies.length}`, expires_in: 3600 };
+    };
+    const mgr = createTokenManager({ username: "u", password: "p" }, oauth, post);
+    await mgr.getToken();
+    await mgr.forceRefresh(); // refresh_token rejected → password grant
+    await mgr.forceRefresh(); // must go straight to the password grant
+    expect(bodies.filter((b) => b.includes("grant_type=refresh_token"))).toHaveLength(1);
+    expect(bodies).toHaveLength(4);
+  });
+});
+
 describe("createTokenManager — jwt-bearer grant", () => {
   it("posts grant_type=<jwt-bearer URN> with a freshly built assertion", async () => {
     const { post, bodies } = recordingPoster([{ access_token: "jwt1", expires_in: 3600 }]);
