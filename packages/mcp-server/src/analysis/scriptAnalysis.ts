@@ -175,7 +175,8 @@ export function analyzeSecurity(script: string): Record<string, unknown> {
   const findings: Finding[] = [
     ...findPattern(
       script,
-      /addEncodedQuery\(['\"][^'\"]*\+\s*input/,
+      // The literal's closing quote sits between it and the `+`.
+      /addEncodedQuery\(\s*['\"][^'\"]*['\"]\s*\+\s*input/,
       "sec.encoded.query.concat",
       "high",
       "Dynamic encoded query concatenation can allow injection.",
