@@ -212,3 +212,7 @@ test('does not leak comment-usage state across files sharing one plugin instance
   // fileB must keep its import too — its tag must not be suppressed by fileA.
   assert.equal(await transformWithShared(fileB), fileB);
 });
+
+test('removes export-all re-exports', async () => {
+  assert.equal(await transform('export * from "./shared";\nvar a = 1;'), 'var a = 1;');
+});

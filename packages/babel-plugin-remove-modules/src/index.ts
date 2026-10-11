@@ -136,6 +136,12 @@ export default function() {
           path.remove();
         }
       },
+      // `export * from "./x"` re-exports another file's bindings and declares
+      // nothing here, so it goes like an export list does. Left in place it was
+      // emitted verbatim, and an `export` statement does not parse on the instance.
+      ExportAllDeclaration(path) {
+        path.remove();
+      },
       ExportDefaultDeclaration(path) {
         const type = path.node.declaration.type;
         if (type === "FunctionDeclaration") {
