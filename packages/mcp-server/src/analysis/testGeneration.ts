@@ -15,6 +15,7 @@ export type AtfTestSuggestion = {
 };
 
 const RESERVED_MEMBERS = new Set(["initialize", "type", "prototype", "constructor"]);
+const STATEMENT_KEYWORDS = new Set(["function", "if", "for", "while", "switch", "catch", "with"]);
 
 function sanitizeIdentifier(value: string): string {
   const trimmed = value.trim();
@@ -78,7 +79,8 @@ function collectMethods(script: string): AtfTestMethod[] {
     register(match[1], match[2]);
   }
   while ((match = es6Method.exec(script)) !== null) {
-    if (match[1] === "function") {
+    // `if (a) {` at the start of a line has the same shape as a method header.
+    if (STATEMENT_KEYWORDS.has(match[1])) {
       continue;
     }
     register(match[1], match[2]);
