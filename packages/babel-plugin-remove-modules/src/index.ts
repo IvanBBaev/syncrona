@@ -165,8 +165,15 @@ export default function() {
           path.replaceWith(path.node.declaration);
           return;
         }
-        //fallback remove it
-        path.remove();
+        // Any other expression has no name to keep. Drop it when evaluating it
+        // has no effect, but keep one that does (`export default init();`) as a
+        // plain statement: removing it silently skipped the call.
+        const expression = path.node.declaration as t.Expression;
+        if (path.scope.isPure(expression)) {
+          path.remove();
+        } else {
+          path.replaceWith(t.expressionStatement(expression));
+        }
       }
     }
   } as PluginObject;

@@ -42,7 +42,7 @@ mod2.test.asdf();
 
 ### `export`'s
 
-Exports always get removed as of now, but if there is need an override can be added.
+Exports always get removed as of now, but if there is need an override can be added. A declaration keeps its body, and a default-exported expression with side effects (`export default init();`) is kept as a plain statement.
 
 ```javascript
 export default function() {}

@@ -216,3 +216,8 @@ test('does not leak comment-usage state across files sharing one plugin instance
 test('removes export-all re-exports', async () => {
   assert.equal(await transform('export * from "./shared";\nvar a = 1;'), 'var a = 1;');
 });
+
+test('keeps a default-exported expression with side effects as a statement', async () => {
+  assert.equal(await transform('export default init();'), 'init();');
+  assert.equal(await transform('export default { a: 1 };'), '');
+});
