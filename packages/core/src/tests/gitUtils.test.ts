@@ -207,6 +207,7 @@ describe("gitUtils", () => {
         "core.quotePath=false",
         "diff",
         "--name-status",
+        "-z",
         "--no-renames",
         "--diff-filter=D",
         "HEAD",
@@ -313,6 +314,64 @@ describe("gitUtils", () => {
 
     const result = await gitDiffToEncodedPaths("HEAD~1");
     expect(result).toContain(path.resolve("/repo", cyrillicPath));
+  });
+
+  // quotePath=false still C-quotes a path holding a double quote, backslash, tab
+  // or newline, so git is asked for NUL-separated verbatim paths instead.
+  describe("NUL-separated name-status output", () => {
+    const odd = {
+      quote: 'packages/scope/src/sys_script_include/Say "hi"/script.js',
+      backslash: "packages/scope/src/sys_script_include/a\\b/script.js",
+      tab: "packages/scope/src/sys_script_include/a\tb/script.js",
+      newline: "packages/scope/src/sys_script_include/a\nb/script.js",
+      renamedFrom: "packages/scope/src/sys_script_include/old\tname/script.js",
+      gone: 'packages/scope/src/sys_script_include/"gone"/script.js',
+    };
+
+    it("keeps paths with a quote, backslash, tab or newline on both sides of the diff", async () => {
+      mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+          if (args.includes("rev-parse")) cb(null, "/repo\n");
+          else
+            cb(
+              null,
+              [
+                "M", odd.quote,
+                "A", odd.backslash,
+                "M", odd.tab,
+                "R087", odd.renamedFrom, odd.newline,
+                "D", odd.gone,
+                "M", "packages/other/foo.js",
+                "",
+              ].join("\0")
+            );
+        }
+      );
+
+      const { changed, deleted } = await gitDiffToChanges("HEAD~1");
+      expect(changed.split(PATH_DELIMITER)).toEqual(
+        [odd.quote, odd.backslash, odd.tab, odd.newline].map((p) => path.resolve("/repo", p))
+      );
+      expect(deleted).toEqual(
+        [odd.renamedFrom, odd.gone].map((p) => path.resolve("/repo", p))
+      );
+      const diffCall = mockExecFile.mock.calls.find((c) => c[1].includes("diff"));
+      expect(diffCall?.[1]).toContain("-z");
+    });
+
+    it("reports a deleted path holding a quote as git evidence for --prune", async () => {
+      mockGetSourcePath.mockReturnValue("/repo/packages/scope/src");
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], cb: (e: unknown, out: string) => void) => {
+          if (args.includes("rev-parse")) cb(null, "/repo\n");
+          else cb(null, ["D", odd.gone, ""].join("\0"));
+        }
+      );
+      await expect(gitWorkingTreeDeletions()).resolves.toEqual([
+        path.resolve("/repo", odd.gone),
+      ]);
+    });
   });
 
   // REV-96 (GATE-2): the DIFF_OUTPUT fixture above starts with a blank line, but
