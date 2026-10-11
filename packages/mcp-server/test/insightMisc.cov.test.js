@@ -723,6 +723,28 @@ test('handleValidateBeforePush: unknown-only requested tables filter down to non
       assert.match(requestedUrls[0], /sys_update_xml\?/);
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.fileCount, 0);
+      // Nothing was validated, so the gate is not green.
+      assert.equal(res.isError, true);
+      assert.equal(parsed.ready, false);
+      assert.equal(parsed.validated, false);
+      assert.deepEqual(parsed.unknownTables, ['not_a_real_table']);
+    }
+  );
+});
+
+test('handleValidateBeforePush: an unknown table next to a known one withholds the green gate', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      global.fetch = async () => mkResponse(200, { result: [] });
+      const res = await handleValidateBeforePush(
+        { scope: 'x_my_scope', tables: ['sys_script_include', 'sys_ui_action'] },
+        1000
+      );
+      const parsed = JSON.parse(res.content[0].text);
+      assert.equal(parsed.ready, false);
+      assert.equal(parsed.validated, false);
+      assert.deepEqual(parsed.unknownTables, ['sys_ui_action']);
     }
   );
 });
