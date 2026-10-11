@@ -444,6 +444,51 @@ describe("Watcher queue behavior", () => {
     await stopWatching();
   });
 
+  it("does not requeue a path deleted while its push was in flight", async () => {
+    // The drain empties the queue before it pushes, so an unlink that lands
+    // during the push found nothing to remove, and the failed result requeued
+    // the deleted file to fail every retry until `dev` was restarted.
+    const kept = ctx("/tmp/sys_script/rec1/script.js", "sys_script", "rec_1", "script");
+    const gone = ctx("/tmp/sys_script/rec2/script.js", "sys_script", "rec_2", "script");
+    mockGetFileContextFromPath.mockImplementation((p: string) =>
+      p === gone.filePath ? gone : kept
+    );
+    mockGroupAppFiles.mockImplementation((ctxs: unknown) =>
+      (ctxs as Sync.FileContext[]).map((c) => ({ table: c.tableName, sysId: c.sys_id, fields: {} }))
+    );
+    let settle: (v: unknown) => void = () => {};
+    mockPushFiles.mockImplementationOnce(
+      () => new Promise((resolve) => { settle = resolve; })
+    );
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+
+    const { startWatching, stopWatching } = await import("../Watcher.js");
+
+    startWatching("/tmp");
+    changeHandler(kept.filePath);
+    changeHandler(gone.filePath);
+    jest.advanceTimersByTime(350);
+    for (let i = 0; i < 10 && mockPushFiles.mock.calls.length === 0; i += 1) {
+      await Promise.resolve();
+    }
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+
+    unlinkHandler(gone.filePath);
+    settle([
+      { success: false, message: "unreachable" },
+      { success: false, message: "unreachable" },
+    ]);
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+
+    jest.advanceTimersByTime(500);
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(2);
+    expect(mockGroupAppFiles).toHaveBeenLastCalledWith([kept]);
+
+    await stopWatching();
+  });
+
   // Keep this test LAST: it deliberately leaves the failed batch requeued in
   // the module-level push queue (see the ordering note above the describe).
   it("does not throw when queue processing fails and logs error", async () => {

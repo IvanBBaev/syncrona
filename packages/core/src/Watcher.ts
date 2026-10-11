@@ -45,6 +45,11 @@ let warnedUntracked = new Set<string>();
 // SDK-F2: paths already reported as a stray per-record sidecar of a composite
 // table, for the same reason — one warning per path per session.
 let warnedStraySidecar = new Set<string>();
+// Paths deleted since they were last added or changed. The drain empties the
+// queue before it pushes, so a file deleted while its batch is in flight is not
+// in the queue for fileUnlinked to remove — a failed push must not requeue it.
+let deletedPaths = new Set<string>();
+const notDeleted = (queued: string): boolean => !deletedPaths.has(queued);
 // Bumped by stopWatching. A drain remembers the session it started in: a push
 // still in flight when the watcher stops belongs to a session that no longer
 // exists, so its files must not be requeued or retried into the next one.
@@ -206,7 +211,7 @@ const drainQueue = async (): Promise<void> => {
         // never reaches the catch below. Requeue the failed files and drive
         // the same backoff ladder; otherwise those changes would be dropped
         // until the user happens to re-save the file.
-        pushQueue = Array.from(new Set([...failedPaths, ...pushQueue]));
+        pushQueue = Array.from(new Set([...failedPaths.filter(notDeleted), ...pushQueue]));
         logger.warn(
           `${failedPaths.length} file(s) failed to push — retrying automatically.`
         );
@@ -228,7 +233,7 @@ const drainQueue = async (): Promise<void> => {
     // A batch from a session that has since stopped is dropped, not requeued.
     const sameSession = drainSession === session;
     if (sameSession && inFlight.length > 0) {
-      pushQueue = Array.from(new Set([...inFlight, ...pushQueue]));
+      pushQueue = Array.from(new Set([...inFlight.filter(notDeleted), ...pushQueue]));
     }
     let message;
     if (e instanceof Error) {
@@ -275,6 +280,7 @@ export function startWatching(directory: string) {
 }
 
 async function fileChanged(path: string) {
+  deletedPaths.delete(path);
   pushQueue.push(path);
   processQueue();
 }
@@ -286,6 +292,7 @@ function fileAdded(path: string): void {
   // local delete): getFileContextFromPath resolves paths through the manifest
   // and returns undefined for unknown files, which drainQueue would then
   // silently drop. Surface the untracked case instead of pretending to sync.
+  deletedPaths.delete(path);
   if (skipStrayCompositeSidecar(path)) return;
   let tracked = false;
   try {
@@ -308,7 +315,8 @@ function fileUnlinked(path: string): void {
   // is requeued), it would fail every retry — and when it was the stale copy
   // of an "Ambiguous push", block every other save, since later changes join
   // the same batch. A re-created file comes back through "add" or "change".
-  pushQueue = pushQueue.filter((queued) => queued !== path);
+  deletedPaths.add(path);
+  pushQueue = pushQueue.filter(notDeleted);
   logger.warn(
     `File deleted locally: ${path} — delete propagation is not supported, so the instance record is unchanged. Run "syncrona repair" to reconcile the manifest.`
   );
@@ -341,6 +349,7 @@ export async function stopWatching(): Promise<void> {
   // warn again about a file it never warned about in THIS run.
   warnedUntracked = new Set<string>();
   warnedStraySidecar = new Set<string>();
+  deletedPaths = new Set<string>();
   if (watcher) {
     const current = watcher;
     watcher = undefined;
