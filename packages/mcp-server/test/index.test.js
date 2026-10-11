@@ -2164,7 +2164,8 @@ test('integration helper runs one-command table dependency report generation', a
           {
             sys_id: 'dbo1',
             name: 'x_demo_custom',
-            super_class: { value: 'task' },
+            super_class: { link: 'https://dev123.service-now.com/api/now/table/sys_db_object/8c58a5aa0a0a0b07008047e8ef0fe1ee', value: '8c58a5aa0a0a0b07008047e8ef0fe1ee' },
+            'super_class.name': 'task',
             sys_scope: { scope: 'x_demo' },
           },
         ],
@@ -2208,7 +2209,8 @@ test('integration helper analyzes scope relations with explicit and hidden evide
           {
             sys_id: 'dbo1',
             name: 'x_demo_child',
-            super_class: { value: 'task' },
+            super_class: { link: 'https://dev123.service-now.com/api/now/table/sys_db_object/8c58a5aa0a0a0b07008047e8ef0fe1ee', value: '8c58a5aa0a0a0b07008047e8ef0fe1ee' },
+            'super_class.name': 'task',
             sys_scope: { scope: 'x_demo' },
           },
         ],
