@@ -646,10 +646,12 @@ export const getPathsInPath = async (p: string): Promise<string[]> => {
   // an empty list silently (an empty list reads as "no files", which callers
   // like repair --prune interpret as a meaningful, actionable result).
   const resolved = path.resolve(p);
-  if (
-    !isUnderPath(path.resolve(ConfigManager.getSourcePath()), resolved) &&
-    !isUnderPath(path.resolve(ConfigManager.getBuildPath()), resolved)
-  ) {
+  const sourceRoot = path.resolve(ConfigManager.getSourcePath());
+  // The build root is only consulted for a path outside the source tree.
+  const buildRoot = isUnderPath(sourceRoot, resolved)
+    ? undefined
+    : path.resolve(ConfigManager.getBuildPath());
+  if (buildRoot !== undefined && !isUnderPath(buildRoot, resolved)) {
     logger.warn(
       `Refusing to scan "${resolved}": it is outside the configured source and build directories.`
     );
@@ -671,9 +673,15 @@ export const getPathsInPath = async (p: string): Promise<string[]> => {
       continue;
     }
 
+    // A configured source or build root may itself be a symlink (a shared
+    // checkout linked into the project); skipping it reads as "no files" and
+    // a plain push reports nothing to do. The user chose that root, so it is
+    // followed — and only it: links below it are still skipped.
+    const followLink =
+      next.depth === 0 && (next.filePath === sourceRoot || next.filePath === buildRoot);
     let stat;
     try {
-      stat = await fsp.lstat(next.filePath);
+      stat = followLink ? await fsp.stat(next.filePath) : await fsp.lstat(next.filePath);
     } catch (_) {
       continue;
     }

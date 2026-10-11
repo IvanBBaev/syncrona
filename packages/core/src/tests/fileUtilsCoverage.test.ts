@@ -539,6 +539,30 @@ describe("getPathsInPath", () => {
     expect(found).not.toContain(path.resolve(link));
   });
 
+  it("walks a configured source root that is itself a symlink, still skipping links below it", async () => {
+    const real = makeTmpDir();
+    fs.writeFileSync(path.join(real, "a.txt"), "a");
+    fs.symlinkSync(path.join(real, "a.txt"), path.join(real, "inner-link.txt"));
+    const root = path.join(makeTmpDir(), "src");
+    fs.symlinkSync(real, root);
+    asMock(ConfigManager.getSourcePath).mockReturnValue(root);
+    asMock(ConfigManager.getBuildPath).mockReturnValue(path.join(real, "..", "build"));
+
+    // Paths stay under the configured (link) root, where the manifest expects them.
+    await expect(getPathsInPath(root)).resolves.toEqual([path.join(root, "a.txt")]);
+  });
+
+  it("still skips a requested path below the root that is a symlink", async () => {
+    const outside = makeTmpDir();
+    fs.writeFileSync(path.join(outside, "secret.txt"), "s");
+    const root = makeTmpDir();
+    fs.symlinkSync(outside, path.join(root, "linked"));
+    asMock(ConfigManager.getSourcePath).mockReturnValue(root);
+    asMock(ConfigManager.getBuildPath).mockReturnValue(root);
+
+    await expect(getPathsInPath(path.join(root, "linked"))).resolves.toEqual([]);
+  });
+
   it("ignores a directory entry that cannot be read", async () => {
     const root = makeTmpDir();
     asMock(ConfigManager.getSourcePath).mockReturnValue(root);
