@@ -383,7 +383,7 @@ const MODULE_FLOORS = [
   // driven on purpose
   // (test/graphMermaidSelection.test.js, test/scopeKnowledgeSparseInput.test.js),
   // and the same replay now yields one reading per file.
-  { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.49 / 95.77
+  { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.50 / 95.87
   { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.31 / 89.51
 ];
 
