@@ -228,11 +228,12 @@ describe("createTokenManager", () => {
   });
 
   it("refreshes when a short-lived token falls inside the expiry skew window", async () => {
-    // A token whose lifetime (1s) is shorter than the 30s expiry skew must be
-    // treated as already needing refresh on the very next getToken. This pins the
-    // two halves of the boundary: a valid positive expires_in is honored as the
-    // real TTL (NOT silently routed to the 30-min default), and getToken subtracts
-    // the skew from expiry rather than adding it.
+    // A token whose lifetime (1s) is shorter than the 30s expiry skew is served
+    // only for the first half of its life (the skew is capped at TTL / 2, so it is
+    // never stale on arrival) and refreshed after that. This pins the two halves of
+    // the boundary: a valid positive expires_in is honored as the real TTL (NOT
+    // silently routed to the 30-min default), and getToken subtracts the skew from
+    // expiry rather than adding it.
     const bodies: string[] = [];
     let n = 0;
     const post = async (_path: string, body: string): Promise<OAuthTokenResponse> => {
@@ -242,11 +243,20 @@ describe("createTokenManager", () => {
         ? { access_token: "short", refresh_token: "R", expires_in: 1 }
         : { access_token: "fresh", refresh_token: "R2", expires_in: 3600 };
     };
-    const mgr = createTokenManager(creds, oauth, post);
-    expect(await mgr.getToken()).toBe("short");
-    expect(await mgr.getToken()).toBe("fresh"); // expired within skew -> refresh
-    expect(bodies[1]).toContain("grant_type=refresh_token");
-    expect(n).toBe(2);
+    let clock = 1_000_000;
+    const now = jest.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const mgr = createTokenManager(creds, oauth, post);
+      expect(await mgr.getToken()).toBe("short");
+      clock += 400;
+      expect(await mgr.getToken()).toBe("short"); // still inside the first half
+      clock += 200;
+      expect(await mgr.getToken()).toBe("fresh"); // past TTL - TTL/2 -> refresh
+      expect(bodies[1]).toContain("grant_type=refresh_token");
+      expect(n).toBe(2);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("de-duplicates concurrent acquisitions into a single token call", async () => {
