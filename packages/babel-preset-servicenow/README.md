@@ -26,7 +26,7 @@ The sanitizer performs various operations on code to make it safe for ServiceNow
 
 ### `__proto__` references
 
-ServiceNow blocks references to `__proto__` on the serverside. This is sidestepped by changing all references to `__proto__` to `__proto-sn__`. So far all functionality has been preserved in transpiled output.
+ServiceNow blocks references to `__proto__` on the serverside. This is sidestepped by changing all references to `__proto__` to `__proto_sn__`. So far all functionality has been preserved in transpiled output.
 
 ```javascript
 test.__proto__ = {};
@@ -35,7 +35,7 @@ test.__proto__ = {};
 **becomes...**
 
 ```javascript
-test.__proto-sn__ = {};
+test.__proto_sn__ = {};
 ```
 
 ### Keyword Identifiers
