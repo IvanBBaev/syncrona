@@ -216,6 +216,14 @@ export const SENSITIVE_KEYS = [
   "x-mfa-code",
   "pin",
   "nonce",
+  // camelCase humps are word boundaries for the fenced short tokens.
+  "authHeader",
+  "userPin",
+  "otpCode",
+  "OTPCode",
+  "mfaCode",
+  "accountSid",
+  "PHPSESSID",
 ];
 
 /**
@@ -238,4 +246,9 @@ export const BENIGN_KEYS = [
   "pinned",
   "assignment_group",
   "sys_updated_on",
+  // The camelCase split must not open a boundary inside a word.
+  "authorName",
+  "isPinned",
+  "sidebarOpen",
+  "AUTHOR",
 ];

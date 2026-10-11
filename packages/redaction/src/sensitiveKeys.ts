@@ -45,6 +45,8 @@ const SENSITIVE_KEY_PATTERNS = [
   /cookie/,
   /session/,
   /(^|[^a-z])sid([^a-z]|$)/,
+  // PHP's session cookie name; `session` above does not reach it.
+  /sessid/,
   /passphrase/,
   /(^|[^a-z])otp([^a-z]|$)/,
   /(^|[^a-z])mfa([^a-z]|$)/,
@@ -57,8 +59,16 @@ const SENSITIVE_KEY_PATTERNS = [
  *
  * Case-insensitive by normalization rather than by the `i` flag, so the patterns
  * above can be read as plain lowercase and a future entry cannot forget the flag.
+ *
+ * A camelCase hump is turned into `_` before lowercasing, so the fenced short
+ * tokens see a word boundary there: `authHeader`, `userPin` and `OTPCode` would
+ * otherwise lowercase to `authheader`, `userpin` and `otpcode` and slip past the
+ * fences the comment on `SENSITIVE_KEY_PATTERNS` says they should hit.
  */
 export function isSensitiveKey(key: string): boolean {
-  const normalized = key.toLowerCase();
+  const normalized = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .toLowerCase();
   return SENSITIVE_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
 }
