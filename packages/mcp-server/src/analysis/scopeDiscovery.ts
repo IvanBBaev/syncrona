@@ -363,7 +363,7 @@ async function discoverServiceNowScopeKnowledge(
 
   const scopedTables = await safeTableGet(
     "sys_db_object",
-    ["sys_id", "name", "super_class", "sys_scope"],
+    ["sys_id", "name", "super_class", "super_class.name", "sys_scope"],
     `sys_scope.scope=${escapeQueryValue(normalizedScope)}`
   );
   for (const row of scopedTables) {
@@ -384,8 +384,10 @@ async function discoverServiceNowScopeKnowledge(
       sysId,
     });
 
-    const parent = asRecord(row.super_class);
-    const parentName = toStringField(parent.value) || toStringField(parent.display_value);
+    // super_class references sys_db_object by sys_id, so its value is the
+    // parent's sys_id, never its name; the dot-walked column carries the name.
+    const parentName = toStringField(row["super_class.name"])
+      || toStringField(asRecord(row.super_class).display_value);
     if (parentName) {
       const parentNodeId = `table:${parentName}`;
       directNodes.set(parentNodeId, { id: parentNodeId, kind: "table", label: parentName });
