@@ -58,8 +58,11 @@ const run: Sync.PluginFunc = async function (
         return;
       }
       if (stats && stats.hasErrors()) {
-        console.error(stats.toString("normal"));
-        reject(new Error("Webpack failed to create the bundle."));
+        // Put the errors in the thrown message, the plugin contract's report
+        // channel, as the eslint and typescript plugins do. Printed only to
+        // stderr, they never reached an MCP client, which saw a bare "failed".
+        const report = stats.toString({ all: false, errors: true });
+        reject(new Error(`Webpack failed to create the bundle.\n${report}`));
         return;
       }
       resolve(memFS.readFileSync("/bundle.js", "utf-8") as string);

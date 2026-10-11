@@ -170,7 +170,7 @@ test('throws when the bundle cannot be created', async (t) => {
   });
   await assert.rejects(
     () => run(makeContext(path.join(dir, 'broken.js')), brokenSource, OPTIONS),
-    /Webpack failed to create the bundle/
+    /Webpack failed to create the bundle\.\n[\s\S]*does-not-exist\.js/
   );
 });
 
