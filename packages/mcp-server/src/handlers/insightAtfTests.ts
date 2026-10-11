@@ -226,6 +226,26 @@ export async function handleRunAtfTests(
   const triggerResponse = await runBackgroundScript(script, timeoutMs);
   const trigger = parseAtfTrigger(String(triggerResponse.text ?? ""));
 
+  // A rejected trigger (401, 403, 5xx) started nothing, so polling would only
+  // wait out the budget and report "no results yet" as a non-error.
+  if (triggerResponse.status < 200 || triggerResponse.status > 299) {
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: triggerResponse.status, scope, triggered: false },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: triggerResponse.status,
+        scope,
+        error: `The instance rejected the ATF trigger script (HTTP ${triggerResponse.status}); no tests were started.`,
+        response: triggerResponse.data,
+      },
+      true
+    );
+  }
+
   const useTest = Boolean(testId) && !suiteId && !runAll;
   const table = useTest ? "sys_atf_test_result" : "sys_atf_test_suite_result";
   const filterParts: string[] = [];
