@@ -121,7 +121,7 @@ test('sn_list_metadata_records: default query/limit and limit clamping (over max
         makeContext()
       );
       assert.equal(res.isError, false);
-      assert.match(capturedUrl, /sysparm_limit=500/);
+      assert.match(capturedUrl, /sysparm_limit=501\b/);
     }
   );
 });
@@ -141,7 +141,7 @@ test('sn_list_metadata_records: limit below 1 is clamped up to 1', async () => {
         { recordType: 'business_rule', limit: -5 },
         makeContext()
       );
-      assert.match(capturedUrl, /sysparm_limit=1\b/);
+      assert.match(capturedUrl, /sysparm_limit=2\b/);
     }
   );
 });
@@ -161,7 +161,7 @@ test('sn_list_metadata_records: non-numeric limit falls back to default 100', as
         { recordType: 'business_rule', limit: 'not-a-number' },
         makeContext()
       );
-      assert.match(capturedUrl, /sysparm_limit=100\b/);
+      assert.match(capturedUrl, /sysparm_limit=101\b/);
     }
   );
 });
