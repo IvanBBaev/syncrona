@@ -30,6 +30,14 @@ beforeEach(() => {
 });
 
 describe("parseUnmappedPath", () => {
+  it.each([
+    [src("sys_atf_step", "NewStep", ".script.js.swp")],
+    [src("sys_script_include", "NewUtil", "script.js~")],
+    [src("sys_script_include", "NewUtil", "script.orig")],
+  ])("does not offer an editor artifact %s for `push --create`", (filePath) => {
+    expect(parseUnmappedPath(filePath)).toBeUndefined();
+  });
+
   it("parses the folder layout <table>/<record>/<field>.<ext>", () => {
     expect(parseUnmappedPath(src("sys_script_include", "NewUtil", "script.js"))).toEqual({
       table: "sys_script_include",
