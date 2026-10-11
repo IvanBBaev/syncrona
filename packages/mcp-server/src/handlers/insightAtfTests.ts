@@ -114,6 +114,10 @@ function snSleep(ms: number): Promise<void> {
 const ATF_POLL_INTERVAL_MS = 1500;
 const ATF_MAX_POLL_ATTEMPTS = 40;
 const ATF_MIN_ATTEMPT_TIMEOUT_MS = 1000;
+// One read returns at most this many result rows; one more is requested so a
+// run with more results than this is reported as truncated instead of being
+// summarized — and declared complete — from the first page alone.
+const ATF_MAX_RESULT_ROWS = 200;
 
 // Exported for the budget test, alongside buildAtfRunScript/parseAtfTrigger/
 // summarizeAtfResults: the alternative is asserting on wall-clock through
@@ -123,10 +127,11 @@ export async function pollAtfResults(
   query: string,
   fields: string,
   timeoutMs: number
-): Promise<{ status: number; rows: Record<string, unknown>[] }> {
+): Promise<{ status: number; rows: Record<string, unknown>[]; truncated: boolean }> {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   let lastStatus = 0;
   let lastRows: Record<string, unknown>[] = [];
+  let truncated = false;
 
   for (let attempt = 0; attempt < ATF_MAX_POLL_ATTEMPTS; attempt += 1) {
     const remaining = deadline - Date.now();
@@ -141,7 +146,7 @@ export async function pollAtfResults(
 
     const params = new URLSearchParams();
     params.set("sysparm_query", query);
-    params.set("sysparm_limit", "50");
+    params.set("sysparm_limit", String(ATF_MAX_RESULT_ROWS + 1));
     params.set("sysparm_fields", fields);
 
     const response = await snRequest(
@@ -155,10 +160,15 @@ export async function pollAtfResults(
       Math.max(ATF_MIN_ATTEMPT_TIMEOUT_MS, Math.min(timeoutMs, remaining))
     );
     lastStatus = response.status;
-    lastRows = toTableResultRows(response.data);
+    const allRows = toTableResultRows(response.data);
+    truncated = allRows.length > ATF_MAX_RESULT_ROWS;
+    lastRows = truncated ? allRows.slice(0, ATF_MAX_RESULT_ROWS) : allRows;
 
+    // With `truncated`, terminal visible rows say nothing about the rows past the
+    // limit, and polling again cannot reveal them, so the poll ends either way;
+    // the caller must not read it as complete.
     if (isAtfTerminal(lastRows)) {
-      return { status: lastStatus, rows: lastRows };
+      return { status: lastStatus, rows: lastRows, truncated };
     }
 
     // No wait is owed after the final attempt: the loop is about to end either
@@ -177,7 +187,7 @@ export async function pollAtfResults(
     await snSleep(Math.min(ATF_POLL_INTERVAL_MS, beforeSleep));
   }
 
-  return { status: lastStatus, rows: lastRows };
+  return { status: lastStatus, rows: lastRows, truncated };
 }
 
 export async function handleRunAtfTests(
@@ -269,7 +279,8 @@ export async function handleRunAtfTests(
   );
 
   const summary = summarizeAtfResults(poll.rows);
-  const completed = isAtfTerminal(poll.rows);
+  // Rows past the read limit were never seen, so they may still be running.
+  const completed = !poll.truncated && isAtfTerminal(poll.rows);
 
   context.auditMutatingTool(
     "sync_run_atf_tests",
@@ -279,6 +290,7 @@ export async function handleRunAtfTests(
       scope,
       mode: useTest ? "test" : runAll ? "all" : "suite",
       completed,
+      truncated: poll.truncated,
       total: summary.total,
       passed: summary.passed,
       failed: summary.failed,
@@ -295,6 +307,7 @@ export async function handleRunAtfTests(
       testId: testId || null,
       triggered: trigger,
       completed,
+      truncated: poll.truncated,
       summary,
     },
     poll.status < 200 || poll.status > 299 || summary.failed > 0
