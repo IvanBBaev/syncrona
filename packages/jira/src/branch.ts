@@ -38,12 +38,27 @@ const BRANCH_TYPE_SEGMENTS = new Set([
   "CHORE",
 ]);
 
-function stripBranchTypeSegments(prefix: string): string {
+/** Shape of a Jira project key; the same prefix pattern the scanner matches. */
+const PROJECT_KEY = /^[A-Z][A-Z0-9_]+$/;
+
+/**
+ * Strip leading branch-type words (and the empty segments a doubled underscore
+ * leaves between them and the key, as in `feature__abc-1`). Returns null when
+ * what remains is not a project key: `release_2026-10` leaves `2026`, which
+ * starts with a digit and so names no project.
+ */
+function stripBranchTypeSegments(prefix: string): string | null {
   const segments = prefix.split("_");
-  while (segments.length > 1 && BRANCH_TYPE_SEGMENTS.has(segments[0])) {
+  let stripped = false;
+  while (
+    segments.length > 1 &&
+    (BRANCH_TYPE_SEGMENTS.has(segments[0]) || (stripped && segments[0] === ""))
+  ) {
     segments.shift();
+    stripped = true;
   }
-  return segments.join("_");
+  const key = segments.join("_");
+  return PROJECT_KEY.test(key) ? key : null;
 }
 
 export function extractIssueKey(branch: string | null | undefined): string | null {
@@ -55,7 +70,7 @@ export function extractIssueKey(branch: string | null | undefined): string | nul
   let match: RegExpExecArray | null;
   while ((match = re.exec(upper)) !== null) {
     const prefix = stripBranchTypeSegments(match[1]);
-    if (!NON_KEY_PREFIXES.has(prefix)) {
+    if (prefix !== null && !NON_KEY_PREFIXES.has(prefix)) {
       return `${prefix}-${match[2]}`;
     }
   }
