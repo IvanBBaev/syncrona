@@ -103,30 +103,56 @@ export function diffInstanceVsLocal(params: {
   instance: DiffRecordInput[];
   localSyncedAt?: string;
 }): InstanceDiffReport {
-  const localByKey = new Map<string, DiffRecordInput>();
-  for (const record of params.local) {
-    if (record && typeof record.name === "string" && record.name.length > 0) {
-      localByKey.set(record.name, record);
-    }
-  }
+  const isUsable = (record: DiffRecordInput) =>
+    Boolean(record) && typeof record.name === "string" && record.name.length > 0;
+  const localRecords = params.local.filter(isUsable);
+  const instanceRecords = params.instance.filter(isUsable);
 
-  const instanceByKey = new Map<string, DiffRecordInput>();
-  for (const record of params.instance) {
-    if (record && typeof record.name === "string" && record.name.length > 0) {
-      instanceByKey.set(record.name, record);
+  // Pair records by sys_id when both sides have one, and by name otherwise, so
+  // two records that share a name (e.g. business rules on different tables) are
+  // compared separately instead of collapsing into one.
+  const pairs: Array<{ name: string; localRecord?: DiffRecordInput; instanceRecord?: DiffRecordInput }> = [];
+  const unmatchedInstance = new Set<DiffRecordInput>(instanceRecords);
+  const unmatchedLocal: DiffRecordInput[] = [];
+  const takeInstance = (predicate: (candidate: DiffRecordInput) => boolean) => {
+    for (const candidate of unmatchedInstance) {
+      if (predicate(candidate)) {
+        unmatchedInstance.delete(candidate);
+        return candidate;
+      }
+    }
+    return undefined;
+  };
+  for (const localRecord of localRecords) {
+    const match = localRecord.sysId
+      ? takeInstance((candidate) => candidate.sysId === localRecord.sysId)
+      : undefined;
+    if (match) {
+      pairs.push({ name: localRecord.name, localRecord, instanceRecord: match });
+    } else {
+      unmatchedLocal.push(localRecord);
     }
   }
+  for (const localRecord of unmatchedLocal) {
+    const match = takeInstance(
+      (candidate) => candidate.name === localRecord.name && !(candidate.sysId && localRecord.sysId)
+    );
+    pairs.push({ name: localRecord.name, localRecord, instanceRecord: match });
+  }
+  for (const instanceRecord of unmatchedInstance) {
+    pairs.push({ name: instanceRecord.name, instanceRecord });
+  }
+  const pairKey = (pair: (typeof pairs)[number]) =>
+    pair.instanceRecord?.sysId ?? pair.localRecord?.sysId ?? "";
+  const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  pairs.sort((a, b) => compare(a.name, b.name) || compare(pairKey(a), pairKey(b)));
 
   const changed: RecordDiffEntry[] = [];
   const added: RecordDiffEntry[] = [];
   const removed: RecordDiffEntry[] = [];
   let unchangedCount = 0;
 
-  const allNames = new Set<string>([...localByKey.keys(), ...instanceByKey.keys()]);
-
-  for (const name of [...allNames].sort()) {
-    const localRecord = localByKey.get(name);
-    const instanceRecord = instanceByKey.get(name);
+  for (const { name, localRecord, instanceRecord } of pairs) {
 
     if (localRecord && !instanceRecord) {
       added.push({
@@ -185,7 +211,7 @@ export function diffInstanceVsLocal(params: {
     removed,
     unchangedCount,
     summary: {
-      total: allNames.size,
+      total: pairs.length,
       changed: changed.length,
       added: added.length,
       removed: removed.length,
