@@ -223,13 +223,21 @@ export async function handleHealthPlanningTool(
       const httpEndpoint = context.getHealthEndpointStatus
         ? context.getHealthEndpointStatus()
         : { enabled: false };
+      // The status follows the capability probes: every probe failing is "error",
+      // some failing is "degraded". The tool call itself still succeeded, so
+      // isError stays false and the verdict is carried by `status`.
+      const checks = Object.values(capabilities).map((value) => asRecord(value));
+      const failedChecks = checks.filter((check) => check.ok !== true).length;
+      const status = failedChecks === 0
+        ? "ok"
+        : failedChecks === checks.length ? "error" : "degraded";
       return {
         isError: false,
         content: [
           {
             type: "text",
             text: toJsonText({
-              status: "ok",
+              status,
               metrics,
               httpEndpoint,
               diagnosticsTimeline: Object.entries(capabilities).map(([k, v]) => ({ check: k, ...(asRecord(v)) })),
