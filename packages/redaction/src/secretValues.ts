@@ -33,6 +33,11 @@ import { SCAN_BUDGET } from "./constants";
 const AUTH_HEADER_SECRET =
   /\bauthorization["']?\s*[:=]\s*["']?\s*(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}/i;
 const AUTH_SCHEME_TOKEN = /\b(?:bearer|basic)\s+([A-Za-z0-9._~+/=-]{12,})/i;
+// Header context with any other scheme (`Token`, `Digest`, `ApiKey`, `SSWS`, …). The
+// scheme word is free text here, so the same REV-147 evidence is demanded of the token:
+// a digit or a base64 symbol, which "Authorization: Missing header" does not carry.
+const AUTH_HEADER_ANY_SCHEME =
+  /\bauthorization["']?\s*[:=]\s*["']?\s*[A-Za-z][\w-]*\s+([A-Za-z0-9._~+/=-]{8,})/i;
 
 // SEC-8 follow-up (REV-190): the same whole-value over-redaction hit the bare
 // `user:pass@host` form, which accepted ANY `[\w.-]+` as the host. Ordinary forensic values
@@ -60,9 +65,23 @@ function looksLikeInlineAuthorization(value: string): boolean {
   if (AUTH_HEADER_SECRET.test(value)) {
     return true;
   }
+  const carriesTokenMaterial = (token: string): boolean => /[0-9+/=]/.test(token);
+  const anyScheme = AUTH_HEADER_ANY_SCHEME.exec(value);
+  if (anyScheme && carriesTokenMaterial(anyScheme[1])) {
+    return true;
+  }
   const match = AUTH_SCHEME_TOKEN.exec(value);
-  return match ? /[0-9]/.test(match[1]) || /[+/=]/.test(match[1]) : false;
+  return match ? carriesTokenMaterial(match[1]) : false;
 }
+
+// A credential spelled as a form/query pair (`password=hunter2`) or as a JSON member
+// (`"client_secret": "…"`). Both forms need the assignment syntax itself, so prose that
+// merely names the field ("password reset requested", "invalid password: too short")
+// stays untouched; only `=` and a quoted JSON key with a quoted non-empty value count.
+const CREDENTIAL_KEYS =
+  "password|passwd|pwd|passphrase|client_secret|refresh_token|access_token|api[_-]?key";
+const FORM_CREDENTIAL = new RegExp(`(?:^|[?&;\\s])(?:${CREDENTIAL_KEYS})=[^\\s&;]+`, "i");
+const JSON_CREDENTIAL = new RegExp(`"(?:${CREDENTIAL_KEYS})"\\s*:\\s*"[^"]+"`, "i");
 
 /**
  * True when a string VALUE looks like credential material and must not be stored
@@ -83,11 +102,15 @@ export function looksLikeSecretValue(value: string): boolean {
     return true;
   }
   return (
-    /\/\/[^/\s:@]+:[^/\s:@]+@/.test(value) || // scheme://user:pass@host
+    // Userinfo with a password: the user may be empty and the password may itself
+    // carry a colon (`//:token@host`, `//svc:p:w@host`).
+    /\/\/[^/\s:@]*:[^/\s@]+@/.test(value) || // scheme://user:pass@host
     BARE_USERPASS_HOST.test(value) || // user:pass@host (REV-190)
     /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+/.test(value) || // JWT (embedded)
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value) || // PEM private key
+    /-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----/.test(value) || // PEM / PGP private key
     looksLikeInlineAuthorization(value) || // inline Authorization
+    FORM_CREDENTIAL.test(value) || // password=… form / query pair
+    JSON_CREDENTIAL.test(value) || // "password": "…" JSON member
     /\bAKIA[0-9A-Z]{16}\b/.test(value) || // AWS access key id
     // REV-126: vendor-prefixed API keys / tokens (Stripe, OpenAI, GitHub, Slack,
     // GitLab, Google). Each prefix is a high-signal marker, so a broad trailing
@@ -100,6 +123,9 @@ export function looksLikeSecretValue(value: string): boolean {
     /\bglpat-[A-Za-z0-9_-]{16,}/.test(value) || // GitLab PAT
     /\bAIza[A-Za-z0-9_-]{20,}/.test(value) || // Google API key
     /\baws_?secret_?access_?key\b/i.test(value) || // labelled AWS secret key
-    /\b[A-Fa-f0-9]{64}\b/.test(value) // raw 256-bit hex secret / key material
+    // Raw 256-bit (or longer) hex key material. Fenced on alphanumerics rather than
+    // `\b`, so a 128-char key, a `0x` prefix and a `key_` label are caught too, while
+    // a hex run embedded in a longer alphanumeric word still is not.
+    /(?<![A-Za-z0-9])(?:0x)?[A-Fa-f0-9]{64,}(?![A-Za-z0-9])/.test(value)
   );
 }

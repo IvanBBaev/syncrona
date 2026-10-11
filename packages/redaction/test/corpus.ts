@@ -44,6 +44,14 @@ export const SECRET_VALUES: CorpusEntry[] = [
     value: "https://admin:hunter2@dev12345.service-now.com/api/now/table/incident",
   },
   {
+    label: "scheme://:token@host with an empty user",
+    value: "https://:hunter2@dev12345.service-now.com/api/now/table/incident",
+  },
+  {
+    label: "scheme://user:pass@host with a colon in the password",
+    value: "https://svc:hunter:2@dev12345.service-now.com/",
+  },
+  {
     label: "bare user:pass@fqdn",
     value: "admin:hunter2@db.internal.example.com refused the connection",
   },
@@ -66,6 +74,10 @@ export const SECRET_VALUES: CorpusEntry[] = [
     value: "-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----",
   },
   {
+    label: "PGP private key block header",
+    value: token("-----BEGIN PGP PRIVATE K", "EY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE K", "EY BLOCK-----"),
+  },
+  {
     label: "inline Authorization header assignment",
     value: `Authorization: ${token("Bearer ", "AbCdEfGh12345678")}`,
   },
@@ -79,6 +91,18 @@ export const SECRET_VALUES: CorpusEntry[] = [
     // Symbol-carrying token with NO digits — the other half of the same check.
     label: "bare Bearer + base64-symbol token",
     value: token("Bearer ", "AbCdEfGhIjKlMnOp="),
+  },
+  {
+    label: "Authorization header with another scheme and a digit-carrying token",
+    value: token("Authori", "zation: Token ", "abcdef01", "23456789"),
+  },
+  {
+    label: "form-encoded password pair",
+    value: token("grant_type=password&username=admin&", "password=", "hunter2"),
+  },
+  {
+    label: "JSON client_secret member",
+    value: token('{"client_id":"abc","', 'client_secret":', ' "EXAMPLEsecret"}'),
   },
   {
     label: "AWS access key id",
@@ -126,6 +150,18 @@ export const SECRET_VALUES: CorpusEntry[] = [
     label: "raw 256-bit hex key material",
     value: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
   },
+  {
+    label: "raw 512-bit hex key material",
+    value: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2".repeat(2),
+  },
+  {
+    label: "0x-prefixed 256-bit hex key",
+    value: "0xa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+  },
+  {
+    label: "underscore-labelled 256-bit hex key",
+    value: "key_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+  },
 ];
 
 /**
@@ -155,9 +191,16 @@ export const BENIGN_VALUES: CorpusEntry[] = [
   { label: "Bearer prose under the token length floor (REV-147)", value: "Bearer credentials rejected" },
   { label: "auth-method advice prose (REV-147)", value: "switch to basic auth before retrying" },
   { label: "Authorization mentioned without a value", value: "Authorization header missing from the response" },
+  { label: "Authorization with another scheme but a word, not a token", value: "Authorization: Negotiate required" },
+  { label: "password named in prose, not assigned", value: "invalid password: too short, password reset requested" },
+  { label: "form pair with an empty password", value: "username=admin&password=&remember=1" },
+  { label: "JSON password member left empty", value: '{"password": ""}' },
+  { label: "form pair for a non-credential field", value: "sysparm_query=active=true&sysparm_limit=10" },
+  { label: "URL with a port and a path, no userinfo", value: "https://dev12345.service-now.com:443/x@y" },
   // Shape near-misses, one per rule.
   { label: "JWT-ish string with segments below the floor", value: "eyJab.eyJcd.ef" },
   { label: "PUBLIC certificate, not a private key", value: "-----BEGIN CERTIFICATE-----\nMIIabc\n-----END CERTIFICATE-----" },
+  { label: "PGP PUBLIC key block, not a private key", value: "-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENBF\n-----END PGP PUBLIC KEY BLOCK-----" },
   { label: "AWS-key prefix too short", value: token("AKIA", "SHORT") },
   { label: "AWS region assignment, not a secret", value: "aws_region=eu-west-1" },
   { label: "Stripe prefix with no body", value: token("sk", "_live_") },
@@ -173,6 +216,7 @@ export const BENIGN_VALUES: CorpusEntry[] = [
   { label: "40-char git SHA", value: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" },
   { label: "63 hex chars, one short of the rule", value: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b" },
   { label: "UUID", value: "550e8400-e29b-41d4-a716-446655440000" },
+  { label: "64 hex chars inside a longer alphanumeric word", value: "zza1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2" },
 ];
 
 /**
