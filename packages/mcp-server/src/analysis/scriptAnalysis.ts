@@ -156,7 +156,8 @@ export function analyzeArchitecture(script: string): Record<string, unknown> {
     ),
     ...findPattern(
       script,
-      /try\s*\{[\s\S]*\}\s*catch\s*\(\s*\)\s*\{/,
+      // An empty catch BODY, with or without a binding: `catch (e) {}`, `catch {}`.
+      /\bcatch\s*(?:\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\))?\s*\{\s*\}/,
       "arch.empty.catch",
       "medium",
       "Empty catch blocks hide failures.",
