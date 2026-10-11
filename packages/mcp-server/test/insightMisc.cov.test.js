@@ -438,6 +438,23 @@ test('handleGenerateReleaseNotes: update set not found by name propagates error'
   );
 });
 
+test('handleGenerateReleaseNotes: a rejected update set lookup reports the HTTP status, not "not found"', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      const urls = [];
+      global.fetch = async (url) => {
+        urls.push(String(url));
+        return mkResponse(401, { error: { message: 'User Not Authenticated' } });
+      };
+      const res = await handleGenerateReleaseNotes({ updateSetName: 'Sprint 12' }, 1000);
+      assert.equal(res.isError, true);
+      assert.equal(res.content[0].text, 'Update set lookup failed with HTTP 401: Sprint 12');
+      assert.equal(urls.length, 1, 'the changes are not read for an update set that was never resolved');
+    }
+  );
+});
+
 // ---------------------------------------------------------------------------
 // insightExportUpdateSet.ts
 // ---------------------------------------------------------------------------

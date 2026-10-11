@@ -110,6 +110,11 @@ export async function resolveUpdateSetSysId(
     timeoutMs
   );
 
+  // snRequest resolves with the status instead of throwing: a rejected lookup
+  // (401, 403, 5xx) carries no rows and must not read as a missing update set.
+  if (response.status < 200 || response.status > 299) {
+    return { error: `Update set lookup failed with HTTP ${response.status}: ${name}` };
+  }
   const rows = toTableResultRows(response.data);
   if (rows.length === 0) {
     return { error: `Update set not found: ${name}` };
