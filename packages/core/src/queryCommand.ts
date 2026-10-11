@@ -105,9 +105,30 @@ export function buildQueryParams(args: QueryCmdArgs): Record<string, string> {
 }
 
 /**
+ * The offset of the Link header's rel="next" page, when the instance sent one.
+ * Read-ACL filtering drops rows from a page after the limit is applied, so a
+ * short page is not proof of the last page while that header still points on.
+ */
+function nextOffsetFromLink(headers: unknown): number | null {
+  const link = (headers as Record<string, unknown> | null | undefined)?.link;
+  if (typeof link !== "string") {
+    return null;
+  }
+  for (const part of link.split(",")) {
+    if (!/;\s*rel="?next"?/i.test(part)) {
+      continue;
+    }
+    const offset = /[?&]sysparm_offset=(\d+)/.exec(part)?.[1];
+    return offset === undefined ? null : Number(offset);
+  }
+  return null;
+}
+
+/**
  * Fetches one page. `hasMore` comes from asking for `limit + 1` rows rather than
  * from the Link header or X-Total-Count: both depend on the count query that
- * `--no-count` switches off, while the extra row is exact either way.
+ * `--no-count` switches off, while the extra row is exact either way. A short
+ * page still falls back to the Link header, since ACLs can hide rows from it.
  */
 export async function runQuery(
   client: Pick<SNClient, "tableAPIGet">,
@@ -143,13 +164,12 @@ export async function runQuery(
     throw new NonApiResponseError(typeof contentType === "string" ? contentType : undefined, snippet);
   }
   const rows = (data as { result: QueryRecord[] }).result;
-  const hasMore = rows.length > limit;
-  return {
-    ok: true,
-    hasMore,
-    nextOffset: hasMore ? offset + limit : null,
-    records: hasMore ? rows.slice(0, limit) : rows,
-  };
+  if (rows.length > limit) {
+    return { ok: true, hasMore: true, nextOffset: offset + limit, records: rows.slice(0, limit) };
+  }
+  const linkOffset = nextOffsetFromLink(resp.headers);
+  const hasMore = linkOffset !== null && linkOffset > offset;
+  return { ok: true, hasMore, nextOffset: hasMore ? linkOffset : null, records: rows };
 }
 
 function statusOf(e: unknown): number | undefined {
