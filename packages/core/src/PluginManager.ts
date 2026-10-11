@@ -23,10 +23,83 @@ export function resolvePluginSpecifier(pluginName: string): string {
     const requireFromRoot = createRequire(path.join(rootDir, "package.json"));
     return pathToFileURL(requireFromRoot.resolve(pluginName)).href;
   } catch {
+    // A relative or absolute plugin path names a file in the project; left
+    // as-is, import() would resolve it against this module instead.
+    if (pluginName.startsWith(".") || path.isAbsolute(pluginName)) {
+      return pathToFileURL(path.resolve(rootDir, pluginName)).href;
+    }
     // An ESM-only plugin exposes no "require" condition, so the resolver above
-    // cannot see it. A bare specifier at least lets Node's own ESM resolution
-    // try; if that fails too, runPlugins reports the install hint.
+    // cannot see it. Read its "exports" from the project's node_modules: a bare
+    // specifier would be resolved from where syncrona is installed, which for a
+    // global or npx-cached install is not the project.
+    const entry = findEsmPackageEntry(rootDir, pluginName);
+    if (entry) return pathToFileURL(entry).href;
+    // Last resort: Node's own resolution from this module (a plugin installed
+    // next to syncrona itself). If that fails too, runPlugins reports the
+    // install hint.
     return pluginName;
+  }
+}
+
+const ESM_CONDITIONS = new Set(["node", "import", "default"]);
+
+/** The first target an "exports" entry yields under Node's ESM conditions. */
+function exportTarget(entry: unknown): string | undefined {
+  if (typeof entry === "string") return entry;
+  if (Array.isArray(entry)) {
+    for (const candidate of entry) {
+      const target = exportTarget(candidate);
+      if (target) return target;
+    }
+    return undefined;
+  }
+  if (entry && typeof entry === "object") {
+    for (const [condition, value] of Object.entries(entry)) {
+      if (!ESM_CONDITIONS.has(condition)) continue;
+      const target = exportTarget(value);
+      if (target) return target;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The entry file of `pluginName` (a package, optionally with a subpath) found
+ * in a node_modules directory at or above `rootDir`, read the way Node's ESM
+ * resolver reads "exports" (no subpath patterns). A package without "exports"
+ * is already resolved through "main" by createRequire.
+ */
+function findEsmPackageEntry(rootDir: string, pluginName: string): string | undefined {
+  const parts = pluginName.split("/");
+  const nameLength = pluginName.startsWith("@") ? 2 : 1;
+  const packageName = parts.slice(0, nameLength).join("/");
+  const subpath = parts.length > nameLength ? `./${parts.slice(nameLength).join("/")}` : ".";
+  let dir = path.resolve(rootDir);
+  for (;;) {
+    const packageDir = path.join(dir, "node_modules", packageName);
+    let manifest: { exports?: unknown } | undefined;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf-8"));
+    } catch {
+      manifest = undefined;
+    }
+    if (manifest) {
+      const { exports } = manifest;
+      const isSubpathMap =
+        !!exports &&
+        typeof exports === "object" &&
+        !Array.isArray(exports) &&
+        Object.keys(exports).some((key) => key.startsWith("."));
+      const target = isSubpathMap
+        ? exportTarget((exports as Record<string, unknown>)[subpath])
+        : subpath === "."
+          ? exportTarget(exports)
+          : undefined;
+      return target ? path.resolve(packageDir, target) : undefined;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
   }
 }
 

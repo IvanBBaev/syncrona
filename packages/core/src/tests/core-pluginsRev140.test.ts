@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // REV-140 regression suite. `runPlugins` used to hand `<root>/node_modules/<name>`
 // — a DIRECTORY — straight to `await import()`. Under real Node ESM that throws
@@ -34,6 +34,46 @@ beforeAll(() => {
     PLUGIN_ENTRY,
     "module.exports = { run: async (_c, output) => ({ success: true, output: output + '\\n// transformed' }) };\n"
   );
+});
+
+// An ESM-only plugin: its "exports" offers no "require" condition, so
+// createRequire cannot resolve it from the project root.
+const ESM_PLUGIN_NAME = "@syncrona/fixture-esm-only";
+const ESM_PLUGIN_DIR = path.join(FIXTURE_ROOT, "node_modules", ESM_PLUGIN_NAME);
+const ESM_PLUGIN_ENTRY = path.join(ESM_PLUGIN_DIR, "esm", "index.js");
+const ESM_RUN_SOURCE =
+  "export const run = async (_c, output) => ({ success: true, output: output + ' esm' });\n";
+
+beforeAll(() => {
+  fs.mkdirSync(path.join(ESM_PLUGIN_DIR, "esm"), { recursive: true });
+  fs.writeFileSync(
+    path.join(ESM_PLUGIN_DIR, "package.json"),
+    JSON.stringify({
+      name: ESM_PLUGIN_NAME,
+      version: "1.0.0",
+      type: "module",
+      exports: { ".": { import: "./esm/index.js" } },
+    })
+  );
+  fs.writeFileSync(ESM_PLUGIN_ENTRY, ESM_RUN_SOURCE);
+  // Subpath map, a fallback array and a "require" condition listed first.
+  const subDir = path.join(FIXTURE_ROOT, "node_modules", "fixture-esm-subpaths");
+  fs.mkdirSync(path.join(subDir, "lib"), { recursive: true });
+  fs.writeFileSync(
+    path.join(subDir, "package.json"),
+    JSON.stringify({
+      name: "fixture-esm-subpaths",
+      version: "1.0.0",
+      type: "module",
+      exports: {
+        ".": [{ require: "./lib/missing.cjs", import: "./lib/root.js" }],
+        "./transform": { import: { node: "./lib/transform.js" } },
+        "./types": { types: "./lib/types.d.ts" },
+      },
+    })
+  );
+  fs.writeFileSync(path.join(subDir, "lib", "root.js"), ESM_RUN_SOURCE);
+  fs.writeFileSync(path.join(subDir, "lib", "transform.js"), ESM_RUN_SOURCE);
 });
 
 afterAll(() => {
@@ -103,6 +143,49 @@ describe("PluginManager plugin specifier (REV-140)", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("ERR_UNSUPPORTED_DIR_IMPORT");
   });
+
+  // A bare specifier would be resolved from where syncrona is installed, not
+  // from the project, so a global install never found the project's plugin.
+  it("resolves an ESM-only plugin from the project's node_modules through its exports", async () => {
+    const { resolvePluginSpecifier } = await import("../PluginManager.js");
+    const specifier = resolvePluginSpecifier(ESM_PLUGIN_NAME);
+
+    expect(specifier.startsWith("file://")).toBe(true);
+    expect(fs.realpathSync(fileURLToPath(specifier))).toBe(fs.realpathSync(ESM_PLUGIN_ENTRY));
+    const result = runInRealNode(
+      `const m = await import(${JSON.stringify(specifier)});\n` +
+        `process.stdout.write((await m.run({}, "src")).output);\n`
+    );
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("src esm");
+  });
+
+  it("resolves a missing relative plugin path against the project root, not this module", async () => {
+    const { resolvePluginSpecifier } = await import("../PluginManager.js");
+    const specifier = resolvePluginSpecifier("./plugins/missing.mjs");
+
+    expect(specifier).toBe(pathToFileURL(path.join(FIXTURE_ROOT, "plugins", "missing.mjs")).href);
+  });
+
+  it.each([
+    ["fixture-esm-subpaths", "lib/root.js"],
+    ["fixture-esm-subpaths/transform", "lib/transform.js"],
+  ])("follows exports arrays, subpaths and nested conditions for %s", async (name, entry) => {
+    const { resolvePluginSpecifier } = await import("../PluginManager.js");
+    const specifier = resolvePluginSpecifier(name);
+
+    expect(fileURLToPath(specifier)).toBe(
+      path.join(FIXTURE_ROOT, "node_modules", "fixture-esm-subpaths", entry)
+    );
+  });
+
+  it.each(["fixture-esm-subpaths/types", "fixture-esm-subpaths/absent", "not-installed-anywhere"])(
+    "falls back to the bare specifier when %s has no ESM entry in the project",
+    async (name) => {
+      const { resolvePluginSpecifier } = await import("../PluginManager.js");
+      expect(resolvePluginSpecifier(name)).toBe(name);
+    }
+  );
 
   it("still reports the install hint when the plugin is genuinely absent", async () => {
     getConfig.mockReturnValue({ rules: [] });
