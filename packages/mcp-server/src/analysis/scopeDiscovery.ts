@@ -198,6 +198,7 @@ async function discoverServiceNowScopeKnowledge(
     inferred: number;
   };
   truncations: Array<{ table: string; limit: number }>;
+  failures: Array<{ table: string; error: string }>;
 }> {
   const normalizedScope = scope.trim();
   if (!normalizedScope || normalizedScope === "unknown_scope") {
@@ -210,6 +211,7 @@ async function discoverServiceNowScopeKnowledge(
         inferred: 0,
       },
       truncations: [],
+      failures: [],
     };
   }
 
@@ -232,6 +234,9 @@ async function discoverServiceNowScopeKnowledge(
   // REV-101: records every table whose fetch reached the row cap so callers can
   // report an explicit, per-type truncation notice instead of a silent partial.
   const truncations: Array<{ table: string; limit: number }> = [];
+  // A failed fetch (401/403/5xx, timeout) is recorded the same way, so an
+  // unreadable table is not mistaken for a table with no records in the scope.
+  const failures: Array<{ table: string; error: string }> = [];
 
   const safeTableGet = async (
     table: string,
@@ -252,7 +257,8 @@ async function discoverServiceNowScopeKnowledge(
         truncations.push({ table, limit: SCOPE_DISCOVERY_ROW_LIMIT });
       }
       return rows;
-    } catch (_) {
+    } catch (error) {
+      failures.push({ table, error: error instanceof Error ? error.message : String(error) });
       return [];
     }
   };
@@ -473,6 +479,7 @@ async function discoverServiceNowScopeKnowledge(
     graph: graphWithServiceNowRelations,
     relationEvidence,
     truncations,
+    failures,
   };
 }
 
@@ -776,6 +783,7 @@ export async function hydrateScopeKnowledgeInputs(
   let serviceNowGraph: ScopeKnowledgeGraph = { nodes: [], edges: [] };
   let serviceNowRelationEvidence = { explicit: 0, hidden: 0, inferred: 0 };
   let serviceNowTruncations: Array<{ table: string; limit: number }> = [];
+  let serviceNowFailures: Array<{ table: string; error: string }> = [];
 
   try {
     const serviceNow = await discoverServiceNowScopeKnowledge(scope, timeoutMs);
@@ -783,12 +791,14 @@ export async function hydrateScopeKnowledgeInputs(
     serviceNowGraph = serviceNow.graph;
     serviceNowRelationEvidence = serviceNow.relationEvidence;
     serviceNowTruncations = serviceNow.truncations;
+    serviceNowFailures = serviceNow.failures;
     serviceNowDiscovered = serviceNow.entities.length > 0 || serviceNow.graph.edges.length > 0;
-  } catch (_) {
+  } catch (error) {
     serviceNowEntities = [];
     serviceNowGraph = { nodes: [], edges: [] };
     serviceNowRelationEvidence = { explicit: 0, hidden: 0, inferred: 0 };
     serviceNowTruncations = [];
+    serviceNowFailures = [{ table: "*", error: error instanceof Error ? error.message : String(error) }];
   }
 
   const mergedEntities = new Map<string, Record<string, unknown>>();
@@ -821,6 +831,9 @@ export async function hydrateScopeKnowledgeInputs(
       // is not silently treated as a complete view of the scope.
       serviceNowTruncated: serviceNowTruncations.length > 0,
       serviceNowTruncations,
+      // A failed ServiceNow fetch means the scope view is incomplete, not empty.
+      serviceNowFailed: serviceNowFailures.length > 0,
+      serviceNowFailures,
       localEntityCount: discovered.entities.length,
       localDependencyCount: discovered.graph.edges.length,
     },
