@@ -116,6 +116,25 @@ type FetchResult = {
   headers: unknown;
 };
 
+/**
+ * Node's fetch rejects every network-level failure with a bare
+ * `TypeError("fetch failed")` and keeps the actual reason (`ENOTFOUND`,
+ * `ECONNREFUSED`, a TLS error) on `error.cause`. Surface that reason — the code
+ * when there is one, its message otherwise — so a DNS typo is not reported
+ * identically to a refused connection.
+ */
+function fetchFailureReason(error: unknown): string {
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  if (!cause || typeof cause !== "object") {
+    return "";
+  }
+  const { code, message } = cause as { code?: unknown; message?: unknown };
+  if (typeof code === "string" && code) {
+    return code;
+  }
+  return typeof message === "string" ? message : "";
+}
+
 /** Single HTTP attempt: returns status, parsed body, and the raw headers. */
 async function jiraFetchOnce(
   config: JiraConfig,
@@ -154,7 +173,12 @@ async function jiraFetchOnce(
       throw new Error(`Jira request timed out after ${timeoutMs}ms: ${url}`);
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Jira request failed: ${message}`);
+    const reason = fetchFailureReason(error);
+    throw new Error(
+      reason && reason !== message
+        ? `Jira request failed: ${message} (${reason})`
+        : `Jira request failed: ${message}`
+    );
   } finally {
     clearTimeout(timer);
   }
