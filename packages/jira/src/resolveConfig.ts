@@ -35,8 +35,11 @@ function normalizeDeployment(
 /** Build a config from environment variables, or null when not fully set. */
 function configFromEnv(env: NodeJS.ProcessEnv): JiraConfig | null {
   const baseUrl = (env.JIRA_BASE_URL || "").trim().replace(/\/$/, "");
-  // Do not trim the token — surrounding whitespace can be significant.
-  const token = env.JIRA_TOKEN || "";
+  // Trim the token. Atlassian API tokens and Server/DC personal access tokens
+  // never contain whitespace, while a value read from a file or a CRLF `.env`
+  // routinely carries a trailing `\r`/`\n` — which Cloud Basic auth would encode
+  // into the base64 credential and turn into a guaranteed 401.
+  const token = (env.JIRA_TOKEN || "").trim();
   if (!baseUrl || !token) {
     return null;
   }
@@ -54,7 +57,8 @@ function configFromStored(stored: StoredJiraCredentials | null): JiraConfig | nu
     return null;
   }
   const baseUrl = (stored.baseUrl || "").trim().replace(/\/$/, "");
-  const token = stored.token || "";
+  // Trimmed for the same reason as the env token above.
+  const token = (stored.token || "").trim();
   if (!baseUrl || !token) {
     return null;
   }
