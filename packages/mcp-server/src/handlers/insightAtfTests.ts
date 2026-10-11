@@ -256,6 +256,33 @@ export async function handleRunAtfTests(
     );
   }
 
+  // A run-all that started no suite has no result to wait for, so polling would
+  // only spend the budget and end in `completed: false`. It is an error, not a
+  // pass: an empty or inactive scope, a script whose output was lost, and suites
+  // that all failed to start must not read as a green test run.
+  const triggeredCount =
+    (Array.isArray(trigger.suites) ? trigger.suites.length : 0) +
+    (Array.isArray(trigger.tests) ? trigger.tests.length : 0);
+  if (runAll && !suiteId && !testId && triggeredCount === 0) {
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: triggerResponse.status, scope, mode: "all", triggered: false },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: triggerResponse.status,
+        scope,
+        mode: "all",
+        triggered: trigger,
+        completed: false,
+        error: `No ATF suite was started for scope ${scope}: the scope has no active test suite, or none of them could be started.`,
+      },
+      true
+    );
+  }
+
   const useTest = Boolean(testId) && !suiteId && !runAll;
   const table = useTest ? "sys_atf_test_result" : "sys_atf_test_suite_result";
   const filterParts: string[] = [];
