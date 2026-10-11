@@ -375,6 +375,57 @@ describe("initNewApp", () => {
     expect(calls.filter((c) => c.method === "POST")).toEqual([]);
   });
 
+  it("an existing scope's refusal also spells out the manual binding for an empty scope", async () => {
+    const { client } = fakeClient({ existingApps: [{ sys_id: "old-1" }] });
+    await expect(
+      initNewApp({ logLevel: "info", new: true, name: "Asset Tracker" } as never, deps(client))
+    ).rejects.toThrow('sync.manifest.json with {"scope":"x_acme_asset_track","scopeId":"old-1","tables":{}}');
+  });
+
+  it("a failed create whose scope exists afterwards reports it instead of leaving a dead end", async () => {
+    // The POST timed out after the instance inserted the row: a re-run would
+    // only refuse with "already exists", so the binding is spelled out now.
+    const { client } = fakeClient();
+    client.tableAPIGet
+      .mockImplementationOnce(() => ok([]))
+      .mockImplementationOnce(() => ok([{ sys_id: "late-1" }]));
+    client.createRecord.mockRejectedValueOnce(new Error("timeout of 30000ms exceeded"));
+    const downloadApp = jest.fn(async () => undefined);
+    const error = await initNewApp(
+      { logLevel: "info", new: true, name: "Asset Tracker" } as never,
+      deps(client, { downloadApp })
+    ).catch((e: unknown) => e as Error);
+
+    expect(error).toBeInstanceOf(AppCreatorError);
+    expect(error.message).toContain("reported an error (timeout of 30000ms exceeded), but the scope now exists");
+    expect(error.message).toContain('{"scope":"x_acme_asset_track","scopeId":"late-1","tables":{}}');
+    expect(downloadApp).not.toHaveBeenCalled();
+  });
+
+  it("a non-Error create failure is reported by its text when the scope exists afterwards", async () => {
+    const { client } = fakeClient();
+    client.tableAPIGet.mockImplementationOnce(() => ok([])).mockImplementationOnce(() => ok([{ sys_id: "late-2" }]));
+    client.createRecord.mockRejectedValueOnce("socket hang up");
+
+    await expect(
+      initNewApp({ logLevel: "info", new: true, name: "Asset Tracker" } as never, deps(client))
+    ).rejects.toThrow("reported an error (socket hang up), but the scope now exists");
+  });
+
+  it.each([
+    ["the scope is still free", () => ok([])],
+    ["the re-check fails too", () => Promise.reject(new Error("offline")) as Promise<never>],
+  ])("a failed create is rethrown as is when %s", async (_label, recheck) => {
+    const { client } = fakeClient();
+    client.tableAPIGet.mockImplementationOnce(() => ok([])).mockImplementationOnce(recheck as never);
+    const failure = new Error("400 invalid scope");
+    client.createRecord.mockRejectedValueOnce(failure);
+
+    await expect(
+      initNewApp({ logLevel: "info", new: true, name: "Asset Tracker" } as never, deps(client))
+    ).rejects.toBe(failure);
+  });
+
   it("creates nothing when the scope lookup hides the existing row's sys_id", async () => {
     const { client, calls } = fakeClient({ existingApps: [{}] });
     await expect(

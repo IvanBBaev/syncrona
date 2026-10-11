@@ -261,6 +261,13 @@ export async function findExistingApp(
   return sysId;
 }
 
+// `syncrona download <scope>` refuses a scope that owns no records, which a
+// freshly created one usually is, so every recovery spells out the manifest
+// init --new itself would have written instead.
+function manualBindHint(scope: string, scopeId: string): string {
+  return `Bind this directory by writing sync.manifest.json with ${JSON.stringify({ scope, scopeId, tables: {} })} next to sync.config.js; `;
+}
+
 export type InitNewDeps = {
   getClient: (profile?: string) => SNClient;
   /** The instance the credentials resolve to; empty when none is configured. */
@@ -358,7 +365,9 @@ export async function initNewApp(
   if (existingSysId) {
     throw new AppCreatorError(
       `An application with scope "${scope}" already exists on ${instance} (sys_id ${existingSysId}). ` +
-        `Bind to it with \`syncrona download ${scope}\` or \`syncrona init\`, or choose another --scope.`
+        `Bind to it with \`syncrona download ${scope}\` or \`syncrona init\`, or choose another --scope. ` +
+        "If it owns no records yet (an interrupted init --new leaves it so), download refuses it: " +
+        manualBindHint(scope, existingSysId).trimEnd()
     );
   }
 
@@ -373,7 +382,25 @@ export async function initNewApp(
     return false;
   }
 
-  const scopeId = await createScopedApp(client, body);
+  let scopeId: string;
+  try {
+    scopeId = await createScopedApp(client, body);
+  } catch (e) {
+    // A timed-out or dropped reply does not mean the insert failed: ask again,
+    // so a scope that does exist now is reported as such rather than left for a
+    // re-run to refuse as "already exists".
+    const createdSysId = await findExistingApp(client, scope).catch(() => undefined);
+    if (!createdSysId) {
+      throw e;
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    throw new AppCreatorError(
+      `Creating ${scope} reported an error (${message}), but the scope now exists on ${instance} ` +
+        `(sys_id ${createdSysId}). Do not re-run init --new. ` +
+        manualBindHint(scope, createdSysId) +
+        `\`syncrona download ${scope}\` only works once the scope owns records.`
+    );
+  }
   logger.success(`Created application "${name}" (${scope}, sys_id ${scopeId}) on ${instance}.`);
   logger.info(
     "ServiceNow switched your current application to it (sys_app insert rule `Set Current Application`)."
@@ -387,15 +414,10 @@ export async function initNewApp(
     await deps.downloadApp(scope, client, { scopeId, justCreated: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    // The recovery must not be `syncrona download <scope>`: a scope that owns no
-    // records yet is exactly what download refuses to build a manifest for. The
-    // manifest init --new would have written is spelled out instead, scopeId
-    // included, so the hand-written binding is the same one.
-    const manifest = JSON.stringify({ scope, scopeId, tables: {} });
     throw new AppCreatorError(
       `The application ${scope} was created (sys_id ${scopeId}), but binding this directory failed: ${message} ` +
         "Do not re-run init --new, the scope now exists. " +
-        `Bind this directory by writing sync.manifest.json with ${manifest} next to sync.config.js; ` +
+        manualBindHint(scope, scopeId) +
         `\`syncrona download ${scope}\` only works once the scope owns records.`
     );
   }
