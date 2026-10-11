@@ -202,3 +202,31 @@ test('an uncapped comparison reports complete with no truncation note', async ()
     assert.equal(payload.tables[0].truncationNote, undefined);
   });
 });
+
+// Pins: a requested table the tool cannot read compared nothing, so the run is not
+// complete. Before, the name was dropped in silence and `complete: true` came back over
+// a comparison that never ran.
+test('a requested table the tool cannot read is listed and leaves the comparison incomplete', async () => {
+  await withTwoStoredProfiles(async () => {
+    const urls = [];
+    global.fetch = async (url) => {
+      urls.push(String(url));
+      return mkResponse(200, { result: [] });
+    };
+
+    const res = await handleCompareInstances(
+      {
+        profileA: PROFILE_A,
+        profileB: PROFILE_B,
+        scope: 'x_branch_risk',
+        tables: ['sys_ui_action'],
+      },
+      1000
+    );
+
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(urls.length, 0);
+    assert.deepEqual(payload.unknownTables, ['sys_ui_action']);
+    assert.equal(payload.summary.complete, false);
+  });
+});

@@ -149,6 +149,8 @@ export async function handleCompareInstances(
   const requestedTables = Array.isArray(args.tables)
     ? args.tables.filter((item): item is string => typeof item === "string")
     : [];
+  // A requested table this tool cannot read was never compared, like sn_search_scripts.
+  const unknownTables = requestedTables.filter((table) => !(table in SCRIPT_SEARCH_TABLES));
   const tables = requestedTables.length > 0
     ? requestedTables.filter((table) => table in SCRIPT_SEARCH_TABLES)
     : Object.keys(SCRIPT_SEARCH_TABLES);
@@ -252,6 +254,7 @@ export async function handleCompareInstances(
       profileB,
       scope,
       tablesCompared: tables,
+      unknownTables,
       summary: {
         onlyInA: onlyInACount,
         onlyInB: onlyInBCount,
@@ -259,7 +262,9 @@ export async function handleCompareInstances(
         errors: errorCount,
         // REV-101: complete only when there were no errors AND no table was capped
         // by the row limit; truncated tables are listed so the gap is user-visible.
-        complete: errorCount === 0 && truncatedTables.length === 0,
+        // A requested table that was never compared leaves the comparison partial too.
+        complete:
+          errorCount === 0 && truncatedTables.length === 0 && unknownTables.length === 0 && tables.length > 0,
         truncated: truncatedTables.length > 0,
         truncatedTables,
         limit,
