@@ -36,9 +36,15 @@ function normalizeContent(value: string): string {
   return (value || "").replace(/\r\n/g, "\n").replace(/\s+$/g, "");
 }
 
+// An empty value has no lines; "".split("\n") would count it as one.
+function toLines(value: string): string[] {
+  const normalized = normalizeContent(value);
+  return normalized.length > 0 ? normalized.split("\n") : [];
+}
+
 function countLineDelta(localValue: string, instanceValue: string): { addedLines: number; removedLines: number } {
-  const localLines = normalizeContent(localValue).split("\n");
-  const instanceLines = normalizeContent(instanceValue).split("\n");
+  const localLines = toLines(localValue);
+  const instanceLines = toLines(instanceValue);
 
   const instanceCounts = new Map<string, number>();
   for (const line of instanceLines) {
@@ -129,7 +135,7 @@ export function diffInstanceVsLocal(params: {
         sysId: localRecord.sysId,
         localLength: localRecord.value.length,
         instanceLength: 0,
-        addedLines: normalizeContent(localRecord.value).split("\n").length,
+        addedLines: toLines(localRecord.value).length,
         removedLines: 0,
         diffSummary: "Exists locally but not on the instance (new local record).",
       });
@@ -144,7 +150,7 @@ export function diffInstanceVsLocal(params: {
         localLength: 0,
         instanceLength: instanceRecord.value.length,
         addedLines: 0,
-        removedLines: normalizeContent(instanceRecord.value).split("\n").length,
+        removedLines: toLines(instanceRecord.value).length,
         diffSummary: "Exists on the instance but not locally (missing local copy).",
       });
       continue;
