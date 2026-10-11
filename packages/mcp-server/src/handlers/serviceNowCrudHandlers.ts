@@ -83,7 +83,11 @@ export async function handleServiceNowCrudTool(
         params.set("sysparm_offset", String(offset));
       }
       if (fields.length > 0) {
-        params.set("sysparm_fields", fields.join(","));
+        // sysparm_fields limits the returned columns, so a grouping field left out
+        // of the list would never be fetched and every row would count as empty.
+        const requestedFields =
+          analyzeField && !fields.includes(analyzeField) ? [...fields, analyzeField] : fields;
+        params.set("sysparm_fields", requestedFields.join(","));
       }
 
       const response = await snRequest(
