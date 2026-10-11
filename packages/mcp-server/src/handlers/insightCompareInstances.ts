@@ -56,20 +56,28 @@ export function diffInstanceRecords(
   rowsB: Record<string, unknown>[],
   opts: { nameField: string; contentField: string }
 ): { onlyInA: string[]; onlyInB: string[]; different: Array<Record<string, unknown>> } {
-  const mapA = new Map<string, string>();
-  const mapB = new Map<string, string>();
-  for (const row of rowsA) {
-    const name = String(row[opts.nameField] ?? "");
-    if (name) {
-      mapA.set(name, hashRecordContent(row[opts.contentField]));
+  // Names are not unique (two business rules in a scope can share one), so every
+  // record under a name counts: one record keeps its own hash, several hash their
+  // sorted hashes together. Keeping only the last row read made the verdict depend
+  // on the order each instance returned them and hid a change to any other copy.
+  const hashByName = (rows: Record<string, unknown>[]): Map<string, string> => {
+    const hashes = new Map<string, string[]>();
+    for (const row of rows) {
+      const name = String(row[opts.nameField] ?? "");
+      if (name) {
+        const list = hashes.get(name) ?? [];
+        list.push(hashRecordContent(row[opts.contentField]));
+        hashes.set(name, list);
+      }
     }
-  }
-  for (const row of rowsB) {
-    const name = String(row[opts.nameField] ?? "");
-    if (name) {
-      mapB.set(name, hashRecordContent(row[opts.contentField]));
+    const result = new Map<string, string>();
+    for (const [name, list] of hashes) {
+      result.set(name, list.length === 1 ? list[0] : hashRecordContent(list.sort().join("\n")));
     }
-  }
+    return result;
+  };
+  const mapA = hashByName(rowsA);
+  const mapB = hashByName(rowsB);
 
   const onlyInA: string[] = [];
   const onlyInB: string[] = [];
