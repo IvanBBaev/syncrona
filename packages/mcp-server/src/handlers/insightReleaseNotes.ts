@@ -5,9 +5,15 @@ import { snRequest, toTableResultRows } from "../servicenowCore";
 import type { ToolResponse } from "../toolResponse";
 import { errorResponse, resolveUpdateSetSysId, textResponse } from "./insightShared";
 
+// The Table API answers one page; this tool reads one page and says so when the
+// update set holds more. One row past the cap is requested so a set of exactly
+// RELEASE_NOTES_MAX_CHANGES changes is not reported as truncated.
+export const RELEASE_NOTES_MAX_CHANGES = 1000;
+
 export function buildReleaseNotesMarkdown(
   label: string,
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  truncated = false
 ): string {
   const grouped = new Map<string, Array<{ action: string; name: string }>>();
   for (const row of rows) {
@@ -22,6 +28,12 @@ export function buildReleaseNotesMarkdown(
 
   const lines: string[] = [`# Release Notes — ${label}`, ""];
   lines.push(`Total changes: ${rows.length}`, "");
+  if (truncated) {
+    lines.push(
+      `> Truncated: the update set holds more than ${rows.length} changes; only the first ${rows.length} are listed.`,
+      ""
+    );
+  }
 
   const sortedTypes = [...grouped.keys()].sort();
   for (const type of sortedTypes) {
@@ -48,7 +60,7 @@ export async function handleGenerateReleaseNotes(
 
   const params = new URLSearchParams();
   params.set("sysparm_query", `update_set=${escapeQueryValue(resolved.sysId)}^ORDERBYtype`);
-  params.set("sysparm_limit", "1000");
+  params.set("sysparm_limit", String(RELEASE_NOTES_MAX_CHANGES + 1));
   params.set("sysparm_fields", "name,type,target_name,action");
 
   const response = await snRequest(
@@ -58,7 +70,9 @@ export async function handleGenerateReleaseNotes(
     timeoutMs
   );
 
-  const rows = toTableResultRows(response.data);
+  const allRows = toTableResultRows(response.data);
+  const truncated = allRows.length > RELEASE_NOTES_MAX_CHANGES;
+  const rows = truncated ? allRows.slice(0, RELEASE_NOTES_MAX_CHANGES) : allRows;
   const isError = response.status < 200 || response.status > 299;
 
   if (format === "json") {
@@ -67,6 +81,7 @@ export async function handleGenerateReleaseNotes(
         status: response.status,
         updateSet: resolved.label,
         changeCount: rows.length,
+        truncated,
         changes: rows.map((row) => ({
           type: String(row.type ?? ""),
           action: String(row.action ?? "").toUpperCase(),
@@ -79,6 +94,6 @@ export async function handleGenerateReleaseNotes(
 
   return {
     isError,
-    content: [{ type: "text", text: buildReleaseNotesMarkdown(resolved.label, rows) }],
+    content: [{ type: "text", text: buildReleaseNotesMarkdown(resolved.label, rows, truncated) }],
   };
 }
