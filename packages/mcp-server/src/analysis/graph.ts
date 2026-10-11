@@ -215,8 +215,12 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
         why: "GlideRecord reference",
       });
 
+      // A scope name may itself contain underscores (x_acme_my_app), so the
+      // table-name pattern cannot tell where the scope ends; a table under the
+      // record's own scope prefix is never a cross-scope reference.
       const tableScopeCode = extractScopeCodeFromTableName(t);
-      if (tableScopeCode && ownScopeCode && tableScopeCode !== ownScopeCode) {
+      const isOwnScopeTable = ownScopeCode.length > 0 && t.trim().toLowerCase().startsWith(`${ownScopeCode}_`);
+      if (tableScopeCode && ownScopeCode && tableScopeCode !== ownScopeCode && !isOwnScopeTable) {
         const externalScopeId = `external_scope:${tableScopeCode}`;
         upsertNode({ id: externalScopeId, kind: "external_scope", label: tableScopeCode });
         pushUniqueEdge(edges, edgeKeys, {
