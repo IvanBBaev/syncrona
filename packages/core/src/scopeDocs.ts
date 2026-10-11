@@ -247,6 +247,9 @@ function findMarkerLine(
  *   name cannot cut the block short or swallow the notes after it.
  * - If no markers exist but content is present, the auto block is appended,
  *   preserving the manual content.
+ * - A start marker without an end marker after it is refused: appending would
+ *   leave that orphan start to pair with the new block's end marker on the next
+ *   run, replacing every manual line between them.
  * - If there is no existing content, a titled document with the block is created.
  */
 export function upsertDocsSection(
@@ -261,6 +264,12 @@ export function upsertDocsSection(
     const before = existing.slice(0, start.start);
     const after = existing.slice(end.end);
     return `${before}${autoBlock}${after}`;
+  }
+  if (start) {
+    throw new Error(
+      `the existing doc has a ${DOCS_AUTO_START} line but no ${DOCS_AUTO_END} line after it; ` +
+        "put the end marker back after the generated block so the notes below it are kept."
+    );
   }
 
   if (existing.trim().length > 0) {
