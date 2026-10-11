@@ -160,6 +160,22 @@ test("getActiveInstance survives a valid-JSON but non-object config.json", async
   }
 });
 
+test("getActiveInstance trims the stored value and maps blank to null, like the sync reader", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw");
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  const configPath = path.join(getSyncronaDir(), "config.json");
+
+  writeFileSync(configPath, JSON.stringify({ activeInstance: "  " }), "utf8");
+  await expect(getActiveInstance()).resolves.toBeNull();
+  expect(getActiveInstanceSync()).toBeNull();
+
+  writeFileSync(configPath, JSON.stringify({ activeInstance: ` ${INSTANCE} ` }), "utf8");
+  await expect(getActiveInstance()).resolves.toBe(INSTANCE);
+  expect(getActiveInstanceSync()).toBe(INSTANCE);
+  // The padded marker must still resolve the credentials the sync path finds.
+  expect((await resolveCredentialsFromStore())?.user).toBe("admin");
+});
+
 test("setActiveInstance repairs a non-object config.json instead of throwing", async () => {
   mkdirSync(getSyncronaDir(), { recursive: true });
   writeFileSync(path.join(getSyncronaDir(), "config.json"), "null", "utf8");

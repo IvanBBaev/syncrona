@@ -654,7 +654,13 @@ export async function setActiveInstance(instance: string): Promise<void> {
 
 export async function getActiveInstance(): Promise<string | null> {
   const config = await loadGlobalConfig();
-  return config.activeInstance || null;
+  // Same normalization as getActiveInstanceSync: the CLI (async) and the MCP
+  // server (sync) must agree on the active instance. Returning the raw value let
+  // a whitespace-only marker read as an instance named "  " (a doomed
+  // credential lookup instead of "no active instance"), and " host " miss the
+  // credential file the sync reader finds for "host".
+  const active = String(config.activeInstance || "").trim();
+  return active || null;
 }
 
 export async function resolveCredentialsFromStore(
