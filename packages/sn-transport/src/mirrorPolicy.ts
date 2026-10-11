@@ -408,6 +408,13 @@ const parseRetryAfter = (header: string | null | undefined, now: () => number): 
   if (/^\d+$/.test(raw)) {
     return Number(raw) * 1_000;
   }
+  // Every RFC 9110 HTTP-date form (IMF-fixdate, RFC 850, asctime) opens with a
+  // day name. Without this guard V8's lenient `Date.parse` reads malformed
+  // delay-seconds such as "1.5", "-1" or "3,5" as a date in the past, which
+  // turns a junk header into an immediate hot retry instead of the backoff.
+  if (!/^[A-Za-z]/.test(raw)) {
+    return null;
+  }
   const at = Date.parse(raw);
   if (Number.isNaN(at)) {
     return null;

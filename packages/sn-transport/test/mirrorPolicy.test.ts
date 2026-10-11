@@ -320,6 +320,14 @@ describe("computeRetryDelay: full jitter with a defensive Retry-After (D6)", () 
     expect(computeRetryDelay(0, "   ", { random: () => 1 })).toBe(RETRY_BASE_DELAY_MS);
     expect(computeRetryDelay(0, "later", { random: () => 1 })).toBe(RETRY_BASE_DELAY_MS);
   });
+
+  it.each(["1.5", "0.5", "-1", "3,5", "+2"])(
+    "falls back to the backoff for malformed delay-seconds %p instead of retrying at once",
+    (header) => {
+      // V8's Date.parse reads these as a past date, which would otherwise mean 0 ms.
+      expect(computeRetryDelay(0, header, { random: () => 1 })).toBe(RETRY_BASE_DELAY_MS);
+    }
+  );
 });
 
 describe("buildKeysetQuery: design §6 parameters, exactly", () => {
