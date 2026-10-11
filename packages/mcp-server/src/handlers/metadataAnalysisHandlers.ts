@@ -81,19 +81,23 @@ export async function handleMetadataAnalysisTool(
           : 100;
       const cfg = getMetadataConfig(metadataType);
 
-      const rows = await tableGet(
+      // One row past the limit is requested so a result that fills the limit
+      // exactly is told apart from one that was cut off at it.
+      const allRows = await tableGet(
         cfg.table,
         {
           query,
-          limit,
+          limit: limit + 1,
         },
         timeoutMs
       );
+      const truncated = allRows.length > limit;
+      const rows = truncated ? allRows.slice(0, limit) : allRows;
 
       const normalized = rows.map((row) => normalizeMetadataRow(metadataType, row));
       return {
         isError: false,
-        content: [{ type: "text", text: toJsonText({ recordType: metadataType, count: normalized.length, rows: normalized }) }],
+        content: [{ type: "text", text: toJsonText({ recordType: metadataType, count: normalized.length, truncated, rows: normalized }) }],
       };
     }
 
