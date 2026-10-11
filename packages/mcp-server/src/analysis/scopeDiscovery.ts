@@ -131,6 +131,12 @@ function toStringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+// The Table API returns a reference column as { link, value } unless
+// sysparm_exclude_reference_link is set; accept both shapes.
+function toReferenceField(value: unknown): string {
+  return toStringField(value) || toStringField(asRecord(value).value);
+}
+
 export type WorkspaceScopeKnowledge = {
   entities: Array<Record<string, unknown>>;
   graph: ScopeKnowledgeGraph;
@@ -312,9 +318,9 @@ async function discoverServiceNowScopeKnowledge(
         runTime: metadataType === "scheduled_job" ? toStringField(row.run_time) : "",
         fieldName: metadataType === "dictionary" ? toStringField(row.element) : "",
         columnLabel: metadataType === "dictionary" ? toStringField(row.column_label) : "",
-        internalType: metadataType === "dictionary" ? toStringField(row.internal_type) : "",
+        internalType: metadataType === "dictionary" ? toReferenceField(row.internal_type) : "",
         maxLength: metadataType === "dictionary" ? toStringField(row.max_length) : "",
-        reference: metadataType === "dictionary" ? toStringField(row.reference) : "",
+        reference: metadataType === "dictionary" ? toReferenceField(row.reference) : "",
         mandatory: metadataType === "dictionary"
           ? (row.mandatory === true || toStringField(row.mandatory) === "true")
           : false,
@@ -422,8 +428,8 @@ async function discoverServiceNowScopeKnowledge(
       const sourceNodeId = `table:${sourceTable}`;
       directNodes.set(sourceNodeId, { id: sourceNodeId, kind: "table", label: sourceTable });
 
-      const internalType = toStringField(row.internal_type).toLowerCase();
-      const explicitTarget = toStringField(row.reference).toLowerCase();
+      const internalType = toReferenceField(row.internal_type).toLowerCase();
+      const explicitTarget = toReferenceField(row.reference).toLowerCase();
       const attributeTargets = parseReferenceTargetsFromAttributes(toStringField(row.attributes));
 
       if (explicitTarget) {
