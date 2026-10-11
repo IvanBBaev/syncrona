@@ -144,15 +144,24 @@ export async function buildSemanticIndexFromWorkspaceAsync(
   return symbols;
 }
 
+export const SEMANTIC_SEARCH_LIMIT = 200;
+
 export function searchSemanticIndex(
   symbols: SemanticSymbol[],
   query: string
 ): SemanticSymbol[] {
+  return searchSemanticIndexWithTotal(symbols, query).matches;
+}
+
+// `total` is the match count before the SEMANTIC_SEARCH_LIMIT cap, so a caller
+// can tell a complete answer from a truncated one.
+export function searchSemanticIndexWithTotal(
+  symbols: SemanticSymbol[],
+  query: string
+): { matches: SemanticSymbol[]; total: number } {
   const q = query.trim().toLowerCase();
-  if (!q) {
-    return symbols.slice(0, 200);
-  }
-  return symbols.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 200);
+  const all = q ? symbols.filter((s) => s.name.toLowerCase().includes(q)) : symbols;
+  return { matches: all.slice(0, SEMANTIC_SEARCH_LIMIT), total: all.length };
 }
 
 export function buildSymbolCrossReference(

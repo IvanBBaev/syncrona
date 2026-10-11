@@ -10,7 +10,6 @@ import {
   getMetadataConfig,
   normalizeMetadataRow,
   rankImpact,
-  searchSemanticIndex,
   summarizeBlastRadius,
   summarizeEdgeProvenance,
   summarizeGraphHotspots,
@@ -18,6 +17,7 @@ import {
   type MetadataType,
   type SemanticSymbol,
 } from "../analysis";
+import { searchSemanticIndexWithTotal } from "../analysis/semantic";
 import { escapeQueryValue, toJsonText } from "../runtimeUtils";
 import { snRequest } from "../servicenowCore";
 import { tableGet } from "../sessionContext";
@@ -321,10 +321,13 @@ export async function handleMetadataAnalysisTool(
 
     case "sync_search_semantic_index": {
       const query = typeof args.query === "string" ? args.query : "";
-      const matches = searchSemanticIndex(await context.getLastSemanticIndex(), query);
+      const { matches, total } = searchSemanticIndexWithTotal(await context.getLastSemanticIndex(), query);
       return {
         isError: false,
-        content: [{ type: "text", text: toJsonText({ query, count: matches.length, matches }) }],
+        content: [{
+          type: "text",
+          text: toJsonText({ query, count: matches.length, total, truncated: total > matches.length, matches }),
+        }],
       };
     }
 
