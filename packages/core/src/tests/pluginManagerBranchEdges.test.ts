@@ -42,6 +42,16 @@ beforeAll(() => {
     },
     { main: "index.mjs" }
   );
+  writePackage("returns-nothing", { "index.js": "exports.run = async () => undefined;\n" });
+  writePackage("returns-no-output", {
+    "index.js": "exports.run = async () => ({ success: true });\n",
+  });
+  writePackage("returns-number-output", {
+    "index.js": "exports.run = async () => ({ success: true, output: 42 });\n",
+  });
+  writePackage("fails-without-output", {
+    "index.js": "exports.run = async () => ({ success: false });\n",
+  });
   writePackage("throws-error", {
     "index.js": "throw new Error('plugin init exploded');\n",
   });
@@ -143,6 +153,31 @@ describe("PluginManager.runPlugins — plugin module shapes", () => {
         "abc"
       )
     ).resolves.toEqual({ success: true, content: "ABC" });
+  });
+
+  it.each(["returns-nothing", "returns-no-output", "returns-number-output"])(
+    "rejects a plugin that %s with a clear invalid-result error",
+    async (name) => {
+      await expect(
+        PluginManager.runPlugins(
+          [{ name }] as Sync.PluginConfig[],
+          context("/virtual/a.js"),
+          "x"
+        )
+      ).rejects.toThrow(
+        `Build plugin "${name}" returned an invalid result for /virtual/a.js: expected { success: boolean, output: string }.`
+      );
+    }
+  );
+
+  it("accepts a failed result that carries no output", async () => {
+    await expect(
+      PluginManager.runPlugins(
+        [{ name: "fails-without-output" }] as Sync.PluginConfig[],
+        context("/virtual/a.js"),
+        "x"
+      )
+    ).resolves.toEqual({ success: false, content: "" });
   });
 
   it("keeps the original Error message when the plugin module throws on import", async () => {

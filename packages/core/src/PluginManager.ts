@@ -44,6 +44,13 @@ function matchesFilePath(reg: RegExp, filePath: string): boolean {
   return stateless.test(filePath);
 }
 
+function isPluginResults(value: unknown): value is Sync.PluginResults {
+  if (typeof value !== "object" || value === null) return false;
+  const { success, output } = value as Record<string, unknown>;
+  if (typeof success !== "boolean") return false;
+  return !success || typeof output === "string";
+}
+
 class PluginManager {
   pluginRules: Sync.PluginRule[];
   constructor() {
@@ -130,7 +137,16 @@ class PluginManager {
           `Build plugin "${pConfig.name}" does not export a run(context, content, options) function.`
         );
       }
-      const results = await plugin.run(context, output, pConfig.options);
+      const results: unknown = await plugin.run(context, output, pConfig.options);
+      // A plugin is third-party code: a missing return used to die on
+      // `results.success` with a bare TypeError, and a success without a string
+      // `output` pushed the text "undefined" over the record field.
+      if (!isPluginResults(results)) {
+        throw new Error(
+          `Build plugin "${pConfig.name}" returned an invalid result for ${context.filePath}: ` +
+            "expected { success: boolean, output: string }."
+        );
+      }
       if (!results.success) {
         return {
           success: false,
