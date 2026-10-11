@@ -75,6 +75,27 @@ function mockInstance(urls) {
       }
       return mkResponse(200, { result: [row] });
     }
+    if (uri.includes('/api/now/table/sys_dictionary?')) {
+      return mkResponse(200, {
+        result: [
+          {
+            sys_id: 'dict1',
+            name: 'x_demo_child',
+            element: 'caller',
+            column_label: 'Caller',
+            internal_type: {
+              link: 'https://dev123.service-now.com/api/now/table/sys_glide_object/reference',
+              value: 'reference',
+            },
+            reference: {
+              link: 'https://dev123.service-now.com/api/now/table/sys_db_object/sys_user',
+              value: 'sys_user',
+            },
+            attributes: '',
+          },
+        ],
+      });
+    }
     return mkResponse(200, { result: [] });
   };
 }
@@ -92,5 +113,24 @@ test('table inheritance names the parent table, not its sys_db_object sys_id', a
       [['table:x_demo_child', 'table:task']]
     );
     assert.equal(hydrated.graph.nodes.some((n) => n.id === `table:${TASK_SYS_ID}`), false);
+  });
+});
+
+test('a dictionary reference read as a { link, value } object still yields the referenced table', async () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'syncrona-scope-ref-'));
+  const urls = [];
+  mockInstance(urls);
+
+  await withEnv(async () => {
+    const hydrated = await hydrateScopeKnowledgeInputs([], { nodes: [], edges: [] }, 'x_demo', 5000, projectDir);
+    const references = hydrated.graph.edges.filter((e) => e.why.startsWith('Dictionary reference'));
+    assert.deepEqual(
+      references.map((e) => [e.from, e.to, e.why]),
+      [['table:x_demo_child', 'table:sys_user', 'Dictionary reference (caller:reference)']]
+    );
+    const field = hydrated.entities.find((e) => e.metadataType === 'dictionary');
+    assert.ok(field, 'expected the dictionary entry as an entity');
+    assert.equal(field.reference, 'sys_user');
+    assert.equal(field.internalType, 'reference');
   });
 });
