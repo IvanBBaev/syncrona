@@ -278,26 +278,62 @@ export function resolveUniqueNames(
     }
   }
 
+  // Distinct sys_ids, not group length: the same record listed twice is not a
+  // collision with itself, and v1 counts it the same way.
+  const suffixed = new Set<string>();
+  for (const group of groups.values()) {
+    if (new Set(group.map((candidate) => candidate.sysId)).size > 1) {
+      for (const candidate of group) {
+        suffixed.add(candidate.sysId);
+      }
+    }
+  }
+
+  const finalName = (candidate: NameCandidate): string => {
+    if (!suffixed.has(candidate.sysId)) {
+      return candidate.name;
+    }
+    const suffix = `_${candidate.sysId}`;
+    // The suffix has to fit inside the cap too, so the base is re-truncated
+    // against the remaining budget rather than appended blindly.
+    const budget = Math.max(0, MAX_NAME_BYTES - nameByteLength(suffix));
+    return `${truncateToNameByteCap(candidate.name, budget)}${suffix}`;
+  };
+
+  // A suffixed name can land on another record's plain name: "Foo" and "foo"
+  // become "foo_B", which a third record may already be called. Suffix every
+  // plain name that a final name folds onto, and repeat until nothing changes.
+  // Each pass suffixes at least one more record, so the loop ends, and it only
+  // reads sets, so the outcome stays independent of row order.
+  for (;;) {
+    const owners = new Map<string, Set<string>>();
+    for (const candidate of usable) {
+      const key = canonicalFoldName(finalName(candidate));
+      const set = owners.get(key) ?? new Set<string>();
+      set.add(candidate.sysId);
+      owners.set(key, set);
+    }
+    let grew = false;
+    for (const candidate of usable) {
+      const owner = owners.get(canonicalFoldName(finalName(candidate)));
+      if (owner && owner.size > 1 && !suffixed.has(candidate.sysId)) {
+        suffixed.add(candidate.sysId);
+        grew = true;
+      }
+    }
+    if (!grew) {
+      break;
+    }
+  }
+
   const names = new Map<string, string>();
   const collided: string[] = [];
   for (const group of groups.values()) {
-    // Distinct sys_ids, not group length: the same record listed twice is not a
-    // collision with itself, and v1 counts it the same way.
-    const distinct = new Set(group.map((candidate) => candidate.sysId));
-    if (distinct.size === 1) {
-      for (const candidate of group) {
-        names.set(candidate.sysId, candidate.name);
-      }
-      continue;
-    }
     for (const candidate of group) {
-      const suffix = `_${candidate.sysId}`;
-      // The suffix has to fit inside the cap too, so the base is re-truncated
-      // against the remaining budget rather than appended blindly.
-      const budget = Math.max(0, MAX_NAME_BYTES - nameByteLength(suffix));
-      const base = truncateToNameByteCap(candidate.name, budget);
-      names.set(candidate.sysId, `${base}${suffix}`);
-      collided.push(candidate.sysId);
+      names.set(candidate.sysId, finalName(candidate));
+      if (suffixed.has(candidate.sysId)) {
+        collided.push(candidate.sysId);
+      }
     }
   }
 

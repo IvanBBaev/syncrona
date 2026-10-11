@@ -230,6 +230,20 @@ describe("resolveUniqueNames: order-independent case-insensitive uniqueness (D18
     expect(names.get("a2")).toBe("widget_a2");
   });
 
+  it("keeps a suffixed name off a third record's plain name", () => {
+    // "Foo" and "foo" collide and become "Foo_B" / "foo_B"; a third record
+    // already called "foo_B" would otherwise share one file with B on APFS.
+    const { names, collided } = resolveUniqueNames([
+      { sysId: "A", name: "Foo" },
+      { sysId: "B", name: "foo" },
+      { sysId: "C", name: "foo_B" },
+    ]);
+    const folded = [...names.values()].map(canonicalFoldName);
+    expect(new Set(folded).size).toBe(3);
+    expect(names.get("C")).toBe("foo_B_C");
+    expect([...collided].sort()).toEqual(["A", "B", "C"]);
+  });
+
   it("leaves a unique name alone", () => {
     const { names, collided } = resolveUniqueNames([
       { sysId: "a1", name: "Widget" },
