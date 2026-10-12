@@ -108,9 +108,19 @@ export async function writeDownloadCheckpoint(
 }
 
 export async function deleteDownloadCheckpoint(): Promise<void> {
+  const checkpointPath = getDownloadCheckpointPath();
   try {
-    await fsp.unlink(getDownloadCheckpointPath());
-  } catch (_) {
-    // already gone — nothing to clean up
+    await fsp.unlink(checkpointPath);
+  } catch (e) {
+    // Only "already gone" is harmless. A checkpoint that survives a finished
+    // download (a locked or read-only file) lists every table as completed, so
+    // the next download skips them all and never fetches instance-side edits,
+    // and `push --prune` keeps reporting an unfinished download.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw new Error(
+      `The download finished, but its checkpoint ${checkpointPath} could not be removed ` +
+        `(${(e as Error).message}). Delete it by hand; until then the next download ` +
+        `skips every table it lists.`
+    );
   }
 }
