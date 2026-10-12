@@ -395,7 +395,14 @@ export async function handleWorkflowTool(
         written: false,
       };
 
-      if (writeSimulationReport) {
+      // A dry run has no side effects: the report is returned inline below but
+      // never written to disk, even when writeSimulationReport is set.
+      if (writeSimulationReport && context.dryRun) {
+        simulationArtifact = {
+          written: false,
+          reason: "dry run: the simulation report was not written; it is returned inline as simulationReport",
+        };
+      } else if (writeSimulationReport) {
         const explicitScope = typeof args.scope === "string" ? args.scope.trim() : "";
         const sessionContext = await context.safeGetSessionContext(timeoutMs);
         const sessionScope = sessionContext
@@ -521,6 +528,8 @@ export async function handleWorkflowTool(
           executionMode,
           riskLevel,
           allowRemoteApply,
+          simulationReport,
+          simulationArtifact,
         });
       }
 
