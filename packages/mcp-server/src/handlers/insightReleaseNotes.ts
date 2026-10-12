@@ -70,10 +70,25 @@ export async function handleGenerateReleaseNotes(
     timeoutMs
   );
 
-  const allRows = toTableResultRows(response.data);
+  const isError = response.status < 200 || response.status > 299;
+  // A 2xx whose body is not a Table API JSON object (a login or maintenance
+  // page served as HTML, for instance) carries no rows; reading it as an empty
+  // update set would report a release with no changes as success.
+  const data = response.data;
+  const isTablePayload =
+    !!data && typeof data === "object" && !Array.isArray(data) &&
+    Array.isArray((data as Record<string, unknown>).result);
+  if (!isError && !isTablePayload) {
+    const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
+    return errorResponse(
+      `Release notes request returned HTTP ${response.status} with ${kind} instead of a Table API result; ` +
+        "the instance may be serving a login or maintenance page."
+    );
+  }
+
+  const allRows = toTableResultRows(data);
   const truncated = allRows.length > RELEASE_NOTES_MAX_CHANGES;
   const rows = truncated ? allRows.slice(0, RELEASE_NOTES_MAX_CHANGES) : allRows;
-  const isError = response.status < 200 || response.status > 299;
 
   if (format === "json") {
     return textResponse(
