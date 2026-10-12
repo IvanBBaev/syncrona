@@ -112,8 +112,15 @@ async function fetchScopeScriptRows(
   limit: number,
   timeoutMs: number
 ): Promise<{ status: number; rows: Record<string, unknown>[] }> {
+  // Without an order the instance returns rows in no defined order, so a capped
+  // read took a different subset on each side and on each run. Ordering by the
+  // name the diff keys on (sys_id breaks ties) makes both sides read the same
+  // leading slice of the scope.
   const params = new URLSearchParams();
-  params.set("sysparm_query", `sys_scope.scope=${escapeQueryValue(scope)}`);
+  params.set(
+    "sysparm_query",
+    `sys_scope.scope=${escapeQueryValue(scope)}^ORDERBY${nameField}^ORDERBYsys_id`
+  );
   params.set("sysparm_limit", String(limit));
   params.set("sysparm_fields", `sys_id,${nameField},${scriptField}`);
 
