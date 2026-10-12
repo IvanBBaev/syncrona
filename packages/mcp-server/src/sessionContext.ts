@@ -162,14 +162,22 @@ async function getScopeBySysId(
   return scopes.length > 0 ? scopes[0] : null;
 }
 
+// Update set names are not unique, and a completed or ignored set keeps its name.
+// Only an in-progress set can take new changes, so the lookup is limited to that
+// state (unless anyState is set) and ordered, most recently updated first, so
+// duplicates always resolve to the same record.
 async function getUpdateSetByName(
   updateSetName: string,
-  timeoutMs: number
+  timeoutMs: number,
+  anyState: boolean = false
 ): Promise<Record<string, unknown> | null> {
+  const stateFilter = anyState ? "" : "^state=in progress";
   const sets = await tableGet(
     "sys_update_set",
     {
-      query: `name=${escapeQueryValue(updateSetName)}`,
+      query:
+        `name=${escapeQueryValue(updateSetName)}${stateFilter}` +
+        "^ORDERBYDESCsys_updated_on^ORDERBYsys_id",
       fields: ["sys_id", "name", "state", "application"],
       limit: 1,
     },
@@ -328,6 +336,16 @@ export async function setCurrentUpdateSet(
       );
       assertOkResponse(created, `Creating update set ${updateSetNameInput}`);
       targetUpdateSet = asRecord(asRecord(created.data).result);
+    }
+    if (!targetUpdateSet) {
+      const other = await getUpdateSetByName(updateSetNameInput, timeoutMs, true);
+      if (other) {
+        throw new Error(
+          `Update set "${updateSetNameInput}" is not in progress ` +
+            `(state: ${toStringField(other.state) || "unknown"}). ` +
+            "Pass updateSetSysId to select it anyway, or createIfMissing to create a new one."
+        );
+      }
     }
   }
 
