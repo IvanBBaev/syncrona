@@ -70,6 +70,30 @@ describe("download checkpoint", () => {
     expect(await readDownloadCheckpoint("x_app")).toBeNull();
   });
 
+  // A write cut short (ENOSPC, a kill) must leave the previous checkpoint
+  // readable: an in-place write truncated it and the resume was lost.
+  it("keeps the previous checkpoint when a rewrite fails partway", async () => {
+    await writeDownloadCheckpoint({ scope: "x_app", completedTables: ["a"] });
+    const realWriteFile = fs.promises.writeFile;
+    const spy = jest
+      .spyOn(fs.promises, "writeFile")
+      .mockImplementation((async (file: fs.PathLike, ..._rest: unknown[]) => {
+        await realWriteFile(file, "{ \"scope\": \"x_");
+        throw Object.assign(new Error("ENOSPC: no space left on device"), {
+          code: "ENOSPC",
+        });
+      }) as never);
+    try {
+      await expect(
+        writeDownloadCheckpoint({ scope: "x_app", completedTables: ["a", "b"] })
+      ).rejects.toThrow("ENOSPC");
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await readDownloadCheckpoint("x_app"))?.completedTables).toEqual(["a"]);
+    expect(fs.readdirSync(dir)).toEqual([DOWNLOAD_CHECKPOINT_FILE]);
+  });
+
   it("delete is a no-op when no checkpoint exists", async () => {
     await expect(deleteDownloadCheckpoint()).resolves.toBeUndefined();
   });

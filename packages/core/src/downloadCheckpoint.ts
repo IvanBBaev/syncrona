@@ -100,11 +100,18 @@ function normalizeInstance(instance: string | undefined): string {
 export async function writeDownloadCheckpoint(
   checkpoint: DownloadCheckpoint
 ): Promise<void> {
-  await fsp.writeFile(
-    getDownloadCheckpointPath(),
-    JSON.stringify(checkpoint, null, 2),
-    "utf8"
-  );
+  // Temp file + rename, like writeManifestFile: an in-place write cut short by a
+  // full disk or a kill left truncated JSON, the next run read it as "no
+  // checkpoint", and the resume was lost without a word.
+  const checkpointPath = getDownloadCheckpointPath();
+  const tmpPath = `${checkpointPath}.${process.pid}.tmp`;
+  try {
+    await fsp.writeFile(tmpPath, JSON.stringify(checkpoint, null, 2), "utf8");
+    await fsp.rename(tmpPath, checkpointPath);
+  } catch (e) {
+    await fsp.rm(tmpPath, { force: true }).catch(() => undefined);
+    throw e;
+  }
 }
 
 export async function deleteDownloadCheckpoint(): Promise<void> {
