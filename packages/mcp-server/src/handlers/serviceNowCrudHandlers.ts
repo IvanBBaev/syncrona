@@ -76,9 +76,11 @@ export async function handleServiceNowCrudTool(
       const analyzeField =
         typeof args.analyzeField === "string" ? args.analyzeField.trim() : "";
 
+      // One row past the limit is requested so a result that fills the limit
+      // exactly is told apart from one that was cut off at it.
       const params = new URLSearchParams();
       params.set("sysparm_query", query);
-      params.set("sysparm_limit", String(limit));
+      params.set("sysparm_limit", String(limit + 1));
       if (offset > 0) {
         params.set("sysparm_offset", String(offset));
       }
@@ -97,11 +99,14 @@ export async function handleServiceNowCrudTool(
         timeoutMs
       );
 
-      const rows = toTableResultRows(response.data);
+      const allRows = toTableResultRows(response.data);
+      const truncated = allRows.length > limit;
+      const rows = truncated ? allRows.slice(0, limit) : allRows;
       const payload: Record<string, unknown> = {
         status: response.status,
         table,
         rowCount: rows.length,
+        truncated,
         rows,
       };
 
