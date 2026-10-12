@@ -108,6 +108,50 @@ function isMcpClientConfigDocument(value: unknown): value is McpClientConfig {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// VS Code's mcp.json is JSONC: comments and trailing commas are normal there,
+// and other clients' configs pick them up from hand edits. JSON.parse rejects
+// both, and a config read as malformed is replaced — every other server in it
+// was lost. Strip them outside string literals so plain JSON.parse can read it.
+function stripJsonc(raw: string): string {
+  return dropOutsideStrings(dropOutsideStrings(raw, "comments"), "trailingCommas");
+}
+
+function dropOutsideStrings(raw: string, what: "comments" | "trailingCommas"): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\") {
+        out += raw[i + 1] ?? "";
+        i += 1;
+      } else if (ch === '"') {
+        inString = false;
+      }
+    } else if (ch === '"') {
+      inString = true;
+      out += ch;
+    } else if (what === "comments" && ch === "/" && raw[i + 1] === "/") {
+      while (i + 1 < raw.length && raw[i + 1] !== "\n") i += 1;
+    } else if (what === "comments" && ch === "/" && raw[i + 1] === "*") {
+      const end = raw.indexOf("*/", i + 2);
+      if (end === -1) {
+        // left in place so JSON.parse rejects the file as malformed
+        out += raw.slice(i);
+        break;
+      }
+      i = end + 1;
+      out += " ";
+    } else if (what === "trailingCommas" && ch === "," && /^\s*[}\]]/.test(raw.slice(i + 1))) {
+      // dropped: only whitespace stands between it and the closing bracket
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function isServerMap(value: unknown): value is Record<string, McpServerEntry> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -135,7 +179,12 @@ async function writeMcpClientConfig(
       // Windows editors often save JSON with a UTF-8 byte order mark, which
       // JSON.parse rejects; reading it as malformed would wipe every other
       // server in the file.
-      parsed = JSON.parse(existingRaw.replace(/^\uFEFF/, ""));
+      const text = existingRaw.replace(/^\uFEFF/, "");
+      const plain = stripJsonc(text);
+      parsed = JSON.parse(plain);
+      if (plain !== text && isMcpClientConfigDocument(parsed)) {
+        logger.warn(`Comments and trailing commas in ${mcpConfigPath} are not kept when it is rewritten.`);
+      }
     } catch (_) {
       parsed = undefined;
     }

@@ -637,6 +637,59 @@ describe("writeMcpClientConfig", () => {
   });
 });
 
+describe("writeMcpClientConfig — JSONC", () => {
+  beforeEach(() => {
+    seed(workspaceServerBuild(), "// built server");
+  });
+
+  // VS Code's mcp.json is JSONC. JSON.parse rejected comments and trailing
+  // commas, the file was read as malformed and replaced, and every other server
+  // registered in it was lost.
+  it("merges into a config with comments and trailing commas instead of replacing it", async () => {
+    seed(
+      vsCodeConfig(),
+      [
+        "// my MCP servers",
+        "{",
+        '  "inputs": [{ "id": "token", "description": "a \\"quoted\\" // not a comment" },],',
+        "  /* hand-picked */",
+        '  "servers": {',
+        '    "existing": { "url": "https://example.com/mcp", }, // remote',
+        "    // trailing comment before the brace",
+        "  },",
+        "}",
+      ].join("\n")
+    );
+
+    await runMcp();
+
+    const parsed = JSON.parse(fs.readFileSync(vsCodeConfig(), "utf8")) as {
+      inputs?: Array<{ description?: string }>;
+      servers?: Record<string, { url?: string }>;
+    };
+    expect(Object.keys(parsed.servers ?? {}).sort()).toEqual(["existing", "syncrona"]);
+    expect(parsed.servers?.existing?.url).toBe("https://example.com/mcp");
+    expect(parsed.inputs?.[0]?.description).toBe('a "quoted" // not a comment');
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      `Comments and trailing commas in ${vsCodeConfig()} are not kept when it is rewritten.`
+    );
+    expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+      expect.stringContaining("Replacing malformed MCP client config")
+    );
+  });
+
+  it("still replaces a config whose block comment never ends", async () => {
+    seed(vsCodeConfig(), '{ "servers": { "existing": {} } } /* unterminated');
+
+    await runMcp();
+
+    expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      `Replacing malformed MCP client config: ${vsCodeConfig()}`
+    );
+  });
+});
+
 describe("writeMcpClientConfig — VS Code schema", () => {
   beforeEach(() => {
     seed(workspaceServerBuild(), "// built server");

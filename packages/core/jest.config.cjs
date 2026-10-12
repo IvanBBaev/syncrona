@@ -255,7 +255,7 @@ module.exports = {
     // floor while it was the weakest file in the tree; that is what let it fail
     // the tree-wide floor on Linux by a single line (77.77 lines / 52.27
     // branches) while macOS measured 83.33 / 68.18 and shipped green.
-    './src/mcpCommand.ts': { lines: 97, branches: 93 }, // measured 100.00 / 98.50
+    './src/mcpCommand.ts': { lines: 97, branches: 93 }, // measured 100.00 / 98.00
     // The CLI registry: 25 entries, nearly all one-line delegations, so a floor
     // on LINES is what
     // catches an entry that no longer routes anywhere (it declares no branches,
