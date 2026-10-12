@@ -290,7 +290,12 @@ export function buildDependencyGraph(records: Array<Record<string, unknown>>): {
         });
       }
 
-      const isGlobalInclude = !include.includes(".") && !include.toLowerCase().startsWith("x_");
+      // An explicit `global.` prefix is a global dependency even when the record's
+      // own scope is unknown; with a known non-global own scope it is already
+      // reported above as a cross-scope dependency.
+      const isQualifiedGlobalInclude = includeScopeCode === "global" && !ownScopeCode;
+      const isGlobalInclude = isQualifiedGlobalInclude
+        || (!include.includes(".") && !include.toLowerCase().startsWith("x_"));
       if (isGlobalInclude) {
         const globalId = "external_scope:global";
         upsertNode({ id: globalId, kind: "external_scope", label: "global" });
