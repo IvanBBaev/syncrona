@@ -204,13 +204,6 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
         serversKey: "mcpServers",
         restartHint: "Claude Desktop: fully quit and open again.",
         onlyIfExists: true,
-      },
-      {
-        clientName: "Cursor",
-        configPath: path.join(homeDir, ".cursor", "mcp.json"),
-        serversKey: "mcpServers",
-        restartHint: "Cursor: run `Developer: Reload Window`.",
-        onlyIfExists: true,
       }
     );
   }
@@ -224,13 +217,6 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
           serversKey: "mcpServers",
           restartHint: "Claude Desktop: fully quit and open again.",
           onlyIfExists: true,
-        },
-        {
-          clientName: "Cursor",
-          configPath: path.join(appData, "Cursor", "mcp.json"),
-          serversKey: "mcpServers",
-          restartHint: "Cursor: run `Developer: Reload Window`.",
-          onlyIfExists: true,
         }
       );
     } else {
@@ -238,10 +224,20 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
       // client paths from. Say so, or the skip is indistinguishable from "those
       // clients are not installed".
       logger.warn(
-        "APPDATA is not set: skipping Claude Desktop and Cursor configuration on win32."
+        "APPDATA is not set: skipping Claude Desktop configuration on win32."
       );
     }
   }
+
+  // Cursor keeps its global MCP config at ~/.cursor/mcp.json on every OS; the
+  // %APPDATA%\Cursor path it was once looked up at on Windows never exists.
+  targets.push({
+    clientName: "Cursor",
+    configPath: path.join(homeDir, ".cursor", "mcp.json"),
+    serversKey: "mcpServers",
+    restartHint: "Cursor: run `Developer: Reload Window`.",
+    onlyIfExists: true,
+  });
 
   const resolved: McpClientTarget[] = [];
   for (const target of targets) {

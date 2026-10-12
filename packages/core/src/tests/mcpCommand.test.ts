@@ -249,10 +249,11 @@ describe("resolveMcpClientTargets — every platform arm, on every host", () => 
     seed(workspaceServerBuild(), "// built server");
   });
 
-  it("configures only VS Code on a platform with no known desktop client", async () => {
-    // Linux (and anything else): the desktop-client paths must be left alone
+  it("configures VS Code and Cursor only on a platform without Claude Desktop", async () => {
+    // Linux (and anything else): the Claude Desktop paths must be left alone
     // even when files happen to sit at them, because those layouts belong to
-    // macOS and Windows installs.
+    // macOS and Windows installs. Cursor's ~/.cursor/mcp.json is the same on
+    // every OS.
     setPlatform("linux");
     seed(homeClaudeConfig(), withExistingServer());
     seed(homeCursorConfig(), withExistingServer());
@@ -262,12 +263,8 @@ describe("resolveMcpClientTargets — every platform arm, on every host", () => 
     await runMcp();
 
     expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
-    for (const untouched of [
-      homeClaudeConfig(),
-      homeCursorConfig(),
-      appDataClaudeConfig(),
-      appDataCursorConfig(),
-    ]) {
+    expect(serversIn(homeCursorConfig())).toEqual(["existing", "syncrona"]);
+    for (const untouched of [homeClaudeConfig(), appDataClaudeConfig(), appDataCursorConfig()]) {
       expect(serversIn(untouched)).toEqual(["existing"]);
     }
   });
@@ -287,48 +284,54 @@ describe("resolveMcpClientTargets — every platform arm, on every host", () => 
     expect(serversIn(appDataClaudeConfig())).toEqual(["existing"]);
   });
 
-  it("configures Claude Desktop and Cursor under %APPDATA% on win32", async () => {
+  it("configures Claude Desktop under %APPDATA% and Cursor under the home directory on win32", async () => {
+    // Cursor reads %USERPROFILE%\.cursor\mcp.json on Windows too; the
+    // %APPDATA%\Cursor path never exists, so the onlyIfExists target matched
+    // nothing and Cursor was silently never configured.
     setPlatform("win32");
     seed(appDataClaudeConfig(), withExistingServer());
     seed(appDataCursorConfig(), withExistingServer());
+    seed(homeCursorConfig(), withExistingServer());
     seed(homeClaudeConfig(), withExistingServer());
 
     await runMcp();
 
     expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
     expect(serversIn(appDataClaudeConfig())).toEqual(["existing", "syncrona"]);
-    expect(serversIn(appDataCursorConfig())).toEqual(["existing", "syncrona"]);
+    expect(serversIn(homeCursorConfig())).toEqual(["existing", "syncrona"]);
+    expect(serversIn(appDataCursorConfig())).toEqual(["existing"]);
     // The darwin layout is not consulted on win32.
     expect(serversIn(homeClaudeConfig())).toEqual(["existing"]);
   });
 
-  it("configures VS Code only on win32 when APPDATA is not set", async () => {
+  it("skips Claude Desktop but still configures Cursor on win32 when APPDATA is not set", async () => {
     // The guard is `win32 && appData`: without the variable there is no roaming
-    // profile to derive the client paths from, so path.join must never be
+    // profile to derive the Claude Desktop path from, so path.join must never be
     // reached with an empty first segment (that would resolve relative to cwd).
+    // Cursor lives under the home directory and does not need it.
     setPlatform("win32");
     delete process.env.APPDATA;
     seed(appDataClaudeConfig(), withExistingServer());
-    seed(appDataCursorConfig(), withExistingServer());
+    seed(homeCursorConfig(), withExistingServer());
 
     await runMcp();
 
     expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
     expect(serversIn(appDataClaudeConfig())).toEqual(["existing"]);
-    expect(serversIn(appDataCursorConfig())).toEqual(["existing"]);
+    expect(serversIn(homeCursorConfig())).toEqual(["existing", "syncrona"]);
   });
 
-  it("says why the desktop clients were skipped on win32 without APPDATA", async () => {
-    // Silently configuring only VS Code is indistinguishable from "Claude
-    // Desktop and Cursor are not installed", which sends the user hunting in
-    // the wrong place for why the MCP server never appears.
+  it("says why Claude Desktop was skipped on win32 without APPDATA", async () => {
+    // Silently skipping it is indistinguishable from "Claude Desktop is not
+    // installed", which sends the user hunting in the wrong place for why the
+    // MCP server never appears.
     setPlatform("win32");
     delete process.env.APPDATA;
 
     await runMcp();
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
-      "APPDATA is not set: skipping Claude Desktop and Cursor configuration on win32."
+      "APPDATA is not set: skipping Claude Desktop configuration on win32."
     );
   });
 
