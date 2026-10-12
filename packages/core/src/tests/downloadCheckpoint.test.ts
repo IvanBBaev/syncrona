@@ -74,6 +74,16 @@ describe("download checkpoint", () => {
     await expect(deleteDownloadCheckpoint()).resolves.toBeUndefined();
   });
 
+  // A checkpoint that cannot be removed after a finished download marks every
+  // table completed, so the next download silently skips them all. Only ENOENT
+  // may be ignored; anything else must surface with the path to delete.
+  it("reports a checkpoint it cannot remove instead of ignoring the failure", async () => {
+    fs.mkdirSync(getDownloadCheckpointPath());
+    await expect(deleteDownloadCheckpoint()).rejects.toThrow(
+      `checkpoint ${getDownloadCheckpointPath()} could not be removed`
+    );
+  });
+
   // getRootDir throws until a project config is loaded, and `download` can run
   // before that. The checkpoint then belongs next to the invocation (cwd) — the
   // path helper must not propagate the failure, or a first download in a fresh
