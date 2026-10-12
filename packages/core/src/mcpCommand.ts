@@ -21,17 +21,23 @@ type McpServerProcessArgs = Sync.SharedCmdArgs & {
   mcpServerPath?: string;
 };
 
-type McpClientConfig = {
-  mcpServers?: Record<string, {
-    command: string;
-    args: string[];
-    cwd?: string;
-  }>;
+type McpServerEntry = {
+  type?: "stdio";
+  command: string;
+  args: string[];
+  cwd?: string;
 };
+
+type McpClientConfig = Record<string, unknown>;
+
+// VS Code's mcp.json keeps its servers under `servers`; Claude Desktop and
+// Cursor use `mcpServers`. An entry under the other client's key is ignored.
+type McpServersKey = "servers" | "mcpServers";
 
 type McpClientTarget = {
   clientName: string;
   configPath: string;
+  serversKey: McpServersKey;
   restartHint: string;
   onlyIfExists: boolean;
 };
@@ -102,7 +108,16 @@ function isMcpClientConfigDocument(value: unknown): value is McpClientConfig {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string, workspaceRoot: string): Promise<string> {
+function isServerMap(value: unknown): value is Record<string, McpServerEntry> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function writeMcpClientConfig(
+  mcpConfigPath: string,
+  serversKey: McpServersKey,
+  mcpServerPath: string,
+  workspaceRoot: string
+): Promise<string> {
   await fsp.mkdir(path.dirname(mcpConfigPath), { recursive: true });
 
   let config: McpClientConfig = {};
@@ -139,18 +154,30 @@ async function writeMcpClientConfig(mcpConfigPath: string, mcpServerPath: string
   // Same array exclusion as the document-level guard: spreading an array here
   // would register its elements as servers named "0", "1", ... — a garbage
   // entry per element, written back as a success.
-  const existingServers = config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
-    ? config.mcpServers
-    : {};
+  const existing = config[serversKey];
+  const existingServers = isServerMap(existing) ? existing : {};
 
-  config.mcpServers = {
-    ...existingServers,
-    "syncrona": {
-      command: "node",
-      args: [mcpServerPath],
-      cwd: workspaceRoot,
-    },
+  const entry: McpServerEntry = {
+    command: "node",
+    args: [mcpServerPath],
+    cwd: workspaceRoot,
   };
+  config[serversKey] = {
+    ...existingServers,
+    "syncrona": serversKey === "servers" ? { type: "stdio", ...entry } : entry,
+  };
+
+  // Earlier releases wrote the VS Code entry under `mcpServers`, where VS Code
+  // never looks. Drop that dead copy so the file holds one syncrona entry.
+  const legacy = config.mcpServers;
+  if (serversKey !== "mcpServers" && isServerMap(legacy) && "syncrona" in legacy) {
+    const { syncrona: _dead, ...others } = legacy;
+    if (Object.keys(others).length > 0) {
+      config.mcpServers = others;
+    } else {
+      delete config.mcpServers;
+    }
+  }
 
   await fsp.writeFile(mcpConfigPath, JSON.stringify(config, null, 2), "utf8");
   return mcpConfigPath;
@@ -163,6 +190,7 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
     {
       clientName: "VS Code",
       configPath: path.join(workspaceRoot, ".vscode", "mcp.json"),
+      serversKey: "servers",
       restartHint: "VS Code: run `Developer: Reload Window`.",
       onlyIfExists: false,
     },
@@ -173,12 +201,14 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
       {
         clientName: "Claude Desktop",
         configPath: path.join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+        serversKey: "mcpServers",
         restartHint: "Claude Desktop: fully quit and open again.",
         onlyIfExists: true,
       },
       {
         clientName: "Cursor",
         configPath: path.join(homeDir, ".cursor", "mcp.json"),
+        serversKey: "mcpServers",
         restartHint: "Cursor: run `Developer: Reload Window`.",
         onlyIfExists: true,
       }
@@ -191,12 +221,14 @@ async function resolveMcpClientTargets(workspaceRoot: string): Promise<McpClient
         {
           clientName: "Claude Desktop",
           configPath: path.join(appData, "Claude", "claude_desktop_config.json"),
+          serversKey: "mcpServers",
           restartHint: "Claude Desktop: fully quit and open again.",
           onlyIfExists: true,
         },
         {
           clientName: "Cursor",
           configPath: path.join(appData, "Cursor", "mcp.json"),
+          serversKey: "mcpServers",
           restartHint: "Cursor: run `Developer: Reload Window`.",
           onlyIfExists: true,
         }
@@ -300,7 +332,7 @@ export async function mcpCommand(args: McpServerProcessArgs): Promise<void> {
     const clientTargets = await resolveMcpClientTargets(workspaceRoot);
     const updatedConfigs: McpClientTarget[] = [];
     for (const target of clientTargets) {
-      await writeMcpClientConfig(target.configPath, mcpServerPath, workspaceRoot);
+      await writeMcpClientConfig(target.configPath, target.serversKey, mcpServerPath, workspaceRoot);
       updatedConfigs.push(target);
       logger.success(`MCP client config updated (${target.clientName}): ${target.configPath}`);
     }

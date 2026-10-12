@@ -172,20 +172,29 @@ function seed(filePath: string, contents = "{}"): string {
 const withExistingServer = () =>
   JSON.stringify({ mcpServers: { existing: { command: "node", args: ["/other.js"] } } });
 
-/** The server names present in a written client config, sorted. */
+/** The same unrelated entry in VS Code's schema, which keys servers by `servers`. */
+const withExistingVsCodeServer = () =>
+  JSON.stringify({ servers: { existing: { command: "node", args: ["/other.js"] } } });
+
+/**
+ * The server names present in a written client config, sorted. VS Code reads
+ * `servers`; the desktop clients read `mcpServers`.
+ */
 function serversIn(filePath: string): string[] {
-  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
-    mcpServers?: Record<string, unknown>;
-  };
-  return Object.keys(parsed.mcpServers ?? {}).sort();
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<
+    string,
+    Record<string, unknown> | undefined
+  >;
+  const key = filePath === vsCodeConfig() ? "servers" : "mcpServers";
+  return Object.keys(parsed[key] ?? {}).sort();
 }
 
 /** The MCP server entrypoint that landed in the VS Code config. */
 function configuredServerPath(): string {
   const parsed = JSON.parse(fs.readFileSync(vsCodeConfig(), "utf8")) as {
-    mcpServers?: Record<string, { args?: string[] }>;
+    servers?: Record<string, { args?: string[] }>;
   };
-  return String(parsed.mcpServers?.["syncrona"]?.args?.[0]);
+  return String(parsed.servers?.["syncrona"]?.args?.[0]);
 }
 
 const runMcp = (overrides: Partial<McpArgs> = {}): Promise<void> =>
@@ -532,7 +541,7 @@ describe("writeMcpClientConfig", () => {
       vsCodeConfig(),
       JSON.stringify({
         inputs: [{ id: "token" }],
-        mcpServers: { existing: { command: "node", args: ["/other.js"] } },
+        servers: { existing: { command: "node", args: ["/other.js"] } },
       })
     );
 
@@ -540,11 +549,12 @@ describe("writeMcpClientConfig", () => {
 
     const parsed = JSON.parse(fs.readFileSync(vsCodeConfig(), "utf8")) as {
       inputs?: unknown;
-      mcpServers?: Record<string, { command: string; args: string[]; cwd?: string }>;
+      servers?: Record<string, { type?: string; command: string; args: string[]; cwd?: string }>;
     };
     expect(parsed.inputs).toEqual([{ id: "token" }]);
-    expect(parsed.mcpServers?.existing).toEqual({ command: "node", args: ["/other.js"] });
-    expect(parsed.mcpServers?.["syncrona"]).toEqual({
+    expect(parsed.servers?.existing).toEqual({ command: "node", args: ["/other.js"] });
+    expect(parsed.servers?.["syncrona"]).toEqual({
+      type: "stdio",
       command: "node",
       args: [workspaceServerBuild()],
       cwd: tmpRoot,
@@ -589,21 +599,21 @@ describe("writeMcpClientConfig", () => {
     expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 
-  it("replaces an mcpServers value that is not a map", async () => {
-    seed(vsCodeConfig(), JSON.stringify({ mcpServers: "not-a-map" }));
+  it("replaces a servers value that is not a map", async () => {
+    seed(vsCodeConfig(), JSON.stringify({ servers: "not-a-map" }));
 
     await runMcp();
 
     expect(serversIn(vsCodeConfig())).toEqual(["syncrona"]);
   });
 
-  it("replaces an mcpServers value that is an array instead of spreading it", async () => {
+  it("replaces a servers value that is an array instead of spreading it", async () => {
     // `typeof [] === "object"` passes the map guard, and spreading an array
     // registers each element as a server named by its index ("0", "1", ...) —
     // the same class the document-level array guard excludes.
     seed(
       vsCodeConfig(),
-      JSON.stringify({ mcpServers: [{ command: "node", args: ["/other.js"] }] })
+      JSON.stringify({ servers: [{ command: "node", args: ["/other.js"] }] })
     );
 
     await runMcp();
@@ -615,12 +625,65 @@ describe("writeMcpClientConfig", () => {
     // Windows editors (Notepad among them) save JSON with a leading BOM.
     // JSON.parse rejects it, so the file read as malformed and every other
     // server registered in it was wiped.
-    seed(vsCodeConfig(), `\uFEFF${withExistingServer()}`);
+    seed(vsCodeConfig(), `\uFEFF${withExistingVsCodeServer()}`);
 
     await runMcp();
 
     expect(serversIn(vsCodeConfig())).toEqual(["existing", "syncrona"]);
     expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeMcpClientConfig — VS Code schema", () => {
+  beforeEach(() => {
+    seed(workspaceServerBuild(), "// built server");
+  });
+
+  // VS Code's mcp.json keys servers by `servers`; an entry under `mcpServers`
+  // (the Claude Desktop / Cursor schema) is never loaded, while the command
+  // still reported "MCP client config updated (VS Code)".
+  it("registers the VS Code entry under servers and drops the dead mcpServers copy", async () => {
+    seed(
+      vsCodeConfig(),
+      JSON.stringify({
+        mcpServers: {
+          syncrona: { command: "node", args: ["/old.js"] },
+          other: { command: "node", args: ["/other.js"] },
+        },
+      })
+    );
+
+    await runMcp();
+
+    const parsed = JSON.parse(fs.readFileSync(vsCodeConfig(), "utf8")) as {
+      servers?: Record<string, { type?: string }>;
+      mcpServers?: Record<string, unknown>;
+    };
+    expect(parsed.servers?.["syncrona"]?.type).toBe("stdio");
+    expect(Object.keys(parsed.mcpServers ?? {})).toEqual(["other"]);
+  });
+
+  it("removes an mcpServers map that held only the dead syncrona copy", async () => {
+    seed(
+      vsCodeConfig(),
+      JSON.stringify({ mcpServers: { syncrona: { command: "node", args: ["/old.js"] } } })
+    );
+
+    await runMcp();
+
+    const parsed = JSON.parse(fs.readFileSync(vsCodeConfig(), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(["servers"]);
+  });
+
+  it("keeps the desktop clients on mcpServers", async () => {
+    setPlatform("darwin");
+    seed(homeCursorConfig(), withExistingServer());
+
+    await runMcp();
+
+    const parsed = JSON.parse(fs.readFileSync(homeCursorConfig(), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(["mcpServers"]);
+    expect(serversIn(homeCursorConfig())).toEqual(["existing", "syncrona"]);
   });
 });
 
