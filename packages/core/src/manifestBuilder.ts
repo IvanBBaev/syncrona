@@ -1763,6 +1763,12 @@ interface TableEnumerationContext {
   metaEnabled: boolean;
   /** R4: tables whose records may be represented by the sidecar alone. */
   dataModelTables: ReadonlySet<string>;
+  /**
+   * Tables outside `dataModelTables` whose sidecar-only records the previous
+   * manifest already tracks (see {@link previousSidecarOnlyTables}). They are
+   * enumerated like a data-model table, without its naming or scoping rules.
+   */
+  keptSidecarTables: ReadonlySet<string>;
 }
 
 /** One table's enumeration: its manifest entry (if any) and whether it was cut short. */
@@ -1801,7 +1807,9 @@ async function enumerateTable(
   // Without metadata there is no sidecar either, so `meta: false` keeps the
   // early return for those tables too.
   const sidecarOnly =
-    files.length === 0 && metaEnabled && ctx.dataModelTables.has(tableName);
+    files.length === 0 &&
+    metaEnabled &&
+    (ctx.dataModelTables.has(tableName) || ctx.keptSidecarTables.has(tableName));
   if (files.length === 0 && !sidecarOnly) {
     return { skipped };
   }
@@ -1960,9 +1968,11 @@ type ManifestBuildConfig = Pick<
 /** The enumeration context for `config`, with the R4 opt-in applied. */
 function tableEnumerationContext(
   client: SNClient,
+  scopeName: string,
   scopeId: string,
   config: ManifestBuildConfig
 ): TableEnumerationContext {
+  const dataModelTables = new Set(getDataModelTables(config));
   return {
     client,
     scopeId,
@@ -1975,8 +1985,41 @@ function tableEnumerationContext(
     // records is missing most of what defines them, and a default-off flag would
     // have left every existing project in that state indefinitely.
     metaEnabled: config.meta !== false,
-    dataModelTables: new Set(getDataModelTables(config)),
+    dataModelTables,
+    keptSidecarTables: new Set(
+      config.meta === false ? [] : previousSidecarOnlyTables(scopeName, dataModelTables)
+    ),
   };
+}
+
+/**
+ * The tables, other than `optedIn`, in which the previous manifest of
+ * `scopeName` tracks a record that has nothing but its sidecar.
+ *
+ * `push --create` adds such a record for any table (an ATF test or suite, say),
+ * but a rebuild treated only the opted-in data-model tables as sidecar-only. A
+ * table with no field file was left out, so the next `refresh` dropped every
+ * record just created: their `.meta.json` files stopped mapping to a record,
+ * `push` ignored them and `repair --prune` called them orphans.
+ */
+function previousSidecarOnlyTables(
+  scopeName: string,
+  optedIn: ReadonlySet<string>
+): string[] {
+  const previous = getPreviousManifest(scopeName);
+  return Object.entries(previous?.tables || {})
+    .filter(
+      ([tableName, table]) =>
+        !optedIn.has(tableName) &&
+        Object.values(table?.records || {}).some(
+          (record) =>
+            Array.isArray(record?.files) &&
+            record.files.length > 0 &&
+            record.files.every(isMetaFile)
+        )
+    )
+    .map(([tableName]) => tableName)
+    .sort();
 }
 
 /**
@@ -2010,7 +2053,7 @@ export async function buildManifestFromTableAPI(
         "with `syncrona init --new`, which binds the new, empty scope."
     );
   }
-  const ctx = tableEnumerationContext(client, scopeId, config);
+  const ctx = tableEnumerationContext(client, scopeName, scopeId, config);
 
   const discovered = await getTableNamesInScope(
     client,
@@ -2051,9 +2094,10 @@ export async function buildManifestFromTableAPI(
   }
   // R4: an opted-in table is enumerated even when the sys_metadata sweep did
   // not list it (a table it found nothing in yields no entry, as before). An
-  // explicit `includes.<table>: false` switches it off here too.
+  // explicit `includes.<table>: false` switches it off here too. A table whose
+  // sidecar-only records the workspace already tracks is kept the same way.
   const tableNames = [...discovered];
-  for (const tableName of ctx.dataModelTables) {
+  for (const tableName of [...ctx.dataModelTables, ...ctx.keptSidecarTables]) {
     if (ctx.includes[tableName] !== false && !tableNames.includes(tableName)) {
       tableNames.push(tableName);
     }
@@ -2082,7 +2126,9 @@ export async function buildManifestFromTableAPI(
  * names records by their display value alone. Every opted-in table is therefore
  * (re)built here through the Table API, replacing whatever entry the endpoint
  * returned, so a data-model record has the same name and the same sidecar on
- * both paths. A no-op when nothing is opted in or `meta: false`.
+ * both paths. A table the endpoint did not list but whose sidecar-only records
+ * the previous manifest tracks (a record `push --create` added) is built here
+ * too. A no-op when there is neither, or with `meta: false`.
  *
  * Mutates and returns `manifest`. Throws, like the builder, when a table fails.
  */
@@ -2091,8 +2137,17 @@ export async function attachDataModelTablesToManifest(
   client: SNClient,
   config: ManifestBuildConfig
 ): Promise<SN.AppManifest> {
+  if (config.meta === false) {
+    return manifest;
+  }
   const tables = getDataModelTables(config);
-  if (tables.length === 0 || config.meta === false) {
+  // A table outside the opt-in whose sidecar-only records the workspace
+  // already tracks (see previousSidecarOnlyTables) is enumerated too, unless
+  // the endpoint listed it: then it has field files and its entry stands.
+  const kept = previousSidecarOnlyTables(manifest.scope, new Set(tables)).filter(
+    (tableName) => !Object.prototype.hasOwnProperty.call(manifest.tables || {}, tableName)
+  );
+  if (tables.length === 0 && kept.length === 0) {
     return manifest;
   }
   const scopeId = manifest.scopeId || (await getScopeId(client, manifest.scope));
@@ -2102,8 +2157,8 @@ export async function attachDataModelTablesToManifest(
     );
   }
   resetTableHierarchyCache();
-  const ctx = tableEnumerationContext(client, scopeId, config);
-  const wanted = tables.filter((tableName) => ctx.includes[tableName] !== false);
+  const ctx = tableEnumerationContext(client, manifest.scope, scopeId, config);
+  const wanted = [...tables, ...kept].filter((tableName) => ctx.includes[tableName] !== false);
   // Built into a fresh map first: a table that comes back empty must REPLACE
   // the endpoint's entry (named by the old rule), not leave it in place.
   const built: SN.AppManifest["tables"] = Object.create(null);
@@ -2140,7 +2195,7 @@ export async function discoverTableMetaFields(
   tableName: string,
   config: ManifestBuildConfig
 ): Promise<{ fields: string[]; readOnly: string[] }> {
-  const ctx = tableEnumerationContext(client, "", config);
+  const ctx = tableEnumerationContext(client, "", "", config);
   let hierarchyTableNames: string[] | undefined;
   const files = await getFileFieldsForTable(
     client,

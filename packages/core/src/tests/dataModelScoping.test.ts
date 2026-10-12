@@ -620,3 +620,64 @@ describe("R4 scoping: a table the operator added to dataModelTables", () => {
     }
   });
 });
+
+describe("a sidecar-only record push --create added outside dataModelTables", () => {
+  // An ATF test has no field file: its record is the sidecar alone. `push
+  // --create` writes it into the manifest whatever the opt-in says, and the next
+  // refresh has to keep it.
+  const previousManifest = (scope = "x_demo"): SN.AppManifest =>
+    ({
+      scope,
+      scopeId: "scope-1",
+      tables: {
+        sys_atf_test: {
+          metaFields: ["name"],
+          records: {
+            "Login test": {
+              sys_id: "t1",
+              name: "Login test",
+              files: [{ name: ".meta", type: "json" }],
+            },
+          },
+        },
+      },
+    }) as unknown as SN.AppManifest;
+  const instance: Instance = { rows: { sys_atf_test: [{ sys_id: "t1", name: "Login test" }] } };
+
+  it("keeps the record on a Table API rebuild", async () => {
+    getManifest.mockReturnValue(previousManifest());
+    const { manifest } = await build(instance, { dataModelTables: [] });
+
+    expect(recordIds(manifest, "sys_atf_test")).toEqual(["t1"]);
+    const [record] = Object.values(manifest.tables.sys_atf_test.records);
+    expect(record.files).toEqual([{ name: ".meta", type: "json" }]);
+  });
+
+  it("keeps the record on the companion-app path, where the endpoint omits the table", async () => {
+    getManifest.mockReturnValue(previousManifest());
+    const manifest = { scope: "x_demo", scopeId: "scope-1", tables: {} } as SN.AppManifest;
+
+    await attachDataModelTablesToManifest(
+      manifest,
+      createClient(fakeInstance(instance)),
+      config({ dataModelTables: [] })
+    );
+
+    expect(recordIds(manifest, "sys_atf_test")).toEqual(["t1"]);
+  });
+
+  it("drops the table once the instance no longer has the record", async () => {
+    getManifest.mockReturnValue(previousManifest());
+    const { manifest } = await build({ rows: { sys_atf_test: [] } }, { dataModelTables: [] });
+
+    expect(manifest.tables.sys_atf_test).toBeUndefined();
+  });
+
+  it("ignores the previous manifest of another scope", async () => {
+    getManifest.mockReturnValue(previousManifest("x_other"));
+    const { manifest, tableAPIGet } = await build(instance, { dataModelTables: [] });
+
+    expect(manifest.tables.sys_atf_test).toBeUndefined();
+    expect(queriesOn(tableAPIGet, "sys_atf_test")).toEqual([]);
+  });
+});
