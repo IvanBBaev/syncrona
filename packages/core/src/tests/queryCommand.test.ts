@@ -82,6 +82,17 @@ describe("runQuery", () => {
     expect(envelope).toEqual({ ok: true, hasMore: true, nextOffset: 11, records: rows(7) });
   });
 
+  it("reads the rel=next offset when the page URL itself contains commas", async () => {
+    const base = "https://x.service-now.com/api/now/table/incident";
+    const link =
+      `<${base}?sysparm_offset=0&sysparm_limit=11&sysparm_query=numberININC1,INC2>;rel="first",` +
+      `<${base}?sysparm_offset=11&sysparm_limit=11&sysparm_query=numberININC1,INC2>;rel="next"`;
+    const { client } = makeClient(async () => respond({ result: rows(7) }, { link }));
+    const envelope = await runQuery(client, baseArgs({ limit: 10 }));
+
+    expect(envelope).toEqual({ ok: true, hasMore: true, nextOffset: 11, records: rows(7) });
+  });
+
   it("ignores a Link header without a forward rel=next page", async () => {
     const link = '<https://x.service-now.com/api/now/table/incident?sysparm_offset=0>;rel="first"';
     const { client } = makeClient(async () => respond({ result: rows(2) }, { link }));

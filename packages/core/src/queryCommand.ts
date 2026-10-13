@@ -114,11 +114,14 @@ function nextOffsetFromLink(headers: unknown): number | null {
   if (typeof link !== "string") {
     return null;
   }
-  for (const part of link.split(",")) {
-    if (!/;\s*rel="?next"?/i.test(part)) {
+  // Each link-value is `<uri>; params` (RFC 8288). The URI may itself contain
+  // commas (an `IN` list in sysparm_query, a sysparm_fields list), so the header
+  // is split on the angle-bracketed URIs, not on every comma.
+  for (const [, uri, params] of link.matchAll(/<([^>]*)>([^<]*)/g)) {
+    if (!/;\s*rel="?next"?/i.test(params)) {
       continue;
     }
-    const offset = /[?&]sysparm_offset=(\d+)/.exec(part)?.[1];
+    const offset = /[?&]sysparm_offset=(\d+)/.exec(uri)?.[1];
     return offset === undefined ? null : Number(offset);
   }
   return null;
