@@ -342,7 +342,7 @@ const MODULE_FLOORS = [
   // ubuntu pair is 296/315, which renders 93.97. Neither forced pair has been
   // observed on CI yet: the first ubuntu run after this lands must confirm it, and
   // replace it with the printed reading if it differs.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.53 / 93.95 (also 99.53 / 93.97: V8 range granularity on ubuntu, 295/314 vs 296/315 branches, same uncovered lines 443-444 835 1037-1038, one extra covered function range at 98.48 against darwin's 96.97)
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.53 / 94.08
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 100.00 / 94.12 (also 100.00 / 95.24: V8 range granularity, 80/85 vs 80/84 branches, no uncovered lines in either reading)
