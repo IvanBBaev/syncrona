@@ -52,6 +52,7 @@ export {
   buildOnboardingPlan,
   buildScopeKnowledgeIndex,
   computeKnowledgeStaleness,
+  describePartialDiscovery,
   rankMinimalFootprintTargets,
   renderScopeKnowledgeMarkdown,
   summarizeTableImpactPaths,

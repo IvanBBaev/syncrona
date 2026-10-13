@@ -441,9 +441,42 @@ export function summarizeTableImpactPaths(
   return out.slice(0, Math.max(1, limit));
 }
 
+// Capped or failed ServiceNow fetches leave the index an incomplete view of the
+// scope; say so wherever the index is read, so absent records are not taken as
+// proof that nothing else exists.
+export function describePartialDiscovery(sourceSummary: unknown): string[] {
+  const summary = asRecord(sourceSummary);
+  const notes: string[] = [];
+  const truncations = Array.isArray(summary.serviceNowTruncations) ? summary.serviceNowTruncations : [];
+  const failures = Array.isArray(summary.serviceNowFailures) ? summary.serviceNowFailures : [];
+  if (summary.serviceNowTruncated === true || truncations.length > 0) {
+    const tables = truncations
+      .map((row) => {
+        const item = asRecord(row);
+        const table = toStringField(item.table);
+        return table ? `${table} (limit ${Number(item.limit) || 0})` : "";
+      })
+      .filter(Boolean);
+    notes.push(`ServiceNow discovery was truncated${tables.length > 0 ? `: ${tables.join(", ")}` : ""}.`);
+  }
+  if (summary.serviceNowFailed === true || failures.length > 0) {
+    const tables = failures
+      .map((row) => {
+        const item = asRecord(row);
+        const table = toStringField(item.table);
+        const error = toStringField(item.error);
+        return table ? `${table}${error ? ` (${error})` : ""}` : "";
+      })
+      .filter(Boolean);
+    notes.push(`ServiceNow discovery failed${tables.length > 0 ? `: ${tables.join(", ")}` : ""}.`);
+  }
+  return notes;
+}
+
 export function validateScopeKnowledgeIndex(index: Record<string, unknown>): {
   valid: boolean;
   missingFields: string[];
+  warnings: string[];
 } {
   // Provenance fields (instance, instanceBaseUrl) are intentionally NOT
   // required: indexes generated before they existed, or without ServiceNow
@@ -481,6 +514,7 @@ export function validateScopeKnowledgeIndex(index: Record<string, unknown>): {
   return {
     valid: missingFields.length === 0,
     missingFields,
+    warnings: describePartialDiscovery(index.sourceSummary),
   };
 }
 
@@ -871,6 +905,9 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
   lines.push(`- ServiceNow dependencies: ${Number(sourceSummary.serviceNowDependencyCount) || 0}`);
   lines.push(`- Local entities: ${Number(sourceSummary.localEntityCount) || 0}`);
   lines.push(`- Local dependencies: ${Number(sourceSummary.localDependencyCount) || 0}`);
+  for (const note of describePartialDiscovery(sourceSummary)) {
+    lines.push(`- Partial discovery: ${note}`);
+  }
   lines.push("");
   lines.push("## Update Set Context");
   lines.push(`- Context keys: ${Object.keys(asRecord(index.updateSetContext)).length}`);

@@ -181,3 +181,39 @@ test('scope-knowledge writers refuse to write files when the scope did not resol
   assert.deepEqual(writes, []);
   assert.equal(hydrations.includes(''), false, 'refused before discovery');
 });
+
+test('truncated or failed discovery is flagged in the validation and the Markdown', () => {
+  const { validateScopeKnowledgeIndex, describePartialDiscovery } = require('../dist/analysis.js');
+  const index = buildScopeKnowledgeIndex({
+    scope: 'x_nuvo_sync',
+    entities: [],
+    graph: { nodes: [], edges: [] },
+    sourceSummary: {
+      serviceNowTruncated: true,
+      serviceNowTruncations: [{ table: 'sys_script', limit: 500 }],
+      serviceNowFailed: true,
+      serviceNowFailures: [{ table: 'sys_script_include', error: 'HTTP 403' }, { table: '' }],
+    },
+  });
+  const validation = validateScopeKnowledgeIndex(index);
+  assert.equal(validation.valid, true);
+  assert.deepEqual(validation.warnings, [
+    'ServiceNow discovery was truncated: sys_script (limit 500).',
+    'ServiceNow discovery failed: sys_script_include (HTTP 403).',
+  ]);
+  const markdown = renderScopeKnowledgeMarkdown(index);
+  assert.match(markdown, /- Partial discovery: ServiceNow discovery was truncated: sys_script \(limit 500\)\./);
+  assert.match(markdown, /- Partial discovery: ServiceNow discovery failed: sys_script_include \(HTTP 403\)\./);
+
+  // Flags without detail rows still warn; a complete discovery adds nothing.
+  assert.deepEqual(describePartialDiscovery({ serviceNowFailed: true, serviceNowFailures: [{ table: '*', error: '' }] }), [
+    'ServiceNow discovery failed: *.',
+  ]);
+  assert.deepEqual(describePartialDiscovery({ serviceNowTruncated: true }), ['ServiceNow discovery was truncated.']);
+  assert.deepEqual(describePartialDiscovery({ serviceNowTruncated: false, serviceNowTruncations: [] }), []);
+  assert.deepEqual(describePartialDiscovery(undefined), []);
+  assert.doesNotMatch(
+    renderScopeKnowledgeMarkdown(buildScopeKnowledgeIndex({ scope: 'x_a', entities: [], graph: { nodes: [], edges: [] } })),
+    /Partial discovery/
+  );
+});
