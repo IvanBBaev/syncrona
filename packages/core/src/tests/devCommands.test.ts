@@ -104,6 +104,27 @@ describe("devCommands", () => {
       expect(mockSetLogLevel).not.toHaveBeenCalledWith({ logLevel: "warn" });
     });
 
+    it("a background refresh that scopeCheck fails leaves exitCode untouched", async () => {
+      // scopeCheck reports a thrown sync or a scope mismatch through
+      // process.exitCode = 1; from a scheduled dev refresh that would turn the
+      // later clean Ctrl+C exit of `syncrona dev` into a failure.
+      mockScopeCheck.mockImplementationOnce(async () => {
+        process.exitCode = 1;
+      });
+      process.exitCode = 0;
+      await refreshCommand({ logLevel: "info" } as never, false);
+      expect(process.exitCode).toBe(0);
+    });
+
+    it("an interactive refresh keeps the exitCode scopeCheck set", async () => {
+      mockScopeCheck.mockImplementationOnce(async () => {
+        process.exitCode = 1;
+      });
+      process.exitCode = 0;
+      await refreshCommand({ logLevel: "info" } as never);
+      expect(process.exitCode).toBe(1);
+    });
+
     it("#1: a background refresh never resets the active instance profile", async () => {
       // setLogLevel(args) is the ONLY call that may touch profile state, and it
       // must always receive the real command args (with instanceProfile), never

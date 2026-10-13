@@ -76,6 +76,11 @@ export async function refreshCommand(
   // BASE instance. Drive the logger level directly so the profile that
   // setLogLevel(args) established above is preserved through the refresh.
   const previousLogLevel = logger.getLogLevel();
+  // scopeCheck reports a failed scope check or a thrown sync through
+  // process.exitCode = 1. A background refresh must leave the exit code alone,
+  // as it does for an unsuccessful sync below, or one transient failure would
+  // make the later clean Ctrl+C exit of `syncrona dev` report a failure.
+  const previousExitCode = process.exitCode;
   await scopeCheck(async () => {
     if (!log) logger.setLogLevel("warn");
     try {
@@ -90,4 +95,5 @@ export async function refreshCommand(
       if (!log) logger.setLogLevel(previousLogLevel);
     }
   });
+  if (!log) process.exitCode = previousExitCode;
 }

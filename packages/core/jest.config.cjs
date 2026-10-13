@@ -232,7 +232,7 @@ module.exports = {
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 98.02 / 96.66
-    './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
+    './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.65
     './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 93.02
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
