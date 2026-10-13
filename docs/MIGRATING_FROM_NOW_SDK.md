@@ -210,12 +210,12 @@ Being honest about the gaps:
 - **Injecting a pre-issued session or bearer token** (`SN_SDK_SESSION_*`) is
   not supported. syncrona always authenticates from a stored or environment
   credential.
-- **Live-instance verification is pending for the 1.1.0 write paths.**
-  `push --create` / `--prune`, `init --new`, the `cicd` actions,
-  `fluent install` and the data-model round-trip are covered by mocked tests,
-  but they have not yet been run against a live instance. The read paths
-  (including the vendor-prefix lookup) have been. Try them on a
-  non-production instance first, with `--dry-run` where the command supports
+- **Some 1.1.0 write paths are verified by mocked tests only.**
+  `push --create` / `--prune`, `init --new`, the data-model sidecars,
+  `cicd run-suite` / `run-test`, `fluent install` and the read paths were run
+  against a live instance on 2026-10-13. `cicd install` / `publish` /
+  `rollback`, `fluent move-to-app` and the composite data-model layout have not
+  been yet. Try those on a non-production instance first, with `--dry-run` where the command supports
   it (`push`, `init`, `fluent move-to-app`); `cicd` has no preview mode and
   refuses `--dry-run`.
 

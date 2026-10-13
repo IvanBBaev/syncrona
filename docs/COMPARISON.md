@@ -71,7 +71,8 @@ Versus the ServiceNow SDK specifically:
 - **Data-model records are opt-in.** A table, its columns and its choices are
   tracked as separate sidecars, or as one document per table with
   `dataModelLayout: "composite"` (opt-in `dataModelTables`, see
-  [DATA_MODEL.md](DATA_MODEL.md)). The live round-trip is still pending.
+  [DATA_MODEL.md](DATA_MODEL.md)). The sidecar layout has been round-tripped
+  against a live instance; the composite layout has not yet.
 - **API-key profiles do not reach the `fluent` tier.** The SDK's install,
   reinstall and update-set export endpoints accept only a UI session, so only
   Basic and OAuth profiles work for instance-side `fluent` actions. A mutual-TLS
@@ -81,7 +82,8 @@ Versus the ServiceNow SDK specifically:
   --native` generates table types from `sys_dictionary` without it, but the
   `--scripts` / `--fluent` definitions still need the SDK, and so do
   `fluent explain` (the SDK's bundled documentation) and `fluent move-to-app`.
-- **Live-instance verification is pending for the 1.1.0 write paths:**
-  `push --create` / `--prune`, `init --new`, `cicd`, `fluent install` and the
-  data-model round-trip are covered by mocked tests but have not yet been run
-  against a live instance.
+- **Some 1.1.0 write paths are verified by mocked tests only.**
+  `push --create` / `--prune`, `init --new`, the data-model sidecars,
+  `cicd run-suite` / `run-test` and `fluent install` were run against a live
+  instance on 2026-10-13. `cicd install` / `publish` / `rollback`,
+  `fluent move-to-app` and the composite data-model layout have not been yet.

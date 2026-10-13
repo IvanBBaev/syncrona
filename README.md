@@ -36,12 +36,12 @@ Because your scoped-app code is downloaded as plain, editable files in a project
 > `syncrona fluent` (which drives `@servicenow/sdk` when you install it). See
 > [docs/MIGRATING_FROM_NOW_SDK.md](docs/MIGRATING_FROM_NOW_SDK.md) for the
 > command and environment-variable mapping and the honest list of what is not
-> covered yet. These parity commands are covered by unit and integration tests
-> against mocked instance responses, but `push --create` / `--prune`, `cicd`,
-> `init --new` and the Fluent commands that reach the instance or the SDK
-> (`fluent explain`, `fluent move-to-app`, the `sync_fluent_build` MCP tool) are
-> **not yet verified against a live instance**. Try them on a development
-> instance first.
+> covered yet. `push --create` / `--prune`, `init --new`, the data-model
+> sidecars, `cicd run-suite` / `run-test`, `fluent install` and `query` were
+> verified against a live instance on 2026-10-13. Still covered only by mocked
+> tests: `cicd install` / `publish` / `rollback`, `fluent move-to-app`, the
+> `sync_fluent_build` MCP tool and the composite data-model layout. Try those
+> on a development instance first.
 
 **Project documentation**
 

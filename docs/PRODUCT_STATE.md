@@ -14,7 +14,7 @@
 | Coverage | core **97.85%** lines / 88.51% branches; mcp **97.87%** lines / 91.31% branches; mirror **100%** on all four axes (re-measured 2026-08-25) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
 | Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). Dev dependencies are audited too since 2026-08-25 — the full tree is also **0 vulnerabilities** (was 11: 5 low, 3 moderate, 3 high, all dev-only), gated in `ci.yml` by a blocking `npm audit --audit-level=high` plus a non-blocking low+moderate report; see [Dependency audit posture](../SECURITY.md#dependency-audit-posture) for why the two trees have different thresholds |
 | Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
-| Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, live-instance verification of the 1.1.0 write paths (`push --create`/`--prune`, `init --new`, `cicd`, `fluent install`, data-model round-trip), DX backlog (DX1–DX24) |
+| Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, live-instance verification of the remaining 1.1.0 write paths (`cicd install`/`publish`/`rollback`, `fluent move-to-app`, composite data-model layout, mutual TLS), DX backlog (DX1–DX24) |
 
 ## Metrics snapshot (2026-06-12)
 
@@ -68,16 +68,16 @@ timeline
 
 | Command | State | Notes |
 |---|---|---|
-| `init` | ✅ | wizard, or non-interactive all-scope bootstrap when `.env` present; `init --new` creates a new scoped application (`sys_app`) and binds the directory to it (1.1.0, live-instance verification pending) |
+| `init` | ✅ | wizard, or non-interactive all-scope bootstrap when `.env` present; `init --new` creates a new scoped application (`sys_app`) and binds the directory to it (1.1.0, verified live 2026-10-13) |
 | `download <scope>` | ✅ | scoped endpoint with full Table-API fallback (paginated, chunked) |
 | `refresh` / `dev` | ✅ | manifest sync + watch mode; serialized watcher queue, overlap-guarded interval |
-| `push` | ✅ | confirm → atomic collaboration lock → checkpoint/resume → concurrent push; `--diff`, `--dry-run`, `--ci`, `--updateSet`, `--scopeSwap`; `--create` creates or adopts records for unmapped files and `--prune` deletes in-scope records whose files were all removed (1.1.0, live-instance verification pending) |
+| `push` | ✅ | confirm → atomic collaboration lock → checkpoint/resume → concurrent push; `--diff`, `--dry-run`, `--ci`, `--updateSet`, `--scopeSwap`; `--create` creates or adopts records for unmapped files and `--prune` deletes in-scope records whose files were all removed (1.1.0, verified live 2026-10-13) |
 | `build` / `deploy` | ✅ | plugin pipeline (babel/ts/webpack/sass/prettier) → build dir → deploy |
 | `docs` | ✅ | per-scope Markdown + mermaid docs generated from the manifest |
 | `repair` | ✅ | reconciles the manifest with local files; report-only by default, `--apply` re-downloads, `--apply --prune` deletes orphan files git holds committed and unchanged (never records awaiting `push --create` or files of unlisted tables; refused without git evidence) |
 | `query <table>` | ✅ | read-only Table API query with the `now-sdk query` flag set and its `-o json` envelope (1.1.0) |
-| `cicd <action>` | ✅ | `sn_cicd` driver: ATF suite/test runs and app-repo install/publish/rollback with exit codes 0/1/2 (1.1.0, live-instance verification pending) |
-| `fluent <action>` | ✅ | Fluent (`.now.ts`) toolchain through the optional `@syncrona/fluent` + `@servicenow/sdk` tier; Basic and OAuth profiles only (1.1.0, live install pending) |
+| `cicd <action>` | ✅ | `sn_cicd` driver: ATF suite/test runs and app-repo install/publish/rollback with exit codes 0/1/2 (1.1.0; `run-suite`/`run-test` verified live 2026-10-13, app-repo actions mocked only) |
+| `fluent <action>` | ✅ | Fluent (`.now.ts`) toolchain through the optional `@syncrona/fluent` + `@servicenow/sdk` tier; Basic and OAuth profiles only (1.1.0; `install`/`status`/`types`/`explain` verified live 2026-10-13, `move-to-app` mocked only) |
 | `mirror <action>` | ✅ | full-instance git mirror (`init`, `sync`, `status`, `verify`, `report`), GET-only |
 | `status` / `doctor` / `plugins` | ✅ | diagnostics, connectivity, plugin-rule report |
 | `check-env` / `config <action>` / `completion [shell]` | ✅ | machine prerequisites, config inspection and plugin snippets, bash/zsh completion |
@@ -226,9 +226,11 @@ mindmap
    tests against an instance (G11).
 5. **now-sdk parity follow-ups (1.1.0)** — the commands that close the gap to the
    ServiceNow SDK (`push --create`/`--prune`, `init --new`, `query`, `cicd`,
-   `fluent`, opt-in data-model records) are covered by mocked tests, but the
-   instance writes have not yet been verified against a live instance (the
-   WP-0 spike verified the read paths only). Still open past 1.1.0: API-key
+   `fluent`, opt-in data-model records) were verified against a live instance on
+   2026-10-13 (`push --create`/`--prune`, `init --new`, data-model sidecars,
+   `cicd run-suite`/`run-test`, `fluent install`, `query`); `cicd install`/
+   `publish`/`rollback`, `fluent move-to-app` and the composite layout are
+   covered by mocked tests only. Still open past 1.1.0: API-key
    profiles in the Fluent tier (mutual TLS with a Basic or OAuth profile is
    supported, but not yet verified against an instance that enforces it). The opt-in composite data-model
    layout (`dataModelLayout: "composite"`) has shipped. Native type generation from

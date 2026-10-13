@@ -23,7 +23,7 @@ decisions (incl. npm publish, which is owner-gated).
 The v1.1.0 parity epic (ROADMAP "v1.1.0 — now-sdk parity", R1–R8) shipped with
 mocked tests. These items close what it deliberately left open.
 
-- [ ] **SDK-F1. Live PDI verification of the 1.1.0 write paths** — run
+- [x] **SDK-F1. Live PDI verification of the 1.1.0 write paths** — run
   `push --create` / `--no-create`, `push --prune` (including the decline path,
   exit 130), `init --new` (`sys_app` create and directory binding), every
   `cicd` action (and the `sync_cicd_run` MCP tool), `fluent install` / `--reinstall`, and the opt-in
@@ -49,6 +49,22 @@ mocked tests. These items close what it deliberately left open.
     create wrote a `name` column the table lacks. Fixed: a step is named by sys_id
     (as download already named it), a create sets that sys_id, and any other
     folder name is refused before a request.
+  - Write paths verified live 2026-10-09 to 2026-10-13 on the same vendor
+    instance: `init --new` (dry run, invalid vendor prefix, create and binding),
+    `push --create` (create, adopt, deny list, edit), `push --prune` (dry run,
+    decline with exit 130, `--diff`, `--ci`), the data-model sidecars (create,
+    column PATCH, unknown-key refusal, prune refusal), `repair` (it keeps the
+    sidecars of a deleted table as `push --create` candidates, as documented),
+    `cicd run-suite` / `run-test` (pass 0, fail 2, `--dry-run` refused, timeout,
+    `--progress-id` resume), `sync_cicd_run` (unconfirmed call refused, fail,
+    pass, resume), `fluent init` / `build` / `install` / `status` /
+    `types --native` / `explain --list`, and `query`.
+  - Not run live: `cicd install` / `publish` / `rollback` (owner decision: they
+    act on the shared instance's app repository), `--reinstall`,
+    `fluent move-to-app`, `sync_fluent_build`, the composite data-model layout
+    and mutual TLS (no client certificate); all stay covered by mocked tests.
+  - Found live: a `cicd` poll that timed out printed the "Network issue" hint.
+    Fixed: a timeout hints only from the last failed poll, if any.
 - [x] **SDK-F2. Composite data-model documents** — one parent-plus-children
   document per table (table, columns, choices) on top of the independent
   sidecar records shipped in 1.1.0; push must stay idempotent and ordered.
@@ -60,7 +76,7 @@ mocked tests. These items close what it deliberately left open.
   keeps the SDK as the default and falls back to native generation when the
   adapter or the SDK is missing (unless `--scripts`/`--fluent` asks for
   SDK-only definitions). Works with API-key and mutual-TLS profiles. Covered by
-  mocked Table API tests; not yet run against a live instance.
+  mocked Table API tests; verified live 2026-10-05 and 2026-10-13.
 - [ ] **SDK-F4. API-key profiles in the Fluent tier** — instance-side `fluent`
   actions refuse API-key profiles because the SDK's install, reinstall and
   update-set export endpoints accept only a UI session. Revisit when the SDK's
@@ -85,7 +101,7 @@ mocked tests. These items close what it deliberately left open.
   the same `api/sn_cicd` requests as `syncrona cicd` through `servicenowCore.ts`
   (native fetch, no core import), behind `confirmDestructive` / `dryRun` /
   audit, with the outcome mapped to `succeeded` / `failed` / `incomplete` and
-  the CLI exit code. Mocked tests only; the live run is part of SDK-F1.
+  the CLI exit code. Verified live 2026-10-13 (SDK-F1).
 - [x] **SDK-F6. `sync_fluent_build` MCP tool** — deferred from WP-8. Done: the
   63rd MCP tool (`handlers/fluentHandlers.ts`, registry module `fluent`) builds
   a Fluent project through `@syncrona/fluent`, resolved lazily at call time from
