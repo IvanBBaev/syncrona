@@ -5,6 +5,7 @@ import { isSafeRemoteEndpoint } from "../endpointPolicy";
 import { runBackgroundScript, snRequest, summarizeRows, toTableResultRows } from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
+import { describeNonTablePayload } from "./insightShared";
 
 type ServiceNowCrudContext = {
   timeoutMs: number;
@@ -98,6 +99,17 @@ export async function handleServiceNowCrudTool(
         undefined,
         timeoutMs
       );
+
+      // A login or maintenance page served with a 2xx carries no rows; read as
+      // an empty result it would answer the query with "nothing matched".
+      const statusOk = response.status >= 200 && response.status <= 299;
+      const badPayload = statusOk ? describeNonTablePayload(response.status, response.data) : null;
+      if (badPayload) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Query on ${table} returned ${badPayload}.` }],
+        };
+      }
 
       const allRows = toTableResultRows(response.data);
       const truncated = allRows.length > limit;

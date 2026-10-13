@@ -60,3 +60,30 @@ test('sn_query_records does not report truncated when the matches exactly fill t
   assert.equal(body.rowCount, 10);
   assert.equal(body.truncated, false);
 });
+
+test('sn_query_records reports a login page served with 200 as an error, not an empty result', async () => {
+  const old = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+  process.env.SN_INSTANCE = 'dev123.service-now.com';
+  process.env.SN_USER = 'admin';
+  process.env.SN_PASSWORD = 'secret';
+  clearServiceNowSecretsCache();
+  clearScopedApiPrefixCache();
+  global.fetch = async () => ({ status: 200, text: async () => '<html><body>Log in</body></html>' });
+  try {
+    const res = await handleServiceNowCrudTool(
+      'sn_query_records',
+      { table: 'incident', limit: 10 },
+      { timeoutMs: 1000, dryRun: false, startedAt: Date.now() }
+    );
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /Query on incident returned HTTP 200 with a non-JSON body/);
+  } finally {
+    global.fetch = REAL_GLOBAL_FETCH;
+    for (const k of KEYS) {
+      if (old[k] === undefined) delete process.env[k];
+      else process.env[k] = old[k];
+    }
+    clearServiceNowSecretsCache();
+    clearScopedApiPrefixCache();
+  }
+});
