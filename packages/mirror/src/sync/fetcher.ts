@@ -288,6 +288,8 @@ interface TableWalk {
   rowsFetched: number;
   pages: number;
   seenColumns: Set<string>;
+  /** Whether the walk started after a resume cursor, so rows before it went uncounted. */
+  resumed: boolean;
 }
 
 /**
@@ -307,11 +309,13 @@ export async function fetchSweep(options: FetchSweepOptions): Promise<SweepFetch
 
   for (const [index, job] of jobs.entries()) {
     const table = job.planned.entry.name;
+    const resumeCursor = options.resumeCursors?.[table] ?? null;
     const walk: TableWalk = {
-      cursor: options.resumeCursors?.[table] ?? null,
+      cursor: resumeCursor,
       rowsFetched: 0,
       pages: 0,
       seenColumns: new Set<string>(),
+      resumed: resumeCursor !== null,
     };
 
     let failure: MirrorHttpError | null = null;
@@ -457,9 +461,12 @@ function completedOutcome(job: TableJob, walk: TableWalk): TableFetchOutcome {
   // F3 without a 403: the Aggregate count says there are rows this credential cannot
   // see. Only meaningful for a full sweep — a watermark read is *supposed* to return
   // fewer rows than the table holds, and applying this there would mark every
-  // incremental run partial.
+  // incremental run partial. A resumed walk is exempt for the same reason: the rows
+  // before its cursor were read by an earlier run and are not in `rowsFetched`, so
+  // comparing it against the whole table's count would report them as invisible.
   if (
     job.planned.strategy === "sweep" &&
+    !walk.resumed &&
     expectedRows !== null &&
     walk.rowsFetched < expectedRows
   ) {

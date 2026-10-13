@@ -666,6 +666,22 @@ describe("fetchSweep failure taxonomy", () => {
     });
   });
 
+  it("F3: a resumed full sweep is not partial for the rows read before its cursor", async () => {
+    // The rows up to the resume cursor were read by the interrupted run, so this
+    // walk sees only the tail. Grading the tail against the whole table's count
+    // would report the head as hidden by an ACL.
+    const source = new ScriptedSource({ alpha: [{ rows: [wireRow(4), wireRow(5)] }] });
+
+    const result = await fetchSweep({
+      client: source,
+      plan: [sweep("alpha", { rowCount: 5 })],
+      onRow: () => undefined,
+      resumeCursors: { alpha: sysId(3) },
+    });
+
+    expect(outcomeFor(result, "alpha")).toMatchObject({ status: "complete", rowsFetched: 2 });
+  });
+
   it("F3: a watermark read is never partial for returning fewer rows than the table holds", async () => {
     // An incremental read is SUPPOSED to return a fraction of the table. Applying
     // the shortfall detector here would mark every incremental run partial and make
