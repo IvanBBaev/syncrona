@@ -160,7 +160,12 @@ export async function statusCommand(
             "Scoped SyncroNow AI API is unavailable on this instance. Using Table API compatibility mode; current session scope could not be verified."
           );
         } else {
-          throw e;
+          // The connection check passed, so this is not a connection failure.
+          errors.push(
+            e instanceof Error && e.message.trim()
+              ? `Could not read the current session scope: ${e.message}`
+              : "Could not read the current session scope."
+          );
         }
       }
     } catch (e) {

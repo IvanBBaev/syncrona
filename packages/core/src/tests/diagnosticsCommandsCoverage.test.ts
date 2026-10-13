@@ -239,15 +239,23 @@ describe("statusCommand", () => {
     expect(summary.ok).toBe(true);
   });
 
-  it("rethrows a non-scoped scope error and records it as a connection failure (line 122)", async () => {
+  it("reports a non-scoped scope error as a scope lookup failure, not a connection failure", async () => {
     mockUnwrapSNResponse.mockRejectedValueOnce(new Error("boom deep in scope"));
     mockIsScopedUnavailable.mockReturnValue(false);
     const { statusCommand } = await import("../diagnosticsCommands.js");
     const summary = await statusCommand({ logLevel: "info" } as never);
-    // connectivityOk was already set true before the scope lookup ran, so the
-    // rethrow into the outer catch only appends an error — it does not reset it.
+    // The connection check already passed; only the scope lookup failed.
     expect(summary.connectivityOk).toBe(true);
-    expect(summary.errors.some((e) => e.includes("boom deep in scope"))).toBe(true);
+    expect(summary.errors).toEqual(["Could not read the current session scope: boom deep in scope"]);
+  });
+
+  it("reports a bare scope lookup failure when the error has no text", async () => {
+    mockUnwrapSNResponse.mockRejectedValueOnce("   ");
+    mockIsScopedUnavailable.mockReturnValue(false);
+    const { statusCommand } = await import("../diagnosticsCommands.js");
+    const summary = await statusCommand({ logLevel: "info" } as never);
+    expect(summary.connectivityOk).toBe(true);
+    expect(summary.errors).toEqual(["Could not read the current session scope."]);
   });
 
   it("reports a bare connection-failure message when the error has no text", async () => {
