@@ -189,8 +189,13 @@ async function sampleSourceTreeAsync(rootDir: string): Promise<SourceTreeSample>
  * The index is stale when a source file was modified after the index was built,
  * or when sources have disappeared since (REV-155) — this catches out-of-band
  * edits, deletions and bootstrap downloads that the tool-triggered invalidation
- * allowlist misses. Returns false when nothing is built yet (the primary guard
- * handles that) or when freshness cannot be determined.
+ * allowlist misses. Returns false when freshness cannot be determined.
+ *
+ * REV-213: `_builtIndex` is a compile-time witness, not an input. "Nothing built
+ * yet" is the primary guard's answer, so every caller must check the index first; a
+ * caller that forgot would compare the sample against a builtAt of 0 and force a
+ * rebuild loop. Requiring the non-null index makes that a type error instead of an
+ * unreachable runtime branch (which V8 counted inconsistently across runners).
  *
  * Honest limit: an edit that leaves the file count unchanged AND back-dates the
  * mtime below builtAt (restoring a backup in place, or a checkout that preserves
@@ -198,18 +203,7 @@ async function sampleSourceTreeAsync(rootDir: string): Promise<SourceTreeSample>
  * later edit recovers. Detecting it would need a content hash of the whole tree
  * on every read, which is exactly the cost this poll exists to avoid.
  */
-function isSampleStale(sample: SourceTreeSample): boolean {
-  // REV-213: unreachable by construction, kept as a guard rather than deleted. The
-  // only caller is the `||` chain in getSemanticIndex, which tests `!LAST_SEMANTIC_INDEX`
-  // first and short-circuits, plus isSemanticIndexStaleAsync, which returns on the same
-  // condition before it gets here. Deliberately NOT covered: driving it would mean
-  // exporting a private predicate purely so a test could call it in a state no caller can
-  // produce. It stays because "nothing built yet" is the primary guard's answer, not this
-  // one's, and a future caller that forgets the check should get "not stale" rather than
-  // compare a sample against a builtAt of 0 and force a rebuild loop.
-  if (!LAST_SEMANTIC_INDEX) {
-    return false;
-  }
+function isSampleStale(_builtIndex: readonly SemanticSymbol[], sample: SourceTreeSample): boolean {
   // Any change in the count is stale, not only a drop: a file moved in with `mv`,
   // copied with `cp -p` or unpacked from an archive keeps its older mtime, so a
   // grown count is the only sign its symbols are missing from the index.
@@ -225,14 +219,10 @@ function isSampleStale(sample: SourceTreeSample): boolean {
   return sample.newestMtimeMs > LAST_SEMANTIC_INDEX_BUILT_AT;
 }
 
-async function isSemanticIndexStaleAsync(projectDir: string): Promise<boolean> {
-  // REV-213: unreachable by construction, same reasoning as isSampleStale above — the
-  // sole caller is the `&&` chain in getSemanticIndexAsync, whose first operand is
-  // `LAST_SEMANTIC_INDEX`, so a null index never reaches this call. Left uncovered on
-  // purpose.
-  if (!LAST_SEMANTIC_INDEX) {
-    return false;
-  }
+async function isSemanticIndexStaleAsync(
+  builtIndex: readonly SemanticSymbol[],
+  projectDir: string
+): Promise<boolean> {
   // REV-156: a burst of tool calls polls the same unchanged workspace; reuse the
   // last answer inside a short window so the walk is amortized instead of paid per
   // call. Every publish/invalidation resets the window, so the delay only ever
@@ -242,7 +232,7 @@ async function isSemanticIndexStaleAsync(projectDir: string): Promise<boolean> {
   if (LAST_STALENESS_POLL_AT !== 0 && now - LAST_STALENESS_POLL_AT < STALENESS_POLL_INTERVAL_MS) {
     return LAST_STALENESS_POLL_RESULT;
   }
-  const stale = isSampleStale(await sampleSourceTreeAsync(projectDir));
+  const stale = isSampleStale(builtIndex, await sampleSourceTreeAsync(projectDir));
   LAST_STALENESS_POLL_AT = Date.now();
   LAST_STALENESS_POLL_RESULT = stale;
   return stale;
@@ -256,12 +246,12 @@ export function getSemanticIndex(projectDir: string = PROJECT_DIR): SemanticSymb
   // One walk answers both questions: is the cache stale, and what did the tree look
   // like when this build started.
   const sample = sampleSourceTree(projectDir);
-  if (!LAST_SEMANTIC_INDEX || LAST_SEMANTIC_INDEX_DIRTY || isSampleStale(sample)) {
-    const nextIndex = buildSemanticIndexFromWorkspace(projectDir);
-    commitSemanticIndex(nextIndex, { startedAt, epoch, fileCount: sample.fileCount });
+  if (LAST_SEMANTIC_INDEX && !LAST_SEMANTIC_INDEX_DIRTY && !isSampleStale(LAST_SEMANTIC_INDEX, sample)) {
+    return LAST_SEMANTIC_INDEX;
   }
-
-  return LAST_SEMANTIC_INDEX || [];
+  const nextIndex = buildSemanticIndexFromWorkspace(projectDir);
+  commitSemanticIndex(nextIndex, { startedAt, epoch, fileCount: sample.fileCount });
+  return nextIndex;
 }
 
 /**
@@ -279,7 +269,7 @@ export async function getSemanticIndexAsync(
   if (
     LAST_SEMANTIC_INDEX &&
     !LAST_SEMANTIC_INDEX_DIRTY &&
-    !(await isSemanticIndexStaleAsync(projectDir))
+    !(await isSemanticIndexStaleAsync(LAST_SEMANTIC_INDEX, projectDir))
   ) {
     return LAST_SEMANTIC_INDEX;
   }

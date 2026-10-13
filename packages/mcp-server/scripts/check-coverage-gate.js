@@ -194,7 +194,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Seven entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Six entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
@@ -216,7 +216,11 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // on BOTH runners; `semanticIndexState.js` has since become the first entry where the
 // platforms split — ubuntu counts two branch ranges that darwin never reports (65/69
 // against 63/67, with a byte-identical uncovered-line list), so its ubuntu reading is
-// declared below exactly like the run-to-run flickers. `servicenowCore.js` is the
+// declared exactly like the run-to-run flickers. It later reported a THIRD reading on
+// ubuntu (94.52 / 94.59 / 94.74, same uncovered lines), so the two unreachable REV-213
+// guards that carried the flicker were replaced by a compile-time witness and the
+// module now measures 100 / 98.59 with no declared second reading — its only uncovered
+// branch is tsc's `__importDefault` helper. `servicenowCore.js` is the
 // second, and it split on a commit that touched neither the module nor its tests: the
 // same +2/+2 shape (265/289 against 263/287), the same byte-identical uncovered-line
 // list, and one extra function range on top (62/64 against 61/64). Those four counters
@@ -367,7 +371,7 @@ const MODULE_FLOORS = [
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
   // once its prune's two load-bearing catches were driven on purpose. A module that
   // jumps and is not pinned can fall back just as far under the defaults.
-  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.74 / 94.52 (also 98.74 / 94.59: V8 range granularity, 69/73 vs 70/74 branches, macOS vs ubuntu-latest on unchanged source, uncovered lines 203-204 223-224 in both readings)
+  { pattern: 'dist/semanticIndexState.js', line: 97, branch: 95 }, // measured 100.00 / 98.59
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
   { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.93 / 93.62
   // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
