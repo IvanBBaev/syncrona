@@ -243,7 +243,7 @@ module.exports = {
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
     './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.77 / 94.98
     // Reads records for `query -o json`, whose envelope scripts parse.
-    './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.46 / 96.10
+    './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.53 / 96.20
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
     './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.72 / 98.51

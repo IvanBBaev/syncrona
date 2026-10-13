@@ -148,6 +148,13 @@ export async function runQuery(
   if (typeof args.query !== "string") {
     throw new Error("--query (-q) is required; pass an encoded query such as `active=true`.");
   }
+  // An empty encoded query matches every row, so a blank -q would page through the
+  // whole table; a full-table read has to be asked for explicitly.
+  if (!args.query.trim()) {
+    throw new Error(
+      "--query (-q) is empty; pass an encoded query such as `active=true` (use `sys_idISNOTEMPTY` to match every record)."
+    );
+  }
   const limit = requireInteger("limit", args.limit ?? QUERY_DEFAULT_LIMIT, 1);
   const offset = requireInteger("offset", args.offset ?? 0, 0);
   // At least 1 ms: axios reads a timeout of 0 as "never time out".

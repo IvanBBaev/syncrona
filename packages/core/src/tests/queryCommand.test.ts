@@ -141,6 +141,8 @@ describe("runQuery", () => {
     [{ table: "inc%2Fident" }, /is not a table name/],
     [{ table: "  " }, /table name is required/],
     [{ query: undefined }, /--query \(-q\) is required/],
+    [{ query: "" }, /--query \(-q\) is empty/],
+    [{ query: "  " }, /--query \(-q\) is empty/],
   ])("refuses %p before any request", async (over, message) => {
     const { tableAPIGet, client } = makeClient(async () => respond({ result: [] }));
     await expect(runQuery(client, baseArgs(over as Partial<QueryArgs>))).rejects.toThrow(message);
