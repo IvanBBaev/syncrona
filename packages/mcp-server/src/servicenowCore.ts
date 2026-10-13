@@ -1263,6 +1263,23 @@ export function describeNonTablePayload(status: number, data: unknown): string |
   );
 }
 
+// A session that expired or was never accepted is answered with the login form
+// and a 2xx status. Only a non-JSON body is checked, and only for the form's
+// markup (a password input or a form posting to login.do): script output that
+// merely mentions login.do is HTML-escaped by sys.scripts.do and plain JSON
+// from the scoped API, so it does not match.
+export function describeLoginPage(data: unknown): string | null {
+  if (typeof data !== "string") {
+    return null;
+  }
+  const isLoginForm =
+    /<input\b[^>]*\bname\s*=\s*["']user_password["']/i.test(data) ||
+    /<form\b[^>]*\baction\s*=\s*["'][^"']*login\.do/i.test(data);
+  return isLoginForm
+    ? "the instance answered with its login page; the credentials or session were not accepted"
+    : null;
+}
+
 // The single-record counterpart of describeNonTablePayload, for a POST or PATCH
 // whose Table API answer is `result` as one object. A 2xx without a record that
 // carries a sys_id (a login page, an empty body, a proxy's JSON) means nothing is

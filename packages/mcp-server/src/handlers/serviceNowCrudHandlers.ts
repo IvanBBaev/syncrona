@@ -3,6 +3,7 @@ import { toJsonText, trimOutput } from "../runtimeUtils";
 import { evaluateCreateTablePolicy } from "../createTablePolicy";
 import { isSafeRemoteEndpoint } from "../endpointPolicy";
 import {
+  describeLoginPage,
   describeNonRecordPayload,
   runBackgroundScript,
   snRequest,
@@ -280,18 +281,23 @@ export async function handleServiceNowCrudTool(
       }
 
       const response = await runBackgroundScript(script, timeoutMs, endpointPath);
+      // A 2xx login page means the script never ran; its status alone would
+      // report it as executed with empty output.
+      const loginPage = describeLoginPage(response.data);
       context.auditMutatingTool(toolName, args, {
         status: response.status,
         usedEndpoint: response.usedEndpoint,
+        ...(loginPage ? { error: loginPage } : {}),
       }, Date.now() - startedAt);
       return {
-        isError: response.status < 200 || response.status > 299,
+        isError: response.status < 200 || response.status > 299 || loginPage !== null,
         content: [
           {
             type: "text",
             text: toJsonText({
               status: response.status,
               usedEndpoint: response.usedEndpoint,
+              ...(loginPage ? { error: `The script did not run: ${loginPage}.` } : {}),
               data: response.data,
               text: trimOutput(response.text),
             }),
