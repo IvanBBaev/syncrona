@@ -352,7 +352,7 @@ const MODULE_FLOORS = [
   // covered lines under one unchanged uncovered line (17, `trimOutput`'s truncation
   // arm) is exactly 103/104 -> 110/111. Branch coverage did not move at all, which is
   // what a comment-only change should do.
-  { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.10 / 77.27
+  { pattern: 'dist/runtimeUtils.js', line: 96, branch: 73 }, // measured 99.10 / 76.19 (also 99.10 / 77.27: V8 range granularity, 16/21 vs 17/22 branches, source unchanged)
   // Anything that starts a process or a listener, plus the handlers that actually
   // mutate the instance.
   { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.19 / 91.89
