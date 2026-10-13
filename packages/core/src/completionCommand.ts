@@ -97,6 +97,11 @@ export function renderZshCompletionScript(
     "  )",
     "  if (( CURRENT == 2 )); then",
     "    _describe -t commands 'syncrona command' commands",
+    // A compdef function owns every word of the command line: adding no
+    // matches past the first word leaves `syncrona push ./<TAB>` with nothing,
+    // where the bash script falls back to filenames (`-o default`).
+    "  else",
+    "    _files",
     "  fi",
     "  return 0",
     "}",

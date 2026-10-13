@@ -95,6 +95,13 @@ describe("completionCommand", () => {
       expect(script).not.toBe(renderBashCompletionScript(CLI_COMMANDS));
     });
 
+    it("completes filenames past the command word, as the bash script does", () => {
+      const script = renderZshCompletionScript(CLI_COMMANDS);
+      expect(script).toMatch(
+        /if \(\( CURRENT == 2 \)\); then\n\s+_describe [^\n]+\n\s+else\n\s+_files\n\s+fi/
+      );
+    });
+
     it("escapes single quotes and colons inside command descriptions", () => {
       const synthetic: CliCommandModule[] = [
         {
