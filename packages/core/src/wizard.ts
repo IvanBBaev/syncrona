@@ -363,7 +363,9 @@ export async function downloadApp(
       }
     }
 
-    if (countManifestFiles(man) === 0) {
+    // Only an empty answer from the scoped endpoint warrants the Table-API
+    // build; an empty Table-API build would just repeat the same sweep.
+    if (fromScopedEndpoint && countManifestFiles(man) === 0) {
       logger.info("Custom endpoint returned empty manifest — building from Table API...");
       fromScopedEndpoint = false;
       man = await buildManifestFromTableAPI(scope, client, config, { allowEmpty });

@@ -233,7 +233,7 @@ module.exports = {
     './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 98.02 / 96.66
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.65
-    './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 93.02
+    './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 93.18
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)

@@ -341,6 +341,25 @@ describe("downloadApp edges", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("100% (0/0)"));
   });
 
+  it("builds an empty Table-API manifest once when the scoped endpoint is unavailable", async () => {
+    const empty = { scope: "x_new", tables: {} };
+    mockUnwrapSNResponse.mockRejectedValueOnce({ response: { status: 404 } });
+    mockBuildManifestFromTableAPI.mockResolvedValue(empty);
+    const client = { getManifest: jest.fn() };
+
+    const { downloadApp } = await import("../wizard.js");
+    const man = await downloadApp("x_new", client as never, { justCreated: true, scopeId: "sys-1" });
+
+    expect(man).toEqual({ scope: "x_new", tables: {}, scopeId: "sys-1" });
+    // The Table-API answer is already the fallback: a second sweep of every
+    // table would repeat the same requests and report the custom endpoint as
+    // having returned an empty manifest, which it never did.
+    expect(mockBuildManifestFromTableAPI).toHaveBeenCalledTimes(1);
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+      "Custom endpoint returned empty manifest — building from Table API..."
+    );
+  });
+
   it.each([
     ["no scopeId", { justCreated: true }],
     ["an empty scopeId", { justCreated: true, scopeId: "" }],
