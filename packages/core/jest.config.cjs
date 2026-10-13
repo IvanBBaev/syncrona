@@ -220,7 +220,7 @@ module.exports = {
     // Transport: auth headers, retries and the request surface every command uses.
     './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.73 / 95.59
     // Credentials: the keychain/file store and the auth-method picker.
-    './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 99.50
+    './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
     './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/config.ts': { lines: 96, branches: 91 }, // measured 99.58 / 96.62

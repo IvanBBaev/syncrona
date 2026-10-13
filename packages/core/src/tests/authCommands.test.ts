@@ -405,6 +405,39 @@ describe("loginCommand", () => {
     expect(env).not.toContain("OLD-KEY");
   });
 
+  it("leaves .env to the upsert alone when re-login with the same method has nothing stale", async () => {
+    const envPath = `${process.cwd()}/.env`;
+    const files = new Map<string, string>();
+    files.set(envPath, "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_USER=old\nSN_PASSWORD=old\n");
+    files.set(`${process.cwd()}/.gitignore`, ".env\n");
+    mockFsReadFile.mockImplementation(async (p: unknown) => {
+      const content = files.get(String(p));
+      if (content === undefined) {
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }
+      return content;
+    });
+    const envWrites: string[] = [];
+    mockFsWriteFile.mockImplementation(async (p: unknown, data: unknown) => {
+      if (String(p) === envPath) envWrites.push(String(data));
+      files.set(String(p), String(data));
+    });
+
+    await loginCommand({
+      ...BASE_ARGS,
+      instance: "dev123.service-now.com",
+      authMethod: "basic",
+      user: "admin",
+      password: "secret",
+    });
+
+    // One write: the upsert. The stale-key pass found nothing to drop and did
+    // not rewrite the file first.
+    expect(envWrites).toHaveLength(1);
+    expect(envWrites[0]).toContain("FOO=bar");
+    expect(envWrites[0]).toContain("SN_USER=admin");
+  });
+
   it("logs in with the OAuth client-credentials grant from flags", async () => {
     await loginCommand({
       ...BASE_ARGS,
