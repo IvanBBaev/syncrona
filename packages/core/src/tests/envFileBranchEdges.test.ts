@@ -54,6 +54,26 @@ describe("formatEnvValue — nullish input", () => {
   });
 });
 
+describe("formatEnvValue — a value single quotes cannot carry", () => {
+  // dotenv ends a single-quoted value at the first ' followed by a comment, so
+  // 'p' #1' read back as "p": the stored password was silently cut short.
+  it.each(["p' #1", "a'#b", "x '  # y"])("round-trips %p in another quoting", (value) => {
+    const formatted = formatEnvValue(value);
+    expect(dotenv.parse(`K=${formatted}\n`).K).toBe(value);
+  });
+
+  it("falls back to double quotes when the value also holds a backtick", () => {
+    const value = "p' #`1";
+    const formatted = formatEnvValue(value);
+    expect(formatted).toBe(`"${value}"`);
+    expect(dotenv.parse(`K=${formatted}\n`).K).toBe(value);
+  });
+
+  it("refuses a value that no quoting reads back verbatim", () => {
+    expect(() => formatEnvValue("a' #`b\"c")).toThrow(/cannot hold verbatim/);
+  });
+});
+
 describe("upsertEnvVars — line shapes", () => {
   it("leaves comments and non-assignment lines untouched while replacing a key", () => {
     const out = upsertEnvVars("# header\nnot an assignment\nA=1\n", { A: "2" });
@@ -65,9 +85,23 @@ describe("upsertEnvVars — line shapes", () => {
     expect(out).toBe("A=1\nB=2\n");
   });
 
-  it("replaces only the first occurrence of a duplicated key", () => {
-    const out = upsertEnvVars("A=1\nA=old\n", { A: "new" });
-    expect(out).toBe("A=new\nA=old\n");
+  // dotenv lets the last assignment win: keeping a later duplicate would leave
+  // the old value in force after a login or init wrote the new one.
+  it("rewrites the first assignment of a duplicated key and drops the later ones", () => {
+    const out = upsertEnvVars("A=1\nB=x\nA=old\nexport A=older\n", { A: "new" });
+    expect(out).toBe("A=new\nB=x\n");
+    expect(dotenv.parse(out).A).toBe("new");
+  });
+
+  it("leaves the duplicates of a key it does not write alone", () => {
+    const out = upsertEnvVars("B=1\nB=2\n", { A: "new" });
+    expect(out).toBe("B=1\nB=2\nA=new\n");
+  });
+
+  it("replaces an exported key in place and keeps its export prefix", () => {
+    const out = upsertEnvVars("export A=1\nB=2\n", { A: "new" });
+    expect(out).toBe("export A=new\nB=2\n");
+    expect(dotenv.parse(out).A).toBe("new");
   });
 });
 
