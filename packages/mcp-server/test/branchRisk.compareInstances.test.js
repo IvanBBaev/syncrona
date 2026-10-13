@@ -296,3 +296,60 @@ test('a 200 login page from one instance is a per-table error, not an empty side
     assert.deepEqual(tableResult.onlyInA, []);
   });
 });
+
+// Pins: a scope neither instance has read as zero records on both sides and came back
+// as a complete, identical comparison. The scope is looked up only when nothing was read.
+test('a scope missing from an instance is an error when no records were read', async () => {
+  await withTwoStoredProfiles(async () => {
+    const urls = [];
+    global.fetch = async (url) => {
+      urls.push(String(url));
+      if (String(url).includes('/sys_scope?') && String(url).includes(PROFILE_A)) {
+        return mkResponse(200, { result: [{ sys_id: 's1' }] });
+      }
+      return mkResponse(200, { result: [] });
+    };
+
+    const res = await handleCompareInstances(
+      { profileA: PROFILE_A, profileB: PROFILE_B, scope: 'x_acme_typo', tables: ['sys_script_include'] },
+      1000
+    );
+
+    assert.equal(res.isError, true);
+    assert.equal(res.content[0].text, `Scope x_acme_typo is not installed on ${PROFILE_B}; nothing was compared.`);
+    assert.equal(urls.filter((url) => url.includes('/sys_scope?')).length, 2);
+  });
+});
+
+test('an empty scope both instances have is a complete, identical comparison', async () => {
+  await withTwoStoredProfiles(async () => {
+    global.fetch = async (url) =>
+      mkResponse(200, { result: String(url).includes('/sys_scope?') ? [{ sys_id: 's1' }] : [] });
+
+    const res = await handleCompareInstances(
+      { profileA: PROFILE_A, profileB: PROFILE_B, scope: 'x_empty', tables: ['sys_script_include'] },
+      1000
+    );
+
+    assert.equal(res.isError, false);
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(payload.summary.complete, true);
+  });
+});
+
+test('a scope lookup answered with a login page is an error', async () => {
+  await withTwoStoredProfiles(async () => {
+    global.fetch = async (url) =>
+      String(url).includes('/sys_scope?')
+        ? mkResponse(200, '<html><body>Log in</body></html>')
+        : mkResponse(200, { result: [] });
+
+    const res = await handleCompareInstances(
+      { profileA: PROFILE_A, profileB: PROFILE_B, scope: 'x_branch_risk', tables: ['sys_script_include'] },
+      1000
+    );
+
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Could not look up scope x_branch_risk on branchrisk-a/);
+  });
+});

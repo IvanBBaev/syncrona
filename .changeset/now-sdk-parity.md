@@ -152,3 +152,4 @@ now-sdk parity: SyncroNow AI covers the everyday ServiceNow SDK (`now-sdk`) work
 - The terminal progress bar no longer leaves stray characters at the end of the line when its time estimate gets shorter (`~1m 6s leftt`).
 - `sync_compare_instances` treats a 2xx login or maintenance page from either instance as a per-table error. Before, it read the page as "no rows" and listed every record on the other side as missing, under `complete: true`.
 - `sync_compare_instances` reads one row past `limit` on each side, so a scope of exactly `limit` records is no longer reported as truncated and incomplete.
+- `sync_compare_instances` checks that the scope exists when neither instance returned a record, and reports a scope missing from an instance as an error. Before, a mistyped scope came back as a complete, identical comparison.

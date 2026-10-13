@@ -140,6 +140,38 @@ async function fetchScopeScriptRows(
   return { status: response.status, rows: toTableResultRows(response.data), badPayload };
 }
 
+// Whether `scope` is installed on the instance, or an error message when the
+// lookup itself could not be read.
+async function lookupScope(
+  config: { instance: string; user: string; password: string },
+  scope: string,
+  timeoutMs: number
+): Promise<{ found: boolean } | { error: string }> {
+  const params = new URLSearchParams();
+  params.set("sysparm_query", `scope=${escapeQueryValue(scope)}`);
+  params.set("sysparm_fields", "sys_id");
+  params.set("sysparm_limit", "1");
+  try {
+    const response = await snRequestWithConfig(
+      config,
+      "GET",
+      `/api/now/table/sys_scope?${params.toString()}`,
+      undefined,
+      timeoutMs
+    );
+    if (!isSuccessStatus(response.status)) {
+      return { error: `HTTP ${response.status}` };
+    }
+    const badPayload = describeNonTablePayload(response.status, response.data);
+    if (badPayload) {
+      return { error: badPayload };
+    }
+    return { found: toTableResultRows(response.data).length > 0 };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function handleCompareInstances(
   args: Record<string, unknown>,
   timeoutMs: number
@@ -182,6 +214,7 @@ export async function handleCompareInstances(
   let onlyInBCount = 0;
   let differentCount = 0;
   let errorCount = 0;
+  let rowsRead = 0;
   const truncatedTables: string[] = [];
 
   for (const table of tables) {
@@ -263,6 +296,7 @@ export async function handleCompareInstances(
       contentField: config.scriptField,
     });
 
+    rowsRead += resA.rows.length + resB.rows.length;
     onlyInACount += diff.onlyInA.length;
     onlyInBCount += diff.onlyInB.length;
     differentCount += diff.different.length;
@@ -284,6 +318,30 @@ export async function handleCompareInstances(
       truncatedTables.push(table);
     }
     tableResults.push(tableResult);
+  }
+
+  // Zero records on both sides compares as "identical" under `complete: true`,
+  // which is also what a scope neither instance has (a typo) looks like. Only
+  // then is it worth asking the instances whether the scope exists at all.
+  if (rowsRead === 0 && errorCount === 0 && tables.length > 0) {
+    const [scopeA, scopeB] = await Promise.all([
+      lookupScope(configA, scope, timeoutMs),
+      lookupScope(configB, scope, timeoutMs),
+    ]);
+    for (const [profile, lookup] of [[profileA, scopeA], [profileB, scopeB]] as const) {
+      if ("error" in lookup) {
+        return errorResponse(`Could not look up scope ${scope} on ${profile}: ${lookup.error}`);
+      }
+    }
+    const missing = [
+      "found" in scopeA && !scopeA.found ? profileA : "",
+      "found" in scopeB && !scopeB.found ? profileB : "",
+    ].filter((profile) => profile.length > 0);
+    if (missing.length > 0) {
+      return errorResponse(
+        `Scope ${scope} is not installed on ${missing.join(" or ")}; nothing was compared.`
+      );
+    }
   }
 
   return textResponse(
