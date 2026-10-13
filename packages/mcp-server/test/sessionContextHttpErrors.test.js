@@ -51,6 +51,25 @@ test('listScopes surfaces a failed read rather than an empty scope list', async 
   assert.match(result.error.message, /500/);
 });
 
+test('tableGet rejects a 200 login page instead of returning no rows', async () => {
+  const html = '<html><body>Log in to ServiceNow</body></html>';
+  const { result } = await withTransport(
+    () => ({ status: 200, data: html, text: html }),
+    () => sessionContext.listUpdateSets(1000)
+  );
+  assert.ok(result.error instanceof Error, 'an HTML 200 must not read as an empty table');
+  assert.match(result.error.message, /Reading sys_update_set returned HTTP 200 with a non-JSON body/);
+});
+
+test('tableGet rejects a 200 JSON body without a result array', async () => {
+  const { result } = await withTransport(
+    () => ({ status: 200, data: { status: 'maintenance' }, text: '' }),
+    () => sessionContext.tableGet('sys_scope', {}, 1000)
+  );
+  assert.ok(result.error instanceof Error);
+  assert.match(result.error.message, /an unexpected JSON payload/);
+});
+
 // Answers every read with one plausible row; `write` decides the PUT/POST reply.
 function instance(write) {
   return (method, endpoint) => {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { escapeQueryValue, toJsonText } from "../runtimeUtils";
-import { snRequest, toTableResultRows } from "../servicenowCore";
+import { describeNonTablePayload, snRequest, toTableResultRows } from "../servicenowCore";
+
+export { describeNonTablePayload };
 
 import type { ToolResponse } from "../toolResponse";
 
@@ -54,25 +56,6 @@ export function errorResponse(message: string): ToolResponse {
     isError: true,
     content: [{ type: "text", text: message }],
   };
-}
-
-// snRequest falls back to the raw text when a body is not JSON, and
-// toTableResultRows reads anything without a `result` array as no rows. A 2xx
-// that is not a Table API JSON object (a login or maintenance page served as
-// HTML, for instance) must therefore be rejected before it is read as an empty
-// result. Returns a description of the bad payload, or null for a Table API one.
-export function describeNonTablePayload(status: number, data: unknown): string | null {
-  const isTablePayload =
-    !!data && typeof data === "object" && !Array.isArray(data) &&
-    Array.isArray((data as Record<string, unknown>).result);
-  if (isTablePayload) {
-    return null;
-  }
-  const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
-  return (
-    `HTTP ${status} with ${kind} instead of a Table API result; ` +
-    "the instance may be serving a login or maintenance page"
-  );
 }
 
 export function clampLimit(value: unknown, fallback: number, max: number): number {

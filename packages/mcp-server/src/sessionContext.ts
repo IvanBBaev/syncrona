@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {
+  describeNonTablePayload,
   getCurrentScopeWithFallback,
   getServiceNowConfig,
   snRequest,
@@ -59,6 +60,10 @@ export async function tableGet(
     timeoutMs
   );
   assertOkResponse(response, `Reading ${table}`);
+  const badPayload = describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    throw new Error(`Reading ${table} returned ${badPayload}`);
+  }
   return toTableResultRows(response.data);
 }
 
