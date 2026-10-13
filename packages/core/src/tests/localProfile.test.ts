@@ -45,6 +45,13 @@ describe("resolveInstanceProfile (DX7 .syncrona-local)", () => {
     expect(resolveInstanceProfile({ instanceProfile: "prod" })).toBe("prod");
   });
 
+  it("reads a .syncrona-local saved with a UTF-8 byte order mark", () => {
+    // Notepad and PowerShell redirection write one; ignoring the file would
+    // silently send the command to the base instance instead of this profile.
+    fs.writeFileSync(path.join(dir, ".syncrona-local"), `\uFEFF${JSON.stringify({ instanceProfile: "dev" })}`);
+    expect(resolveInstanceProfile({})).toBe("dev");
+  });
+
   it("ignores a malformed .syncrona-local", () => {
     fs.writeFileSync(path.join(dir, ".syncrona-local"), "{ not json");
     expect(resolveInstanceProfile({})).toBeUndefined();

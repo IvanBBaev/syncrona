@@ -56,7 +56,8 @@ export const LOCAL_CONFIG_FILE = ".syncrona-local";
 function readLocalInstanceProfile(): string | undefined {
   try {
     const raw = readFileSync(path.join(process.cwd(), LOCAL_CONFIG_FILE), "utf-8");
-    const parsed = JSON.parse(raw) as { instanceProfile?: unknown };
+    // An editor's UTF-8 BOM would fail the parse and silently drop the profile.
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, "")) as { instanceProfile?: unknown };
     const profile = typeof parsed.instanceProfile === "string" ? parsed.instanceProfile.trim() : "";
     return profile || undefined;
   } catch (_) {
