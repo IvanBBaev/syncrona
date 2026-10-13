@@ -37,6 +37,8 @@ type ScopeKnowledgeContext = {
   writeScopeDocsBundle: (scopeCode: string, files: Array<{ relativePath: string; content: string }>) => string[];
 };
 
+const ENTITY_DOCS_PER_TYPE = 200;
+
 // Without a resolved scope every write lands under "unknown_scope", where the
 // next unresolved run silently overwrites it; refuse it and ask for `scope`.
 function unresolvedScopeWrite(scope: string, writeFiles: boolean, dryRun: boolean): ToolResponse | null {
@@ -355,11 +357,18 @@ export async function handleScopeKnowledgeTool(
       const tableRelationshipsPath = `${docsRoot.dir}/table-relationships.md`;
       const crossScopePath = `${docsRoot.dir}/cross-scope-dependencies.md`;
 
-      const byType = (type: string) =>
-        hydrated.entities
+      // Each folder documents at most ENTITY_DOCS_PER_TYPE entities; the rest are
+      // counted so a cut folder is not passed off as the whole scope.
+      const entityDocsOmitted: Record<string, number> = {};
+      const byType = (type: string) => {
+        const rows = hydrated.entities
           .map((item) => context.asRecord(item))
-          .filter((item) => toStringField(item.metadataType) === type)
-          .slice(0, 200);
+          .filter((item) => toStringField(item.metadataType) === type);
+        if (rows.length > ENTITY_DOCS_PER_TYPE) {
+          entityDocsOmitted[type] = rows.length - ENTITY_DOCS_PER_TYPE;
+        }
+        return rows.slice(0, ENTITY_DOCS_PER_TYPE);
+      };
 
       const buildEntityFiles = (entitiesByType: Record<string, Record<string, unknown>[]>) => {
         const files: Array<{ relativePath: string; content: string }> = [];
@@ -430,6 +439,12 @@ export async function handleScopeKnowledgeTool(
           crossScopePath,
         },
         files: files.map((file) => `${docsRoot.dir}/${file.relativePath}`),
+        ...(Object.keys(entityDocsOmitted).length > 0
+          ? {
+            entityDocsOmitted,
+            note: `Entity documents are capped at ${ENTITY_DOCS_PER_TYPE} per type; entityDocsOmitted counts the entities without one.`,
+          }
+          : {}),
       };
 
       if (dryRun || !writeFiles) {

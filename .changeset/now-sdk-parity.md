@@ -171,3 +171,4 @@ now-sdk parity: SyncroNow AI covers the everyday ServiceNow SDK (`now-sdk`) work
 - `sync_generate_release_notes` names a change with an empty `target_name` by its update name instead of listing it nameless, and orders by sys_id after type so a cut at the change cap is stable.
 - `sync_validate_before_push` names a recent change with an empty `target_name` by its update name instead of listing a nameless conflict.
 - `sn_analyze_impact` reports a `targetId` absent from the graph as an error (`targetFound: false`) instead of an empty impact that reads as "affects nothing", and `sync_validate_change_package` no longer validates a package whose `selectedIds` include ids the graph never mentions (`unknownIds`).
+- `sync_generate_scope_docs` reports the entities past its 200-per-type document cap (`entityDocsOmitted` with a note) instead of silently leaving them undocumented.
