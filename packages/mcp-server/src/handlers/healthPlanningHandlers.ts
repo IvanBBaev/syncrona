@@ -44,6 +44,9 @@ type AiActionTemplate = {
   args: Record<string, unknown>;
   triggerKeywords: string[];
   baseScore: number;
+  // A step whose args need another step's result: the graph from `dependsOn` feeds `argsFromDependency`.
+  dependsOn?: string;
+  argsFromDependency?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -145,7 +148,7 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       id: "minimal-footprint",
       title: "Rank minimal-footprint implementation targets",
       tool: "sync_plan_minimal_footprint",
-      reason: "Prioritizes low-risk, high-confidence change points.",
+      reason: "Prioritizes low-risk, high-confidence change points; pass the graph the dependency-graph step returned.",
       args: {
         task: objective,
         graph: {},
@@ -153,6 +156,8 @@ function buildAiActionTemplates(objective: string): AiActionTemplate[] {
       },
       triggerKeywords: ["plan", "target", "minimal", "footprint", "task"],
       baseScore: 4,
+      dependsOn: "dependency-graph",
+      argsFromDependency: "graph",
     },
     {
       id: "preflight",
@@ -183,8 +188,11 @@ function buildAiNextActions(
   const objectiveTokens = new Set(tokenizeForPlanning(objective));
   const declared = new Set(declaredToolNames);
 
-  const ranked = buildAiActionTemplates(objective)
-    .filter((template) => declared.has(template.tool))
+  const available = buildAiActionTemplates(objective).filter((template) => declared.has(template.tool));
+  const availableIds = new Set(available.map((template) => template.id));
+  const ranked = available
+    // A step whose input comes from an undeclared step could only be called with a placeholder.
+    .filter((template) => !template.dependsOn || availableIds.has(template.dependsOn))
     .map((template) => ({
       template,
       score: scoreActionTemplate(template, objectiveTokens),
@@ -194,19 +202,47 @@ function buildAiNextActions(
         return b.score - a.score;
       }
       return a.template.title.localeCompare(b.template.title);
-    })
-    .slice(0, maxSteps);
+    });
 
-  return ranked.map((entry, index) => ({
-    step: index + 1,
-    id: entry.template.id,
-    title: entry.template.title,
-    tool: entry.template.tool,
-    reason: entry.template.reason,
-    recommendedArgs: entry.template.args,
-    dryRunFirst: entry.template.dryRunFirst === true || entry.template.tool === "sync_preflight_check",
-    confidence: Math.min(0.99, 0.55 + entry.score * 0.08),
-  }));
+  // Ranking alone can put a step ahead of the step that produces its input; pull each
+  // prerequisite forward to just before its first dependent, then cut to maxSteps.
+  const ordered: typeof ranked = [];
+  const placed = new Set<string>();
+  const place = (entry: (typeof ranked)[number]): void => {
+    if (placed.has(entry.template.id)) {
+      return;
+    }
+    placed.add(entry.template.id);
+    const prerequisite = entry.template.dependsOn
+      ? ranked.find((candidate) => candidate.template.id === entry.template.dependsOn)
+      : undefined;
+    if (prerequisite) {
+      place(prerequisite);
+    }
+    ordered.push(entry);
+  };
+  ranked.forEach(place);
+  const selected = ordered.slice(0, maxSteps);
+  const stepById = new Map(selected.map((entry, index) => [entry.template.id, index + 1]));
+
+  return selected.map((entry, index) => {
+    const action: Record<string, unknown> = {
+      step: index + 1,
+      id: entry.template.id,
+      title: entry.template.title,
+      tool: entry.template.tool,
+      reason: entry.template.reason,
+      recommendedArgs: entry.template.args,
+      dryRunFirst: entry.template.dryRunFirst === true || entry.template.tool === "sync_preflight_check",
+      confidence: Math.min(0.99, 0.55 + entry.score * 0.08),
+    };
+    if (entry.template.dependsOn && entry.template.argsFromDependency) {
+      action.argsFrom = {
+        [entry.template.argsFromDependency]: { step: stepById.get(entry.template.dependsOn) },
+      };
+    }
+    return action;
+  });
 }
 
 export async function handleHealthPlanningTool(
