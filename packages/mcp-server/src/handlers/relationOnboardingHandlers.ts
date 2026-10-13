@@ -8,6 +8,13 @@ import type { ToolResponse } from "../toolResponse";
 
 
 
+// Edges read from instance metadata (sys_db_object inheritance, sys_dictionary
+// references and attribute hints), as opposed to ones parsed from workspace files.
+function isServiceNowMetadataEdge(why: string): boolean {
+  const text = why.toLowerCase();
+  return text.includes("dictionary") || text.includes("servicenow table inheritance");
+}
+
 type RelationOnboardingContext = {
   timeoutMs: number;
   projectDir: string;
@@ -58,7 +65,7 @@ export async function handleRelationOnboardingTool(
           if (!includeWorkspace && (String(row.source).startsWith("file:") || String(row.target).startsWith("file:"))) {
             return false;
           }
-          if (!includeServiceNow && String(row.why).toLowerCase().includes("dictionary")) {
+          if (!includeServiceNow && isServiceNowMetadataEdge(String(row.why))) {
             return false;
           }
           return true;
@@ -75,10 +82,14 @@ export async function handleRelationOnboardingTool(
         { explicit: 0, hidden: 0, inferred: 0 }
       );
 
+      // With a source excluded, its tables come only through the kept relations;
+      // the graph's own table nodes would list the excluded source's tables too.
       const tableSet = new Set<string>();
-      for (const node of hydrated.graph.nodes) {
-        if (node.kind === "table" && node.id.startsWith("table:")) {
-          tableSet.add(node.id.replace(/^table:/, ""));
+      if (includeWorkspace && includeServiceNow) {
+        for (const node of hydrated.graph.nodes) {
+          if (node.kind === "table" && node.id.startsWith("table:")) {
+            tableSet.add(node.id.replace(/^table:/, ""));
+          }
         }
       }
       for (const row of relations) {
@@ -101,8 +112,11 @@ export async function handleRelationOnboardingTool(
         relations,
       };
 
+      // A failed instance read leaves the relation set partial, not complete;
+      // workspace edges alone must not pass for the scope's full picture.
+      const serviceNowFailed = includeServiceNow && hydrated.sourceSummary.serviceNowFailed === true;
       return {
-        isError: relations.length === 0,
+        isError: relations.length === 0 || serviceNowFailed,
         content: [{ type: "text", text: toJsonText(payload) }],
       };
     }
