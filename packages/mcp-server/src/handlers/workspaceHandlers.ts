@@ -238,22 +238,24 @@ export async function handleWorkspaceTool(
         };
       }
 
-      if (dryRun) {
-        return context.makeDryRunAuditResponse(toolName, args, {
-          target: typeof args.target === "string" ? args.target.trim() : "",
-          diff: typeof args.diff === "string" ? args.diff.trim() : "",
-          updateSet: typeof args.updateSet === "string" ? args.updateSet.trim() : "",
-          scopeSwap: args.scopeSwap === true,
-        });
-      }
-
       const logLevel = cliLogLevel(args.logLevel);
       const target = typeof args.target === "string" ? args.target.trim() : "";
       const diff = typeof args.diff === "string" ? args.diff.trim() : "";
       const updateSet = typeof args.updateSet === "string" ? args.updateSet.trim() : "";
       const scopeSwap = args.scopeSwap === true;
+      // Checked before the dry-run branch: a preview must refuse what the real
+      // run would refuse, not report it as a push that would go ahead.
       const refused = refuseOptionLikeTokens({ target, diff, updateSet });
       if (refused) return refused;
+
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          target,
+          diff,
+          updateSet,
+          scopeSwap,
+        });
+      }
 
       // Option values go in `--opt=value` form so a value can never be read as
       // an option of its own. `target` is a positional, which yargs cannot take

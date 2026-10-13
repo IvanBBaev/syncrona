@@ -252,6 +252,21 @@ for (const field of ['target', 'diff', 'updateSet']) {
   });
 }
 
+test('sync_push: a dry run refuses the same "-"-leading target the real run refuses', async () => {
+  let previewed = false;
+  const ctx = makeContext({
+    dryRun: true,
+    makeDryRunAuditResponse: () => {
+      previewed = true;
+      return { isError: false, content: [{ type: 'text', text: 'preview' }] };
+    },
+  });
+  const res = await handleWorkspaceTool('sync_push', { confirmDestructive: true, target: '--prune' }, ctx);
+  assert.equal(res.isError, true);
+  assert.equal(previewed, false, 'a preview must not promise a push the real run refuses');
+  assert.match(res.content[0].text, /Invalid target/);
+});
+
 test('sync_build: a "-"-leading diff is refused before the CLI runs', async () => {
   let ran = false;
   const ctx = makeContext({
