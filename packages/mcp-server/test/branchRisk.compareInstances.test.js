@@ -230,3 +230,39 @@ test('a requested table the tool cannot read is listed and leaves the comparison
     assert.equal(payload.summary.complete, false);
   });
 });
+
+// Pins: a 200 login or maintenance page has no `result` array, and read as "no rows"
+// it listed every record on the healthy side as onlyInA under `complete: true`.
+test('a 200 login page from one instance is a per-table error, not an empty side', async () => {
+  await withTwoStoredProfiles(async () => {
+    global.fetch = async (url) => {
+      if (String(url).includes(PROFILE_B)) {
+        return mkResponse(200, '<html><body>Log in</body></html>');
+      }
+      return mkResponse(200, {
+        result: [{ sys_id: 'a1', name: 'SharedUtils', script: 'gs.info("a");' }],
+      });
+    };
+
+    const res = await handleCompareInstances(
+      {
+        profileA: PROFILE_A,
+        profileB: PROFILE_B,
+        scope: 'x_branch_risk',
+        tables: ['sys_script_include'],
+      },
+      1000
+    );
+
+    assert.equal(res.isError, true);
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(payload.summary.errors, 1);
+    assert.equal(payload.summary.complete, false);
+    assert.equal(payload.summary.onlyInA, 0);
+    const tableResult = payload.tables[0];
+    assert.equal(tableResult.statusA, 200);
+    assert.match(String(tableResult.statusB), /^error: HTTP 200 with a non-JSON body/);
+    assert.match(String(tableResult.error), /without a Table API result/);
+    assert.deepEqual(tableResult.onlyInA, []);
+  });
+});

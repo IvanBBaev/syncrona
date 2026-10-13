@@ -2,6 +2,7 @@
 import { createHash } from "crypto";
 import { escapeQueryValue } from "../runtimeUtils";
 import {
+  describeNonTablePayload,
   loadAuthStoreProfile,
   snRequestWithConfig,
   toTableResultRows,
@@ -111,7 +112,7 @@ async function fetchScopeScriptRows(
   scope: string,
   limit: number,
   timeoutMs: number
-): Promise<{ status: number; rows: Record<string, unknown>[] }> {
+): Promise<{ status: number; rows: Record<string, unknown>[]; badPayload: string | null }> {
   // Without an order the instance returns rows in no defined order, so a capped
   // read took a different subset on each side and on each run. Ordering by the
   // name the diff keys on (sys_id breaks ties) makes both sides read the same
@@ -131,7 +132,12 @@ async function fetchScopeScriptRows(
     undefined,
     timeoutMs
   );
-  return { status: response.status, rows: toTableResultRows(response.data) };
+  // A 2xx login or maintenance page has no `result` array either, and its "no
+  // rows" would read as every record on the other side being missing here.
+  const badPayload = isSuccessStatus(response.status)
+    ? describeNonTablePayload(response.status, response.data)
+    : null;
+  return { status: response.status, rows: toTableResultRows(response.data), badPayload };
 }
 
 export async function handleCompareInstances(
@@ -231,6 +237,21 @@ export async function handleCompareInstances(
         different: [],
         error:
           "Comparison skipped for this table because an instance request returned a non-2xx status.",
+      });
+      continue;
+    }
+
+    if (resA.badPayload || resB.badPayload) {
+      errorCount += 1;
+      tableResults.push({
+        table,
+        statusA: resA.badPayload ? `error: ${resA.badPayload}` : resA.status,
+        statusB: resB.badPayload ? `error: ${resB.badPayload}` : resB.status,
+        onlyInA: [],
+        onlyInB: [],
+        different: [],
+        error:
+          "Comparison skipped for this table because an instance answered without a Table API result.",
       });
       continue;
     }
