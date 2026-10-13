@@ -81,6 +81,7 @@ function readLocalRecordsFromManifest(
   projectDir: string,
   layout: WorkspaceLayout,
   table: string,
+  scriptField: string,
   recordName?: string
 ): LocalManifestRead {
   const manifestPath = path.join(projectDir, "sync.manifest.json");
@@ -121,30 +122,31 @@ function readLocalRecordsFromManifest(
       continue;
     }
 
+    // Only the field the instance side reads is compared. A record's files also
+    // hold other script/html fields and the `.meta` sidecar (DX22); joining them
+    // in made every record differ from the instance's single script column.
     const files = Array.isArray(rec.files) ? rec.files : [];
-    const parts: string[] = [];
-    for (const fileRaw of files) {
-      const file = asRecord(fileRaw);
-      const fileName = toStringField(file.name) || "script";
-      const fileType = toStringField(file.type) || "js";
-      const filePath = recordFieldFilePath(
-        projectDir,
-        layout,
-        table,
-        recName,
-        fileName,
-        fileType
-      );
-      try {
-        parts.push(readFileSync(filePath, "utf-8"));
-      } catch (_) {
-        missingLocalFiles.push(path.relative(projectDir, filePath));
-      }
+    const scriptFile = files
+      .map((fileRaw) => asRecord(fileRaw))
+      .find((file) => toStringField(file.name) === scriptField);
+    const filePath = recordFieldFilePath(
+      projectDir,
+      layout,
+      table,
+      recName,
+      scriptField,
+      toStringField(scriptFile?.type) || "js"
+    );
+    let value = "";
+    try {
+      value = readFileSync(filePath, "utf-8");
+    } catch (_) {
+      missingLocalFiles.push(path.relative(projectDir, filePath));
     }
 
     local.push({
       name: recName,
-      value: parts.join("\n"),
+      value,
       sysId: toStringField(rec.sys_id) || undefined,
       updatedOn: toStringField(rec.sys_updated_on) || toStringField(rec.updatedOn) || undefined,
     });
@@ -248,6 +250,7 @@ async function handleDiffInstanceVsLocal(
     context.projectDir,
     context.layout,
     table,
+    fieldConfig.scriptField,
     recordName
   );
   if (!localRead.ok) {
