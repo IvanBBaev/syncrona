@@ -50,8 +50,10 @@ export async function handleSearchScripts(
   const filterLocally = serverTerm !== query;
 
   const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+  // A table named twice was searched twice, listing each of its matches twice
+  // and doubling matchCount.
   const requestedTables = Array.isArray(args.tables)
-    ? args.tables.filter((item): item is string => typeof item === "string")
+    ? [...new Set(args.tables.filter((item): item is string => typeof item === "string"))]
     : [];
   // REV-198: an unrecognized table name used to be dropped in silence. `tables` is a
   // free-form string array in the schema (no enum) and sn_search_scripts has no input
