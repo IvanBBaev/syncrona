@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
 import { getProgTick } from "../appUtils.js";
 
 // QA regression lock for DEV-3: the DX24 progress ETA used a custom token
@@ -39,5 +40,25 @@ describe("getProgTick (DX24)", () => {
     // The ETA suffix and the count are rendered.
     expect(out).toContain("left");
     expect(out).toMatch(/1\/4/);
+  });
+
+  it("overwrites the whole previous line when the ETA gets shorter", () => {
+    const { stream, read } = fakeTtyStream();
+    let now = 0;
+    const spy = jest.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const tick = getProgTick("info", 3, stream)!;
+      now = 130_000;
+      tick(); // 1/3 after 2m 10s -> "~4m 20s left"
+      now = 131_000;
+      tick(); // 2/3 -> "~1m 6s left", shorter
+    } finally {
+      spy.mockRestore();
+    }
+    const [first, second] = read().split("\r").filter((s) => s.length > 0);
+    expect(first).toContain("~4m 20s left");
+    expect(second).toContain("~1m 6s left");
+    expect(second.length).toBe(first.length);
+    expect(second.trimEnd()).toMatch(/left$/);
   });
 });

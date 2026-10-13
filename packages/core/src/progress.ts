@@ -21,6 +21,10 @@ export const getProgTick = (
   const isTty = Boolean((stream as unknown as { isTTY?: boolean }).isTTY);
   const startedAt = Date.now();
   let completed = 0;
+  // `\r` only returns the cursor: a line shorter than the one before it (the
+  // ETA shrinking from "~1m 5s" to "~9s") would leave the old line's tail on
+  // screen, so each line is padded to the longest one painted so far.
+  let paintedWidth = 0;
   return () => {
     completed += 1;
     const elapsed = Date.now() - startedAt;
@@ -39,7 +43,8 @@ export const getProgTick = (
     const line = `${bar} ${completed}/${total} (${percent}%) ~${formatDuration(
       remainingMs
     )} left`;
-    stream.write(`\r${line}`);
+    paintedWidth = Math.max(paintedWidth, line.length);
+    stream.write(`\r${line.padEnd(paintedWidth)}`);
     if (completed >= total) {
       stream.write("\n");
     }
