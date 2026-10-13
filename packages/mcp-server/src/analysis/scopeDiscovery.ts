@@ -264,7 +264,13 @@ async function discoverServiceNowScopeKnowledge(
   };
 
   for (const metadataType of metadataTypes) {
-    const cfg = getMetadataConfig(metadataType);
+    const cfg = { ...getMetadataConfig(metadataType) };
+    // sys_trigger holds the runtime schedule rows and has no sys_scope column, so
+    // ServiceNow drops the scope condition and answers with every trigger on the
+    // instance. A scope's own scheduled jobs are its sysauto_script records.
+    if (metadataType === "scheduled_job") {
+      cfg.table = "sysauto_script";
+    }
     const fields = ["sys_id", cfg.displayField, "sys_scope"];
     if (cfg.scriptField) {
       fields.push(cfg.scriptField);
