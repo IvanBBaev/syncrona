@@ -288,7 +288,7 @@ const MODULE_FLOORS = [
   // The flicker reappeared on the new counters during WP-8 (1 of 4 runs, no change
   // to toolService): 153/168 vs 153/167 branch ranges, the denominator growing alone
   // as before. Lower reading first, per the annotation contract.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 92.47 / 91.07 (also 92.47 / 91.62: V8 range granularity, 153/168 vs 153/167 branches, same uncovered lines 469-505 559-563 567-574 595 664)
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 97.27 / 87.50
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.
@@ -342,7 +342,7 @@ const MODULE_FLOORS = [
   // ubuntu pair is 296/315, which renders 93.97. Neither forced pair has been
   // observed on CI yet: the first ubuntu run after this lands must confirm it, and
   // replace it with the printed reading if it differs.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.54 / 94.22 (also 99.54 / 94.28: V8 range granularity, 310/329 vs 313/332 branches on unchanged source, uncovered lines 444-445 850 1067-1068 in both readings)
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.55 / 94.56
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
   { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 100.00 / 94.25 (also 100.00 / 95.35: V8 range granularity, 82/87 vs 82/86 branches, five of seven runs on unchanged source; 83/88 and 83/87 also occur, no uncovered lines in any reading)
@@ -384,7 +384,7 @@ const MODULE_FLOORS = [
   // (test/graphMermaidSelection.test.js, test/scopeKnowledgeSparseInput.test.js),
   // and the same replay now yields one reading per file.
   { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.51 / 95.93
-  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.31 / 89.51
+  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.46 / 89.61
 ];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
