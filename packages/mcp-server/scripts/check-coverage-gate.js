@@ -342,10 +342,10 @@ const MODULE_FLOORS = [
   // ubuntu pair is 296/315, which renders 93.97. Neither forced pair has been
   // observed on CI yet: the first ubuntu run after this lands must confirm it, and
   // replace it with the printed reading if it differs.
-  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.54 / 94.22
+  { pattern: 'dist/servicenowCore.js', line: 96, branch: 88 }, // measured 99.54 / 94.28
   { pattern: 'dist/scopePaths.js', line: 99, branch: 92 }, // measured 100.00 / 95.00
   { pattern: 'dist/scopeBootstrap.js', line: 96, branch: 90 }, // measured 98.65 / 93.18
-  { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 100.00 / 94.25 (also 100.00 / 95.35: V8 range granularity, 82/87 vs 82/86 branches, the pre-truncation 80/85 vs 80/84 flicker carried forward, no uncovered lines in either reading)
+  { pattern: 'dist/sessionContext.js', line: 96, branch: 89 }, // measured 100.00 / 94.32 (also 100.00 / 95.40: V8 range granularity, 83/88 vs 83/87 branches, the 82/87 vs 82/86 flicker carried forward after the session-context read change, no uncovered lines in either reading)
   // A single reading, not a declared pair: the move from 99.04 was a source edit,
   // not range flicker. `wrapUntrustedData` gained seven comment lines explaining why
   // its zero-width space is written as `\u200b`, tsc emits comments, and seven more
