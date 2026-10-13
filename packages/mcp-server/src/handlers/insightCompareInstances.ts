@@ -27,19 +27,19 @@ function isSuccessStatus(status: number): boolean {
 }
 
 // REV-101: a per-table fetch is capped at `limit` (default 200, max 500). When a
-// scope has more matching records than the cap, the ServiceNow table API returns
-// exactly `limit` rows and the rest are silently dropped, so a partial comparison
-// used to be reported as if it were the whole picture. A row count that reaches
-// the limit is the truncation signal; surface an explicit per-type notice so a
-// capped comparison is never mistaken for a complete one.
+// scope has more matching records than the cap, the rest are silently dropped, so
+// a partial comparison used to be reported as if it were the whole picture. Each
+// side reads one row past the limit, and a count above the limit is the truncation
+// signal (a scope of exactly `limit` records is complete); surface an explicit
+// per-type notice so a capped comparison is never mistaken for a complete one.
 export function buildTruncationNote(
   table: string,
   rowCountA: number,
   rowCountB: number,
   limit: number
 ): string | null {
-  const truncatedA = rowCountA >= limit;
-  const truncatedB = rowCountB >= limit;
+  const truncatedA = rowCountA > limit;
+  const truncatedB = rowCountB > limit;
   if (!truncatedA && !truncatedB) {
     return null;
   }
@@ -122,7 +122,7 @@ async function fetchScopeScriptRows(
     "sysparm_query",
     `sys_scope.scope=${escapeQueryValue(scope)}^ORDERBY${nameField}^ORDERBYsys_id`
   );
-  params.set("sysparm_limit", String(limit));
+  params.set("sysparm_limit", String(limit + 1));
   params.set("sysparm_fields", `sys_id,${nameField},${scriptField}`);
 
   const response = await snRequestWithConfig(
@@ -256,7 +256,9 @@ export async function handleCompareInstances(
       continue;
     }
 
-    const diff = diffInstanceRecords(resA.rows, resB.rows, {
+    // The extra row only signals truncation; diffing it would compare a record
+    // one side read and the other may not have.
+    const diff = diffInstanceRecords(resA.rows.slice(0, limit), resB.rows.slice(0, limit), {
       nameField: config.nameField,
       contentField: config.scriptField,
     });

@@ -18,13 +18,15 @@ const {
 // insightCompareInstances.ts: buildTruncationNote
 // ---------------------------------------------------------------------------
 
-test('REV-101: buildTruncationNote returns null when neither side reaches the limit', () => {
+test('REV-101: buildTruncationNote returns null when neither side passes the limit', () => {
   assert.equal(buildTruncationNote('sys_script', 499, 100, 500), null);
   assert.equal(buildTruncationNote('sys_script', 0, 0, 500), null);
+  // Each side reads limit + 1 rows, so exactly `limit` rows is the whole scope.
+  assert.equal(buildTruncationNote('sys_script', 500, 500, 500), null);
 });
 
-test('REV-101: a full (limit-sized) result set produces a truncation notice, not a silent cap', () => {
-  const note = buildTruncationNote('sys_script', 500, 100, 500);
+test('REV-101: a result set past the limit produces a truncation notice, not a silent cap', () => {
+  const note = buildTruncationNote('sys_script', 501, 100, 500);
   assert.notEqual(note, null);
   assert.match(note, /sys_script/);
   assert.match(note, /500-row limit/);
@@ -42,16 +44,16 @@ test('REV-101: an over-limit count on the B side is flagged for profileB', () =>
 });
 
 test('REV-101: both sides capped names both profiles', () => {
-  const note = buildTruncationNote('sys_script_include', 500, 500, 500);
+  const note = buildTruncationNote('sys_script_include', 501, 501, 500);
   assert.match(note, /profileA and profileB/);
 });
 
 test('REV-101: the note honours a lower effective limit (default 200)', () => {
-  const note = buildTruncationNote('sys_script', 200, 0, 200);
+  const note = buildTruncationNote('sys_script', 201, 0, 200);
   assert.notEqual(note, null);
   assert.match(note, /200-row limit/);
   // a set below the lowered limit is not flagged
-  assert.equal(buildTruncationNote('sys_script', 199, 0, 200), null);
+  assert.equal(buildTruncationNote('sys_script', 200, 0, 200), null);
 });
 
 // ---------------------------------------------------------------------------

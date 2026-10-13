@@ -139,9 +139,12 @@ test('a per-table row cap is surfaced as a truncation note, not silently swallow
   await withTwoStoredProfiles(async () => {
     global.fetch = async (url) => {
       const suffix = String(url).includes(PROFILE_B) ? 'b' : 'a';
+      // Each side asks for limit + 1 rows; the second row is the truncation signal.
+      assert.equal(new URL(String(url)).searchParams.get('sysparm_limit'), '2');
       return mkResponse(200, {
         result: [
           { sys_id: `${suffix}1`, name: 'SharedUtils', script: `gs.info("${suffix}");` },
+          { sys_id: `${suffix}2`, name: 'ZetaUtils', script: 'gs.info("z");' },
         ],
       });
     };
@@ -167,8 +170,35 @@ test('a per-table row cap is surfaced as a truncation note, not silently swallow
     assert.equal(tableResult.truncated, true);
     assert.match(String(tableResult.truncationNote), /hit the 1-row limit/);
     assert.match(String(tableResult.truncationNote), /may be incomplete/);
-    // The diff itself still ran on what was fetched: the shared record differs.
+    // The diff ran on the first `limit` rows only: the probe row is not compared.
     assert.deepEqual(tableResult.different.map((entry) => entry.name), ['SharedUtils']);
+  });
+});
+
+// Pins: a scope holding exactly `limit` records was read in full. Before, a count that
+// reached the limit was flagged as truncated and the comparison reported incomplete.
+test('a scope of exactly limit records is a complete comparison', async () => {
+  await withTwoStoredProfiles(async () => {
+    global.fetch = async () =>
+      mkResponse(200, {
+        result: [{ sys_id: 'x1', name: 'SharedUtils', script: 'gs.info("same");' }],
+      });
+
+    const res = await handleCompareInstances(
+      {
+        profileA: PROFILE_A,
+        profileB: PROFILE_B,
+        scope: 'x_branch_risk',
+        tables: ['sys_script_include'],
+        limit: 1,
+      },
+      1000
+    );
+
+    assert.equal(res.isError, false);
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(payload.summary.truncated, false);
+    assert.equal(payload.summary.complete, true);
   });
 });
 
