@@ -421,6 +421,37 @@ test('resolveServiceNowSecrets: reads instance from a nested "servicenow" object
   }
 });
 
+// mcp init writes the stored active instance into secrets.json. A project .env
+// that targets another instance used to fill SN_USER/SN_PASSWORD, so its
+// credentials were sent to the active instance.
+test('resolveServiceNowSecrets: never pairs one instance with credentials a provider holds for another', () => {
+  const snap = snapshotEnv();
+  clearAllRelevantEnv();
+  process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-core-pairing-home-'));
+  clearServiceNowSecretsCache();
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-core-pairing-'));
+  const providers = [
+    { name: 'secrets-file', load: () => ({ SN_INSTANCE: 'prod.service-now.com' }) },
+    {
+      name: 'dotenv',
+      load: () => ({ SN_INSTANCE: 'dev.service-now.com', SN_USER: 'dev-user', SN_PASSWORD: 'dev-pass' }),
+    },
+    {
+      name: 'auth-store',
+      load: () => ({ SN_INSTANCE: 'https://PROD.service-now.com/', SN_USER: 'prod-user', SN_PASSWORD: 'prod-pass' }),
+    },
+  ];
+
+  try {
+    const cfg = resolveServiceNowSecrets(tempDir, providers);
+    assert.equal(cfg.instance, 'prod.service-now.com');
+    assert.equal(cfg.user, 'prod-user');
+    assert.equal(cfg.password, 'prod-pass');
+  } finally {
+    restoreEnv(snap);
+  }
+});
+
 test('resolveServiceNowSecrets: malformed secrets.json is ignored (falls through to a later provider)', () => {
   const snap = snapshotEnv();
   clearAllRelevantEnv();

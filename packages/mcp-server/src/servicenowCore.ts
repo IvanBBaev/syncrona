@@ -793,7 +793,19 @@ export function resolveServiceNowSecrets(
       break;
     }
     const values = provider.load(projectDir);
+    // A provider that names a different instance than the one already chosen
+    // must not lend its identity to it: secrets.json pointing at the active
+    // instance plus a .env for another one used to pair that .env user and
+    // password with the wrong instance.
+    const providerInstance = cleanEnvValue(String(values.SN_INSTANCE || ""));
+    const namesOtherInstance =
+      merged.SN_INSTANCE !== "" &&
+      providerInstance !== "" &&
+      instanceKey(providerInstance) !== instanceKey(merged.SN_INSTANCE);
     for (const key of Object.keys(merged)) {
+      if (namesOtherInstance && key !== "SN_INSTANCE") {
+        continue;
+      }
       const raw = String(values[key] || "");
       // REV-157: this loop used to re-run cleanEnvValue over every provider's
       // output. That was a no-op for the env/.env/secrets-file providers (which
@@ -961,6 +973,10 @@ export function getServiceNowConfig(projectDir: string = process.cwd()): SNConfi
     expiresAt: Date.now() + SECRETS_CACHE_TTL_MS,
   });
   return config;
+}
+
+function instanceKey(instance: string): string {
+  return instance.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
 }
 
 export function instanceToBaseUrl(instance: string): string {
