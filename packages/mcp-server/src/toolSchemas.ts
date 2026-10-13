@@ -802,7 +802,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           minimum: 0,
           default: 0,
           description:
-            "Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap.",
+            "Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap. Rows are ordered by sys_id after any ORDERBY in query, so consecutive pages neither repeat nor skip records.",
         },
         analyzeField: {
           type: "string",

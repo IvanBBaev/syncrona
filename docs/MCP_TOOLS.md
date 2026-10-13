@@ -815,7 +815,7 @@ Query records from a ServiceNow table using sysparm_query and optionally analyze
 | `query` | `string` | no | `""` |  |
 | `fields` | `array<string>` | no | `[]` |  |
 | `limit` | `number (min 1, max 500)` | no | `50` |  |
-| `offset` | `integer (min 0)` | no | `0` | Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap. |
+| `offset` | `integer (min 0)` | no | `0` | Number of rows to skip before returning results (maps to sysparm_offset). Combine with limit to paginate through tables larger than the 500-row limit cap. Rows are ordered by sys_id after any ORDERBY in query, so consecutive pages neither repeat nor skip records. |
 | `analyzeField` | `string` | no | `""` | Optional field name for grouped count analysis |
 | `timeoutMs` | `number (min 1000, max 900000)` | no |  |  |
 

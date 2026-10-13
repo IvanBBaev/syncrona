@@ -49,6 +49,18 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+// Offset paging is only sound over a total order: without one the instance may
+// return rows in a different order on each request, so consecutive pages can
+// repeat some records and skip others. sys_id breaks every tie, after any
+// ORDERBY the caller gave; a caller who already orders by sys_id keeps theirs.
+export function withSysIdTiebreak(query: string): string {
+  const trimmed = query.trim().replace(/\^+$/, "");
+  if (/(^|\^)ORDERBY(DESC)?sys_id(\^|$)/.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed ? `${trimmed}^ORDERBYsys_id` : "ORDERBYsys_id";
+}
+
 export async function handleServiceNowCrudTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -86,7 +98,7 @@ export async function handleServiceNowCrudTool(
       // One row past the limit is requested so a result that fills the limit
       // exactly is told apart from one that was cut off at it.
       const params = new URLSearchParams();
-      params.set("sysparm_query", query);
+      params.set("sysparm_query", withSysIdTiebreak(query));
       params.set("sysparm_limit", String(limit + 1));
       if (offset > 0) {
         params.set("sysparm_offset", String(offset));
