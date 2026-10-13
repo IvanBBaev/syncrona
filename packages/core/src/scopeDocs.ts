@@ -111,10 +111,12 @@ export function summarizeManifest(manifest: SN.AppManifest): ScopeSummary {
 
   for (const table of tableNames) {
     const tableConfig = manifest.tables[table];
-    const recordEntries = Object.values(tableConfig.records || {});
+    // The key is the record's folder name; a record without `name` is named by
+    // it, as every other manifest consumer does.
+    const recordEntries = Object.entries(tableConfig.records || {});
     const records = recordEntries
-      .map((record) => ({
-        name: record.name,
+      .map(([key, record]) => ({
+        name: record.name || key,
         files: (record.files || []).map((file) => file.name).sort(byCodeUnit),
       }))
       .sort((a, b) => byCodeUnit(a.name, b.name));

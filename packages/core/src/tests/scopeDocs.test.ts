@@ -112,6 +112,21 @@ describe("scopeDocs", () => {
     }
   });
 
+  it("names a record without a name field by its manifest key, in a deterministic order", () => {
+    // The key is the record's folder name, which every other consumer falls
+    // back to (`record.name || key`); an undefined name rendered an empty row
+    // and compared equal to everything, so the row order followed the input.
+    const manifestWith = (records: Record<string, unknown>) =>
+      ({ scope: "x_acme_app", tables: { u_t: { records } } }) as unknown as SN.AppManifest;
+    const a = { sys_id: "1", files: [] };
+    const b = { name: "Beta", sys_id: "2", files: [] };
+    const c = { sys_id: "3", files: [] };
+    const names = (manifest: SN.AppManifest) =>
+      summarizeManifest(manifest).tables[0].records.map((r) => r.name);
+    expect(names(manifestWith({ Charlie: c, Beta: b, Alpha: a }))).toEqual(["Alpha", "Beta", "Charlie"]);
+    expect(names(manifestWith({ Alpha: a, Charlie: c, Beta: b }))).toEqual(["Alpha", "Beta", "Charlie"]);
+  });
+
   it("renders a Mermaid flowchart linking the scope to each table", () => {
     const summary = summarizeManifest(sampleManifest());
     const mermaid = buildScopeMermaid(summary);
