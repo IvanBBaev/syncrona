@@ -205,7 +205,7 @@ test('handleListRecentChanges: respects explicit since and custom limit', async 
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.since, '2024-05-01T00:00:00.000Z');
       assert.match(decodeURIComponent(requestedUrls[0].replace(/\+/g, ' ')), /2024-05-01 00:00:00/);
-      assert.match(requestedUrls[0], /sysparm_limit=5\b/);
+      assert.match(requestedUrls[0], /sysparm_limit=6\b/);
     }
   );
 });
@@ -1049,4 +1049,68 @@ test('handleRunAtfTests: non-2xx poll status marks response as error', async () 
       assert.equal(parsed.completed, false);
     }
   );
+});
+
+// ---------------------------------------------------------------------------
+// Record history / recent changes: login pages and cut pages
+// ---------------------------------------------------------------------------
+
+const SN_ENV = { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' };
+
+test('handleRecordHistory: an HTML 200 body is an error, not a record with no history', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async () => mkResponse(200, '<html><body>Log in</body></html>');
+    const res = await handleRecordHistory({ table: 'incident', sysId: 'abc' }, 1000);
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /HTTP 200 with a non-JSON body instead of a Table API result/);
+  });
+});
+
+test('handleRecordHistory: requests limit+1 with a sys_id tiebreak and reports truncation', async () => {
+  await withEnv(SN_ENV, async () => {
+    const requestedUrls = [];
+    global.fetch = async (url) => {
+      requestedUrls.push(String(url));
+      return mkResponse(200, {
+        result: [1, 2, 3].map((n) => ({ fieldname: `f${n}`, sys_created_on: '2024-01-01 00:00:00' })),
+      });
+    };
+    const res = await handleRecordHistory({ table: 'incident', sysId: 'abc', limit: 2 }, 1000);
+    assert.equal(res.isError, false);
+    assert.match(requestedUrls[0], /sysparm_limit=3\b/);
+    assert.match(decodeURIComponent(requestedUrls[0]), /ORDERBYDESCsys_created_on\^ORDERBYsys_id/);
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.entryCount, 2);
+    assert.equal(parsed.truncated, true);
+    assert.deepEqual(parsed.history.map((h) => h.field), ['f1', 'f2']);
+  });
+});
+
+test('handleRecordHistory: a page within the limit is not truncated', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async () => mkResponse(200, { result: [{ fieldname: 'f1' }] });
+    const res = await handleRecordHistory({ table: 'incident', sysId: 'abc', limit: 2 }, 1000);
+    assert.equal(JSON.parse(res.content[0].text).truncated, false);
+  });
+});
+
+test('handleListRecentChanges: an HTML 200 body is an error, not a scope with no changes', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async () => mkResponse(200, '<html><body>Maintenance</body></html>');
+    const res = await handleListRecentChanges({ scope: 'x_my_scope' }, 1000);
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /Recent changes request returned HTTP 200 with a non-JSON body/);
+  });
+});
+
+test('handleListRecentChanges: reports truncation when more changes match than the limit', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async () =>
+      mkResponse(200, { result: [1, 2, 3].map((n) => ({ target_name: `S${n}` })) });
+    const res = await handleListRecentChanges({ scope: 'x_my_scope', limit: 2 }, 1000);
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.rowCount, 2);
+    assert.equal(parsed.truncated, true);
+    assert.deepEqual(parsed.changes.map((c) => c.name), ['S1', 'S2']);
+  });
 });

@@ -56,6 +56,25 @@ export function errorResponse(message: string): ToolResponse {
   };
 }
 
+// snRequest falls back to the raw text when a body is not JSON, and
+// toTableResultRows reads anything without a `result` array as no rows. A 2xx
+// that is not a Table API JSON object (a login or maintenance page served as
+// HTML, for instance) must therefore be rejected before it is read as an empty
+// result. Returns a description of the bad payload, or null for a Table API one.
+export function describeNonTablePayload(status: number, data: unknown): string | null {
+  const isTablePayload =
+    !!data && typeof data === "object" && !Array.isArray(data) &&
+    Array.isArray((data as Record<string, unknown>).result);
+  if (isTablePayload) {
+    return null;
+  }
+  const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
+  return (
+    `HTTP ${status} with ${kind} instead of a Table API result; ` +
+    "the instance may be serving a login or maintenance page"
+  );
+}
+
 export function clampLimit(value: unknown, fallback: number, max: number): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.min(Math.max(Math.floor(value), 1), max);
@@ -80,7 +99,9 @@ export function buildRecentChangesQuery(scope: string, sinceDateTime: string): s
   if (sinceDateTime) {
     parts.push(`sys_created_on>=${sinceDateTime}`);
   }
-  parts.push("ORDERBYDESCsys_created_on");
+  // One commit stamps many sys_update_xml rows with the same sys_created_on;
+  // the sys_id tiebreak keeps the cut at the row limit stable.
+  parts.push("ORDERBYDESCsys_created_on", "ORDERBYsys_id");
   return parts.join("^");
 }
 
@@ -115,22 +136,13 @@ export async function resolveUpdateSetSysId(
   if (response.status < 200 || response.status > 299) {
     return { error: `Update set lookup failed with HTTP ${response.status}: ${name}` };
   }
-  // A 2xx whose body is not a Table API JSON object (a login or maintenance
-  // page served as HTML, for instance) carries no rows and must not read as a
-  // missing update set either.
-  const data = response.data;
-  const isTablePayload =
-    !!data && typeof data === "object" && !Array.isArray(data) &&
-    Array.isArray((data as Record<string, unknown>).result);
-  if (!isTablePayload) {
-    const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
-    return {
-      error:
-        `Update set lookup returned HTTP ${response.status} with ${kind} instead of a Table API result; ` +
-        `the instance may be serving a login or maintenance page: ${name}`,
-    };
+  // A login or maintenance page served with a 2xx must not read as a missing
+  // update set either.
+  const badPayload = describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    return { error: `Update set lookup returned ${badPayload}: ${name}` };
   }
-  const rows = toTableResultRows(data);
+  const rows = toTableResultRows(response.data);
   if (rows.length === 0) {
     return { error: `Update set not found: ${name}` };
   }

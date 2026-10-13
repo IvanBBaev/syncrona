@@ -2472,16 +2472,16 @@ test('buildRecentChangesQuery scopes by application and orders by created date',
   const query = buildRecentChangesQuery('x_nuvo_sinc', '2026-01-01 00:00:00');
   assert.equal(
     query,
-    'application.scope=x_nuvo_sinc^sys_created_on>=2026-01-01 00:00:00^ORDERBYDESCsys_created_on'
+    'application.scope=x_nuvo_sinc^sys_created_on>=2026-01-01 00:00:00^ORDERBYDESCsys_created_on^ORDERBYsys_id'
   );
   assert.equal(
     buildRecentChangesQuery('x_nuvo_sinc', ''),
-    'application.scope=x_nuvo_sinc^ORDERBYDESCsys_created_on'
+    'application.scope=x_nuvo_sinc^ORDERBYDESCsys_created_on^ORDERBYsys_id'
   );
   // A caret in the scope must not smuggle extra conditions into the query.
   assert.equal(
     buildRecentChangesQuery('x_app^sys_id=ADMIN', ''),
-    'application.scope=x_app sys_id=ADMIN^ORDERBYDESCsys_created_on'
+    'application.scope=x_app sys_id=ADMIN^ORDERBYDESCsys_created_on^ORDERBYsys_id'
   );
 });
 

@@ -3,7 +3,7 @@ import { escapeQueryValue } from "../runtimeUtils";
 import { snRequest, toTableResultRows } from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
-import { errorResponse, resolveUpdateSetSysId, textResponse } from "./insightShared";
+import { describeNonTablePayload, errorResponse, resolveUpdateSetSysId, textResponse } from "./insightShared";
 
 // The Table API answers one page; this tool reads one page and says so when the
 // update set holds more. One row past the cap is requested so a set of exactly
@@ -71,22 +71,14 @@ export async function handleGenerateReleaseNotes(
   );
 
   const isError = response.status < 200 || response.status > 299;
-  // A 2xx whose body is not a Table API JSON object (a login or maintenance
-  // page served as HTML, for instance) carries no rows; reading it as an empty
-  // update set would report a release with no changes as success.
-  const data = response.data;
-  const isTablePayload =
-    !!data && typeof data === "object" && !Array.isArray(data) &&
-    Array.isArray((data as Record<string, unknown>).result);
-  if (!isError && !isTablePayload) {
-    const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
-    return errorResponse(
-      `Release notes request returned HTTP ${response.status} with ${kind} instead of a Table API result; ` +
-        "the instance may be serving a login or maintenance page."
-    );
+  // A login or maintenance page served with a 2xx carries no rows; reading it
+  // as an empty update set would report a release with no changes as success.
+  const badPayload = isError ? null : describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    return errorResponse(`Release notes request returned ${badPayload}.`);
   }
 
-  const allRows = toTableResultRows(data);
+  const allRows = toTableResultRows(response.data);
   const truncated = allRows.length > RELEASE_NOTES_MAX_CHANGES;
   const rows = truncated ? allRows.slice(0, RELEASE_NOTES_MAX_CHANGES) : allRows;
 

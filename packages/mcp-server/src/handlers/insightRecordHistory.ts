@@ -3,7 +3,7 @@ import { escapeQueryValue, wrapUntrustedData } from "../runtimeUtils";
 import { snRequest, toTableResultRows } from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
-import { clampLimit, errorResponse, textResponse } from "./insightShared";
+import { clampLimit, describeNonTablePayload, errorResponse, textResponse } from "./insightShared";
 
 export function formatRecordHistory(
   rows: Record<string, unknown>[]
@@ -38,9 +38,12 @@ export async function handleRecordHistory(
   const params = new URLSearchParams();
   params.set(
     "sysparm_query",
-    `tablename=${escapeQueryValue(table)}^documentkey=${escapeQueryValue(sysId)}^ORDERBYDESCsys_created_on`
+    // One audited update stamps every changed field with the same
+    // sys_created_on; the sys_id tiebreak keeps the cut at `limit` stable.
+    `tablename=${escapeQueryValue(table)}^documentkey=${escapeQueryValue(sysId)}^ORDERBYDESCsys_created_on^ORDERBYsys_id`
   );
-  params.set("sysparm_limit", String(limit));
+  // One row past the limit tells a full page from a cut one.
+  params.set("sysparm_limit", String(limit + 1));
   params.set("sysparm_fields", "fieldname,oldvalue,newvalue,sys_created_by,sys_created_on");
 
   const response = await snRequest(
@@ -50,7 +53,17 @@ export async function handleRecordHistory(
     timeoutMs
   );
 
-  const rows = toTableResultRows(response.data);
+  const isError = response.status < 200 || response.status > 299;
+  // A login or maintenance page served with a 2xx must not read as a record
+  // with no history.
+  const badPayload = isError ? null : describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    return errorResponse(`Record history request returned ${badPayload}.`);
+  }
+
+  const allRows = toTableResultRows(response.data);
+  const truncated = allRows.length > limit;
+  const rows = truncated ? allRows.slice(0, limit) : allRows;
 
   return textResponse(
     {
@@ -58,8 +71,9 @@ export async function handleRecordHistory(
       table,
       sysId,
       entryCount: rows.length,
+      truncated,
       history: formatRecordHistory(rows),
     },
-    response.status < 200 || response.status > 299
+    isError
   );
 }

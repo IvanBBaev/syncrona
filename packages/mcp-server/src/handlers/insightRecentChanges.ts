@@ -6,6 +6,7 @@ import {
   buildRecentChangesQuery,
   clampLimit,
   defaultSinceIso,
+  describeNonTablePayload,
   errorResponse,
   isoToServiceNowDateTime,
   textResponse,
@@ -36,7 +37,8 @@ export async function handleListRecentChanges(
 
   const params = new URLSearchParams();
   params.set("sysparm_query", buildRecentChangesQuery(scope, sinceDateTime));
-  params.set("sysparm_limit", String(limit));
+  // One row past the limit tells a full page from a cut one.
+  params.set("sysparm_limit", String(limit + 1));
   params.set(
     "sysparm_fields",
     "name,type,target_name,action,sys_created_by,sys_created_on,update_set"
@@ -49,7 +51,17 @@ export async function handleListRecentChanges(
     timeoutMs
   );
 
-  const rows = toTableResultRows(response.data);
+  const isError = response.status < 200 || response.status > 299;
+  // A login or maintenance page served with a 2xx must not read as a scope
+  // with no recent changes.
+  const badPayload = isError ? null : describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    return errorResponse(`Recent changes request returned ${badPayload}.`);
+  }
+
+  const allRows = toTableResultRows(response.data);
+  const truncated = allRows.length > limit;
+  const rows = truncated ? allRows.slice(0, limit) : allRows;
   const changes = rows.map((row) => ({
     name: String(row.target_name ?? row.name ?? ""),
     type: String(row.type ?? ""),
@@ -64,8 +76,9 @@ export async function handleListRecentChanges(
       scope,
       since: sinceIso,
       rowCount: changes.length,
+      truncated,
       changes,
     },
-    response.status < 200 || response.status > 299
+    isError
   );
 }

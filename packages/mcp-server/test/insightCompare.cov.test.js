@@ -116,13 +116,13 @@ test('buildRecentChangesQuery: includes scope, since clause and ordering', () =>
   const q = buildRecentChangesQuery('x_my_scope', '2024-01-01 00:00:00');
   assert.equal(
     q,
-    'application.scope=x_my_scope^sys_created_on>=2024-01-01 00:00:00^ORDERBYDESCsys_created_on'
+    'application.scope=x_my_scope^sys_created_on>=2024-01-01 00:00:00^ORDERBYDESCsys_created_on^ORDERBYsys_id'
   );
 });
 
 test('buildRecentChangesQuery: omits since clause when empty', () => {
   const q = buildRecentChangesQuery('x_my_scope', '');
-  assert.equal(q, 'application.scope=x_my_scope^ORDERBYDESCsys_created_on');
+  assert.equal(q, 'application.scope=x_my_scope^ORDERBYDESCsys_created_on^ORDERBYsys_id');
 });
 
 test('SCRIPT_SEARCH_TABLES: contains expected script tables with field mappings', () => {
