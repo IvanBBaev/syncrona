@@ -131,7 +131,12 @@ export function extractReferencesFromScript(script: string): {
 } {
   const tableMatches = [...script.matchAll(/GlideRecord(?:Secure)?\(['\"]([a-z0-9_]+)['\"]\)/gi)];
   const apiMatches = [...script.matchAll(/sn_ws\.RESTMessageV2\(['\"]([^'\"]+)['\"]/gi)];
-  const includeMatches = [...script.matchAll(/new\s+([A-Z][A-Za-z0-9_]+)\s*\(/g)];
+  // A scope-qualified constructor (`new global.Foo()`, `new x_app.Foo()`) is an
+  // include like the bare form. Only `global.` and `x_*.` prefixes are read as
+  // scopes: `sn_ws.RESTMessageV2` and other `sn_*` namespaces are platform APIs.
+  const includeMatches = [
+    ...script.matchAll(/new\s+((?:global\.|x_[a-z0-9_]+\.)?[A-Z][A-Za-z0-9_]+)\s*\(/g),
+  ];
   const glideAjaxMatches = [...script.matchAll(/new\s+GlideAjax\s*\(\s*['\"]([A-Za-z0-9_$.]+)['\"]\s*\)/g)];
 
   const dedupe = (values: string[]) => [...new Set(values.filter((v) => v.length > 0))];
