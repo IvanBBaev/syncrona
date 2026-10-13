@@ -483,7 +483,7 @@ test('handleExportUpdateSet: happy path without writeFiles returns xml and count
       global.fetch = async (url) => {
         const u = String(url);
         if (u.includes('export_update_set.do')) {
-          return mkResponse(200, '<xml>data</xml>');
+          return mkResponse(200, '<?xml version="1.0" encoding="UTF-8"?><unload>data</unload>');
         }
         return mkResponse(200, { result: [{ type: 'sys_script' }] });
       };
@@ -494,7 +494,7 @@ test('handleExportUpdateSet: happy path without writeFiles returns xml and count
       assert.equal(parsed.sysId, 'set-1');
       assert.equal(parsed.recordCount, 1);
       assert.equal(parsed.savedTo, null);
-      assert.match(parsed.xml, /<xml>data<\/xml>/);
+      assert.match(parsed.xml, /<unload>data<\/unload>/);
     }
   );
 });
@@ -547,7 +547,7 @@ test('handleExportUpdateSet: writeFiles=true saves file and reports savedTo path
         global.fetch = async (url) => {
           const u = String(url);
           if (u.includes('export_update_set.do')) {
-            return mkResponse(200, '<xml>content</xml>');
+            return mkResponse(200, '<?xml version="1.0" encoding="UTF-8"?><unload>content</unload>');
           }
           return mkResponse(200, { result: [] });
         };
@@ -560,7 +560,7 @@ test('handleExportUpdateSet: writeFiles=true saves file and reports savedTo path
         assert.match(parsed.savedTo, /update_set|set-1/);
         const savedAbs = path.join(tmpDir, parsed.savedTo);
         assert.ok(fs.existsSync(savedAbs));
-        assert.equal(fs.readFileSync(savedAbs, 'utf8'), '<xml>content</xml>');
+        assert.equal(fs.readFileSync(savedAbs, 'utf8'), '<?xml version="1.0" encoding="UTF-8"?><unload>content</unload>');
       }
     );
   } finally {
@@ -617,7 +617,7 @@ test('handleExportUpdateSet: writeFiles=true with an unwritable target path repo
         global.fetch = async (url) => {
           const u = String(url);
           if (u.includes('export_update_set.do')) {
-            return mkResponse(200, '<xml>content</xml>');
+            return mkResponse(200, '<?xml version="1.0" encoding="UTF-8"?><unload>content</unload>');
           }
           return mkResponse(200, { result: [] });
         };
@@ -1206,5 +1206,70 @@ test('handleValidateBeforePush: more recent changes than listed are flagged', as
     const parsed = JSON.parse(res.content[0].text);
     assert.equal(parsed.recentChanges.length, 50);
     assert.equal(parsed.recentChangesTruncated, true);
+  });
+});
+
+test('handleExportUpdateSet: a login page served with 200 is an error and is never saved', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'export-login-'));
+  const prevCwd = process.cwd();
+  process.chdir(tmp);
+  try {
+    await withEnv(SN_ENV, async () => {
+      global.fetch = async (url) => {
+        if (String(url).includes('export_update_set.do')) {
+          return mkResponse(200, '<html><body>Log in</body></html>');
+        }
+        return mkResponse(200, { result: [] });
+      };
+      const res = await handleExportUpdateSet({ updateSetSysId: 'set-1', writeFiles: true }, 1000);
+      assert.equal(res.isError, true);
+      const parsed = JSON.parse(res.content[0].text);
+      assert.match(parsed.error, /not an update set unload/);
+      assert.equal(parsed.savedTo, null);
+      assert.equal(fs.existsSync(path.join(tmp, '.syncrona-mcp')), false);
+    });
+  } finally {
+    process.chdir(prevCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('handleExportUpdateSet: a failed or non-table count query reports an unknown record count', async () => {
+  await withEnv(SN_ENV, async () => {
+    for (const countReply of [mkResponse(500, { error: 'boom' }), mkResponse(200, '<html>Log in</html>')]) {
+      global.fetch = async (url) => {
+        if (String(url).includes('export_update_set.do')) {
+          return mkResponse(200, '<?xml version="1.0" encoding="UTF-8"?><unload></unload>');
+        }
+        return countReply;
+      };
+      const res = await handleExportUpdateSet({ updateSetSysId: 'set-1' }, 1000);
+      assert.equal(res.isError, false);
+      const parsed = JSON.parse(res.content[0].text);
+      assert.equal(parsed.recordCount, null);
+      assert.equal(parsed.recordCountTruncated, false);
+    }
+  });
+});
+
+test('handleExportUpdateSet: a record count past the limit is capped and flagged', async () => {
+  await withEnv(SN_ENV, async () => {
+    const requestedUrls = [];
+    global.fetch = async (url) => {
+      const u = String(url);
+      requestedUrls.push(u);
+      if (u.includes('export_update_set.do')) {
+        return mkResponse(200, '<unload></unload>');
+      }
+      return mkResponse(200, { result: Array.from({ length: 1001 }, (_, i) => ({ sys_id: `x${i}` })) });
+    };
+    const res = await handleExportUpdateSet({ updateSetSysId: 'set-1' }, 1000);
+    assert.match(requestedUrls.find((u) => u.includes('sys_update_xml')), /sysparm_limit=1001\b/);
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.recordCount, 1000);
+    assert.equal(parsed.recordCountTruncated, true);
   });
 });
