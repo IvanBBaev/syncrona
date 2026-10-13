@@ -267,10 +267,14 @@ export async function fetchNativeSchema(
   }
 
   const names = [...tables.keys()].sort();
+  // The scope's own tables come back from the instance unchecked, unlike the
+  // ancestors above; a name outside the alphabet would rewrite the nameIN
+  // clause of both reads below, so it is rendered without columns instead.
+  const readable = names.filter((name) => NAME_PATTERN.test(name));
   const dictionary = await readByNames(
     client,
     "sys_dictionary",
-    names,
+    readable,
     "elementISNOTEMPTY^active=true",
     "name,element,column_label,internal_type,reference,mandatory,choice,max_length",
     paging
@@ -278,7 +282,7 @@ export async function fetchNativeSchema(
   const choiceRows = await readByNames(
     client,
     "sys_choice",
-    names,
+    readable,
     "inactive=false",
     "name,element,value",
     paging

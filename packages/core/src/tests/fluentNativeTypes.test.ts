@@ -212,6 +212,24 @@ describe("fetchNativeSchema", () => {
     expect(calls).toEqual([]);
   });
 
+  it("keeps a scope table whose name would change the encoded query out of the column reads", async () => {
+    const fixture: Fixture = {
+      ...TASK_FIXTURE,
+      sys_db_object: [
+        ...TASK_FIXTURE.sys_db_object,
+        { name: "x_acme_odd^NQnameISNOTEMPTY", label: "Odd", "super_class.name": "", "sys_scope.scope": "x_acme" },
+      ],
+    };
+    const { client, calls } = fakeClient(fixture);
+    const schema = await fetchNativeSchema(client, { scope: "x_acme" });
+    expect(schema.requested).toContain("x_acme_odd^NQnameISNOTEMPTY");
+    expect(schema.tables.find((t) => t.name === "x_acme_odd^NQnameISNOTEMPTY")?.fields).toEqual([]);
+    expect(calls.filter((c) => c.table !== "sys_db_object").map((c) => c.query)).toEqual([
+      "nameINtask,x_acme_note,x_acme_ticket^elementISNOTEMPTY^active=true^ORDERBYsys_id",
+      "nameINtask,x_acme_note,x_acme_ticket^inactive=false^ORDERBYsys_id",
+    ]);
+  });
+
   it("pages every read until an empty page and chunks nameIN lists", async () => {
     const tables = Array.from({ length: 5 }, (_, i) => ({
       name: `x_t${i}`,
