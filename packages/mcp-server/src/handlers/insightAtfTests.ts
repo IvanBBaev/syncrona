@@ -27,14 +27,16 @@ export function buildAtfRunScript(opts: {
     "  function runSuite(id) {",
     "    try {",
     "      var runner = new sn_atf.UserTestRunner();",
-    "      if (typeof runner.runSuite === 'function') { runner.runSuite(id); }",
+    "      if (typeof runner.runSuite !== 'function') { triggered.errors.push('suite ' + id + ': runSuite is unavailable'); return; }",
+    "      runner.runSuite(id);",
     "      triggered.suites.push(id);",
     "    } catch (e) { triggered.errors.push('suite ' + id + ': ' + e); }",
     "  }",
     "  function runTest(id) {",
     "    try {",
     "      var runner = new sn_atf.UserTestRunner();",
-    "      if (typeof runner.runTest === 'function') { runner.runTest(id); }",
+    "      if (typeof runner.runTest !== 'function') { triggered.errors.push('test ' + id + ': runTest is unavailable'); return; }",
+    "      runner.runTest(id);",
     "      triggered.tests.push(id);",
     "    } catch (e) { triggered.errors.push('test ' + id + ': ' + e); }",
     "  }",
@@ -52,8 +54,21 @@ export function buildAtfRunScript(opts: {
   ].join("\n");
 }
 
+const ATF_TRIGGER_MARKER = "SYNCRONA_ATF_TRIGGERED:";
+
+// The scoped sinc API answers JSON with the script output in result.output, so
+// the marker's own JSON sits escaped inside the body text; the sys.scripts.do
+// fallback answers HTML with the output inline.
+export function atfTriggerOutput(response: { text?: unknown; data?: unknown }): string {
+  const data = response.data as { result?: { output?: unknown } } | null | undefined;
+  if (data && typeof data === "object" && typeof data.result?.output === "string") {
+    return data.result.output;
+  }
+  return String(response.text ?? "");
+}
+
 export function parseAtfTrigger(text: string): Record<string, unknown> {
-  const marker = "SYNCRONA_ATF_TRIGGERED:";
+  const marker = ATF_TRIGGER_MARKER;
   const index = typeof text === "string" ? text.indexOf(marker) : -1;
   if (index < 0) {
     return { suites: [], tests: [], errors: [] };
@@ -234,7 +249,8 @@ export async function handleRunAtfTests(
   });
 
   const triggerResponse = await runBackgroundScript(script, timeoutMs);
-  const trigger = parseAtfTrigger(String(triggerResponse.text ?? ""));
+  const triggerOutput = atfTriggerOutput(triggerResponse);
+  const trigger = parseAtfTrigger(triggerOutput);
 
   // A rejected trigger (401, 403, 5xx) started nothing, so polling would only
   // wait out the budget and report "no results yet" as a non-error.
@@ -256,34 +272,48 @@ export async function handleRunAtfTests(
     );
   }
 
-  // A run-all that started no suite has no result to wait for, so polling would
-  // only spend the budget and end in `completed: false`. It is an error, not a
-  // pass: an empty or inactive scope, a script whose output was lost, and suites
-  // that all failed to start must not read as a green test run.
+  // A run that started nothing has no result to wait for, so polling would only
+  // spend the budget and end in `completed: false`. It is an error, not a pass:
+  // an empty or inactive scope, a script whose output was lost (a 200 login page
+  // carries no marker), and a suite or test that failed to start must not read as
+  // a test run still in progress.
+  const triggerErrors = Array.isArray(trigger.errors) ? trigger.errors.map(String) : [];
   const triggeredCount =
     (Array.isArray(trigger.suites) ? trigger.suites.length : 0) +
     (Array.isArray(trigger.tests) ? trigger.tests.length : 0);
-  if (runAll && !suiteId && !testId && triggeredCount === 0) {
+  const useTest = Boolean(testId) && !suiteId && !runAll;
+  const mode = useTest ? "test" : runAll ? "all" : "suite";
+  if (triggeredCount === 0) {
+    const markerSeen = triggerOutput.includes(ATF_TRIGGER_MARKER);
+    let error: string;
+    if (!markerSeen) {
+      error =
+        "The ATF trigger script's output carried no result marker (the instance may have " +
+        "answered with a login page, or the script did not run); no tests are known to have started.";
+    } else if (triggerErrors.length > 0) {
+      error = `No ATF run was started: ${triggerErrors.join("; ")}`;
+    } else {
+      error = `No ATF suite was started for scope ${scope}: the scope has no active test suite, or none of them could be started.`;
+    }
     context.auditMutatingTool(
       "sync_run_atf_tests",
       args,
-      { status: triggerResponse.status, scope, mode: "all", triggered: false },
+      { status: triggerResponse.status, scope, mode, triggered: false },
       Date.now() - context.startedAt
     );
     return textResponse(
       {
         status: triggerResponse.status,
         scope,
-        mode: "all",
+        mode,
         triggered: trigger,
         completed: false,
-        error: `No ATF suite was started for scope ${scope}: the scope has no active test suite, or none of them could be started.`,
+        error,
       },
       true
     );
   }
 
-  const useTest = Boolean(testId) && !suiteId && !runAll;
   const table = useTest ? "sys_atf_test_result" : "sys_atf_test_suite_result";
   const filterParts: string[] = [];
   if (testId && useTest) {
@@ -315,9 +345,10 @@ export async function handleRunAtfTests(
     {
       status: poll.status,
       scope,
-      mode: useTest ? "test" : runAll ? "all" : "suite",
+      mode,
       completed,
       truncated: poll.truncated,
+      triggerErrors: triggerErrors.length,
       total: summary.total,
       passed: summary.passed,
       failed: summary.failed,
@@ -329,7 +360,7 @@ export async function handleRunAtfTests(
     {
       status: poll.status,
       scope,
-      mode: useTest ? "test" : runAll ? "all" : "suite",
+      mode,
       suiteId: suiteId || null,
       testId: testId || null,
       triggered: trigger,
@@ -337,6 +368,8 @@ export async function handleRunAtfTests(
       truncated: poll.truncated,
       summary,
     },
-    poll.status < 200 || poll.status > 299 || summary.failed > 0
+    // A suite that failed to start is a failure of the run even when the ones
+    // that did start passed.
+    poll.status < 200 || poll.status > 299 || summary.failed > 0 || triggerErrors.length > 0
   );
 }
