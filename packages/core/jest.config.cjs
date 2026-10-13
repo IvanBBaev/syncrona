@@ -208,7 +208,7 @@ module.exports = {
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
-    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.45 / 96.03
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.74
     './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.97 / 94.42
@@ -243,7 +243,7 @@ module.exports = {
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
     './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.80 / 95.12
     // Reads records for `query -o json`, whose envelope scripts parse.
-    './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.53 / 96.20
+    './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.56 / 97.46
     // Installs and reinstalls applications through the optional Fluent tier, and
     // mints the OAuth token the ServiceNow SDK uses for the whole session.
     './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.75 / 98.52
