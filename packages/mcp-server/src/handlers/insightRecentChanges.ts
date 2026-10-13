@@ -63,7 +63,10 @@ export async function handleListRecentChanges(
   const truncated = allRows.length > limit;
   const rows = truncated ? allRows.slice(0, limit) : allRows;
   const changes = rows.map((row) => ({
-    name: String(row.target_name ?? row.name ?? ""),
+    // target_name comes back as "" (not absent) for records without a display
+    // value; fall back to the update name (table_sysid) so the change stays
+    // identifiable.
+    name: String(row.target_name || row.name || ""),
     type: String(row.type ?? ""),
     action: String(row.action ?? "").toUpperCase(),
     changedBy: String(row.sys_created_by ?? ""),
