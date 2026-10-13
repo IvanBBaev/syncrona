@@ -1114,3 +1114,31 @@ test('logger text mode keeps client- and instance-supplied text on one record li
     configureLogger(original);
   }
 });
+
+test('logger JSON mode never throws on an unserialisable field and keeps its own keys', () => {
+  const original = getLoggerConfig();
+  const originalWrite = process.stderr.write;
+  const captured = [];
+  process.stderr.write = (chunk) => {
+    captured.push(String(chunk));
+    return true;
+  };
+  try {
+    configureLogger({ level: 'debug', format: 'json' });
+    const circular = {};
+    circular.self = circular;
+    logger.error('tool.error', { bad: circular, big: 10n, message: 'spoofed', level: 'debug', ok: 1 });
+    assert.equal(captured.length, 1);
+    const record = JSON.parse(captured[0]);
+    assert.equal(record.level, 'error');
+    assert.equal(record.message, 'tool.error');
+    assert.equal(record.field_message, 'spoofed');
+    assert.equal(record.field_level, 'debug');
+    assert.equal(record.bad, '[object Object]');
+    assert.equal(record.big, '10');
+    assert.equal(record.ok, 1);
+  } finally {
+    process.stderr.write = originalWrite;
+    configureLogger(original);
+  }
+});

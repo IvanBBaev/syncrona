@@ -127,6 +127,16 @@ function formatTextFields(fields: LogFields): string {
   return parts.join(" ");
 }
 
+const RESERVED_JSON_KEYS = new Set(["level", "time", "message"]);
+
+function toJsonSafeValue(value: unknown): unknown {
+  try {
+    return JSON.stringify(value) === undefined ? String(value) : value;
+  } catch (_) {
+    return String(value);
+  }
+}
+
 function emit(level: EmittableLevel, message: string, fields?: LogFields): void {
   if (!shouldLog(level)) {
     return;
@@ -137,7 +147,11 @@ function emit(level: EmittableLevel, message: string, fields?: LogFields): void 
     if (fields) {
       for (const [key, value] of Object.entries(fields)) {
         if (value !== undefined) {
-          record[key] = value;
+          // A field may neither replace the record's own level/time/message nor
+          // make the whole record unserialisable: logging runs inside catch
+          // blocks, so a throw here would mask the error being reported.
+          const recordKey = RESERVED_JSON_KEYS.has(key) ? `field_${key}` : key;
+          record[recordKey] = toJsonSafeValue(value);
         }
       }
     }
