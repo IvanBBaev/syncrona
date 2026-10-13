@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { escapeQueryValue, wrapUntrustedData } from "../runtimeUtils";
-import { runBackgroundScript, snRequest, toTableResultRows } from "../servicenowCore";
+import {
+  describeNonTablePayload,
+  runBackgroundScript,
+  snRequest,
+  toTableResultRows,
+} from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
 import type { InsightToolContext } from "./insightShared";
@@ -142,7 +147,12 @@ export async function pollAtfResults(
   query: string,
   fields: string,
   timeoutMs: number
-): Promise<{ status: number; rows: Record<string, unknown>[]; truncated: boolean }> {
+): Promise<{
+  status: number;
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+  badPayload: string | null;
+}> {
   const deadline = Date.now() + Math.max(0, timeoutMs);
   let lastStatus = 0;
   let lastRows: Record<string, unknown>[] = [];
@@ -175,6 +185,15 @@ export async function pollAtfResults(
       Math.max(ATF_MIN_ATTEMPT_TIMEOUT_MS, Math.min(timeoutMs, remaining))
     );
     lastStatus = response.status;
+    // A 2xx login or maintenance page reads as zero rows, which would keep the
+    // poll waiting out the budget and end as "no results yet"; polling again
+    // will not turn it into a Table API answer.
+    if (response.status >= 200 && response.status <= 299) {
+      const badPayload = describeNonTablePayload(response.status, response.data);
+      if (badPayload) {
+        return { status: lastStatus, rows: [], truncated: false, badPayload };
+      }
+    }
     const allRows = toTableResultRows(response.data);
     truncated = allRows.length > ATF_MAX_RESULT_ROWS;
     lastRows = truncated ? allRows.slice(0, ATF_MAX_RESULT_ROWS) : allRows;
@@ -183,7 +202,7 @@ export async function pollAtfResults(
     // limit, and polling again cannot reveal them, so the poll ends either way;
     // the caller must not read it as complete.
     if (isAtfTerminal(lastRows)) {
-      return { status: lastStatus, rows: lastRows, truncated };
+      return { status: lastStatus, rows: lastRows, truncated, badPayload: null };
     }
 
     // No wait is owed after the final attempt: the loop is about to end either
@@ -202,7 +221,7 @@ export async function pollAtfResults(
     await snSleep(Math.min(ATF_POLL_INTERVAL_MS, beforeSleep));
   }
 
-  return { status: lastStatus, rows: lastRows, truncated };
+  return { status: lastStatus, rows: lastRows, truncated, badPayload: null };
 }
 
 export async function handleRunAtfTests(
@@ -334,6 +353,28 @@ export async function handleRunAtfTests(
     "sys_id,status,output,duration,run_time,test,test_suite",
     timeoutMs
   );
+
+  if (poll.badPayload) {
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: poll.status, scope, mode, completed: false, triggerErrors: triggerErrors.length },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: poll.status,
+        scope,
+        mode,
+        suiteId: suiteId || null,
+        testId: testId || null,
+        triggered: trigger,
+        completed: false,
+        error: `ATF results could not be read: ${poll.badPayload}. The run was started; check its results on the instance.`,
+      },
+      true
+    );
+  }
 
   const summary = summarizeAtfResults(poll.rows);
   // Rows past the read limit were never seen, so they may still be running.

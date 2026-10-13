@@ -97,3 +97,29 @@ test('sync_run_atf_tests reports a run-all within one read as complete and not t
     assert.equal(body.summary.total, 200);
   });
 });
+
+test('sync_run_atf_tests stops polling and fails when the result read answers a login page', async () => {
+  await withInstance(async () => {
+    let polls = 0;
+    global.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('runBackgroundScript')) {
+        return { status: 200, text: async () => 'SYNCRONA_ATF_TRIGGERED:{"suites":["s1"],"tests":[],"errors":[]}' };
+      }
+      polls += 1;
+      return { status: 200, text: async () => '<html><form action="login.do"></form></html>' };
+    };
+
+    const audits = [];
+    const res = await handleRunAtfTests(
+      { scope: 'x_my_scope', suiteId: 's1', confirmDestructive: true },
+      { ...context(audits), timeoutMs: 5000 }
+    );
+    assert.equal(res.isError, true);
+    const body = JSON.parse(res.content[0].text);
+    assert.equal(body.completed, false);
+    assert.match(body.error, /ATF results could not be read: HTTP 200 with a non-JSON body/);
+    assert.equal(polls, 1, 'a login page is not polled again');
+    assert.equal(audits[0].completed, false);
+  });
+});
