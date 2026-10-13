@@ -1114,3 +1114,97 @@ test('handleListRecentChanges: reports truncation when more changes match than t
     assert.deepEqual(parsed.changes.map((c) => c.name), ['S1', 'S2']);
   });
 });
+
+test('handleValidateBeforePush: a login page served with 200 is an error, not a clean table', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async (url) => {
+      if (String(url).includes('sys_update_xml')) return mkResponse(200, { result: [] });
+      return mkResponse(200, '<html><body>Log in</body></html>');
+    };
+    const res = await handleValidateBeforePush(
+      { scope: 'x_my_scope', tables: ['sys_script_include'] },
+      1000
+    );
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.validated, false);
+    assert.equal(parsed.ready, false);
+    assert.equal(parsed.errors.length, 1);
+    assert.equal(parsed.errors[0].table, 'sys_script_include');
+    assert.match(parsed.errors[0].reason, /non-JSON body instead of a Table API result/);
+  });
+});
+
+test('handleValidateBeforePush: a table with more scripts than the limit withholds the green gate', async () => {
+  await withEnv(SN_ENV, async () => {
+    const requestedUrls = [];
+    global.fetch = async (url) => {
+      const u = String(url);
+      requestedUrls.push(u);
+      if (u.includes('sys_update_xml')) return mkResponse(200, { result: [] });
+      return mkResponse(200, {
+        result: [1, 2, 3].map((n) => ({ sys_id: `s${n}`, name: `Inc${n}`, script: 'gs.info("hi");' })),
+      });
+    };
+    const res = await handleValidateBeforePush(
+      { scope: 'x_my_scope', tables: ['sys_script_include'], limit: 2 },
+      1000
+    );
+    const scriptUrl = decodeURIComponent(requestedUrls.find((u) => u.includes('sys_script_include')));
+    assert.match(scriptUrl, /sysparm_limit=3\b/);
+    assert.match(scriptUrl, /ORDERBYname\^ORDERBYsys_id/);
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.fileCount, 2);
+    assert.deepEqual(parsed.truncatedTables, ['sys_script_include']);
+    assert.equal(parsed.validated, false);
+    assert.equal(parsed.ready, false);
+  });
+});
+
+test('handleValidateBeforePush: a login page on the conflict query means no conflict check ran', async () => {
+  await withEnv(SN_ENV, async () => {
+    global.fetch = async (url) => {
+      if (String(url).includes('sys_update_xml')) return mkResponse(200, '<html>Log in</html>');
+      return mkResponse(200, { result: [] });
+    };
+    const res = await handleValidateBeforePush(
+      { scope: 'x_my_scope', tables: ['sys_script_include'] },
+      1000
+    );
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.conflictCheckPerformed, false);
+    assert.equal(parsed.validated, false);
+    const conflictError = parsed.errors.find((e) => e.table === 'sys_update_xml');
+    assert.ok(conflictError);
+    assert.match(conflictError.reason, /instead of a Table API result/);
+  });
+});
+
+test('handleValidateBeforePush: more recent changes than listed are flagged', async () => {
+  await withEnv(SN_ENV, async () => {
+    const requestedUrls = [];
+    global.fetch = async (url) => {
+      const u = String(url);
+      requestedUrls.push(u);
+      if (u.includes('sys_update_xml')) {
+        return mkResponse(200, {
+          result: Array.from({ length: 51 }, (_, i) => ({
+            name: `sys_script_include_${i}`,
+            type: 'Script Include',
+            target_name: `Inc${i}`,
+            sys_created_on: '2026-01-01 00:00:00',
+            sys_created_by: 'admin',
+          })),
+        });
+      }
+      return mkResponse(200, { result: [] });
+    };
+    const res = await handleValidateBeforePush(
+      { scope: 'x_my_scope', tables: ['sys_script_include'] },
+      1000
+    );
+    assert.match(requestedUrls.find((u) => u.includes('sys_update_xml')), /sysparm_limit=51\b/);
+    const parsed = JSON.parse(res.content[0].text);
+    assert.equal(parsed.recentChanges.length, 50);
+    assert.equal(parsed.recentChangesTruncated, true);
+  });
+});

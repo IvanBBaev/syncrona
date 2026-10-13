@@ -8,6 +8,7 @@ import {
   buildRecentChangesQuery,
   clampLimit,
   defaultSinceIso,
+  describeNonTablePayload,
   errorResponse,
   isoToServiceNowDateTime,
   SCRIPT_SEARCH_TABLES,
@@ -15,6 +16,9 @@ import {
 } from "./insightShared";
 
 // --- E2: sync_validate_before_push ---------------------------------------
+
+// Recent changes listed for the conflict check; more are flagged, not listed.
+const CONFLICT_CHANGES_LIMIT = 50;
 
 export function evaluateValidationStatus(
   report: Record<string, unknown>
@@ -62,7 +66,8 @@ export async function handleValidateBeforePush(
   const files: Array<Record<string, unknown>> = [];
   let blockedCount = 0;
   let warningCount = 0;
-  const errors: Array<{ table: string; status: number }> = [];
+  const errors: Array<{ table: string; status: number; reason?: string }> = [];
+  const truncatedTables: string[] = [];
 
   for (const table of tables) {
     const config = SCRIPT_SEARCH_TABLES[table];
@@ -71,8 +76,12 @@ export async function handleValidateBeforePush(
     }
 
     const params = new URLSearchParams();
-    params.set("sysparm_query", `sys_scope.scope=${escapeQueryValue(scope)}`);
-    params.set("sysparm_limit", String(limit));
+    params.set(
+      "sysparm_query",
+      `sys_scope.scope=${escapeQueryValue(scope)}^ORDERBY${config.nameField}^ORDERBYsys_id`
+    );
+    // One row past the limit tells a fully read table from one that was cut.
+    params.set("sysparm_limit", String(limit + 1));
     params.set("sysparm_fields", `sys_id,${config.nameField},${config.scriptField}`);
 
     const response = await snRequest(
@@ -87,7 +96,19 @@ export async function handleValidateBeforePush(
       continue;
     }
 
-    const rows = toTableResultRows(response.data);
+    // A login or maintenance page served with a 2xx analysed nothing; read as
+    // no rows it would make the table look clean.
+    const badPayload = describeNonTablePayload(response.status, response.data);
+    if (badPayload) {
+      errors.push({ table, status: response.status, reason: badPayload });
+      continue;
+    }
+
+    const allRows = toTableResultRows(response.data);
+    const rows = allRows.length > limit ? allRows.slice(0, limit) : allRows;
+    if (allRows.length > limit) {
+      truncatedTables.push(table);
+    }
     for (const row of rows) {
       const script = String(row[config.scriptField] ?? "");
       const report = buildFullScriptAnalysisReport(script);
@@ -122,7 +143,7 @@ export async function handleValidateBeforePush(
     "sysparm_query",
     buildRecentChangesQuery(scope, isoToServiceNowDateTime(sinceIso))
   );
-  conflictParams.set("sysparm_limit", "50");
+  conflictParams.set("sysparm_limit", String(CONFLICT_CHANGES_LIMIT + 1));
   conflictParams.set("sysparm_fields", "target_name,type,action,sys_created_by,sys_created_on");
 
   const conflictResponse = await snRequest(
@@ -135,14 +156,27 @@ export async function handleValidateBeforePush(
   // "nobody else touched the scope" and "the conflict check never ran" are
   // opposite verdicts, and silently reporting the former invites a push over a
   // colleague's concurrent update-set changes.
-  const conflictCheckPerformed =
-    conflictResponse.status >= 200 && conflictResponse.status <= 299;
+  // A login or maintenance page served with a 2xx is a conflict check that
+  // never ran, too.
+  const conflictOk = conflictResponse.status >= 200 && conflictResponse.status <= 299;
+  const conflictBadPayload = conflictOk
+    ? describeNonTablePayload(conflictResponse.status, conflictResponse.data)
+    : null;
+  const conflictCheckPerformed = conflictOk && !conflictBadPayload;
   if (!conflictCheckPerformed) {
-    errors.push({ table: "sys_update_xml", status: conflictResponse.status });
+    errors.push({
+      table: "sys_update_xml",
+      status: conflictResponse.status,
+      ...(conflictBadPayload ? { reason: conflictBadPayload } : {}),
+    });
   }
-  const conflictRows = conflictCheckPerformed
+  const allConflictRows = conflictCheckPerformed
     ? toTableResultRows(conflictResponse.data)
     : [];
+  const recentChangesTruncated = allConflictRows.length > CONFLICT_CHANGES_LIMIT;
+  const conflictRows = recentChangesTruncated
+    ? allConflictRows.slice(0, CONFLICT_CHANGES_LIMIT)
+    : allConflictRows;
   const recentChanges = conflictRows.map((row) => ({
     name: String(row.target_name ?? ""),
     type: String(row.type ?? ""),
@@ -153,8 +187,14 @@ export async function handleValidateBeforePush(
 
   // A table query that failed analysed zero scripts, so its verdict is unknown —
   // not clean. Only a run where every query succeeded can report a green gate,
-  // and only over the tables asked for: an unknown table was never read.
-  const validated = errors.length === 0 && unknownTables.length === 0 && tables.length > 0;
+  // and only over the tables asked for: an unknown table was never read. A table
+  // with more scripts than `limit` was read only in part, so it cannot be green
+  // either.
+  const validated =
+    errors.length === 0 &&
+    unknownTables.length === 0 &&
+    truncatedTables.length === 0 &&
+    tables.length > 0;
   const ready = blockedCount === 0 && validated;
 
   return textResponse(
@@ -163,11 +203,13 @@ export async function handleValidateBeforePush(
       ready,
       validated,
       unknownTables,
+      truncatedTables,
       blockedCount,
       warningCount,
       fileCount: files.length,
       files,
       recentChanges,
+      recentChangesTruncated,
       conflictCheckPerformed,
       conflictWindowHours,
       errors,
