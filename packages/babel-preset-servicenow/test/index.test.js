@@ -39,6 +39,13 @@ test('brackets every ES3 reserved word, including delete, typeof and in', async 
   }
 });
 
+test('quotes reserved-word object literal keys', async () => {
+  assert.equal(
+    await transform('var o = { default: a, class: b, name: c };'),
+    'var o = {\n  "default": a,\n  "class": b,\n  name: c\n};'
+  );
+});
+
 test('leaves already-computed reserved-word access untouched', async () => {
   const source = 'var w = record["class"];';
   assert.equal(await transform(source), source);

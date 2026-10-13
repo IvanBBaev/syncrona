@@ -26,6 +26,14 @@ export default function() {
           path.replaceWith(replacement);
         }
       },
+      //ES3 rejects a reserved word as an object literal key too, so quote it
+      ObjectProperty(path) {
+        const key = path.node.key;
+        if (key.type === "Identifier" && isReservedWord(key.name) && !path.node.computed) {
+          path.node.key = t.stringLiteral(key.name);
+          path.node.shorthand = false;
+        }
+      },
       //remove use strict
       Program: {
         exit: function exit(path) {
