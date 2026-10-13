@@ -173,12 +173,9 @@ export function normalizeMetadataRow(
   };
 }
 
-export function buildMetadataUpdatePayload(
-  type: MetadataType,
-  updates: Record<string, unknown>
-): Record<string, unknown> {
+export function metadataUpdatableFields(type: MetadataType): string[] {
   const cfg = getMetadataConfig(type);
-  const allowed = new Set([
+  const fields = [
     "active",
     "description",
     "order",
@@ -186,7 +183,15 @@ export function buildMetadataUpdatePayload(
     cfg.displayField,
     cfg.scriptField || "",
     cfg.tableField || "",
-  ]);
+  ].filter((field) => field.length > 0);
+  return [...new Set(fields)];
+}
+
+export function buildMetadataUpdatePayload(
+  type: MetadataType,
+  updates: Record<string, unknown>
+): Record<string, unknown> {
+  const allowed = new Set(metadataUpdatableFields(type));
 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(updates)) {

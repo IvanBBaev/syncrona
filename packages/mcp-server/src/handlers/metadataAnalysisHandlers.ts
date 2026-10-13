@@ -8,6 +8,7 @@ import {
   detectGraphCycles,
   diffDependencyGraphs,
   getMetadataConfig,
+  metadataUpdatableFields,
   normalizeMetadataRow,
   rankImpact,
   summarizeBlastRadius,
@@ -19,7 +20,7 @@ import {
 } from "../analysis";
 import { searchSemanticIndexWithTotal } from "../analysis/semantic";
 import { escapeQueryValue, toJsonText } from "../runtimeUtils";
-import { snRequest } from "../servicenowCore";
+import { describeNonRecordPayload, snRequest } from "../servicenowCore";
 import { tableGet } from "../sessionContext";
 
 import type { ToolResponse } from "../toolResponse";
@@ -149,6 +150,25 @@ export async function handleMetadataAnalysisTool(
 
       const payload = buildMetadataUpdatePayload(metadataType, updates);
       const cfg = getMetadataConfig(metadataType);
+      // Keys outside the updatable fields are dropped from the PATCH. Dropping
+      // all of them would send an empty body that changes nothing yet answers
+      // 200 with the record, which reads as a successful update.
+      const ignoredKeys = Object.keys(updates).filter((key) => !(key in payload));
+      if (Object.keys(payload).length === 0) {
+        const updatable = metadataUpdatableFields(metadataType).join(", ");
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text:
+                ignoredKeys.length > 0
+                  ? `No updatable field in updates (ignored: ${ignoredKeys.join(", ")}). A ${metadataType} update accepts: ${updatable}.`
+                  : `updates is empty. A ${metadataType} update accepts: ${updatable}.`,
+            },
+          ],
+        };
+      }
 
       if (dryRun) {
         return context.makeDryRunAuditResponse(toolName, args, {
@@ -156,6 +176,7 @@ export async function handleMetadataAnalysisTool(
           table: cfg.table,
           sysId,
           payload,
+          ...(ignoredKeys.length > 0 ? { ignoredKeys } : {}),
         });
       }
 
@@ -166,10 +187,30 @@ export async function handleMetadataAnalysisTool(
         timeoutMs
       );
 
-      context.auditMutatingTool(toolName, args, { status: response.status, table: cfg.table, sysId }, Date.now() - startedAt);
+      const patchOk = response.status >= 200 && response.status <= 299;
+      // A 2xx login page or proxy body updated nothing, whatever its status says.
+      const badPayload = patchOk ? describeNonRecordPayload(response.status, response.data) : null;
+      context.auditMutatingTool(
+        toolName,
+        args,
+        { status: response.status, table: cfg.table, sysId, ...(badPayload ? { error: badPayload } : {}) },
+        Date.now() - startedAt
+      );
       return {
-        isError: response.status < 200 || response.status > 299,
-        content: [{ type: "text", text: toJsonText({ status: response.status, table: cfg.table, sysId, result: response.data }) }],
+        isError: !patchOk || badPayload !== null,
+        content: [
+          {
+            type: "text",
+            text: toJsonText({
+              status: response.status,
+              table: cfg.table,
+              sysId,
+              ...(badPayload ? { error: `The record is not known to have been updated: ${badPayload}.` } : {}),
+              ...(ignoredKeys.length > 0 ? { ignoredKeys } : {}),
+              result: response.data,
+            }),
+          },
+        ],
       };
     }
 
