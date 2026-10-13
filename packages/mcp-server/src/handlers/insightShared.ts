@@ -115,7 +115,22 @@ export async function resolveUpdateSetSysId(
   if (response.status < 200 || response.status > 299) {
     return { error: `Update set lookup failed with HTTP ${response.status}: ${name}` };
   }
-  const rows = toTableResultRows(response.data);
+  // A 2xx whose body is not a Table API JSON object (a login or maintenance
+  // page served as HTML, for instance) carries no rows and must not read as a
+  // missing update set either.
+  const data = response.data;
+  const isTablePayload =
+    !!data && typeof data === "object" && !Array.isArray(data) &&
+    Array.isArray((data as Record<string, unknown>).result);
+  if (!isTablePayload) {
+    const kind = typeof data === "string" ? "a non-JSON body" : "an unexpected JSON payload";
+    return {
+      error:
+        `Update set lookup returned HTTP ${response.status} with ${kind} instead of a Table API result; ` +
+        `the instance may be serving a login or maintenance page: ${name}`,
+    };
+  }
+  const rows = toTableResultRows(data);
   if (rows.length === 0) {
     return { error: `Update set not found: ${name}` };
   }

@@ -181,6 +181,29 @@ test('resolveUpdateSetSysId: resolves by name via table lookup (not found)', asy
   );
 });
 
+test('resolveUpdateSetSysId: an HTML 200 body is not read as a missing update set', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      global.fetch = async () => mkResponse(200, '<html><body>Log in</body></html>');
+      const result = await resolveUpdateSetSysId({ updateSetName: 'My Update Set' }, 1000);
+      assert.match(result.error, /HTTP 200 with a non-JSON body instead of a Table API result/);
+      assert.doesNotMatch(result.error, /not found/);
+    }
+  );
+});
+
+test('resolveUpdateSetSysId: a 200 JSON body without a result array is rejected', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev123.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      global.fetch = async () => mkResponse(200, { status: 'maintenance' });
+      const result = await resolveUpdateSetSysId({ updateSetName: 'My Update Set' }, 1000);
+      assert.match(result.error, /an unexpected JSON payload instead of a Table API result/);
+    }
+  );
+});
+
 // ---------------------------------------------------------------------------
 // insightCompareInstances.ts
 // ---------------------------------------------------------------------------
