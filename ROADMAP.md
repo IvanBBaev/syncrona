@@ -12,6 +12,47 @@ the internal tracking docs ([`TODO`](TODO), [`DONE`](DONE),
 [`docs/BUSINESS_ANALYSIS.md`](docs/BUSINESS_ANALYSIS.md)) and is the
 human-facing summary of them.
 
+<!-- release-progress:begin -->
+## Release progress (Opus 5.5 hours)
+
+> Maintained by the `%-relase-opus-5-5-persentage` skill. Unit: wall-clock hours
+> of one autonomous Opus 5.5 session at this project's gate standard.
+> Numbers are computed by the skill's script from the table below.
+
+| | |
+|---|---|
+| Release target | `v1.1.0` — now-sdk parity (current version `1.0.0`) |
+| Progress | **87.4 %** — 101 h of 115.5 h earned |
+| Remaining | **14.5 h** Opus 5.5 (2 h workable now, 12.5 h blocked) |
+| Blocked by | owner: resume and approve the remaining live write-path run on the shared vendor instance (halted 2026-10-10) and its cleanup; owner: tag and publish `v1.1.0` (release date = the day the live run passes) |
+| Calibration | Plan sizes S/M/L ≈ 3/5/12 h: WP-0…WP-8 landed 2026-10-03…10-05 across 3–4 parallel sessions, acceptance rounds 1–8 took 2026-10-05…10-09; one review/fix round ≈ 1–1.5 h (2026-10-13 rounds) |
+| Updated | 2026-10-13 at `5b7fe49` |
+
+| ID | Item | Source | Status | Est h |
+|---|---|---|---|---|
+| WP-0 | Spike and decisions (SDK auth, `sys_app` creation, fluent tier shape) | ROADMAP "v1.1.0 — now-sdk parity" | `done` | 5 |
+| R1 | `push --create` / `--no-create` with create policy and deny list | ROADMAP v1.1.0 table, R1 | `done` | 12 |
+| R2 | `push --prune` (scope-checked, confirmation, exit 130) | ROADMAP v1.1.0 table, R2 | `done` | 5 |
+| R3 | `init --new` (`sys_app` create and binding) | ROADMAP v1.1.0 table, R3 | `done` | 5 |
+| R4 | Data model as local records, incl. composite documents (SDK-F2) | ROADMAP v1.1.0 table, R4; TODO SDK-F2 | `done` | 14 |
+| R5 | Type definitions via the SDK and `--native` (SDK-F3) | ROADMAP v1.1.0 table, R5; TODO SDK-F3 | `done` | 5 |
+| R6 | `cicd <action>` incl. `--progress-id` resume (SDK-F7) | ROADMAP v1.1.0 table, R6; TODO SDK-F7 | `done` | 6 |
+| R7 | `fluent <action>` tier incl. `explain` / `move-to-app` (SDK-F5) and mutual TLS | ROADMAP v1.1.0 table, R7; TODO SDK-F5 | `done` | 15 |
+| R8 | `query <table>` with the `now-sdk query` envelope | ROADMAP v1.1.0 table, R8 | `done` | 3 |
+| WP-8 | MCP `sync_cicd_run` and `sync_fluent_build` (SDK-F6), contract 1.1.0 | ROADMAP v1.1.0 table, WP-8; TODO WP-8, SDK-F6 | `done` | 7 |
+| ACC | Acceptance review rounds 1–8 on the parity branch and their fixes | WORKLOG 2026-10-05…10-09 | `done` | 16 |
+| DOCS | Migration guide, comparison, data-model docs, CHANGELOG entries | ROADMAP v1.1.0 intro; plan WP-9 | `done` | 4 |
+| LR-FIX | Fixes for live-run findings: refresh keeps sidecar-only records, the missing-`pushATFfile` message and the `sys_atf_step` create fix (`f934eb8`) are on main | TODO SDK-F1; WORKLOG 2026-10-10 | `done` | 4 |
+| SDK-F1 | Live verification of the write paths (create, prune, `init --new`, `cicd`, `fluent install`, data-model round-trip, mutual TLS); read-only slice and part of the ATF create path done | TODO SDK-F1 | `blocked-owner` | 8 |
+| CLEAN | Cleanup of live-run records on the shared instance (C1–C6, suite links, app preference) | WORKLOG 2026-10-10 | `blocked-owner` | 2 |
+| CAVEAT | Drop the "live verification pending" caveats in README, COMPARISON, ROADMAP and MIGRATING_FROM_NOW_SDK once SDK-F1 passes | TODO SDK-F1 | `blocked-owner` | 1.5 |
+| REL-PREP | Release prep: `1.1.0` CHANGELOG heading, site badge, changeset version run, release gate | plan WP-9; WORKLOG 2026-10-09 release patch v2 | `open` | 2 |
+| REL | Tag `v1.1.0` and publish through the Release workflow | ROADMAP "Where SyncroNow AI is today" | `blocked-owner` | 1 |
+
+### History
+- 2026-10-13 `5b7fe49` — 87.4 %, 14.5 h left (first run; target `v1.1.0`; SDK-F4 API-key in the Fluent tier left out of the target per plan Q8 — 1.1.0 refuses session-only actions)
+<!-- release-progress:end -->
+
 - **Current version:** `1.0.0` — first stable release, cut and **published on npm
   2026-08-25**. All 16 packages are live with build provenance
   (`predicateType: https://slsa.dev/provenance/v1`), published by the `Release`
