@@ -44,6 +44,7 @@
  * the scope that owns it; the summary carries the full sorted list.
  */
 import { compareBytewise } from "../order";
+import { isSafePathComponent } from "@syncrona/sn-transport";
 import { isMirrorSysId, repoPath } from "../shards/shardLayout";
 import type { WriterFs } from "../write/fs";
 import type { CanonicalTreeReader } from "./canonicalTree";
@@ -80,6 +81,8 @@ export interface RefsViewResult {
 }
 
 interface ReferenceColumn {
+  /** Table whose dictionary row defines the column. */
+  table: string;
   element: string;
   /** Raw `reference` value from the dictionary row; resolved lazily. */
   targetRaw: string | null;
@@ -140,6 +143,7 @@ export async function generateRefsView(
       continue;
     }
     const column: ReferenceColumn = {
+      table: tableName,
       element,
       targetRaw: envelopeField(fields, "reference"),
     };
@@ -202,6 +206,10 @@ export async function generateRefsView(
   const scopes = new Set<string>();
   const danglingRefs: DanglingReference[] = [];
   let indexedRecords = 0;
+  // A target name that is not a safe path component (a hand-edited `../x`)
+  // would make the reader's shard lookup throw and take every derived view
+  // down with it. Such a column is unverifiable, named once (R3), not fatal.
+  const unsafeTargetColumns = new Set<ReferenceColumn>();
 
   for (const table of tables) {
     const data = await reader.table(table);
@@ -235,6 +243,16 @@ export async function generateRefsView(
         if (targetTable === null) {
           // The dictionary row's own target is unresolvable — the column is
           // unverifiable, which is not the same claim as dangling.
+          continue;
+        }
+        if (!isSafePathComponent(targetTable)) {
+          if (!unsafeTargetColumns.has(column)) {
+            unsafeTargetColumns.add(column);
+            reader.anomalies.push({
+              source: "refs",
+              detail: `reference column ${column.table}.${column.element} targets a table name that is not a safe path component: ${JSON.stringify(targetTable)}; not verified`,
+            });
+          }
           continue;
         }
         const target = await reader.table(targetTable);

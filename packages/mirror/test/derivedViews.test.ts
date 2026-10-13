@@ -638,6 +638,29 @@ describe("refs view", () => {
     expect(summary.counts.refScopes).toBe(1);
     expect(fs.derivedFiles().get(derivedPath("refs", "global.md"))).toContain("None.");
   });
+
+  it("names a reference column with an unsafe target table once instead of aborting (R3)", async () => {
+    const fs = new DerivedMemoryFs();
+    await buildCanonicalTree(fs, [
+      {
+        table: "sys_dictionary",
+        sysId: sysIdFor(0xa01),
+        fields: { internal_type: "reference", name: "alpha", element: "ref_a", reference: "../escape" },
+      },
+      { table: "alpha", sysId: sysIdFor(0xa10), fields: { ref_a: sysIdFor(0xaf1) } },
+      { table: "alpha", sysId: sysIdFor(0xa11), fields: { ref_a: sysIdFor(0xaf2) } },
+    ]);
+    const summary = await generateDerivedViews(fs, ROOT, derivedConfig());
+
+    expect(summary.danglingRefs).toEqual([]);
+    expect(summary.counts.refRecords).toBe(3);
+    expect(summary.anomalies.filter((anomaly) => anomaly.source === "refs")).toEqual([
+      {
+        source: "refs",
+        detail: 'reference column alpha.ref_a targets a table name that is not a safe path component: "../escape"; not verified',
+      },
+    ]);
+  });
 });
 
 describe("acl matrix view", () => {
