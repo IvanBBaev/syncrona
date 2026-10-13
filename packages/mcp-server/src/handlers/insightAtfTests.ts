@@ -257,6 +257,15 @@ export async function handleRunAtfTests(
     return errorResponse("Provide suiteId, testId, or set runAll=true.");
   }
 
+  // A test's result lands in sys_atf_test_result and a suite's in
+  // sys_atf_test_suite_result, and one run is polled on one table: with a suite
+  // the test's result was never read, so its count kept the poll waiting out the
+  // budget, and with runAll the script started only the test yet the poll read
+  // every suite result of the scope as this run's.
+  if (testId && (suiteId || runAll)) {
+    return errorResponse("testId cannot be combined with suiteId or runAll=true; run the test on its own.");
+  }
+
   // Triggering ATF runs a background script that mutates the instance, so gate
   // it behind the same confirmDestructive / dryRun / audit contract as the
   // other mutating tools.

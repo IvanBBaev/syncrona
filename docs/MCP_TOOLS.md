@@ -647,7 +647,7 @@ Trigger ATF test execution in the instance (a single test, a suite, or all suite
 | --- | --- | --- | --- | --- |
 | `scope` | `string` | yes |  | Scope code that owns the ATF tests (for example x_nuvo_sinc). |
 | `suiteId` | `string` | no |  | sys_id of an ATF test suite to run. |
-| `testId` | `string` | no |  | sys_id of a single ATF test to run. |
+| `testId` | `string` | no |  | sys_id of a single ATF test to run. Cannot be combined with suiteId or runAll. |
 | `runAll` | `boolean` | no | `false` | Run all ATF suites in the scope. Used when suiteId and testId are omitted. |
 | `confirmDestructive` | `boolean` | yes | `false` | Required acknowledgement — running ATF tests executes a background script and mutates the instance. Must be true to run. |
 | `dryRun` | `boolean` | no | `false` | Plan the run and record an audit entry without triggering ATF execution. |

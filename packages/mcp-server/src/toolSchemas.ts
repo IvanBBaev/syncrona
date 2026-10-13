@@ -1769,7 +1769,7 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         },
         testId: {
           type: "string",
-          description: "sys_id of a single ATF test to run.",
+          description: "sys_id of a single ATF test to run. Cannot be combined with suiteId or runAll.",
         },
         runAll: {
           type: "boolean",
