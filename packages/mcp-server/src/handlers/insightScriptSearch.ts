@@ -37,6 +37,18 @@ export async function handleSearchScripts(
     return errorResponse("Missing required field: query");
   }
 
+  // An encoded query cannot carry a literal "^" (escapeQueryValue turns it into a
+  // space), so `a ^ b` would search for `a   b` and report a clean search for code
+  // that holds the real text. Send the longest caret-free piece to the instance and
+  // keep only the rows whose script holds the whole query.
+  const serverTerm = query
+    .split("^")
+    .reduce((longest, piece) => (piece.trim().length > longest.trim().length ? piece : longest), "");
+  if (!serverTerm.trim()) {
+    return errorResponse("query must contain at least one character other than ^");
+  }
+  const filterLocally = serverTerm !== query;
+
   const scope = typeof args.scope === "string" ? args.scope.trim() : "";
   const requestedTables = Array.isArray(args.tables)
     ? args.tables.filter((item): item is string => typeof item === "string")
@@ -67,7 +79,7 @@ export async function handleSearchScripts(
       continue;
     }
 
-    const queryParts = [`${config.scriptField}CONTAINS${escapeQueryValue(query)}`];
+    const queryParts = [`${config.scriptField}CONTAINS${escapeQueryValue(serverTerm)}`];
     if (scope) {
       queryParts.push(`sys_scope.scope=${escapeQueryValue(scope)}`);
     }
@@ -106,6 +118,9 @@ export async function handleSearchScripts(
     }
     for (const row of rows) {
       const script = String(row[config.scriptField] ?? "");
+      if (filterLocally && !script.toLowerCase().includes(query.toLowerCase())) {
+        continue;
+      }
       matches.push({
         table,
         name: String(row[config.nameField] ?? ""),
