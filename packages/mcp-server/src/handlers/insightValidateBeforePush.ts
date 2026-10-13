@@ -82,7 +82,7 @@ export async function handleValidateBeforePush(
     );
     // One row past the limit tells a fully read table from one that was cut.
     params.set("sysparm_limit", String(limit + 1));
-    params.set("sysparm_fields", `sys_id,${config.nameField},${config.scriptField}`);
+    params.set("sysparm_fields", [...new Set(["sys_id", config.nameField, config.scriptField])].join(","));
 
     const response = await snRequest(
       "GET",
@@ -144,7 +144,7 @@ export async function handleValidateBeforePush(
     buildRecentChangesQuery(scope, isoToServiceNowDateTime(sinceIso))
   );
   conflictParams.set("sysparm_limit", String(CONFLICT_CHANGES_LIMIT + 1));
-  conflictParams.set("sysparm_fields", "target_name,type,action,sys_created_by,sys_created_on");
+  conflictParams.set("sysparm_fields", "target_name,name,type,action,sys_created_by,sys_created_on");
 
   const conflictResponse = await snRequest(
     "GET",
@@ -178,7 +178,9 @@ export async function handleValidateBeforePush(
     ? allConflictRows.slice(0, CONFLICT_CHANGES_LIMIT)
     : allConflictRows;
   const recentChanges = conflictRows.map((row) => ({
-    name: String(row.target_name ?? ""),
+    // An empty target_name (a deleted or unnamed target) falls back to the update
+    // name (`table_sysid`), as sync_list_recent_changes does, so no change is nameless.
+    name: String(row.target_name || row.name || ""),
     type: String(row.type ?? ""),
     action: String(row.action ?? "").toUpperCase(),
     changedBy: String(row.sys_created_by ?? ""),

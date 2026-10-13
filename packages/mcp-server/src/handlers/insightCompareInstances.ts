@@ -123,7 +123,7 @@ async function fetchScopeScriptRows(
     `sys_scope.scope=${escapeQueryValue(scope)}^ORDERBY${nameField}^ORDERBYsys_id`
   );
   params.set("sysparm_limit", String(limit + 1));
-  params.set("sysparm_fields", `sys_id,${nameField},${scriptField}`);
+  params.set("sysparm_fields", [...new Set(["sys_id", nameField, scriptField])].join(","));
 
   const response = await snRequestWithConfig(
     config,
