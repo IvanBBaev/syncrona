@@ -268,7 +268,9 @@ export async function generateFormsView(
                 row.type === null || row.type === "element"
                   ? ""
                   : ` — ${escapeCell(row.type)}`;
-              lines.push(`- \`${row.element}\`${typeSuffix}`);
+              // Escaped like every other instance string: a raw line break in
+              // the element name would otherwise inject Markdown lines of its own.
+              lines.push(`- \`${escapeCell(row.element)}\`${typeSuffix}`);
             }
           }
         }

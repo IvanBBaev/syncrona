@@ -219,6 +219,31 @@ describe("forms view", () => {
       `sys_ui_form_section ${J4}: missing sys_ui_form or sys_ui_section reference; skipped`,
     ]);
   });
+
+  it("escapes element names so a line break cannot inject Markdown lines", async () => {
+    const fs = new DerivedMemoryFs();
+    const form = sysIdFor(0x1a0);
+    const section = sysIdFor(0x1a1);
+    await buildCanonicalTree(fs, [
+      { table: "sys_ui_form", sysId: form, fields: { name: "alpha" } },
+      { table: "sys_ui_section", sysId: section, fields: { caption: "Main" } },
+      {
+        table: "sys_ui_form_section",
+        sysId: sysIdFor(0x1a2),
+        fields: { sys_ui_form: form, sys_ui_section: section, position: "0" },
+      },
+      {
+        table: "sys_ui_element",
+        sysId: sysIdFor(0x1a3),
+        fields: { sys_ui_section: section, element: "a|b\n# injected", position: "0" },
+      },
+    ]);
+    await generateDerivedViews(fs, ROOT, derivedConfig());
+
+    const doc = fs.derivedFiles().get(derivedPath("forms", "alpha", "Default.md")) as string;
+    expect(doc.split("\n")).toContain("- `a\\|b\\n# injected`");
+    expect(doc.split("\n")).not.toContain("# injected`");
+  });
 });
 
 describe("workflows view", () => {
