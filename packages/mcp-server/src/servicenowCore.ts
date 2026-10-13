@@ -1263,6 +1263,29 @@ export function describeNonTablePayload(status: number, data: unknown): string |
   );
 }
 
+// The single-record counterpart of describeNonTablePayload, for a POST or PATCH
+// whose Table API answer is `result` as one object. A 2xx without a record that
+// carries a sys_id (a login page, an empty body, a proxy's JSON) means nothing is
+// known to have been written, so it must not read as a created or updated record.
+export function describeNonRecordPayload(status: number, data: unknown): string | null {
+  const result =
+    !!data && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>).result
+      : undefined;
+  const isRecord =
+    !!result && typeof result === "object" && !Array.isArray(result) &&
+    typeof (result as Record<string, unknown>).sys_id === "string" &&
+    ((result as Record<string, unknown>).sys_id as string).length > 0;
+  if (isRecord) {
+    return null;
+  }
+  const kind = typeof data === "string" ? "a non-JSON body" : "a payload without a record sys_id";
+  return (
+    `HTTP ${status} with ${kind} instead of a Table API record; ` +
+    "the instance may be serving a login or maintenance page"
+  );
+}
+
 export function toTableResultRows(data: unknown): Record<string, unknown>[] {
   const obj = asRecord(data);
   const result = obj.result;

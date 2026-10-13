@@ -2,7 +2,13 @@
 import { toJsonText, trimOutput } from "../runtimeUtils";
 import { evaluateCreateTablePolicy } from "../createTablePolicy";
 import { isSafeRemoteEndpoint } from "../endpointPolicy";
-import { runBackgroundScript, snRequest, summarizeRows, toTableResultRows } from "../servicenowCore";
+import {
+  describeNonRecordPayload,
+  runBackgroundScript,
+  snRequest,
+  summarizeRows,
+  toTableResultRows,
+} from "../servicenowCore";
 
 import type { ToolResponse } from "../toolResponse";
 import { describeNonTablePayload } from "./insightShared";
@@ -184,16 +190,27 @@ export async function handleServiceNowCrudTool(
         timeoutMs
       );
 
-      context.auditMutatingTool(toolName, args, { status: response.status, table }, Date.now() - startedAt);
+      const createOk = response.status >= 200 && response.status <= 299;
+      const badPayload = createOk ? describeNonRecordPayload(response.status, response.data) : null;
+
+      context.auditMutatingTool(
+        toolName,
+        args,
+        { status: response.status, table, ...(badPayload ? { error: badPayload } : {}) },
+        Date.now() - startedAt
+      );
 
       return {
-        isError: response.status < 200 || response.status > 299,
+        isError: !createOk || badPayload !== null,
         content: [
           {
             type: "text",
             text: toJsonText({
               status: response.status,
               table,
+              ...(badPayload
+                ? { error: `No record is known to have been created: ${badPayload}.` }
+                : {}),
               result: response.data,
             }),
           },

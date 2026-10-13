@@ -21,6 +21,7 @@ import {
   toJsonText,
 } from "./runtimeUtils";
 import {
+  describeNonRecordPayload,
   getCurrentScopeWithFallback,
   runBackgroundScript,
   snScopedApiRequest,
@@ -612,9 +613,12 @@ export async function createAndSyncScriptInclude(
     timeoutMs
   );
   const created = asRecord(asRecord(createRes.data).result);
+  const createOk = createRes.status >= 200 && createRes.status < 300;
+  // A 2xx login page or empty body created nothing that a refresh could pull.
+  const badPayload = createOk ? describeNonRecordPayload(createRes.status, createRes.data) : null;
 
   let refreshResult: CmdResult | null = null;
-  if (createRes.status >= 200 && createRes.status < 300 && refreshAfterCreate) {
+  if (createOk && !badPayload && refreshAfterCreate) {
     refreshResult = await runSyncroCliCommand("refresh", ["--logLevel", "warn"], timeoutMs);
   }
 
@@ -622,6 +626,9 @@ export async function createAndSyncScriptInclude(
 
   return {
     createStatus: createRes.status,
+    ...(badPayload
+      ? { createError: `No Script Include is known to have been created: ${badPayload}.` }
+      : {}),
     created,
     refreshTriggered: refreshAfterCreate,
     refreshResult:
@@ -632,8 +639,8 @@ export async function createAndSyncScriptInclude(
         ? "Ask AI to edit one of the localPaths directly."
         : "No local path found in manifest yet. Run syncrona refresh again and retry.",
     isFailure:
-      createRes.status < 200 ||
-      createRes.status > 299 ||
+      !createOk ||
+      badPayload !== null ||
       (refreshResult !== null && refreshResult.exitCode !== 0),
   };
 }
