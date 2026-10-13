@@ -526,7 +526,8 @@ test('handleSearchScripts: respects a custom limit reflected in the request quer
         return mkResponse(200, { result: [] });
       };
       await handleSearchScripts({ query: 'x', tables: ['sys_script_include'], limit: 5 }, 1000);
-      assert.match(requestedUrls[0], /sysparm_limit=5\b/);
+      // One row past the limit tells a fully read table from a truncated one.
+      assert.match(requestedUrls[0], /sysparm_limit=6\b/);
     }
   );
 });

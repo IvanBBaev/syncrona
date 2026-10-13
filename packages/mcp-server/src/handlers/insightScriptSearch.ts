@@ -5,6 +5,7 @@ import { snRequest, toTableResultRows } from "../servicenowCore";
 import type { ToolResponse } from "../toolResponse";
 import {
   clampLimit,
+  describeNonTablePayload,
   errorResponse,
   SCRIPT_SEARCH_TABLES,
   textResponse,
@@ -57,7 +58,8 @@ export async function handleSearchScripts(
   const limit = clampLimit(args.limit, 20, 100);
 
   const matches: Array<Record<string, unknown>> = [];
-  const errors: Array<{ table: string; status: number }> = [];
+  const errors: Array<{ table: string; status: number; reason?: string }> = [];
+  const truncatedTables: string[] = [];
 
   for (const table of tables) {
     const config = SCRIPT_SEARCH_TABLES[table];
@@ -72,7 +74,9 @@ export async function handleSearchScripts(
 
     const params = new URLSearchParams();
     params.set("sysparm_query", queryParts.join("^"));
-    params.set("sysparm_limit", String(limit));
+    // One row past the limit tells a table with exactly `limit` matches from
+    // one whose matches were cut.
+    params.set("sysparm_limit", String(limit + 1));
     params.set("sysparm_fields", `sys_id,${config.nameField},${config.scriptField}`);
 
     const response = await snRequest(
@@ -87,7 +91,19 @@ export async function handleSearchScripts(
       continue;
     }
 
-    const rows = toTableResultRows(response.data);
+    // A login or maintenance page served with a 2xx searched nothing either; read
+    // as no rows it would bring back the false clean search REV-152 removed.
+    const badPayload = describeNonTablePayload(response.status, response.data);
+    if (badPayload) {
+      errors.push({ table, status: response.status, reason: badPayload });
+      continue;
+    }
+
+    const allRows = toTableResultRows(response.data);
+    const rows = allRows.length > limit ? allRows.slice(0, limit) : allRows;
+    if (allRows.length > limit) {
+      truncatedTables.push(table);
+    }
     for (const row of rows) {
       const script = String(row[config.scriptField] ?? "");
       matches.push({
@@ -122,6 +138,10 @@ export async function handleSearchScripts(
       searchableTables: Object.keys(SCRIPT_SEARCH_TABLES),
       searchComplete,
       matchCount: matches.length,
+      // Tables with more matches than `limit`: the search reached them, but the
+      // match list is not every usage. Raise `limit` or narrow `query` / `scope`.
+      truncated: truncatedTables.length > 0,
+      truncatedTables,
       matches,
       errors,
     },

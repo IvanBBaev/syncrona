@@ -121,3 +121,47 @@ test('REV-152: a fully successful search still reports success and completeness'
     assert.equal(res.structuredContent.searchComplete, true);
   });
 });
+
+test('a search whose table answered 200 with a login page is not a clean search', async () => {
+  await withEnv(async () => {
+    global.fetch = async () => mkResponse(200, '<html><body>Log in</body></html>');
+
+    const res = await handleSearchScripts(
+      { query: 'gs.setRedirect', tables: TWO_TABLES },
+      1000
+    );
+
+    assert.equal(res.isError, true);
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(payload.searchComplete, false);
+    assert.equal(payload.errors.length, 2);
+    assert.match(payload.errors[0].reason, /non-JSON body instead of a Table API result/);
+  });
+});
+
+test('a table with more matches than the limit is reported as truncated', async () => {
+  await withEnv(async () => {
+    const requestedUrls = [];
+    global.fetch = async (url) => {
+      requestedUrls.push(String(url));
+      if (String(url).includes('/sys_script_include?')) {
+        return mkResponse(200, {
+          result: [1, 2, 3].map((n) => ({ sys_id: `s${n}`, name: `H${n}`, script: 'gs.setRedirect();' })),
+        });
+      }
+      return mkResponse(200, { result: [] });
+    };
+
+    const res = await handleSearchScripts(
+      { query: 'gs.setRedirect', tables: TWO_TABLES, limit: 2 },
+      1000
+    );
+
+    assert.equal(res.isError, false);
+    assert.match(requestedUrls[0], /sysparm_limit=3\b/);
+    const payload = JSON.parse(res.content[0].text);
+    assert.equal(payload.matchCount, 2);
+    assert.equal(payload.truncated, true);
+    assert.deepEqual(payload.truncatedTables, ['sys_script_include']);
+  });
+});
