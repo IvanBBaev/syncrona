@@ -1054,6 +1054,34 @@ describe("tombstone advisory", () => {
     expect(recordDirExists(fs, deadEntry)).toBe(true);
   });
 
+  it("refuses when another record claims the directory under a case-variant name", async () => {
+    const fs = new MemoryFs();
+    const dead = sysIdFor("case-renamed-away");
+    const usurper = sysIdFor("case-renamed-into");
+    // APFS and NTFS resolve both names to one directory.
+    const deadEntry = entryFor({ sysId: dead, name: "shared_name" });
+    const usurperEntry = entryFor({ sysId: usurper, name: "Shared_Name" });
+    await seedRecordDir(fs, deadEntry);
+    await seedShards(fs, {
+      entries: new Map([
+        [dead, deadEntry],
+        [usurper, usurperEntry],
+      ]),
+    });
+    const probe = new ScriptedProbe();
+
+    const result = await reconcileSweep({
+      ...base(fs),
+      evidence: watermarkEvidence,
+      advisory: { tombstones: [{ table: TABLE, sysId: dead }], source: probe },
+    });
+
+    expect(result.tombstones.map((row) => row.disposition)).toEqual(["path-conflict"]);
+    expect(probe.calls).toEqual([]);
+    expect(result.deletions).toEqual([]);
+    expect(recordDirExists(fs, deadEntry)).toBe(true);
+  });
+
   it("duplicate advisories collapse to one outcome and one GET", async () => {
     const fs = new MemoryFs();
     const { sysId } = await seedOneRecord(fs, { label: "tombstoned", name: "tomb_target" });

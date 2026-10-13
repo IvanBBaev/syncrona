@@ -101,6 +101,7 @@ import {
 } from "../shards/shardStore";
 import { isStagingName } from "../write/atomicWrite";
 import { DeletionAuthority } from "../write/deletionAuthority";
+import { foldRepoPath } from "../write/foldRepoPath";
 import type { WriterFs } from "../write/fs";
 import { toNativePath } from "../write/fs";
 import { applyAuthorizedDeletion } from "../write/writer";
@@ -456,9 +457,10 @@ async function confirmTombstone(
   // directory would take a live record's files with it. Without full-sweep
   // evidence there is no observed set to consult, so the shard set stands in
   // as the best available map of live paths — and a conflict means refuse.
+  // Paths are compared folded, as a case-insensitive filesystem compares them.
   for (const claim of claims) {
     for (const [otherId, otherEntry] of claim.shards.entries) {
-      if (otherId !== sysId && otherEntry.path === claim.entry.path) {
+      if (otherId !== sysId && foldRepoPath(otherEntry.path) === foldRepoPath(claim.entry.path)) {
         return {
           table,
           sysId,

@@ -412,6 +412,13 @@ describe("INV-5 rule 2: a directory a live record has taken over", () => {
     expect(authority.authorize(GLOBAL, DELETED).path.endsWith("/shared")).toBe(true);
   });
 
+  it("refuses it when the live record's name differs only in case", () => {
+    // APFS and NTFS resolve `Shared` and `shared` to one directory, so deleting the
+    // stale entry's path would remove the live record's freshly written files.
+    const authority = sweepWhere("Shared");
+    expect(authority.has(GLOBAL, DELETED)).toBe(false);
+  });
+
   it("hands back the record's OLD location when it moved to another scope", () => {
     // The record still exists — in a different scope — so what is being removed is a
     // stale directory, and the path handed back must be the one the sweep proved

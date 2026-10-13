@@ -30,6 +30,7 @@
  */
 import type { RecordEntry } from "../contracts";
 import { compareBytewise } from "../order";
+import { foldRepoPath } from "./foldRepoPath";
 
 /** One record the sweep has proved is gone, and where it lives on disk. */
 export interface AuthorizedDeletion {
@@ -124,7 +125,10 @@ export class DeletionAuthority {
    *     still points at `instance/<scope>/<table>/foo`, so acting on rule 1 alone
    *     would delete B's freshly written directory and the mirror would lose a
    *     record that exists on the instance. The observed set is the authority on
-   *     which paths are live, so the check is a lookup, not a heuristic.
+   *     which paths are live, so the check is a lookup, not a heuristic. The
+   *     lookup compares folded paths: a full sweep does not seed the name resolver,
+   *     so B may be admitted as `Foo` while A's entry says `foo`, and on a
+   *     case-insensitive filesystem that is still A's directory.
    */
   static fromCompletedSweep(evidence: CompletedSweepEvidence): DeletionAuthority {
     if (!evidence.complete) {
@@ -135,14 +139,14 @@ export class DeletionAuthority {
     const livePaths = new Set<string>();
     for (const scope of evidence.scopes) {
       for (const entry of scope.observed.values()) {
-        livePaths.add(entry.path);
+        livePaths.add(foldRepoPath(entry.path));
       }
     }
 
     const deletions = new Map<string, AuthorizedDeletion>();
     for (const scope of evidence.scopes) {
       for (const [sysId, entry] of scope.baseline) {
-        if (scope.observed.has(sysId) || livePaths.has(entry.path)) {
+        if (scope.observed.has(sysId) || livePaths.has(foldRepoPath(entry.path))) {
           continue;
         }
         deletions.set(deletionKey(scope.scope, sysId), {
