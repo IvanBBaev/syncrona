@@ -194,7 +194,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Six entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Seven entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
@@ -367,7 +367,7 @@ const MODULE_FLOORS = [
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
   // once its prune's two load-bearing catches were driven on purpose. A module that
   // jumps and is not pinned can fall back just as far under the defaults.
-  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.74 / 94.52
+  { pattern: 'dist/semanticIndexState.js', line: 96, branch: 91 }, // measured 98.74 / 94.52 (also 98.74 / 94.59: V8 range granularity, 69/73 vs 70/74 branches, macOS vs ubuntu-latest on unchanged source, uncovered lines 203-204 223-224 in both readings)
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
   { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.93 / 93.62
   // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
