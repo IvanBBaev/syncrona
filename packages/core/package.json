@@ -36,10 +36,10 @@
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "dotenv": "^17.4.2",
-    "inquirer": "^14.0.2",
+    "inquirer": "^14.2.3",
     "lodash": "^4.17.21",
     "winston": "^3.19.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.2.0"
   },
   "bin": {
     "syncrona": "./dist/index.js"
