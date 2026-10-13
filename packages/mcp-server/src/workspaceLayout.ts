@@ -64,6 +64,11 @@ export function readWorkspaceLayout(projectDir: string): WorkspaceLayout {
 
   try {
     // sync.config.js is user-authored CJS; require is the only loader for it here.
+    // The server is long-lived and callers read the layout per request, so the
+    // module cache must not pin the first-seen config: a user who flips `flat`
+    // mid-session would otherwise get paths for the old layout, which both
+    // readers turn into silent misses.
+    delete require.cache[require.resolve(configPath)];
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded = require(configPath);
     const cfg = loaded?.default || loaded;

@@ -140,6 +140,18 @@ test('readWorkspaceLayout reads flat: true together with a custom sourceDirector
   }
 });
 
+test('readWorkspaceLayout picks up a sync.config.js edited after the first read', () => {
+  const dir = tmpProject('layout-edit');
+  try {
+    writeConfig(dir, 'module.exports = { flat: false };');
+    assert.deepEqual(readWorkspaceLayout(dir), { sourceDirectory: 'src', flat: false });
+    writeConfig(dir, 'module.exports = { sourceDirectory: "app-src", flat: true };');
+    assert.deepEqual(readWorkspaceLayout(dir), { sourceDirectory: 'app-src', flat: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('readWorkspaceLayout treats a truthy non-true flat value as nested (strict === true, like core)', () => {
   const dir = tmpProject('layout-truthy');
   try {
