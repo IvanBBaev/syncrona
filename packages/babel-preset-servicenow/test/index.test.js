@@ -28,6 +28,17 @@ test('moves reserved-word member access to bracket syntax', async () => {
   );
 });
 
+test('brackets every ES3 reserved word, including delete, typeof and in', async () => {
+  assert.equal(await transform('set.delete(key);'), 'set["delete"](key);');
+  assert.equal(
+    await transform('var t = meta.typeof + meta.in + meta.function;'),
+    'var t = meta["typeof"] + meta["in"] + meta["function"];'
+  );
+  for (const word of ['debugger', 'delete', 'export', 'function', 'in', 'typeof', 'with']) {
+    assert.equal(isReservedWord(word), true, word);
+  }
+});
+
 test('leaves already-computed reserved-word access untouched', async () => {
   const source = 'var w = record["class"];';
   assert.equal(await transform(source), source);

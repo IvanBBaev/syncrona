@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// ES3 reserved words (keywords, future reserved words and literals), which
+// ServiceNow's Rhino engine rejects as a dot-accessed property name.
 const reservedWords = {
   abstract: true,
   boolean: true,
@@ -10,21 +12,26 @@ const reservedWords = {
   class: true,
   const: true,
   continue: true,
+  debugger: true,
   default: true,
+  delete: true,
   do: true,
   double: true,
   else: true,
   enum: true,
+  export: true,
   extends: true,
   false: true,
   final: true,
   finally: true,
   float: true,
   for: true,
+  function: true,
   goto: true,
   if: true,
   implements: true,
   import: true,
+  in: true,
   instanceof: true,
   int: true,
   interface: true,
@@ -48,10 +55,12 @@ const reservedWords = {
   transient: true,
   true: true,
   try: true,
+  typeof: true,
   var: true,
   void: true,
   volatile: true,
-  while: true
+  while: true,
+  with: true
 };
 
 export function isReservedWord(word: string) {
