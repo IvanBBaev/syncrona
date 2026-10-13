@@ -111,6 +111,13 @@ import os from "os";
 import path from "path";
 import { promises as fsp } from "fs";
 
+// The first import of the command loads its whole module graph; under a loaded
+// full-gate run that alone can exceed the first test's 5 s budget. Pay it here
+// with room to spare — the per-test imports below then hit the module cache.
+beforeAll(async () => {
+  await import("../diagnosticsCommands.js");
+}, 60_000);
+
 // Reasonable, connection-succeeds defaults; each test overrides what it needs.
 beforeEach(() => {
   jest.clearAllMocks();
