@@ -115,6 +115,30 @@ test('sn_autonomous_remediation_workflow: non-apply analysis does not audit', ()
   assert.equal(ctx._audits.length, 0);
 });
 
+test('sn_autonomous_remediation_workflow: a whitespace-only script is refused before any audit', () => {
+  const ctx = makeContext({ dryRun: false });
+  const res = handleScriptAnalysisTool(
+    'sn_autonomous_remediation_workflow',
+    { script: '  \n ', apply: true, confirmDestructive: true },
+    ctx
+  );
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /non-empty script/);
+  assert.equal(ctx._audits.length, 0);
+});
+
+test('sn_autonomous_remediation_workflow: the patched script is not reported as validated', () => {
+  const res = handleScriptAnalysisTool(
+    'sn_autonomous_remediation_workflow',
+    { script: 'gs.log("x");', apply: true, confirmDestructive: true },
+    makeContext({ dryRun: false })
+  );
+  const payload = JSON.parse(res.content[0].text);
+  assert.equal(payload.validation.performed, false);
+  assert.equal('ok' in payload.validation, false);
+  assert.equal(payload.steps.includes('validate'), false);
+});
+
 test('unknown tool returns null so dispatch can fall through', () => {
   const res = handleScriptAnalysisTool('not_a_real_tool', {}, makeContext());
   assert.equal(res, null);

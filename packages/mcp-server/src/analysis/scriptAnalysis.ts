@@ -259,14 +259,16 @@ export function runAutonomousRemediation(
     : script;
 
   return {
-    steps: ["detect", "propose patch", opts.dryRun ? "dry-run" : "apply", "validate"],
+    steps: ["detect", "propose patch", opts.dryRun ? "dry-run" : "apply"],
     findingsCount: findings.length,
     patchPlan,
     applied: opts.apply && !opts.dryRun,
     patchedScript,
+    // The patch is a local text rewrite: nothing compiles, runs or checks it, so
+    // reporting a passed validation would vouch for a script no one examined.
     validation: {
-      ok: true,
-      message: "Validation completed in mocked mode.",
+      performed: false,
+      message: "The patched script was not validated; review it before deploying.",
     },
     why: formatWhyLines(findings),
   };

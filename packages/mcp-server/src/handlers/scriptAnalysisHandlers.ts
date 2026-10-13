@@ -77,6 +77,14 @@ export function handleScriptAnalysisTool(
 
     case "sn_autonomous_remediation_workflow": {
       const script = typeof args.script === "string" ? args.script : "";
+      // An empty script is refused before the apply path, which would audit it as
+      // a mutation first.
+      if (!script.trim()) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Provide a non-empty script to remediate." }],
+        };
+      }
       const apply = args.apply === true;
       const confirmDestructive = args.confirmDestructive === true;
       if (apply && !confirmDestructive) {
@@ -98,7 +106,7 @@ export function handleScriptAnalysisTool(
         context.auditMutatingTool(toolName, args, remediation, Date.now() - startedAt);
       }
       return {
-        isError: !script.trim(),
+        isError: false,
         content: [{ type: "text", text: toJsonText(remediation) }],
       };
     }
