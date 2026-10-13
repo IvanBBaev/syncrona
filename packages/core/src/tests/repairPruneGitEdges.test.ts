@@ -339,7 +339,10 @@ describe("many orphans", () => {
 
     expect(files.filter((f) => existsSync(f))).toEqual([]);
     expect(infoSpy).toHaveBeenCalledWith(`Pruned ${files.length} orphan file(s).`);
-  });
+    // Committing and hashing 600 real files takes about a second alone but can pass
+    // jest's 5 s default under a loaded full-gate run, and a timed-out run keeps
+    // logging into the next test's spies.
+  }, 30000);
 
   test("a top-level directory starting with a quote is not read as a C-quoted path", async () => {
     // hash-object --stdin-paths unquotes a line that starts with `"`.
