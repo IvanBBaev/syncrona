@@ -118,10 +118,13 @@ const logOperationResults = (
   logger.error("-".repeat(60));
   logger.error(fail("Error Summary"));
   logger.error("-".repeat(60));
+  // A lone failure needs no numbering; printing it bare AND as "1. …" showed
+  // the same error twice.
+  if (unsuccessful.length === 1) {
+    logr.error(unsuccessful[0].message);
+    return;
+  }
   unsuccessful.forEach(({ message }, index) => {
-    if (unsuccessful.length === 1) {
-      logr.error(message);
-    }
     logr.error(`${index + 1}. ${message}`);
   });
 };

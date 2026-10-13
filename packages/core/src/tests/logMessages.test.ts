@@ -134,6 +134,19 @@ describe("logMessages", () => {
     expect(internalErrorText()).toContain("nope");
   });
 
+  it("logPushResults prints a lone failure once, unnumbered", () => {
+    logPushResults([{ success: false, message: "only" }] as never);
+    expect(internalError.mock.calls.map((c) => c[0])).toEqual(["only"]);
+  });
+
+  it("logPushResults numbers each failure once when several fail", () => {
+    logPushResults([
+      { success: false, message: "first" },
+      { success: false, message: "second" },
+    ] as never);
+    expect(internalError.mock.calls.map((c) => c[0])).toEqual(["1. first", "2. second"]);
+  });
+
   it("logBuildResults prints totals for the Builds operation", () => {
      
     logBuildResults([{ success: false, message: "bad" }] as any);
