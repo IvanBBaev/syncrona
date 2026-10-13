@@ -175,6 +175,21 @@ export class CicdCliError extends Error {
   }
 }
 
+/**
+ * The poll deadline passed. Not a transport failure in itself: the error
+ * taxonomy sees only the last poll error (when one occurred), so a plain
+ * timeout does not get the "network issue" hint its message text would match.
+ */
+export class CicdTimeoutError extends CicdCliError {
+  constructor(
+    message: string,
+    readonly pollError?: unknown
+  ) {
+    super(message);
+    this.name = "CicdTimeoutError";
+  }
+}
+
 type JsonObject = Record<string, unknown>;
 
 function asObject(value: unknown): JsonObject | undefined {
@@ -604,13 +619,14 @@ async function pollProgress(
   // Never sleep past the deadline: the poll after a shortened pause is the last one.
   const pause = (): Promise<void> =>
     deps.sleep(Math.max(0, Math.min(pollMs, timeoutMs - (deps.now() - startedAt))));
-  const timedOut = (lastError?: unknown): CicdCliError => {
+  const timedOut = (lastError?: unknown): CicdTimeoutError => {
     const where = linkUrl(lastProgress, "progress") ?? progressUrl ?? `${request} on the instance`;
     const last = lastProgress ? statusLabel(lastProgress) : "never read";
     const error = lastError === undefined ? "" : `; last poll error: ${errorText(lastError)}`;
-    return new CicdCliError(
+    return new CicdTimeoutError(
       `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for progress ${progressId} (last status: ${last}${error}). ` +
-        `The work may still be running on the instance; check it at ${where} and resume waiting with --progress-id ${progressId} (and a longer --timeout).`
+        `The work may still be running on the instance; check it at ${where} and resume waiting with --progress-id ${progressId} (and a longer --timeout).`,
+      lastError
     );
   };
   for (;;) {
@@ -1121,8 +1137,14 @@ export async function cicdCommand(
     }
     writeJsonFailure(error, state.progressId, verdict);
     // The original error goes to the taxonomy, so a 403 on an sn_cicd URL gets
-    // the missing-role hint instead of the generic "re-run login" one.
-    logErrorHint(e);
+    // the missing-role hint instead of the generic "re-run login" one. A timeout
+    // is classified by its last poll error only: its own text says "timed out",
+    // which would read as a network issue when the instance simply is still busy.
+    if (!(e instanceof CicdTimeoutError)) {
+      logErrorHint(e);
+    } else if (e.pollError !== undefined) {
+      logErrorHint(e.pollError);
+    }
     process.exitCode = CICD_EXIT_INCOMPLETE;
   }
 }

@@ -241,7 +241,7 @@ module.exports = {
     './src/mirrorCommand.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.95
     // Drives api/sn_cicd: installs, publishes and rolls back applications, and
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
-    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.80 / 95.12
+    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.82 / 95.17
     // Reads records for `query -o json`, whose envelope scripts parse.
     './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.56 / 97.46
     // Installs and reinstalls applications through the optional Fluent tier, and

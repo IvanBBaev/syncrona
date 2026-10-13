@@ -578,6 +578,27 @@ describe("cicd --poll-ms floor", () => {
     expect(errors.join("\n")).toMatch(/Timed out after 1s/);
   });
 
+  it("gives a plain timeout no network hint: the instance is still busy, not unreachable", async () => {
+    const { h } = clocked(harness({ progress: [() => progress("1")] }));
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 600_000 }, 0)).toBe(1);
+
+    expect(infos.some((line) => line.includes("Network issue"))).toBe(false);
+  });
+
+  it("hints from the last poll error when a timeout follows a failed poll", async () => {
+    const { h } = clocked(
+      harness({
+        progress: [() => Object.assign(new Error("socket hang up"), { code: "ECONNRESET" })],
+      })
+    );
+
+    expect(await run(h, "install", { scope: "x_app", timeout: 1, pollMs: 1500 }, 0)).toBe(1);
+
+    expect(errors.join("\n")).toMatch(/Timed out after 1s .*last poll error: socket hang up/);
+    expect(infos.some((line) => line.includes("Network issue"))).toBe(true);
+  });
+
   it("cuts a retry pause after a failed poll short at --timeout too", async () => {
     const { h, sleeps } = clocked(
       harness({
