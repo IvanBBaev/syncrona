@@ -50,8 +50,10 @@ export async function handleValidateBeforePush(
     return errorResponse("Missing required field: scope");
   }
 
+  // A table named twice is read once: read twice, each of its scripts would be
+  // listed twice and counted twice toward blockedCount and warningCount.
   const requestedTables = Array.isArray(args.tables)
-    ? args.tables.filter((item): item is string => typeof item === "string")
+    ? [...new Set(args.tables.filter((item): item is string => typeof item === "string"))]
     : [];
   // A requested table this tool cannot read validated nothing, like sn_search_scripts.
   const unknownTables = requestedTables.filter((table) => !(table in SCRIPT_SEARCH_TABLES));
