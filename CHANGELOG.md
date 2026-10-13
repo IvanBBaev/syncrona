@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-13
+
 **now-sdk parity.** SyncroNow AI now covers the everyday ServiceNow SDK
 (`now-sdk`) workflow without giving up the file-based tier: `query`, `cicd`,
 `fluent`, `init --new` and `push --create` / `--prune` are new, and two MCP tools
@@ -17,11 +19,13 @@ column whose type was never read. A missing table was read as "not
 `sys_metadata`" and planned as a create. A rejected OAuth grant was returned as
 the command's own result. Every case found now fails closed and says why.
 
-Not yet verified against a live instance: `push --create` / `--prune`, `cicd`
-and `sync_cicd_run`, `init --new`, and the Fluent commands that reach the
-instance or the SDK (`fluent explain`, `fluent move-to-app`, `sync_fluent_build`).
-They are covered by tests against mocked responses only, so try them on a
-development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md).
+Verified against a live instance: `init --new`, `push --create` / `--prune`,
+the data-model sidecars, `cicd run-suite` / `run-test` and `sync_cicd_run`,
+`fluent install` / `status` / `types --native` / `explain`, and `query`. Covered
+by tests against mocked responses only: `cicd install` / `publish` / `rollback`,
+`fluent move-to-app`, `sync_fluent_build`, the composite data-model layout and
+mutual TLS, so try those on a development instance first. See
+[`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md).
 
 ### Added
 
@@ -115,6 +119,9 @@ development instance first. See [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md)
   or a network failure reads as "no OAuth token could be obtained" and is retried
   like any transient poll failure, so an outage no longer blames your
   credentials.
+- A `cicd` run that outlives `--timeout` no longer prints the "Network issue"
+  hint: a timeout is not a connection failure. The hint now follows the last
+  poll error, when the final poll failed before the deadline.
 - `cicd` and `sync_cicd_run` now agree on every wait outcome. They make the same
   number of requests for a transient poll failure (a network failure, 408, 425,
   429 or 5xx, retried up to 3 times). An HTML login page or a redirect loop ends
@@ -1596,7 +1603,8 @@ TLS) and the shared encrypted credential store.
 
 - nothing removed
 
-[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/IvanBBaev/syncrona/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/IvanBBaev/syncrona/compare/v0.9.4...v1.0.0
 [0.9.4]: https://github.com/IvanBBaev/syncrona/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/IvanBBaev/syncrona/compare/v0.9.1...v0.9.3

@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/mcp-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server for SyncroNow AI — drives ServiceNow scope automation, record queries, and background script execution from AI chat clients.",
   "main": "./dist/index.js",
   "bin": {
@@ -27,10 +27,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@syncrona/credential-store": "^1.0.0",
-    "@syncrona/jira": "^1.0.0",
-    "@syncrona/redaction": "^1.0.0",
-    "@syncrona/sn-transport": "^1.0.0",
+    "@syncrona/credential-store": "^1.1.0",
+    "@syncrona/jira": "^1.1.0",
+    "@syncrona/redaction": "^1.1.0",
+    "@syncrona/sn-transport": "^1.1.0",
     "undici": "^6.29.0",
     "zod": "^4.4.3"
   },

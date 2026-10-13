@@ -1,5 +1,20 @@
 # @syncrona/mirror
 
+## 1.1.0
+
+### Patch Changes
+
+- b10ccc0: The forms view now escapes `sys_ui_element` names like every other instance string, so a line break or `|` in an element name can no longer inject Markdown lines into a derived form document.
+- bcb81e6: Generating the derived views no longer aborts when a mirrored `sys_dictionary` reference column names a target table that is not a safe path component (for example a hand-edited `../escape`). The refs view now skips verifying that column and names it once in the anomaly list, as it already did for other unreadable tree content.
+- bd53c99: A sweep resumed from a cursor is no longer graded partial/not-visible for the rows read before the cursor.
+- 2f2ce8e: Compare record directories case-insensitively before authorising a deletion. A full sweep that writes a live record as `Foo` while a deleted record's stale entry names `foo` no longer removes the live record's directory on APFS or NTFS. The same applies to a tombstone whose path another shard entry claims under a case-variant name.
+- Updated dependencies [e33dd3e]
+- Updated dependencies [6d7ec9b]
+- Updated dependencies [976a3d5]
+  - @syncrona/credential-store@1.1.0
+  - @syncrona/redaction@1.1.0
+  - @syncrona/sn-transport@1.1.0
+
 ## 1.0.0
 
 ### Patch Changes

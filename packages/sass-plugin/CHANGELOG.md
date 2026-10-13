@@ -1,5 +1,11 @@
 # @syncrona/sass-plugin
 
+## 1.1.0
+
+### Patch Changes
+
+- @syncrona/types@1.1.0
+
 ## 1.0.0
 
 ### Patch Changes

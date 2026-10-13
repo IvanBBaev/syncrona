@@ -1,5 +1,12 @@
 # @syncrona/webpack-plugin
 
+## 1.1.0
+
+### Patch Changes
+
+- a4a3281: - A failed bundle reports webpack's errors in the thrown message instead of only on stderr, so an MCP client sees why the build failed.
+- @syncrona/types@1.1.0
+
 ## 1.0.0
 
 ### Patch Changes
