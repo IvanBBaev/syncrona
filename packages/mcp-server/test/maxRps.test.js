@@ -44,18 +44,23 @@ test('SN_MAX_RPS=2 spaces consecutive requests by about 500ms', async () => {
   });
   const config = { instance: base, user: 'u', password: 'p' };
   try {
+    let firstCallAt = 0;
     await withMaxRps('2', async () => {
+      firstCallAt = Date.now();
       for (let i = 0; i < 3; i += 1) {
         const out = await snRequestWithConfig(config, 'GET', 'api/now/table/incident', undefined, 5000);
         assert.equal(out.status, 200);
       }
     });
     assert.equal(arrivals.length, 3);
-    // Arrivals are stamped server-side, after connection setup, so the first
-    // one can land late and shrink the first gap. Only the warm gap between
-    // the second and third request is asserted; 450ms still sits far above
-    // the default cap's ~100ms spread.
-    assert.ok(arrivals[2] - arrivals[1] >= 450, `warm gap was ${arrivals[2] - arrivals[1]}ms`);
+    // The limiter books each slot 500ms after the previous one, counted from
+    // the first call, so the third request cannot leave before firstCallAt +
+    // 1000ms. Gaps between server-side arrivals are not asserted: a request
+    // that lands late under load shrinks the gap after it without the limiter
+    // being wrong. 990ms allows for a timer firing a millisecond early and
+    // still sits far above the default cap's ~200ms for three requests.
+    const thirdAfterFirstCall = arrivals[2] - firstCallAt;
+    assert.ok(thirdAfterFirstCall >= 990, `third request arrived ${thirdAfterFirstCall}ms after the first call`);
   } finally {
     await close(server);
   }
