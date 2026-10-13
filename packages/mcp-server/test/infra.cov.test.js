@@ -263,7 +263,7 @@ test('logger falls back to String(value) in text mode when JSON.stringify throws
     circular.self = circular;
     logger.debug('circular-field', { bad: circular });
     assert.equal(captured.length, 1);
-    assert.match(captured[0], /bad=\[object Object\]/);
+    assert.match(captured[0], /bad="\[object Object\]"/);
   } finally {
     process.stderr.write = originalWrite;
     configureLogger(original);
@@ -1086,5 +1086,31 @@ test('resolveServerVersion falls back to the "unknown" sentinel rather than gues
     assert.equal(resolveServerVersion(numericVersion), '0.0.0-unknown', 'non-string version');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('logger text mode keeps client- and instance-supplied text on one record line', () => {
+  const original = getLoggerConfig();
+  const originalWrite = process.stderr.write;
+  const captured = [];
+  process.stderr.write = (chunk) => {
+    captured.push(String(chunk));
+    return true;
+  };
+  try {
+    configureLogger({ level: 'debug', format: 'text' });
+    const forged = 'x\n2026-01-01T00:00:00.000Z ERROR forged.record admin=granted';
+    logger.error('tool.error\nINFO forged', { tool: forged, error: 'two words', plain: 'bar' });
+    assert.equal(captured.length, 1);
+    const line = captured[0];
+    assert.equal(line.split('\n').length, 2, 'exactly one record line plus its terminator');
+    assert.ok(line.endsWith('\n'));
+    assert.match(line, / ERROR "tool\.error\\nINFO forged" /);
+    assert.ok(line.includes(`tool=${JSON.stringify(forged)}`));
+    assert.match(line, /error="two words"/);
+    assert.match(line, /plain=bar/);
+  } finally {
+    process.stderr.write = originalWrite;
+    configureLogger(original);
   }
 });

@@ -104,13 +104,25 @@ function renderFieldValue(value: unknown): string {
   }
 }
 
+// A text record is one line of `key=value` pairs. Field values (and the odd
+// message) carry instance- and client-supplied text -- tool names, error
+// messages, child-process stderr -- so a raw line break or space would let that
+// text end the record early and forge a second, trusted-looking one. Such
+// values are written as JSON string literals, which escape every control
+// character and keep the whole value in one token.
+const NEEDS_QUOTING = /[\s\u0000-\u001f\u007f]/;
+
+function quoteIfNeeded(text: string): string {
+  return NEEDS_QUOTING.test(text) ? JSON.stringify(text) : text;
+}
+
 function formatTextFields(fields: LogFields): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined) {
       continue;
     }
-    parts.push(`${key}=${renderFieldValue(value)}`);
+    parts.push(`${key}=${quoteIfNeeded(renderFieldValue(value))}`);
   }
   return parts.join(" ");
 }
@@ -133,7 +145,8 @@ function emit(level: EmittableLevel, message: string, fields?: LogFields): void 
     return;
   }
   const suffix = fields ? formatTextFields(fields) : "";
-  process.stderr.write(`${time} ${level.toUpperCase()} ${message}${suffix ? ` ${suffix}` : ""}\n`);
+  const safeMessage = /[\u0000-\u001f\u007f]/.test(message) ? JSON.stringify(message) : message;
+  process.stderr.write(`${time} ${level.toUpperCase()} ${safeMessage}${suffix ? ` ${suffix}` : ""}\n`);
 }
 
 export const logger = {
