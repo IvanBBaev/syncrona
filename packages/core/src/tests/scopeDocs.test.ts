@@ -138,7 +138,7 @@ describe("scopeDocs", () => {
 
     it("creates a titled document when there is no existing content", () => {
       const out = upsertDocsSection("", "x_acme_app", autoBlock);
-      expect(out).toContain("# Scope: x_acme_app");
+      expect(out).toContain("# Scope: x\\_acme\\_app");
       expect(out).toContain(DOCS_AUTO_START);
       expect(out).toContain("AUTO CONTENT");
     });
@@ -234,7 +234,13 @@ describe("scopeDocs", () => {
       original + "\n## My manual section\nKeep me.\n"
     );
 
-    const second = await generateScopeDocs(sampleManifest(), {
+    const changed = sampleManifest();
+    changed.tables.sys_script_include.records.Gamma = {
+      name: "Gamma",
+      sys_id: "3",
+      files: [{ name: "Gamma.script.js", type: "js" }],
+    } as unknown as SN.AppManifest["tables"][string]["records"][string];
+    const second = await generateScopeDocs(changed, {
       outDir: tempDir,
       now: new Date("2026-02-02T03:04:05Z"),
     });
@@ -243,6 +249,34 @@ describe("scopeDocs", () => {
     expect(updated).toContain("Keep me.");
     expect(updated).toContain("2026-02-02T03:04:05.000Z");
     expect(updated).not.toContain("2026-01-02T03:04:05.000Z");
+  });
+
+  it("leaves an unchanged doc alone instead of only bumping its timestamp", async () => {
+    const file = await generateScopeDocs(sampleManifest(), {
+      outDir: tempDir,
+      now: new Date("2026-01-02T03:04:05Z"),
+    });
+    const crlf = (await fs.promises.readFile(file, "utf8")).replace(/\n/g, "\r\n") + "Notes.\r\n";
+    await fs.promises.writeFile(file, crlf);
+
+    await generateScopeDocs(sampleManifest(), {
+      outDir: tempDir,
+      now: new Date("2026-03-02T03:04:05Z"),
+    });
+    expect(await fs.promises.readFile(file, "utf8")).toBe(crlf);
+  });
+
+  it("escapes emphasis and entity characters in record names", () => {
+    const manifest: SN.AppManifest = {
+      scope: "x_acme_app",
+      tables: {
+        sys_script: {
+          records: { r1: { name: "_init_ &lt;", sys_id: "1", files: [] } },
+        },
+      },
+    } as unknown as SN.AppManifest;
+    const body = buildScopeDocBody(summarizeManifest(manifest), new Date(0));
+    expect(body).toContain("| \\_init\\_ \\&lt; | — |");
   });
 
   // INJ-1: the scope comes from the manifest, i.e. ultimately from the
