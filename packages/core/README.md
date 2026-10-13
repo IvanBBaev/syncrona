@@ -8,6 +8,23 @@
 This module contains the core of SyncroNow AI. It is required to use SyncroNow AI at all.
 It can interact with other plugins after you configure them.
 
+It ships the `syncrona` CLI. The full command reference lives in the
+[root README](../../README.md#commands); the 1.1 additions at a glance:
+
+- `init --new --name "<display>"` creates a new scoped application on the
+  instance and binds the directory to it (`--dry-run` prints the `sys_app` body).
+- `push --create` creates (or adopts) records for files not in the manifest yet;
+  `push --prune` deletes in-scope records whose tracked files git shows deleted
+  (see [Creating and deleting records](#creating-and-deleting-records)).
+- `query <table>` reads any table with the `now-sdk query` flags.
+- `cicd <action>` runs ATF suites and tests and installs, publishes or rolls
+  back applications through the CI/CD API.
+- `fluent <action>` drives Fluent (`.now.ts`) apps through the optional
+  [`@syncrona/fluent`](../fluent/README.md) tier; `fluent types --native`
+  generates table types without it.
+- Records get an editable `.meta.json` sidecar holding their non-file columns
+  (see the root README's "Data model").
+
 ## Credential resolution order
 
 Commands resolve ServiceNow credentials in this order (first match wins):
@@ -37,6 +54,19 @@ follows the same precedence (see the mcp-server README).
   half-written. A crash cannot leave it behind for long: a lock whose owning
   process no longer exists is reclaimed immediately, and locks older than 30
   minutes are treated as stale and replaced automatically.
+
+## Creating and deleting records
+
+By default `push` only updates records the manifest already tracks.
+
+- `--create` (or `createRecords: true` in `sync.config.js`; `--no-create` wins
+  over it) also creates records for local files in the manifest layout that no
+  record claims yet. A single in-scope record with the same display name is
+  adopted into the manifest instead of duplicated.
+- `--prune` is **destructive**: it deletes the in-scope records whose tracked
+  files git shows deleted. It confirms first unless `--ci`, refuses more than
+  25 deletions or 20% of the manifest unless `--allow-mass-delete`, and has no
+  config switch. Preview with `push --prune --dry-run`.
 
 Push retries only network errors and retryable HTTP statuses (5xx/408/429);
 authentication failures fail fast instead of being retried.

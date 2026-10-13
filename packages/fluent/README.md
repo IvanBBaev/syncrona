@@ -15,6 +15,11 @@ npm install --save-dev @syncrona/fluent @servicenow/sdk
 If either package is missing, `syncrona fluent` exits 1 with a single
 install hint. No other command is affected.
 
+`syncrona fluent types --native` needs neither package: core generates the table
+types (`@types/syncrona/tables.d.ts`) from `sys_db_object`, `sys_dictionary` and
+`sys_choice` directly, and a plain `types` falls back to it when the SDK is not
+installed.
+
 ## What lives here
 
 - `createFluentEngine(options, deps?)`: implements the `SN.FluentEngine` port

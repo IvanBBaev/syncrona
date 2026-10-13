@@ -1082,7 +1082,12 @@ native Windows.
 
 ### How do I Delete Something?
 
-Deleting something in SyncroNow AI is relatively simple. Just follow these steps:
+From your project: delete the record's files, then run
+`npx syncrona push --prune --dry-run` to preview and `npx syncrona push --prune`
+to delete the in-scope records whose tracked files git shows deleted (it asks
+first and refuses mass deletions; see [Other push options](#other-push-options)).
+
+From the instance:
 
 1. Turn off dev mode if you are currently running SyncroNow AI
 2. Delete the record in ServiceNow
@@ -1092,6 +1097,12 @@ Deleting something in SyncroNow AI is relatively simple. Just follow these steps
 Why is this not automatic? Deleting files can be a dangerous game and it should be a deliberate action!
 
 ### How do I Add New Scripts?
+
+From your project: create the files in the download layout
+(`<table>/<record>/<field>.<ext>`) and run `npx syncrona push --create` — it
+creates the records on the instance (preview with `--dry-run`).
+
+From the instance:
 
 1. Turn off dev mode if you are currently running SyncroNow AI
 2. Create the record in ServiceNow

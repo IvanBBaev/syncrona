@@ -78,7 +78,7 @@
                 "name": "How do I delete something?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Turn off dev mode, delete the record in ServiceNow, run refresh, then remove the files from your project. It is deliberate rather than automatic because deleting files should never be accidental."
+                  "text": "Delete the files locally and run push --prune: it deletes the in-scope records whose tracked files git shows deleted, after a confirmation and within a mass-delete limit (preview with --dry-run). Or delete the record in ServiceNow, run refresh, then remove the files. Deletion is never automatic — it is always a deliberate action."
                 }
               },
               {
@@ -86,7 +86,7 @@
                 "name": "How do I add new scripts?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Turn off dev mode, create the record in ServiceNow, and run refresh — the files are created automatically."
+                  "text": "Create the files in the manifest layout and run push --create to create the records on the instance. Or create the record in ServiceNow and run refresh — the files are created automatically."
                 }
               },
               {
@@ -142,7 +142,7 @@
                 "name": "Is it production-ready?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "It is pre-1.0 and early. The engineering is solid — type-checked lint, enforced module boundaries, tests and a security model — but review the security model for your own deployment, and keep your source in Git."
+                  "text": "It is a stable 1.x release (1.1.0) under semantic versioning. The engineering is solid — type-checked lint, enforced module boundaries, tests and a security model — but review the security model for your own deployment, and keep your source in Git."
                 }
               },
               {
@@ -369,7 +369,7 @@ var Example = (function () {
             <h2 class="sec-title">Why teams pick it</h2>
           </div>
           <p class="sec-intro sm">
-            For teams deciding how to manage ServiceNow scoped-app code. SyncroNow AI is pre-1.0 and early — these are the
+            For teams deciding how to manage ServiceNow scoped-app code. SyncroNow AI is a young 1.x project — these are the
             honest trade-offs.
           </p>
           <div class="table-wrap">
@@ -570,9 +570,9 @@ syncrona init</code></pre>
             <input type="text" id="cmdSearch" placeholder="Search commands — dev, push, jira…" aria-label="Search commands" autocomplete="off" />
           </div>
           <div class="cmd-list" id="cmdList">
-            <div class="cmd-row" data-search="init walks you through creating a syncronow ai project from scratch — the recommended way to start.">
+            <div class="cmd-row" data-search="init walks you through creating a syncronow ai project from scratch — the recommended way to start. --ci provisions every scope in .env; --new creates a new scoped application on the instance.">
               <div><div class="cmd-name">init</div><div class="cmd-alias">no alias</div></div>
-              <div><div class="cmd-desc">Walks you through creating a SyncroNow AI project from scratch — the recommended way to start.</div><code class="cmd-usage">syncrona init</code></div>
+              <div><div class="cmd-desc">Walks you through creating a SyncroNow AI project from scratch — the recommended way to start. <code class="inline">--ci</code> provisions every scope the <code class="inline">.env</code> exposes; <code class="inline">--new --name "&lt;display&gt;"</code> creates a new scoped application on the instance and binds the directory to it.</div><code class="cmd-usage">syncrona init</code></div>
             </div>
             <div class="cmd-row" data-search="refresh alias: r refreshes the manifest and downloads new files created in servicenow. never overwrites local content.">
               <div><div class="cmd-name">refresh</div><div class="cmd-alias">alias: r</div></div>
@@ -582,9 +582,9 @@ syncrona init</code></pre>
               <div><div class="cmd-name">dev</div><div class="cmd-alias">alias: d</div></div>
               <div><div class="cmd-desc">Watches tracked files, then builds and pushes each save to its record.</div><code class="cmd-usage">syncrona dev</code></div>
             </div>
-            <div class="cmd-row" data-search="push builds and pushes all local files to the instance in your .env. supports --diff, --dry-run, --update-set, --scope-swap.">
+            <div class="cmd-row" data-search="push builds and pushes all local files to the instance in your .env. supports --diff, --dry-run, --update-set, --scope-swap. --create creates records for new files; --prune deletes records whose files git shows deleted.">
               <div><div class="cmd-name">push</div><div class="cmd-alias">no alias</div></div>
-              <div><div class="cmd-desc">Builds and pushes all local files to the instance in your .env. Supports --diff, --dry-run, --update-set, --scope-swap.</div><code class="cmd-usage">syncrona push</code></div>
+              <div><div class="cmd-desc">Builds and pushes all local files to the instance in your .env. Supports --diff, --dry-run, --update-set, --scope-swap. <code class="inline">--create</code> creates (or adopts) records for files not in the manifest yet; <code class="inline">--prune</code> deletes in-scope records whose tracked files git shows deleted — confirmed unless <code class="inline">--ci</code>, with a mass-delete limit.</div><code class="cmd-usage">syncrona push</code></div>
             </div>
             <div class="cmd-row" data-search="build builds the project locally and stores the output in the build folder. --diff records changed files for deploy.">
               <div><div class="cmd-name">build</div><div class="cmd-alias">no alias</div></div>
@@ -602,9 +602,9 @@ syncrona init</code></pre>
               <div><div class="cmd-name">docs</div><div class="cmd-alias">no alias</div></div>
               <div><div class="cmd-desc">Generates Markdown docs and Mermaid diagrams describing the downloaded scope.</div><code class="cmd-usage">syncrona docs</code></div>
             </div>
-            <div class="cmd-row" data-search="repair reconciles the manifest with local files: re-downloads missing, prunes orphans. destructive — confirms first.">
+            <div class="cmd-row" data-search="repair reconciles the manifest with local files: reports by default, --apply re-downloads missing files, --apply --prune deletes orphans that git can restore.">
               <div><div class="cmd-name">repair</div><div class="cmd-alias">no alias</div></div>
-              <div><div class="cmd-desc">Reconciles the manifest with local files: re-downloads missing, prunes orphans. Destructive — confirms first.</div><code class="cmd-usage">syncrona repair</code></div>
+              <div><div class="cmd-desc">Reconciles the manifest with local files: reports by default, <code class="inline">--apply</code> re-downloads missing files, <code class="inline">--apply --prune</code> deletes orphans that git can restore.</div><code class="cmd-usage">syncrona repair</code></div>
             </div>
             <div class="cmd-row" data-search="status extended workspace status: instance, user, scope, config paths, env and connectivity.">
               <div><div class="cmd-name">status</div><div class="cmd-alias">no alias</div></div>
@@ -618,9 +618,13 @@ syncrona init</code></pre>
               <div><div class="cmd-name">cicd</div><div class="cmd-alias">no alias</div></div>
               <div><div class="cmd-desc">Drives the ServiceNow CI/CD API: run ATF suites or tests, install, publish or roll back an app, and wait for the result.</div><code class="cmd-usage">syncrona cicd run-suite --suite-name "Smoke tests"</code></div>
             </div>
-            <div class="cmd-row" data-search="fluent builds, packs, transforms and installs fluent (.now.ts) apps through the optional servicenow sdk tier.">
+            <div class="cmd-row" data-search="fluent builds, packs, transforms and installs fluent (.now.ts) apps through the optional servicenow sdk tier. types --native generates table types without the sdk.">
               <div><div class="cmd-name">fluent</div><div class="cmd-alias">no alias</div></div>
-              <div><div class="cmd-desc">Builds, packs, transforms and installs Fluent (<code class="inline">.now.ts</code>) apps through the optional ServiceNow SDK tier.</div><code class="cmd-usage">syncrona fluent build</code></div>
+              <div><div class="cmd-desc">Builds, packs, transforms and installs Fluent (<code class="inline">.now.ts</code>) apps through the optional ServiceNow SDK tier. <code class="inline">types --native</code> generates table types from <code class="inline">sys_dictionary</code> without the SDK.</div><code class="cmd-usage">syncrona fluent build</code></div>
+            </div>
+            <div class="cmd-row" data-search="mirror full-instance git mirror: init provisions the repository, sync sweeps the instance into the tree, status, verify and report check it.">
+              <div><div class="cmd-name">mirror</div><div class="cmd-alias">no alias</div></div>
+              <div><div class="cmd-desc">Full-instance git mirror: <code class="inline">init</code> provisions the repository, <code class="inline">sync</code> sweeps the instance into the tree, <code class="inline">status</code>, <code class="inline">verify</code> and <code class="inline">report</code> check it. Exits 2 on drift.</div><code class="cmd-usage">syncrona mirror sync</code></div>
             </div>
             <div class="cmd-row" data-search="doctor runs local config and servicenow connectivity diagnostics with actionable fixes.">
               <div><div class="cmd-name">doctor</div><div class="cmd-alias">no alias</div></div>
@@ -637,6 +641,10 @@ syncrona init</code></pre>
             <div class="cmd-row" data-search="config inspect or extend config: show-defaults, or add-plugin for a paste-ready rules snippet.">
               <div><div class="cmd-name">config</div><div class="cmd-alias">no alias</div></div>
               <div><div class="cmd-desc">Inspect or extend config: show-defaults, or add-plugin for a paste-ready rules snippet.</div><code class="cmd-usage">syncrona config add-plugin</code></div>
+            </div>
+            <div class="cmd-row" data-search="completion prints a bash or zsh tab-completion script.">
+              <div><div class="cmd-name">completion</div><div class="cmd-alias">no alias</div></div>
+              <div><div class="cmd-desc">Prints a bash or zsh tab-completion script (auto-detects the shell from <code class="inline">$SHELL</code>).</div><code class="cmd-usage">syncrona completion zsh &gt;&gt; ~/.zshrc</code></div>
             </div>
             <div class="cmd-row" data-search="mcp starts the standalone mcp server and can auto-configure local mcp client files.">
               <div><div class="cmd-name">mcp</div><div class="cmd-alias">no alias</div></div>
@@ -676,7 +684,7 @@ syncrona init</code></pre>
           <div class="flags">
             <div class="flags-title">Cross-cutting flags</div>
             <div class="flag-row"><code class="flag-name">--diff &lt;branch&gt;</code><span class="flag-desc">Uses <code>git diff</code> against a branch. On <code>push</code> it pushes only changed files; on <code>build</code> it builds everything but records which files changed for a later targeted <code>deploy</code>.</span></div>
-            <div class="flag-row"><code class="flag-name">--dry-run</code><span class="flag-desc">Previews effects without writing — on <code>push</code>, <code>deploy</code>, <code>download</code> and <code>build</code>.</span></div>
+            <div class="flag-row"><code class="flag-name">--dry-run</code><span class="flag-desc">Previews effects without writing — on <code>push</code>, <code>deploy</code>, <code>download</code>, <code>build</code>, <code>init</code>, <code>repair</code> and <code>fluent</code>. Every other command refuses the flag instead of ignoring it.</span></div>
             <div class="flag-row"><code class="flag-name">--instance-profile &lt;name&gt;</code><span class="flag-desc">Selects profile env vars (<code>SN_INSTANCE_&lt;PROFILE&gt;</code>, <code>SN_USER_&lt;PROFILE&gt;</code>, <code>SN_PASSWORD_&lt;PROFILE&gt;</code>), falling back to base vars.</span></div>
             <div class="flag-row"><code class="flag-name">--refresh-interval &lt;seconds&gt;</code><span class="flag-desc">Tunes how often <code>dev</code> re-reads the manifest (default 30s; <code>0</code> disables polling).</span></div>
           </div>
@@ -1168,11 +1176,11 @@ includes: {
           <div class="faq">
             <details>
               <summary>How do I delete something?<span class="mark" aria-hidden="true"></span></summary>
-              <div class="faq-answer">Turn off dev mode, delete the record in ServiceNow, run refresh, then remove the files from your project. It is deliberate rather than automatic because deleting files should never be accidental.</div>
+              <div class="faq-answer">Delete the files locally and run <code class="inline">push --prune</code>: it deletes the in-scope records whose tracked files git shows deleted, after a confirmation and within a mass-delete limit (preview with <code class="inline">--dry-run</code>). Or delete the record in ServiceNow, run refresh, then remove the files. Deletion is never automatic — it is always a deliberate action.</div>
             </details>
             <details>
               <summary>How do I add new scripts?<span class="mark" aria-hidden="true"></span></summary>
-              <div class="faq-answer">Turn off dev mode, create the record in ServiceNow, and run refresh — the files are created automatically.</div>
+              <div class="faq-answer">Create the files in the manifest layout and run <code class="inline">push --create</code> to create the records on the instance. Or create the record in ServiceNow and run refresh — the files are created automatically.</div>
             </details>
             <details>
               <summary>Does my source code still live in ServiceNow?<span class="mark" aria-hidden="true"></span></summary>
@@ -1200,7 +1208,7 @@ includes: {
             </details>
             <details>
               <summary>Is it production-ready?<span class="mark" aria-hidden="true"></span></summary>
-              <div class="faq-answer">It is pre-1.0 and early. The engineering is solid — type-checked lint, enforced module boundaries, tests and a security model — but review the security model for your own deployment, and keep your source in Git. Track progress in the <a href="https://github.com/IvanBBaev/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.</div>
+              <div class="faq-answer">It is a stable 1.x release (1.1.0) under semantic versioning. The engineering is solid — type-checked lint, enforced module boundaries, tests and a security model — but review the security model for your own deployment, and keep your source in Git. Track progress in the <a href="https://github.com/IvanBBaev/syncrona/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.</div>
             </details>
             <details>
               <summary>Why the package name <code>@syncrona/*</code>?<span class="mark" aria-hidden="true"></span></summary>
