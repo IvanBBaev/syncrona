@@ -21,12 +21,12 @@ human-facing summary of them.
 
 | | |
 |---|---|
-| Release target | `v1.1.0` — now-sdk parity (current version `1.0.0`) |
-| Progress | **87.4 %** — 101 h of 115.5 h earned |
-| Remaining | **14.5 h** Opus 5.5 (2 h workable now, 12.5 h blocked) |
-| Blocked by | owner: resume and approve the remaining live write-path run on the shared vendor instance (halted 2026-10-10) and its cleanup; owner: tag and publish `v1.1.0` (release date = the day the live run passes) |
+| Release target | `v1.1.0` — now-sdk parity (current version `1.1.0`, published 2026-10-13) |
+| Progress | **98.3 %** — 113.5 h of 115.5 h earned |
+| Remaining | **2 h** Opus 5.5 (0 h workable now, 2 h blocked) |
+| Blocked by | owner: delete the live-run records on the shared vendor instance (an automated delete was refused) |
 | Calibration | Plan sizes S/M/L ≈ 3/5/12 h: WP-0…WP-8 landed 2026-10-03…10-05 across 3–4 parallel sessions, acceptance rounds 1–8 took 2026-10-05…10-09; one review/fix round ≈ 1–1.5 h (2026-10-13 rounds) |
-| Updated | 2026-10-13 at `5b7fe49` |
+| Updated | 2026-10-13 at `484f74f` |
 
 | ID | Item | Source | Status | Est h |
 |---|---|---|---|---|
@@ -43,14 +43,15 @@ human-facing summary of them.
 | ACC | Acceptance review rounds 1–8 on the parity branch and their fixes | WORKLOG 2026-10-05…10-09 | `done` | 16 |
 | DOCS | Migration guide, comparison, data-model docs, CHANGELOG entries | ROADMAP v1.1.0 intro; plan WP-9 | `done` | 4 |
 | LR-FIX | Fixes for live-run findings: refresh keeps sidecar-only records, the missing-`pushATFfile` message and the `sys_atf_step` create fix (`f934eb8`) are on main | TODO SDK-F1; WORKLOG 2026-10-10 | `done` | 4 |
-| SDK-F1 | Live verification of the write paths (create, prune, `init --new`, `cicd`, `fluent install`, data-model round-trip, mutual TLS); read-only slice and part of the ATF create path done | TODO SDK-F1 | `blocked-owner` | 8 |
+| SDK-F1 | Live verification of the write paths: create, prune, `init --new`, data-model sidecars, `cicd run-suite`/`run-test`, `fluent install`, `query` verified 2026-10-13; app-repo `cicd` actions, `move-to-app`, `sync_fluent_build`, composite layout and mTLS stay mocked by owner decision | TODO SDK-F1 | `done` | 8 |
 | CLEAN | Cleanup of live-run records on the shared instance (C1–C6, suite links, app preference) | WORKLOG 2026-10-10 | `blocked-owner` | 2 |
-| CAVEAT | Drop the "live verification pending" caveats in README, COMPARISON, ROADMAP and MIGRATING_FROM_NOW_SDK once SDK-F1 passes | TODO SDK-F1 | `blocked-owner` | 1.5 |
-| REL-PREP | Release prep: `1.1.0` CHANGELOG heading, site badge, changeset version run, release gate | plan WP-9; WORKLOG 2026-10-09 release patch v2 | `open` | 2 |
-| REL | Tag `v1.1.0` and publish through the Release workflow | ROADMAP "Where SyncroNow AI is today" | `blocked-owner` | 1 |
+| CAVEAT | Drop the "live verification pending" caveats in README, COMPARISON, ROADMAP and MIGRATING_FROM_NOW_SDK once SDK-F1 passes | TODO SDK-F1 | `done` | 1.5 |
+| REL-PREP | Release prep: `1.1.0` CHANGELOG heading, site badge, changeset version run, release gate | plan WP-9; WORKLOG 2026-10-09 release patch v2 | `done` | 2 |
+| REL | Tag `v1.1.0` and publish through the Release workflow | ROADMAP "Where SyncroNow AI is today" | `done` | 1 |
 
 ### History
 - 2026-10-13 `5b7fe49` — 87.4 %, 14.5 h left (first run; target `v1.1.0`; SDK-F4 API-key in the Fluent tier left out of the target per plan Q8 — 1.1.0 refuses session-only actions)
+- 2026-10-13 `484f74f` — 98.3 %, 2 h left (+10.9 pp; SDK-F1, CAVEAT, REL-PREP, REL done — `v1.1.0` published to npm after two coverage-annotation fixes for ubuntu V8 readings; only the instance cleanup remains, owner-blocked)
 <!-- release-progress:end -->
 
 - **Current version:** `1.0.0` — first stable release, cut and **published on npm
