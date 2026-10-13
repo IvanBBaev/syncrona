@@ -177,6 +177,25 @@ export async function handleServiceNowCrudTool(
         };
       }
 
+      // A missing, array or empty record was POSTed as {}, which creates a blank
+      // record the caller never described; the schema declares record required.
+      if (
+        !args.record ||
+        typeof args.record !== "object" ||
+        Array.isArray(args.record) ||
+        Object.keys(record).length === 0
+      ) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "Missing required field: record (an object with at least one field to set).",
+            },
+          ],
+        };
+      }
+
       if (!confirmDestructive) {
         return {
           isError: true,
