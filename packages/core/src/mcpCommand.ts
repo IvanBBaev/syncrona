@@ -86,6 +86,12 @@ async function resolveMcpServerPath(explicitPath: string | undefined, workspaceR
     fromEnv ? path.resolve(fromEnv) : "",
     path.join(workspaceRoot, "packages", "mcp-server", "dist", "index.js"),
     path.join(workspaceRoot, "node_modules", "@syncrona", "mcp-server", "dist", "index.js"),
+    // An installed CLI lives at <node_modules>/syncrona/dist, so the server it
+    // ships beside is <node_modules>/@syncrona/mcp-server — a global install
+    // (`npm i -g syncrona @syncrona/mcp-server`) found nothing, because only the
+    // monorepo sibling below was tried. It goes first: in node_modules that
+    // unscoped sibling is whatever unrelated package is called "mcp-server".
+    path.resolve(__dirname, "..", "..", "@syncrona", "mcp-server", "dist", "index.js"),
     path.resolve(__dirname, "..", "..", "mcp-server", "dist", "index.js"),
   ].filter((item) => item.length > 0);
 
@@ -96,7 +102,7 @@ async function resolveMcpServerPath(explicitPath: string | undefined, workspaceR
   }
 
   throw new Error(
-    "Unable to find MCP server entrypoint. Build @syncrona/mcp-server or provide --mcp-server-path."
+    "Unable to find MCP server entrypoint. Install @syncrona/mcp-server next to syncrona, build it, or provide --mcp-server-path."
   );
 }
 

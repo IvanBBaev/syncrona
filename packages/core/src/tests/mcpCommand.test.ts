@@ -83,6 +83,9 @@ jest.unstable_mockModule("os", () => {
 // branch is unreachable here and its error message is never tested. Everything
 // else in this suite runs against a real temp directory on the real filesystem.
 const hiddenFromLookup = new Set<string>();
+// Paths the lookup sees as existing without a file on disk: the installed-CLI
+// candidates sit outside the temp workspace, next to the source tree.
+const presentForLookup = new Set<string>();
 jest.unstable_mockModule("fs", () => {
   const actual = jest.requireActual("fs") as typeof import("fs");
   const promises = {
@@ -90,7 +93,9 @@ jest.unstable_mockModule("fs", () => {
     stat: (target: Parameters<typeof actual.promises.stat>[0]) =>
       hiddenFromLookup.has(String(target))
         ? Promise.reject(Object.assign(new Error("not found"), { code: "ENOENT" }))
-        : actual.promises.stat(target),
+        : presentForLookup.has(String(target))
+          ? actual.promises.stat(fileURLToPath(import.meta.url))
+          : actual.promises.stat(target),
   };
   return { ...actual, promises, default: { ...actual, promises } };
 });
@@ -114,6 +119,17 @@ const BUNDLED_SIBLING = path.resolve(
   "..",
   "..",
   "..",
+  "mcp-server",
+  "dist",
+  "index.js"
+);
+// The server an installed CLI ships beside: <node_modules>/@syncrona/mcp-server.
+const INSTALLED_SIBLING = path.resolve(
+  TEST_DIR,
+  "..",
+  "..",
+  "..",
+  "@syncrona",
   "mcp-server",
   "dist",
   "index.js"
@@ -203,6 +219,7 @@ const runMcp = (overrides: Partial<McpArgs> = {}): Promise<void> =>
 beforeEach(() => {
   jest.clearAllMocks();
   hiddenFromLookup.clear();
+  presentForLookup.clear();
 
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-mcp-"));
   tmpRoot = path.join(base, "workspace");
@@ -518,6 +535,16 @@ describe("resolveMcpServerPath candidate order", () => {
     await runMcp();
 
     expect(configuredServerPath()).toBe(installedServerBuild());
+  });
+
+  it("finds the scoped server installed beside the CLI before an unscoped mcp-server", async () => {
+    // A global install puts syncrona and @syncrona/mcp-server side by side in
+    // one node_modules; an unrelated "mcp-server" package there must not win.
+    presentForLookup.add(INSTALLED_SIBLING);
+
+    await runMcp();
+
+    expect(configuredServerPath()).toBe(INSTALLED_SIBLING);
   });
 
   it("fails with an actionable error when no candidate exists", async () => {
