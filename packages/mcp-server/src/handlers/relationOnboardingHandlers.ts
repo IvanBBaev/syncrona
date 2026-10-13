@@ -101,10 +101,19 @@ export async function handleRelationOnboardingTool(
         }
       }
 
+      // Discovery skips the instance for an unresolved scope without recording a
+      // failure, so workspace edges alone would otherwise read as the full picture.
+      const scopeUnresolved = includeServiceNow && normalizeScopeCode(scope) === "unknown_scope";
       const payload = {
         scope: normalizeScopeCode(scope),
         includeWorkspace,
         includeServiceNow,
+        ...(scopeUnresolved
+          ? {
+              scopeUnresolved: true,
+              note: "Could not resolve the application scope from the instance session; ServiceNow relations were not read. Pass `scope` to include them.",
+            }
+          : {}),
         sourceSummary: hydrated.sourceSummary,
         tables: [...tableSet.values()].sort(),
         relationEvidence,
@@ -116,7 +125,7 @@ export async function handleRelationOnboardingTool(
       // workspace edges alone must not pass for the scope's full picture.
       const serviceNowFailed = includeServiceNow && hydrated.sourceSummary.serviceNowFailed === true;
       return {
-        isError: relations.length === 0 || serviceNowFailed,
+        isError: relations.length === 0 || serviceNowFailed || scopeUnresolved,
         content: [{ type: "text", text: toJsonText(payload) }],
       };
     }

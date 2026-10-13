@@ -71,3 +71,21 @@ test('a failed ServiceNow read is an error even when workspace edges exist', asy
   const excluded = await analyze({ includeServiceNow: false }, { serviceNowFailed: true });
   assert.equal(excluded.isError, false);
 });
+
+test('an unresolved scope is an error unless ServiceNow relations are excluded', async () => {
+  const context = { ...makeContext(), resolveScopeCode: async () => 'unknown_scope' };
+  const run = (args) =>
+    handleRelationOnboardingTool('sync_analyze_scope_relations', args, context).then((result) => ({
+      isError: result.isError,
+      payload: JSON.parse(result.content[0].text),
+    }));
+
+  const unresolved = await run({});
+  assert.equal(unresolved.isError, true);
+  assert.equal(unresolved.payload.scopeUnresolved, true);
+  assert.match(unresolved.payload.note, /pass `scope`/i);
+
+  const workspaceOnly = await run({ includeServiceNow: false });
+  assert.equal(workspaceOnly.isError, false);
+  assert.equal(workspaceOnly.payload.scopeUnresolved, undefined);
+});
