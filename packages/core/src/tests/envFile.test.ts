@@ -119,6 +119,21 @@ describe("envFile", () => {
       const mode = (await fs.promises.stat(envPath)).mode & 0o777;
       expect(mode).toBe(0o600);
     });
+
+    // root reads a write-only file anyway, so the unreadable case needs a
+    // regular user.
+    const itUnreadable =
+      process.platform === "win32" || process.getuid?.() === 0 ? it.skip : it;
+    itUnreadable("refuses to overwrite an existing .env it cannot read", async () => {
+      const envPath = path.join(tempDir, ".env");
+      await fs.promises.writeFile(envPath, "SYNCRONA_OTHER=1\n");
+      await fs.promises.chmod(envPath, 0o200);
+      await expect(writeDotEnv(envPath, { SN_PASSWORD: "secret" })).rejects.toThrow(
+        /EACCES/
+      );
+      await fs.promises.chmod(envPath, 0o600);
+      expect(await fs.promises.readFile(envPath, "utf8")).toBe("SYNCRONA_OTHER=1\n");
+    });
   });
 
   describe("ensureGitignored", () => {

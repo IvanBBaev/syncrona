@@ -98,8 +98,11 @@ export async function writeDotEnv(
   let existing = "";
   try {
     existing = await fsp.readFile(envPath, "utf8");
-  } catch {
-    existing = "";
+  } catch (e) {
+    // Only a missing file starts empty. An existing .env that cannot be read
+    // would otherwise be replaced by the new keys alone, losing every
+    // unrelated variable in it.
+    if ((e as NodeJS.ErrnoException)?.code !== "ENOENT") throw e;
   }
   const next = upsertEnvVars(existing, vars);
   await fsp.writeFile(envPath, next, { encoding: "utf8", mode: 0o600 });
