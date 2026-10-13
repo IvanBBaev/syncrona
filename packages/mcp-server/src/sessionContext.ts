@@ -207,6 +207,10 @@ async function getUpdateSetBySysId(
   return sets.length > 0 ? sets[0] : null;
 }
 
+// The Table API's own default page cap; callers detecting truncation ask for one
+// row past what they show, so this sits above their 500-row ceiling.
+const LIST_LIMIT_MAX = 1000;
+
 export async function listScopes(
   timeoutMs: number,
   queryText?: string,
@@ -219,7 +223,7 @@ export async function listScopes(
     {
       query,
       fields: ["sys_id", "scope", "name"],
-      limit: Math.min(Math.max(limit, 1), 500),
+      limit: Math.min(Math.max(limit, 1), LIST_LIMIT_MAX),
     },
     timeoutMs
   );
@@ -237,7 +241,7 @@ export async function listUpdateSets(
     {
       query,
       fields: ["sys_id", "name", "state", "application", "sys_created_on"],
-      limit: Math.min(Math.max(limit, 1), 500),
+      limit: Math.min(Math.max(limit, 1), LIST_LIMIT_MAX),
     },
     timeoutMs
   );

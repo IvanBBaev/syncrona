@@ -295,6 +295,10 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
           type: "integer",
           description: "Number of rows returned in this page.",
         },
+        truncated: {
+          type: "boolean",
+          description: "True when more rows match than the limit returned.",
+        },
         rows: {
           type: "array",
           description: "sys_scope rows limited to the sys_id, scope and name fields.",
@@ -424,6 +428,10 @@ const BASE_MCP_TOOLS: Array<Record<string, unknown>> = [
         count: {
           type: "integer",
           description: "Number of rows returned in this page.",
+        },
+        truncated: {
+          type: "boolean",
+          description: "True when more rows match than the limit returned.",
         },
         rows: {
           type: "array",

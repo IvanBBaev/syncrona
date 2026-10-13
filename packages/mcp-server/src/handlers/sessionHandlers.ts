@@ -132,8 +132,14 @@ export async function handleSessionTool(
         typeof args.limit === "number" && Number.isFinite(args.limit)
           ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
           : 100;
-      const result = await listScopes(timeoutMs, query, limit);
-      return structuredJsonResponse({ count: result.length, rows: result });
+      // One row past the limit tells a full page from a truncated one.
+      const result = await listScopes(timeoutMs, query, limit + 1);
+      const rows = result.slice(0, limit);
+      return structuredJsonResponse({
+        count: rows.length,
+        truncated: result.length > limit,
+        rows,
+      });
     }
 
     case "sync_set_update_set": {
@@ -183,8 +189,14 @@ export async function handleSessionTool(
         typeof args.limit === "number" && Number.isFinite(args.limit)
           ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
           : 100;
-      const result = await listUpdateSets(timeoutMs, query, limit);
-      return structuredJsonResponse({ count: result.length, rows: result });
+      // One row past the limit tells a full page from a truncated one.
+      const result = await listUpdateSets(timeoutMs, query, limit + 1);
+      const rows = result.slice(0, limit);
+      return structuredJsonResponse({
+        count: rows.length,
+        truncated: result.length > limit,
+        rows,
+      });
     }
 
     case "sync_prepare_session": {
@@ -235,12 +247,14 @@ export async function handleSessionTool(
             },
             timeoutMs
           );
-          const target = asRecord(updateRes.targetUpdateSet);
-          actions.push(
-            `update set changed: ${initialUpdateSetSysId || "<empty>"} -> ${toStringField(
-              target.sysId
-            )}`
-          );
+          const targetSysId = toStringField(asRecord(updateRes.targetUpdateSet).sysId);
+          // A name-only request always resolves through setCurrentUpdateSet, which
+          // may land on the set that was already current; that is not a change.
+          if (targetSysId !== initialUpdateSetSysId) {
+            actions.push(
+              `update set changed: ${initialUpdateSetSysId || "<empty>"} -> ${targetSysId}`
+            );
+          }
         }
       }
 

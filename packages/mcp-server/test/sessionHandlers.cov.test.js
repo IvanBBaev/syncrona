@@ -195,7 +195,7 @@ test('getSessionContext: throws when sys_user cannot be found for SN_USER', asyn
   );
 });
 
-test('listScopes: trims/query passthrough and clamps limit into [1,500]', async () => {
+test('listScopes: trims/query passthrough and clamps limit into [1,1000]', async () => {
   await withEnv(
     { SN_INSTANCE: 'dev1.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
     async () => {
@@ -205,12 +205,12 @@ test('listScopes: trims/query passthrough and clamps limit into [1,500]', async 
         return tableResult([{ sys_id: 's1', scope: 'x_a', name: 'A' }]);
       };
 
-      const rows = await listScopes(1000, '  scope=x_a  ', 999);
+      const rows = await listScopes(1000, '  scope=x_a  ', 5000);
       assert.equal(rows.length, 1);
       assert.equal(rows[0].scope, 'x_a');
       const url = seenUrls[0];
       assert.match(url, /sysparm_query=scope%3Dx_a/);
-      assert.match(url, /sysparm_limit=500/);
+      assert.match(url, /sysparm_limit=1000/);
     }
   );
 });
@@ -549,7 +549,9 @@ test('sync_list_scopes: returns count + rows and clamps a huge limit', async () 
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.count, 1);
       assert.equal(parsed.rows[0].scope, 'x_a');
-      assert.match(seenUrls[0], /sysparm_limit=500/);
+      assert.equal(parsed.truncated, false);
+      // Clamped to 500, plus the one row that reveals truncation.
+      assert.match(seenUrls[0], /sysparm_limit=501/);
       // B2 contract: declared outputSchema => structuredContent on success.
       assert.deepEqual(res.structuredContent, parsed);
     }
@@ -572,7 +574,7 @@ test('sync_list_scopes: non-numeric/invalid limit falls back to default 100', as
         makeContext()
       );
       assert.equal(res.isError, false);
-      assert.match(seenUrls[0], /sysparm_limit=100/);
+      assert.match(seenUrls[0], /sysparm_limit=101/);
     }
   );
 });
@@ -589,6 +591,31 @@ test('sync_list_update_sets: returns count + rows', async () => {
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.count, 1);
       assert.equal(parsed.rows[0].name, 'Set A');
+    }
+  );
+});
+
+test('sync_list_update_sets: a full page past the limit is flagged truncated, not passed off as all rows', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev1.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      const seenUrls = [];
+      global.fetch = async (url) => {
+        seenUrls.push(String(url));
+        return tableResult([
+          { sys_id: 'us-1', name: 'A' },
+          { sys_id: 'us-2', name: 'B' },
+          { sys_id: 'us-3', name: 'C' },
+        ]);
+      };
+
+      const res = await handleSessionTool('sync_list_update_sets', { limit: 2 }, makeContext());
+      assert.equal(res.isError, false);
+      assert.match(seenUrls[0], /sysparm_limit=3/);
+      const parsed = JSON.parse(res.content[0].text);
+      assert.equal(parsed.count, 2);
+      assert.equal(parsed.truncated, true);
+      assert.deepEqual(parsed.rows.map((r) => r.sys_id), ['us-1', 'us-2']);
     }
   );
 });
@@ -784,6 +811,46 @@ test('sync_prepare_session: expected update set by name with no sysId always swi
       const parsed = JSON.parse(res.content[0].text);
       assert.equal(parsed.changed, true);
       assert.match(parsed.actions[0], /update set changed: <empty> -> us-9/);
+    }
+  );
+});
+
+test('sync_prepare_session: an expected update set name that is already current reports no change', async () => {
+  await withEnv(
+    { SN_INSTANCE: 'dev1.service-now.com', SN_USER: 'admin', SN_PASSWORD: 'secret' },
+    async () => {
+      global.fetch = async (url, init) => {
+        const href = String(url);
+        const method = init && init.method ? init.method : 'GET';
+        if (href.includes('/api/now/table/sys_user?')) {
+          return tableResult([{ sys_id: 'user-1', user_name: 'admin' }]);
+        }
+        if (href.includes('/getCurrentScope')) {
+          return mkResponse(404, { error: 'nope' });
+        }
+        if (href.includes('/api/now/table/sys_update_set?')) {
+          return tableResult([{ sys_id: 'us-9', name: 'Feature Set', state: 'in progress' }]);
+        }
+        if (href.includes('/api/now/table/sys_user_preference?')) {
+          return href.includes('sys_update_set')
+            ? tableResult([{ sys_id: 'pref-us', name: 'sys_update_set', value: 'us-9' }])
+            : tableResult([]);
+        }
+        if (method === 'PUT' && href.includes('/api/now/table/sys_user_preference/')) {
+          return mkResponse(200, { result: { sys_id: 'pref-us', value: 'us-9' } });
+        }
+        throw new Error(`Unmatched: ${method} ${href}`);
+      };
+
+      const res = await handleSessionTool(
+        'sync_prepare_session',
+        { expectedUpdateSetName: 'Feature Set' },
+        makeContext()
+      );
+      assert.equal(res.isError, false);
+      const parsed = JSON.parse(res.content[0].text);
+      assert.deepEqual(parsed.actions, [], 'us-9 -> us-9 is not a change');
+      assert.equal(parsed.changed, false);
     }
   );
 });

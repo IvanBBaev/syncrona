@@ -171,6 +171,7 @@ Page of sys_scope rows matching the query.
 | Field | Type | Always present | Description |
 | --- | --- | --- | --- |
 | `count` | `integer` | yes | Number of rows returned in this page. |
+| `truncated` | `boolean` | no | True when more rows match than the limit returned. |
 | `rows` | `array<object>` | yes | sys_scope rows limited to the sys_id, scope and name fields. |
 | `correlationId` | `string` | no | Request correlation id injected by the server. |
 
@@ -221,6 +222,7 @@ Page of sys_update_set rows matching the query.
 | Field | Type | Always present | Description |
 | --- | --- | --- | --- |
 | `count` | `integer` | yes | Number of rows returned in this page. |
+| `truncated` | `boolean` | no | True when more rows match than the limit returned. |
 | `rows` | `array<object>` | yes | sys_update_set rows limited to the sys_id, name, state, application and sys_created_on fields. |
 | `correlationId` | `string` | no | Request correlation id injected by the server. |
 
