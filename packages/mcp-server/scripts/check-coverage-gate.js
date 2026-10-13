@@ -194,7 +194,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Five entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Six entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
@@ -358,7 +358,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.19 / 91.89
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
-  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
+  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 98.94 (also 100.00 / 100.00: V8 range granularity, 93/94 vs 93/93 branches on unchanged source, no uncovered lines in either reading; the lower reading appears under full-gate load)
   // SDK-F6: the Fluent build resolves a caller-supplied project path against the
   // workspace (symlinks included) and swaps the process console while it runs.
   { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.75
