@@ -181,6 +181,7 @@ const drainQueue = async (): Promise<void> => {
 
       const updateResults = await pushFiles(buildables);
       const failedPaths: string[] = [];
+      const finalFailedPaths: string[] = [];
       updateResults.forEach((res, index) => {
         const buildable = buildables[index];
         if (!buildable) {
@@ -193,7 +194,12 @@ const drainQueue = async (): Promise<void> => {
           logFilePush(ctx, res);
         }
         if (!res.success) {
-          failedPaths.push(...(pathsByBuildable.get(key) ?? []));
+          // A failure only a change can fix (the file does not build, the
+          // record is gone, the instance refused the request) would fail the
+          // same way on every retry, so it is not requeued: the next save of
+          // the file queues it again.
+          const target = res.retryable === false ? finalFailedPaths : failedPaths;
+          target.push(...(pathsByBuildable.get(key) ?? []));
         }
       });
       // Batch handed off — a later batch's throw must not requeue it
@@ -203,6 +209,12 @@ const drainQueue = async (): Promise<void> => {
         // Stopped mid-push: the failures belong to the previous session.
         drainSession = session;
         continue;
+      }
+      if (finalFailedPaths.length > 0) {
+        logger.warn(
+          `${finalFailedPaths.length} file(s) failed to push and will not be retried — ` +
+            "fix the cause shown above and save the file again."
+        );
       }
       if (failedPaths.length > 0) {
         // pushFiles RESOLVES per-record failures (pushRec converts every

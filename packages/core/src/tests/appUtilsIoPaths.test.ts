@@ -182,13 +182,13 @@ describe("pushFiles network edges", () => {
   it("reports a non-Error update rejection by its text", async () => {
     mockClient.updateRecord.mockImplementationOnce(() => Promise.reject("ECONNRESET"));
     const results = await App.pushFiles([scriptRecord("sys_script", "Rule")]);
-    expect(results).toEqual([{ success: false, message: "sys_script > Rule : ECONNRESET" }]);
+    expect(results).toEqual([{ success: false, message: "sys_script > Rule : ECONNRESET", retryable: false }]);
   });
 
   it("reports an update error without a message as too many retries", async () => {
     mockClient.updateRecord.mockRejectedValueOnce(new Error(""));
     const results = await App.pushFiles([scriptRecord("sys_script", "Rule")]);
-    expect(results).toEqual([{ success: false, message: "sys_script > Rule : Too many retries" }]);
+    expect(results).toEqual([{ success: false, message: "sys_script > Rule : Too many retries", retryable: false }]);
   });
 
   it.each<[string, unknown, string]>([
@@ -197,7 +197,7 @@ describe("pushFiles network edges", () => {
   ])("reports a plugin that rejects with %s as a build failure and sends nothing", async (_label, reason, text) => {
     getFinalFileContents.mockImplementationOnce(() => Promise.reject(reason));
     const results = await App.pushFiles([scriptRecord("sys_script", "Rule")]);
-    expect(results).toEqual([{ success: false, message: `sys_script > Rule : \n0:\n${text}` }]);
+    expect(results).toEqual([{ success: false, message: `sys_script > Rule : \n0:\n${text}`, retryable: false }]);
     expect(mockClient.updateRecord).not.toHaveBeenCalled();
   });
 

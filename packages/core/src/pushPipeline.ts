@@ -6,6 +6,7 @@ import {
   describeUnlistedCreateTable,
   escapeQueryValue,
   isDeniedCreateTable,
+  shouldRetryStatus,
 } from "@syncrona/sn-transport";
 import { promises as fsp } from "fs";
 import path from "path";
@@ -555,7 +556,7 @@ const pushRec = async (
   sysId: string,
   builtRec: Record<string, string>,
   summary?: string
-) => {
+): Promise<PushFileResult> => {
   const recSummary = summary ?? `${table} > ${sysId}`;
   try {
     const pushRes = await retryOnErr(
@@ -569,19 +570,27 @@ const pushRec = async (
       },
       isRetryableRequestError
     );
-    return processPushResponse(pushRes, recSummary);
+    const result = processPushResponse(pushRes, recSummary);
+    return result.success
+      ? result
+      : { ...result, retryable: pushRes.status !== 404 && shouldRetryStatus(pushRes.status) };
   } catch (e) {
     if (getErrorResponseStatus(e) === 404) {
       return {
         success: false,
         message: `Could not find ${recSummary} on the server.`,
+        retryable: false,
       };
     }
     let message
     if (e instanceof Error) message = e.message
     else message = String(e)
     const errMsg = message || "Too many retries";
-    return { success: false, message: `${recSummary} : ${errMsg}` };
+    return {
+      success: false,
+      message: `${recSummary} : ${errMsg}`,
+      retryable: isRetryableRequestError(e),
+    };
   }
 };
 
@@ -641,14 +650,23 @@ const mapWithConcurrency = async <T, R>(
   return results;
 };
 
+/**
+ * A push result that also says whether pushing the same content again can
+ * succeed. `retryable: false` marks a failure that only a change can fix: the
+ * local file does not build, its sidecar is unusable, the record is gone (404),
+ * or the instance refused the request (a 4xx outside the shared retry policy).
+ * Watch mode stops retrying such a record until its file is saved again.
+ */
+export type PushFileResult = Sync.PushResult & { retryable?: boolean };
+
 export const pushFiles = async (
   recs: Sync.BuildableRecord[],
   concurrencyOverride?: number
-): Promise<Sync.PushResult[]> => {
+): Promise<PushFileResult[]> => {
   const client = defaultClient();
   const pushConcurrency = resolvePushConcurrency(concurrencyOverride);
   const tick = getProgTick(logger.getLogLevel(), recs.length * 2) || (() => {});
-  const pushOne = async (rec: Sync.BuildableRecord): Promise<Sync.PushResult> => {
+  const pushOne = async (rec: Sync.BuildableRecord): Promise<PushFileResult> => {
     const fieldNames = Object.keys(rec.fields);
     const recSummary = summarizeRecord(
       rec.table,
@@ -658,7 +676,11 @@ export const pushFiles = async (
     tick();
     if (!buildRes.success) {
       tick();
-      return { success: false, message: `${recSummary} : ${buildRes.message}` };
+      return {
+        success: false,
+        message: `${recSummary} : ${buildRes.message}`,
+        retryable: false,
+      };
     }
     let expanded: MetaExpansion;
     try {
@@ -670,6 +692,7 @@ export const pushFiles = async (
       return {
         success: false,
         message: `${recSummary} : ${e instanceof Error ? e.message : String(e)}`,
+        retryable: false,
       };
     }
     if (expanded.skipped.length > 0) {

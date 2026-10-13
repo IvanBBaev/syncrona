@@ -44,7 +44,12 @@ jest.unstable_mockModule("../snClient.js", () => ({
   retryOnErr: async (f: () => Promise<unknown>) => f(),
   getErrorResponseStatus: (e: unknown) =>
     (e as { response?: { status?: number } } | null)?.response?.status,
-  isRetryableRequestError: () => true,
+  // Mirrors the real policy: no HTTP status (a transport error) or a status in
+  // the shared retry set is retryable; any other status is not.
+  isRetryableRequestError: (e: unknown) => {
+    const status = (e as { response?: { status?: number } } | null)?.response?.status;
+    return status === undefined || [408, 425, 429, 500, 502, 503, 504].includes(status);
+  },
   // Mirrors the real contract: a non-2xx response resolves to a failed
   // PushResult; 2xx resolves to a successful one.
   processPushResponse: (response: { status: number }, recSummary: string) =>
@@ -116,6 +121,11 @@ const ctx = (
   sys_id: sysId,
   scope: "x_nuvo_test",
 });
+
+const httpError = (status: number): Error =>
+  Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: { status },
+  });
 
 const connectionRefused = (): Error =>
   Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:443"), {
@@ -283,6 +293,120 @@ describe("Watcher retry ladder vs resolved push failures (seventh-wave re-examin
     expect(pushedSysIds.slice(2)).toEqual(["rec_a"]);
     expect(mockLogFilePush).toHaveBeenLastCalledWith(
       recA,
+      expect.objectContaining({ success: true })
+    );
+  });
+
+  it("does not retry a push the instance refused — the same request would fail the same way", async () => {
+    const rec = ctx("/watched/rec1.script.js", "sys_script", "rec_1", "script");
+    mockGetFileContextFromPath.mockReturnValue(rec);
+    mockUpdateRecord.mockRejectedValue(httpError(403));
+
+    const { startWatching } = await import("../Watcher.js");
+    startWatching("/watched");
+    changeHandler(rec.filePath);
+
+    await drainAfter(350);
+    expect(mockUpdateRecord).toHaveBeenCalledTimes(1);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "1 file(s) failed to push and will not be retried — fix the cause shown above and save the file again."
+    );
+    expect(mockLoggerWarn).not.toHaveBeenCalledWith(
+      "1 file(s) failed to push — retrying automatically."
+    );
+
+    await drainAfter(60_000);
+    expect(mockUpdateRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a record the instance no longer has (404)", async () => {
+    const rec = ctx("/watched/rec1.script.js", "sys_script", "rec_1", "script");
+    mockGetFileContextFromPath.mockReturnValue(rec);
+    mockUpdateRecord.mockRejectedValue(httpError(404));
+
+    const { startWatching } = await import("../Watcher.js");
+    startWatching("/watched");
+    changeHandler(rec.filePath);
+
+    await drainAfter(350);
+    await drainAfter(60_000);
+    expect(mockUpdateRecord).toHaveBeenCalledTimes(1);
+    expect(mockLogFilePush).toHaveBeenCalledWith(
+      rec,
+      expect.objectContaining({ success: false, retryable: false })
+    );
+  });
+
+  it("does not retry a non-2xx response outside the retry policy, but retries one inside it", async () => {
+    const recA = ctx("/watched/aaa.script.js", "sys_script", "rec_a", "script");
+    const recB = ctx("/watched/bbb.script.js", "sys_script", "rec_b", "script");
+    mockGetFileContextFromPath.mockImplementation((p: unknown) =>
+      p === recA.filePath ? recA : recB
+    );
+    let recBAttempts = 0;
+    mockUpdateRecord.mockImplementation(async (_table, sysId) => {
+      if (sysId === "rec_a") return { status: 400 };
+      return { status: recBAttempts++ === 0 ? 503 : 200 };
+    });
+
+    const { startWatching } = await import("../Watcher.js");
+    startWatching("/watched");
+    changeHandler(recA.filePath);
+    changeHandler(recB.filePath);
+
+    await drainAfter(350);
+    await drainAfter(60_000);
+    const pushedSysIds = mockUpdateRecord.mock.calls.map((call) => call[1]);
+    expect(pushedSysIds.filter((id) => id === "rec_a")).toHaveLength(1);
+    expect(pushedSysIds.filter((id) => id === "rec_b")).toHaveLength(2);
+  });
+
+  it("retries only the transient failure when a batch mixes it with a refused push", async () => {
+    const recA = ctx("/watched/aaa.script.js", "sys_script", "rec_a", "script");
+    const recB = ctx("/watched/bbb.script.js", "sys_script", "rec_b", "script");
+    mockGetFileContextFromPath.mockImplementation((p: unknown) =>
+      p === recA.filePath ? recA : recB
+    );
+    let recBAttempts = 0;
+    mockUpdateRecord.mockImplementation(async (_table, sysId) => {
+      if (sysId === "rec_a") throw httpError(400);
+      if (recBAttempts++ === 0) throw connectionRefused();
+      return { status: 200 };
+    });
+
+    const { startWatching } = await import("../Watcher.js");
+    startWatching("/watched");
+    changeHandler(recA.filePath);
+    changeHandler(recB.filePath);
+
+    await drainAfter(350);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "1 file(s) failed to push — retrying automatically."
+    );
+    await drainAfter(60_000);
+    const pushedSysIds = mockUpdateRecord.mock.calls.map((call) => call[1]);
+    expect(pushedSysIds.filter((id) => id === "rec_a")).toHaveLength(1);
+    expect(pushedSysIds.filter((id) => id === "rec_b")).toHaveLength(2);
+  });
+
+  it("pushes a refused file again once it is saved again", async () => {
+    const rec = ctx("/watched/rec1.script.js", "sys_script", "rec_1", "script");
+    mockGetFileContextFromPath.mockReturnValue(rec);
+    mockUpdateRecord
+      .mockRejectedValueOnce(httpError(403))
+      .mockResolvedValue({ status: 200 });
+
+    const { startWatching } = await import("../Watcher.js");
+    startWatching("/watched");
+    changeHandler(rec.filePath);
+    await drainAfter(350);
+    expect(mockUpdateRecord).toHaveBeenCalledTimes(1);
+
+    changeHandler(rec.filePath);
+    await drainAfter(350);
+    expect(mockUpdateRecord).toHaveBeenCalledTimes(2);
+    expect(mockLogFilePush).toHaveBeenLastCalledWith(
+      rec,
       expect.objectContaining({ success: true })
     );
   });

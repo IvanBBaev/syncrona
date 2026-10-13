@@ -208,7 +208,7 @@ module.exports = {
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
-    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.45 / 96.00
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.45 / 96.03
     './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.85 / 94.23
@@ -231,7 +231,7 @@ module.exports = {
     './src/commands.ts': { lines: 96, branches: 94 }, // measured 99.55 / 99.04
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
-    './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 97.97 / 96.42
+    './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 98.02 / 96.66
     './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.23
     './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 93.02
     './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
