@@ -46,6 +46,13 @@ test('quotes reserved-word object literal keys', async () => {
   );
 });
 
+test('quotes reserved-word keys of object methods and accessors', async () => {
+  assert.equal(
+    await transform('var o = { get default() { return 1; }, set class(v) {}, delete() {}, name() {} };'),
+    'var o = {\n  get "default"() {\n    return 1;\n  },\n  set "class"(v) {},\n  "delete"() {},\n  name() {}\n};'
+  );
+});
+
 test('leaves already-computed reserved-word access untouched', async () => {
   const source = 'var w = record["class"];';
   assert.equal(await transform(source), source);

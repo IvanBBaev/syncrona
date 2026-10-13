@@ -26,12 +26,16 @@ export default function() {
           path.replaceWith(replacement);
         }
       },
-      //ES3 rejects a reserved word as an object literal key too, so quote it
-      ObjectProperty(path) {
-        const key = path.node.key;
-        if (key.type === "Identifier" && isReservedWord(key.name) && !path.node.computed) {
-          path.node.key = t.stringLiteral(key.name);
-          path.node.shorthand = false;
+      //ES3 rejects a reserved word as an object literal key too, so quote it;
+      //methods and accessors (`get default() {}`) carry the same key
+      "ObjectProperty|ObjectMethod"(path) {
+        const node = path.node as t.ObjectProperty | t.ObjectMethod;
+        const key = node.key;
+        if (key.type === "Identifier" && isReservedWord(key.name) && !node.computed) {
+          node.key = t.stringLiteral(key.name);
+          if (node.type === "ObjectProperty") {
+            node.shorthand = false;
+          }
         }
       },
       //remove use strict
