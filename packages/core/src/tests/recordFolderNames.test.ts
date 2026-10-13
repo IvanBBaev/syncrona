@@ -311,6 +311,27 @@ describe("migrateRenamedRecordFolders", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Left \"t/Solo\" in place"));
   });
 
+  it("moves nothing for records without a sys_id, and never throws on a null record", async () => {
+    // The sys_id is the record's identity across manifests; without one, a
+    // folder cannot be attributed, so a "Foo." of the old manifest is not some
+    // other sys_id-less record's "Foo" of the new one.
+    write("t/Foo./script.js", "old");
+    const files = [{ name: "script", type: "js" }];
+    const previous = {
+      scope: "x",
+      tables: { t: { records: { "Foo.": { name: "Foo.", files } } } },
+    } as unknown as SN.AppManifest;
+    const next = {
+      scope: "x",
+      tables: { t: { records: { Foo: { name: "Foo", files }, Gone: null } } },
+    } as unknown as SN.AppManifest;
+    await expect(migrateRenamedRecordFolders(previous, next, root, false)).resolves.toEqual({
+      moved: [],
+      leftBehind: [],
+    });
+    expect(fs.existsSync(path.join(root, "t/Foo./script.js"))).toBe(true);
+  });
+
   it("does nothing across scopes, for instance-side renames or without a previous manifest", async () => {
     write("t/Solo/script.js", "old");
     const next = manifestOf("x", [["Solo_s1", "s1"], ["solo_s2", "s2"]]);

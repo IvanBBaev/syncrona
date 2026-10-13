@@ -525,11 +525,14 @@ export async function migrateRenamedRecordFolders(
     const prevClaims = new Map<string, Set<string>>();
     for (const [key, record] of Object.entries(prevRecords)) {
       const name = recordNameOf(key, record);
-      prevNameBySysId.set(record?.sys_id, name);
       const canonical = canonicalFolderKey(name);
       const claims = prevClaims.get(canonical) ?? new Set<string>();
       claims.add(name);
       prevClaims.set(canonical, claims);
+      // The sys_id is the record's identity across the two manifests; a record
+      // without one cannot be followed to a new folder.
+      if (typeof record?.sys_id !== "string") continue;
+      prevNameBySysId.set(record.sys_id, name);
     }
     // canonical key -> the sys_ids of the new manifest that name a folder so.
     // Kept per record: "Foo." -> "Foo" keeps its canonical key, and the record's
@@ -545,8 +548,9 @@ export async function migrateRenamedRecordFolders(
     const reported = new Set<string>();
 
     for (const [key, record] of Object.entries(table?.records ?? {})) {
+      if (typeof record?.sys_id !== "string") continue;
       const newName = recordNameOf(key, record);
-      const oldName = prevNameBySysId.get(record?.sys_id);
+      const oldName = prevNameBySysId.get(record.sys_id);
       if (oldName === undefined || oldName === newName) continue;
       if (!isRuleDrivenRename(oldName, newName, record.sys_id)) continue;
       if (!isMovableOldFolder(oldName) || !isSafePathComponent(newName)) continue;
