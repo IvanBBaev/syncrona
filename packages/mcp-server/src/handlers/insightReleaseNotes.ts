@@ -107,8 +107,18 @@ export async function handleGenerateReleaseNotes(
     );
   }
 
+  // A rejected request carries no rows; rendering it would print "Total changes: 0"
+  // with no word of the HTTP status that caused it.
+  if (isError) {
+    const detail = (response.data as { error?: { message?: unknown } } | undefined)?.error?.message;
+    return errorResponse(
+      `Release notes request failed with HTTP ${response.status}` +
+        (typeof detail === "string" && detail ? `: ${detail}` : ".")
+    );
+  }
+
   return {
-    isError,
+    isError: false,
     content: [{ type: "text", text: buildReleaseNotesMarkdown(resolved.label, rows, truncated) }],
   };
 }
