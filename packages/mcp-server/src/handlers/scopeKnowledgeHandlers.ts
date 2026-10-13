@@ -37,6 +37,21 @@ type ScopeKnowledgeContext = {
   writeScopeDocsBundle: (scopeCode: string, files: Array<{ relativePath: string; content: string }>) => string[];
 };
 
+// Without a resolved scope every write lands under "unknown_scope", where the
+// next unresolved run silently overwrites it; refuse it and ask for `scope`.
+function unresolvedScopeWrite(scope: string, writeFiles: boolean, dryRun: boolean): ToolResponse | null {
+  if (dryRun || !writeFiles) return null;
+  const code = scope.trim();
+  if (code && code !== "unknown_scope") return null;
+  return {
+    isError: true,
+    content: [{
+      type: "text",
+      text: "Could not resolve the application scope from the instance session; pass `scope` to write files.",
+    }],
+  };
+}
+
 function toRecordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
@@ -215,6 +230,8 @@ export async function handleScopeKnowledgeTool(
       const updateSetContext = context.asRecord(args.updateSetContext);
       const trigger = typeof args.trigger === "string" ? args.trigger : "manual";
       const writeFiles = args.writeFiles === true;
+      const refused = unresolvedScopeWrite(scope, writeFiles, dryRun);
+      if (refused) return refused;
 
       const hydrated = await context.hydrateScopeKnowledgeInputs(entities, graph, scope, timeoutMs);
       const recommendedEditTargets = task
@@ -298,6 +315,8 @@ export async function handleScopeKnowledgeTool(
       const graph = context.toGraphFromUnknown(args.graph);
       const task = typeof args.task === "string" ? args.task.trim() : "scope docs";
       const writeFiles = args.writeFiles === true;
+      const refusedDocs = unresolvedScopeWrite(scope, writeFiles, dryRun);
+      if (refusedDocs) return refusedDocs;
       const includeFields = args.includeFields !== false;
       const includeDiagrams = args.includeDiagrams !== false;
       const includeScheduledJobs = args.includeScheduledJobs !== false;
@@ -444,6 +463,8 @@ export async function handleScopeKnowledgeTool(
 
       const scopeArg = typeof delegatedArgs.scope === "string" ? delegatedArgs.scope : "";
       const scope = await context.resolveScopeCode(scopeArg, timeoutMs);
+      const refusedUpdate = unresolvedScopeWrite(scope, delegatedArgs.writeFiles === true, dryRun);
+      if (refusedUpdate) return refusedUpdate;
       const entities = toRecordArray(delegatedArgs.entities);
       const graph = context.toGraphFromUnknown(delegatedArgs.graph);
       const task = typeof delegatedArgs.task === "string" ? delegatedArgs.task : trigger;
@@ -499,6 +520,8 @@ export async function handleScopeKnowledgeTool(
         ? args.task.trim()
         : "table dependencies report";
       const writeFiles = args.writeFiles === true;
+      const refusedReport = unresolvedScopeWrite(scope, writeFiles, dryRun);
+      if (refusedReport) return refusedReport;
 
       const hydrated = await context.hydrateScopeKnowledgeInputs([], context.toGraphFromUnknown({}), scope, timeoutMs);
       const recommendedEditTargets = rankMinimalFootprintTargets(task, hydrated.graph, 8);

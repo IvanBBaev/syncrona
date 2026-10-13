@@ -140,3 +140,44 @@ test('the renderer skips unnamed tables, falls back to ids and dashes, and zeroe
   );
   assert.equal(md.includes('| u_bare | - | - | no | - |'), true);
 });
+
+test('scope-knowledge writers refuse to write files when the scope did not resolve', async () => {
+  const { handleScopeKnowledgeTool } = require('../dist/handlers/scopeKnowledgeHandlers.js');
+  const writes = [];
+  const hydrations = [];
+  const context = (resolved, dryRun = false) => ({
+    timeoutMs: 1000,
+    dryRun,
+    resolveScopeCode: async () => resolved,
+    hydrateScopeKnowledgeInputs: async (entities, graph) => {
+      hydrations.push(resolved);
+      return { entities, graph, sourceSummary: {}, autodiscovered: false, serviceNowDiscovered: false };
+    },
+    safeGetSessionContext: async () => null,
+    asRecord: (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {}),
+    toGraphFromUnknown: () => ({ nodes: [], edges: [] }),
+    writeJsonAndMarkdown: (paths) => writes.push(paths.markdownPath),
+    writeTableDocs: () => [],
+    writeScopeDocsBundle: (_scope, files) => files.map((file) => file.relativePath),
+  });
+  const tools = [
+    'sync_generate_scope_knowledge',
+    'sync_generate_scope_docs',
+    'sync_scope_knowledge_auto_update',
+    'sync_generate_table_dependency_report',
+  ];
+  for (const tool of tools) {
+    for (const resolved of ['unknown_scope', '']) {
+      const res = await handleScopeKnowledgeTool(tool, { trigger: 'manual', writeFiles: true }, context(resolved));
+      assert.equal(res.isError, true, `${tool} wrote for "${resolved}"`);
+      assert.match(res.content[0].text, /pass `scope` to write files/);
+    }
+    // A preview or a read-only run under an unresolved scope still answers.
+    const preview = await handleScopeKnowledgeTool(tool, { trigger: 'manual', writeFiles: true }, context('unknown_scope', true));
+    assert.doesNotMatch(preview.content[0].text, /pass `scope`/);
+    const readOnly = await handleScopeKnowledgeTool(tool, { trigger: 'manual' }, context('unknown_scope'));
+    assert.doesNotMatch(readOnly.content[0].text, /pass `scope`/);
+  }
+  assert.deepEqual(writes, []);
+  assert.equal(hydrations.includes(''), false, 'refused before discovery');
+});
