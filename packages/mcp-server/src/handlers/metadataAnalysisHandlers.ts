@@ -270,9 +270,27 @@ export async function handleMetadataAnalysisTool(
         },
         impact
       );
+      // A target the graph never mentions (a typo, a stale id) ranks nothing, and an
+      // empty impact list would read as "this change affects nothing".
+      const graphIds = new Set<string>([
+        ...nodes.map((n) => toStringField(n.id)),
+        ...edges.flatMap((e) => [toStringField(e.from), toStringField(e.to)]),
+      ]);
+      const targetFound = !!targetId && graphIds.has(targetId);
       return {
-        isError: !targetId,
-        content: [{ type: "text", text: toJsonText({ targetId, impact, blastRadius, why: ["Severity is ranked by graph distance from changed node."] }) }],
+        isError: !targetFound,
+        content: [{
+          type: "text",
+          text: toJsonText({
+            targetId,
+            ...(targetId && !targetFound
+              ? { targetFound: false, note: "targetId is not a node or edge endpoint in graph; no impact was ranked." }
+              : {}),
+            impact,
+            blastRadius,
+            why: ["Severity is ranked by graph distance from changed node."],
+          }),
+        }],
       };
     }
 
@@ -349,9 +367,16 @@ export async function handleMetadataAnalysisTool(
         }
       );
 
+      // An id the graph never mentions has no dependencies to miss, so it passed
+      // as valid; a typo'd or stale id must not validate a package.
+      const graphIds = new Set<string>([
+        ...nodes.map((n) => toStringField(n.id)),
+        ...edges.flatMap((e) => [toStringField(e.from), toStringField(e.to)]),
+      ]);
+      const unknownIds = selectedIds.filter((id) => !graphIds.has(id));
       return {
-        isError: validation.valid !== true,
-        content: [{ type: "text", text: toJsonText(validation) }],
+        isError: validation.valid !== true || unknownIds.length > 0,
+        content: [{ type: "text", text: toJsonText(unknownIds.length > 0 ? { ...validation, unknownIds } : validation) }],
       };
     }
 

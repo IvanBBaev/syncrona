@@ -336,9 +336,32 @@ test('sn_analyze_impact: non-object graph and non-array nodes/edges degrade to e
     { graph: { nodes: 'nope', edges: 'nope' }, targetId: 'x' },
     makeContext()
   );
-  assert.equal(res.isError, false);
+  // An empty graph cannot hold the target, so the empty impact is not a verdict.
+  assert.equal(res.isError, true);
   const parsed = JSON.parse(res.content[0].text);
   assert.deepEqual(parsed.impact, []);
+  assert.equal(parsed.targetFound, false);
+});
+
+test('sn_analyze_impact: a targetId absent from the graph is an error, not "no impact"', async () => {
+  const graph = {
+    nodes: [{ id: 'a', kind: 'script', label: 'A' }, { id: 'b', kind: 'table', label: 'B' }],
+    edges: [{ from: 'a', to: 'b', relation: 'depends_on', why: 'uses table' }],
+  };
+  const res = await handleMetadataAnalysisTool('sn_analyze_impact', { graph, targetId: 'typo' }, makeContext());
+  assert.equal(res.isError, true);
+  const parsed = JSON.parse(res.content[0].text);
+  assert.equal(parsed.targetFound, false);
+  assert.match(parsed.note, /not a node/);
+
+  // An id known only as an edge endpoint is still in the graph.
+  const edgeOnly = await handleMetadataAnalysisTool(
+    'sn_analyze_impact',
+    { graph: { nodes: [], edges: graph.edges }, targetId: 'a' },
+    makeContext()
+  );
+  assert.equal(edgeOnly.isError, false);
+  assert.equal(JSON.parse(edgeOnly.content[0].text).impact.length, 1);
 });
 
 // --- sn_diff_dependency_graphs -------------------------------------------
@@ -435,6 +458,23 @@ test('sync_validate_change_package: missing dependency makes validation invalid/
   const parsed = JSON.parse(res.content[0].text);
   assert.equal(parsed.valid, false);
   assert.equal(parsed.missingDependencies.length, 1);
+});
+
+test('sync_validate_change_package: a selected id absent from the graph does not validate', async () => {
+  const res = await handleMetadataAnalysisTool(
+    'sync_validate_change_package',
+    {
+      selectedIds: ['a', 'b', 'typo'],
+      graph: {
+        nodes: [{ id: 'a' }, { id: 'b' }],
+        edges: [{ from: 'a', to: 'b', why: 'needs b' }],
+      },
+    },
+    makeContext()
+  );
+  assert.equal(res.isError, true);
+  const parsed = JSON.parse(res.content[0].text);
+  assert.deepEqual(parsed.unknownIds, ['typo']);
 });
 
 test('sync_validate_change_package: non-array selectedIds/graph fields degrade gracefully', async () => {
