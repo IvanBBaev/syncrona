@@ -51,3 +51,15 @@ test.default;
 ```javascript
 test["default"]
 ```
+
+The same applies to optional chaining (`test?.default` becomes `test?.["default"]`) and to object-literal keys:
+
+```javascript
+var options = { default: true };
+```
+
+**becomes...**
+
+```javascript
+var options = { "default": true };
+```

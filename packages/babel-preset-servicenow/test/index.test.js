@@ -77,3 +77,7 @@ test('isReservedWord matches Rhino reserved words only', () => {
   assert.equal(isReservedWord('hasOwnProperty'), false);
   assert.equal(isReservedWord('constructor'), false);
 });
+
+test('moves reserved-word optional member access to bracket syntax', async () => {
+  assert.equal(await transform('var v = record?.class;'), 'var v = record?.["class"];');
+});

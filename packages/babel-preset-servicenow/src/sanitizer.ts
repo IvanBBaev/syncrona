@@ -26,6 +26,23 @@ export default function() {
           path.replaceWith(replacement);
         }
       },
+      // `a?.default` is the same dot access spelled through optional chaining.
+      OptionalMemberExpression(path) {
+        if (
+          path.node.property.type === "Identifier" &&
+          isReservedWord(path.node.property.name) &&
+          !path.node.computed
+        ) {
+          path.replaceWith(
+            t.optionalMemberExpression(
+              path.node.object,
+              t.stringLiteral(path.node.property.name),
+              true,
+              path.node.optional
+            )
+          );
+        }
+      },
       //ES3 rejects a reserved word as an object literal key too, so quote it;
       //methods and accessors (`get default() {}`) carry the same key
       "ObjectProperty|ObjectMethod"(path) {
