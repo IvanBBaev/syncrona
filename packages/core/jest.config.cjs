@@ -211,7 +211,7 @@ module.exports = {
     './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.45 / 96.03
     './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.85 / 94.23
+    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.97 / 94.42
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75

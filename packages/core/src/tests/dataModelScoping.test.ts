@@ -673,6 +673,34 @@ describe("a sidecar-only record push --create added outside dataModelTables", ()
     expect(manifest.tables.sys_atf_test).toBeUndefined();
   });
 
+  // With meta: false no sidecar is built, so the table would come back empty
+  // anyway; the guard spares the schema lookups for it.
+  const mentions = (tableAPIGet: TableApiGet, table: string) =>
+    tableAPIGet.mock.calls.filter(([t, q]) => t === table || String(q).includes(table));
+
+  it("does not look the table up with meta: false on a Table API rebuild", async () => {
+    getManifest.mockReturnValue(previousManifest());
+    const { manifest, tableAPIGet } = await build(instance, { dataModelTables: [], meta: false });
+
+    expect(manifest.tables.sys_atf_test).toBeUndefined();
+    expect(mentions(tableAPIGet, "sys_atf_test")).toEqual([]);
+  });
+
+  it("leaves the companion-app manifest untouched with meta: false", async () => {
+    getManifest.mockReturnValue(previousManifest());
+    const manifest = { scope: "x_demo", scopeId: "scope-1", tables: {} } as SN.AppManifest;
+    const tableAPIGet = fakeInstance(instance);
+
+    await attachDataModelTablesToManifest(
+      manifest,
+      createClient(tableAPIGet),
+      config({ dataModelTables: [], meta: false })
+    );
+
+    expect(manifest.tables).toEqual({});
+    expect(tableAPIGet).not.toHaveBeenCalled();
+  });
+
   it("ignores the previous manifest of another scope", async () => {
     getManifest.mockReturnValue(previousManifest("x_other"));
     const { manifest, tableAPIGet } = await build(instance, { dataModelTables: [] });
