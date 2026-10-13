@@ -220,9 +220,25 @@ test('sync_suggest_tests: inline empty script body is rejected without calling t
 // sync_diff_instance_vs_local
 // ---------------------------------------------------------------------------
 
+// The diff needs a resolved scope and a readable manifest; both are refused
+// otherwise, so the default context supplies them.
+function mkManifestProject(manifest = { tables: {} }) {
+  const dir = mkTempProject();
+  fs.writeFileSync(path.join(dir, 'sync.manifest.json'), JSON.stringify(manifest));
+  return dir;
+}
+
+function diffContext(overrides = {}) {
+  return makeContext({
+    resolveScope: async () => 'x_app',
+    projectDir: mkManifestProject(),
+    ...overrides,
+  });
+}
+
 test('sync_diff_instance_vs_local: defaults tableName to sys_script_include when omitted', async () => {
   let capturedTable = null;
-  const ctx = makeContext({
+  const ctx = diffContext({
     tableGet: async (table) => {
       capturedTable = table;
       return [];
@@ -238,7 +254,7 @@ test('sync_diff_instance_vs_local: defaults tableName to sys_script_include when
 
 test('sync_diff_instance_vs_local: unknown table falls back to default script/name field config', async () => {
   let capturedFields = null;
-  const ctx = makeContext({
+  const ctx = diffContext({
     tableGet: async (_table, opts) => {
       capturedFields = opts.fields;
       return [];
@@ -256,7 +272,7 @@ test('sync_diff_instance_vs_local: unknown table falls back to default script/na
 
 test('sync_diff_instance_vs_local: sys_ws_operation uses operation_script as the script field', async () => {
   let capturedFields = null;
-  const ctx = makeContext({
+  const ctx = diffContext({
     tableGet: async (_table, opts) => {
       capturedFields = opts.fields;
       return [
@@ -282,7 +298,7 @@ test('sync_diff_instance_vs_local: sys_ws_operation uses operation_script as the
 
 test('sync_diff_instance_vs_local: scope known adds condition and is reflected in the response', async () => {
   let capturedQuery = null;
-  const ctx = makeContext({
+  const ctx = diffContext({
     resolveScope: async () => 'x_app',
     tableGet: async (_table, opts) => {
       capturedQuery = opts.query;
@@ -299,12 +315,12 @@ test('sync_diff_instance_vs_local: scope known adds condition and is reflected i
   assert.equal(parsed.scope, 'x_app');
 });
 
-test('sync_diff_instance_vs_local: scope unknown_scope omits the scope condition and reports null scope', async () => {
-  let capturedQuery = null;
-  const ctx = makeContext({
+test('sync_diff_instance_vs_local: an unresolved scope is refused before any instance read', async () => {
+  let called = false;
+  const ctx = diffContext({
     resolveScope: async () => 'unknown_scope',
-    tableGet: async (_table, opts) => {
-      capturedQuery = opts.query;
+    tableGet: async () => {
+      called = true;
       return [];
     },
   });
@@ -313,33 +329,32 @@ test('sync_diff_instance_vs_local: scope unknown_scope omits the scope condition
     { tableName: 'sys_script_include' },
     ctx
   );
-  assert.ok(!capturedQuery.includes('sys_scope.scope'));
-  const parsed = JSON.parse(res.content[0].text);
-  assert.equal(parsed.scope, null);
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /Could not resolve the application scope/);
+  assert.equal(called, false, 'an unscoped query would span every application');
 });
 
-test('sync_diff_instance_vs_local: no manifest file on disk yields empty local side, report still returned', async () => {
+test('sync_diff_instance_vs_local: a missing manifest is an error, not an empty local side', async () => {
   const tempDir = mkTempProject();
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include', recordName: 'Anything' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
-  assert.equal(res.isError, false);
-  const parsed = JSON.parse(res.content[0].text);
-  assert.ok(parsed.report);
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /No sync\.manifest\.json/);
 });
 
-test('sync_diff_instance_vs_local: malformed manifest JSON is tolerated (parse error -> empty local)', async () => {
+test('sync_diff_instance_vs_local: malformed manifest JSON is an error', async () => {
   const tempDir = mkTempProject();
   fs.writeFileSync(path.join(tempDir, 'sync.manifest.json'), '{ not valid json ');
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
-  assert.equal(res.isError, false);
-  assert.doesNotThrow(() => JSON.parse(res.content[0].text));
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /Could not read .*sync\.manifest\.json/);
 });
 
 test('sync_diff_instance_vs_local: manifest with a matching local record and readable file diffs against instance', async () => {
@@ -365,7 +380,7 @@ test('sync_diff_instance_vs_local: manifest with a matching local record and rea
   fs.mkdirSync(fileDir, { recursive: true });
   fs.writeFileSync(path.join(fileDir, 'script.js'), 'var MyUtil = Class.create();');
 
-  const ctx = makeContext({
+  const ctx = diffContext({
     projectDir: tempDir,
     tableGet: async () => [
       {
@@ -405,7 +420,7 @@ test('sync_diff_instance_vs_local: manifest record without a name is skipped', a
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
   assert.doesNotThrow(() => JSON.parse(res.content[0].text));
@@ -428,14 +443,14 @@ test('sync_diff_instance_vs_local: manifest record filtered out by a non-matchin
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include', recordName: 'MyUtil' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
   const parsed = JSON.parse(res.content[0].text);
   assert.equal(parsed.recordName, 'MyUtil');
 });
 
-test('sync_diff_instance_vs_local: manifest file entry that resolves to a directory (unreadable as text) is tolerated', async () => {
+test('sync_diff_instance_vs_local: manifest file entry that resolves to a directory (unreadable as text) is reported as missing', async () => {
   const tempDir = mkTempProject();
   fs.writeFileSync(
     path.join(tempDir, 'sync.manifest.json'),
@@ -461,13 +476,16 @@ test('sync_diff_instance_vs_local: manifest file entry that resolves to a direct
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include', recordName: 'DirClashUtil' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
-  assert.doesNotThrow(() => JSON.parse(res.content[0].text));
+  const parsed = JSON.parse(res.content[0].text);
+  assert.deepEqual(parsed.missingLocalFiles, [
+    path.join('src', 'sys_script_include', 'DirClashUtil', 'script.js'),
+  ]);
 });
 
-test('sync_diff_instance_vs_local: manifest record with a file entry that does not exist on disk is tolerated', async () => {
+test('sync_diff_instance_vs_local: manifest record with a file entry that does not exist on disk is reported as missing', async () => {
   const tempDir = mkTempProject();
   fs.writeFileSync(
     path.join(tempDir, 'sync.manifest.json'),
@@ -488,10 +506,13 @@ test('sync_diff_instance_vs_local: manifest record with a file entry that does n
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include', recordName: 'MissingFileUtil' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
-  assert.doesNotThrow(() => JSON.parse(res.content[0].text));
+  const parsed = JSON.parse(res.content[0].text);
+  assert.deepEqual(parsed.missingLocalFiles, [
+    path.join('src', 'sys_script_include', 'MissingFileUtil', 'script.js'),
+  ]);
 });
 
 test('sync_diff_instance_vs_local: manifest record with files as a non-array is tolerated (defaults to empty)', async () => {
@@ -511,7 +532,7 @@ test('sync_diff_instance_vs_local: manifest record with files as a non-array is 
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
   assert.doesNotThrow(() => JSON.parse(res.content[0].text));
@@ -526,26 +547,26 @@ test('sync_diff_instance_vs_local: manifest tables entry absent for the requeste
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
   assert.equal(res.isError, false);
   assert.doesNotThrow(() => JSON.parse(res.content[0].text));
 });
 
-test('sync_diff_instance_vs_local: root manifest JSON that is not an object yields empty local side', async () => {
+test('sync_diff_instance_vs_local: root manifest JSON that is not an object is an error', async () => {
   const tempDir = mkTempProject();
   fs.writeFileSync(path.join(tempDir, 'sync.manifest.json'), JSON.stringify([1, 2, 3]));
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { tableName: 'sys_script_include' },
-    makeContext({ projectDir: tempDir })
+    diffContext({ projectDir: tempDir })
   );
-  assert.equal(res.isError, false);
-  assert.doesNotThrow(() => JSON.parse(res.content[0].text));
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /is not a manifest object/);
 });
 
 test('sync_diff_instance_vs_local: instance rows missing optional fields still map through cleanly', async () => {
-  const ctx = makeContext({
+  const ctx = diffContext({
     tableGet: async () => [{}],
   });
   const res = await handleDeveloperTool(
@@ -555,6 +576,25 @@ test('sync_diff_instance_vs_local: instance rows missing optional fields still m
   );
   assert.equal(res.isError, false);
   assert.doesNotThrow(() => JSON.parse(res.content[0].text));
+});
+
+test('sync_diff_instance_vs_local: a scope holding more records than the cap is refused, not half-diffed', async () => {
+  let capturedOpts = null;
+  const ctx = diffContext({
+    tableGet: async (_table, opts) => {
+      capturedOpts = opts;
+      return Array.from({ length: opts.limit }, (_, i) => ({ sys_id: `s${i}`, name: `R${i}`, script: '' }));
+    },
+  });
+  const res = await handleDeveloperTool(
+    'sync_diff_instance_vs_local',
+    { tableName: 'sys_script_include' },
+    ctx
+  );
+  assert.equal(capturedOpts.limit, 1001, 'one row past the cap reveals truncation');
+  assert.match(capturedOpts.query, /\^ORDERBYname\^ORDERBYsys_id$/);
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /more than 1000 records in x_app; pass recordName/);
 });
 
 // ---------------------------------------------------------------------------

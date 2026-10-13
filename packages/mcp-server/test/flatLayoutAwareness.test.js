@@ -95,7 +95,7 @@ function makeDiffContext(projectDir, layout, instanceScript) {
     timeoutMs: 1000,
     projectDir,
     layout,
-    resolveScope: async () => 'unknown_scope',
+    resolveScope: async () => 'x_app',
     tableGet: async () => [
       {
         sys_id: 'sid-1',

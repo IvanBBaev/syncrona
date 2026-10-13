@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   handleDeveloperTool,
@@ -45,14 +48,37 @@ test('sync_suggest_tests: an inline script produces a suggestion without the net
   assert.doesNotThrow(() => JSON.parse(res.content[0].text));
 });
 
-test('sync_diff_instance_vs_local: returns a response (no manifest => empty local side)', async () => {
+function mkManifestProject() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-tool-handlers-'));
+  fs.writeFileSync(path.join(dir, 'sync.manifest.json'), JSON.stringify({ tables: {} }));
+  return dir;
+}
+
+test('sync_diff_instance_vs_local: no manifest is an error, not an all-instance-only diff', async () => {
   const res = await handleDeveloperTool(
     'sync_diff_instance_vs_local',
     { table: 'sys_script_include', recordName: 'MyUtil' },
-    makeContext()
+    makeContext({ resolveScope: async () => 'x_app' })
   );
-  assert.ok(res, 'handler should return a response');
-  assert.equal(res.content[0].type, 'text');
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /No sync\.manifest\.json/);
+});
+
+test('sync_suggest_tests: a name matching several Script Includes is refused, not guessed', async () => {
+  let capturedLimit = null;
+  const ctx = makeContext({
+    tableGet: async (_table, opts) => {
+      capturedLimit = opts.limit;
+      return [
+        { sys_id: 'a', name: 'MyUtil', script: 'var A = 1;' },
+        { sys_id: 'b', name: 'MyUtil', script: 'var B = 2;' },
+      ];
+    },
+  });
+  const res = await handleDeveloperTool('sync_suggest_tests', { scriptIncludeName: 'MyUtil' }, ctx);
+  assert.equal(capturedLimit, 2, 'a second row reveals the ambiguity');
+  assert.equal(res.isError, true);
+  assert.match(res.content[0].text, /More than one Script Include is named MyUtil on the instance/);
 });
 
 test('sync_diff_instance_vs_local: a caret-bearing scope cannot inject extra query conditions', async () => {
@@ -61,6 +87,7 @@ test('sync_diff_instance_vs_local: a caret-bearing scope cannot inject extra que
   // the lookup. The handler must neutralize the caret before composing the query.
   let capturedQuery = null;
   const ctx = makeContext({
+    projectDir: mkManifestProject(),
     resolveScope: async () => 'x_app^sys_id=ADMIN',
     tableGet: async (_table, opts) => {
       capturedQuery = opts.query;

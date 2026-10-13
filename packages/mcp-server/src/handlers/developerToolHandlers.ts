@@ -35,6 +35,8 @@ const SCRIPT_FIELD_BY_TABLE: Record<string, { scriptField: string; nameField: st
   sys_transform_script: { scriptField: "script", nameField: "name" },
 };
 
+const INSTANCE_DIFF_LIMIT = 1000;
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") {
     return {};
@@ -67,22 +69,39 @@ function errorResponse(message: string): ToolResponse {
   };
 }
 
+type LocalManifestRead =
+  | { ok: true; records: DiffRecordInput[]; missingLocalFiles: string[] }
+  | { ok: false; error: string };
+
+// A missing or unreadable manifest is not "no local records": diffed against it,
+// every instance record would read as instance-only. Field files the manifest
+// lists but the workspace lacks are reported, since the record's local value is
+// then partial and its diff entry misleading.
 function readLocalRecordsFromManifest(
   projectDir: string,
   layout: WorkspaceLayout,
   table: string,
   recordName?: string
-): DiffRecordInput[] {
+): LocalManifestRead {
   const manifestPath = path.join(projectDir, "sync.manifest.json");
   if (!existsSync(manifestPath)) {
-    return [];
+    return {
+      ok: false,
+      error: `No sync.manifest.json in ${projectDir}; run \`syncrona refresh\` before diffing against the instance.`,
+    };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(manifestPath, "utf-8"));
-  } catch (_) {
-    return [];
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Could not read ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: `${manifestPath} is not a manifest object.` };
   }
 
   const root = asRecord(parsed);
@@ -91,6 +110,7 @@ function readLocalRecordsFromManifest(
   const records = asRecord(tableEntry.records);
 
   const local: DiffRecordInput[] = [];
+  const missingLocalFiles: string[] = [];
   for (const key of Object.keys(records)) {
     const rec = asRecord(records[key]);
     const recName = toStringField(rec.name);
@@ -115,12 +135,10 @@ function readLocalRecordsFromManifest(
         fileName,
         fileType
       );
-      if (existsSync(filePath)) {
-        try {
-          parts.push(readFileSync(filePath, "utf-8"));
-        } catch (_) {
-          // ignore unreadable file
-        }
+      try {
+        parts.push(readFileSync(filePath, "utf-8"));
+      } catch (_) {
+        missingLocalFiles.push(path.relative(projectDir, filePath));
       }
     }
 
@@ -132,7 +150,7 @@ function readLocalRecordsFromManifest(
     });
   }
 
-  return local;
+  return { ok: true, records: local, missingLocalFiles };
 }
 
 async function handleSuggestTests(
@@ -168,7 +186,7 @@ async function handleSuggestTests(
       {
         query: conditions.join("^"),
         fields: ["sys_id", "name", "script", "api_name", "client_callable"],
-        limit: 1,
+        limit: 2,
       },
       context.timeoutMs
     );
@@ -176,6 +194,14 @@ async function handleSuggestTests(
     if (rows.length === 0) {
       return errorResponse(
         `Script Include not found for ${scriptIncludeSysId || scriptIncludeName}. Verify the name/sys_id and scope.`
+      );
+    }
+
+    // A name is unique only within a scope; with the scope unresolved, picking
+    // the first match would analyse another application's Script Include.
+    if (rows.length > 1) {
+      return errorResponse(
+        `More than one Script Include is named ${scriptIncludeName}${scope && scope !== "unknown_scope" ? ` in ${scope}` : " on the instance"}; pass scope or scriptIncludeSysId.`
       );
     }
 
@@ -210,18 +236,25 @@ async function handleDiffInstanceVsLocal(
   const fieldConfig = SCRIPT_FIELD_BY_TABLE[table] || { scriptField: "script", nameField: "name" };
   const recordName = toStringField(args.recordName).trim() || undefined;
   const scope = await context.resolveScope(toStringField(args.scope));
+  // Without a scope the query would span every application on the instance, and
+  // other scopes' records would read as instance-only against this workspace.
+  if (!scope || scope === "unknown_scope") {
+    return errorResponse(
+      "Could not resolve the application scope from the instance session; pass `scope` to diff against it."
+    );
+  }
 
-  const local = readLocalRecordsFromManifest(
+  const localRead = readLocalRecordsFromManifest(
     context.projectDir,
     context.layout,
     table,
     recordName
   );
-
-  const conditions: string[] = [];
-  if (scope && scope !== "unknown_scope") {
-    conditions.push(`sys_scope.scope=${escapeQueryValue(scope)}`);
+  if (!localRead.ok) {
+    return errorResponse(localRead.error);
   }
+
+  const conditions: string[] = [`sys_scope.scope=${escapeQueryValue(scope)}`];
   if (recordName) {
     conditions.push(`${fieldConfig.nameField}=${escapeQueryValue(recordName)}`);
   }
@@ -229,12 +262,18 @@ async function handleDiffInstanceVsLocal(
   const rows = await context.tableGet(
     table,
     {
-      query: conditions.join("^"),
+      query: `${conditions.join("^")}^ORDERBY${fieldConfig.nameField}^ORDERBYsys_id`,
       fields: ["sys_id", fieldConfig.nameField, fieldConfig.scriptField, "sys_updated_on"],
-      limit: 1000,
+      limit: INSTANCE_DIFF_LIMIT + 1,
     },
     context.timeoutMs
   );
+  // A capped read would report every local record past the cap as local-only.
+  if (rows.length > INSTANCE_DIFF_LIMIT) {
+    return errorResponse(
+      `${table} holds more than ${INSTANCE_DIFF_LIMIT} records in ${scope}; pass recordName to diff a single record.`
+    );
+  }
 
   const instance: DiffRecordInput[] = rows.map((row) => ({
     name: toStringField(row[fieldConfig.nameField]),
@@ -243,13 +282,14 @@ async function handleDiffInstanceVsLocal(
     updatedOn: toStringField(row.sys_updated_on) || undefined,
   }));
 
-  const report = diffInstanceVsLocal({ local, instance });
+  const report = diffInstanceVsLocal({ local: localRead.records, instance });
 
   return textResponse({
     tool: "sync_diff_instance_vs_local",
     table,
-    scope: scope && scope !== "unknown_scope" ? scope : null,
+    scope,
     recordName: recordName || null,
+    missingLocalFiles: localRead.missingLocalFiles,
     report,
   });
 }
