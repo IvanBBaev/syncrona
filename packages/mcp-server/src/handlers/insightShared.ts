@@ -29,7 +29,9 @@ export const SCRIPT_SEARCH_TABLES: Record<string, { scriptField: string; nameFie
   sys_script_client: { scriptField: "script", nameField: "name" },
   sys_ui_script: { scriptField: "script", nameField: "name" },
   sys_ws_operation: { scriptField: "operation_script", nameField: "name" },
-  sys_transform_script: { scriptField: "script", nameField: "name" },
+  // No name column (its display field is `when`); core names these records by
+  // sys_id, so the instance side must too or no record pairs with its local file.
+  sys_transform_script: { scriptField: "script", nameField: "sys_id" },
 };
 
 export function textResponse(payload: unknown, isError = false): ToolResponse {

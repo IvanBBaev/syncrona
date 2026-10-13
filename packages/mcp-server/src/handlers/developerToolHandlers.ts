@@ -32,7 +32,9 @@ const SCRIPT_FIELD_BY_TABLE: Record<string, { scriptField: string; nameField: st
   sys_script_client: { scriptField: "script", nameField: "name" },
   sys_ui_script: { scriptField: "script", nameField: "name" },
   sys_ws_operation: { scriptField: "operation_script", nameField: "name" },
-  sys_transform_script: { scriptField: "script", nameField: "name" },
+  // No name column (its display field is `when`); core names these records by
+  // sys_id, so the instance side must too or no record pairs with its local file.
+  sys_transform_script: { scriptField: "script", nameField: "sys_id" },
 };
 
 const INSTANCE_DIFF_LIMIT = 1000;
@@ -266,7 +268,7 @@ async function handleDiffInstanceVsLocal(
     table,
     {
       query: `${conditions.join("^")}^ORDERBY${fieldConfig.nameField}^ORDERBYsys_id`,
-      fields: ["sys_id", fieldConfig.nameField, fieldConfig.scriptField, "sys_updated_on"],
+      fields: [...new Set(["sys_id", fieldConfig.nameField, fieldConfig.scriptField, "sys_updated_on"])],
       limit: INSTANCE_DIFF_LIMIT + 1,
     },
     context.timeoutMs
@@ -279,7 +281,9 @@ async function handleDiffInstanceVsLocal(
   }
 
   const instance: DiffRecordInput[] = rows.map((row) => ({
-    name: toStringField(row[fieldConfig.nameField]),
+    // Same fallback as core's record names: a row with an empty display value is
+    // named by its sys_id, and an unnamed row would be dropped from the diff.
+    name: toStringField(row[fieldConfig.nameField]) || toStringField(row.sys_id),
     value: toStringField(row[fieldConfig.scriptField]),
     sysId: toStringField(row.sys_id) || undefined,
     updatedOn: toStringField(row.sys_updated_on) || undefined,

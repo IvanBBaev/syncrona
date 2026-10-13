@@ -89,7 +89,7 @@ export async function handleSearchScripts(
     // One row past the limit tells a table with exactly `limit` matches from
     // one whose matches were cut.
     params.set("sysparm_limit", String(limit + 1));
-    params.set("sysparm_fields", `sys_id,${config.nameField},${config.scriptField}`);
+    params.set("sysparm_fields", [...new Set(["sys_id", config.nameField, config.scriptField])].join(","));
 
     const response = await snRequest(
       "GET",
