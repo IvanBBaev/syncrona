@@ -10,6 +10,13 @@ import { describeNonTablePayload, errorResponse, resolveUpdateSetSysId, textResp
 // RELEASE_NOTES_MAX_CHANGES changes is not reported as truncated.
 export const RELEASE_NOTES_MAX_CHANGES = 1000;
 
+// An update record can hold an empty target_name (a deleted or unnamed target);
+// `??` kept that empty string, so the change was listed without a name. Fall back
+// to the update name (`table_sysid`), as sync_list_recent_changes does.
+function changeName(row: Record<string, unknown>): string {
+  return String(row.target_name || row.name || "");
+}
+
 export function buildReleaseNotesMarkdown(
   label: string,
   rows: Record<string, unknown>[],
@@ -19,7 +26,7 @@ export function buildReleaseNotesMarkdown(
   for (const row of rows) {
     const type = String(row.type ?? "unknown");
     const action = String(row.action ?? "").toUpperCase() || "UPDATE";
-    const name = String(row.target_name ?? row.name ?? "");
+    const name = changeName(row);
     if (!grouped.has(type)) {
       grouped.set(type, []);
     }
@@ -59,7 +66,8 @@ export async function handleGenerateReleaseNotes(
   }
 
   const params = new URLSearchParams();
-  params.set("sysparm_query", `update_set=${escapeQueryValue(resolved.sysId)}^ORDERBYtype`);
+  // The sys_id tiebreak keeps a cut at the cap stable across calls.
+  params.set("sysparm_query", `update_set=${escapeQueryValue(resolved.sysId)}^ORDERBYtype^ORDERBYsys_id`);
   params.set("sysparm_limit", String(RELEASE_NOTES_MAX_CHANGES + 1));
   params.set("sysparm_fields", "name,type,target_name,action");
 
@@ -92,7 +100,7 @@ export async function handleGenerateReleaseNotes(
         changes: rows.map((row) => ({
           type: String(row.type ?? ""),
           action: String(row.action ?? "").toUpperCase(),
-          name: String(row.target_name ?? row.name ?? ""),
+          name: changeName(row),
         })),
       },
       isError
