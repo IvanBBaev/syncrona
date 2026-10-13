@@ -239,14 +239,39 @@ export async function handleSessionTool(
           (!!expectedUpdateSetName && !expectedUpdateSetSysId);
 
         if (needsChange) {
-          const updateRes = await setCurrentUpdateSet(
-            {
-              updateSetName: expectedUpdateSetName,
-              updateSetSysId: expectedUpdateSetSysId,
-              createIfMissing: createUpdateSetIfMissing,
-            },
-            timeoutMs
-          );
+          let updateRes: Record<string, unknown>;
+          try {
+            updateRes = await setCurrentUpdateSet(
+              {
+                updateSetName: expectedUpdateSetName,
+                updateSetSysId: expectedUpdateSetSysId,
+                createIfMissing: createUpdateSetIfMissing,
+              },
+              timeoutMs
+            );
+          } catch (error) {
+            // The scope switch above already happened; a bare thrown error would
+            // read as "nothing changed" and leave the session in a scope the
+            // caller was never told about.
+            if (actions.length === 0) {
+              throw error;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            const partial = { actions, changed: true, error: message, initialContext };
+            context.auditMutatingTool(toolName, args, partial, Date.now() - startedAt);
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: toJsonText({
+                    ...partial,
+                    error: `The update set was not changed, but the scope already was: ${message}`,
+                  }),
+                },
+              ],
+            };
+          }
           const targetSysId = toStringField(asRecord(updateRes.targetUpdateSet).sysId);
           // A name-only request always resolves through setCurrentUpdateSet, which
           // may land on the set that was already current; that is not a change.
