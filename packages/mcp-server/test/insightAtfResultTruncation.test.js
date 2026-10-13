@@ -123,3 +123,55 @@ test('sync_run_atf_tests stops polling and fails when the result read answers a 
     assert.equal(audits[0].completed, false);
   });
 });
+
+test('sync_run_atf_tests is not complete until every triggered suite has a result', async () => {
+  await withInstance(async () => {
+    let polls = 0;
+    global.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('runBackgroundScript')) {
+        return {
+          status: 200,
+          text: async () => 'SYNCRONA_ATF_TRIGGERED:{"suites":["s1","s2"],"tests":[],"errors":[]}',
+        };
+      }
+      polls += 1;
+      // Only s1 has written its result row; s2 is still running.
+      return { status: 200, text: async () => JSON.stringify({ result: [{ sys_id: 'r1', status: 'success' }] }) };
+    };
+
+    const audits = [];
+    const res = await handleRunAtfTests(
+      { scope: 'x_my_scope', runAll: true, confirmDestructive: true },
+      context(audits)
+    );
+    const body = JSON.parse(res.content[0].text);
+    assert.equal(body.completed, false, 'one of two triggered suites has no result yet');
+    assert.ok(polls >= 1);
+    assert.equal(audits[0].completed, false);
+  });
+});
+
+test('sync_run_atf_tests does not count a still-running result as a failure', async () => {
+  await withInstance(async () => {
+    global.fetch = async (url) => {
+      const u = String(url);
+      if (u.includes('runBackgroundScript')) {
+        return { status: 200, text: async () => 'SYNCRONA_ATF_TRIGGERED:{"suites":["s1"],"tests":[],"errors":[]}' };
+      }
+      return { status: 200, text: async () => JSON.stringify({ result: [{ sys_id: 'r1', status: 'running' }] }) };
+    };
+
+    const audits = [];
+    const res = await handleRunAtfTests(
+      { scope: 'x_my_scope', suiteId: 's1', confirmDestructive: true },
+      context(audits)
+    );
+    const body = JSON.parse(res.content[0].text);
+    assert.equal(body.completed, false);
+    assert.equal(body.summary.failed, 0);
+    assert.equal(body.summary.pending, 1);
+    assert.notEqual(res.isError, true, 'a run cut short by the budget is not a failing run');
+    assert.equal(audits[0].pending, 1);
+  });
+});

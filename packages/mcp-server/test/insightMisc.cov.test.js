@@ -870,7 +870,7 @@ test('summarizeAtfResults: counts passed/failed and wraps output as untrusted da
 
 test('summarizeAtfResults: empty rows returns zeroed summary', () => {
   const summary = summarizeAtfResults([]);
-  assert.deepEqual(summary, { total: 0, passed: 0, failed: 0, results: [] });
+  assert.deepEqual(summary, { total: 0, passed: 0, failed: 0, pending: 0, results: [] });
 });
 
 test('summarizeAtfResults: unrecognized status is not counted as passed (falls to failed)', () => {
@@ -880,9 +880,20 @@ test('summarizeAtfResults: unrecognized status is not counted as passed (falls t
   assert.equal(summary.results[0].status, 'cancelled');
 });
 
-test('summarizeAtfResults: missing status defaults to "unknown" and counts as failed', () => {
+test('summarizeAtfResults: missing status defaults to "unknown" and counts as pending', () => {
   const summary = summarizeAtfResults([{ sys_id: '1' }]);
   assert.equal(summary.results[0].status, 'unknown');
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.pending, 1);
+});
+
+test('summarizeAtfResults: queued and running results count as pending, not failed', () => {
+  const summary = summarizeAtfResults([
+    { sys_id: '1', status: 'running' },
+    { sys_id: '2', status: 'Queued' },
+    { sys_id: '3', status: 'failure' },
+  ]);
+  assert.equal(summary.pending, 2);
   assert.equal(summary.failed, 1);
 });
 

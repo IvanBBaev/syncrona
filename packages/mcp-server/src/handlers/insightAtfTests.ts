@@ -90,14 +90,25 @@ export function parseAtfTrigger(text: string): Record<string, unknown> {
 
 export function summarizeAtfResults(
   rows: Record<string, unknown>[]
-): { total: number; passed: number; failed: number; results: Array<Record<string, unknown>> } {
+): {
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+  results: Array<Record<string, unknown>>;
+} {
   let passed = 0;
   let failed = 0;
+  // A result still queued or running has not failed; counting it as failed made
+  // a run cut short by the budget read as a failing one.
+  let pending = 0;
   const results = rows.map((row) => {
     const status = String(row.status ?? "").toLowerCase();
     const ok = status === "success" || status === "passed";
     if (ok) {
       passed += 1;
+    } else if (ATF_RUNNING_STATES.has(status)) {
+      pending += 1;
     } else {
       failed += 1;
     }
@@ -110,11 +121,14 @@ export function summarizeAtfResults(
       duration: String(row.duration ?? row.run_time ?? ""),
     };
   });
-  return { total: rows.length, passed, failed, results };
+  return { total: rows.length, passed, failed, pending, results };
 }
 
-function isAtfTerminal(rows: Record<string, unknown>[]): boolean {
-  if (rows.length === 0) {
+// `expectedCount` is the number of suites or tests the trigger started: each
+// writes its own result row, and one that has not written it yet is still
+// running even when every row already there has finished.
+function isAtfTerminal(rows: Record<string, unknown>[], expectedCount = 0): boolean {
+  if (rows.length === 0 || rows.length < expectedCount) {
     return false;
   }
   return rows.every((row) => !ATF_RUNNING_STATES.has(String(row.status ?? "").toLowerCase()));
@@ -146,7 +160,8 @@ export async function pollAtfResults(
   table: string,
   query: string,
   fields: string,
-  timeoutMs: number
+  timeoutMs: number,
+  expectedCount = 0
 ): Promise<{
   status: number;
   rows: Record<string, unknown>[];
@@ -201,7 +216,7 @@ export async function pollAtfResults(
     // With `truncated`, terminal visible rows say nothing about the rows past the
     // limit, and polling again cannot reveal them, so the poll ends either way;
     // the caller must not read it as complete.
-    if (isAtfTerminal(lastRows)) {
+    if (isAtfTerminal(lastRows, expectedCount)) {
       return { status: lastStatus, rows: lastRows, truncated, badPayload: null };
     }
 
@@ -351,7 +366,8 @@ export async function handleRunAtfTests(
     table,
     filterParts.join("^"),
     "sys_id,status,output,duration,run_time,test,test_suite",
-    timeoutMs
+    timeoutMs,
+    triggeredCount
   );
 
   if (poll.badPayload) {
@@ -378,7 +394,7 @@ export async function handleRunAtfTests(
 
   const summary = summarizeAtfResults(poll.rows);
   // Rows past the read limit were never seen, so they may still be running.
-  const completed = !poll.truncated && isAtfTerminal(poll.rows);
+  const completed = !poll.truncated && isAtfTerminal(poll.rows, triggeredCount);
 
   context.auditMutatingTool(
     "sync_run_atf_tests",
@@ -393,6 +409,7 @@ export async function handleRunAtfTests(
       total: summary.total,
       passed: summary.passed,
       failed: summary.failed,
+      pending: summary.pending,
     },
     Date.now() - context.startedAt
   );
