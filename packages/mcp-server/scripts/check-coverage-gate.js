@@ -363,7 +363,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 98.19 / 91.89
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
-  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 98.94 (also 100.00 / 100.00: V8 range granularity, 93/94 vs 93/93 branches on unchanged source, no uncovered lines in either reading; the lower reading appears under full-gate load)
+  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 98.99 (also 100.00 / 100.00: V8 range granularity, 98/99 vs 98/98 branches on unchanged source, no uncovered lines in either reading; the lower reading appears under full-gate load)
   // SDK-F6: the Fluent build resolves a caller-supplied project path against the
   // workspace (symlinks included) and swaps the process console while it runs.
   { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.75
