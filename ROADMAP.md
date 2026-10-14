@@ -26,7 +26,7 @@ human-facing summary of them.
 | Remaining | **2 h** Opus 5.5 (0 h workable now, 2 h blocked) |
 | Blocked by | owner: delete the live-run records on the shared vendor instance (an automated delete was refused) |
 | Calibration | Plan sizes S/M/L ≈ 3/5/12 h: WP-0…WP-8 landed 2026-10-03…10-05 across 3–4 parallel sessions, acceptance rounds 1–8 took 2026-10-05…10-09; one review/fix round ≈ 1–1.5 h (2026-10-13 rounds) |
-| Updated | 2026-10-13 at `484f74f` |
+| Updated | 2026-10-14 at `58e3438` |
 
 | ID | Item | Source | Status | Est h |
 |---|---|---|---|---|
@@ -52,6 +52,7 @@ human-facing summary of them.
 ### History
 - 2026-10-13 `5b7fe49` — 87.4 %, 14.5 h left (first run; target `v1.1.0`; SDK-F4 API-key in the Fluent tier left out of the target per plan Q8 — 1.1.0 refuses session-only actions)
 - 2026-10-13 `484f74f` — 98.3 %, 2 h left (+10.9 pp; SDK-F1, CAVEAT, REL-PREP, REL done — `v1.1.0` published to npm after two coverage-annotation fixes for ubuntu V8 readings; only the instance cleanup remains, owner-blocked)
+- 2026-10-14 `58e3438` — 98.3 %, 2 h left (±0 pp; `484f74f` no longer on main after a peer history rewrite. Work since then is post-release and outside the `v1.1.0` target: MCP/core review rounds 17–23, the Fluent build diagnostics fix, the non-required Windows CI job and coverage-annotation re-recordings, now nine pending changesets. The roadmap names no next release yet, so the target stays `v1.1.0`. CLEAN is still owner-blocked)
 <!-- release-progress:end -->
 
 - **Current version:** `1.0.0` — first stable release, cut and **published on npm
