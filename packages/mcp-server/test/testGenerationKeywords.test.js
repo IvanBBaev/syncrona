@@ -28,3 +28,25 @@ test('suggestAtfTest does not report control-flow statements as methods', () => 
   assert.deepEqual(suggestion.methods.map((m) => m.name), ['run']);
   assert.ok(!/subject\.(if|for|switch)\(/.test(suggestion.atfTestScript));
 });
+
+test('suggestAtfTest ignores the word "class" in a header comment', () => {
+  const script = [
+    '/* Utility class for incident routing. */',
+    'var IncidentRouter = Class.create();',
+    'IncidentRouter.prototype = {',
+    '  route: function(record) {},',
+    "  type: 'IncidentRouter'",
+    '};',
+  ].join('\n');
+
+  const suggestion = suggestAtfTest({ scriptIncludeName: 'IncidentRouter', script });
+  assert.equal(suggestion.className, 'IncidentRouter');
+  assert.match(suggestion.atfTestScript, /var subject = new IncidentRouter\(\);/);
+});
+
+test('suggestAtfTest still detects an ES6 class with an extends clause', () => {
+  const script = 'class Child extends global.Base {\n  run(a) {\n    return a;\n  }\n}';
+  const suggestion = suggestAtfTest({ scriptIncludeName: 'Child', script });
+  assert.equal(suggestion.className, 'Child');
+  assert.equal(suggestion.isClass, true);
+});

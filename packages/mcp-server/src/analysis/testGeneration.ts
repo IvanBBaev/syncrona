@@ -31,7 +31,12 @@ function parseArgList(rawArgs: string): string[] {
 }
 
 function detectClassName(script: string, fallback: string): { className: string; isClass: boolean } {
-  const es6 = script.match(/class\s+([A-Za-z_$][A-Za-z0-9_$]*)/);
+  // Require the class body (or an extends clause) after the name, so the word
+  // "class" in a header comment such as "Utility class for incidents" does not
+  // win over the Class.create() declaration below.
+  const es6 = script.match(
+    /\bclass\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:extends\s+[A-Za-z_$][A-Za-z0-9_$.]*\s*)?\{/
+  );
   if (es6) {
     return { className: es6[1], isClass: true };
   }
