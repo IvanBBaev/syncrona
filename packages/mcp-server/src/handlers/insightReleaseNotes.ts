@@ -17,6 +17,12 @@ function changeName(row: Record<string, unknown>): string {
   return String(row.target_name || row.name || "");
 }
 
+// Names and types are instance data rendered one per Markdown line; a line break
+// inside one would start a forged "## <type>" section or "- ACTION: <name>" item.
+function oneLine(value: string): string {
+  return value.replace(/[\r\n\u2028\u2029]+/g, " ").trim();
+}
+
 export function buildReleaseNotesMarkdown(
   label: string,
   rows: Record<string, unknown>[],
@@ -24,16 +30,17 @@ export function buildReleaseNotesMarkdown(
 ): string {
   const grouped = new Map<string, Array<{ action: string; name: string }>>();
   for (const row of rows) {
-    const type = String(row.type ?? "unknown");
-    const action = String(row.action ?? "").toUpperCase() || "UPDATE";
-    const name = changeName(row);
+    // An empty type rendered as a bare "## " heading.
+    const type = oneLine(String(row.type ?? "")) || "unknown";
+    const action = oneLine(String(row.action ?? "")).toUpperCase() || "UPDATE";
+    const name = oneLine(changeName(row));
     if (!grouped.has(type)) {
       grouped.set(type, []);
     }
     grouped.get(type)?.push({ action, name });
   }
 
-  const lines: string[] = [`# Release Notes — ${label}`, ""];
+  const lines: string[] = [`# Release Notes — ${oneLine(label)}`, ""];
   lines.push(`Total changes: ${rows.length}`, "");
   if (truncated) {
     lines.push(

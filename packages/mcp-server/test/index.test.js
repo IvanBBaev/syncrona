@@ -2521,6 +2521,19 @@ test('buildReleaseNotesMarkdown groups changes by type', () => {
   assert.equal(md.includes('- DELETE: RuleC'), true);
 });
 
+test('buildReleaseNotesMarkdown keeps instance values on one line and names an empty type', () => {
+  const md = buildReleaseNotesMarkdown('Set\n## Forged label', [
+    { type: 'sys_script', action: 'update', target_name: 'RuleA\n## Forged section\n- INSERT: Ghost' },
+    { type: '', action: 'insert', target_name: 'Untyped' },
+  ]);
+  const lines = md.split('\n');
+  assert.equal(lines.filter((line) => line.startsWith('## ')).sort().join('|'), '## sys_script|## unknown');
+  assert.equal(lines.includes('- INSERT: Ghost'), false);
+  assert.equal(lines.includes('- UPDATE: RuleA ## Forged section - INSERT: Ghost'), true);
+  assert.equal(lines[0], '# Release Notes — Set ## Forged label');
+  assert.equal(lines.includes('- INSERT: Untyped'), true);
+});
+
 test('handleInsightTool returns null for unrelated tools', async () => {
   const res = await handleInsightTool('some_other_tool', {}, { timeoutMs: 5000 });
   assert.equal(res, null);
