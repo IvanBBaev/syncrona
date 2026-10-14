@@ -74,14 +74,18 @@ export function summarizeMetricsWindows(
 }
 
 export function summarizeMetrics(events: ToolMetricEvent[]): Record<string, unknown> {
-  const byTool: Record<string, { total: number; ok: number; error: number; avgLatencyMs: number }> = {};
-  const latencySamples: Record<string, number> = {};
+  // Keyed by Map, not a plain object: the tool name is whatever the client sent,
+  // and `__proto__` / `constructor` as a plain-object key would resolve to a
+  // prototype and have the counters below written onto Object.prototype.
+  const byTool = new Map<string, { total: number; ok: number; error: number; avgLatencyMs: number }>();
+  const latencySamples = new Map<string, number>();
 
   for (const ev of events) {
-    if (!byTool[ev.tool]) {
-      byTool[ev.tool] = { total: 0, ok: 0, error: 0, avgLatencyMs: 0 };
+    let item = byTool.get(ev.tool);
+    if (!item) {
+      item = { total: 0, ok: 0, error: 0, avgLatencyMs: 0 };
+      byTool.set(ev.tool, item);
     }
-    const item = byTool[ev.tool];
     item.total += 1;
     if (ev.ok) {
       item.ok += 1;
@@ -89,14 +93,15 @@ export function summarizeMetrics(events: ToolMetricEvent[]): Record<string, unkn
       item.error += 1;
     }
     if (isFiniteLatency(ev.latencyMs)) {
-      const samples = (latencySamples[ev.tool] ?? 0) + 1;
-      latencySamples[ev.tool] = samples;
+      const samples = (latencySamples.get(ev.tool) ?? 0) + 1;
+      latencySamples.set(ev.tool, samples);
       item.avgLatencyMs = ((item.avgLatencyMs * (samples - 1)) + ev.latencyMs) / samples;
     }
   }
 
   return {
-    tools: byTool,
+    // Object.fromEntries defines own properties, so a `__proto__` entry stays data.
+    tools: Object.fromEntries(byTool),
     timeline: events.slice(-50),
     windows: summarizeMetricsWindows(events.slice(-200), 20),
   };
