@@ -618,7 +618,16 @@ export const resolveMetaUpdate = (
       unknown.push(key);
       continue;
     }
-    if (readOnly.has(key) || META_PUSH_PROTECTED_FIELDS.has(key)) {
+    // The denylist is checked here too, not only during discovery: an explicit
+    // `tableOptions.<table>.metaFields` may re-add `sys_id` or an audit stamp to
+    // READ it, and without this the sidecar value went into the PATCH body — a
+    // hand-edited `sys_id` retargeting the update, a stale `sys_mod_count` or
+    // `sys_updated_on` rewriting the platform's own record of the last save.
+    if (
+      readOnly.has(key) ||
+      META_PUSH_PROTECTED_FIELDS.has(key) ||
+      META_FIELD_DENYLIST.has(key)
+    ) {
       skipped.push(key);
       continue;
     }

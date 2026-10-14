@@ -301,6 +301,34 @@ describe("resolveMetaUpdate", () => {
     expect([...update.skipped].sort()).toEqual(["sys_class_name", "sys_domain", "sys_domain_path"]);
   });
 
+  // An explicit metaFields list may re-add the denylisted columns so they are
+  // READ into the sidecar; that must not make them writable.
+  it("never pushes sys_id or the audit stamps, even when an explicit metaFields lists them", () => {
+    const denylisted = [
+      "sys_id",
+      "sys_created_by",
+      "sys_created_on",
+      "sys_updated_by",
+      "sys_updated_on",
+      "sys_mod_count",
+    ];
+    const update = resolveMetaUpdate(
+      JSON.stringify({
+        sys_id: "0123456789abcdef0123456789abcdef",
+        sys_created_by: "someone",
+        sys_created_on: "2020-01-01 00:00:00",
+        sys_updated_by: "someone",
+        sys_updated_on: "2020-01-01 00:00:00",
+        sys_mod_count: "7",
+        active: "true",
+      }),
+      { metaFields: [...known.metaFields, ...denylisted], readOnlyFields: [] }
+    );
+
+    expect(update.fields).toEqual({ active: "true" });
+    expect([...update.skipped].sort()).toEqual([...denylisted].sort());
+  });
+
   // The whole point of the feature: ServiceNow answers 200 to an update naming a
   // column that does not exist, so a typo would otherwise be a "successful" push
   // that changed nothing.
