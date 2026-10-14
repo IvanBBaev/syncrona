@@ -389,7 +389,7 @@ const MODULE_FLOORS = [
   // (test/graphMermaidSelection.test.js, test/scopeKnowledgeSparseInput.test.js),
   // and the same replay now yields one reading per file.
   { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.51 / 96.00
-  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.50 / 92.18
+  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.28 / 91.88 (also 96.50 / 92.18: V8 range granularity, 611/665 vs 613/665 branches and 880/914 vs 882/914 lines on unchanged source, the only moving range is dist lines 505-506, the unreachable continue guard in the impact-diagram edge loop, since every included edge has both ends in the aliased node set)
 ];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
