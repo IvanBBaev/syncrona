@@ -389,7 +389,7 @@ const MODULE_FLOORS = [
   // (test/graphMermaidSelection.test.js, test/scopeKnowledgeSparseInput.test.js),
   // and the same replay now yields one reading per file.
   { pattern: 'dist/analysis/graph.js', line: 96, branch: 92 }, // measured 99.51 / 96.00
-  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.46 / 89.68
+  { pattern: 'dist/analysis/scopeKnowledge.js', line: 92, branch: 86 }, // measured 96.50 / 92.18
 ];
 
 // `--test-coverage-include` only FILTERS the modules the run actually loaded; V8
