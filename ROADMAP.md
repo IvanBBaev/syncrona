@@ -332,7 +332,7 @@ the parts still marked 🚧 are covered by mocked tests only.
 | R6 | `cicd <action>`: `run-suite`, `run-test`, `install`, `publish`, `rollback` over `api/sn_cicd`, exit codes 0/1/2 | 🚧 implemented; `run-suite`/`run-test` and resume verified live 2026-10-13, `install`/`publish`/`rollback` mocked only |
 | R7 | `fluent <action>` through the optional `@syncrona/fluent` package (`@servicenow/sdk` optional peer `~4.13`): `init`, `build`, `transform`, `pack`, `install`, `types`, `dependencies`, `run`, `status`; Basic and OAuth profiles | ✅ implemented; `init`/`build`/`install`/`status`/`types` verified live 2026-10-13 |
 | R8 | `query <table>` with the `now-sdk query` flag set and its JSON envelope | ✅ implemented (read-only) |
-| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2; `progressId` resumes an `incomplete` run). `sync_fluent_build` (SDK-F6) runs the R7 `fluent build` through the optional `@syncrona/fluent` package (local-only, `dryRun`, audit; exit code 0/2/1) | 🚧 implemented; `sync_cicd_run` verified live 2026-10-13, `sync_fluent_build` verified on a local SDK 4.13.6 project 2026-10-14 |
+| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2; `progressId` resumes an `incomplete` run). `sync_fluent_build` (SDK-F6) runs the R7 `fluent build` through the optional `@syncrona/fluent` package (local-only, `dryRun`, audit; exit code 0/2/1) | ✅ implemented; `sync_cicd_run` verified live 2026-10-13, `sync_fluent_build` verified on a local SDK 4.13.6 project 2026-10-14 |
 
 Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
 
