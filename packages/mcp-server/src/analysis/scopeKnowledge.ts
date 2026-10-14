@@ -518,8 +518,20 @@ export function validateScopeKnowledgeIndex(index: Record<string, unknown>): {
   };
 }
 
+// Dictionary values come from the instance: a default value is often a
+// `javascript:` expression with `||` or several lines, and either one split the
+// row into extra cells or broke the table off mid-row.
+function markdownCell(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+}
+
+function markdownHeading(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function escapeMermaidLabel(value: string): string {
   return value
+    .replace(/\s+/g, " ")
     .replace(/\|/g, "/")
     .replace(/[\[\]{}()]/g, "")
     .replace(/"/g, "'")
@@ -755,7 +767,7 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
     lines.push("- No Business Rules or Script Includes discovered for impact mini-diagrams.");
   } else {
     for (const item of impactObjects) {
-      lines.push(`### ${item.name || item.id}`);
+      lines.push(`### ${markdownHeading(item.name || item.id)}`);
       lines.push("```mermaid");
       lines.push(renderObjectImpactMermaid(item.id, graphNodes, graphEdges, 16));
       lines.push("```");
@@ -812,7 +824,7 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
       if (!tableName) {
         continue;
       }
-      lines.push(`### ${tableName}`);
+      lines.push(`### ${markdownHeading(tableName)}`);
       lines.push("| Field | Label | Type | Required | Reference |");
       lines.push("| --- | --- | --- | --- | --- |");
       for (const rawField of fields.slice(0, 200)) {
@@ -827,7 +839,9 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
         const typeWithLength = maxLength ? `${type}(${maxLength})` : type;
         const required = field.required === true ? "yes" : "no";
         const reference = toStringField(field.reference) || "-";
-        lines.push(`| ${fieldName} | ${label} | ${typeWithLength} | ${required} | ${reference} |`);
+        lines.push(
+          `| ${[fieldName, label, typeWithLength, required, reference].map(markdownCell).join(" | ")} |`
+        );
       }
       lines.push("");
     }
@@ -888,9 +902,11 @@ export function renderScopeKnowledgeMarkdown(index: Record<string, unknown>): st
       const runTime = toStringField(row.runTime) || "n/a";
       const affected = (affectedTablesBySource.get(id) || []).sort((a, b) => a.localeCompare(b));
       const script = toStringField(row.script).trim();
-      const excerpt = script.length > 140 ? `${script.slice(0, 140)}...` : script;
+      // A raw multi-line excerpt continued the list item with script lines.
+      const flatScript = script.replace(/\s+/g, " ");
+      const excerpt = flatScript.length > 140 ? `${flatScript.slice(0, 140)}...` : flatScript;
 
-      lines.push(`### ${name}`);
+      lines.push(`### ${markdownHeading(name)}`);
       lines.push(`- Schedule: run_type=${runType}, run_period=${runPeriod}, run_time=${runTime}`);
       lines.push(`- Affected tables: ${affected.length > 0 ? affected.join(", ") : "none detected"}`);
       lines.push(`- Script excerpt: ${excerpt || "n/a"}`);
@@ -1012,7 +1028,9 @@ export function buildTableFieldMarkdownDocs(index: Record<string, unknown>): Arr
       const required = field.required === true ? "yes" : "no";
       const reference = toStringField(field.reference) || "-";
       const defaultValue = toStringField(field.defaultValue) || "-";
-      lines.push(`| ${fieldName} | ${label} | ${typeWithLength} | ${required} | ${reference} | ${defaultValue} |`);
+      lines.push(
+        `| ${[fieldName, label, typeWithLength, required, reference, defaultValue].map(markdownCell).join(" | ")} |`
+      );
     }
 
     lines.push("");
