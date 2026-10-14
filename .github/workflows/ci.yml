@@ -23,7 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       # G15: validate on Linux (typical CI/CD consumers) and macOS (developer
-      # machines). Windows support is tracked separately (D5 / DX1).
+      # machines). Native Windows runs in the non-required `windows` job below
+      # (D5 / DX1).
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -340,6 +341,54 @@ jobs:
           name: fluent
           disable_search: true
           fail_ci_if_error: false
+
+  # D5 / DX1: native Windows runner — NON-REQUIRED by design (ROADMAP proposes
+  # it as a non-required job). Windows support is today proven only by the
+  # path-handling unit tests that run on Linux/macOS; this job records which
+  # build and test steps actually pass on a native windows-latest runner so the
+  # gaps are visible before anyone decides to make it blocking. Job-level
+  # `continue-on-error` keeps a red Windows run from failing the workflow; it
+  # stays out of branch protection until it is green on main.
+  #
+  # npm runs package scripts through cmd.exe on Windows, which cannot handle
+  # the `NODE_OPTIONS=... jest` prefix or the `test/*.test.js` globs in the
+  # workspace scripts, so npm's script-shell is pointed at the runner's Git Bash.
+  # Only build + tests run here: audit, lint, coverage, quality, pack and bench
+  # are platform-independent and already enforced by the check job.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Use Git Bash as npm's script shell
+        run: npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Test syncrona
+        run: npm run test:core
+
+      - name: Test @syncrona/mcp-server
+        run: npm run test:mcp
+
+      - name: Test shared packages
+        run: npm run test:shared
+
+      - name: Test build plugin packages
+        run: npm run test:plugins
 
   # G16: secret scanning across the full git history — the enforcing gate.
   #

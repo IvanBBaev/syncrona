@@ -422,8 +422,9 @@ Goal: a supportable, broadly installable 1.0 that clears the enterprise gate.
   `packages/webpack-plugin/test/win32ConfigDiscovery.test.js`. Reserved device
   names (`CON`, `NUL`) and trailing dots/spaces stay as-is by contract (renaming
   would diverge on-disk layouts; `repair`'s canonical-name check already defuses
-  the prune vector). Remaining: a native `windows-latest` CI runner (proposed as
-  a non-required job).
+  the prune vector). A native `windows-latest` CI job now runs build + tests
+  as a non-required job (`windows` in `.github/workflows/ci.yml`); remaining:
+  get it green on main, then decide whether to make it required.
 
 ### Auth & connectivity
 - ✅ **Proxy / TLS configuration** (G9) — CLI honors `HTTPS_PROXY` / `NO_PROXY`

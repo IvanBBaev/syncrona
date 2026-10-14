@@ -16,7 +16,7 @@ has not been tested against a live instance, it says so.
 | OS — macOS | supported | ✅ CI (macos-latest) |
 | OS — Linux | supported | ✅ CI (ubuntu-latest) |
 | OS — Windows (WSL) | supported, recommended | 🟡 documented; not in CI |
-| OS — Windows (native) | `packaging/windows/install.ps1` | 🔴 code-complete, **unverified** (no Windows host in CI) |
+| OS — Windows (native) | `packaging/windows/install.ps1` | 🟡 build + tests run on a non-required `windows-latest` CI job; the installer itself is still **unverified** |
 
 ## ServiceNow
 
