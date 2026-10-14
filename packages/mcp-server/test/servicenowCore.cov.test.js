@@ -170,6 +170,21 @@ test('summarizeRows counts by field, defaulting missing values to <empty>', () =
   assert.deepEqual(summarizeRows(rows, 'state'), { '1': 2, '2': 1, '<empty>': 1 });
 });
 
+test('summarizeRows counts prototype-named field values as plain keys', () => {
+  const rows = [
+    { name: 'constructor' },
+    { name: '__proto__' },
+    { name: 'constructor' },
+    { name: 'toString' },
+    { name: '__proto__' },
+  ];
+  const counts = summarizeRows(rows, 'name');
+  assert.equal(counts.constructor, 2);
+  assert.equal(counts.toString, 1);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(counts, '__proto__')?.value, 2);
+  assert.deepEqual(Object.keys(counts).sort(), ['__proto__', 'constructor', 'toString']);
+});
+
 // ---------------------------------------------------------------------------
 // resolveServiceNowSecrets — error branches
 // ---------------------------------------------------------------------------

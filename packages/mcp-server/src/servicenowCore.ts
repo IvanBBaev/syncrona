@@ -1318,11 +1318,14 @@ export function summarizeRows(
   rows: Record<string, unknown>[],
   analyzeField: string
 ): Record<string, number> {
-  return rows.reduce<Record<string, number>>((acc, row) => {
+  // Field values come from the instance, so a value such as "constructor" or
+  // "__proto__" must not resolve to an inherited Object.prototype member.
+  const counts = new Map<string, number>();
+  for (const row of rows) {
     const key = String(row[analyzeField] ?? "<empty>");
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Object.fromEntries(counts);
 }
 
 export async function runBackgroundScript(
