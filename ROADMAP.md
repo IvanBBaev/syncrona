@@ -43,7 +43,7 @@ human-facing summary of them.
 | ACC | Acceptance review rounds 1–8 on the parity branch and their fixes | WORKLOG 2026-10-05…10-09 | `done` | 16 |
 | DOCS | Migration guide, comparison, data-model docs, CHANGELOG entries | ROADMAP v1.1.0 intro; plan WP-9 | `done` | 4 |
 | LR-FIX | Fixes for live-run findings: refresh keeps sidecar-only records, the missing-`pushATFfile` message and the `sys_atf_step` create fix (`f934eb8`) are on main | TODO SDK-F1; WORKLOG 2026-10-10 | `done` | 4 |
-| SDK-F1 | Live verification of the write paths: create, prune, `init --new`, data-model sidecars, `cicd run-suite`/`run-test`, `fluent install`, `query` verified 2026-10-13; app-repo `cicd` actions, `move-to-app`, `sync_fluent_build`, composite layout and mTLS stay mocked by owner decision | TODO SDK-F1 | `done` | 8 |
+| SDK-F1 | Live verification of the write paths: create, prune, `init --new`, data-model sidecars, `cicd run-suite`/`run-test`, `fluent install`, `query` verified 2026-10-13, `sync_fluent_build` 2026-10-14 (local build); app-repo `cicd` actions, `move-to-app`, composite layout and mTLS stay mocked by owner decision | TODO SDK-F1 | `done` | 8 |
 | CLEAN | Cleanup of live-run records on the shared instance (C1–C6, suite links, app preference) | WORKLOG 2026-10-10 | `blocked-owner` | 2 |
 | CAVEAT | Drop the "live verification pending" caveats in README, COMPARISON, ROADMAP and MIGRATING_FROM_NOW_SDK once SDK-F1 passes | TODO SDK-F1 | `done` | 1.5 |
 | REL-PREP | Release prep: `1.1.0` CHANGELOG heading, site badge, changeset version run, release gate | plan WP-9; WORKLOG 2026-10-09 release patch v2 | `done` | 2 |
@@ -332,7 +332,7 @@ the parts still marked 🚧 are covered by mocked tests only.
 | R6 | `cicd <action>`: `run-suite`, `run-test`, `install`, `publish`, `rollback` over `api/sn_cicd`, exit codes 0/1/2 | 🚧 implemented; `run-suite`/`run-test` and resume verified live 2026-10-13, `install`/`publish`/`rollback` mocked only |
 | R7 | `fluent <action>` through the optional `@syncrona/fluent` package (`@servicenow/sdk` optional peer `~4.13`): `init`, `build`, `transform`, `pack`, `install`, `types`, `dependencies`, `run`, `status`; Basic and OAuth profiles | ✅ implemented; `init`/`build`/`install`/`status`/`types` verified live 2026-10-13 |
 | R8 | `query <table>` with the `now-sdk query` flag set and its JSON envelope | ✅ implemented (read-only) |
-| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2; `progressId` resumes an `incomplete` run). `sync_fluent_build` (SDK-F6) runs the R7 `fluent build` through the optional `@syncrona/fluent` package (local-only, `dryRun`, audit; exit code 0/2/1) | 🚧 implemented; `sync_cicd_run` verified live 2026-10-13, `sync_fluent_build` mocked only |
+| WP-8 | MCP exposure: `sync_cicd_run` wraps the R6 `sn_cicd` actions (`confirmDestructive`, `dryRun`, audit; outcome + exit code 0/1/2; `progressId` resumes an `incomplete` run). `sync_fluent_build` (SDK-F6) runs the R7 `fluent build` through the optional `@syncrona/fluent` package (local-only, `dryRun`, audit; exit code 0/2/1) | 🚧 implemented; `sync_cicd_run` verified live 2026-10-13, `sync_fluent_build` verified on a local SDK 4.13.6 project 2026-10-14 |
 
 Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
 
@@ -351,7 +351,10 @@ Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
   `moveToApp` behind a confirmation (SDK-F5).
 - ✅ **`sync_fluent_build` MCP tool** (SDK-F6): runs `fluent build` through the
   optional `@syncrona/fluent` package, confined to the workspace, with
-  `dryRun`, audit and the CLI's exit codes. Live build still pending.
+  `dryRun`, audit and the CLI's exit codes. Verified 2026-10-14 on a local SDK
+  4.13.6 project (success, compile errors, dry run, timeout budget, adapter
+  missing or outside the workspace); the run found that SDK compile errors only
+  reached the console, now fixed in `@syncrona/fluent`.
 
 ---
 

@@ -114,7 +114,7 @@ describe("createFluentEngine", () => {
     const orch = of(sdk.calls, "Orchestrator")[0];
     expect(orch.args).toHaveLength(2);
     expect(orch.args[1]).toBeDefined();
-    expect(of(sdk.calls, "Project")[0].args[0]).toEqual({ fileSystem: "FS", rootDir: "/p" });
+    expect(of(sdk.calls, "Project")[0].args[0]).toEqual({ fileSystem: "FS", rootDir: "/p", logger: expect.anything() });
     expect(of(sdk.calls, "build")[0].args[0]).toEqual({ frozenKeys: true });
   });
 
@@ -139,6 +139,87 @@ describe("createFluentEngine", () => {
     expect(await engine(sdk).build({})).toEqual({ success: false, errors: ["E1"], warnings: ["W1"] });
     const failed = fakeSdk({ build: () => ({ success: false }) });
     expect(await engine(failed).build({})).toEqual({ success: false, errors: [], warnings: [] });
+  });
+
+  describe("SDK log capture", () => {
+    let consoleCalls: Array<[string, unknown[]]>;
+    const spies: jest.SpyInstance[] = [];
+    beforeEach(() => {
+      consoleCalls = [];
+      for (const level of ["error", "warn", "info"] as const) {
+        spies.push(
+          jest.spyOn(console, level).mockImplementation((...data: unknown[]) => {
+            consoleCalls.push([level, data]);
+          }),
+        );
+      }
+    });
+    afterEach(() => spies.splice(0).forEach((s) => s.mockRestore()));
+
+    type SdkLog = Record<string, (...data: unknown[]) => void>;
+    async function withSdkLog(build: (log: SdkLog) => unknown) {
+      let log: SdkLog = {};
+      const sdk = fakeSdk({ build: () => build(log) });
+      const e = engine(sdk);
+      await e.pack({});
+      log = (of(sdk.calls, "Project")[0].args[0] as { logger: SdkLog }).logger;
+      return { e, log };
+    }
+
+    it("reports what the SDK only logs during a failed build instead of printing it", async () => {
+      const { e } = await withSdkLog((log) => {
+        log.warn("\u001b[33mW1\u001b[39m", 2);
+        log.error("\u001b[31mTS2322: bad type\u001b[39m");
+        log.error(new Error("Found 1 diagnostic error(s) while building the project."));
+        log.info("progress");
+        return { success: false, diagnostics: [] };
+      });
+      expect(await e.build({})).toEqual({ success: false, errors: ["TS2322: bad type"], warnings: ["W1 2"] });
+      expect(consoleCalls).toEqual([["info", ["progress"]]]);
+    });
+
+    it("keeps the SDK summary when it is the only error", async () => {
+      const { e } = await withSdkLog((log) => {
+        log.error(new Error("Found 2 diagnostic error(s) while building the project."));
+        return { success: false, diagnostics: [] };
+      });
+      expect((await e.build({})).errors).toEqual(["Found 2 diagnostic error(s) while building the project."]);
+    });
+
+    it("prints the log when the SDK reports structured diagnostics", async () => {
+      const { e } = await withSdkLog((log) => {
+        log.error("logged");
+        return { success: false, diagnostics: [{ level: 1, message: "E1" }] };
+      });
+      expect(await e.build({})).toEqual({ success: false, errors: ["E1"], warnings: [] });
+      expect(consoleCalls).toEqual([["error", ["logged"]]]);
+    });
+
+    it("prints the log when the build throws", async () => {
+      const { e } = await withSdkLog((log) => {
+        log.error("logged");
+        throw new Error("boom");
+      });
+      await expect(e.build({})).rejects.toThrow("boom");
+      expect(consoleCalls).toEqual([["error", ["logged"]]]);
+    });
+
+    it("forwards to the console outside a build and starts each build empty", async () => {
+      let builds = 0;
+      const { e, log } = await withSdkLog((sdkLog) => {
+        builds++;
+        if (builds === 1) sdkLog.error("first");
+        return { success: true, diagnostics: [] };
+      });
+      expect((await e.build({})).errors).toEqual(["first"]);
+      log.error("between");
+      log.warn("between");
+      expect(await e.build({})).toEqual({ success: true, errors: [], warnings: [] });
+      expect(consoleCalls).toEqual([
+        ["error", ["between"]],
+        ["warn", ["between"]],
+      ]);
+    });
   });
 
   it.each([

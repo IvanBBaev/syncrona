@@ -60,7 +60,7 @@ function filePath(file: SdkProjectFile): string {
 }
 
 export interface SdkApi {
-  Project: new (options: { fileSystem: unknown; rootDir: string }) => unknown;
+  Project: new (options: { fileSystem: unknown; rootDir: string; logger?: unknown }) => unknown;
   Orchestrator: new (project: unknown, credential?: unknown) => SdkOrchestrator;
   ProjectFactory: (new (fileSystem: unknown) => {
     createProject(dir: string, options: Record<string, unknown>): Promise<unknown>;
@@ -368,6 +368,62 @@ export function splitDiagnostics(diagnostics: readonly SdkDiagnostic[] = []): { 
   return { errors, warnings };
 }
 
+// Matches CSI colour/cursor sequences such as `\u001b[31m`.
+const ANSI_PATTERN = /\u001b\[[0-9;?]*[A-Za-z]/g;
+
+function loggedText(data: readonly unknown[]): string {
+  return data
+    .map((d) => (d instanceof Error ? d.message : typeof d === "string" ? d : String(d)))
+    .join(" ")
+    .replace(ANSI_PATTERN, "");
+}
+
+interface SdkLogCapture {
+  errors: string[];
+  warnings: string[];
+  /** The captured calls, to hand back to the console when they are not reported. */
+  calls: Array<{ level: "error" | "warn"; data: unknown[] }>;
+}
+
+/**
+ * The SDK's default project logger is `console`, and its build reports
+ * compile errors only there: `Project.getRecords` logs each diagnostic and
+ * throws, and `Orchestrator.build` swallows the throw into
+ * `{ success: false, diagnostics: [] }`. This logger forwards to `console`
+ * (resolved per call, so a caller's console redirect still applies), except
+ * that error and warn calls are held in `capture` while it is set, so the
+ * build can report them instead of the console showing them twice.
+ */
+function createSdkLogger(): { logger: unknown; capture?: SdkLogCapture } {
+  const state: { logger: unknown; capture?: SdkLogCapture } = { logger: undefined };
+  const host = console as unknown as Record<PropertyKey, unknown>;
+  state.logger = new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === "error" || prop === "warn") {
+          return (...data: unknown[]) => {
+            const capture = state.capture;
+            if (!capture) return console[prop](...data);
+            (prop === "error" ? capture.errors : capture.warnings).push(loggedText(data));
+            capture.calls.push({ level: prop, data });
+          };
+        }
+        const value = host[prop];
+        return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(console) : value;
+      },
+    },
+  );
+  return state;
+}
+
+function replay(capture: SdkLogCapture): void {
+  for (const call of capture.calls) console[call.level](...call.data);
+}
+
+/** The message of the error `Project.getRecords` throws after logging each diagnostic. */
+const DIAGNOSTIC_SUMMARY = /^Found \d+ diagnostic error\(s\)/;
+
 export function createFluentEngine(options: SN.FluentEngineOptions, deps: FluentEngineDeps = {}): SN.FluentEngine {
   const loadSdk = deps.loadSdk ?? defaultSdkLoader;
   const loadDocs = deps.loadDocs ?? defaultSdkDocsLoader;
@@ -377,6 +433,7 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
   let sdk: LoadedSdk | undefined;
   let orchestrator: SdkOrchestrator | undefined;
   let credential: unknown;
+  const sdkLogger = createSdkLogger();
 
   const loaded = (): LoadedSdk => {
     if (!sdk) {
@@ -408,7 +465,7 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
   const orch = (): SdkOrchestrator => {
     if (!orchestrator) {
       const { api } = loaded();
-      const project = new api.Project({ fileSystem, rootDir: projectDir });
+      const project = new api.Project({ fileSystem, rootDir: projectDir, logger: sdkLogger.logger });
       const cred = lazyCredential();
       orchestrator = cred === undefined ? new api.Orchestrator(project) : new api.Orchestrator(project, cred);
     }
@@ -437,8 +494,27 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
 
   return {
     async build(opts) {
-      const result = await withTls(() => orch().build({ ...opts }));
-      const { errors, warnings } = splitDiagnostics(result.diagnostics);
+      const logged: SdkLogCapture = { errors: [], warnings: [], calls: [] };
+      sdkLogger.capture = logged;
+      let result: SdkBuildResult;
+      try {
+        result = await withTls(() => orch().build({ ...opts }));
+      } catch (error) {
+        replay(logged);
+        throw error;
+      } finally {
+        sdkLogger.capture = undefined;
+      }
+      const reported = splitDiagnostics(result.diagnostics);
+      if (reported.errors.length || reported.warnings.length) {
+        // The structured diagnostics are the report; the log goes to the console as before.
+        replay(logged);
+        return { success: result.success && reported.errors.length === 0, ...reported };
+      }
+      // The SDK's summary only counts the diagnostics already listed.
+      const listed = logged.errors.filter((e) => !DIAGNOSTIC_SUMMARY.test(e));
+      const errors = listed.length ? listed : logged.errors;
+      const { warnings } = logged;
       return { success: result.success && errors.length === 0, errors, warnings };
     },
 
