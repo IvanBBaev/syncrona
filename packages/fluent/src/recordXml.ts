@@ -30,6 +30,12 @@ export interface RecordXmlField {
   value?: string | null;
   /** Rendered as the `display_value` attribute (reference and choice fields). */
   displayValue?: string;
+  /**
+   * Further attributes in insertion order, after `display_value` — e.g. the
+   * coalesce keys the SDK writes on reference fields (`<contains name="itil">`).
+   * A `display_value` key here overrides `displayValue`.
+   */
+  attributes?: Readonly<Record<string, string>>;
   /** Emit the value as a CDATA section, as the SDK does for script-typed fields. */
   cdata?: boolean;
 }
@@ -95,7 +101,12 @@ export function cdataSection(value: string): string {
 
 function renderField(field: RecordXmlField): string {
   const name = checkName("field", field.name);
-  const attrs = field.displayValue === undefined ? "" : ` display_value="${escapeXmlAttribute(field.displayValue)}"`;
+  const pairs: Record<string, string> = {};
+  if (field.displayValue !== undefined) pairs.display_value = field.displayValue;
+  Object.assign(pairs, field.attributes);
+  const attrs = Object.entries(pairs)
+    .map(([key, value]) => ` ${checkName("attribute", key)}="${escapeXmlAttribute(value)}"`)
+    .join("");
   const value = field.value ?? "";
   if (value === "") return `<${name}${attrs}/>`;
   const body = field.cdata ? cdataSection(value) : escapeXmlText(value);

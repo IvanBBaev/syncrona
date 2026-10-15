@@ -79,6 +79,25 @@ describe("serializeRecordUpdate", () => {
     );
   });
 
+  it("renders further attributes after display_value, in insertion order", () => {
+    const xml = serializeRecordUpdate({
+      table: "sys_user_role_contains",
+      fields: [
+        { name: "contains", value: "abc", attributes: { name: "itil" } },
+        { name: "role", value: "def", displayValue: "dv", attributes: { name: "x.m", scope: "s&" } },
+        { name: "view", value: "", displayValue: "old", attributes: { display_value: "new" } },
+      ],
+    });
+    expect(xml.split("\n").slice(3, 6)).toEqual([
+      '    <contains name="itil">abc</contains>',
+      '    <role display_value="dv" name="x.m" scope="s&amp;">def</role>',
+      '    <view display_value="new"/>',
+    ]);
+    expect(() =>
+      serializeRecordUpdate({ table: "t", fields: [{ name: "f", value: "v", attributes: { "a b": "x" } }] }),
+    ).toThrow('Invalid attribute name for record_update XML: "a b"');
+  });
+
   it("rejects table and field names that are not XML names", () => {
     expect(() => serializeRecordUpdate({ table: "bad table", fields: [] })).toThrow(RecordXmlError);
     expect(() => serializeRecordUpdate({ table: "t", fields: [{ name: "1x", value: "v" }] })).toThrow(
