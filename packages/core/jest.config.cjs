@@ -64,7 +64,10 @@ module.exports = {
     '!src/tests/**',
   ],
   testPathIgnorePatterns: [
-    ".js",
+    // Compiled test output only. These patterns are regexes matched against the
+    // ABSOLUTE path, so a bare ".js" also matched any checkout path containing
+    // "<char>js" (`~/jsmith/`, `…-json-…`) and Jest then ran no tests at all.
+    "\\.[cm]?jsx?$",
     // Stryker copies the whole package (tests included) into its sandbox and
     // does not clean it up when a run is interrupted, so without this a
     // leftover .stryker-tmp makes Jest run every suite twice — and the sandbox
