@@ -204,7 +204,7 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 89 }, // measured 98.85 / 95.68
+    './src/FileUtils.ts': { lines: 95, branches: 89 }, // measured 98.85 / 95.71
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
@@ -218,7 +218,7 @@ module.exports = {
     // Deletes local files under `repair --apply --prune`.
     './src/repairCommand.ts': { lines: 95, branches: 91 }, // measured 97.65 / 95.20
     // Transport: auth headers, retries and the request surface every command uses.
-    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.73 / 95.59
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.73 / 95.64
     // Credentials: the keychain/file store and the auth-method picker.
     './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
@@ -238,7 +238,7 @@ module.exports = {
     // Shells out to `git` for the mirror's repack, and mints the Authorization
     // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
     // true of the engine — so it holds credential material for a whole sweep.
-    './src/mirrorCommand.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.95
+    './src/mirrorCommand.ts': { lines: 97, branches: 94 }, // measured 100.00 / 99.01
     // Drives api/sn_cicd: installs, publishes and rolls back applications, and
     // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
     './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.82 / 95.17
