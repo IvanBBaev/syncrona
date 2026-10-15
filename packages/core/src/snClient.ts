@@ -197,7 +197,22 @@ export function getErrorResponseStatus(e: unknown): number | undefined {
 // Network errors (no HTTP response) are retryable; HTTP errors follow the
 // shared retry-status policy so 4xx failures (bad credentials, missing
 // record) fail fast instead of hammering the instance.
+// A scoped route the instance's Sincronia server app does not provide. The
+// wrapped message replaces the bare axios error, so the 4xx status would be
+// lost and the push retry loop would classify the error as retryable.
+export class MissingEndpointError extends Error {
+  readonly status: number | undefined;
+  constructor(message: string, status: number | undefined) {
+    super(message);
+    this.name = "MissingEndpointError";
+    this.status = status;
+  }
+}
+
 export function isRetryableRequestError(e: unknown): boolean {
+  if (e instanceof MissingEndpointError) {
+    return false;
+  }
   const status = getErrorResponseStatus(e);
   if (status === undefined) {
     return true;
@@ -421,11 +436,13 @@ export const snClient = (
       // Sincronia server app has no pushATFfile route, so no ATF step script
       // can be sent. The bare axios error said only "status code 400".
       if (!isEndpointNotFound(e)) throw e;
-      throw new Error(
+      const status = getErrorResponseStatus(e);
+      throw new MissingEndpointError(
         `The instance has no pushATFfile endpoint under ${endpointPrefixOrder()
           .map((prefix) => `api/${prefix}`)
-          .join(" or ")} (HTTP ${getErrorResponseStatus(e)}), so the ATF step script ` +
-          "cannot be sent. Install a Sincronia server app version that provides it."
+          .join(" or ")} (HTTP ${status}), so the ATF step script ` +
+          "cannot be sent. Install a Sincronia server app version that provides it.",
+        status
       );
     }
   };

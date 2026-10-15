@@ -326,6 +326,18 @@ describe("snClient request wrappers", () => {
     expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_script/rec-1", { script: "x" });
   });
 
+  it("does not classify the missing pushATFfile route as retryable", async () => {
+    const { isRetryableRequestError } = await import("../snClient.js");
+    const client = await makeClient();
+    mockPost.mockRejectedValueOnce({ response: { status: 404 } });
+    mockPost.mockRejectedValueOnce({ response: { status: 400 } });
+    const error = await client
+      .updateRecord("sys_atf_step", "step-1", { "inputs.script": "x" })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(isRetryableRequestError(error)).toBe(false);
+  });
+
   it("updateRecord skips the ATF side-call for a step update without a script", async () => {
     const client = await makeClient();
     await client.updateRecord("sys_atf_step", "step-1", { description: "d" });
