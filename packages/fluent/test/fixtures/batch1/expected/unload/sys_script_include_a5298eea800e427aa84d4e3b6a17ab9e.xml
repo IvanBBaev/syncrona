@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_script_include">
+  <sys_script_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a5298eea800e427aa84d4e3b6a17ab9e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_script_include_a5298eea800e427aa84d4e3b6a17ab9e</sys_update_name>
+    <access>package_private</access>
+    <active>true</active>
+    <api_name>x_snc_bprobe.NumIdSI</api_name>
+    <caller_access/>
+    <client_callable>false</client_callable>
+    <description/>
+    <mobile_callable>false</mobile_callable>
+    <name>NumIdSI</name>
+    <sandbox_callable>false</sandbox_callable>
+    <script><![CDATA[var NumIdSI = 1;]]></script>
+    <sys_name>NumIdSI</sys_name>
+  </sys_script_include>
+</record_update>

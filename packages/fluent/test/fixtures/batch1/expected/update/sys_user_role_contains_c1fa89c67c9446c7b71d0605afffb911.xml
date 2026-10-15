@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_role_contains">
+  <sys_user_role_contains action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c1fa89c67c9446c7b71d0605afffb911</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_role_contains_c1fa89c67c9446c7b71d0605afffb911</sys_update_name>
+    <contains name="x_snc_bprobe.user">ad1b3fb6a6814917a7caa2a18297120c</contains>
+    <role name="x_snc_bprobe.manager">19412ce8f2894686bb0f45e2d56fa407</role>
+    <sys_name>x_snc_bprobe.user.x_snc_bprobe.manager</sys_name>
+  </sys_user_role_contains>
+</record_update>

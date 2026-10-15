@@ -14,7 +14,7 @@ module.exports = {
   // Every SDK and network touchpoint here is injected: the SDK through the
   // `loadSdk` seam, the UI-session login through a `fetch` parameter. The tests
   // drive a fake SDK and a scripted fetch, so no branch needs the real SDK or an
-  // instance. Measured across all 4 suites (42 tests): 100/100/100/100, so the
+  // instance. Measured across all 12 suites (215 tests): 100/100/100/100, so the
   // floor sits at it; an untested branch must be an `istanbul ignore` with a reason.
   coverageThreshold: {
     global: {

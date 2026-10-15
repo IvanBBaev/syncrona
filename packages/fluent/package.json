@@ -23,10 +23,14 @@
     "@syncrona/types": "^1.1.0"
   },
   "peerDependencies": {
-    "@servicenow/sdk": "~4.13"
+    "@servicenow/sdk": "~4.13",
+    "typescript": ">=5"
   },
   "peerDependenciesMeta": {
     "@servicenow/sdk": {
+      "optional": true
+    },
+    "typescript": {
       "optional": true
     }
   },

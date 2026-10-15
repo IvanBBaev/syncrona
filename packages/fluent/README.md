@@ -47,6 +47,16 @@ installed.
   `fluent explain`. The loader finds the `docs` directory the SDK bundles and
   the public `@servicenow/sdk-api/docs` module without evaluating the SDK; it
   throws `FluentDocsUnavailableError` when either is missing.
+- `compileFluentProject({ projectDir })`: a native compiler for a subset of the
+  Fluent core APIs (`SUPPORTED_FLUENT_APIS`: `Property`, `Role`,
+  `ScriptInclude`), without the SDK.
+  - It reads `now.config.json` and `generated/keys.ts` and assigns sys_ids
+    through the keys registry the way SDK 4.13 does.
+  - It returns the record updates the SDK build would write, the keys.ts text
+    to write back and the diagnostics; it writes no files itself.
+  - Anything outside the subset is an error diagnostic, never a silent drop.
+  - It needs only `typescript` (an optional peer dependency), resolved from
+    the project first; `FluentTypeScriptMissingError` says when it is missing.
 
 ## TLS
 

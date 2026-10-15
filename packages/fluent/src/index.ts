@@ -9,6 +9,9 @@
  *
  * Like `@syncrona/mirror`, this package MUST NOT depend on the `syncrona` core
  * CLI (enforced by the `fluent-no-core` dependency-cruiser rule).
+ *
+ * The native compiler (`compileFluentProject`) builds a subset of the SDK core
+ * APIs without the SDK; it needs only `typescript`, loaded on the first compile.
  */
 export * from "./engine";
 export * from "./auth";
@@ -17,3 +20,26 @@ export * from "./recordXml";
 export * from "./zip";
 export * from "./pack";
 export * from "./install";
+export {
+  compileFluentProject,
+  SUPPORTED_FLUENT_APIS,
+  type CompileFluentOptions,
+  type CompileFluentResult,
+} from "./compiler/compile";
+export {
+  FluentCompileError,
+  type FluentDiagnostic,
+  type FluentDiagnosticSeverity,
+  type SourceLocation,
+} from "./compiler/diagnostics";
+export type { GuidGenerator } from "./compiler/keys";
+export type {
+  InstallCategory,
+  RecordUpdateField,
+  RecordUpdateModel,
+} from "./compiler/record";
+export {
+  defaultTypeScriptLoader,
+  FluentTypeScriptMissingError,
+  type TypeScriptLoader,
+} from "./compiler/typescript";

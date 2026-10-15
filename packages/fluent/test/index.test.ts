@@ -54,7 +54,20 @@ describe("@syncrona/fluent public surface", () => {
         "flowIds",
         "nativeInstall",
         "nativeInstallStatus",
+        "compileFluentProject",
+        "defaultTypeScriptLoader",
+        "FluentCompileError",
+        "FluentTypeScriptMissingError",
+        "SUPPORTED_FLUENT_APIS",
       ].sort(),
     );
+  });
+
+  it("exposes the native compiler", () => {
+    expect(typeof fluent.compileFluentProject).toBe("function");
+    expect(typeof fluent.defaultTypeScriptLoader).toBe("function");
+    expect(new fluent.FluentCompileError("x", { file: "f", line: 1, column: 1 })).toBeInstanceOf(Error);
+    expect(new fluent.FluentTypeScriptMissingError().code).toBe("FLUENT_TYPESCRIPT_MISSING");
+    expect(fluent.SUPPORTED_FLUENT_APIS).toEqual(["Property", "Role", "ScriptInclude"]);
   });
 });

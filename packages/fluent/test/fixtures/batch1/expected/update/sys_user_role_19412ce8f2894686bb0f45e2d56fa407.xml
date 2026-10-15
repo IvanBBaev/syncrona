@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_role">
+  <sys_user_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>19412ce8f2894686bb0f45e2d56fa407</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_role_19412ce8f2894686bb0f45e2d56fa407</sys_update_name>
+    <assignable_by>admin</assignable_by>
+    <can_delegate>false</can_delegate>
+    <description>Manager role</description>
+    <elevated_privilege>true</elevated_privilege>
+    <federated_id>fed-1</federated_id>
+    <grantable>false</grantable>
+    <name>x_snc_bprobe.manager</name>
+    <scoped_admin>true</scoped_admin>
+    <suffix>manager</suffix>
+    <sys_name>x_snc_bprobe.manager</sys_name>
+  </sys_user_role>
+</record_update>
