@@ -38,6 +38,17 @@ describe("@syncrona/fluent public surface", () => {
         "serializeDeleteMultiple",
         "serializeRecordUpdate",
         "splitDiagnostics",
+        "FluentNativeError",
+        "INVENTORY_FILE",
+        "ZipError",
+        "crc32",
+        "createZip",
+        "defaultPackagePath",
+        "nativePack",
+        "packEntries",
+        "packageInventory",
+        "readNativeProject",
+        "snakeCase",
       ].sort(),
     );
   });

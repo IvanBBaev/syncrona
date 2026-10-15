@@ -14,3 +14,5 @@ export * from "./engine";
 export * from "./auth";
 export * from "./uiSession";
 export * from "./recordXml";
+export * from "./zip";
+export * from "./pack";

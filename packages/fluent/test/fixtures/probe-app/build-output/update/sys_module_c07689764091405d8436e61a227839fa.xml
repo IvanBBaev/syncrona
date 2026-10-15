@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_module">
+  <sys_module action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c07689764091405d8436e61a227839fa</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_module_c07689764091405d8436e61a227839fa</sys_update_name>
+    <content><![CDATA[import { gs } from '@servicenow/glide';
+export function showStateUpdate(current, previous) {
+    const currentState = current.getValue('state');
+    const previousState = previous.getValue('state');
+    gs.addInfoMessage(`state updated from "${previousState}" to "${currentState}"`);
+}
+]]></content>
+    <external_source>false</external_source>
+    <path>x_snc_bprobe/syncrona-build-probe/0.0.1/src/server/script.ts</path>
+    <sys_name>x_snc_bprobe/syncrona-build-probe/0.0.1/src/server/script.ts</sys_name>
+  </sys_module>
+</record_update>
