@@ -48,6 +48,7 @@ const AUTH_ENV_VARS = [
   "SN_OAUTH_CLIENT_ID",
   "SN_OAUTH_CLIENT_SECRET",
   "SN_INSTANCE_PROFILE",
+  "SYNCRONA_TLS_REJECT_UNAUTHORIZED",
 ] as const;
 
 const CONFIG = {
@@ -457,6 +458,81 @@ describe("minting the Authorization header in core (§9, INV-2)", () => {
     expect(posts[0].url).toBe("https://dev1.service-now.com/oauth_token.do");
     expect(posts[0].method).toBe("POST");
     expect(posts[0].body).toContain("grant_type=client_credentials");
+  });
+
+  // Jest's sandbox has no undici default dispatcher; stand one in whose class is
+  // named like undici's, so core builds its dispatcher from that class (as in
+  // fluentCommand.test.ts).
+  class Agent {
+    constructor(readonly options: { connect: Record<string, unknown> }) {}
+  }
+  const DISPATCHER_SLOT = Symbol.for("undici.globalDispatcher.1");
+  const host = globalThis as Record<symbol, unknown>;
+  let previousDispatcher: unknown;
+  beforeEach(() => {
+    previousDispatcher = host[DISPATCHER_SLOT];
+    host[DISPATCHER_SLOT] = new Agent({ connect: {} });
+  });
+  afterEach(() => {
+    host[DISPATCHER_SLOT] = previousDispatcher;
+  });
+  const tlsOf = (init: unknown): Record<string, unknown> | undefined =>
+    ((init as { dispatcher?: Agent }).dispatcher)?.options.connect;
+
+  it("sweeps over the CLI's TLS settings, not the platform defaults", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "s3cr3t";
+    process.env.SYNCRONA_TLS_REJECT_UNAUTHORIZED = "false";
+    const inits: unknown[] = [];
+    jest.spyOn(globalThis, "fetch").mockImplementation(async (_input: unknown, init: unknown) => {
+      inits.push(init);
+      return { ok: true, status: 200 } as never;
+    });
+    const { engine, seen } = fakeEngine();
+
+    expect(await syncWith(await newRoot(), engine)).toBe(0);
+    const sweepFetch = seen.clientOptions[0].fetch as
+      | ((url: string, init: RequestInit) => Promise<unknown>)
+      | undefined;
+    expect(typeof sweepFetch).toBe("function");
+    await sweepFetch?.("https://dev1.service-now.com/api/now/table/sys_db_object", {
+      headers: { Accept: "application/json" },
+    });
+    expect(inits[0]).toMatchObject({ headers: { Accept: "application/json" } });
+    expect(tlsOf(inits[0])).toMatchObject({ rejectUnauthorized: false });
+  });
+
+  it("mints the OAuth token over the CLI's TLS settings too", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "oauth-client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "client-1";
+    process.env.SN_OAUTH_CLIENT_SECRET = "client-secret";
+    process.env.SYNCRONA_TLS_REJECT_UNAUTHORIZED = "false";
+    const inits: unknown[] = [];
+    jest.spyOn(globalThis, "fetch").mockImplementation(async (_input: unknown, init: unknown) => {
+      inits.push(init);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: "tok", expires_in: 1800 }),
+      } as never;
+    });
+    const { engine } = fakeEngine();
+
+    expect(await syncWith(await newRoot(), engine)).toBe(0);
+    expect(inits).toHaveLength(1);
+    expect(tlsOf(inits[0])).toMatchObject({ rejectUnauthorized: false });
+  });
+
+  it("leaves the platform fetch alone when no TLS setting is configured", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "s3cr3t";
+    const { engine, seen } = fakeEngine();
+
+    expect(await syncWith(await newRoot(), engine)).toBe(0);
+    expect(seen.clientOptions[0].fetch).toBeUndefined();
   });
 
   it("turns a rejected token request into exit 1 that names the status", async () => {

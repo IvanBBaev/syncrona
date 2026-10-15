@@ -59,7 +59,12 @@ import type {
 } from "@syncrona/mirror";
 import { logger } from "./Logger.js";
 import { setLogLevel, logErrorHint, resolveInstanceProfile } from "./commandHelpers.js";
-import { resolveCredentials, buildClientAuth } from "./snClient.js";
+import {
+  resolveCredentials,
+  buildClientAuth,
+  resolveTlsMaterial,
+  buildFetchDispatcher,
+} from "./snClient.js";
 import { createTokenManager, type OAuthTokenResponse, type TokenPoster } from "./oauth.js";
 
 /** The subcommands §13.1 names, in the order the docs list them. */
@@ -134,6 +139,13 @@ export type MirrorEngine = Pick<
 };
 
 /** Every effect the command has on the world, in one injectable object. */
+/**
+ * The engine's authorization plus the fetch dispatcher that carries the CLI's
+ * TLS settings, when any are configured. The engine has no TLS handling of its
+ * own, so core hands it a `fetch` bound to this dispatcher.
+ */
+export type CoreMirrorAuthorization = MirrorAuthorization & { dispatcher?: object };
+
 export interface MirrorCommandDeps {
   /** Lazily resolves the engine, so `--help` survives a missing tarball. */
   loadEngine: () => Promise<MirrorEngine>;
@@ -148,7 +160,7 @@ export interface MirrorCommandDeps {
   /** Runs one git subcommand in the mirror repo; rejects on a non-zero exit. */
   runGit: (args: readonly string[], cwd: string) => Promise<void>;
   /** §9: mints the ready Authorization header outside `@syncrona/mirror`. */
-  resolveAuthorization: (profile?: string) => Promise<MirrorAuthorization>;
+  resolveAuthorization: (profile?: string) => Promise<CoreMirrorAuthorization>;
   /** Where command output goes — stdout in production, a buffer under test. */
   write: (line: string) => void;
 }
@@ -195,7 +207,7 @@ const nodeRunGit = (args: readonly string[], cwd: string): Promise<void> =>
  * Phase-2 concern; until then an expiring token surfaces as an `auth` fatal and
  * exit 1 rather than as a silently truncated tree.
  */
-async function nodeResolveAuthorization(profile?: string): Promise<MirrorAuthorization> {
+async function nodeResolveAuthorization(profile?: string): Promise<CoreMirrorAuthorization> {
   const credentials = resolveCredentials(profile);
   if (!credentials.instance) {
     throw new MirrorCliError(
@@ -203,15 +215,28 @@ async function nodeResolveAuthorization(profile?: string): Promise<MirrorAuthori
     );
   }
   const { oauth, apiKey } = buildClientAuth(credentials);
+  // The CA bundle, verification opt-out and mTLS client certificate every other
+  // command applies: the token POST and the sweep's GETs both carry them.
+  const tls = resolveTlsMaterial();
+  const dispatcher = tls ? buildFetchDispatcher(tls) : undefined;
+  const transport = dispatcher ? { dispatcher } : {};
 
   if (apiKey) {
-    return { instance: credentials.instance, headers: { [apiKey.header]: apiKey.value } };
+    return {
+      instance: credentials.instance,
+      headers: { [apiKey.header]: apiKey.value },
+      ...transport,
+    };
   }
   if (!oauth) {
     const encoded = Buffer.from(`${credentials.user}:${credentials.password}`, "utf8").toString(
       "base64"
     );
-    return { instance: credentials.instance, headers: { Authorization: `Basic ${encoded}` } };
+    return {
+      instance: credentials.instance,
+      headers: { Authorization: `Basic ${encoded}` },
+      ...transport,
+    };
   }
 
   const baseUrl = `https://${credentials.instance}/`;
@@ -220,7 +245,8 @@ async function nodeResolveAuthorization(profile?: string): Promise<MirrorAuthori
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-    });
+      ...transport,
+    } as RequestInit);
     if (!response.ok) {
       throw new MirrorCliError(
         `OAuth token request to ${credentials.instance} failed with HTTP ${response.status}. ` +
@@ -237,6 +263,7 @@ async function nodeResolveAuthorization(profile?: string): Promise<MirrorAuthori
   return {
     instance: credentials.instance,
     headers: { Authorization: `Bearer ${await tokens.getToken()}` },
+    ...transport,
   };
 }
 
@@ -303,11 +330,15 @@ async function buildClient(
   profile?: string
 ): Promise<InstanceType<MirrorEngine["MirrorHttpClient"]>> {
   const auth = await deps.resolveAuthorization(profile);
+  const { dispatcher } = auth;
   return new engine.MirrorHttpClient({
     instance: auth.instance,
     headers: auth.headers,
     requestsPerSecond: config.sync.requestsPerSecond,
     pageSize: config.sync.pageSize,
+    ...(dispatcher
+      ? { fetch: (url, init) => fetch(url, { ...init, dispatcher } as RequestInit) }
+      : {}),
   });
 }
 
