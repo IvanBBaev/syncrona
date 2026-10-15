@@ -326,6 +326,13 @@ describe("snClient request wrappers", () => {
     expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_script/rec-1", { script: "x" });
   });
 
+  it("updateRecord skips the ATF side-call for a step update without a script", async () => {
+    const client = await makeClient();
+    await client.updateRecord("sys_atf_step", "step-1", { description: "d" });
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_atf_step/step-1", { description: "d" });
+  });
+
   it("createRecord POSTs once, asks only for sys_id, and returns it", async () => {
     const client = await makeClient();
     mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "new-1" } } });

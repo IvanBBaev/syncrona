@@ -435,8 +435,14 @@ export const snClient = (
     recordId: string,
     fields: Record<string, string>
   ) => {
-    if (table === "sys_atf_step") {
-      await updateATFfile(fields["inputs.script"], recordId);
+    // Only when the update carries a script, as createRecord does: a push of an
+    // ATF step's `.meta.json` alone has no `inputs.script`, and the side-call
+    // then POSTed `{sys_id}` with no file — failing the metadata push outright
+    // on an instance without the route, and on one with it asking the server
+    // app to replace the step script with nothing.
+    const atfScript = fields["inputs.script"];
+    if (table === "sys_atf_step" && typeof atfScript === "string") {
+      await updateATFfile(atfScript, recordId);
     }
     const endpoint = `api/now/table/${table}/${recordId}`;
     return client.patch(endpoint, fields);
