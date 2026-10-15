@@ -13,3 +13,4 @@
 export * from "./engine";
 export * from "./auth";
 export * from "./uiSession";
+export * from "./recordXml";
