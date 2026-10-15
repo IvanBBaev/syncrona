@@ -76,7 +76,15 @@ export const findFieldRepresentation = async (
   const wanted = canonicalStem(fieldName);
   return entries.find((entry) => {
     const ext = path.extname(entry);
-    return ext !== "" && canonicalStem(path.basename(entry, ext)) === wanted;
+    // Editor and OS leftovers (`script.js~`, `script.bak`) share the stem, but
+    // push ignores them (getFileContextFromPath), so they cannot represent the
+    // field here either: counting one as present hid a deleted `script.js` from
+    // refresh and repair, and made a force download keep the backup instead.
+    return (
+      ext !== "" &&
+      !isEditorArtifactPath(entry) &&
+      canonicalStem(path.basename(entry, ext)) === wanted
+    );
   });
 };
 

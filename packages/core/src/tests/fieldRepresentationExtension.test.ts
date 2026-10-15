@@ -138,6 +138,37 @@ describe("a field is represented by its stem, whatever extension it wears", () =
     );
   });
 
+  it("negative control: an editor backup is not the field's file", async () => {
+    for (const leftover of ["script.js~", "script.bak", "script.tmp"]) {
+      const dir = freshDir();
+      fs.writeFileSync(path.join(dir, leftover), "x");
+
+      await expect(
+        fUtils.SNFileExists(dir)(asFile("script", "js"))
+      ).resolves.toBe(false);
+    }
+  });
+
+  it("negative control: a flat-layout editor backup is not the field's file", async () => {
+    const dir = freshDir();
+    fs.writeFileSync(path.join(dir, "MyUtil~script.js~"), "x");
+
+    await expect(
+      fUtils.SNFileExists(dir)(asFile("MyUtil~script", "js"))
+    ).resolves.toBe(false);
+  });
+
+  it("still sees the .meta.json sidecar beside its own editor backup", async () => {
+    const dir = freshDir();
+    fs.writeFileSync(path.join(dir, ".meta.json~"), "{}");
+
+    await expect(fUtils.findFieldRepresentation(dir, ".meta")).resolves.toBeUndefined();
+    fs.writeFileSync(path.join(dir, ".meta.json"), "{}");
+    await expect(fUtils.findFieldRepresentation(dir, ".meta")).resolves.toBe(
+      ".meta.json"
+    );
+  });
+
   it("reports a field with no local file at all as missing", async () => {
     await expect(
       fUtils.SNFileExists(freshDir())(asFile("script", "js"))
@@ -274,6 +305,17 @@ describe("a force write never creates a second claimant for one field", () => {
   it("still creates the file when the field has no local representation", async () => {
     const dir = path.join(SOURCE, "force-create");
     fs.mkdirSync(dir, { recursive: true });
+
+    await fUtils.writeSNFileForce(withContent("script", "js", "fresh"), dir);
+
+    expect(fs.readFileSync(path.join(dir, "script.js"), "utf8")).toBe("fresh");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("writes the field's file beside a leftover editor backup of it", async () => {
+    const dir = path.join(SOURCE, "force-backup");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "script.js~"), "old");
 
     await fUtils.writeSNFileForce(withContent("script", "js", "fresh"), dir);
 
