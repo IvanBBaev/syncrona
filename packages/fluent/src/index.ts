@@ -16,3 +16,4 @@ export * from "./uiSession";
 export * from "./recordXml";
 export * from "./zip";
 export * from "./pack";
+export * from "./install";

@@ -49,6 +49,11 @@ describe("@syncrona/fluent public surface", () => {
         "packageInventory",
         "readNativeProject",
         "snakeCase",
+        "InstanceSession",
+        "applySetCookies",
+        "flowIds",
+        "nativeInstall",
+        "nativeInstallStatus",
       ].sort(),
     );
   });
