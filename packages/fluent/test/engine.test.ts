@@ -20,6 +20,7 @@ import {
   splitDiagnostics,
 } from "../src/engine";
 import type { SN } from "@syncrona/types";
+import { FakeInstance, INSTANCE, probeProject, removeProbeProjects, res } from "./helpers/fakeInstance";
 
 type Call = { method: string; args: unknown[] };
 
@@ -394,6 +395,93 @@ describe("createFluentEngine", () => {
     (sdk.sdk as { version?: string }).version = undefined;
     expect(await engine(sdk).sdkVersion()).toBeUndefined();
     expect(logger.debug).toHaveBeenCalledWith("fluent: loaded @servicenow/sdk (unknown version)");
+  });
+});
+
+describe("engine choice", () => {
+  afterAll(removeProbeProjects);
+
+  const missing = () => {
+    throw new FluentSdkMissingError();
+  };
+  const basic: SN.FluentAuthResolver = async () => ({ type: "basic", token: "tok", cookie: "JSESSIONID=s1" });
+
+  function chosen(
+    choice: SN.FluentEngineChoice | undefined,
+    loadSdk: (dir: string) => LoadedSdk,
+    extra: { withInstance?: boolean; tls?: SN.FluentTlsOptions; createDispatcher?: jest.Mock } = {},
+  ) {
+    const projectDir = probeProject();
+    const fake = new FakeInstance();
+    const log = { info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+    const instance = extra.withInstance === false ? {} : { instanceUrl: INSTANCE, auth: basic };
+    const e = createFluentEngine(
+      { projectDir, ...instance, tls: extra.tls, logger: log, engine: choice },
+      { loadSdk, fetch: fake.fetch, sleep: async () => undefined, createDispatcher: extra.createDispatcher },
+    );
+    return { e, projectDir, fake, log };
+  }
+
+  it("falls back to the native engine under auto when the SDK is missing, announcing it once", async () => {
+    const { e, projectDir, fake, log } = chosen(undefined, missing);
+    expect(await e.pack({})).toBe(path.join(projectDir, "target", "syncrona_build_probe_0_0_1.zip"));
+    expect(await e.install({ skipFlowActivation: true })).toEqual({ trackerId: "t1", rollbackId: "r1" });
+    expect(await e.installStatus()).toEqual({ finished: false, id: "" });
+    expect(fake.to("sn_appclient_upload_processor.do")).toHaveLength(1);
+    expect(log.info.mock.calls.filter(([m]) => m.includes("not installed"))).toEqual([
+      ["@servicenow/sdk is not installed; fluent pack runs on syncrona's native engine."],
+    ]);
+  });
+
+  it("keeps the SDK under auto when it loads, and surfaces a broken SDK instead of falling back", async () => {
+    const sdk = fakeSdk();
+    expect(await chosen("auto", sdk.loadSdk).e.pack({ packagePath: "x.zip" })).toBe("/p/target/app.zip");
+    expect(of(sdk.calls, "pack")[0].args[0]).toBe("x.zip");
+    const broken = () => {
+      throw new Error("corrupt SDK");
+    };
+    await expect(chosen("auto", broken).e.pack({})).rejects.toThrow("corrupt SDK");
+  });
+
+  it("never falls back when the SDK engine is forced", async () => {
+    await expect(chosen("sdk", missing).e.pack({})).rejects.toThrow(FluentSdkMissingError);
+  });
+
+  it("runs pack, install and status natively without loading the SDK when native is forced", async () => {
+    const loadSdk = jest.fn(missing);
+    const { e, projectDir, fake, log } = chosen("native", loadSdk);
+    expect(await e.pack({ packagePath: "out.zip" })).toBe(path.join(projectDir, "out.zip"));
+    expect(await e.install({ installAsync: true })).toEqual({ trackerId: "t1", rollbackId: "r1" });
+    fake.on("GET", "api/now/table/sys_upgrade_history", res({ result: [{ sys_id: "h1", upgrade_finished: "x" }] }));
+    expect(await e.installStatus()).toEqual({ finished: true, id: "h1" });
+    expect(await e.sdkVersion()).toBeUndefined();
+    expect(loadSdk).not.toHaveBeenCalled();
+    expect(log.info).not.toHaveBeenCalledWith(expect.stringContaining("not installed"));
+  });
+
+  it("refuses the actions the native engine does not cover", async () => {
+    const { e } = chosen("native", fakeSdk().loadSdk);
+    await expect(e.build({})).rejects.toThrow(
+      expect.objectContaining({ code: "FLUENT_NATIVE_UNSUPPORTED", message: expect.stringContaining("pack, install and status only") }),
+    );
+  });
+
+  it.each([
+    ["install", (e: SN.FluentEngine) => e.install({})],
+    ["status", (e: SN.FluentEngine) => e.installStatus()],
+  ])("refuses a native %s without an instance credential", async (action, call) => {
+    await expect(call(chosen("native", missing, { withInstance: false }).e)).rejects.toThrow(
+      `fluent ${action} needs an instance and credentials.`,
+    );
+  });
+
+  it("carries the TLS settings into the native install and status", async () => {
+    const createDispatcher = jest.fn(() => ({}));
+    const tls = { rejectUnauthorized: false };
+    const { e } = chosen("native", missing, { tls, createDispatcher });
+    await e.install({});
+    await e.installStatus();
+    expect(createDispatcher.mock.calls).toEqual([[tls], [tls]]);
   });
 });
 

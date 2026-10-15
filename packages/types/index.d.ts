@@ -401,7 +401,16 @@ export namespace SN {
      */
     tls?: FluentTlsOptions;
     logger: FluentLogger;
+    /**
+     * Which engine runs `pack`, `install` and `installStatus`: `sdk` the
+     * ServiceNow SDK, `native` syncrona's own implementation, and `auto` (the
+     * default) the SDK when it is installed and the native engine otherwise.
+     * Every other action needs the SDK whatever is chosen.
+     */
+    engine?: FluentEngineChoice;
   }
+
+  type FluentEngineChoice = "auto" | "sdk" | "native";
 
   interface FluentBuildResult {
     success: boolean;

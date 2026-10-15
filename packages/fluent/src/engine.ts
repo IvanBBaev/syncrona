@@ -16,11 +16,18 @@
 // Markdown docs the SDK ships in its package root through the lean
 // `@servicenow/sdk-api/docs` module, with its own loader, so it neither loads
 // the full API nor needs an instance.
+//
+// `pack`, `install` and `installStatus` also have a native engine (`./pack`,
+// `./install`) that needs no SDK. The `engine` option picks it: `sdk` and
+// `native` force one, and `auto` (the default) uses the SDK when it loads and
+// falls back to the native engine, with one notice, when it is not installed.
 
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { SN } from "@syncrona/types";
+import { InstallFetch, nativeInstall, nativeInstallStatus } from "./install";
+import { FluentNativeError, nativePack } from "./pack";
 
 // --- The SDK slice this adapter drives -------------------------------------
 
@@ -317,6 +324,9 @@ export interface FluentEngineDeps {
   fileSystem?: unknown;
   /** Builds the dispatcher an engine call installs when `tls` is set. */
   createDispatcher?: FluentDispatcherFactory;
+  /** The native engine's `fetch` and poll wait; injectable so tests make no network calls. */
+  fetch?: InstallFetch;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 function docTopic(doc: SdkDocFile): SN.FluentDocTopic {
@@ -430,12 +440,20 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
   const fileSystem = deps.fileSystem ?? fs;
   const createDispatcher = deps.createDispatcher ?? createTlsDispatcher;
   const { projectDir, instanceUrl, auth, tls, logger } = options;
+  const choice = options.engine ?? "auto";
   let sdk: LoadedSdk | undefined;
+  let fellBack = false;
   let orchestrator: SdkOrchestrator | undefined;
   let credential: unknown;
   const sdkLogger = createSdkLogger();
 
   const loaded = (): LoadedSdk => {
+    if (choice === "native") {
+      throw new FluentNativeError(
+        "The native Fluent engine covers pack, install and status only; this action needs @servicenow/sdk.",
+        "FLUENT_NATIVE_UNSUPPORTED",
+      );
+    }
     if (!sdk) {
       sdk = loadSdk(projectDir);
       logger.debug(`fluent: loaded @servicenow/sdk ${sdk.version ?? "(unknown version)"}`);
@@ -492,6 +510,32 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
     }
   };
 
+  /**
+   * Runs `onSdk` or `onNative` as `choice` says; under `auto` a missing SDK
+   * selects the native engine, announced once per engine.
+   */
+  const pick = async <T>(action: string, onSdk: () => Promise<T>, onNative: () => Promise<T>): Promise<T> => {
+    if (choice === "native") return onNative();
+    if (choice === "auto") {
+      try {
+        loaded();
+      } catch (error) {
+        if (!(error instanceof FluentSdkMissingError)) throw error;
+        if (!fellBack) {
+          fellBack = true;
+          logger.info(`@servicenow/sdk is not installed; fluent ${action} runs on syncrona's native engine.`);
+        }
+        return onNative();
+      }
+    }
+    return onSdk();
+  };
+
+  const nativeDeps = (action: string) => {
+    if (!auth || !instanceUrl) throw new Error(`fluent ${action} needs an instance and credentials.`);
+    return { instanceUrl, auth, logger, fetch: deps.fetch, sleep: deps.sleep };
+  };
+
   return {
     async build(opts) {
       const logged: SdkLogCapture = { errors: [], warnings: [], calls: [] };
@@ -540,21 +584,43 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
     },
 
     async pack(opts) {
-      return withTls(() => orch().pack(opts.packagePath));
+      return pick(
+        "pack",
+        () => withTls(() => orch().pack(opts.packagePath)),
+        async () => nativePack(projectDir, opts.packagePath),
+      );
     },
 
     async install(opts) {
-      const { skipFlowActivation, ...rest } = opts;
-      const request: Record<string, unknown> = { ...rest };
-      if (skipFlowActivation) request.skipFlags = { skipFlowActivation: true };
-      requireCredential("install");
-      const result = await withTls(() => orch().install(request));
-      return result ?? {};
+      return pick(
+        "install",
+        async () => {
+          const { skipFlowActivation, ...rest } = opts;
+          const request: Record<string, unknown> = { ...rest };
+          if (skipFlowActivation) request.skipFlags = { skipFlowActivation: true };
+          requireCredential("install");
+          const result = await withTls(() => orch().install(request));
+          return result ?? {};
+        },
+        () => {
+          const native = nativeDeps("install");
+          return withTls(() => nativeInstall(projectDir, opts, native));
+        },
+      );
     },
 
     async installStatus() {
-      requireCredential("status");
-      return withTls(() => orch().installStatus());
+      return pick(
+        "status",
+        () => {
+          requireCredential("status");
+          return withTls(() => orch().installStatus());
+        },
+        () => {
+          const native = nativeDeps("status");
+          return withTls(() => nativeInstallStatus(projectDir, native));
+        },
+      );
     },
 
     async types(opts) {
@@ -620,7 +686,7 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
     },
 
     async sdkVersion() {
-      return loaded().version;
+      return choice === "native" ? undefined : loaded().version;
     },
   };
 }
