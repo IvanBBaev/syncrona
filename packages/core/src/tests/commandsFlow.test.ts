@@ -3,6 +3,10 @@ import { jest } from "@jest/globals";
 import os from "os";
 import path from "path";
 
+// The CLI resolves an explicit server path before checking it, so on Windows
+// the POSIX literal gains a drive letter; the mocks must key on the same value.
+const MCP_ENTRY = path.resolve("/tmp/mcp/dist/index.js");
+
 export {};
 
 const mockStartWatching = jest.fn();
@@ -885,7 +889,7 @@ describe("command flows", () => {
       ],
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath.includes("@syncrona/typescript-plugin")) {
+      if (candidatePath.includes(path.join("@syncrona", "typescript-plugin"))) {
         return { isDirectory: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -913,7 +917,7 @@ describe("command flows", () => {
       profile: undefined,
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath === "/tmp/mcp/dist/index.js") {
+      if (candidatePath === MCP_ENTRY) {
         return { isFile: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -923,27 +927,27 @@ describe("command flows", () => {
       logLevel: "info",
       autoConfigure: true,
       start: false,
-      mcpServerPath: "/tmp/mcp/dist/index.js",
+      mcpServerPath: MCP_ENTRY,
     });
 
     expect(mockMkdir).toHaveBeenCalled();
     expect(mockWriteFile).toHaveBeenCalledWith(
-      "/tmp/project/.vscode/mcp.json",
+      path.join("/tmp/project", ".vscode", "mcp.json"),
       expect.any(String),
       "utf8"
     );
     expect(mockWriteFile).toHaveBeenCalledWith(
-      "/tmp/project/.syncrona-mcp/secrets.json",
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
       expect.stringContaining("dev.service-now.com"),
       "utf8"
     );
     expect(mockWriteFile).toHaveBeenCalledWith(
-      "/tmp/project/.syncrona-mcp/secrets.json",
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
       expect.not.stringContaining("dev-pass"),
       "utf8"
     );
     expect(mockWriteFile).toHaveBeenCalledWith(
-      "/tmp/project/.syncrona-mcp/secrets.json",
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
       expect.not.stringContaining("password"),
       "utf8"
     );
@@ -977,7 +981,7 @@ describe("command flows", () => {
     });
 
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath === "/tmp/mcp/dist/index.js") {
+      if (candidatePath === MCP_ENTRY) {
         return { isFile: () => true };
       }
       if (expectedPaths.includes(candidatePath)) {
@@ -1005,7 +1009,7 @@ describe("command flows", () => {
         logLevel: "info",
         autoConfigure: true,
         start: false,
-        mcpServerPath: "/tmp/mcp/dist/index.js",
+        mcpServerPath: MCP_ENTRY,
       });
     } finally {
       Object.defineProperty(process, "platform", {
@@ -1023,7 +1027,7 @@ describe("command flows", () => {
       const writtenConfig = JSON.parse(String(match?.[1] ?? "{}"));
       expect(writtenConfig.mcpServers?.existing).toBeDefined();
       expect(writtenConfig.mcpServers?.["syncrona"]).toBeDefined();
-      expect(writtenConfig.mcpServers?.["syncrona"]?.args).toEqual(["/tmp/mcp/dist/index.js"]);
+      expect(writtenConfig.mcpServers?.["syncrona"]?.args).toEqual([MCP_ENTRY]);
     }
   });
 
@@ -1040,7 +1044,7 @@ describe("command flows", () => {
       profile: undefined,
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath === "/tmp/mcp/dist/index.js") {
+      if (candidatePath === MCP_ENTRY) {
         return { isFile: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -1050,7 +1054,7 @@ describe("command flows", () => {
       logLevel: "info",
       autoConfigure: true,
       start: true,
-      mcpServerPath: "/tmp/mcp/dist/index.js",
+      mcpServerPath: MCP_ENTRY,
     });
 
     expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
@@ -1069,7 +1073,7 @@ describe("command flows", () => {
       profile: undefined,
     });
     mockStat.mockImplementation(async (candidatePath: string) => {
-      if (candidatePath === "/tmp/mcp/dist/index.js") {
+      if (candidatePath === MCP_ENTRY) {
         return { isFile: () => true };
       }
       throw Object.assign(new Error("not found"), { code: "ENOENT" });
@@ -1079,7 +1083,7 @@ describe("command flows", () => {
       logLevel: "info",
       autoConfigure: true,
       start: false,
-      mcpServerPath: "/tmp/mcp/dist/index.js",
+      mcpServerPath: MCP_ENTRY,
     });
 
     // stdout must stay byte-clean for MCP stdio clients: routeAllToStderr has

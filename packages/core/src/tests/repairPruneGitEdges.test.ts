@@ -344,18 +344,22 @@ describe("many orphans", () => {
     // logging into the next test's spies.
   }, 30000);
 
-  test("a top-level directory starting with a quote is not read as a C-quoted path", async () => {
-    // hash-object --stdin-paths unquotes a line that starts with `"`.
-    sourceDir = path.join(tmp, '"src');
-    mkdirSync(sourceDir);
-    (ConfigManager.getSourcePath as jest.Mock).mockReturnValue(sourceDir);
-    const leftover = write("sys_script/Gone/script.js");
-    initRepo(tmp);
+  // Windows refuses a `"` in a file name, so no source directory there can start with one.
+  (process.platform === "win32" ? test.skip : test)(
+    "a top-level directory starting with a quote is not read as a C-quoted path",
+    async () => {
+      // hash-object --stdin-paths unquotes a line that starts with `"`.
+      sourceDir = path.join(tmp, '"src');
+      mkdirSync(sourceDir);
+      (ConfigManager.getSourcePath as jest.Mock).mockReturnValue(sourceDir);
+      const leftover = write("sys_script/Gone/script.js");
+      initRepo(tmp);
 
-    await repairCommand(PRUNE);
+      await repairCommand(PRUNE);
 
-    expect(existsSync(leftover)).toBe(false);
-  });
+      expect(existsSync(leftover)).toBe(false);
+    }
+  );
 });
 
 describe("content is compared byte for byte, before any git conversion", () => {
@@ -440,45 +444,49 @@ describe("content is compared byte for byte, before any git conversion", () => {
 });
 
 describe("paths reach git literally, never as pathspec globs", () => {
-  test("the printed restore of `Approval [old]` leaves a live `Approval o` edit alone", async () => {
-    // `[old]` is a glob character class matching `o`: a plain
-    // `git checkout HEAD -- 'sys_script/Approval [old]/script.js'` also resets
-    // the live record's file and discards its unpushed edit.
-    (ConfigManager.getManifest as jest.Mock).mockReturnValue({
-      scope: "x_app",
-      tables: { sys_script: { records: { "Approval o": record("Approval o") } } },
-    });
-    writeFileSync(
-      path.join(tmp, "sync.manifest.json"),
-      JSON.stringify({
+  // The printed command is quoted for a POSIX shell, which a Windows runner lacks at /bin/sh.
+  (process.platform === "win32" ? test.skip : test)(
+    "the printed restore of `Approval [old]` leaves a live `Approval o` edit alone",
+    async () => {
+      // `[old]` is a glob character class matching `o`: a plain
+      // `git checkout HEAD -- 'sys_script/Approval [old]/script.js'` also resets
+      // the live record's file and discards its unpushed edit.
+      (ConfigManager.getManifest as jest.Mock).mockReturnValue({
         scope: "x_app",
-        tables: {
-          sys_script: {
-            records: { "Approval o": record("Approval o"), "Approval [old]": record("Approval [old]") },
+        tables: { sys_script: { records: { "Approval o": record("Approval o") } } },
+      });
+      writeFileSync(
+        path.join(tmp, "sync.manifest.json"),
+        JSON.stringify({
+          scope: "x_app",
+          tables: {
+            sys_script: {
+              records: { "Approval o": record("Approval o"), "Approval [old]": record("Approval [old]") },
+            },
           },
-        },
-      })
-    );
-    const pruned = write("sys_script/Approval [old]/script.js", "old record");
-    const live = write("sys_script/Approval o/script.js", "live v1");
-    initRepo(tmp);
-    writeFileSync(live, "live v2 — unpushed edit");
-    mockPrompt.mockResolvedValue({ confirmed: true });
+        })
+      );
+      const pruned = write("sys_script/Approval [old]/script.js", "old record");
+      const live = write("sys_script/Approval o/script.js", "live v1");
+      initRepo(tmp);
+      writeFileSync(live, "live v2 — unpushed edit");
+      mockPrompt.mockResolvedValue({ confirmed: true });
 
-    await repairCommand({ logLevel: "info", apply: true, prune: true } as never);
+      await repairCommand({ logLevel: "info", apply: true, prune: true } as never);
 
-    expect(existsSync(pruned)).toBe(false);
-    const [[questions]] = mockPrompt.mock.calls as unknown as [[{ message: string }[]]];
-    expect(questions[0].message).toContain("git --literal-pathspecs checkout HEAD -- <file>");
-    const restore = logged(infoSpy)
-      .split("\n")
-      .find((line) => line.includes("checkout HEAD --"));
-    expect(restore).toContain("--literal-pathspecs checkout HEAD -- 'sys_script/Approval [old]/script.js'");
-    // Run the printed command exactly as a user would paste it.
-    execSync(restore!.slice(restore!.indexOf("git -C")), { cwd: tmp, shell: "/bin/sh" });
-    expect(readFileSync(pruned, "utf8")).toBe("old record");
-    expect(readFileSync(live, "utf8")).toBe("live v2 — unpushed edit");
-  });
+      expect(existsSync(pruned)).toBe(false);
+      const [[questions]] = mockPrompt.mock.calls as unknown as [[{ message: string }[]]];
+      expect(questions[0].message).toContain("git --literal-pathspecs checkout HEAD -- <file>");
+      const restore = logged(infoSpy)
+        .split("\n")
+        .find((line) => line.includes("checkout HEAD --"));
+      expect(restore).toContain("--literal-pathspecs checkout HEAD -- 'sys_script/Approval [old]/script.js'");
+      // Run the printed command exactly as a user would paste it.
+      execSync(restore!.slice(restore!.indexOf("git -C")), { cwd: tmp, shell: "/bin/sh" });
+      expect(readFileSync(pruned, "utf8")).toBe("old record");
+      expect(readFileSync(live, "utf8")).toBe("live v2 — unpushed edit");
+    }
+  );
 
   test("the restore template for many files is literal too", async () => {
     const names = Array.from({ length: 11 }, (_, i) => `Leftover [${i}]`);

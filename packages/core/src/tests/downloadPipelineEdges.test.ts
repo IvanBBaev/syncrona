@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import path from "node:path";
 import { jest } from "@jest/globals";
 import { SN } from "@syncrona/types";
 
@@ -177,8 +178,8 @@ describe("processManifest without a previous manifest", () => {
 
     expect(warnings().some((m) => m.includes("Could not move"))).toBe(false);
     expect(createDirRecursively.mock.calls.map((call) => String((call as unknown[])[0])).sort()).toEqual([
-      "/src/t/Foo_s1",
-      "/src/t/foo_s2",
+      path.join("/src", "t", "Foo_s1"),
+      path.join("/src", "t", "foo_s2"),
     ]);
     expect(writeFileForce).toHaveBeenCalledTimes(1);
     const [manifestPath, written] = writeFileForce.mock.calls[0];

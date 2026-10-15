@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "node:path";
 export {};
 
 // Branch edges of commands.ts the other command suites leave untaken:
@@ -203,7 +204,7 @@ beforeEach(() => {
   mockPrompt.mockResolvedValue({ confirmed: true });
 
   mockStat.mockImplementation(async (p: unknown) => {
-    if (p === `${ROOT}/.env`) return { isFile: () => true };
+    if (p === path.join(ROOT, ".env")) return { isFile: () => true };
     throw enoent();
   });
   mockMkdir.mockResolvedValue(undefined);
@@ -227,7 +228,7 @@ describe("initCommand all-scope flow edges", () => {
 
     expect(mockGetManifestApi).toHaveBeenCalledTimes(1);
     expect(mockGetManifestApi.mock.calls[0][0]).toBe("x_v_beta");
-    expect(process.chdir).toHaveBeenCalledWith(`${ROOT}/packages/beta`);
+    expect(process.chdir).toHaveBeenCalledWith(path.join(ROOT, "packages/beta"));
   });
 
   it("rethrows an app-list failure that is not a missing scoped endpoint", async () => {
@@ -255,8 +256,8 @@ describe("initCommand all-scope flow edges", () => {
 
   it("proceeds after an accepted confirmation and keeps an existing sync.config.js", async () => {
     mockStat.mockImplementation(async (p: unknown) => {
-      if (p === `${ROOT}/.env`) return { isFile: () => true };
-      if (p === `${ROOT}/packages/alpha/sync.config.js`) return { isFile: () => true };
+      if (p === path.join(ROOT, ".env")) return { isFile: () => true };
+      if (p === path.join(ROOT, "packages/alpha/sync.config.js")) return { isFile: () => true };
       throw enoent();
     });
 

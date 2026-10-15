@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "node:path";
 export {};
 
 const mockSaveCredentials = jest.fn();
@@ -248,7 +249,7 @@ describe("loginCommand", () => {
       expect.stringContaining("sourceDirectory"),
       "utf8"
     );
-    expect(mockFsMkdir).toHaveBeenCalledWith(expect.stringContaining("/src"), { recursive: true });
+    expect(mockFsMkdir).toHaveBeenCalledWith(expect.stringContaining(`${path.sep}src`), { recursive: true });
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Created default sync.config.js"));
   });
 
@@ -373,11 +374,11 @@ describe("loginCommand", () => {
   it("drops the previous method's keys from .env when re-login switches method", async () => {
     const files = new Map<string, string>();
     files.set(
-      `${process.cwd()}/.env`,
+      path.join(process.cwd(), ".env"),
       "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_AUTH_METHOD=api-key\nSN_API_KEY=OLD-KEY\n"
     );
     // Already ignored, so the .gitignore check never appends to a real file.
-    files.set(`${process.cwd()}/.gitignore`, ".env\n");
+    files.set(path.join(process.cwd(), ".gitignore"), ".env\n");
     mockFsReadFile.mockImplementation(async (p: unknown) => {
       const content = files.get(String(p));
       if (content === undefined) {
@@ -397,7 +398,7 @@ describe("loginCommand", () => {
       password: "secret",
     });
 
-    const env = files.get(`${process.cwd()}/.env`) ?? "";
+    const env = files.get(path.join(process.cwd(), ".env")) ?? "";
     expect(env).toContain("FOO=bar");
     expect(env).toContain("SN_USER=admin");
     expect(env).toContain("SN_PASSWORD=secret");
@@ -406,10 +407,10 @@ describe("loginCommand", () => {
   });
 
   it("leaves .env to the upsert alone when re-login with the same method has nothing stale", async () => {
-    const envPath = `${process.cwd()}/.env`;
+    const envPath = path.join(process.cwd(), ".env");
     const files = new Map<string, string>();
     files.set(envPath, "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_USER=old\nSN_PASSWORD=old\n");
-    files.set(`${process.cwd()}/.gitignore`, ".env\n");
+    files.set(path.join(process.cwd(), ".gitignore"), ".env\n");
     mockFsReadFile.mockImplementation(async (p: unknown) => {
       const content = files.get(String(p));
       if (content === undefined) {

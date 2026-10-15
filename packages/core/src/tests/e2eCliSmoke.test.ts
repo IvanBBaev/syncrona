@@ -93,12 +93,19 @@ describeIfBuilt("CLI e2e smoke (dist binary)", () => {
   }, 30000);
 
   // DX1: check-env runs without a project/instance and reports prerequisites.
+  // Native Windows is unsupported by design: there the platform check fails
+  // and points at WSL, so the healthy-machine exit 0 only holds elsewhere.
   it("check-env reports prerequisites and exits 0 on a healthy machine", async () => {
     const res = await runCli(["check-env"], workspace);
     const out = res.stdout + res.stderr;
-    expect(res.code).toBe(0);
     expect(out).toContain("node:");
-    expect(out).toMatch(/Environment looks good/);
+    if (process.platform === "win32") {
+      expect(res.code).toBe(1);
+      expect(out).toContain("WSL");
+    } else {
+      expect(res.code).toBe(0);
+      expect(out).toMatch(/Environment looks good/);
+    }
   }, 30000);
 
   // DX9: config show-defaults prints the built-in defaults without a project.

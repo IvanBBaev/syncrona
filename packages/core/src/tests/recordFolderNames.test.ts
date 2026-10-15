@@ -308,7 +308,7 @@ describe("migrateRenamedRecordFolders", () => {
     expect(result.leftBehind).toEqual([
       expect.objectContaining({ table: "t", folder: "Solo" }),
     ]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Left \"t/Solo\" in place"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Left "${path.join("t", "Solo")}" in place`));
   });
 
   it("moves nothing for records without a sys_id, and never throws on a null record", async () => {
@@ -366,7 +366,7 @@ describe("migrateRenamedRecordFolders", () => {
       expect(result).toEqual({ moved: [{ table: "t", from: "Foo_s1", to: "Foo" }], leftBehind: [] });
       expect(fs.readFileSync(path.join(root, to), "utf8")).toBe("local edit");
       expect(fs.existsSync(path.join(root, from))).toBe(false);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Renamed "t/Foo_s1" to "t/Foo"'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Renamed "${path.join("t", "Foo_s1")}" to "${path.join("t", "Foo")}"`));
     }
   );
 
@@ -381,7 +381,7 @@ describe("migrateRenamedRecordFolders", () => {
     );
     expect(result.moved).toEqual([]);
     expect(result.leftBehind).toEqual([expect.objectContaining({ table: "t", folder: "Foo_s1" })]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Left "t/Foo_s1" in place'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Left "${path.join("t", "Foo_s1")}" in place`));
     expect(fs.readFileSync(path.join(root, "t/Foo_s1/script.js"), "utf8")).toBe("local edit");
   });
 

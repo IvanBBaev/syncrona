@@ -772,19 +772,26 @@ describe("checkEnvCommand", () => {
     const oldExit = process.exitCode;
     process.exitCode = 0;
     mockExecFileSync.mockReturnValue("git version 2.42.0\n");
-    const { checkEnvCommand } = await import("../diagnosticsCommands.js");
-    const result = checkEnvCommand({ logLevel: "info" } as never);
-    const node = result.checks.find((c) => c.name === "node");
-    const git = result.checks.find((c) => c.name === "git");
-    expect(node?.ok).toBe(true);
-    expect(git?.ok).toBe(true);
-    expect(git?.details).toBe("git version 2.42.0");
-    // On the darwin/linux test host the platform check passes.
-    const platform = result.checks.find((c) => c.name === "platform");
-    expect(platform?.ok).toBe(true);
-    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Environment looks good"));
-    expect(process.exitCode).toBe(0);
-    process.exitCode = oldExit;
+    // Pin a supported platform: native Windows fails the platform check by
+    // design, and the Windows CI job runs this suite too.
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    try {
+      const { checkEnvCommand } = await import("../diagnosticsCommands.js");
+      const result = checkEnvCommand({ logLevel: "info" } as never);
+      const node = result.checks.find((c) => c.name === "node");
+      const git = result.checks.find((c) => c.name === "git");
+      expect(node?.ok).toBe(true);
+      expect(git?.ok).toBe(true);
+      expect(git?.details).toBe("git version 2.42.0");
+      const platform = result.checks.find((c) => c.name === "platform");
+      expect(platform?.ok).toBe(true);
+      expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Environment looks good"));
+      expect(process.exitCode).toBe(0);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+      process.exitCode = oldExit;
+    }
   });
 
   it("flags an outdated Node runtime and fails the exit code (line 518, 559-561)", async () => {

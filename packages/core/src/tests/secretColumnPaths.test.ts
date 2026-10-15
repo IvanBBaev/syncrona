@@ -270,7 +270,7 @@ const leaveFixture = (fixture: Fixture): void => {
 const writtenHolding = (tmp: string, needle: string): string[] =>
   walk(path.join(tmp, "src"))
     .filter((file) => fs.readFileSync(file, "utf8").includes(needle))
-    .map((file) => path.relative(tmp, file));
+    .map((file) => path.relative(tmp, file).split(path.sep).join("/"));
 
 // Every column the scoped bulk download was asked for, as `table.record.column`.
 const missingFilesRequest = (): string[] =>

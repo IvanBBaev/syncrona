@@ -1013,7 +1013,7 @@ describe("fluentCommand: init", () => {
     const { rec, deps } = harness({ files: {}, cwd: "/new/app" });
     expect(await run({ action: "init", name: "App", scope: "x_a" }, deps)).toBe(0);
     expect(rec.calls).toEqual([{ method: "createProject", options: { name: "App", scope: "x_a" } }]);
-    expect(rec.engineOptions[0].projectDir).toBe(path.resolve("/new/app"));
+    expect(rec.engineOptions[0].projectDir).toBe("/new/app");
     expect(infos.join("\n")).toContain("Fluent project created in");
   });
 

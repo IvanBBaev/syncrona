@@ -46,10 +46,23 @@ const config = require(CONFIG_PATH) as {
   modulePathIgnorePatterns: string[];
 };
 
-// Jest's own resolution: expand `<rootDir>` against the root it was started with,
-// then test the result as a regex against the absolute path of the candidate file.
+// The logic of Jest's `replacePathSepForRegex` (jest-regex-util): on Windows
+// it turns every `/` and every path backslash of the expanded pattern into an
+// escaped `\\`, so `D:\a\...` is not read as the regex escapes `\a`, `\s`, ...
+const replacePathSepForRegex = (pattern: string): string =>
+  path.sep === "\\"
+    ? pattern.replace(/(\/|(.)?\\(?![$()*+.?[\\\]^{|}]))/g, (_match, _sep, prev?: string) =>
+        prev && prev !== "\\" ? `${prev}\\\\` : "\\\\"
+      )
+    : pattern;
+
+// Jest's own resolution (jest-config `normalize`): expand `<rootDir>` against the
+// root it was started with, normalise the separators, then test the result as a
+// regex against the absolute path of the candidate file.
 const matches = (patterns: string[], candidate: string, rootDir: string): boolean =>
-  patterns.some((pattern) => new RegExp(pattern.replace(/<rootDir>/g, rootDir)).test(candidate));
+  patterns.some((pattern) =>
+    new RegExp(replacePathSepForRegex(pattern.replace(/<rootDir>/g, rootDir))).test(candidate)
+  );
 
 const isIgnored = (testPath: string, rootDir: string): boolean =>
   matches(config.testPathIgnorePatterns, testPath, rootDir);

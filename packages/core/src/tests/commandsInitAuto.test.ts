@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "node:path";
 export {};
 
 const mockSetLogLevel = jest.fn();
@@ -108,7 +109,7 @@ describe("initCommand auto scope flow", () => {
 
     const enoent = Object.assign(new Error("missing"), { code: "ENOENT" });
     mockStat.mockImplementation(async (targetPath: string) => {
-      if (targetPath === "/tmp/project/.env") {
+      if (targetPath === path.join("/tmp/project", ".env")) {
         return { isFile: () => true };
       }
       throw enoent;
@@ -233,7 +234,8 @@ describe("initCommand auto scope flow", () => {
     await initCommand({ logLevel: "info", ci: true });
 
     const created = mockMkdir.mock.calls.map((call) => String(call[0]));
-    expect(created).toContain("/tmp/project/packages/x_a_../src");
-    expect(created).not.toContain("/tmp/project/packages/../src");
+    expect(created).toContain(path.join("/tmp/project", "packages", "x_a_..", "src"));
+    // A ".." alias would have collapsed to the project's own src directory.
+    expect(created).not.toContain(path.join("/tmp/project", "src"));
   });
 });

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
+import path from "node:path";
 export {};
 
 // R2, `push --prune`, at the command level: the project-root refusal, how
@@ -128,7 +129,7 @@ beforeAll(async () => {
   ({ pushCommand } = await import("../pushCommand.js"));
 });
 
-const CHECKPOINT = "/tmp/project/sync.download.checkpoint.json";
+const CHECKPOINT = path.join("/tmp/project", "sync.download.checkpoint.json");
 const WT_DELETED = ["/tmp/project/src/sys_script_include/Gone/script.js"];
 
 const enoent = () => Object.assign(new Error("not found"), { code: "ENOENT" });

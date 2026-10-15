@@ -152,8 +152,10 @@ describe("PluginManager plugin specifier (REV-140)", () => {
 
   it("pins the failure of the old directory specifier under real Node ESM", async () => {
     // Guards the fix from being reverted to path.join(root, "node_modules", name).
+    // As a file URL, so Windows reaches the directory check instead of
+    // rejecting the drive letter as a URL scheme first.
     const result = runInRealNode(
-      `await import(${JSON.stringify(PLUGIN_DIR)});\n`
+      `await import(${JSON.stringify(pathToFileURL(PLUGIN_DIR).href)});\n`
     );
 
     expect(result.status).not.toBe(0);

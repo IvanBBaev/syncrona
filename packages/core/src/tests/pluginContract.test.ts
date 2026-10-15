@@ -82,14 +82,15 @@ beforeAll(async () => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-plugin-contract-"));
 
   // Records the exact (context, content, options) it was called with, then
-  // appends "|A" so chaining is observable.
+  // appends "|A" so chaining is observable. The path is JSON-quoted so a
+  // Windows path keeps its backslashes inside the generated string literal.
   writePlugin(
     "syncrona-contract-plugin-a",
     `const fs = require("fs");
      module.exports.run = async (context, content, options) => {
-       fs.writeFileSync(${JSON.stringify(path.join("__ARGS__"))}, JSON.stringify({ context, content, options }));
+       fs.writeFileSync(${JSON.stringify(path.join(tmpRoot, "a-args.json"))}, JSON.stringify({ context, content, options }));
        return { success: true, output: content + "|A" };
-     };`.replace("__ARGS__", path.join(tmpRoot, "a-args.json"))
+     };`
   );
   // Echoes an option value so options pass-through is observable.
   writePlugin(

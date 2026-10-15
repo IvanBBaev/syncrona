@@ -318,28 +318,32 @@ describe("refresh and push with unstorable record names", () => {
     }
   });
 
-  it("moves an old checkout's overlong and tab-named folders to their storable names", async () => {
-    const old = `Old ${"x".repeat(210)}`; // 214 bytes: stored before, over the budget now
-    instance = { l1: old, c1: "tab\there", ok: "Plain" };
-    loadedManifest = scopedManifest(); // the old manifest named them verbatim
-    for (const name of [old, "tab\there", "Plain"]) {
-      fs.mkdirSync(path.join(tableDir, name), { recursive: true });
-      fs.writeFileSync(path.join(tableDir, name, "message.txt"), `local ${name.slice(0, 5)}`);
-    }
+  // Windows refuses a tab in a file name, so no old checkout there can hold one.
+  (process.platform === "win32" ? it.skip : it)(
+    "moves an old checkout's overlong and tab-named folders to their storable names",
+    async () => {
+      const old = `Old ${"x".repeat(210)}`; // 214 bytes: stored before, over the budget now
+      instance = { l1: old, c1: "tab\there", ok: "Plain" };
+      loadedManifest = scopedManifest(); // the old manifest named them verbatim
+      for (const name of [old, "tab\there", "Plain"]) {
+        fs.mkdirSync(path.join(tableDir, name), { recursive: true });
+        fs.writeFileSync(path.join(tableDir, name, "message.txt"), `local ${name.slice(0, 5)}`);
+      }
 
-    expect(await syncManifest()).toBe(true);
+      expect(await syncManifest()).toBe(true);
 
-    expect(fs.readdirSync(tableDir).sort()).toEqual(
-      ["Plain", "tab_here", sanitizeRecordFolderName(old)].sort()
-    );
-    expect(fs.readFileSync(path.join(tableDir, "tab_here", "message.txt"), "utf8")).toBe("local tab\th");
-    expect(fs.readFileSync(path.join(tableDir, "Plain", "message.txt"), "utf8")).toBe("local Plain");
-    // Every record's files were moved with their local edits: nothing to re-download.
-    expect(getMissingFilesApi).not.toHaveBeenCalled();
-    expect(warn.mock.calls.filter((c) => String(c[0]).startsWith("Renamed"))).toHaveLength(2);
-    expect(
-      getFileContextFromPath(path.join(tableDir, sanitizeRecordFolderName(old), "message.txt"))
-    ).toMatchObject({ sys_id: "l1" });
+      expect(fs.readdirSync(tableDir).sort()).toEqual(
+        ["Plain", "tab_here", sanitizeRecordFolderName(old)].sort()
+      );
+      expect(fs.readFileSync(path.join(tableDir, "tab_here", "message.txt"), "utf8")).toBe("local tab\th");
+      expect(fs.readFileSync(path.join(tableDir, "Plain", "message.txt"), "utf8")).toBe("local Plain");
+      // Every record's files were moved with their local edits: nothing to re-download.
+      expect(getMissingFilesApi).not.toHaveBeenCalled();
+      expect(warn.mock.calls.filter((c) => String(c[0]).startsWith("Renamed"))).toHaveLength(2);
+      expect(
+        getFileContextFromPath(path.join(tableDir, sanitizeRecordFolderName(old), "message.txt"))
+      ).toMatchObject({ sys_id: "l1" });
     expect(getFileContextFromPath(path.join(tableDir, old, "message.txt"))).toBeUndefined();
-  });
+    }
+  );
 });

@@ -21,7 +21,7 @@ const writtenFiles: { table: string; record: string; file: string }[] = [];
 const createDirRecursively = jest.fn(async () => undefined);
 const writeSNFileCurry = jest.fn(
   () => async (file: SN.File, parentPath: string) => {
-    const parts = parentPath.split("/");
+    const parts = parentPath.split(/[\\/]/);
     writtenFiles.push({
       table: parts[parts.length - 2] ?? "",
       record: parts[parts.length - 1] ?? "",
