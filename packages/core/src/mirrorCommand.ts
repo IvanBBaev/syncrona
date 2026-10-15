@@ -451,13 +451,6 @@ async function runSync(
   // under `.mirror/state/` and advances it only on a run that finished. A CLI that
   // supplied one would be a CLI that could postpone a reconcile indefinitely.
 
-  // A baseline sweep writes the whole instance in one pass, which leaves a repo
-  // full of loose objects; a plain full repack is the measured-cheap way to fold
-  // them into one pack. Incremental syncs are left to `git maintenance`.
-  if (args.full === true) {
-    await deps.runGit(["repack", "-adf"], deps.root);
-  }
-
   if (args.json === true) {
     deps.write(
       JSON.stringify(
@@ -491,6 +484,17 @@ async function runSync(
     } else {
       logger.success("Mirror sweep complete. ✅");
     }
+  }
+
+  // A baseline sweep writes the whole instance in one pass, which leaves a repo
+  // full of loose objects; a plain full repack is the measured-cheap way to fold
+  // them into one pack. Incremental syncs are left to `git maintenance`.
+  //
+  // After the output, not before: a failed repack still exits 1, but the sweep
+  // has finished by then, and its D10 commit message (which `mirror report`
+  // cannot regenerate) and the `--json` document must reach the operator.
+  if (args.full === true) {
+    await deps.runGit(["repack", "-adf"], deps.root);
   }
   return result.exitCode;
 }

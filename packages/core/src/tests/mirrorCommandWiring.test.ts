@@ -363,6 +363,34 @@ describe("shelling out to git", () => {
     expect(text.toLowerCase()).toContain("not a git repository");
   }, 20000);
 
+  it("still prints the finished sweep's result when the repack after it fails", async () => {
+    const { engine } = fakeEngine();
+    const written: string[] = [];
+
+    const code = await run(
+      "sync",
+      {
+        root: await newRoot(),
+        loadEngine: async () => engine,
+        readConfigModule: async () => ({ formatVersion: 1 }),
+        resolveAuthorization: async () => ({ instance: "dev1.service-now.com", headers: {} }),
+        runGit: async (args: string[]) => {
+          if (args[0] === "repack") throw new Error("git repack -adf failed: disk full");
+        },
+        write: (line: string) => written.push(line),
+      },
+      { full: true, json: true }
+    );
+
+    expect(code).toBe(1);
+    expect(written).toHaveLength(1);
+    expect(JSON.parse(written[0])).toMatchObject({
+      command: "sync",
+      exitCode: 0,
+      commitMessage: "mirror: sweep",
+    });
+  });
+
   it("falls back to the spawn error when git never ran and so wrote nothing", async () => {
     // The working directory does not exist, so the failure happens before git has
     // a stderr to write to. Without the fallback the operator would be told
