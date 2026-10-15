@@ -38,6 +38,7 @@ import {
   isScopelessDataModelTable,
 } from "./dataModel.js";
 import { isSafePathComponent } from "./genericUtils.js";
+import { JSON_INTERNAL_TYPES, getJsonFileTables } from "./tablePresets.js";
 import { logger } from "./Logger.js";
 import {
   assignRecordFolderNames,
@@ -628,6 +629,17 @@ const appendIncludedFields = (
 const untypedReasonFor = (hierarchy: TableHierarchy): string =>
   hierarchy.unreadable ?? NO_DICTIONARY_TYPE;
 
+/** The extension a discovered column is stored under (WP3: JSON for a preset table). */
+const fileTypeForColumn = (
+  internalType: string,
+  jsonStringColumns: readonly string[] | undefined
+): SN.FileType =>
+  (jsonStringColumns && JSON_INTERNAL_TYPES.includes(internalType)
+    ? "json"
+    : getFileTypeForInternalType(internalType)) as SN.FileType;
+
+const JSON_TYPE_QUERY = JSON_INTERNAL_TYPES.map((t) => `ORinternal_type=${t}`).join("^");
+
 async function getFileFieldsForTable(
   client: SNClient,
   tableName: string,
@@ -637,7 +649,11 @@ async function getFileFieldsForTable(
   // DX22: the hierarchy walk this function performs is the same one the metadata
   // discovery needs. Handing it back costs nothing and spares the caller a second
   // sys_db_object walk per table.
-  onHierarchy?: (tableNames: string[]) => void
+  onHierarchy?: (tableNames: string[]) => void,
+  // WP3: set for a table an enabled `tablePresets` entry names — the `string`
+  // columns it lists as JSON. Its `json` / `json_translations` columns become
+  // `.json` field files too, which leaves them out of the sidecar.
+  jsonStringColumns?: readonly string[]
 ): Promise<SN.File[]> {
   try {
     // ATF step script is stored in inputs.script and is not reliably available via dictionary.
@@ -652,9 +668,11 @@ async function getFileFieldsForTable(
       .join("^OR");
 
     // Build field exclusion query
-    let query = `${tableNameQuery}^${SN_TYPE_QUERY}^elementISNOTEMPTY`;
+    const typeQuery = jsonStringColumns ? `${SN_TYPE_QUERY}^${JSON_TYPE_QUERY}` : SN_TYPE_QUERY;
+    let query = `${tableNameQuery}^${typeQuery}^elementISNOTEMPTY`;
 
     // Apply field-level excludes
+    const excludedFields: string[] = [];
     if (tableName in excludes && typeof excludes[tableName] === "object") {
       const exFields = Object.keys(excludes[tableName] as Sync.FieldMap);
       for (const exField of exFields) {
@@ -664,6 +682,7 @@ async function getFileFieldsForTable(
           continue;
         }
         query += `^element!=${exField}`;
+        excludedFields.push(exField);
       }
     }
 
@@ -687,8 +706,24 @@ async function getFileFieldsForTable(
       .filter((r) => r.element && dictionaryInternalType(r.internal_type))
       .map((r) => ({
         name: r.element,
-        type: getFileTypeForInternalType(dictionaryInternalType(r.internal_type)) as SN.FileType,
+        type: fileTypeForColumn(dictionaryInternalType(r.internal_type), jsonStringColumns),
       }));
+
+    // WP3: the preset's string columns that hold JSON. Only a column the
+    // dictionary knows is added — a preset names columns across releases, and
+    // one this instance lacks must not become a file nobody can fill.
+    const pendingJson = (jsonStringColumns ?? []).filter(
+      (column) => !excludedFields.includes(column) && !files.some((f) => f.name === column)
+    );
+    if (pendingJson.length > 0) {
+      const types = await readColumnTypes(client, tableName, tableNameQuery, pendingJson);
+      for (const column of pendingJson) {
+        const type = columnTypeOf(types, column);
+        if (type !== undefined && classifyColumn(tableName, column, type) === "safe") {
+          files.push({ name: column, type: "json" as SN.FileType });
+        }
+      }
+    }
 
     // Apply field-level includes overrides. The query above only returns
     // file-typed columns, so an included column's dictionary type has to be
@@ -1769,6 +1804,8 @@ interface TableEnumerationContext {
    * enumerated like a data-model table, without its naming or scoping rules.
    */
   keptSidecarTables: ReadonlySet<string>;
+  /** WP3: the tables enabled presets name → their string columns holding JSON. */
+  jsonFileTables: ReadonlyMap<string, readonly string[]>;
 }
 
 /** One table's enumeration: its manifest entry (if any) and whether it was cut short. */
@@ -1800,7 +1837,8 @@ async function enumerateTable(
     onSkip,
     (names) => {
       hierarchyTableNames = names;
-    }
+    },
+    ctx.jsonFileTables.get(tableName)
   );
   // A table with no field file has nothing to write — unless it is an opted-in
   // data-model table (R4), whose records are their sidecar and nothing else.
@@ -1963,7 +2001,8 @@ function priorRecordsNotIn(
 type ManifestBuildConfig = Pick<
   Sync.Config,
   "includes" | "excludes" | "tableOptions" | "meta" | "dataModelTables"
->;
+> &
+  Partial<Pick<Sync.Config, "tablePresets">>;
 
 /** The enumeration context for `config`, with the R4 opt-in applied. */
 function tableEnumerationContext(
@@ -1989,6 +2028,7 @@ function tableEnumerationContext(
     keptSidecarTables: new Set(
       config.meta === false ? [] : previousSidecarOnlyTables(scopeName, dataModelTables)
     ),
+    jsonFileTables: getJsonFileTables(config),
   };
 }
 
@@ -2178,6 +2218,65 @@ export async function attachDataModelTablesToManifest(
   return manifest;
 }
 
+// ─── Public: attachPresetTablesToManifest ────────────────────────────────────
+
+/**
+ * WP3 on the companion-app path: the scoped `sinc/getManifest` endpoint knows
+ * nothing of `tablePresets`, so it lists a preset table's JSON columns as
+ * nothing at all (a table with no script field is left out entirely). Every
+ * table an enabled preset names is therefore (re)built through the Table API,
+ * replacing the endpoint's entry, exactly as R4 does for data-model tables. A
+ * table the Table API returns nothing for keeps the endpoint's entry.
+ *
+ * A no-op without presets. Mutates and returns `manifest`.
+ */
+export async function attachPresetTablesToManifest(
+  manifest: SN.AppManifest,
+  client: SNClient,
+  config: Partial<ManifestBuildConfig>
+): Promise<SN.AppManifest> {
+  const presetTables = getJsonFileTables(config);
+  if (presetTables.size === 0) {
+    return manifest;
+  }
+  const scopeId = manifest.scopeId || (await getScopeId(client, manifest.scope));
+  if (!scopeId) {
+    throw new Error(
+      `Scope "${manifest.scope}" not found on this instance. Check the scope code.`
+    );
+  }
+  resetTableHierarchyCache();
+  const ctx = tableEnumerationContext(client, manifest.scope, scopeId, {
+    includes: config.includes ?? {},
+    excludes: config.excludes ?? {},
+    tableOptions: config.tableOptions ?? {},
+    meta: config.meta,
+    dataModelTables: config.dataModelTables,
+    tablePresets: config.tablePresets,
+  });
+  // A preset never overrides a table the project switched off.
+  const wanted = [...presetTables.keys()].filter(
+    (tableName) =>
+      ctx.includes[tableName] !== false &&
+      !(ctx.excludes[tableName] === true && ctx.includes[tableName] === undefined)
+  );
+  const built: SN.AppManifest["tables"] = Object.create(null);
+  await enumerateTables(ctx, manifest.scope, wanted, built, config);
+  const merged: SN.AppManifest["tables"] = Object.assign(
+    Object.create(null),
+    manifest.tables || {}
+  );
+  // A table the Table API returned nothing for keeps whatever the endpoint
+  // listed: the preset adds JSON files to records, it never removes records.
+  for (const tableName of wanted) {
+    if (Object.prototype.hasOwnProperty.call(built, tableName)) {
+      merged[tableName] = built[tableName];
+    }
+  }
+  manifest.tables = merged;
+  return manifest;
+}
+
 // ─── Public: discoverTableMetaFields ─────────────────────────────────────────
 
 /**
@@ -2205,7 +2304,8 @@ export async function discoverTableMetaFields(
     undefined,
     (names) => {
       hierarchyTableNames = names;
-    }
+    },
+    ctx.jsonFileTables.get(tableName)
   );
   return getMetaFieldsForTable(
     client,
@@ -2255,8 +2355,10 @@ export async function attachMetaFieldsToManifest(
   manifest: SN.AppManifest,
   client: SNClient,
   config: Pick<Sync.Config, "tableOptions" | "meta"> &
-    Partial<Pick<Sync.Config, "includes" | "excludes" | "dataModelTables">>
+    Partial<Pick<Sync.Config, "includes" | "excludes" | "dataModelTables" | "tablePresets">>
 ): Promise<SN.AppManifest> {
+  // WP3: before the `meta` opt-out — JSON field files are files, not metadata.
+  await attachPresetTablesToManifest(manifest, client, config);
   // Same opt-out as the builder: `meta: false` means a project has decided it
   // wants the pre-DX22 workspace, and that decision must hold on both paths.
   if (config.meta === false) {

@@ -9,6 +9,7 @@ import { logger } from "./Logger.js";
 import { includes, excludes, tableOptions } from "./defaultOptions.js";
 import { isValidDataModelTableName } from "./dataModel.js";
 import { DATA_MODEL_LAYOUTS, isValidDataModelLayout } from "./dataModelComposite.js";
+import { TABLE_PRESET_NAMES, isTablePresetName } from "./tablePresets.js";
 
 // #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
 // so a scoped deploy never silently degrades into a full deploy.
@@ -77,6 +78,8 @@ const DEFAULT_CONFIG: Sync.Config = {
   // SDK-F2: one sidecar per record stays the default; "composite" keeps a
   // table, its columns and their choices in one data-model document.
   dataModelLayout: "records",
+  // WP3: JSON columns stay sidecar strings unless a project opts a preset in.
+  tablePresets: [],
 };
 
 type ConfigState = {
@@ -143,6 +146,7 @@ const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" 
   createTables: "array",
   dataModelTables: "array",
   dataModelLayout: "string",
+  tablePresets: "array",
 };
 
 // Node clamps a timer delay above 2^31-1 ms to 1 ms, so a "practically never"
@@ -217,6 +221,19 @@ export function validateConfigShape(config: unknown, configPath: string): void {
       `"dataModelLayout" must be one of ${DATA_MODEL_LAYOUTS.map((v) => `"${v}"`).join(", ")}; ` +
         `got ${JSON.stringify(dataModelLayout)}`
     );
+  }
+
+  // A misspelt preset would silently sync nothing, and the JSON columns it
+  // meant would keep landing in the sidecar with no hint why.
+  const tablePresets = (config as { tablePresets?: unknown }).tablePresets;
+  if (Array.isArray(tablePresets)) {
+    const invalid = tablePresets.filter((entry) => !isTablePresetName(entry));
+    if (invalid.length > 0) {
+      errors.push(
+        `"tablePresets" must list preset names (${TABLE_PRESET_NAMES.map((v) => `"${v}"`).join(", ")}); ` +
+          `invalid: ${invalid.map((entry) => JSON.stringify(entry)).join(", ")}`
+      );
+    }
   }
 
   if (errors.length > 0) {

@@ -83,6 +83,14 @@ export namespace Sync {
      * per table holding the table, its columns and their choices.
      */
     dataModelLayout?: "records" | "composite";
+    /**
+     * WP3: named table groups (`"uib"`, `"workspace"`, `"ai"`) whose JSON
+     * columns — every `json` / `json_translations` column plus the string
+     * columns a preset names as JSON (e.g. `sys_ux_macroponent.composition`) —
+     * are synced as `.json` field files instead of sidecar strings. Opt-in:
+     * defaults to an empty list. Unknown names are refused.
+     */
+    tablePresets?: string[];
   }
 
   interface ITableOptionsMap {

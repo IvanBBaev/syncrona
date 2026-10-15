@@ -11,6 +11,7 @@ import {
   META_FILE_TYPE,
   isMetaSidecarPath,
 } from "./metaFields.js";
+import { findSecretJsonPaths, formatJsonFieldForDisk } from "./jsonFieldFiles.js";
 import { logger } from "./Logger.js";
 
 const sleep = (ms: number): Promise<void> =>
@@ -199,6 +200,22 @@ export const writeSNFileCurry = (checkExists: boolean) => async (
     } catch (_) {
       content = String(content);
     }
+  }
+  if (type === "json" && !isMetaSidecarPath(`${name}.${type}`)) {
+    // WP3. A credential inside a JSON column (an AI tool's attributes, an
+    // external agent's configuration) must not land in the working tree, where
+    // the next commit carries it off. The field is withheld, not redacted: a
+    // redacted file would push the placeholder back over the real value.
+    const secretPaths = findSecretJsonPaths(content);
+    if (secretPaths.length > 0) {
+      logger.warn(
+        `Withholding "${name}.${type}" under ${parentPath}: it holds a credential ` +
+          `at ${secretPaths.join(", ")}. Move the value to a credential record ` +
+          `or a system property, then download again.`
+      );
+      return;
+    }
+    content = formatJsonFieldForDisk(content);
   }
   const write = async () => {
       const fullPath = path.join(parentPath, `${name}.${type}`);

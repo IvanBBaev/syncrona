@@ -743,6 +743,10 @@ module.exports = {
   // `data-model/<table>.json` document per table ("composite") instead of one
   // sidecar per record ("records", the default). See "Data model" below.
   dataModelLayout: "records",
+  // (Opt-in) Sync the JSON columns of UI Builder, workspace and AI Agent
+  // configuration tables as `.json` field files: any of "uib", "workspace",
+  // "ai" (see "JSON columns" below). Empty by default.
+  tablePresets: [],
 };
 ```
 
@@ -912,6 +916,48 @@ sidecar per record. Push stays diff-only and goes table, then columns, then
 choices. A workspace that mixes both layouts is refused.
 The documented tables, the naming rules and the push contract are in
 [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+
+#### JSON columns (`tablePresets`)
+
+UI Builder pages, workspaces and AI Agent tools keep their configuration in JSON
+columns, which a default workspace only sees as strings inside a `.meta.json`
+sidecar. `tablePresets` turns those columns into `.json` field files:
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  tablePresets: ["uib", "workspace", "ai"],
+};
+```
+
+| Preset | Tables |
+|---|---|
+| `uib` | `sys_ux_macroponent` (composition, data, layout, props, root component config and definition), screens, client scripts, data brokers, events, page properties, presets, controllers, widgets, extension points, themes and styles |
+| `workspace` | `sys_ux_app`, `sys_ux_app_config`, the page registry, route mappings, keyboard shortcuts, layout bounds, search result components, reflow and macroponent rules, `par_dashboard_widget` |
+| `ai` | `sn_aia_tool`, `sn_aia_agent_tool_m2m` and the external agent cards, configurations and skills |
+
+On those tables every column the dictionary types `json` or `json_translations`
+becomes a field file, plus the string columns the preset names when this
+instance's dictionary has them. A field file is never also a sidecar column.
+
+- **Download** pretty-prints a value only when it is stored minified (exactly
+  `JSON.stringify` of itself). Any other value — indented, spaced, with escaped
+  unicode — is written byte for byte, so nothing is rewritten into a form it
+  was not.
+- **Push** refuses a `.json` field file that is not JSON, and minifies a file that
+  is exactly the 2-space form of its value, so a downloaded-then-pushed value
+  comes back unchanged. A value the instance holds as 2-space indented JSON is
+  minified by its first push; the JSON is the same.
+- A value with a credential-named key (`password`, `api_key`, `client_secret`,
+  `access_token`, …) holding a non-empty string is **not written**; the download
+  warns with the key path. Move the value to a credential record or a system
+  property.
+- `sys_uxf_snapshot` is never synced: UI Builder regenerates it on publish, and
+  `push` refuses one.
+
+Unknown preset names fail config validation. Tables the project switched off in
+`includes`/`excludes` stay off.
 
 ### There are WAY too many files in here!
 

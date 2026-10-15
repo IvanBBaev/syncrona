@@ -56,7 +56,8 @@ const SCRIPT_PATH = "/proj/src/sys_script_include/IncludeA/script.js";
 
 const ctx = (filePath: string, targetField: string): Sync.FileContext => ({
   filePath,
-  ext: ".json",
+  // As the file walk sets it: a field file's own extension, not the sidecar's.
+  ext: filePath.slice(filePath.lastIndexOf(".")),
   name: "IncludeA",
   scope: "x_demo",
   sys_id: "rec-1",

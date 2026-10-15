@@ -207,14 +207,14 @@ module.exports = {
     // hooks, not absorbed by widening the gate.
 
     // Local filesystem writes and the path-containment guard.
-    './src/FileUtils.ts': { lines: 95, branches: 89 }, // measured 98.85 / 95.71
+    './src/FileUtils.ts': { lines: 95, branches: 89 }, // measured 98.87 / 95.89
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
-    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.74
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.78
     './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.97 / 94.42
+    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 98.89 / 93.55
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
     // Merges and rewrites the data-model documents (SDK-F2).
     './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75
@@ -226,7 +226,7 @@ module.exports = {
     './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // The instance-host normalizer both of the above go through (#20).
     './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
-    './src/config.ts': { lines: 96, branches: 91 }, // measured 99.58 / 96.62
+    './src/config.ts': { lines: 96, branches: 91 }, // measured 99.59 / 96.70
     './src/envFile.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
