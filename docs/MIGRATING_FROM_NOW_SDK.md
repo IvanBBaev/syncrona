@@ -60,12 +60,12 @@ scope. [MONOREPO_GUIDE.md](MONOREPO_GUIDE.md) describes the layout, and
 | `now-sdk build` | `syncrona fluent build` | `--frozenKeys`, `--errorOnConflict`, `--skipClean`. Exit code 2 on build errors. |
 | `now-sdk transform` | `syncrona fluent transform` | Local `--paths` (with `--table`, `--force`), one `--update-set <sys_id>`, `--incremental`, or a complete transform. |
 | `now-sdk download` | `syncrona fluent transform --incremental` (Fluent) or `syncrona refresh` / `download` (file-based) | There is no separate `fluent download` action: the incremental or complete transform pulls from the instance and converts in one step. |
-| `now-sdk pack` | `syncrona fluent pack` | `--out <path>`. |
+| `now-sdk pack` | `syncrona fluent pack` | `--out <path>`. Runs without the SDK too (see `--engine` below). |
 | `now-sdk install` | `syncrona fluent install` | Confirms before installing unless `--ci`; `--store`, `--sync`, `--no-demo-data`, `--skipFlowActivation`. Without a terminal, or with `--json`, it exits 1 and asks for `--ci`. Exits 0 once the install is submitted; `fluent status` exits 2 while it is still running. |
 | `now-sdk clean` | — | `now-sdk clean` only empties the local build output directory. syncrona has no separate clean action: delete the output directory, or run `syncrona fluent build` (it cleans first unless `--skipClean`). Do not confuse it with `syncrona fluent install --reinstall`, which is the counterpart of `now-sdk install --reinstall` and uninstalls the application from the instance before installing it again. |
 | `now-sdk dependencies` | `syncrona fluent dependencies` / `syncrona fluent types` | `dependencies --table <t> --ids <a,b> --scope <s>` adds a dependency; without `--table` (or with `types --scripts` / `--fluent`) it downloads type definitions. `fluent types --native` generates table types from `sys_dictionary` without the SDK, and a plain `fluent types` falls back to it when the SDK is not installed. |
 | `now-sdk run` | `syncrona fluent run --script <name>` | Runs a project script locally through the SDK. The script gets no instance credential. |
-| — | `syncrona fluent status` | The SDK version and the last install's progress. |
+| — | `syncrona fluent status` | The SDK version (or the native engine) and the last install's progress. |
 | `now-sdk query <table>` | `syncrona query <table>` | The SDK's query flags except `-s/--select` and `-a/--auth` (`-q` required, `--limit 100`, `--offset`, `-f/--fields`, `--display-value`, `--exclude-reference-link`, `--no-count`, `--view`, `--timeout`). `-o json` prints the same `{ok, hasMore, nextOffset, records}` envelope, so scripts written against `now-sdk query -o json` keep working as long as they do not use `--select`; pick the instance with `syncrona use` instead of `--auth`. Read-only; needs no SDK. |
 | `now-sdk cicd` | `syncrona cicd <action>` | Drives `api/sn_cicd` directly, with no SDK: `run-suite`, `run-test`, `install`, `publish`, `rollback`. Polls the progress tracker (`--poll-ms`, `--timeout`); `--progress-id` resumes a run that outlived `--timeout`. Exit codes are 0 succeeded, 1 could not finish, and 2 tests failed or the work ended in error. Needs the `sn_cicd.sys_ci_automation` role. |
 | `now-sdk explain` | `syncrona fluent explain [topic]` | Reads the documentation bundled with the installed SDK, offline: an exact topic prints the document, a partial match lists candidates, `--list` prints the topic index (filtered by the topic when given) and `--peek` shows summaries. Needs no project, instance or credentials. Exit code 1 when nothing matches. |
@@ -77,8 +77,9 @@ which prints the SDK call it would make without resolving any credentials or
 reaching the instance. Every action but `types --native` loads the adapter and
 the SDK on `--dry-run`, to check that they are installed: when one is missing the
 preview prints the install hint and exits 1, as the real run does, and a plain
-`fluent types --dry-run` reports the native fallback instead when the real run
-would take it. `cicd` and `query` have no preview mode and refuse `--dry-run`
+`fluent types --dry-run` (or a `pack`, `install` or `status` preview) reports the
+native fallback instead when the real run would take it; `--engine native` checks
+the adapter only. `cicd` and `query` have no preview mode and refuse `--dry-run`
 instead of ignoring it.
 
 ## Environment variables
@@ -172,6 +173,14 @@ Beyond what the SDK covers:
 - **Diagnostics.** `status`, `doctor` and `check-env` tell you which
   credentials are active and why a connection fails
   ([TROUBLESHOOTING.md](TROUBLESHOOTING.md)).
+- **Pack, install and status without the SDK.** `@syncrona/fluent` carries a
+  native engine for `fluent pack`, `install` and `status`. `pack` zips an
+  already-built application directory (`dist/app`) with the same
+  `package_inventory.csv` and archive name the SDK writes; `install` uploads it
+  through `sn_appclient_upload_processor.do` and `status` reads the install's
+  progress. By default these actions use the SDK when it is installed and fall
+  back to the native engine, with a one-line notice, when it is not;
+  `--engine sdk` or `--engine native` forces one. Building still needs the SDK.
 - **Table types without the SDK.** `syncrona fluent types --native` reads
   `sys_db_object`, `sys_dictionary` and `sys_choice` over the Table API and
   writes one `.d.ts` to `@types/syncrona/tables.d.ts` in the project (or

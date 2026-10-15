@@ -973,6 +973,12 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         type: "string",
         describe: "pack: output path for the application package; types --native: output .d.ts path",
       },
+      engine: {
+        type: "string",
+        choices: ["sdk", "native"],
+        describe:
+          "pack, install, status: force the ServiceNow SDK or syncrona's native engine (default: the SDK when installed)",
+      },
       reinstall: { type: "boolean", describe: "install: uninstall the application first, then install" },
       store: { type: "boolean", describe: "install: install as a store application" },
       sync: { type: "boolean", describe: "install: wait for the install instead of returning a tracker" },
@@ -1006,6 +1012,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
       ["$0 fluent install --ci", "Install the packed application without prompting"],
       ["$0 fluent install --reinstall", "Uninstall the application, then install it again"],
       ["$0 fluent status", "Show the SDK version and the last install's progress"],
+      ["$0 fluent install --engine native --ci", "Install the packed application without the ServiceNow SDK"],
       ["$0 fluent build --dry-run", "Print the SDK call without running it"],
       ["$0 fluent types --native", "Generate the scope's table types without the SDK"],
       ["$0 fluent explain table", "Read the SDK's documentation on a topic, offline"],

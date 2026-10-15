@@ -61,7 +61,9 @@ It complements README and package-level docs with implementation and quality-gat
   `status`, `explain [topic]` (the SDK's bundled docs, offline; `--list`, `--peek`) and
   `move-to-app --ids` (global records into a global app; prompts unless `--ci`, and needs
   `--ci` without a terminal or with `--json`). `types --native` generates table types from `sys_dictionary` without the SDK,
-  and a plain `types` falls back to it when the SDK is missing.
+  and a plain `types` falls back to it when the SDK is missing. `pack`, `install` and `status`
+  also run on the adapter's native engine, without the SDK: the default uses the SDK when it is
+  installed and falls back to native otherwise, and `--engine sdk|native` forces one.
   It exits 0 on success (`install` once submitted), 1 on failure, and 2 on build errors, a
   `status` whose install has not finished, or a `move-to-app` that moved nothing.
 

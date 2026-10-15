@@ -13,6 +13,10 @@
  *    core's own location, on the first non-dry-run action, never at startup.
  *    Loading the SDK costs over a second, and `syncrona --help` must not pay it.
  *    If either package is missing, the command prints one install hint and exits 1.
+ *    `pack`, `install` and `status` are the exception to the SDK half: the
+ *    adapter carries a native engine for them and uses it when the SDK is not
+ *    installed (saying so once). `--engine sdk|native` forces one; `--engine
+ *    native` never loads the SDK, `--engine sdk` fails without it.
  *
  * 2. **Credentials.** Core resolves the active profile and hands the adapter
  *    a `SN.FluentCredentialInput`. A Basic profile becomes a UI-session login
@@ -54,8 +58,9 @@
  * wherever the real run's local checks would. Every action but
  * `types --native` loads the adapter and asks it for the SDK version, the same
  * resolution the real run makes: a missing adapter or SDK fails the preview with
- * the install hint, as it fails the run, and a plain `fluent types` reports the
- * native fallback when the real run would take it.
+ * the install hint, as it fails the run, and a plain `fluent types` (or a
+ * `pack`, `install` or `status`) reports the native fallback when the real run
+ * would take it. `--engine native` probes the adapter only.
  *
  * `install` and `move-to-app` read the `scope` from `now.config.json`; a file
  * that cannot be parsed, or that sets no scope, is refused with an error naming
@@ -123,6 +128,8 @@ export type FluentCmdArgs = Sync.SharedCmdArgs & {
   frozenKeys?: boolean;
   errorOnConflict?: boolean;
   skipClean?: boolean;
+  // pack, install, status
+  engine?: string;
   // pack, types --native
   out?: string;
   // install
@@ -335,6 +342,30 @@ export interface FluentPlan {
   method: keyof SN.FluentEngine | "nativeTypes";
   options: Record<string, unknown>;
   instance: boolean;
+  /** The engine `--engine` forced; absent means the adapter's `auto`. */
+  engine?: "sdk" | "native";
+}
+
+/** The actions the adapter can run without the SDK, on syncrona's native engine. */
+export const NATIVE_ENGINE_ACTIONS: readonly FluentAction[] = ["pack", "install", "status"];
+
+function canRunNatively(action: FluentAction): boolean {
+  return NATIVE_ENGINE_ACTIONS.includes(action);
+}
+
+/** Validates `--engine`: `sdk` or `native`, and only on an action that has both. */
+function engineOf(action: FluentAction, args: FluentCmdArgs): FluentPlan["engine"] {
+  if (args.engine === undefined) return undefined;
+  const engine = String(args.engine).trim();
+  if (engine !== "sdk" && engine !== "native") {
+    throw new FluentCliError(`--engine must be "sdk" or "native" (got "${engine}").`);
+  }
+  if (!canRunNatively(action)) {
+    throw new FluentCliError(
+      `fluent ${action} has no --engine choice: only ${NATIVE_ENGINE_ACTIONS.join(", ")} run without the SDK.`
+    );
+  }
+  return engine;
 }
 
 function csv(value: string | undefined): string[] {
@@ -361,6 +392,12 @@ function nativeTypesOptions(args: FluentCmdArgs): Record<string, unknown> {
 
 /** Maps CLI flags to one engine call. Pure, so `--dry-run` and tests share it. */
 export function planFluentAction(action: FluentAction, args: FluentCmdArgs): FluentPlan {
+  const plan = planEngineCall(action, args);
+  const engine = engineOf(action, args);
+  return engine ? { ...plan, engine } : plan;
+}
+
+function planEngineCall(action: FluentAction, args: FluentCmdArgs): FluentPlan {
   // The `[topic]` positional exists for `explain` only. Accepted and ignored on
   // any other action, `fluent install prod --ci` would install while the caller
   // believed they had named a target.
@@ -809,27 +846,37 @@ function assertConsentReachable(deps: FluentCommandDeps, action: FluentAction, a
 }
 
 /**
- * Whether the adapter or the SDK is missing, resolved exactly as the real run
- * resolves them; nothing reads the credential store or reaches the instance.
- * `--dry-run` uses it to fail where the real run would (and to report the
- * native fallback of a plain `fluent types`). Any failure other than "not
- * installed" surfaces, as it would in the real run.
+ * Which part of the tier is missing, resolved exactly as the real run resolves
+ * it; nothing reads the credential store or reaches the instance. `--dry-run`
+ * uses it to fail where the real run would (and to report the native fallback
+ * of a plain `fluent types`, or of pack, install and status). Any failure other
+ * than "not installed" surfaces, as it would in the real run.
  */
-async function sdkMissing(deps: FluentCommandDeps, projectDir: string): Promise<boolean> {
+async function probeTier(
+  deps: FluentCommandDeps,
+  projectDir: string,
+  sdk = true
+): Promise<"adapter" | "sdk" | undefined> {
   let fluent: SN.FluentModule;
   try {
     fluent = await deps.loadFluent(projectDir);
   } catch (e) {
-    if (e instanceof FluentNotInstalledError) return true;
+    if (e instanceof FluentNotInstalledError) return "adapter";
     throw e;
   }
+  if (!sdk) return undefined;
   try {
     await fluent.createFluentEngine({ projectDir, logger: fluentLogger }).sdkVersion();
-    return false;
+    return undefined;
   } catch (e) {
-    if (isSdkMissing(e)) return true;
+    if (isSdkMissing(e)) return "sdk";
     throw e;
   }
+}
+
+/** Whether the adapter or the SDK is missing; see `probeTier`. */
+async function sdkMissing(deps: FluentCommandDeps, projectDir: string): Promise<boolean> {
+  return (await probeTier(deps, projectDir)) !== undefined;
 }
 
 const NATIVE_READS = "read sys_db_object, sys_dictionary and sys_choice";
@@ -849,8 +896,23 @@ async function dryRun(deps: FluentCommandDeps, action: FluentAction, plan: Fluen
   const { projectDir } = await checkLocalPreconditions(deps, action, args);
   // Every non-native action loads the adapter and the SDK in the real run, which
   // exits 1 with the install hint when either is missing; the preview probes them
-  // the same way, so it never passes where the run would fail.
-  const missing = await sdkMissing(deps, projectDir);
+  // the same way, so it never passes where the run would fail. `--engine native`
+  // needs the adapter only, and pack, install and status fall back to it when the
+  // SDK alone is missing.
+  const missing = await probeTier(deps, projectDir, plan.engine !== "native");
+  const native = plan.engine === "native" || (missing === "sdk" && plan.engine !== "sdk");
+  if (canRunNatively(action) && missing !== "adapter" && native) {
+    const fallback = plan.engine === "native" ? "" : `${FLUENT_SDK_PACKAGE} is not installed; `;
+    writeDryRun(
+      deps,
+      action,
+      { ...plan, engine: "native" },
+      args,
+      `[dry-run] fluent ${action} → ${fallback}native engine.${String(plan.method)}(${JSON.stringify(plan.options)})` +
+        (plan.instance ? " against the active instance" : " (local only)")
+    );
+    return;
+  }
   if (missing && !canFallBackToNative(action, args)) throw new FluentNotInstalledError();
   if (missing) {
     const native: FluentPlan = { method: "nativeTypes", options: nativeTypesOptions(args), instance: true };
@@ -886,6 +948,7 @@ function writeDryRun(deps: FluentCommandDeps, action: FluentAction, plan: Fluent
           method: plan.method,
           options: plan.options,
           instance: plan.instance,
+          ...(plan.engine ? { engine: plan.engine } : {}),
         },
         null,
         2
@@ -894,6 +957,25 @@ function writeDryRun(deps: FluentCommandDeps, action: FluentAction, plan: Fluent
     return;
   }
   deps.write(line);
+}
+
+/**
+ * The SDK version an action will run on. `--engine native` never loads the SDK;
+ * under `auto`, pack, install and status run natively when it is missing (the
+ * adapter says so once), so only a broken SDK, or a forced `sdk`, fails here.
+ */
+async function engineVersion(
+  engine: SN.FluentEngine,
+  action: FluentAction,
+  plan: FluentPlan
+): Promise<{ native: boolean; version?: string }> {
+  if (plan.engine === "native") return { native: true };
+  try {
+    return { native: false, version: await engine.sdkVersion() };
+  } catch (e) {
+    if (isSdkMissing(e) && canRunNatively(action) && plan.engine === undefined) return { native: true };
+    throw e;
+  }
 }
 
 async function execute(
@@ -944,6 +1026,7 @@ async function execute(
   const engine = fluent.createFluentEngine({
     projectDir,
     logger: fluentLogger,
+    ...(plan.engine ? { engine: plan.engine } : {}),
     ...(credential
       ? {
           instanceUrl: credential.instanceUrl,
@@ -957,7 +1040,7 @@ async function execute(
 
   if (action === "install") {
     // Load the SDK now, so a missing or broken SDK fails before the user consents.
-    await engine.sdkVersion();
+    await engineVersion(engine, action, plan);
     if (args.reinstall) {
       logger.warn(`--reinstall uninstalls ${scope} from the instance before installing it again.`);
     }
@@ -1028,11 +1111,11 @@ async function execute(
       return 0;
     }
     case "installStatus": {
-      const version = await engine.sdkVersion();
+      const { native, version } = await engineVersion(engine, action, plan);
       const status = await engine.installStatus();
       const exitCode = status.finished ? 0 : 2;
-      emit({ exitCode, sdkVersion: version ?? null, ...status }, () => {
-        logger.info(`@servicenow/sdk ${version ?? "(unknown version)"}`);
+      emit({ exitCode, engine: native ? "native" : "sdk", sdkVersion: version ?? null, ...status }, () => {
+        logger.info(native ? "Engine: syncrona native" : `@servicenow/sdk ${version ?? "(unknown version)"}`);
         logger.info(
           status.finished
             ? `Last install finished${status.id ? ` (${status.id})` : ""}.`
