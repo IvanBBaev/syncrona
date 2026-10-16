@@ -38,15 +38,23 @@ import {
   type ArtefactSpec,
   type BuildContext,
 } from "./artefacts/shared";
+import { acl } from "./artefacts/acl";
+import { businessRule } from "./artefacts/businessRule";
+import { clientScript } from "./artefacts/clientScript";
 import { property } from "./artefacts/property";
 import { role } from "./artefacts/role";
 import { scriptInclude } from "./artefacts/scriptInclude";
+import { uiAction } from "./artefacts/uiAction";
 
 /** The SDK core APIs the native compiler builds. */
 export const SUPPORTED_APIS: Readonly<Record<string, ArtefactSpec>> = {
+  Acl: acl,
+  BusinessRule: businessRule,
+  ClientScript: clientScript,
   Property: property,
   Role: role,
   ScriptInclude: scriptInclude,
+  UiAction: uiAction,
 };
 
 /** Names of the SDK core APIs the native compiler builds. */
@@ -56,7 +64,14 @@ export const SUPPORTED_FLUENT_APIS: readonly string[] =
 /** Tables the supported APIs produce; keys of any other table are kept as they are. */
 const EMITTED_TABLES = new Set([
   "sys_properties",
+  "sys_script",
+  "sys_script_client",
   "sys_script_include",
+  "sys_security_acl",
+  "sys_security_acl_role",
+  "sys_ui_action",
+  "sys_ui_action_role",
+  "sys_ui_action_view",
   "sys_user_role",
   "sys_user_role_contains",
 ]);
@@ -199,6 +214,7 @@ export function compileFluentProject(
     { record?: CompiledRecord; error?: unknown }
   >();
   const ctx: BuildContext = {
+    ts,
     scope: config.scope,
     scopeId: config.scopeId,
     factory,
@@ -240,7 +256,6 @@ export function compileFluentProject(
     const policy = opts.protectionPolicy();
     if (policy !== undefined) {
       for (const r of flatten(record)) {
-        /* istanbul ignore else -- no supported builder sets sys_policy itself yet */
         if (r.fields.get("sys_policy") === undefined)
           r.fields.set("sys_policy", policy);
       }

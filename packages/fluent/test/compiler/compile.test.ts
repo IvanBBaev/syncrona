@@ -75,7 +75,7 @@ describe("compileFluentProject", () => {
 
     it("assigns fresh sys_ids on the first build", () => {
       expect(messages(first)).toEqual([]);
-      expect(first.records).toHaveLength(12);
+      expect(first.records).toHaveLength(30);
       expect(first.keysText).not.toContain("deleted");
     });
 
@@ -100,7 +100,7 @@ describe("compileFluentProject", () => {
         "explicit: {\n                    bom_json: {\n                        table: 'sys_module'\n                        id: 'c17be2dde3604b6cb7597d7e626ef325'\n                    }",
       );
       const third = run(withForeign, (s) => s.replace(/^ScriptInclude\(\{ \$id: Now\.ID\['si_min'\].*\n/m, ""));
-      expect(third.records).toHaveLength(11);
+      expect(third.records).toHaveLength(29);
       expect(third.keysText).toMatch(/si_min: \{\n\s+table: 'sys_script_include'\n\s+id: '[0-9a-f]{32}'\n\s+deleted: true\n/);
       expect(third.keysText).toMatch(/bom_json: \{\n\s+table: 'sys_module'\n\s+id: 'c17be2dde3604b6cb7597d7e626ef325'\n\s+\}/);
     });

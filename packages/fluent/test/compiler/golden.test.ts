@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Golden tests: the fixture project is the ScriptInclude/Property/Role part of
+// Golden tests: the fixture project is the core-API part of
 // an SDK 4.13 build probe. Built with the probe's keys.ts, the native compiler
 // must produce the SDK's record updates byte for byte and write keys.ts back
 // unchanged.

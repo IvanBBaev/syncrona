@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl_role">
+  <sys_security_acl_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>adb4604e0f8f4f71b1150e1272e99d3b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_role_adb4604e0f8f4f71b1150e1272e99d3b</sys_update_name>
+    <sys_name>incident.short_description.x_snc_bprobe.manager</sys_name>
+    <sys_policy>protected</sys_policy>
+    <sys_security_acl>9cb219d8c8da486cb6ba56c5f53a604c</sys_security_acl>
+    <sys_user_role name="x_snc_bprobe.manager">19412ce8f2894686bb0f45e2d56fa407</sys_user_role>
+  </sys_security_acl_role>
+</record_update>

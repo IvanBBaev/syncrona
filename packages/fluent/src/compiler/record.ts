@@ -18,6 +18,9 @@ export type InstallCategory = "update" | "unload" | "unload.demo" | "apply_once"
 export const COALESCE_STRATEGIES: Record<string, readonly string[]> = {
   sys_user_role: ["name"],
   sys_user_role_contains: ["role", "contains"],
+  sys_security_acl_role: ["sys_security_acl", "sys_user_role"],
+  sys_ui_action_role: ["sys_ui_action", "sys_user_role"],
+  sys_ui_action_view: ["sys_ui_action", "sys_ui_view"],
 };
 
 export class RecordId implements KeyReference {

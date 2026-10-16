@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_action">
+  <sys_ui_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f3f802813f7449e3a7b6de3a2907528d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_action_f3f802813f7449e3a7b6de3a2907528d</sys_update_name>
+    <action_name>full_ua</action_name>
+    <active>false</active>
+    <client>true</client>
+    <client_script_v2><![CDATA[function onClick(g_form) {}]]></client_script_v2>
+    <comments>internal</comments>
+    <condition>current.active</condition>
+    <form_action>true</form_action>
+    <form_button>true</form_button>
+    <form_button_icon>star</form_button_icon>
+    <form_button_v2>true</form_button_v2>
+    <form_context_menu>true</form_context_menu>
+    <form_link>true</form_link>
+    <form_menu_button_v2>true</form_menu_button_v2>
+    <form_style>primary</form_style>
+    <format_for_configurable_workspace>true</format_for_configurable_workspace>
+    <hint>Do it</hint>
+    <isolate_script>true</isolate_script>
+    <list_action>true</list_action>
+    <list_banner_button>true</list_banner_button>
+    <list_button>true</list_button>
+    <list_button_icon>list</list_button_icon>
+    <list_choice>true</list_choice>
+    <list_context_menu>true</list_context_menu>
+    <list_link>true</list_link>
+    <list_save_with_form_button>true</list_save_with_form_button>
+    <list_style>destructive</list_style>
+    <messages>m1
+m2</messages>
+    <name>FullUA</name>
+    <onclick>doIt()</onclick>
+    <order>300</order>
+    <script><![CDATA[function doIt() {}]]></script>
+    <show_form_icon_only>false</show_form_icon_only>
+    <show_insert>true</show_insert>
+    <show_list_icon_only>true</show_list_icon_only>
+    <show_multiple_update>true</show_multiple_update>
+    <show_query>true</show_query>
+    <show_update>false</show_update>
+    <sys_name>FullUA</sys_name>
+    <sys_overrides/>
+    <sys_policy>read</sys_policy>
+    <table>incident</table>
+    <ui11_compatible>true</ui11_compatible>
+    <ui16_compatible>true</ui16_compatible>
+  </sys_ui_action>
+</record_update>

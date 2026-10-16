@@ -2,9 +2,7 @@
 //
 // Role() → sys_user_role, plus one sys_user_role_contains row per contained role.
 
-import { isGUID } from "../keys";
-import type { CompiledRecord, RecordId } from "../record";
-import type { ArtefactSpec } from "./shared";
+import { roleReference, type ArtefactSpec } from "./shared";
 
 export const role: ArtefactSpec = {
   properties: [
@@ -51,25 +49,7 @@ export const role: ArtefactSpec = {
     });
 
     for (const element of o.array("containsRoles") ?? []) {
-      let contains: RecordId | CompiledRecord;
-      let containsName: string | undefined;
-      if (element.kind === "string" && isGUID(element.value)) {
-        ctx.report(
-          "hint",
-          `Unable to determine a role name for sys_id '${element.value}', so 'sys_name' will not be set on this record. Reference the role via Role() if it is defined in this project to populate sys_name.`,
-          element.loc,
-        );
-        contains = ctx.factory.createReference("sys_user_role", element.value);
-      } else if (element.kind === "string") {
-        containsName = element.value;
-        contains = ctx.factory.createReference("sys_user_role", undefined, { name: element.value });
-      } else if (element.kind === "call") {
-        contains = ctx.recordOf(element);
-        if (contains.table !== "sys_user_role") o.error("Role(): 'containsRoles' must hold roles.", element);
-        containsName = String(contains.fields.get("name"));
-      } else {
-        return o.error("Role(): 'containsRoles' must hold role names, sys_ids or Role() records.", element);
-      }
+      const { role: contains, name: containsName } = roleReference(o, ctx, element, "containsRoles");
       record.children.push(
         ctx.factory.createRecord({
           table: "sys_user_role_contains",

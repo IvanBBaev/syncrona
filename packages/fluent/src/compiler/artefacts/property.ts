@@ -3,18 +3,12 @@
 // Property() → sys_properties.
 
 import type { FluentValue } from "../evaluate";
-import { isSNScope, type ArtefactSpec, type BuildContext, type Options } from "./shared";
+import { isSNScope, roleNames, type ArtefactSpec, type BuildContext, type Options } from "./shared";
 
-/** A roles list as the platform stores it: unique role names, comma-separated. */
 function rolesString(o: Options, ctx: BuildContext, value: FluentValue | undefined, key: string): string | undefined {
   if (value === undefined || value.kind === "undefined") return undefined;
   if (value.kind !== "array") o.error(`Property(): 'roles.${key}' must be an array.`, value);
-  const names = value.items.map((item) => {
-    if (item.kind === "string") return item.value;
-    if (item.kind === "call") return String(ctx.recordOf(item).fields.get("name"));
-    o.error(`Property(): 'roles.${key}' must hold role names or Role() records.`, item);
-  });
-  return [...new Set(names)].join(",");
+  return roleNames(o, ctx, value.items, `roles.${key}`);
 }
 
 export const property: ArtefactSpec = {
@@ -28,7 +22,10 @@ export const property: ArtefactSpec = {
         o.get("name")!.loc,
       );
     }
-    let roles = { read_roles: "" as string | undefined, write_roles: "" as string | undefined };
+    let roles = {
+      read_roles: "" as string | undefined,
+      write_roles: "" as string | undefined,
+    };
     const rolesValue = o.get("roles");
     if (rolesValue !== undefined) {
       if (rolesValue.kind !== "object") return o.error("Property(): 'roles' must be an object.", rolesValue);

@@ -8,7 +8,7 @@ import type { RecordUpdateModel } from "../../src/compiler/record";
 
 export const SCOPE = "x_snc_bprobe";
 export const SCOPE_ID = "db22ea00d7ff49d9b5d64061202ea510";
-export const IMPORT = "import { ScriptInclude, Property, Role } from '@servicenow/sdk/core'\n";
+export const IMPORT = "import { Acl, BusinessRule, ClientScript, Property, Role, ScriptInclude, UiAction } from '@servicenow/sdk/core'\n";
 
 const dirs: string[] = [];
 afterAll(() => {

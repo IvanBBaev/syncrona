@@ -68,6 +68,6 @@ describe("@syncrona/fluent public surface", () => {
     expect(typeof fluent.defaultTypeScriptLoader).toBe("function");
     expect(new fluent.FluentCompileError("x", { file: "f", line: 1, column: 1 })).toBeInstanceOf(Error);
     expect(new fluent.FluentTypeScriptMissingError().code).toBe("FLUENT_TYPESCRIPT_MISSING");
-    expect(fluent.SUPPORTED_FLUENT_APIS).toEqual(["Property", "Role", "ScriptInclude"]);
+    expect(fluent.SUPPORTED_FLUENT_APIS).toEqual(["Acl", "BusinessRule", "ClientScript", "Property", "Role", "ScriptInclude", "UiAction"]);
   });
 });

@@ -4,11 +4,14 @@
 // over the API call's options object that rejects unknown properties and
 // mistyped values instead of dropping them.
 
+import type * as TS from "typescript";
 import { FluentCompileError, type FluentDiagnosticSeverity, type SourceLocation } from "../diagnostics";
 import type { FluentCall, FluentObject, FluentValue } from "../evaluate";
-import type { CompiledRecord, InstallCategory, RecordFactory } from "../record";
+import { isGUID } from "../keys";
+import type { CompiledRecord, InstallCategory, RecordFactory, RecordId } from "../record";
 
 export interface BuildContext {
+  ts: typeof TS;
   scope: string;
   scopeId: string;
   factory: RecordFactory;
@@ -27,6 +30,9 @@ export interface ArtefactSpec {
   build: ArtefactBuilder;
 }
 
+/** The option names (and aliases) an options object, or a nested object within one, accepts. */
+export type OptionsShape = Pick<ArtefactSpec, "properties" | "aliases">;
+
 const COMMON = ["$id", "$meta", "protectionPolicy"];
 const INSTALL_METHODS: Record<string, InstallCategory> = {
   demo: "unload.demo",
@@ -39,26 +45,40 @@ export function isSNScope(scope: string): boolean {
   return !scope.startsWith("x_") && scope !== "global";
 }
 
+/** Lookup that ignores inherited keys such as `toString`. */
+export function lookup<T>(map: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 export class Options {
   readonly installCategory: InstallCategory;
 
+  /** `path` is the dotted prefix of a nested object (`client.`); the top-level object has none. */
   constructor(
     readonly call: FluentCall,
     readonly object: FluentObject,
-    private readonly spec: ArtefactSpec,
-    ctx: BuildContext,
+    private readonly spec: OptionsShape,
+    private readonly ctx: BuildContext,
+    private readonly path = "",
   ) {
+    const common = path ? [] : COMMON;
     for (const [key, value] of object.props) {
-      if (key === "$override") {
+      if (!path && key === "$override") {
         throw new FluentCompileError(`${call.api}(): '$override' is not supported by the native compiler yet.`, value.loc);
       }
-      const current = spec.aliases?.[key];
+      const current = spec.aliases && lookup(spec.aliases, key);
+      if (current && object.props.has(current)) {
+        throw new FluentCompileError(
+          `Both '${current}' and its deprecated alias '${key}' are defined. Remove '${key}' and keep '${current}'.`,
+          object.props.get(current)!.loc,
+        );
+      }
       if (current) ctx.report("hint", `The property '${key}' is deprecated, use '${current}' instead.`, value.loc);
-      else if (!COMMON.includes(key) && !spec.properties.includes(key)) {
-        throw new FluentCompileError(`${call.api}() has no property '${key}'.`, value.loc);
+      else if (!common.includes(key) && !spec.properties.includes(key)) {
+        throw new FluentCompileError(`${call.api}() has no property '${path}${key}'.`, value.loc);
       }
     }
-    this.installCategory = this.readInstallCategory();
+    this.installCategory = path ? "update" : this.readInstallCategory();
   }
 
   static of(call: FluentCall, spec: ArtefactSpec, ctx: BuildContext): Options {
@@ -81,7 +101,19 @@ export class Options {
   }
 
   private expect(key: string, kind: string): never {
-    this.error(`${this.call.api}(): '${key}' must be ${kind}.`, this.get(key));
+    this.error(`${this.call.api}(): '${this.path}${key}' must be ${kind}.`, this.get(key));
+  }
+
+  /** A reader over `value`, an object nested at `path` (`roles[].`), accepting `properties`. */
+  sub(value: FluentValue, path: string, properties: readonly string[]): Options {
+    if (value.kind !== "object") this.error(`${this.call.api}(): '${this.path}${path.replace(/\.$/, "")}' must be an object.`, value);
+    return new Options(this.call, value, { properties }, this.ctx, `${this.path}${path}`);
+  }
+
+  /** The object at `key`, read with its own `properties`. */
+  nested(key: string, properties: readonly string[]): Options | undefined {
+    const v = this.get(key);
+    return v === undefined ? undefined : this.sub(v, `${key}.`, properties);
   }
 
   string(key: string): string | undefined {
@@ -93,8 +125,15 @@ export class Options {
 
   requiredString(key: string): string {
     const v = this.string(key);
-    if (v === undefined) this.error(`${this.call.api}(): '${key}' is required.`);
+    if (v === undefined) this.error(`${this.call.api}(): '${this.path}${key}' is required.`);
     return v;
+  }
+
+  number(key: string): number | undefined {
+    const v = this.get(key);
+    if (v === undefined) return undefined;
+    if (v.kind !== "number") this.expect(key, "a number");
+    return v.value;
   }
 
   boolean(key: string): boolean | undefined {
@@ -121,7 +160,7 @@ export class Options {
 
   stringArray(key: string): string[] | undefined {
     return this.array(key)?.map((item) => {
-      if (item.kind !== "string") this.error(`${this.call.api}(): '${key}' must be an array of strings.`, item);
+      if (item.kind !== "string") this.error(`${this.call.api}(): '${this.path}${key}' must be an array of strings.`, item);
       return item.value;
     });
   }
@@ -155,4 +194,49 @@ export class Options {
     if (!category) this.error(`${this.call.api}(): '$meta.installMethod' must be 'demo', 'first install' or 'once'.`, method);
     return category;
   }
+}
+
+export interface RoleReference {
+  role: RecordId | CompiledRecord;
+  /** The role name, when the reference tells it. */
+  name?: string;
+}
+
+/** A role given by name, sys_id or Role() record, as a sys_user_role reference. */
+export function roleReference(o: Options, ctx: BuildContext, value: FluentValue, key: string): RoleReference {
+  if (value.kind === "string" && isGUID(value.value)) {
+    ctx.report(
+      "hint",
+      `Unable to determine a role name for sys_id '${value.value}', so 'sys_name' will not be set on this record. Reference the role via Role() if it is defined in this project to populate sys_name.`,
+      value.loc,
+    );
+    return { role: ctx.factory.createReference("sys_user_role", value.value) };
+  }
+  if (value.kind === "string") {
+    return {
+      role: ctx.factory.createReference("sys_user_role", undefined, {
+        name: value.value,
+      }),
+      name: value.value,
+    };
+  }
+  if (value.kind === "call") return roleRecord(o, ctx, value, key);
+  return o.error(`${o.call.api}(): '${key}' must hold role names, sys_ids or Role() records.`, value);
+}
+
+/** The record a Role() call compiles to; any other call is an error. */
+export function roleRecord(o: Options, ctx: BuildContext, call: FluentCall, key: string): Required<RoleReference> {
+  const role = ctx.recordOf(call);
+  if (role.table !== "sys_user_role") o.error(`${o.call.api}(): '${key}' must hold roles.`, call);
+  return { role, name: String(role.fields.get("name")) };
+}
+
+/** A roles list as the platform stores it: unique role names, comma-separated. */
+export function roleNames(o: Options, ctx: BuildContext, items: FluentValue[], key: string): string {
+  const names = items.map((item) => {
+    if (item.kind === "string") return item.value;
+    if (item.kind === "call") return roleRecord(o, ctx, item, key).name;
+    return o.error(`${o.call.api}(): '${key}' must hold role names or Role() records.`, item);
+  });
+  return [...new Set(names)].join(",");
 }

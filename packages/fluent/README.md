@@ -48,8 +48,9 @@ installed.
   the public `@servicenow/sdk-api/docs` module without evaluating the SDK; it
   throws `FluentDocsUnavailableError` when either is missing.
 - `compileFluentProject({ projectDir })`: a native compiler for a subset of the
-  Fluent core APIs (`SUPPORTED_FLUENT_APIS`: `Property`, `Role`,
-  `ScriptInclude`), without the SDK.
+  Fluent core APIs (`SUPPORTED_FLUENT_APIS`: `Acl`, `BusinessRule`,
+  `ClientScript`, `Property`, `Role`, `ScriptInclude`, `UiAction`), without
+  the SDK.
   - It reads `now.config.json` and `generated/keys.ts` and assigns sys_ids
     through the keys registry the way SDK 4.13 does.
   - It returns the record updates the SDK build would write, the keys.ts text

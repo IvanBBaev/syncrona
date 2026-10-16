@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl_role">
+  <sys_security_acl_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8381affad1664f9da91040bd7103ad8b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_role_8381affad1664f9da91040bd7103ad8b</sys_update_name>
+    <sys_name>x_snc_bprobe/api.admin</sys_name>
+    <sys_security_acl>711f224a6a1941f48aec5e76037ea64c</sys_security_acl>
+    <sys_user_role name="admin">d0bb664c5e44405b86917e3b4e375d75</sys_user_role>
+  </sys_security_acl_role>
+</record_update>
