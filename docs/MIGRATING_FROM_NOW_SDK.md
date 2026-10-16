@@ -181,6 +181,10 @@ Beyond what the SDK covers:
   progress. By default these actions use the SDK when it is installed and fall
   back to the native engine, with a one-line notice, when it is not;
   `--engine sdk` or `--engine native` forces one. Building still needs the SDK.
+  The upload processor is a UI endpoint, so a native install logs in to a UI
+  session with the profile's user and password: an account that signs in only
+  through SSO, or that must enter a multi-factor code, cannot install natively
+  (`FLUENT_LOGIN_MFA`). Use a service account with a local password and no MFA.
 - **Table types without the SDK.** `syncrona fluent types --native` reads
   `sys_db_object`, `sys_dictionary` and `sys_choice` over the Table API and
   writes one `.d.ts` to `@types/syncrona/tables.d.ts` in the project (or
