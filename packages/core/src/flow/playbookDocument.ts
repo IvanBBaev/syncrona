@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { FlowPayload, FlowRow } from "./flowDocument.js";
-import { FLOW_SECRET_TYPES, redactedMarker } from "./flowSecrets.js";
+import { FLOW_SECRET_TYPES, redactedMarker, redactPayloads } from "./flowSecrets.js";
 import { detectFlowValues, GZIP_BASE64_PREFIX } from "./flowValues.js";
 
 /**
@@ -208,7 +208,7 @@ function toRecord(row: FlowRow, ctx: RecordContext): PlaybookRecord {
     ctx.warnings.push(`${label}: default_value withheld (${type})`);
   }
   const record: PlaybookRecord = { sys_id: sysId, fields };
-  if (Object.keys(payloads).length > 0) record.payloads = payloads;
+  if (Object.keys(payloads).length > 0) record.payloads = redactPayloads(payloads, label, ctx.warnings);
   if (ctx.document !== undefined) {
     const variables = ctx.groups.get(`${ctx.document}:${sysId}`);
     if (variables !== undefined) record.variables = redactVariables(variables, label, ctx.warnings);

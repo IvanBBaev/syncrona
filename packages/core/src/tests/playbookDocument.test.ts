@@ -141,6 +141,23 @@ describe("assemblePlaybookDocument", () => {
     ]);
   });
 
+  it("withholds secret-typed values inside decoded payloads, plain and gzip", () => {
+    const input = rows();
+    input.activities[2].designer_state = JSON.stringify({ inputs: [{ name: "pw", type: "password2", value: "pl41n" }] });
+    input.process.extra_state = gzipSync(
+      Buffer.from(JSON.stringify([{ parameter: { type: "password" }, displayValue: "z1pped" }]))
+    ).toString("base64");
+    const doc = assemblePlaybookDocument(input);
+    expect(doc.lanes[0].activities[0].payloads?.designer_state.value).toEqual({
+      inputs: [{ name: "pw", type: "password2", value: "<redacted:password2>" }],
+    });
+    const text = serializePlaybookDocument(doc);
+    expect(text).not.toContain("pl41n");
+    expect(text).not.toContain("z1pped");
+    expect(doc.warnings).toContainEqual(`activity ${ACT_1}: 1 secret value(s) withheld from designer_state`);
+    expect(doc.warnings).toContainEqual(`process ${PD}: 1 secret value(s) withheld from extra_state`);
+  });
+
   it("keeps an empty secret value as it is", () => {
     const input = rows();
     input.values = [value("sys_pd_activity", ACT_1, "api_key", "password", "")];
