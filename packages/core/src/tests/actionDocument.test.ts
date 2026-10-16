@@ -297,6 +297,23 @@ describe("readActionRows", () => {
     expect(calls).toHaveLength(5);
   });
 
+  it("reads the step tables in batches of step ids", async () => {
+    const tables = instanceTables();
+    const many = Array.from({ length: 250 }, (_, i) => ({ sys_id: i.toString(16).padStart(32, "0"), action: ACTION }));
+    tables.sys_hub_step_instance = [...tables.sys_hub_step_instance, ...many];
+    const { client, calls } = fakeClient(tables);
+    const rows = await readActionRows(client, ACTION);
+    expect(rows.stepValues).toHaveLength(2);
+    expect(rows.stepMappings.map((r) => r.sys_id)).toEqual(["sm1"]);
+    for (const table of ["sys_hub_step_ext_input", "sys_hub_step_ext_output", "sys_variable_value"]) {
+      const batches = calls.filter((c) => c.table === table);
+      expect(batches).toHaveLength(3);
+      const lists = batches.map((c) => /IN([^^]*)/.exec(c.query)?.[1].split(",") ?? []);
+      expect(lists.map((ids) => ids.length)).toEqual([100, 100, 52]);
+    }
+    expect(calls.filter((c) => c.table === "sys_element_mapping")).toHaveLength(4);
+  });
+
   it("refuses a malformed sys_id and reports a missing action", async () => {
     const { client } = fakeClient({});
     await expect(readActionRows(client, "abc^ORactive=true")).rejects.toThrow("is not a sys_id");

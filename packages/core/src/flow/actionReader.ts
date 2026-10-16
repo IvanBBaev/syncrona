@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { assembleActionDocument, type ActionDocument, type ActionRows } from "./actionDocument.js";
 import type { FlowRow } from "./flowDocument.js";
-import { FLOW_PAGE_SIZE, readAll, SCOPE_NAME, SYS_ID, type FlowListing, type FlowReadClient } from "./flowReader.js";
+import {
+  FLOW_PAGE_SIZE,
+  readAll,
+  SCOPE_NAME,
+  SYS_ID,
+  VARIABLE_VALUE_KEYS_PER_QUERY,
+  type FlowListing,
+  type FlowReadClient,
+} from "./flowReader.js";
 
 /**
  * Reads every row of one custom Flow Designer action through the Table API.
@@ -43,23 +51,26 @@ export async function readActionRows(
   if (stepIds.length === 0) {
     return { action, inputs, outputs, outputMappings, steps, stepInputs: none, stepOutputs: none, stepValues: none, stepMappings: none };
   }
-  const ids = stepIds.join(",");
+  // An action with many steps would make one IN list longer than a URL may be,
+  // so the step ids go out in batches, as in readFlowRows.
+  const byStep = async (table: string, condition: string, fields?: string): Promise<FlowRow[]> => {
+    const out: FlowRow[] = [];
+    for (let i = 0; i < stepIds.length; i += VARIABLE_VALUE_KEYS_PER_QUERY) {
+      const ids = stepIds.slice(i, i + VARIABLE_VALUE_KEYS_PER_QUERY).join(",");
+      out.push(...(await readAll(client, table, `${condition}${ids}`, pageSize, fields)));
+    }
+    return out;
+  };
   return {
     action,
     inputs,
     outputs,
     outputMappings,
     steps,
-    stepInputs: await readAll(client, "sys_hub_step_ext_input", `modelIN${ids}`, pageSize),
-    stepOutputs: await readAll(client, "sys_hub_step_ext_output", `modelIN${ids}`, pageSize),
-    stepValues: await readAll(
-      client,
-      "sys_variable_value",
-      `document=sys_hub_step_instance^document_keyIN${ids}`,
-      pageSize,
-      STEP_VALUE_FIELDS
-    ),
-    stepMappings: await readAll(client, "sys_element_mapping", `idIN${ids}`, pageSize),
+    stepInputs: await byStep("sys_hub_step_ext_input", "modelIN"),
+    stepOutputs: await byStep("sys_hub_step_ext_output", "modelIN"),
+    stepValues: await byStep("sys_variable_value", "document=sys_hub_step_instance^document_keyIN", STEP_VALUE_FIELDS),
+    stepMappings: await byStep("sys_element_mapping", "idIN"),
   };
 }
 
