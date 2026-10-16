@@ -64,6 +64,8 @@ export interface CompiledRecord {
   /** Records the same API call produced along with this one (m2m rows and the like). */
   children: CompiledRecord[];
   source: SourceLocation;
+  /** The `$id` the record was declared with, if any. */
+  explicitKey?: string;
 }
 
 export interface CreateRecordOptions {
@@ -111,7 +113,8 @@ export class RecordFactory {
     }
     fields.set("sys_scope", new RecordId("sys_scope", this.scopeId).withAttribute("display_value", this.scope));
     fields.set("sys_update_name", `${table}_${id.getValue()}`);
-    return { table, id, installCategory: options.installCategory, fields, children: [], source: options.source };
+    const explicitKey = explicitId === undefined || explicitId === "" ? {} : { explicitKey: String(explicitId) };
+    return { table, id, installCategory: options.installCategory, fields, children: [], source: options.source, ...explicitKey };
   }
 
   /** A reference to a record by GUID, `$id` key or coalesce keys, resolved on first read. */

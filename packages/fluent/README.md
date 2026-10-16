@@ -56,6 +56,9 @@ installed.
   - It returns the record updates the SDK build would write, the keys.ts text
     to write back and the diagnostics; it writes no files itself.
   - Anything outside the subset is an error diagnostic, never a silent drop.
+  - Like the SDK build, it reports key conflicts as errors: one record defined
+    twice (same table and sys_id) and one `$id` used across tables. It then
+    returns no keys.ts text, so a conflicting build never rewrites the keys.
   - It needs only `typescript` (an optional peer dependency), resolved from
     the project first; `FluentTypeScriptMissingError` says when it is missing.
 

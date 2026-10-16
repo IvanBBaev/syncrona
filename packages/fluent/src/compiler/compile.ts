@@ -13,6 +13,7 @@ import {
   FluentCompileError,
   type FluentDiagnostic,
 } from "./diagnostics";
+import { reportKeyConflicts } from "./conflicts";
 import { FluentEvaluator, type FluentCall } from "./evaluate";
 import {
   defaultGuid,
@@ -88,7 +89,7 @@ export interface CompileFluentResult {
   ok: boolean;
   /** Record updates ordered by path. */
   records: RecordUpdateModel[];
-  /** The keys.ts text to write back; absent when the project could not be read. */
+  /** The keys.ts text to write back; absent when the project could not be read or its keys conflict. */
   keysText?: string;
   keysPath: string;
   diagnostics: FluentDiagnostic[];
@@ -274,17 +275,23 @@ export function compileFluentProject(
     }
   }
 
-  const records = roots
-    .flatMap(flatten)
+  const all = roots.flatMap(flatten);
+  const conflicts = reportKeyConflicts(all, projectDir, (message, location) =>
+    sink.report("error", message, location),
+  );
+  const records = all
     .map(toRecordUpdate)
     .sort((a, b) => a.path.localeCompare(b.path));
-  const keysText = writeKeysFile(
-    registry.commit((table) => !EMITTED_TABLES.has(table)),
-  );
+  // Like the SDK, keys are committed only once they are conflict-free: the
+  // registry would otherwise hand one `$id` to whichever table claimed it last.
+  const keysText =
+    conflicts > 0
+      ? undefined
+      : writeKeysFile(registry.commit((table) => !EMITTED_TABLES.has(table)));
   return {
     ok: !sink.hasErrors,
     records,
-    keysText,
+    ...(keysText === undefined ? {} : { keysText }),
     keysPath,
     diagnostics: sink.diagnostics,
   };
