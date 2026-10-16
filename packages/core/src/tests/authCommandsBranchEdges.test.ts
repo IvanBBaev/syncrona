@@ -215,6 +215,20 @@ describe("loginCommand — auth-method selection and field prompts", () => {
     expect(mockSaveCredentials).not.toHaveBeenCalled();
   });
 
+  it.each(["bearer-token", "Access_Token"])(
+    "refuses the bearer alias %s with the same environment-only message",
+    async (alias) => {
+      await expect(
+        loginCommand({ ...BASE_ARGS, instance: HOST, authMethod: alias })
+      ).rejects.toThrow("process.exit(1)");
+
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "A bearer token is not stored: set SN_AUTH_METHOD=bearer and SN_BEARER_TOKEN in the environment instead."
+      );
+      expect(mockSaveCredentials).not.toHaveBeenCalled();
+    }
+  );
+
   it("offers the method picker with basic as the default", async () => {
     answerPrompts({ method: "api-key", apiKey: "K" });
 
