@@ -2,7 +2,7 @@
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { logger } from "../Logger.js";
-import { sanitizeRecordFolderName } from "../recordFolderNames.js";
+import { canonicalFolderKey, sanitizeRecordFolderName } from "../recordFolderNames.js";
 import { serializeActionDocument } from "./actionDocument.js";
 import { listScopeActions, readActionDocument } from "./actionReader.js";
 import { redactActionSecrets } from "./actionSecrets.js";
@@ -46,27 +46,53 @@ const baseNameOf = (flow: FlowListing): string =>
   sanitizeRecordFolderName((flow.internal_name || flow.name).replace(/[\\/:*?"<>|~]/g, "_")) || flow.sys_id;
 
 /**
- * The file name of each flow, keyed by sys_id. A name two flows share gets the
- * sys_id appended on every one of them, so neither name depends on which flow
- * the instance listed first. Names are compared case-insensitively: on macOS and
- * Windows `A.flow.json` and `a.flow.json` are one file.
+ * The file name of each entry, keyed by sys_id. A base name two entries share
+ * gets the sys_id appended on every one of them, so neither name depends on
+ * which entry the instance listed first. Names are compared as the file system
+ * compares them (canonicalFolderKey: case, Unicode normalization): on macOS and
+ * Windows `A.flow.json` and `a.flow.json` are one file. A final name that still
+ * collides — a generated `<name>_<sys_id>` that another entry's real name
+ * spells — falls back to the bare sys_id, which is unique.
  */
+export function documentFileNames(
+  entries: readonly { sys_id: string; base: string }[],
+  suffix: string
+): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const { base } of entries) {
+    const key = canonicalFolderKey(base);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const names = new Map<string, string>();
+  for (const { sys_id, base } of entries) {
+    const unique = counts.get(canonicalFolderKey(base)) === 1 || base === sys_id;
+    names.set(sys_id, `${unique ? base : `${base}_${sys_id}`}${suffix}`);
+  }
+  // Each pass moves at least one entry onto its sys_id, so this ends.
+  for (;;) {
+    const owners = new Map<string, string[]>();
+    for (const [sysId, name] of names) {
+      const key = canonicalFolderKey(name);
+      owners.set(key, [...(owners.get(key) ?? []), sysId]);
+    }
+    const clashing = [...owners.values()]
+      .filter((ids) => ids.length > 1)
+      .flat()
+      .filter((sysId) => names.get(sysId) !== `${sysId}${suffix}`);
+    if (clashing.length === 0) return names;
+    for (const sysId of clashing) names.set(sysId, `${sysId}${suffix}`);
+  }
+}
+
+/** The file name of each flow, keyed by sys_id; see documentFileNames. */
 export function flowFileNames(
   flows: readonly FlowListing[],
   suffix: string = FLOW_DOCUMENT_SUFFIX
 ): Map<string, string> {
-  const counts = new Map<string, number>();
-  for (const flow of flows) {
-    const key = baseNameOf(flow).toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const names = new Map<string, string>();
-  for (const flow of flows) {
-    const base = baseNameOf(flow);
-    const unique = counts.get(base.toLowerCase()) === 1 || base === flow.sys_id;
-    names.set(flow.sys_id, `${unique ? base : `${base}_${flow.sys_id}`}${suffix}`);
-  }
-  return names;
+  return documentFileNames(
+    flows.map((flow) => ({ sys_id: flow.sys_id, base: baseNameOf(flow) })),
+    suffix
+  );
 }
 
 export type FlowSyncResult = {

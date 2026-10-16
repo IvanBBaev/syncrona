@@ -129,6 +129,20 @@ describe("flowFileNames", () => {
     expect(names.get(B)).toBe(`approve_${B}.flow.json`);
     expect(names.get(C)).toBe("Other.flow.json");
   });
+
+  it("compares names the way the file system does, Unicode normalization included", () => {
+    const names = flowFileNames([listing(A, "Caf\u00e9"), listing(B, "Cafe\u0301")]);
+    expect(names.get(A)).toBe(`Caf\u00e9_${A}.flow.json`);
+    expect(names.get(B)).toBe(`Cafe\u0301_${B}.flow.json`);
+  });
+
+  it("falls back to the sys_id when a generated name is another flow's real name", () => {
+    const names = flowFileNames([listing(A, "Approve"), listing(B, "approve"), listing(C, `approve_${B}`)]);
+    expect(names.get(A)).toBe(`Approve_${A}.flow.json`);
+    expect(names.get(B)).toBe(`${B}.flow.json`);
+    expect(names.get(C)).toBe(`${C}.flow.json`);
+    expect(new Set([...names.values()].map((name) => name.toLowerCase())).size).toBe(3);
+  });
 });
 
 describe("isActionDocumentPath", () => {

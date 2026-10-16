@@ -3,6 +3,7 @@ import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { logger } from "../Logger.js";
 import { sanitizeRecordFolderName } from "../recordFolderNames.js";
+import { documentFileNames } from "./flowFiles.js";
 import type { FlowReadClient } from "./flowReader.js";
 import { serializePlaybookDocument } from "./playbookDocument.js";
 import { isPlaybookDocumentPath, PLAYBOOK_DOCUMENT_DIR, PLAYBOOK_DOCUMENT_SUFFIX } from "./playbookPaths.js";
@@ -22,23 +23,12 @@ export { isPlaybookDocumentPath, PLAYBOOK_DOCUMENT_DIR, PLAYBOOK_DOCUMENT_SUFFIX
 const baseNameOf = (playbook: PlaybookListing): string =>
   sanitizeRecordFolderName((playbook.name || playbook.label).replace(/[\\/:*?"<>|~]/g, "_")) || playbook.sys_id;
 
-/**
- * The file name of each playbook, keyed by sys_id. A name two playbooks share
- * (case-insensitively) gets the sys_id appended on every one of them.
- */
+/** The file name of each playbook, keyed by sys_id; see documentFileNames. */
 export function playbookFileNames(playbooks: readonly PlaybookListing[]): Map<string, string> {
-  const counts = new Map<string, number>();
-  for (const playbook of playbooks) {
-    const key = baseNameOf(playbook).toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const names = new Map<string, string>();
-  for (const playbook of playbooks) {
-    const base = baseNameOf(playbook);
-    const unique = counts.get(base.toLowerCase()) === 1 || base === playbook.sys_id;
-    names.set(playbook.sys_id, `${unique ? base : `${base}_${playbook.sys_id}`}${PLAYBOOK_DOCUMENT_SUFFIX}`);
-  }
-  return names;
+  return documentFileNames(
+    playbooks.map((playbook) => ({ sys_id: playbook.sys_id, base: baseNameOf(playbook) })),
+    PLAYBOOK_DOCUMENT_SUFFIX
+  );
 }
 
 export type PlaybookSyncResult = {
