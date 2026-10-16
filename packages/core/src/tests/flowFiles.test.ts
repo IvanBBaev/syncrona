@@ -266,6 +266,15 @@ describe("syncFlowDocuments", () => {
     expect((await fsp.readdir(path.join(root, ACTION_DOCUMENT_DIR))).sort()).toEqual(["notify.action.json"]);
   });
 
+  it("still writes the actions when the flow folder cannot be made, and returns false", async () => {
+    await fsp.writeFile(dir(), "a file where the folder belongs");
+    listScopeFlows.mockResolvedValue([listing(B, "First")]);
+    listScopeActions.mockResolvedValue([listing(A, "Notify", "notify")]);
+    expect(await syncFlowDocuments(client, "x_demo", root)).toBe(false);
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining(`${B}: `));
+    expect(await fsp.readdir(path.join(root, ACTION_DOCUMENT_DIR))).toEqual(["notify.action.json"]);
+  });
+
   it("still writes the actions when the flows failed, and returns false", async () => {
     listScopeFlows.mockRejectedValue(new Error("HTTP 401"));
     listScopeActions.mockResolvedValue([listing(A, "Notify", "notify")]);

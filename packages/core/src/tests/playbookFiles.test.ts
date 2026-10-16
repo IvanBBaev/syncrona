@@ -159,6 +159,15 @@ describe("writePlaybookDocuments", () => {
     await expect(fsp.stat(dir())).rejects.toThrow();
   });
 
+  it("reports every playbook as failed when the folder cannot be made, without throwing", async () => {
+    await fsp.writeFile(dir(), "a file where the folder belongs");
+    listScopePlaybooks.mockResolvedValue([listing(A, "first"), listing(B, "second")]);
+    const result = await writePlaybookDocuments(client, "x_demo", root);
+    expect(result.failed.map((f) => f.sys_id)).toEqual([A, B]);
+    expect(result.written).toEqual([]);
+    expect(result.stale).toEqual([]);
+  });
+
   it("creates no folder for a scope without playbooks", async () => {
     listScopePlaybooks.mockResolvedValue([]);
     expect(await writePlaybookDocuments(client, "x_demo", root)).toEqual({

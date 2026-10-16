@@ -145,12 +145,13 @@ async function writeDocuments(
   const dir = path.join(sourcePath, kind.dir);
   const names = flowFileNames(listings, kind.suffix);
   const claimed = new Set(names.values());
-  if (listings.length > 0) await fsp.mkdir(dir, { recursive: true });
   // Sequential: each document is several paged reads, and bursts trip rate limits.
   for (const listing of listings) {
     const name = names.get(listing.sys_id) as string;
     const filePath = path.join(dir, name);
     try {
+      // Inside the try: a folder that cannot be made fails these documents, not the run.
+      await fsp.mkdir(dir, { recursive: true });
       const text = await kind.read(client, listing.sys_id);
       if ((await readText(filePath)) === text) {
         result.unchanged.push(name);

@@ -96,12 +96,13 @@ export async function writePlaybookDocuments(
   const dir = path.join(sourcePath, PLAYBOOK_DOCUMENT_DIR);
   const names = playbookFileNames(playbooks);
   const claimed = new Set(names.values());
-  if (playbooks.length > 0) await fsp.mkdir(dir, { recursive: true });
   // Sequential: each playbook is a dozen paged reads, and bursts trip rate limits.
   for (const playbook of playbooks) {
     const name = names.get(playbook.sys_id) as string;
     const filePath = path.join(dir, name);
     try {
+      // Inside the try: a folder that cannot be made fails these documents, not the run.
+      await fsp.mkdir(dir, { recursive: true });
       // The assembler already withholds secret-typed values.
       const text = serializePlaybookDocument(await readPlaybookDocument(client, playbook.sys_id));
       if ((await readText(filePath)) === text) {
