@@ -5,6 +5,7 @@ import {
   PLAYBOOK_TABLES,
   PLAYBOOK_VALUE_CHUNK,
   PLAYBOOK_VALUE_FIELDS,
+  listScopePlaybooks,
   readPlaybookDocument,
   readPlaybookRows,
 } from "../flow/playbookReader.js";
@@ -155,5 +156,33 @@ describe("readPlaybookDocument", () => {
     expect(doc.lanes[0].activities[0].variables?.map((v) => v.value)).toEqual(["Create change"]);
     expect(doc.triggers[0].variables?.map((v) => v.value)).toEqual(["incident"]);
     expect(doc.warnings).toEqual([]);
+  });
+});
+
+describe("listScopePlaybooks", () => {
+  it("lists the playbooks of a scope by sys_id, name and label, dropping rows without a sys_id", async () => {
+    const { client, calls } = fakeClient({
+      sys_pd_process_definition: [
+        { sys_id: PD, name: "remediate", label: "Remediate", "sys_scope.scope": "x_demo" },
+        { sys_id: OTHER, name: 7, "sys_scope.scope": "x_demo" },
+        { sys_id: "bad", name: "broken", "sys_scope.scope": "x_demo" },
+        { sys_id: "d0000000000000000000000000000003", name: "elsewhere", "sys_scope.scope": "x_other" },
+      ],
+    });
+    expect(await listScopePlaybooks(client, "x_demo")).toEqual([
+      { sys_id: PD, name: "remediate", label: "Remediate" },
+      { sys_id: OTHER, name: "", label: "" },
+    ]);
+    expect(calls[0]).toMatchObject({
+      table: "sys_pd_process_definition",
+      query: "sys_scope.scope=x_demo^ORDERBYsys_id",
+      fields: "sys_id,name,label",
+    });
+  });
+
+  it("refuses a scope that would add query conditions", async () => {
+    const { client, calls } = fakeClient({});
+    await expect(listScopePlaybooks(client, "x_demo^ORactive=true")).rejects.toThrow("is not a scope name");
+    expect(calls).toEqual([]);
   });
 });

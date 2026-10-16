@@ -105,3 +105,23 @@ export async function readPlaybookDocument(
 ): Promise<PlaybookDocument> {
   return assemblePlaybookDocument(await readPlaybookRows(client, processSysId, pageSize));
 }
+
+/** A playbook as listed for a scope: enough to name its file. */
+export type PlaybookListing = { sys_id: string; name: string; label: string };
+
+const SCOPE_NAME = /^[A-Za-z0-9_]+$/;
+
+/** List the playbooks of the application with the given scope name. */
+export async function listScopePlaybooks(
+  client: FlowReadClient,
+  scope: string,
+  pageSize: number = FLOW_PAGE_SIZE
+): Promise<PlaybookListing[]> {
+  // The scope goes into an encoded query; `^` or `=` in it would add conditions.
+  if (!SCOPE_NAME.test(scope)) throw new Error(`"${scope}" is not a scope name.`);
+  const rows = await readAll(client, "sys_pd_process_definition", `sys_scope.scope=${scope}`, pageSize, "sys_id,name,label");
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  return rows
+    .map((row) => ({ sys_id: text(row.sys_id), name: text(row.name), label: text(row.label) }))
+    .filter((playbook) => SYS_ID.test(playbook.sys_id));
+}
