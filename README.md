@@ -747,7 +747,8 @@ module.exports = {
   dataModelLayout: "records",
   // (Opt-in) Sync the JSON columns of UI Builder, workspace and AI Agent
   // configuration tables as `.json` field files: any of "uib", "workspace",
-  // "ai" (see "JSON columns" below). Empty by default.
+  // "ai"; "flow" writes read-only Flow Designer documents (see "JSON columns"
+  // below). Empty by default.
   tablePresets: [],
 };
 ```
@@ -938,6 +939,7 @@ module.exports = {
 | `uib` | `sys_ux_macroponent` (composition, data, layout, props, root component config and definition), screens, client scripts, data brokers, events, page properties, presets, controllers, widgets, extension points, themes, styles and UX ATF actions |
 | `workspace` | `sys_ux_app`, `sys_ux_app_config`, the page registry, route mappings, keyboard shortcuts, layout bounds, search result components, reflow and macroponent rules, `par_dashboard_widget`, `par_component` |
 | `ai` | `sn_aia_tool`, `sn_aia_agent_tool_m2m` and the external agent cards, configurations and skills, the Generative AI feature mappings and the OneExtend (Now Assist skill) capability, definition, attribute and resource-mapping tables |
+| `flow` | No field files: one read-only `sys_hub_flow/<name>.flow.json` document per flow and subflow (see below) |
 
 On those tables every column the dictionary types `json` or `json_translations`
 becomes a field file, plus the string columns the preset names when this
@@ -960,6 +962,26 @@ instance's dictionary has them. A field file is never also a sidecar column.
 
 Unknown preset names fail config validation. Tables the project switched off in
 `includes`/`excludes` stay off.
+
+##### Flow Designer documents (`flow`)
+
+The `flow` preset makes `refresh` and `download` write every flow and subflow of
+the scope as one decoded document, `sys_hub_flow/<internal name>.flow.json`:
+the flow row, its triggers, inputs, outputs, variables and stages, and its steps
+as a tree, with the gzip/base64 value payloads decoded to JSON. Two flows whose
+names differ only in case get their sys_id appended.
+
+- The documents are **read-only**. `push` skips them with a warning; edit the
+  flow in Flow Designer and run `syncrona refresh`. They are not manifest
+  records, so `repair` never prunes them and `push --create` never creates from
+  them.
+- A file is rewritten only when its content changed. A document whose flow is
+  gone is left in place and named in a warning.
+- A value typed `password`, `password2`, `glide_encrypted`, `encrypted_text` or
+  `masked` is replaced by `<redacted:<type>>` and listed in the document's
+  `warnings`.
+- A flow that cannot be read makes the command exit 1; the other flows are
+  still written.
 
 ### There are WAY too many files in here!
 

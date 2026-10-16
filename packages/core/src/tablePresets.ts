@@ -89,6 +89,13 @@ export const TABLE_PRESETS = {
     sys_one_extend_capability_attribute_resource_lookup: [],
     sys_one_extend_resource_mapping: [],
   },
+  /**
+   * Flow Designer flows and subflows, written read-only as one decoded
+   * `sys_hub_flow/<name>.flow.json` per flow (see flow/flowFiles.ts). The
+   * flow tables have no JSON column to sync as a field file, so the preset
+   * maps no table here.
+   */
+  flow: {},
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 
 export type TablePresetName = keyof typeof TABLE_PRESETS;
@@ -121,3 +128,7 @@ export const getJsonFileTables = (
   }
   return result;
 };
+
+/** Whether `config` enables the read-only Flow Designer documents. */
+export const isFlowPresetEnabled = (config: Pick<Sync.Config, "tablePresets"> | undefined): boolean =>
+  Array.isArray(config?.tablePresets) && config.tablePresets.includes("flow");

@@ -105,6 +105,10 @@ jest.unstable_mockModule("../Logger.js", () => ({
   },
 }));
 
+// WP2: the `flow` preset's documents, loaded lazily by syncManifest.
+const syncFlowDocuments = jest.fn<(...a: unknown[]) => Promise<boolean>>();
+jest.unstable_mockModule("../flow/flowFiles.js", () => ({ syncFlowDocuments }));
+
 const {
   adoptRecordFolderNames,
   processManifest,
@@ -296,6 +300,22 @@ describe("syncManifest edge cases", () => {
     expect(infos()).toContain('Scope "x_new" owns no records yet — keeping the empty manifest.');
     // The scope's sys_id survives the rebuild.
     expect(updateManifest).toHaveBeenCalledWith({ scope: "x_new", tables: {}, scopeId: "abc" });
+    expect(syncFlowDocuments).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])("WP2 writes the flow documents with the flow preset on (flows read: %s)", async (flowsRead, refreshed) => {
+    getConfig.mockReturnValue({ tablePresets: ["flow"] });
+    getManifest.mockResolvedValue({ scope: "x_new", scopeId: "abc" });
+    getManifestApi.mockRejectedValue({ response: { status: 404 } });
+    mockBuildManifestFromTableAPI.mockResolvedValue({ scope: "x_new", tables: {} });
+    syncFlowDocuments.mockResolvedValue(flowsRead);
+
+    await expect(syncManifest()).resolves.toBe(refreshed);
+
+    expect(syncFlowDocuments).toHaveBeenCalledWith(expect.anything(), "x_new", "/src");
   });
 });
 

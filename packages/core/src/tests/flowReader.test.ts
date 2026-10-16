@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { jest } from "@jest/globals";
-import { FLOW_MAX_PAGES, FLOW_TABLES, readFlowDocument, readFlowRows, type FlowReadClient } from "../flow/flowReader.js";
+import {
+  FLOW_MAX_PAGES,
+  FLOW_TABLES,
+  listScopeFlows,
+  readFlowDocument,
+  readFlowRows,
+  type FlowReadClient,
+} from "../flow/flowReader.js";
 import { NonApiResponseError } from "../snClient.js";
 import { FLOW_ID, flowRows, UI } from "./fixtures/flowRows.js";
 
@@ -131,5 +138,46 @@ describe("readFlowDocument", () => {
     expect(doc.flow.fields.name).toBe("Example Flow");
     expect(doc.steps.map((s) => s.ui_id)).toEqual([UI.update, UI.ifBlock, UI.elseBlock]);
     expect(doc.warnings).toEqual([]);
+  });
+});
+
+describe("listScopeFlows", () => {
+  const flowRow = (sys_id: string, name: string, internal_name: string) => ({
+    sys_id,
+    name,
+    internal_name,
+    "sys_scope.scope": "x_demo",
+  });
+
+  it("lists the scope's flows by sys_id, name and internal name", async () => {
+    const { client, calls } = fakeClient({
+      sys_hub_flow: [
+        flowRow("b".repeat(32), "Second", "second"),
+        flowRow("a".repeat(32), "First", "first"),
+        flowRow("not-a-sys-id", "Broken", "broken"),
+        { sys_id: "c".repeat(32), name: "Elsewhere", internal_name: "elsewhere", "sys_scope.scope": "x_other" },
+      ],
+    });
+    expect(await listScopeFlows(client, "x_demo", 1)).toEqual([
+      { sys_id: "b".repeat(32), name: "Second", internal_name: "second" },
+      { sys_id: "a".repeat(32), name: "First", internal_name: "first" },
+    ]);
+    expect(calls[0]).toMatchObject({
+      table: "sys_hub_flow",
+      query: "sys_scope.scope=x_demo^ORDERBYsys_id",
+      fields: "sys_id,name,internal_name",
+      limit: 1,
+    });
+  });
+
+  it("reads a missing name column as empty", async () => {
+    const { client } = fakeClient({ sys_hub_flow: [{ sys_id: "a".repeat(32), "sys_scope.scope": "x_demo" }] });
+    expect(await listScopeFlows(client, "x_demo")).toEqual([{ sys_id: "a".repeat(32), name: "", internal_name: "" }]);
+  });
+
+  it("refuses a scope that would add query conditions", async () => {
+    const { client, calls } = fakeClient({});
+    await expect(listScopeFlows(client, "x_demo^active=true")).rejects.toThrow(/not a scope name/);
+    expect(calls).toEqual([]);
   });
 });

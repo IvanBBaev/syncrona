@@ -87,8 +87,10 @@ export namespace Sync {
      * WP3: named table groups (`"uib"`, `"workspace"`, `"ai"`) whose JSON
      * columns — every `json` / `json_translations` column plus the string
      * columns a preset names as JSON (e.g. `sys_ux_macroponent.composition`) —
-     * are synced as `.json` field files instead of sidecar strings. Opt-in:
-     * defaults to an empty list. Unknown names are refused.
+     * are synced as `.json` field files instead of sidecar strings. WP2:
+     * `"flow"` writes each Flow Designer flow as a read-only, decoded
+     * `sys_hub_flow/<name>.flow.json` document. Opt-in: defaults to an empty
+     * list. Unknown names are refused.
      */
     tablePresets?: string[];
   }

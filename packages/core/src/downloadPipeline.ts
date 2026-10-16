@@ -30,6 +30,7 @@ import {
   mergeCompositeWrites,
 } from "./dataModelComposite.js";
 import { logger } from "./Logger.js";
+import { isFlowPresetEnabled } from "./tablePresets.js";
 import { unsafePathComponentReason } from "./genericUtils.js";
 import {
   applyManifestFolderNames,
@@ -531,6 +532,16 @@ export const syncManifest = async (): Promise<boolean> => {
     // run then retries exactly the files this one could not fetch. But a run that
     // could not fetch every field is not a successful refresh.
     ConfigManager.updateManifest(newManifest);
+    // WP2: the `flow` preset's documents are rebuilt on every refresh. A flow
+    // that could not be read fails the refresh the way a table does. Loaded only
+    // when the preset is on, so the flow reader stays out of other runs.
+    const flowsComplete = isFlowPresetEnabled(config)
+      ? await (await import("./flow/flowFiles.js")).syncFlowDocuments(
+          client,
+          newManifest.scope,
+          ConfigManager.getSourcePath()
+        )
+      : true;
     if (incompleteTables.length > 0) {
       logger.error(
         `Refresh incomplete: ${incompleteTables.length} table(s) could not be fully fetched: ${incompleteTables.join(
@@ -539,7 +550,7 @@ export const syncManifest = async (): Promise<boolean> => {
       );
       return false;
     }
-    return true;
+    return flowsComplete;
   } catch (e) {
     let message
     if (e instanceof Error) message = e.message

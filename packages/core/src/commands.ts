@@ -27,6 +27,7 @@ import {
 } from "./manifestBuilder.js";
 import { generateScopeDocs } from "./scopeDocs.js";
 import { warnWithdrawnFieldFiles } from "./withdrawnFieldFiles.js";
+import { isFlowPresetEnabled } from "./tablePresets.js";
 import { PATH_DELIMITER } from "./constants.js";
 import { isSafePathComponent } from "./genericUtils.js";
 import {
@@ -296,6 +297,14 @@ export async function downloadCommand(args: Sync.CmdDownloadArgs) {
     sourcePath: ConfigManager.getSourcePath(),
     flat: config.flat === true,
   }));
+  // WP2: the read-only Flow Designer documents of the `flow` preset. Loaded
+  // only when the preset is on, so the flow reader stays out of other runs.
+  if (isFlowPresetEnabled(config)) {
+    const { syncFlowDocuments } = await import("./flow/flowFiles.js");
+    if (!(await syncFlowDocuments(client, man.scope, ConfigManager.getSourcePath()))) {
+      process.exitCode = 1;
+    }
+  }
   try {
     const docPath = await generateScopeDocs(man);
     logger.success(`Scope documentation written to ${docPath}`);

@@ -35,11 +35,17 @@ function totalCount(headers: unknown): number | undefined {
   return Number.isSafeInteger(total) ? total : undefined;
 }
 
-async function readAll(client: FlowReadClient, table: string, query: string, pageSize: number): Promise<FlowRow[]> {
+async function readAll(
+  client: FlowReadClient,
+  table: string,
+  query: string,
+  pageSize: number,
+  fields = ""
+): Promise<FlowRow[]> {
   const ordered = withStableOrder(query);
   const rows: FlowRow[] = [];
   for (let page = 0; page < FLOW_MAX_PAGES; page++) {
-    const resp = await client.tableAPIGet(table, ordered, "", pageSize, rows.length, READ_PARAMS);
+    const resp = await client.tableAPIGet(table, ordered, fields, pageSize, rows.length, READ_PARAMS);
     const data: unknown = resp.data;
     const result = (data as { result?: unknown } | null)?.result;
     if (!Array.isArray(result)) {
@@ -85,4 +91,24 @@ export async function readFlowDocument(
   pageSize?: number
 ): Promise<FlowDocument> {
   return assembleFlowDocument(await readFlowRows(client, flowSysId, pageSize));
+}
+
+/** A flow or subflow as listed for a scope: enough to name its file. */
+export type FlowListing = { sys_id: string; name: string; internal_name: string };
+
+const SCOPE_NAME = /^[A-Za-z0-9_]+$/;
+
+/** List the flows and subflows of the application with the given scope name. */
+export async function listScopeFlows(
+  client: FlowReadClient,
+  scope: string,
+  pageSize: number = FLOW_PAGE_SIZE
+): Promise<FlowListing[]> {
+  // The scope goes into an encoded query; `^` or `=` in it would add conditions.
+  if (!SCOPE_NAME.test(scope)) throw new Error(`"${scope}" is not a scope name.`);
+  const rows = await readAll(client, "sys_hub_flow", `sys_scope.scope=${scope}`, pageSize, "sys_id,name,internal_name");
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  return rows
+    .map((row) => ({ sys_id: text(row.sys_id), name: text(row.name), internal_name: text(row.internal_name) }))
+    .filter((flow) => SYS_ID.test(flow.sys_id));
 }

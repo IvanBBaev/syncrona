@@ -211,8 +211,8 @@ module.exports = {
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
-    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.78
-    './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.60
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.83
+    './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.63
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 99.02 / 94.25
     './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
@@ -231,7 +231,7 @@ module.exports = {
     // Scope resolution — a scope code reaches both a URL and a local path.
     './src/scopeManagement.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/commandHelpers.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
-    './src/commands.ts': { lines: 96, branches: 94 }, // measured 99.55 / 99.04
+    './src/commands.ts': { lines: 96, branches: 94 }, // measured 99.56 / 99.08
     // Spawns plugin processes / watches the tree / drives the interactive setup.
     './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
     './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 98.02 / 96.66

@@ -63,6 +63,12 @@ jest.unstable_mockModule("../snClient.js", () => ({
   }),
 }));
 
+// WP2: the `flow` preset's documents, loaded lazily by downloadCommand.
+const mockSyncFlowDocuments = jest.fn<(...args: unknown[]) => Promise<boolean>>();
+jest.unstable_mockModule("../flow/flowFiles.js", () => ({
+  syncFlowDocuments: (...args: unknown[]) => mockSyncFlowDocuments(...args),
+}));
+
 jest.unstable_mockModule("inquirer", () => ({
   __esModule: true,
   default: {
@@ -214,5 +220,39 @@ describe("downloadCommand flow", () => {
     expect(mockSuccess).not.toHaveBeenCalledWith(expect.stringContaining("Download complete"));
     // And the flag must survive the command, or CI sees a green step over missing files.
     expect(process.exitCode).toBe(1);
+  });
+
+  it("WP2 writes the flow documents when the flow preset is on", async () => {
+    mockGetConfig.mockReturnValue({ includes: {}, excludes: {}, tableOptions: {}, tablePresets: ["flow"] });
+    mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
+    mockSyncFlowDocuments.mockResolvedValue(true);
+    mockGetSourcePath.mockReturnValue("/nonexistent-source");
+    const { downloadCommand } = await import("../commands.js");
+
+    await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
+
+    expect(mockSyncFlowDocuments).toHaveBeenCalledWith(expect.anything(), "x_test", "/nonexistent-source");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("WP2 fails the download when a flow could not be read", async () => {
+    mockGetConfig.mockReturnValue({ includes: {}, excludes: {}, tableOptions: {}, tablePresets: ["flow"] });
+    mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
+    mockSyncFlowDocuments.mockResolvedValue(false);
+    const { downloadCommand } = await import("../commands.js");
+
+    await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
+
+    expect(process.exitCode).toBe(1);
+    expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining("Download finished with errors"));
+  });
+
+  it("WP2 leaves the flow reader unloaded without the preset", async () => {
+    mockGetManifestApi.mockResolvedValue({ data: { result: SCOPED_MANIFEST } });
+    const { downloadCommand } = await import("../commands.js");
+
+    await downloadCommand({ logLevel: "info", scope: "x_test", ci: true });
+
+    expect(mockSyncFlowDocuments).not.toHaveBeenCalled();
   });
 });

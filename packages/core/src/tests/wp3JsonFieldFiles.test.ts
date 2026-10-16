@@ -24,8 +24,8 @@ import {
 const COMPOSITION = { root: { component: "now-heading", props: { label: "Hi" } }, items: [1, 2] };
 
 describe("table presets", () => {
-  it("names the three presets and recognises only them", () => {
-    expect(TABLE_PRESET_NAMES).toEqual(["uib", "workspace", "ai"]);
+  it("names the four presets and recognises only them", () => {
+    expect(TABLE_PRESET_NAMES).toEqual(["uib", "workspace", "ai", "flow"]);
     expect(isTablePresetName("uib")).toBe(true);
     expect(isTablePresetName("toString")).toBe(false);
     expect(isTablePresetName(1)).toBe(false);
