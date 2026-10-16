@@ -184,5 +184,52 @@ describe("JSON columns of preset tables in the manifest (WP3)", () => {
 
       expect(fileNames(manifest, "sys_ux_macroponent", "Home")).toEqual(["client_script.js"]);
     });
+
+    it("looks the scope up when the endpoint's manifest carries no scope id", async () => {
+      const tableAPIGet = macroponentInstance();
+      const manifest = await attachPresetTablesToManifest(
+        { scope: "x_demo" } as unknown as SN.AppManifest,
+        createClient(tableAPIGet),
+        baseConfig(["uib"])
+      );
+
+      expect(tableAPIGet.mock.calls.some((c) => c[0] === "sys_app")).toBe(true);
+      expect(fileNames(manifest, "sys_ux_macroponent", "Home")).toContain("composition.json");
+    });
+
+    it("refuses a scope the instance does not know", async () => {
+      const tableAPIGet: TableApiGet = jest.fn();
+      tableAPIGet.mockResolvedValue({ data: { result: [] } });
+      const manifest = { ...endpointManifest(), scopeId: "" };
+
+      await expect(
+        attachPresetTablesToManifest(manifest, createClient(tableAPIGet), baseConfig(["uib"]))
+      ).rejects.toThrow('Scope "x_demo" not found on this instance');
+    });
+
+    it("never re-reads a table the project excluded", async () => {
+      const tableAPIGet = macroponentInstance();
+      const manifest = await attachPresetTablesToManifest(
+        endpointManifest(),
+        createClient(tableAPIGet),
+        baseConfig(["uib"], { excludes: { sys_ux_macroponent: true } as Sync.TablePropMap })
+      );
+
+      expect(fileNames(manifest, "sys_ux_macroponent", "Home")).toEqual(["client_script.js"]);
+      expect(tableAPIGet.mock.calls.some((c) => c[0] === "sys_ux_macroponent")).toBe(false);
+    });
+
+    it("re-reads an excluded table the project includes again", async () => {
+      const manifest = await attachPresetTablesToManifest(
+        endpointManifest(),
+        createClient(macroponentInstance()),
+        baseConfig(["uib"], {
+          excludes: { sys_ux_macroponent: true } as Sync.TablePropMap,
+          includes: { sys_ux_macroponent: true } as Sync.TablePropMap,
+        })
+      );
+
+      expect(fileNames(manifest, "sys_ux_macroponent", "Home")).toContain("composition.json");
+    });
   });
 });
