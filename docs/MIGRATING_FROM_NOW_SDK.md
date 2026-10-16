@@ -219,7 +219,7 @@ Being honest about the gaps:
   both layouts is refused.
 - **Flow Designer editing.** The file-based tier does not edit flows as
   source. The `flow` table preset writes a read-only, decoded document per
-  flow for review in git; `push` skips it. Whatever the SDK supports in Fluent
+  flow and per custom action for review in git; `push` skips them. Whatever the SDK supports in Fluent
   still builds and installs through `syncrona fluent`, because the SDK does
   that work.
 - **UI Builder, workspaces and AI agents are JSON files, not a DSL.**

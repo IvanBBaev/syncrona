@@ -38,6 +38,7 @@ jest.unstable_mockModule("../progress.js", () => ({
 const { getAppFileListWithCandidates } = await import("../pushPipeline.js");
 
 const flowDoc = path.join("repo", "src", "sys_hub_flow", "approve.flow.json");
+const actionDoc = path.join("repo", "src", "sys_hub_action_type_definition", "notify.action.json");
 const stray = path.join("repo", "src", "sys_script", "stray.js");
 
 beforeEach(() => {
@@ -55,11 +56,18 @@ describe("push and flow documents", () => {
     const messages = warn.mock.calls.map(([message]) => String(message));
     expect(messages[0]).toBe(
       `1 Flow Designer document(s) are read-only and will not be pushed:\n  ${flowDoc}\n` +
-        "Edit the flow in Flow Designer, then run `syncrona refresh` to update the document."
+        "Edit the flow or action in Flow Designer, then run `syncrona refresh` to update the document."
     );
     expect(messages[1]).toContain("1 file(s) are not in the manifest");
     expect(messages[1]).toContain(stray);
     expect(messages[1]).not.toContain(flowDoc);
+  });
+
+  it("skips an action document the same way", async () => {
+    const result = await getAppFileListWithCandidates([actionDoc], { create: true });
+    expect(result).toEqual({ records: [], candidates: [] });
+    expect(parseUnmappedPath).not.toHaveBeenCalledWith(actionDoc);
+    expect(String(warn.mock.calls[0][0])).toContain(`1 Flow Designer document(s) are read-only and will not be pushed:\n  ${actionDoc}`);
   });
 
   it("says nothing about flow documents when none are pushed", async () => {

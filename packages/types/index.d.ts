@@ -88,8 +88,9 @@ export namespace Sync {
      * columns — every `json` / `json_translations` column plus the string
      * columns a preset names as JSON (e.g. `sys_ux_macroponent.composition`) —
      * are synced as `.json` field files instead of sidecar strings. WP2:
-     * `"flow"` writes each Flow Designer flow as a read-only, decoded
-     * `sys_hub_flow/<name>.flow.json` document. Opt-in: defaults to an empty
+     * `"flow"` writes each Flow Designer flow and custom action as a
+     * read-only, decoded `sys_hub_flow/<name>.flow.json` or
+     * `sys_hub_action_type_definition/<name>.action.json` document. Opt-in: defaults to an empty
      * list. Unknown names are refused.
      */
     tablePresets?: string[];

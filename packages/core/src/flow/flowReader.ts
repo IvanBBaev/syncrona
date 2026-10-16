@@ -27,7 +27,7 @@ export const FLOW_PAGE_SIZE = 500;
 export const FLOW_MAX_PAGES = 1000;
 
 const READ_PARAMS = { params: { sysparm_exclude_reference_link: "true" } };
-const SYS_ID = /^[0-9a-f]{32}$/;
+export const SYS_ID = /^[0-9a-f]{32}$/;
 
 function totalCount(headers: unknown): number | undefined {
   const raw = (headers as Record<string, unknown> | null | undefined)?.["x-total-count"];
@@ -35,7 +35,7 @@ function totalCount(headers: unknown): number | undefined {
   return Number.isSafeInteger(total) ? total : undefined;
 }
 
-async function readAll(
+export async function readAll(
   client: FlowReadClient,
   table: string,
   query: string,
@@ -96,7 +96,7 @@ export async function readFlowDocument(
 /** A flow or subflow as listed for a scope: enough to name its file. */
 export type FlowListing = { sys_id: string; name: string; internal_name: string };
 
-const SCOPE_NAME = /^[A-Za-z0-9_]+$/;
+export const SCOPE_NAME = /^[A-Za-z0-9_]+$/;
 
 /** List the flows and subflows of the application with the given scope name. */
 export async function listScopeFlows(

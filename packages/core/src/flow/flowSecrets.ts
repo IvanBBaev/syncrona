@@ -54,7 +54,7 @@ function redactValue(value: unknown, count: { n: number }): unknown {
   return out;
 }
 
-function redactRecord<T extends FlowRecord>(record: T, label: string, warnings: string[]): T {
+export function redactRecord<T extends FlowRecord>(record: T, label: string, warnings: string[]): T {
   let fields = record.fields;
   const type = fields.internal_type;
   if (FLOW_SECRET_TYPES.has(type) && fields.default_value !== undefined) {

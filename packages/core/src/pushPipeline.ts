@@ -44,7 +44,7 @@ import {
   unwrapSNResponse,
   unwrapTableAPIFirstItem,
 } from "./snClient.js";
-import { isFlowDocumentPath } from "./flow/flowPaths.js";
+import { isActionDocumentPath, isFlowDocumentPath } from "./flow/flowPaths.js";
 import { logger } from "./Logger.js";
 import { aggregateErrorMessages, allSettled, wait } from "./genericUtils.js";
 import { getProgTick } from "./progress.js";
@@ -184,8 +184,8 @@ export const getAppFileListWithCandidates = async (
   const misresolved: string[] = [];
   const flowDocuments: string[] = [];
   for (const { filePath, contents, label, entry } of items) {
-    // WP2: a flow document is a read-only view of rows Flow Designer owns.
-    if (entry === undefined && isFlowDocumentPath(filePath)) {
+    // WP2: a flow or action document is a read-only view of rows Flow Designer owns.
+    if (entry === undefined && (isFlowDocumentPath(filePath) || isActionDocumentPath(filePath))) {
       flowDocuments.push(filePath);
       continue;
     }
@@ -252,7 +252,7 @@ export const getAppFileListWithCandidates = async (
     logger.warn(
       `${flowDocuments.length} Flow Designer document(s) are read-only and will not be pushed:\n  ` +
         `${flowDocuments.join("\n  ")}\n` +
-        "Edit the flow in Flow Designer, then run `syncrona refresh` to update the document."
+        "Edit the flow or action in Flow Designer, then run `syncrona refresh` to update the document."
     );
   }
   if (unresolved.length > 0) {

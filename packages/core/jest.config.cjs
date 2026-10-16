@@ -211,7 +211,7 @@ module.exports = {
     // Everything that mutates the ServiceNow instance, plus the collaboration
     // lock and the resumable checkpoint that protect a partial push.
     './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
-    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.83
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 95.84
     './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 100.00 / 95.63
     './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
     './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 99.02 / 94.25

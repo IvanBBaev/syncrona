@@ -88,9 +88,9 @@ export const FLOW_PAYLOAD_COLUMNS: ReadonlySet<string> = new Set([
 
 /** Columns lifted out of `fields` on a step, or redundant with the document. */
 const STEP_LIFTED = new Set(["sys_id", "ui_id", "parent_ui_id", "order", "flow"]);
-const CHILD_LIFTED = new Set(["sys_id", "flow", "model"]);
+export const CHILD_LIFTED = new Set(["sys_id", "flow", "model"]);
 
-function cellText(value: unknown): string {
+export function cellText(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "object") {
     const inner = (value as { value?: unknown }).value;
@@ -99,14 +99,24 @@ function cellText(value: unknown): string {
   return String(value);
 }
 
-function toRecord(row: FlowRow, lifted: ReadonlySet<string>, warnings: string[], label: string): FlowRecord {
+/**
+ * One row as a record: audit stamps, empty cells and `lifted` columns dropped,
+ * payload columns decoded. `payloadColumns` names the columns that must decode.
+ */
+export function toRecord(
+  row: FlowRow,
+  lifted: ReadonlySet<string>,
+  warnings: string[],
+  label: string,
+  payloadColumns: ReadonlySet<string> = FLOW_PAYLOAD_COLUMNS
+): FlowRecord {
   const fields: Record<string, string> = {};
   const payloads: Record<string, FlowPayload> = {};
   for (const [column, raw] of Object.entries(row)) {
     if (lifted.has(column) || AUDIT_COLUMNS.has(column)) continue;
     const text = cellText(raw);
     if (text === "") continue;
-    const known = FLOW_PAYLOAD_COLUMNS.has(column);
+    const known = payloadColumns.has(column);
     if (!known && !text.startsWith(GZIP_BASE64_PREFIX)) {
       fields[column] = text;
       continue;
@@ -127,7 +137,7 @@ function toRecord(row: FlowRow, lifted: ReadonlySet<string>, warnings: string[],
   return record;
 }
 
-function parseOrder(value: unknown): number | null {
+export function parseOrder(value: unknown): number | null {
   const text = cellText(value).trim();
   if (text === "") return null;
   const n = Number(text);
@@ -136,11 +146,11 @@ function parseOrder(value: unknown): number | null {
 
 // Sorting by UTF-16 code unit, not by locale: the output must not depend on the
 // ICU data of the Node.js that generated it.
-function byCodeUnit(a: string, b: string): number {
+export function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function byOrder(a: number | null, b: number | null): number {
+export function byOrder(a: number | null, b: number | null): number {
   if (a === b) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
@@ -268,7 +278,7 @@ export function assembleFlowDocument(rows: FlowRows): FlowDocument {
   };
 }
 
-function sortKeys(value: unknown): unknown {
+export function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};

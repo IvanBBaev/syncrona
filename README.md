@@ -971,17 +971,25 @@ the flow row, its triggers, inputs, outputs, variables and stages, and its steps
 as a tree, with the gzip/base64 value payloads decoded to JSON. Two flows whose
 names differ only in case get their sys_id appended.
 
+It also writes every custom action of the scope as
+`sys_hub_action_type_definition/<internal name>.action.json`: the action row
+(with its `label_cache` decoded), its inputs and outputs, its output mappings
+(`{{step[<cid>].x}}`), and its steps in order, each with the inputs and outputs
+added to it, its static input values (a Script step's script, a Create Record
+step's table) and its data-pill input mappings. The rules below apply to both
+kinds of document.
+
 - The documents are **read-only**. `push` skips them with a warning; edit the
-  flow in Flow Designer and run `syncrona refresh`. They are not manifest
+  flow or action in Flow Designer and run `syncrona refresh`. They are not manifest
   records, so `repair` never prunes them and `push --create` never creates from
   them.
-- A file is rewritten only when its content changed. A document whose flow is
-  gone is left in place and named in a warning.
+- A file is rewritten only when its content changed. A document whose flow or
+  action is gone is left in place and named in a warning.
 - A value typed `password`, `password2`, `glide_encrypted`, `encrypted_text` or
   `masked` is replaced by `<redacted:<type>>` and listed in the document's
   `warnings`.
-- A flow that cannot be read makes the command exit 1; the other flows are
-  still written.
+- A flow or action that cannot be read makes the command exit 1; the others
+  are still written.
 
 ### There are WAY too many files in here!
 

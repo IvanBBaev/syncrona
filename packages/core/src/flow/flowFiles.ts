@@ -3,19 +3,37 @@ import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { logger } from "../Logger.js";
 import { sanitizeRecordFolderName } from "../recordFolderNames.js";
+import { serializeActionDocument } from "./actionDocument.js";
+import { listScopeActions, readActionDocument } from "./actionReader.js";
+import { redactActionSecrets } from "./actionSecrets.js";
 import { serializeFlowDocument } from "./flowDocument.js";
-import { FLOW_DOCUMENT_DIR, FLOW_DOCUMENT_SUFFIX, isFlowDocumentPath } from "./flowPaths.js";
+import {
+  ACTION_DOCUMENT_DIR,
+  ACTION_DOCUMENT_SUFFIX,
+  FLOW_DOCUMENT_DIR,
+  FLOW_DOCUMENT_SUFFIX,
+  isActionDocumentPath,
+  isFlowDocumentPath,
+} from "./flowPaths.js";
 import { listScopeFlows, readFlowDocument, type FlowListing, type FlowReadClient } from "./flowReader.js";
 import { redactFlowSecrets } from "./flowSecrets.js";
 
-export { FLOW_DOCUMENT_DIR, FLOW_DOCUMENT_SUFFIX, isFlowDocumentPath };
+export {
+  ACTION_DOCUMENT_DIR,
+  ACTION_DOCUMENT_SUFFIX,
+  FLOW_DOCUMENT_DIR,
+  FLOW_DOCUMENT_SUFFIX,
+  isActionDocumentPath,
+  isFlowDocumentPath,
+};
 
 /**
  * WP2: the `flow` table preset. Refresh and download write every flow and
- * subflow of the scope as one decoded document, `<source>/sys_hub_flow/<name>.flow.json`.
+ * subflow of the scope as one decoded document, `<source>/sys_hub_flow/<name>.flow.json`,
+ * and every custom action as `<source>/sys_hub_action_type_definition/<name>.action.json`.
  *
  * Read-only: the documents show a flow's definition in git and nothing reads
- * them back — push skips them (see isFlowDocumentPath). They sit directly in
+ * them back — push skips them (see isFlowDocumentPath, isActionDocumentPath). They sit directly in
  * the table folder, two segments deep and without the flat `~`, which is a
  * shape no manifest record has, so `repair` never takes them for orphans and
  * `push --create` never takes them for new records.
@@ -33,7 +51,10 @@ const baseNameOf = (flow: FlowListing): string =>
  * the instance listed first. Names are compared case-insensitively: on macOS and
  * Windows `A.flow.json` and `a.flow.json` are one file.
  */
-export function flowFileNames(flows: readonly FlowListing[]): Map<string, string> {
+export function flowFileNames(
+  flows: readonly FlowListing[],
+  suffix: string = FLOW_DOCUMENT_SUFFIX
+): Map<string, string> {
   const counts = new Map<string, number>();
   for (const flow of flows) {
     const key = baseNameOf(flow).toLowerCase();
@@ -43,7 +64,7 @@ export function flowFileNames(flows: readonly FlowListing[]): Map<string, string
   for (const flow of flows) {
     const base = baseNameOf(flow);
     const unique = counts.get(base.toLowerCase()) === 1 || base === flow.sys_id;
-    names.set(flow.sys_id, `${unique ? base : `${base}_${flow.sys_id}`}${FLOW_DOCUMENT_SUFFIX}`);
+    names.set(flow.sys_id, `${unique ? base : `${base}_${flow.sys_id}`}${suffix}`);
   }
   return names;
 }
@@ -74,42 +95,63 @@ async function writeAtomic(filePath: string, text: string): Promise<void> {
   await fsp.rename(tmp, filePath);
 }
 
-async function existingDocuments(dir: string): Promise<string[]> {
+async function existingDocuments(dir: string, isPath: (filePath: string) => boolean): Promise<string[]> {
   try {
-    return (await fsp.readdir(dir)).filter((name) => isFlowDocumentPath(path.join(dir, name)));
+    return (await fsp.readdir(dir)).filter((name) => isPath(path.join(dir, name)));
   } catch {
     return [];
   }
 }
 
-/**
- * Write the flow document of every flow in `scope` under `sourcePath`. A flow
- * that cannot be read is reported and skipped; the others are still written.
- * Files are rewritten only when their bytes change.
- */
-export async function writeFlowDocuments(
+/** One kind of document the preset writes: flows, or custom actions. */
+type DocumentKind = {
+  dir: string;
+  suffix: string;
+  isPath: (filePath: string) => boolean;
+  list: (client: FlowReadClient, scope: string) => Promise<FlowListing[]>;
+  read: (client: FlowReadClient, sysId: string) => Promise<string>;
+};
+
+const FLOW_KIND: DocumentKind = {
+  dir: FLOW_DOCUMENT_DIR,
+  suffix: FLOW_DOCUMENT_SUFFIX,
+  isPath: isFlowDocumentPath,
+  list: listScopeFlows,
+  read: async (client, sysId) => serializeFlowDocument(redactFlowSecrets(await readFlowDocument(client, sysId))),
+};
+
+const ACTION_KIND: DocumentKind = {
+  dir: ACTION_DOCUMENT_DIR,
+  suffix: ACTION_DOCUMENT_SUFFIX,
+  isPath: isActionDocumentPath,
+  list: listScopeActions,
+  read: async (client, sysId) => serializeActionDocument(redactActionSecrets(await readActionDocument(client, sysId))),
+};
+
+async function writeDocuments(
+  kind: DocumentKind,
   client: FlowReadClient,
   scope: string,
   sourcePath: string
 ): Promise<FlowSyncResult> {
   const result: FlowSyncResult = { written: [], unchanged: [], failed: [], stale: [] };
-  let flows: FlowListing[];
+  let listings: FlowListing[];
   try {
-    flows = await listScopeFlows(client, scope);
+    listings = await kind.list(client, scope);
   } catch (error) {
     result.listError = errorText(error);
     return result;
   }
-  const dir = path.join(sourcePath, FLOW_DOCUMENT_DIR);
-  const names = flowFileNames(flows);
+  const dir = path.join(sourcePath, kind.dir);
+  const names = flowFileNames(listings, kind.suffix);
   const claimed = new Set(names.values());
-  if (flows.length > 0) await fsp.mkdir(dir, { recursive: true });
-  // Sequential: each flow is eight paged reads, and bursts trip rate limits.
-  for (const flow of flows) {
-    const name = names.get(flow.sys_id) as string;
+  if (listings.length > 0) await fsp.mkdir(dir, { recursive: true });
+  // Sequential: each document is several paged reads, and bursts trip rate limits.
+  for (const listing of listings) {
+    const name = names.get(listing.sys_id) as string;
     const filePath = path.join(dir, name);
     try {
-      const text = serializeFlowDocument(redactFlowSecrets(await readFlowDocument(client, flow.sys_id)));
+      const text = await kind.read(client, listing.sys_id);
       if ((await readText(filePath)) === text) {
         result.unchanged.push(name);
         continue;
@@ -117,41 +159,75 @@ export async function writeFlowDocuments(
       await writeAtomic(filePath, text);
       result.written.push(name);
     } catch (error) {
-      result.failed.push({ sys_id: flow.sys_id, reason: errorText(error) });
+      result.failed.push({ sys_id: listing.sys_id, reason: errorText(error) });
     }
   }
-  result.stale = (await existingDocuments(dir)).filter((name) => !claimed.has(name)).sort();
+  result.stale = (await existingDocuments(dir, kind.isPath)).filter((name) => !claimed.has(name)).sort();
   return result;
 }
 
 /**
- * Run writeFlowDocuments and log the outcome. Returns false when a flow, or
- * the listing itself, could not be read: the documents are then incomplete.
+ * Write the flow document of every flow in `scope` under `sourcePath`. A flow
+ * that cannot be read is reported and skipped; the others are still written.
+ * Files are rewritten only when their bytes change.
  */
-export async function syncFlowDocuments(client: FlowReadClient, scope: string, sourcePath: string): Promise<boolean> {
-  logger.info("Writing Flow Designer documents...");
-  const result = await writeFlowDocuments(client, scope, sourcePath);
+export const writeFlowDocuments = (client: FlowReadClient, scope: string, sourcePath: string): Promise<FlowSyncResult> =>
+  writeDocuments(FLOW_KIND, client, scope, sourcePath);
+
+/** Write the document of every custom action in `scope`, as writeFlowDocuments does for flows. */
+export const writeActionDocuments = (client: FlowReadClient, scope: string, sourcePath: string): Promise<FlowSyncResult> =>
+  writeDocuments(ACTION_KIND, client, scope, sourcePath);
+
+/** Log one kind's outcome; false when the documents are incomplete. */
+function report(result: FlowSyncResult, scope: string, noun: string, dir: string, tables: string): boolean {
   if (result.listError !== undefined) {
     logger.error(
-      `Could not list the flows of scope "${scope}" (${result.listError}). ` +
-        "The `flow` preset needs read access to sys_hub_flow and the flow tables."
+      `Could not list the ${noun}s of scope "${scope}" (${result.listError}). ` +
+        `The \`flow\` preset needs read access to ${tables}.`
     );
     return false;
   }
   const total = result.written.length + result.unchanged.length;
-  logger.info(`Flow documents: ${result.written.length} written, ${result.unchanged.length} unchanged (${total} in scope).`);
+  logger.info(
+    `${noun[0].toUpperCase()}${noun.slice(1)} documents: ${result.written.length} written, ` +
+      `${result.unchanged.length} unchanged (${total} in scope).`
+  );
   if (result.stale.length > 0) {
     logger.warn(
-      `${result.stale.length} flow document(s) belong to no flow of this scope any more and were left in place:\n` +
-        result.stale.map((name) => `  ${path.join(FLOW_DOCUMENT_DIR, name)}`).join("\n")
+      `${result.stale.length} ${noun} document(s) belong to no ${noun} of this scope any more and were left in place:\n` +
+        result.stale.map((name) => `  ${path.join(dir, name)}`).join("\n")
     );
   }
   if (result.failed.length > 0) {
     logger.error(
-      `${result.failed.length} flow(s) could not be read:\n` +
+      `${result.failed.length} ${noun}(s) could not be read:\n` +
         result.failed.map((f) => `  ${f.sys_id}: ${f.reason}`).join("\n")
     );
     return false;
   }
   return true;
+}
+
+/**
+ * Write the flow and custom-action documents and log the outcome. Returns
+ * false when a flow or action, or a listing itself, could not be read: the
+ * documents are then incomplete. Actions are written even when flows failed.
+ */
+export async function syncFlowDocuments(client: FlowReadClient, scope: string, sourcePath: string): Promise<boolean> {
+  logger.info("Writing Flow Designer documents...");
+  const flows = report(
+    await writeFlowDocuments(client, scope, sourcePath),
+    scope,
+    "flow",
+    FLOW_DOCUMENT_DIR,
+    "sys_hub_flow and the flow tables"
+  );
+  const actions = report(
+    await writeActionDocuments(client, scope, sourcePath),
+    scope,
+    "action",
+    ACTION_DOCUMENT_DIR,
+    `${ACTION_DOCUMENT_DIR} and the action tables`
+  );
+  return flows && actions;
 }
