@@ -977,7 +977,7 @@ export const CLI_COMMANDS: CliCommandModule[] = [
         type: "string",
         choices: ["sdk", "native"],
         describe:
-          "pack, install, status: force the ServiceNow SDK or syncrona's native engine (default: the SDK when installed)",
+          "build, pack, install, status: force the ServiceNow SDK or syncrona's native engine (default: the SDK when installed)",
       },
       reinstall: { type: "boolean", describe: "install: uninstall the application first, then install" },
       store: { type: "boolean", describe: "install: install as a store application" },

@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<record_update table="sys_app">
+  <sys_app action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>db22ea00d7ff49d9b5d64061202ea510</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_app_db22ea00d7ff49d9b5d64061202ea510</sys_update_name>
+    <active>true</active>
+    <can_edit_in_studio>true</can_edit_in_studio>
+    <enforce_license>log</enforce_license>
+    <guided_setup_guid/>
+    <hide_on_ui>false</hide_on_ui>
+    <ide_created/>
+    <installed_as_dependency>false</installed_as_dependency>
+    <js_level>es_latest</js_level>
+    <licensable>true</licensable>
+    <license_category>none</license_category>
+    <license_model>none</license_model>
+    <logo/>
+    <menu/>
+    <name>Syncrona Build Probe</name>
+    <package_json>x_snc_bprobe/syncrona-build-probe/0.0.1/package.json</package_json>
+    <package_resolver_version>1.0.0</package_resolver_version>
+    <private>false</private>
+    <restrict_table_access>false</restrict_table_access>
+    <runtime_access_tracking>permissive</runtime_access_tracking>
+    <scope>x_snc_bprobe</scope>
+    <scoped_administration>false</scoped_administration>
+    <short_description/>
+    <source>x_snc_bprobe</source>
+    <subscription_entitlement/>
+    <sys_code/>
+    <trackable>true</trackable>
+    <uninstall_blocked>false</uninstall_blocked>
+    <user_role/>
+    <version>0.0.1</version>
+  </sys_app>
+</record_update>

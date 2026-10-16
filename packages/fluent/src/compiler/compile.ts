@@ -82,6 +82,11 @@ export interface CompileFluentOptions {
   loadTypeScript?: TypeScriptLoader;
   /** Generates the sys_id of a new key (tests pin it). */
   generateGuid?: GuidGenerator;
+  /**
+   * Explicit keys of records the caller builds itself (the build's
+   * `sys_module` rows), registered so keys.ts keeps their sys_ids.
+   */
+  explicitKeys?: readonly { table: string; key: string }[];
 }
 
 export interface CompileFluentResult {
@@ -92,6 +97,8 @@ export interface CompileFluentResult {
   /** The keys.ts text to write back; absent when the project could not be read or its keys conflict. */
   keysText?: string;
   keysPath: string;
+  /** The sys_id of each `explicitKeys` entry, by key; empty when the project could not be read. */
+  explicitIds: Record<string, string>;
   diagnostics: FluentDiagnostic[];
 }
 
@@ -165,7 +172,13 @@ export function compileFluentProject(
     keysPath: string,
   ): CompileFluentResult => {
     sink.report("error", e.message, e.location);
-    return { ok: false, records: [], keysPath, diagnostics: sink.diagnostics };
+    return {
+      ok: false,
+      records: [],
+      keysPath,
+      explicitIds: {},
+      diagnostics: sink.diagnostics,
+    };
   };
 
   let config: NowConfig;
@@ -199,6 +212,9 @@ export function compileFluentProject(
     }
   }
   const registry = new KeysRegistry(keys, guid);
+  const explicitIds: Record<string, string> = {};
+  for (const { table, key } of options.explicitKeys ?? [])
+    explicitIds[key] = registry.registerExplicitId(table, key);
   const factory = new RecordFactory(
     registry,
     config.scope,
@@ -293,6 +309,7 @@ export function compileFluentProject(
     records,
     ...(keysText === undefined ? {} : { keysText }),
     keysPath,
+    explicitIds,
     diagnostics: sink.diagnostics,
   };
 }

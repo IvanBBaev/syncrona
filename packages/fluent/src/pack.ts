@@ -76,8 +76,11 @@ function hasHostedPlugins(value: unknown): boolean {
   return Boolean(value);
 }
 
-/** Read `now.config.json` (or `package.json#now`) and `package.json` the way the SDK does. */
-export function readNativeProject(projectDir: string): NativeProject {
+/** The raw project config (`now.config.json`, else `package.json#now`) and `package.json`. */
+export function readNowConfig(projectDir: string): {
+  config: Record<string, unknown>;
+  pkg: Record<string, unknown> | undefined;
+} {
   const pkg = readJson(path.join(projectDir, "package.json"));
   const config = readJson(path.join(projectDir, "now.config.json")) ?? (pkg?.now as Record<string, unknown> | undefined);
   if (!config || typeof config !== "object") {
@@ -86,6 +89,12 @@ export function readNativeProject(projectDir: string): NativeProject {
       "FLUENT_CONFIG_MISSING",
     );
   }
+  return { config, pkg };
+}
+
+/** Read `now.config.json` (or `package.json#now`) and `package.json` the way the SDK does. */
+export function readNativeProject(projectDir: string): NativeProject {
+  const { config, pkg } = readNowConfig(projectDir);
   const packageName = stringOf(pkg?.name);
   const packageVersion = stringOf(pkg?.version);
   if (!packageName || !packageVersion) {

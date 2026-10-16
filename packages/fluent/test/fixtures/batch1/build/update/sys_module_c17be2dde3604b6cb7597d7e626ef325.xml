@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_module action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c17be2dde3604b6cb7597d7e626ef325</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <path>x_snc_bprobe/syncrona-build-probe/0.0.1/bom.json</path>
+    <external_source>false</external_source>
+    <content><![CDATA[{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:fe0f4ce7-54f3-41a5-b0b2-b2486bf1995d",
+  "metadata": {
+    "timestamp": "2026-10-15T14:57:10.814Z",
+    "tools": {
+      "components": [
+        {
+          "type": "library",
+          "name": "sdk-build-plugins",
+          "group": "@servicenow",
+          "version": "4.13.6",
+          "author": "ServiceNow"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "syncrona-build-probe",
+      "version": "0.0.1",
+      "bom-ref": "pkg:servicenow/syncrona-build-probe@0.0.1?sys_scope_id=db22ea00d7ff49d9b5d64061202ea510",
+      "licenses": [
+        {
+          "license": {
+            "name": "UNLICENSED"
+          }
+        }
+      ],
+      "purl": "pkg:servicenow/syncrona-build-probe@0.0.1?sys_scope_id=db22ea00d7ff49d9b5d64061202ea510"
+    }
+  },
+  "components": [],
+  "dependencies": [
+    {
+      "ref": "pkg:servicenow/syncrona-build-probe@0.0.1?sys_scope_id=db22ea00d7ff49d9b5d64061202ea510"
+    }
+  ]
+}]]></content>
+  </sys_module>
+</record_update>

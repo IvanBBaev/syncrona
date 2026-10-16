@@ -61,6 +61,16 @@ installed.
     returns no keys.ts text, so a conflicting build never rewrites the keys.
   - It needs only `typescript` (an optional peer dependency), resolved from
     the project first; `FluentTypeScriptMissingError` says when it is missing.
+- `nativeBuild(projectDir, options)`: the native `fluent build`. It writes the
+  compiler's records plus the `sys_app` scope record and the `package.json` and
+  CycloneDX SBOM `sys_module` rows into the app output directory, byte for byte
+  as SDK 4.13 does (the SBOM names syncrona as its tool), and writes keys.ts
+  back.
+  - It refuses what it cannot build yet (server modules, client content,
+    `metadata/` XML, runtime policies, a logo file) instead of building an
+    incomplete app.
+  - A build with errors, or a `frozenKeys` build whose keys.ts would change,
+    writes nothing.
 
 ## TLS
 

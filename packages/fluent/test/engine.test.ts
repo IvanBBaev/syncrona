@@ -433,6 +433,15 @@ describe("engine choice", () => {
     ]);
   });
 
+  it("builds natively under auto when the SDK is missing", async () => {
+    const { e, projectDir, log } = chosen(undefined, missing);
+    expect(await e.build({})).toEqual({ success: true, errors: [], warnings: [] });
+    expect(fs.readdirSync(path.join(projectDir, "dist", "app", "scope"))).toEqual([
+      "sys_app_db22ea00d7ff49d9b5d64061202ea510.xml",
+    ]);
+    expect(log.info).toHaveBeenCalledWith("@servicenow/sdk is not installed; fluent build runs on syncrona's native engine.");
+  });
+
   it("keeps the SDK under auto when it loads, and surfaces a broken SDK instead of falling back", async () => {
     const sdk = fakeSdk();
     expect(await chosen("auto", sdk.loadSdk).e.pack({ packagePath: "x.zip" })).toBe("/p/target/app.zip");
@@ -447,9 +456,13 @@ describe("engine choice", () => {
     await expect(chosen("sdk", missing).e.pack({})).rejects.toThrow(FluentSdkMissingError);
   });
 
-  it("runs pack, install and status natively without loading the SDK when native is forced", async () => {
+  it("runs build, pack, install and status natively without loading the SDK when native is forced", async () => {
     const loadSdk = jest.fn(missing);
     const { e, projectDir, fake, log } = chosen("native", loadSdk);
+    expect(await e.build({ frozenKeys: true })).toEqual(
+      expect.objectContaining({ success: false, errors: [expect.stringContaining("Keys file is out-of-date")] }),
+    );
+    expect((await e.build({})).success).toBe(true);
     expect(await e.pack({ packagePath: "out.zip" })).toBe(path.join(projectDir, "out.zip"));
     expect(await e.install({ installAsync: true })).toEqual({ trackerId: "t1", rollbackId: "r1" });
     fake.on("GET", "api/now/table/sys_upgrade_history", res({ result: [{ sys_id: "h1", upgrade_finished: "x" }] }));
@@ -461,8 +474,8 @@ describe("engine choice", () => {
 
   it("refuses the actions the native engine does not cover", async () => {
     const { e } = chosen("native", fakeSdk().loadSdk);
-    await expect(e.build({})).rejects.toThrow(
-      expect.objectContaining({ code: "FLUENT_NATIVE_UNSUPPORTED", message: expect.stringContaining("pack, install and status only") }),
+    await expect(e.types({})).rejects.toThrow(
+      expect.objectContaining({ code: "FLUENT_NATIVE_UNSUPPORTED", message: expect.stringContaining("build, pack, install and status only") }),
     );
   });
 

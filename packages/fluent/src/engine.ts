@@ -17,8 +17,8 @@
 // `@servicenow/sdk-api/docs` module, with its own loader, so it neither loads
 // the full API nor needs an instance.
 //
-// `pack`, `install` and `installStatus` also have a native engine (`./pack`,
-// `./install`) that needs no SDK. The `engine` option picks it: `sdk` and
+// `build`, `pack`, `install` and `installStatus` also have a native engine
+// (`./build`, `./pack`, `./install`) that needs no SDK. The `engine` option picks it: `sdk` and
 // `native` force one, and `auto` (the default) uses the SDK when it loads and
 // falls back to the native engine, with one notice, when it is not installed.
 
@@ -26,6 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { SN } from "@syncrona/types";
+import { nativeBuild } from "./build";
 import { InstallFetch, nativeInstall, nativeInstallStatus } from "./install";
 import { FluentNativeError, nativePack } from "./pack";
 
@@ -450,7 +451,7 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
   const loaded = (): LoadedSdk => {
     if (choice === "native") {
       throw new FluentNativeError(
-        "The native Fluent engine covers pack, install and status only; this action needs @servicenow/sdk.",
+        "The native Fluent engine covers build, pack, install and status only; this action needs @servicenow/sdk.",
         "FLUENT_NATIVE_UNSUPPORTED",
       );
     }
@@ -531,6 +532,31 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
     return onSdk();
   };
 
+const sdkBuild = async (opts: Parameters<SN.FluentEngine["build"]>[0]): Promise<SN.FluentBuildResult> => {
+    const logged: SdkLogCapture = { errors: [], warnings: [], calls: [] };
+    sdkLogger.capture = logged;
+    let result: SdkBuildResult;
+    try {
+      result = await withTls(() => orch().build({ ...opts }));
+    } catch (error) {
+      replay(logged);
+      throw error;
+    } finally {
+      sdkLogger.capture = undefined;
+    }
+    const reported = splitDiagnostics(result.diagnostics);
+    if (reported.errors.length || reported.warnings.length) {
+      // The structured diagnostics are the report; the log goes to the console as before.
+      replay(logged);
+      return { success: result.success && reported.errors.length === 0, ...reported };
+    }
+    // The SDK's summary only counts the diagnostics already listed.
+    const listed = logged.errors.filter((e) => !DIAGNOSTIC_SUMMARY.test(e));
+    const errors = listed.length ? listed : logged.errors;
+    const { warnings } = logged;
+    return { success: result.success && errors.length === 0, errors, warnings };
+  };
+
   const nativeDeps = (action: string) => {
     if (!auth || !instanceUrl) throw new Error(`fluent ${action} needs an instance and credentials.`);
     return { instanceUrl, auth, logger, fetch: deps.fetch, sleep: deps.sleep };
@@ -538,28 +564,11 @@ export function createFluentEngine(options: SN.FluentEngineOptions, deps: Fluent
 
   return {
     async build(opts) {
-      const logged: SdkLogCapture = { errors: [], warnings: [], calls: [] };
-      sdkLogger.capture = logged;
-      let result: SdkBuildResult;
-      try {
-        result = await withTls(() => orch().build({ ...opts }));
-      } catch (error) {
-        replay(logged);
-        throw error;
-      } finally {
-        sdkLogger.capture = undefined;
-      }
-      const reported = splitDiagnostics(result.diagnostics);
-      if (reported.errors.length || reported.warnings.length) {
-        // The structured diagnostics are the report; the log goes to the console as before.
-        replay(logged);
-        return { success: result.success && reported.errors.length === 0, ...reported };
-      }
-      // The SDK's summary only counts the diagnostics already listed.
-      const listed = logged.errors.filter((e) => !DIAGNOSTIC_SUMMARY.test(e));
-      const errors = listed.length ? listed : logged.errors;
-      const { warnings } = logged;
-      return { success: result.success && errors.length === 0, errors, warnings };
+      return pick(
+        "build",
+        () => sdkBuild(opts),
+        async () => nativeBuild(projectDir, opts),
+      );
     },
 
     async transform(opts) {

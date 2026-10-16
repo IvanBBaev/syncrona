@@ -962,20 +962,20 @@ describe("fluentCommand: types falls back to native without the SDK", () => {
     expect(rec.generated).toEqual([]);
   });
 
-  it("--dry-run of build exits 1 with the install hint when the adapter reports the SDK missing", async () => {
+  it("--dry-run of an SDK-only action exits 1 with the install hint when the adapter reports the SDK missing", async () => {
     const sdkMissingError = () => Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" });
     const { rec, deps } = harness({
       engine: {
         sdkVersion: async () => {
           throw sdkMissingError();
         },
-        build: async () => {
+        transform: async () => {
           throw sdkMissingError();
         },
       },
     });
-    expect(await run({ action: "build" }, deps)).toBe(1);
-    expect(await run({ action: "build", dryRun: true }, deps)).toBe(1);
+    expect(await run({ action: "transform", paths: "a.js" }, deps)).toBe(1);
+    expect(await run({ action: "transform", paths: "a.js", dryRun: true }, deps)).toBe(1);
     expect(errors).toEqual([FLUENT_INSTALL_HINT, FLUENT_INSTALL_HINT]);
     expect(rec.written).toEqual([]);
   });
@@ -1259,7 +1259,7 @@ describe("fluentCommand: --engine", () => {
   const sdkMissing = () => Promise.reject(Object.assign(new Error("sdk missing"), { code: "FLUENT_SDK_MISSING" }));
   const unreachable = () => Promise.reject(new Error("the SDK must not be loaded"));
 
-  it("plans the forced engine for pack, install and status only", () => {
+  it("plans the forced engine for build, pack, install and status only", () => {
     expect(planFluentAction("pack", { engine: "native" })).toEqual({
       method: "pack",
       options: {},
@@ -1271,8 +1271,12 @@ describe("fluentCommand: --engine", () => {
     expect(() => planFluentAction("install", { engine: "fast" })).toThrow(
       '--engine must be "sdk" or "native" (got "fast").'
     );
-    expect(() => planFluentAction("build", { engine: "native" })).toThrow(
-      "fluent build has no --engine choice: only pack, install, status run without the SDK."
+    expect(planFluentAction("build", { engine: "native", frozenKeys: true })).toMatchObject({
+      method: "build",
+      engine: "native",
+    });
+    expect(() => planFluentAction("transform", { engine: "native" })).toThrow(
+      "fluent transform has no --engine choice: only build, pack, install, status run without the SDK."
     );
   });
 
@@ -1323,6 +1327,22 @@ describe("fluentCommand: --engine", () => {
     const broken = harness({ engine: { sdkVersion: unreachable } });
     expect(await run({ action: "install", ci: true }, broken.deps)).toBe(1);
     expect(errors[1]).toBe("the SDK must not be loaded");
+  });
+
+  it("builds natively under auto when the SDK is missing, keeping the build exit codes", async () => {
+    const seen: unknown[] = [];
+    const { rec, deps } = harness({
+      engine: {
+        sdkVersion: sdkMissing,
+        build: async (options) => {
+          seen.push(options);
+          return { success: false, errors: ["e1"], warnings: [] };
+        },
+      },
+    });
+    expect(await run({ action: "build", frozenKeys: true }, deps)).toBe(2);
+    expect(rec.engineOptions[0]).not.toHaveProperty("engine");
+    expect(seen).toEqual([{ frozenKeys: true }]);
   });
 
   it("previews a forced native engine without probing the SDK", async () => {
@@ -1736,7 +1756,7 @@ describe("default dependencies", () => {
     await writeFile(path.join(root, "now.config.json"), "{}");
     const { deps } = harness();
     const { loadFluent: _l, exists: _e, readFile: _r, ...rest } = deps;
-    expect(await run({ action: "build" }, { ...rest, cwd: root })).toBe(1);
+    expect(await run({ action: "transform", paths: "a.js" }, { ...rest, cwd: root })).toBe(1);
     expect(errors).toEqual([FLUENT_INSTALL_HINT]);
   });
 });

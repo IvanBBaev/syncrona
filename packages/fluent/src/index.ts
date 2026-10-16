@@ -12,12 +12,15 @@
  *
  * The native compiler (`compileFluentProject`) builds a subset of the SDK core
  * APIs without the SDK; it needs only `typescript`, loaded on the first compile.
+ * `nativeBuild` turns its records into the SDK's install layout, so build,
+ * pack and install run end to end without the SDK.
  */
 export * from "./engine";
 export * from "./auth";
 export * from "./uiSession";
 export * from "./recordXml";
 export * from "./zip";
+export * from "./build";
 export * from "./pack";
 export * from "./install";
 export {
