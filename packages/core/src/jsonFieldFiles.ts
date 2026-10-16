@@ -38,7 +38,9 @@ export const jsonFieldForInstance = (content: string, label: string): string => 
   try {
     value = JSON.parse(content);
   } catch (e) {
-    throw new Error(`${label} is not valid JSON: ${describeParseError(content, e)}`);
+    // Node's message already names the line and column of the offending offset.
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`${label} is not valid JSON: ${message}`);
   }
   // An editor's trailing newline is not part of what download wrote.
   if (content.replace(/\r?\n$/, "") === JSON.stringify(value, null, 2)) {
@@ -95,16 +97,4 @@ const tryParse = (raw: string): { value: unknown } | typeof NOT_JSON => {
   } catch {
     return NOT_JSON;
   }
-};
-
-/** The parser's message, with the line and column of the offset it names. */
-const describeParseError = (content: string, e: unknown): string => {
-  const message = e instanceof Error ? e.message : String(e);
-  const match = /position (\d+)/.exec(message);
-  if (!match) return message;
-  const offset = Number(match[1]);
-  const before = content.slice(0, offset);
-  const line = before.split("\n").length;
-  const column = offset - before.lastIndexOf("\n");
-  return `${message} (line ${line}, column ${column})`;
 };

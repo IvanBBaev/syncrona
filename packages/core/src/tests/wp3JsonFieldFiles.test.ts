@@ -108,6 +108,17 @@ describe("jsonFieldForInstance", () => {
       /src\/t\/r\/props\.json is not valid JSON/
     );
   });
+
+  it("names the line and column of a parse error once", () => {
+    let message = "";
+    try {
+      jsonFieldForInstance('{\n  "a": 1,\n}', "props.json");
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(/line 3 column 1/);
+    expect(message.match(/\bline \d+/g)).toHaveLength(1);
+  });
 });
 
 describe("findSecretJsonPaths", () => {
