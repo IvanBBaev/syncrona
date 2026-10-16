@@ -225,6 +225,33 @@ describe("metaFields module", () => {
     // says so rather than vanishing.
     expect(body).toEqual({ ref: "abc", broken: "" });
   });
+
+  // An AI tool keeps its request configuration in a JSON column of a plain
+  // string type; without a WP3 preset that column is a sidecar string, and a
+  // credential in it must not reach the working tree any more than as a file.
+  it("withholds a JSON column that holds a credential, and says where", () => {
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      const body = JSON.parse(
+        serializeMetaFields(
+          {
+            name: "Lookup",
+            tool_attributes: JSON.stringify({ headers: { "x-api-key": "live-key" } }),
+            input_schema: JSON.stringify({ type: "object" }),
+          },
+          ["name", "tool_attributes", "input_schema"],
+          "sn_aia_tool"
+        )
+      );
+
+      expect(body).toEqual({ name: "Lookup", input_schema: '{"type":"object"}' });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/"tool_attributes" of sn_aia_tool.*headers\.x-api-key/)
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe("resolveMetaUpdate", () => {

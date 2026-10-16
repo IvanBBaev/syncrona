@@ -23,6 +23,8 @@
 import { SN } from "@syncrona/types";
 import { SN_TYPE_MAP } from "./fieldMap.js";
 import { FLAT_FIELD_SEPARATOR } from "./flatLayout.js";
+import { findSecretJsonPaths } from "./jsonFieldFiles.js";
+import { logger } from "./Logger.js";
 
 /** Manifest name of the sidecar pseudo-file. */
 export const META_FILE_NAME = ".meta";
@@ -542,7 +544,21 @@ export const serializeMetaFields = (
     if (isDotWalkedColumn(field) || !rowHasColumn(row, field) || secret.has(field)) {
       continue;
     }
-    body[field] = metaValueText(row[field]);
+    const text = metaValueText(row[field]);
+    // A JSON column (an AI tool's attributes, an external agent's configuration)
+    // can hold a credential under a plain string type. The field-file path
+    // withholds such a value (WP3); without a preset the same value would ride
+    // into the working tree here instead. An absent key is never a request to
+    // clear the column, so withholding it leaves the instance's value alone.
+    const secretPaths = findSecretJsonPaths(text);
+    if (secretPaths.length > 0) {
+      logger.warn(
+        `Withholding column "${field}"${table ? ` of ${table}` : ""} from the metadata sidecar: ` +
+          `it holds a credential at ${secretPaths.join(", ")}.`
+      );
+      continue;
+    }
+    body[field] = text;
   }
   return `${JSON.stringify(body, null, 2)}\n`;
 };
