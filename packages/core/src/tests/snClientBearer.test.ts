@@ -14,6 +14,8 @@ const ENV_KEYS = [
   "SN_BEARER_TOKEN",
   "SN_INSTANCE_QA",
   "SN_BEARER_TOKEN_QA",
+  "SN_USER_QA",
+  "SN_PASSWORD_QA",
 ] as const;
 const saved: Record<string, string | undefined> = Object.fromEntries(
   ENV_KEYS.map((k) => [k, process.env[k]])
@@ -86,6 +88,34 @@ describe("bearer-token auth", () => {
     expect(creds.instance).toBe("qa.service-now.com");
     expect(creds.authMethod).toBe("bearer");
     expect(creds.bearerToken).toBe("tok-qa");
+  });
+
+  it("never sends the unprofiled token to a profile's own instance", async () => {
+    const { resolveCredentials, buildClientAuth } = await import("../snClient.js");
+    clearEnv();
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_BEARER_TOKEN = "tok-dev1";
+    process.env.SN_INSTANCE_QA = "qa.service-now.com";
+    process.env.SN_USER_QA = "qa-admin";
+    process.env.SN_PASSWORD_QA = "qa-pw";
+
+    const creds = resolveCredentials("qa");
+    expect(creds.instance).toBe("qa.service-now.com");
+    expect(creds.authMethod).toBe("basic");
+    expect(creds.bearerToken).toBeUndefined();
+    expect(buildClientAuth(creds).apiKey).toBeUndefined();
+  });
+
+  it("lends the unprofiled token to a profile that reuses SN_INSTANCE", async () => {
+    const { resolveCredentials } = await import("../snClient.js");
+    clearEnv();
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_BEARER_TOKEN = "tok-dev1";
+    process.env.SN_USER_QA = "qa-admin";
+
+    const creds = resolveCredentials("qa");
+    expect(creds.instance).toBe("dev1.service-now.com");
+    expect(creds.bearerToken).toBe("tok-dev1");
   });
 
   it("names the missing token when bearer is selected without one", async () => {

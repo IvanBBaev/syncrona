@@ -1020,7 +1020,12 @@ function resolveCredentialsInternal(profile?: string): {
   const clientSecret = envVar(OAUTH_CLIENT_SECRET_ENV);
   const apiKey = envVar(API_KEY_ENV);
   const apiKeyHeader = envVar(API_KEY_HEADER_ENV);
-  const bearerToken = envVar(BEARER_TOKEN_ENV);
+  // A bearer token is valid only on the instance that issued it, so a profile
+  // that names its own instance never borrows the unprofiled token — it belongs
+  // to SN_INSTANCE, and inferring bearer from it would send it to the profile's.
+  const bearerToken =
+    process.env[profileEnvVar(BEARER_TOKEN_ENV, normalizedProfile)] ||
+    (normalizedProfile && instanceFromProfile ? "" : process.env[BEARER_TOKEN_ENV] || "");
   const jwtKey = envVar(JWT_KEY_ENV);
   const jwtKid = envVar(JWT_KID_ENV);
   const jwtIss = envVar(JWT_ISS_ENV);
