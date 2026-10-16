@@ -36,6 +36,12 @@ export function createFluentAuthResolver(
       const { getToken } = input;
       return async () => ({ type: "oauth", token: await getToken() });
     }
+    case "session": {
+      // An injected session is never renewed: once it expires, the SDK's
+      // re-resolve after a 401 gets the same session back and the action fails.
+      const { token, cookie } = input;
+      return async () => ({ type: "basic", token, cookie });
+    }
     case "unsupported":
     default: {
       const method = (input as { method?: string }).method ?? "unknown";

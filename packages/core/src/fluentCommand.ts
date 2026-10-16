@@ -71,7 +71,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
-import { SYS_ID_RE } from "@syncrona/sn-transport";
+import { SESSION_COOKIE_ENV, SESSION_TOKEN_ENV, SYS_ID_RE } from "@syncrona/sn-transport";
 import { logger } from "./Logger.js";
 import { setLogLevel, logErrorHint, resolveInstanceProfile } from "./commandHelpers.js";
 import {
@@ -250,6 +250,24 @@ async function nodeResolveCredential(profile?: string): Promise<FluentCredential
     );
   }
   const instanceUrl = `https://${credentials.instance}/`;
+  // A raw UI session from the environment, like the SDK's SN_SDK_SESSION_TOKEN /
+  // SN_SDK_SESSION_COOKIE, wins over the profile's method: it is a deliberate
+  // choice for this run. It is handed over as is and never renewed.
+  const sessionCookie = (process.env[SESSION_COOKIE_ENV] || "").trim();
+  const sessionToken = (process.env[SESSION_TOKEN_ENV] || "").trim();
+  if (sessionToken && !sessionCookie) {
+    throw new FluentCliError(
+      `${SESSION_TOKEN_ENV} is set without ${SESSION_COOKIE_ENV}: a UI session needs its cookie. ` +
+        `Set both, or unset ${SESSION_TOKEN_ENV} to use the profile.`
+    );
+  }
+  if (sessionCookie) {
+    const tls = resolveTlsMaterial();
+    return {
+      instanceUrl,
+      input: { kind: "session", token: sessionToken, cookie: sessionCookie, ...(tls ? { tls } : {}) },
+    };
+  }
   const { oauth, apiKey } = buildClientAuth(credentials);
   // A pre-issued bearer token reaches the SDK as an OAuth token, just as its own
   // SN_SDK_SESSION_BEARER_TOKEN does. It is never refreshed: once it expires,

@@ -383,6 +383,8 @@ export namespace SN {
   type FluentCredentialInput =
     | { kind: "basic"; username: string; password: string; tls?: FluentTlsOptions }
     | { kind: "oauth"; getToken: () => Promise<string>; tls?: FluentTlsOptions }
+    /** A UI session obtained elsewhere: handed to the SDK as is, with no login. */
+    | { kind: "session"; token: string; cookie: string; tls?: FluentTlsOptions }
     | { kind: "unsupported"; method: string };
 
   interface FluentLogger {

@@ -46,6 +46,14 @@ export const AUTH_METHOD_ENV = "SN_AUTH_METHOD";
 export const API_KEY_ENV = "SN_API_KEY";
 export const API_KEY_HEADER_ENV = "SN_API_KEY_HEADER";
 export const BEARER_TOKEN_ENV = "SN_BEARER_TOKEN";
+/**
+ * A raw UI session for the Fluent tier (the counterpart of the SDK's
+ * `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE`): the `X-UserToken` CSRF
+ * token and the session's `Cookie` header. Environment-only, never stored, and
+ * not an {@link AuthMethod}: REST commands never send a UI session.
+ */
+export const SESSION_TOKEN_ENV = "SN_SESSION_TOKEN";
+export const SESSION_COOKIE_ENV = "SN_SESSION_COOKIE";
 export const OAUTH_CLIENT_ID_ENV = "SN_OAUTH_CLIENT_ID";
 export const OAUTH_CLIENT_SECRET_ENV = "SN_OAUTH_CLIENT_SECRET";
 export const JWT_KEY_ENV = "SN_JWT_KEY";

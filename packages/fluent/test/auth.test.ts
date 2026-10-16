@@ -28,6 +28,22 @@ describe("createFluentAuthResolver", () => {
     expect(await resolve()).toEqual({ type: "oauth", token: "B2" });
   });
 
+  it("returns an injected UI session as is, with no login", async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls++;
+      throw new Error("no network");
+    };
+    const resolve = createFluentAuthResolver(
+      "https://x.invalid",
+      { kind: "session", token: "ck", cookie: "JSESSIONID=a" },
+      { fetch: fetchImpl },
+    );
+    expect(await resolve()).toEqual({ type: "basic", token: "ck", cookie: "JSESSIONID=a" });
+    expect(await resolve()).toEqual({ type: "basic", token: "ck", cookie: "JSESSIONID=a" });
+    expect(calls).toBe(0);
+  });
+
   it("refuses unsupported methods lazily, naming the session-only endpoints", async () => {
     const resolve = createFluentAuthResolver("https://x.invalid", { kind: "unsupported", method: "api-key" });
     const err = await resolve().catch((e: Error) => e);

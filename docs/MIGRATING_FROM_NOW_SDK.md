@@ -95,7 +95,7 @@ other `syncrona` command ([MULTI_INSTANCE.md](MULTI_INSTANCE.md)).
 | `SN_SDK_AUTH_TYPE=basic` with `SN_SDK_USER` / `SN_SDK_USER_PWD` | `SN_USER` / `SN_PASSWORD` | Basic is the default method (`SN_AUTH_METHOD=basic`). |
 | `SN_SDK_AUTH_TYPE=oauth` with `SN_SDK_OAUTH_CLIENT_ID` / `SN_SDK_OAUTH_CLIENT_SECRET` | `SN_AUTH_METHOD=oauth-client-credentials` with `SN_OAUTH_CLIENT_ID` / `SN_OAUTH_CLIENT_SECRET` | The SDK's `oauth` type is the client-credentials grant. In syncrona, `SN_AUTH_METHOD=oauth` is an alias for `oauth-password`, which also needs `SN_USER` / `SN_PASSWORD`. JWT-bearer (`SN_JWT_*`) is supported too. |
 | `SN_SDK_SESSION_BEARER_TOKEN` | `SN_BEARER_TOKEN` | A pre-issued OAuth access token, sent as `Authorization: Bearer <token>`. Like the SDK, a token in the environment wins over every other credential unless `SN_AUTH_METHOD` names a different method. syncrona does not refresh it, and `syncrona login` never stores it. |
-| `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE` | — | syncrona never accepts a raw UI session. A Basic profile logs in to the UI session for you when an SDK action needs one. |
+| `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE` | `SN_SESSION_TOKEN` / `SN_SESSION_COOKIE` | A UI session obtained elsewhere, for the `fluent` actions only: when `SN_SESSION_COOKIE` is set, the SDK gets that session as is, ahead of the profile's method and without a login. syncrona's other commands use REST authentication and ignore it. It is never stored or renewed. Usually unnecessary: a Basic profile logs in to the UI session for you. |
 | `NO_TELEMETRY=1` | (always on) | `@syncrona/fluent` sets `NO_TELEMETRY=1` before it loads the SDK. syncrona itself sends no telemetry. |
 | one set of variables per shell | `--instance-profile <name>` | Reads `SN_INSTANCE_<NAME>`, `SN_USER_<NAME>`, `SN_PASSWORD_<NAME>` (and the other `SN_*` variables with the same suffix), falling back to the base variables. |
 
@@ -133,6 +133,8 @@ The SDK and syncrona authenticate differently:
   - An **OAuth** profile (or a pre-issued `SN_BEARER_TOKEN`) hands its bearer token to the SDK, which bootstraps
     the session's CSRF token itself. That bootstrap reads `sys_user_session`,
     so the integration user needs read access to it.
+  - An **injected UI session** (`SN_SESSION_COOKIE`, with its
+    `SN_SESSION_TOKEN`) is handed to the SDK as is and wins over the profile.
   - A **mutual-TLS** client certificate (`SN_CLIENT_CERT` / `SN_CLIENT_KEY`)
     works with either a Basic or an OAuth profile: the UI login, the token
     request and the SDK's own requests all present it.
@@ -228,9 +230,6 @@ Being honest about the gaps:
   any other file. They are not decomposed into typed source the way the SDK's
   Fluent APIs describe them, and the generated `sys_uxf_snapshot` is never
   pushed: publish the page in UI Builder to regenerate it.
-- **Injecting a raw UI session** (`SN_SDK_SESSION_TOKEN` /
-  `SN_SDK_SESSION_COOKIE`) is not supported. A pre-issued bearer token is
-  (`SN_BEARER_TOKEN`, see the table above).
 - **Some 1.1.0 write paths are verified by mocked tests only.**
   `push --create` / `--prune`, `init --new`, the data-model sidecars,
   `cicd run-suite` / `run-test`, `fluent install` and the read paths were run

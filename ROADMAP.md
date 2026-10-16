@@ -354,6 +354,11 @@ Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
   endpoints (`sn_appclient_upload_processor.do`, `xmlhttp.do`,
   `fluent_update_set_export.do`): they accept a UI session or a bearer token,
   never a key. Live mutual-TLS verification is still open (see above).
+- ✅ **Injected UI session in the Fluent tier** — `SN_SESSION_COOKIE` /
+  `SN_SESSION_TOKEN`, the counterparts of the SDK's `SN_SDK_SESSION_COOKIE` /
+  `SN_SDK_SESSION_TOKEN`: a session obtained elsewhere reaches the SDK as is,
+  ahead of the profile's method and without a login. Environment-only, never
+  stored or renewed. Verified by mocked tests only.
 - ✅ **`explain` and `move-to-app`** counterparts: `fluent explain` reads the
   SDK's bundled documentation offline, and `fluent move-to-app` wraps the SDK's
   `moveToApp` behind a confirmation (SDK-F5).

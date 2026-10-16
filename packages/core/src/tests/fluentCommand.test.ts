@@ -28,6 +28,8 @@ const AUTH_ENV_VARS = [
   "SN_API_KEY",
   "SN_API_KEY_HEADER",
   "SN_BEARER_TOKEN",
+  "SN_SESSION_TOKEN",
+  "SN_SESSION_COOKIE",
   "SN_OAUTH_CLIENT_ID",
   "SN_OAUTH_CLIENT_SECRET",
   "SN_INSTANCE_PROFILE",
@@ -1459,6 +1461,50 @@ describe("default dependencies", () => {
     delete process.env.SN_CLIENT_KEY;
     expect(await run({ action: "types" }, rest)).toBe(0);
     expect(rec.authInputs[1].input).not.toHaveProperty("tls");
+  });
+
+  it("hands an injected UI session to the SDK as is, ahead of the profile's method", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_AUTH_METHOD = "api-key";
+    process.env.SN_API_KEY = "key";
+    process.env.SN_SESSION_TOKEN = " ck-1 ";
+    process.env.SN_SESSION_COOKIE = "JSESSIONID=abc; glide_user_route=r";
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "session" }>;
+    expect(input.kind).toBe("session");
+    expect(input.token).toBe("ck-1");
+    expect(input.cookie).toBe("JSESSIONID=abc; glide_user_route=r");
+    expect(String(input.tls?.cert)).toBe("CERT-PEM");
+
+    // A cookie without a token is passed on with an empty token, as a login
+    // whose instance issued none would be.
+    delete process.env.SN_SESSION_TOKEN;
+    delete process.env.SN_CLIENT_CERT;
+    delete process.env.SN_CLIENT_KEY;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    expect(rec.authInputs[1].input).toEqual({
+      kind: "session",
+      token: "",
+      cookie: "JSESSIONID=abc; glide_user_route=r",
+    });
+  });
+
+  it("refuses a session token without its cookie", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "s3cr3t";
+    process.env.SN_SESSION_TOKEN = "ck-1";
+    process.env.SN_SESSION_COOKIE = "  ";
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(1);
+    expect(errors.join("\n")).toContain("SN_SESSION_TOKEN is set without SN_SESSION_COOKIE");
+    expect(rec.authInputs).toEqual([]);
   });
 
   it("marks an API-key profile unsupported, with or without a client certificate", async () => {

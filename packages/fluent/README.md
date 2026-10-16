@@ -34,6 +34,8 @@ installed.
     session-only endpoints work: `sn_appclient_upload_processor.do`,
     `xmlhttp.do` and `fluent_update_set_export.do`.
   - An OAuth profile hands over its bearer token.
+  - An injected UI session (`{ kind: "session", token, cookie }`) is handed
+    over as is, with no login.
   - API-key profiles are refused, because the SDK cannot use them. A
     mutual-TLS client certificate works with either Basic or OAuth: core hands
     the adapter the TLS material as `tls`.

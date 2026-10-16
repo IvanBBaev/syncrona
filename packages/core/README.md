@@ -113,6 +113,7 @@ Every variable below also accepts a per-profile `_<NAME>` suffix.
 | `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` | oauth-jwt-bearer | Optional JWT header `kid` and `iss`/`sub`/`aud` claim overrides (defaults derived from client id + user + instance). |
 | `SN_CLIENT_CERT` / `SN_CLIENT_KEY` | mTLS | Client certificate + private-key PEM paths (mutual TLS, combinable with any method). |
 | `SN_CLIENT_KEY_PASSPHRASE` | mTLS | Passphrase for an encrypted client key. |
+| `SN_SESSION_COOKIE` / `SN_SESSION_TOKEN` | Fluent tier | An injected UI session (`Cookie` header and `X-UserToken`), handed to the SDK as is ahead of the profile's method; env-only, un-suffixed, never stored or renewed. Other commands ignore it. |
 
 `SN_JWT_KEY`, `SN_CLIENT_CERT` and `SN_CLIENT_KEY` are file **paths** — the key
 material is read at request time and never copied into the credential store.

@@ -375,7 +375,8 @@ describe("loginCommand", () => {
     const files = new Map<string, string>();
     files.set(
       path.join(process.cwd(), ".env"),
-      "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_AUTH_METHOD=api-key\nSN_API_KEY=OLD-KEY\n"
+      "FOO=bar\nSN_INSTANCE=dev123.service-now.com\nSN_AUTH_METHOD=api-key\nSN_API_KEY=OLD-KEY\n" +
+        "SN_SESSION_TOKEN=OLD-CK\nSN_SESSION_COOKIE=JSESSIONID=OLD\n"
     );
     // Already ignored, so the .gitignore check never appends to a real file.
     files.set(path.join(process.cwd(), ".gitignore"), ".env\n");
@@ -404,6 +405,7 @@ describe("loginCommand", () => {
     expect(env).toContain("SN_PASSWORD=secret");
     expect(env).not.toContain("SN_AUTH_METHOD");
     expect(env).not.toContain("OLD-KEY");
+    expect(env).not.toContain("SN_SESSION_");
   });
 
   it("leaves .env to the upsert alone when re-login with the same method has nothing stale", async () => {

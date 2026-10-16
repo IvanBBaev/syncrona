@@ -19,6 +19,8 @@ import {
   CLIENT_KEY_PASSPHRASE_ENV,
   BEARER_TOKEN_ENV,
   normalizeAuthMethod,
+  SESSION_TOKEN_ENV,
+  SESSION_COOKIE_ENV,
 } from "@syncrona/sn-transport";
 import { logger } from "./Logger.js";
 import {
@@ -139,6 +141,10 @@ const MANAGED_AUTH_ENV: string[] = [
   CLIENT_KEY_ENV,
   CLIENT_KEY_PASSPHRASE_ENV,
   BEARER_TOKEN_ENV,
+  // Not a login method, but a stale injected session would override the new
+  // login in the Fluent tier.
+  SESSION_TOKEN_ENV,
+  SESSION_COOKIE_ENV,
 ];
 
 function normalizeLoginMethod(raw?: string): LoginMethod | undefined {

@@ -47,6 +47,12 @@ understand what it touches:
     `x-sn-apikey`, override `SN_API_KEY_HEADER`).
   - **Pre-issued bearer token** — `SN_BEARER_TOKEN`, read from the environment
     only: never written to the credential store, never logged, never refreshed.
+  - **Injected UI session (Fluent tier)** — `SN_SESSION_COOKIE` /
+    `SN_SESSION_TOKEN`, read from the environment only and handed to the
+    ServiceNow SDK as is: never written to the credential store, never logged,
+    never renewed. A session cookie is a full browser session for its user, so
+    treat it like a password and keep it out of shell history and committed
+    `.env` files.
   - **Mutual TLS** — client certificate/key at `SN_CLIENT_CERT` / `SN_CLIENT_KEY`
     (optional `SN_CLIENT_KEY_PASSPHRASE`), applied at the TLS layer and
     combinable with any of the above.
