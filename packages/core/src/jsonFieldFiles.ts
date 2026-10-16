@@ -50,8 +50,10 @@ export const jsonFieldForInstance = (content: string, label: string): string => 
 };
 
 // A key naming a credential, after camelCase is split: `apiKey` → `api_key`.
+// `authorization` is the HTTP header a tool's request configuration carries a
+// bearer token or a Basic pair in.
 const SECRET_KEY =
-  /(?:^|_)(?:password|passwd|pwd|secret|client_secret|api_?key|access_token|refresh_token|auth_token|bearer_token|id_token|private_key|credentials?)$/;
+  /(?:^|_)(?:password|passwd|pwd|secret|client_secret|api_?key|access_token|refresh_token|auth_token|bearer_token|id_token|private_key|credentials?|authorization)$/;
 
 const normalizeKey = (key: string): string =>
   key
@@ -71,7 +73,7 @@ export const findSecretJsonPaths = (raw: string): string[] => {
   const found: string[] = [];
   const walk = (node: unknown, path: string): void => {
     if (Array.isArray(node)) {
-      node.forEach((item, index) => walk(item, `${path}[${index}]`));
+      node.forEach((item, index) => walk(nestedJson(item), `${path}[${index}]`));
       return;
     }
     if (node === null || typeof node !== "object") return;
@@ -81,7 +83,7 @@ export const findSecretJsonPaths = (raw: string): string[] => {
         found.push(childPath);
         continue;
       }
-      walk(value, childPath);
+      walk(nestedJson(value), childPath);
     }
   };
   walk(parsed.value, "");
@@ -89,6 +91,16 @@ export const findSecretJsonPaths = (raw: string): string[] => {
 };
 
 const NOT_JSON = Symbol("not-json");
+
+// UI Builder and AI Agent records routinely hold a JSON document as a string
+// inside the column's JSON (a component's `props`, a tool's `inputs`), so a
+// credential can sit one encoding level down. Only an object or array is worth
+// walking into; any other string is returned as it is, and is a leaf.
+const nestedJson = (value: unknown): unknown => {
+  if (typeof value !== "string" || !/^\s*[[{]/.test(value)) return value;
+  const parsed = tryParse(value);
+  return parsed === NOT_JSON ? value : parsed.value;
+};
 
 const tryParse = (raw: string): { value: unknown } | typeof NOT_JSON => {
   if (raw.trim() === "") return NOT_JSON;

@@ -145,6 +145,22 @@ describe("findSecretJsonPaths", () => {
     expect(findSecretJsonPaths(raw)).toEqual([]);
   });
 
+  it("finds an Authorization header's value", () => {
+    const raw = JSON.stringify({ headers: { Authorization: "Bearer live", Accept: "x" } });
+    expect(findSecretJsonPaths(raw)).toEqual(["headers.Authorization"]);
+  });
+
+  it("finds a credential inside a JSON document held as a string", () => {
+    const raw = JSON.stringify({
+      props: JSON.stringify({ label: "Hi", auth: { api_key: "live-key" } }),
+      items: [JSON.stringify([{ password: "p" }])],
+      note: "{ not json",
+    });
+    expect(findSecretJsonPaths(raw).sort()).toEqual(
+      ["items[0][0].password", "props.auth.api_key"].sort()
+    );
+  });
+
   it("finds nothing in a value that is not JSON", () => {
     expect(findSecretJsonPaths("password=hunter2")).toEqual([]);
   });
