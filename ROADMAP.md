@@ -345,8 +345,15 @@ Follow-ups (tracked in [`TODO`](TODO), "now-sdk parity follow-ups"):
   as one document, opt-in `dataModelLayout: "composite"`). Live round-trip
   still pending.
 - ✅ **Native type generation** from `sys_dictionary`, without the SDK (`fluent types --native`, SDK-F3).
-- 📋 **API-key and mutual-TLS profiles in the Fluent tier** (blocked today by
-  the SDK's session-only endpoints).
+- ✅ **Mutual-TLS and API-key profiles in the Fluent tier** — a client
+  certificate (with any CA bundle or verification opt-out) rides along with
+  Basic and OAuth profiles on every request of an action, the UI-session login
+  and the OAuth token POST included; `fluent types --native` uses syncrona's
+  own client and takes any profile, API key included. An API-key profile stays
+  refused, by design, for the actions that need the SDK's session-only
+  endpoints (`sn_appclient_upload_processor.do`, `xmlhttp.do`,
+  `fluent_update_set_export.do`): they accept a UI session or a bearer token,
+  never a key. Live mutual-TLS verification is still open (see above).
 - ✅ **`explain` and `move-to-app`** counterparts: `fluent explain` reads the
   SDK's bundled documentation offline, and `fluent move-to-app` wraps the SDK's
   `moveToApp` behind a confirmation (SDK-F5).
