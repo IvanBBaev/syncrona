@@ -194,7 +194,7 @@ const PER_FILE_BRANCH_FLOOR = 45;
 // floor naming a module that was renamed or deleted is dead weight, and that is how
 // a per-file gate quietly stops gating.
 //
-// Seven entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
+// Eight entries carry a second reading, `// measured L / B (also L / B: cause)`. V8 range
 // coverage is not reproducible run-to-run on an unchanged tree: across 45 tables here,
 // audit.js reported 92.62% branches 42 times and 92.65% three times, inputValidation.js
 // 96.15% 44 times and 96.30% once — with a byte-identical uncovered-line list every time,
@@ -293,7 +293,7 @@ const MODULE_FLOORS = [
   // The flicker reappeared on the new counters during WP-8 (1 of 4 runs, no change
   // to toolService): 153/168 vs 153/167 branch ranges, the denominator growing alone
   // as before. Lower reading first, per the annotation contract.
-  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 97.27 / 87.50
+  { pattern: 'dist/toolService.js', line: 90, branch: 87 }, // measured 97.27 / 87.01 (also 97.27 / 87.50: V8 range granularity, 154/177 vs 154/176 branches, the denominator growing alone, same uncovered lines 483-484 492-493 565-569 573-580 601 670)
   { pattern: 'dist/toolDispatch.js', line: 96, branch: 95 }, // measured 100.00 / 100.00
   // DX17: +1 covered line (the developer context now resolves the workspace layout
   // instead of just the source directory), which is the whole of 90.22 -> 90.27.
