@@ -995,6 +995,11 @@ kinds of document.
   them.
 - A file is rewritten only when its content changed. A document whose flow or
   action is gone is left in place and named in a warning.
+- Flows built before the v2 step tables (many shipped flows among them) are
+  read from the older tables (`sys_hub_action_instance`, `sys_hub_flow_logic`,
+  ...), and each of their steps carries its inputs from `sys_variable_value`
+  as `variableValues`. When a migrated flow still keeps those older rows next
+  to its v2 rows, they are stale copies and are left out.
 - A value typed `password`, `password2`, `glide_encrypted`, `encrypted_text` or
   `masked` is replaced by `<redacted:<type>>` and listed in the document's
   `warnings`.

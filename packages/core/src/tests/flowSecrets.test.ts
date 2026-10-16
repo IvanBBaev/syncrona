@@ -103,4 +103,20 @@ describe("redactFlowSecrets", () => {
     );
     expect(out.warnings).toEqual(["earlier", `input ${id(2)}: default_value withheld (password)`]);
   });
+
+  it("withholds an older-model input value whose input is secret-typed", () => {
+    const value = (n: number, element: string, internalType: string, v: string): FlowRecord =>
+      record(n, { "variable.element": element, "variable.internal_type": internalType, value: v });
+    const plain = value(21, "table_name", "table_name", "incident");
+    const owner: FlowStep = { ...step(20, undefined), variableValues: [plain, value(22, "api_key", "password2", "s3cret")] };
+    const trigger: FlowRecord = { ...record(23, {}), variableValues: [value(24, "token", "masked", "")] };
+    const out = redactFlowSecrets(doc({ steps: [owner], triggers: [trigger] }));
+    expect(out.steps[0].variableValues?.[0]).toBe(plain);
+    expect(out.steps[0].variableValues?.[1].fields.value).toBe(redactedMarker("password2"));
+    expect(JSON.stringify(out)).not.toContain("s3cret");
+    expect(out.warnings).toEqual([
+      `trigger ${id(23)}: input token withheld (masked)`,
+      `action ${id(20)}: input api_key withheld (password2)`,
+    ]);
+  });
 });

@@ -3,16 +3,20 @@ import { jest } from "@jest/globals";
 import {
   FLOW_MAX_PAGES,
   FLOW_TABLES,
+  LEGACY_FLOW_TABLES,
   listScopeFlows,
   readFlowDocument,
   readFlowRows,
+  VARIABLE_VALUE_FIELDS,
+  VARIABLE_VALUE_KEYS_PER_QUERY,
   type FlowReadClient,
 } from "../flow/flowReader.js";
 import { NonApiResponseError } from "../snClient.js";
-import { FLOW_ID, flowRows, UI } from "./fixtures/flowRows.js";
+import { FLOW_ID, LEGACY_FLOW_ID, LEGACY_UI, legacyFlowRows, flowRows, UI } from "./fixtures/flowRows.js";
 
-// An in-memory Table API: answers each read from fixture rows, honours the
-// `<column>=<value>` filter, limit and offset, and records every call.
+// An in-memory Table API: answers each read from fixture rows, honours
+// `<column>=<value>` and `<column>IN<a,b>` conditions joined by `^`, limit and
+// offset, and records every call.
 
 type Call = { table: string; query: string; fields: string; limit: number; offset: number; extra: unknown };
 type Resp = { data: unknown; headers?: Record<string, unknown> };
@@ -22,11 +26,19 @@ function fakeClient(tables: Record<string, Record<string, unknown>[]>, opts: { t
   const tableAPIGet = jest.fn(
     async (table: string, query: string, fields: string, limit = 500, offset = 0, extra?: unknown): Promise<Resp> => {
       calls.push({ table, query, fields, limit, offset, extra });
-      const [column, value] = query.replace(/\^ORDERBYsys_id$/, "").split("=");
-      const matching = (tables[table] ?? []).filter((row) => {
-        const cell = row[column];
-        return (typeof cell === "object" && cell !== null ? (cell as { value: unknown }).value : cell) === value;
-      });
+      const conditions = query
+        .replace(/\^ORDERBYsys_id$/, "")
+        .split("^")
+        .map((condition) => {
+          const match = /^([\w.]+?)(=|IN)(.*)$/.exec(condition) as RegExpExecArray;
+          return { column: match[1], values: match[2] === "IN" ? match[3].split(",") : [match[3]] };
+        });
+      const matching = (tables[table] ?? []).filter((row) =>
+        conditions.every(({ column, values }) => {
+          const cell = row[column];
+          return values.includes(String(typeof cell === "object" && cell !== null ? (cell as { value: unknown }).value : cell));
+        })
+      );
       return {
         data: { result: matching.slice(offset, offset + limit) },
         headers: opts.totalHeader ? { "x-total-count": String(matching.length) } : {},
@@ -69,6 +81,7 @@ describe("readFlowRows", () => {
       ["sys_hub_flow_variable", `model=${FLOW_ID}^ORDERBYsys_id`],
       ["sys_hub_flow_stage", `flow=${FLOW_ID}^ORDERBYsys_id`],
     ]);
+    expect(rows.variableValues).toEqual([]);
     for (const call of calls) {
       expect(call.fields).toBe("");
       expect(call.extra).toEqual({ params: { sysparm_exclude_reference_link: "true" } });
@@ -128,6 +141,109 @@ describe("readFlowRows", () => {
       `Reading sys_hub_flow did not finish within ${FLOW_MAX_PAGES} pages of 1 rows; the instance may be ignoring sysparm_offset.`
     );
     expect(tableAPIGet).toHaveBeenCalledTimes(FLOW_MAX_PAGES);
+  });
+});
+
+describe("readFlowRows on the older step model", () => {
+  function legacyTables(): Record<string, Record<string, unknown>[]> {
+    const rows = legacyFlowRows();
+    const tables: Record<string, Record<string, unknown>[]> = {
+      sys_hub_flow: [rows.flow],
+      sys_variable_value: [
+        ...rows.variableValues,
+        // A value of a step of another flow must not leak in.
+        { sys_id: "v0", document: "sys_hub_action_instance", document_key: "f".repeat(32), value: "other" },
+      ],
+    };
+    for (const [key, table] of Object.entries(LEGACY_FLOW_TABLES)) {
+      tables[table] = rows[key as keyof typeof LEGACY_FLOW_TABLES];
+    }
+    return tables;
+  }
+
+  it("reads the older step tables and the inputs of their rows", async () => {
+    const { client, calls } = fakeClient(legacyTables(), { totalHeader: true });
+    const rows = await readFlowRows(client, LEGACY_FLOW_ID);
+    expect(rows.actions.map((r) => r.sys_id)).toEqual(["a1000000000000000000000000000002"]);
+    expect(rows.logic.map((r) => r.sys_id)).toEqual(["e1000000000000000000000000000001"]);
+    expect(rows.triggers.map((r) => r.sys_id)).toEqual(["b1000000000000000000000000000001"]);
+    expect(rows.variableValues?.map((r) => r.sys_id).sort()).toEqual([
+      "c0000000000000000000000000000001",
+      "c0000000000000000000000000000002",
+      "c0000000000000000000000000000003",
+    ]);
+    const valueCalls = calls.filter((c) => c.table === "sys_variable_value");
+    expect(valueCalls.map((c) => [c.query, c.fields])).toEqual([
+      [`document=sys_hub_trigger_instance^document_keyINb1000000000000000000000000000001^ORDERBYsys_id`, VARIABLE_VALUE_FIELDS],
+      [`document=sys_hub_action_instance^document_keyINa1000000000000000000000000000002^ORDERBYsys_id`, VARIABLE_VALUE_FIELDS],
+      [`document=sys_hub_flow_logic^document_keyINe1000000000000000000000000000001^ORDERBYsys_id`, VARIABLE_VALUE_FIELDS],
+    ]);
+  });
+
+  it("splits the owners of the values over several queries", async () => {
+    const actions = Array.from({ length: VARIABLE_VALUE_KEYS_PER_QUERY + 1 }, (_, n) => ({
+      sys_id: `a${String(n).padStart(31, "0")}`,
+      flow: LEGACY_FLOW_ID,
+    }));
+    const { client, calls } = fakeClient({ ...legacyTables(), sys_hub_action_instance: actions });
+    await readFlowRows(client, LEGACY_FLOW_ID);
+    const keyCounts = calls
+      .filter((c) => c.query.startsWith("document=sys_hub_action_instance^"))
+      .map((c) => (/document_keyIN([^^]*)/.exec(c.query) as RegExpExecArray)[1].split(",").length);
+    expect(keyCounts).toEqual([VARIABLE_VALUE_KEYS_PER_QUERY, 1]);
+  });
+
+  it("never puts a malformed owner id into a query", async () => {
+    const { client, calls } = fakeClient({
+      ...legacyTables(),
+      sys_hub_flow_logic: [],
+      sys_hub_trigger_instance: [],
+      sys_hub_action_instance: [{ sys_id: "x^ORdocument_key!=", flow: LEGACY_FLOW_ID }],
+    });
+    await readFlowRows(client, LEGACY_FLOW_ID);
+    expect(calls.filter((c) => c.table === "sys_variable_value")).toEqual([]);
+  });
+
+  it("leaves out the pre-migration copies of a migrated flow", async () => {
+    // A migrated flow keeps its older rows beside the v2 ones, with the same ui_ids.
+    const tables = instanceTables();
+    for (const [key, table] of Object.entries(LEGACY_FLOW_TABLES)) {
+      tables[table] = flowRows()[key as keyof typeof LEGACY_FLOW_TABLES].map((row) => ({ ...row, sys_id: `9${String(row.sys_id).slice(1)}` }));
+    }
+    tables.sys_variable_value = [{ sys_id: "v1", document: "sys_hub_action_instance", document_key: "9".repeat(32), value: "stale" }];
+    const { client, calls } = fakeClient(tables, { totalHeader: true });
+    const rows = await readFlowRows(client, FLOW_ID);
+    expect(rows.actions.map((r) => r.sys_id).sort()).toEqual([
+      "a0000000000000000000000000000001",
+      "a0000000000000000000000000000005",
+    ]);
+    expect(rows.variableValues).toEqual([]);
+    expect(calls.filter((c) => Object.values(LEGACY_FLOW_TABLES).includes(c.table as never) || c.table === "sys_variable_value")).toEqual([]);
+  });
+
+  it("decides the trigger apart from the steps", async () => {
+    const legacy = legacyFlowRows();
+    const tables = instanceTables();
+    tables.sys_hub_trigger_instance_v2 = [];
+    tables.sys_hub_trigger_instance = legacy.triggers.map((row) => ({ ...row, flow: FLOW_ID }));
+    tables.sys_hub_action_instance = legacy.actions.map((row) => ({ ...row, flow: FLOW_ID }));
+    tables.sys_variable_value = legacy.variableValues;
+    const { client, calls } = fakeClient(tables, { totalHeader: true });
+    const rows = await readFlowRows(client, FLOW_ID);
+    expect(rows.triggers.map((r) => r.sys_id)).toEqual(["b1000000000000000000000000000001"]);
+    expect(rows.actions.map((r) => r.sys_id)).not.toContain("a1000000000000000000000000000002");
+    expect(rows.variableValues?.map((r) => r.document)).toEqual(["sys_hub_trigger_instance"]);
+    expect(calls.map((c) => c.table).filter((t) => Object.values(LEGACY_FLOW_TABLES).includes(t as never))).toEqual([
+      "sys_hub_trigger_instance",
+    ]);
+  });
+
+  it("assembles an older-model flow into a non-empty document", async () => {
+    const { client } = fakeClient(legacyTables(), { totalHeader: true });
+    const doc = await readFlowDocument(client, LEGACY_FLOW_ID);
+    expect(doc.steps.map((s) => s.ui_id)).toEqual([LEGACY_UI.root]);
+    expect(doc.steps[0].children[0].variableValues).toHaveLength(2);
+    expect(doc.warnings).toEqual([]);
   });
 });
 

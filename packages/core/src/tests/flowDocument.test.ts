@@ -8,7 +8,16 @@ import {
   type FlowStep,
 } from "../flow/flowDocument.js";
 import { detectFlowValues, encodeFlowValues } from "../flow/flowValues.js";
-import { FLOW_ID, flowRows, gz, TRIGGER_INPUTS, UI, UPDATE_VALUES } from "./fixtures/flowRows.js";
+import {
+  FLOW_ID,
+  flowRows,
+  gz,
+  LEGACY_UI,
+  legacyFlowRows,
+  TRIGGER_INPUTS,
+  UI,
+  UPDATE_VALUES,
+} from "./fixtures/flowRows.js";
 
 const shape = (steps: FlowStep[]): unknown => steps.map((s) => ({ [s.kind]: s.ui_id, children: shape(s.children) }));
 
@@ -184,8 +193,68 @@ describe("assembleFlowDocument", () => {
   });
 
   it("reads a plain-JSON payload column as json", () => {
-    const result = assembleFlowDocument(emptyRows({ logic: [{ ...step("s1", "a", "", "1"), outputs_assigned: '{"x":1}' }] }));
-    expect(result.steps[0].payloads).toEqual({ outputs_assigned: { format: "json", value: { x: 1 } } });
+    const result = assembleFlowDocument(emptyRows({ logic: [{ ...step("s1", "a", "", "1"), values: '{"x":1}' }] }));
+    expect(result.steps[0].payloads).toEqual({ values: { format: "json", value: { x: 1 } } });
+  });
+
+  // Live rows: instances store these as comma-separated names, not payloads.
+  it("keeps the assigned-name lists of a logic step as plain fields", () => {
+    const result = assembleFlowDocument(
+      emptyRows({
+        logic: [
+          { ...step("s1", "a", "", "1"), outputs_assigned: "state", flow_variables_assigned: "status,status_message,error" },
+        ],
+      })
+    );
+    expect(result.steps[0].fields).toMatchObject({
+      outputs_assigned: "state",
+      flow_variables_assigned: "status,status_message,error",
+    });
+    expect(result.steps[0].payloads).toBeUndefined();
+    expect(result.warnings).toEqual([]);
+  });
+
+  // Live rows: some payloads start with the indentation of an XML export.
+  it("decodes a gzip payload that starts with whitespace", () => {
+    const result = assembleFlowDocument(emptyRows({ actions: [{ ...step("s1", "a", "", "1"), values: `\n      ${gz(UPDATE_VALUES)}` }] }));
+    expect(result.steps[0].payloads?.values).toEqual({ format: "base64-gzip-json", value: UPDATE_VALUES });
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+describe("assembleFlowDocument on the older step model", () => {
+  const doc = assembleFlowDocument(legacyFlowRows());
+
+  it("builds the step tree from the older tables", () => {
+    expect(shape(doc.steps)).toEqual([{ logic: LEGACY_UI.root, children: [{ action: LEGACY_UI.lookup, children: [] }] }]);
+    expect(doc.steps[0].fields.sys_class_name).toBe("sys_hub_flow_logic");
+    expect(doc.warnings).toEqual([]);
+  });
+
+  it("gives each step and trigger its sys_variable_value inputs, in order", () => {
+    const lookup = doc.steps[0].children[0];
+    expect(lookup.variableValues?.map((v) => [v.fields["variable.element"], v.fields.value])).toEqual([
+      ["table_name", "x_example_record"],
+      ["conditions", "state=0"],
+    ]);
+    expect(lookup.variableValues?.[0].fields).not.toHaveProperty("document_key");
+    expect(lookup.variableValues?.[0].fields).not.toHaveProperty("sys_updated_on");
+    expect(doc.triggers[0].variableValues?.map((v) => v.fields.value)).toEqual(["x_example_record"]);
+    expect(doc.steps[0].variableValues).toBeUndefined();
+  });
+
+  it("reports a value whose owner is not part of the flow", () => {
+    const rows = legacyFlowRows();
+    rows.variableValues.push({ sys_id: "v9", document: "sys_hub_action_instance", document_key: "x".repeat(32), value: "a" });
+    expect(assembleFlowDocument(rows).warnings).toEqual([
+      `variable value v9 belongs to sys_hub_action_instance ${"x".repeat(32)}, which is not a trigger or step of this flow; left out`,
+    ]);
+  });
+
+  it("serializes the same whatever order the values arrive in", () => {
+    const rows = legacyFlowRows();
+    const reversed = { ...rows, variableValues: [...rows.variableValues].reverse() };
+    expect(serializeFlowDocument(assembleFlowDocument(reversed))).toBe(serializeFlowDocument(doc));
   });
 });
 

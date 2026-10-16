@@ -21,7 +21,33 @@ export const FLOW_TABLES = {
   outputs: { table: "sys_hub_flow_output", link: "model" },
   variables: { table: "sys_hub_flow_variable", link: "model" },
   stages: { table: "sys_hub_flow_stage", link: "flow" },
-} as const satisfies Record<Exclude<keyof FlowRows, "flow">, { table: string; link: string }>;
+} as const satisfies Record<Exclude<keyof FlowRows, "flow" | "variableValues">, { table: string; link: string }>;
+
+/**
+ * The tables of the older step model, linked by `flow` as well. Older flows
+ * (many shipped ones among them) have rows only here. A migrated flow keeps
+ * its pre-migration rows here too, as stale copies of its v2 rows with the
+ * same ui_ids, so the older tables are read only where the v2 ones are empty:
+ * the trigger on its own, and the steps (actions, logic, subflows) as a group,
+ * since one flow's steps share one tree.
+ */
+export const LEGACY_FLOW_TABLES = {
+  triggers: "sys_hub_trigger_instance",
+  actions: "sys_hub_action_instance",
+  logic: "sys_hub_flow_logic",
+  subflows: "sys_hub_sub_flow_instance",
+} as const satisfies Partial<Record<keyof typeof FLOW_TABLES, string>>;
+
+/**
+ * The columns read from `sys_variable_value`, the inputs of the older model.
+ * The dot-walked input name and type travel with each value so a secret-typed
+ * input can be withheld without another read.
+ */
+export const VARIABLE_VALUE_FIELDS =
+  "sys_id,document,document_key,order,value,variable,variable.element,variable.internal_type";
+
+/** How many owner sys_ids one `sys_variable_value` query names, to keep URLs short. */
+export const VARIABLE_VALUE_KEYS_PER_QUERY = 100;
 
 export const FLOW_PAGE_SIZE = 500;
 export const FLOW_MAX_PAGES = 1000;
@@ -75,11 +101,27 @@ export async function readFlowRows(
   const [flow] = await readAll(client, "sys_hub_flow", `sys_id=${flowSysId}`, 1);
   if (flow === undefined) throw new Error(`Flow ${flowSysId} was not found in sys_hub_flow.`);
 
-  // Sequential on purpose: eight small reads, and a parallel burst is what trips
-  // instance rate limits first.
-  const parts = {} as Omit<FlowRows, "flow">;
+  // Sequential on purpose: a dozen small reads, and a parallel burst is what
+  // trips instance rate limits first.
+  const parts = {} as Required<Omit<FlowRows, "flow">>;
   for (const [key, { table, link }] of Object.entries(FLOW_TABLES) as [keyof typeof FLOW_TABLES, { table: string; link: string }][]) {
     parts[key] = await readAll(client, table, `${link}=${flowSysId}`, pageSize);
+  }
+  parts.variableValues = [];
+  const v2Steps = parts.actions.length + parts.logic.length + parts.subflows.length;
+  for (const [key, table] of Object.entries(LEGACY_FLOW_TABLES) as [keyof typeof LEGACY_FLOW_TABLES, string][]) {
+    if (key === "triggers" ? parts.triggers.length > 0 : v2Steps > 0) continue;
+    const legacy = await readAll(client, table, `flow=${flowSysId}`, pageSize);
+    if (legacy.length === 0) continue;
+    parts[key] = legacy;
+    // The ids go into an encoded query; only well-formed sys_ids may.
+    const owners = legacy.map((row) => row.sys_id).filter((id): id is string => typeof id === "string" && SYS_ID.test(id));
+    for (let i = 0; i < owners.length; i += VARIABLE_VALUE_KEYS_PER_QUERY) {
+      const keys = owners.slice(i, i + VARIABLE_VALUE_KEYS_PER_QUERY).join(",");
+      parts.variableValues.push(
+        ...(await readAll(client, "sys_variable_value", `document=${table}^document_keyIN${keys}`, pageSize, VARIABLE_VALUE_FIELDS))
+      );
+    }
   }
   return { flow, ...parts };
 }

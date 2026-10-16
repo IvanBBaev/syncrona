@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { FLOW_DOCUMENT_SCHEMA, type FlowDocument, type FlowRecord, type FlowStep } from "./flowDocument.js";
-import { FLOW_TABLES } from "./flowReader.js";
+import { FLOW_TABLES, LEGACY_FLOW_TABLES } from "./flowReader.js";
 import { encodeFlowValues } from "./flowValues.js";
 
 /**
@@ -16,6 +16,11 @@ import { encodeFlowValues } from "./flowValues.js";
  * every payload is encoded back in the format it was read in. Audit stamps were
  * never kept and are not written. The flow's snapshot (`latest_snapshot`) is
  * passed through unchanged; regenerating it is the install's job.
+ *
+ * A trigger or step of the older step model goes back to its own table (named
+ * by its `sys_class_name`), and its `variableValues` come out as
+ * `sys_variable_value` rows owned by it. Their dot-walked columns
+ * (`variable.element`, ...) were read for display and are not written.
  *
  * A document is refused, with every problem listed, when writing it back would
  * lose data: a `<redacted:…>` placeholder would overwrite the real secret, and a
@@ -52,14 +57,38 @@ const STEP_TABLES: Record<FlowStep["kind"], string> = {
 
 type Row = { table: string; label: string; record: FlowRecord; lifted: Record<string, string> };
 
+const LEGACY_TABLES: ReadonlySet<string> = new Set(Object.values(LEGACY_FLOW_TABLES));
+
+/** The table a trigger or step was read from: its older-model table, or the v2 one. */
+function tableOf(record: FlowRecord, v2Table: string): string {
+  const name = record.fields.sys_class_name;
+  return name !== undefined && LEGACY_TABLES.has(name) ? name : v2Table;
+}
+
+function pushWithValues(rows: Row[], row: Row): void {
+  rows.push(row);
+  for (const value of row.record.variableValues ?? []) {
+    const fields = Object.fromEntries(Object.entries(value.fields).filter(([name]) => !name.includes(".")));
+    rows.push({
+      table: "sys_variable_value",
+      label: "input",
+      record: { ...value, fields },
+      lifted: { document: row.table, document_key: row.record.sys_id },
+    });
+  }
+}
+
 function collectRows(doc: FlowDocument): Row[] {
   const flowId = doc.flow.sys_id;
   const rows: Row[] = [{ table: "sys_hub_flow", label: "flow", record: doc.flow, lifted: {} }];
-  const children = (key: Exclude<keyof typeof FLOW_TABLES, "actions" | "logic" | "subflows">, records: FlowRecord[]) => {
+  const children = (key: Exclude<keyof typeof FLOW_TABLES, "triggers" | "actions" | "logic" | "subflows">, records: FlowRecord[]) => {
     const { table, link } = FLOW_TABLES[key];
     for (const record of records) rows.push({ table, label: key, record, lifted: { [link]: flowId } });
   };
-  children("triggers", doc.triggers);
+  for (const record of doc.triggers) {
+    const table = tableOf(record, FLOW_TABLES.triggers.table);
+    pushWithValues(rows, { table, label: "triggers", record, lifted: { flow: flowId } });
+  }
   const walk = (steps: FlowStep[], parent: string) => {
     for (const step of steps) {
       const lifted = {
@@ -68,7 +97,7 @@ function collectRows(doc: FlowDocument): Row[] {
         parent_ui_id: parent,
         order: step.order === null ? "" : String(step.order),
       };
-      rows.push({ table: STEP_TABLES[step.kind], label: step.kind, record: step, lifted });
+      pushWithValues(rows, { table: tableOf(step, STEP_TABLES[step.kind]), label: step.kind, record: step, lifted });
       walk(step.children, step.ui_id);
     }
   };

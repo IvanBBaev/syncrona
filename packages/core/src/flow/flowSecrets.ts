@@ -6,8 +6,9 @@ import type { FlowDocument, FlowPayload, FlowRecord, FlowStep } from "./flowDocu
  * tree. A flow input, output or variable whose `internal_type` is a secret type
  * loses its `default_value`, and inside decoded payloads every object that says
  * it is secret-typed (`type` / `internal_type`, directly or on its `parameter`)
- * loses its value columns. Each redaction is listed in the document's
- * `warnings`.
+ * loses its value columns. A `sys_variable_value` input of the older step model
+ * loses its `value` when the input it fills (`variable.internal_type`) is
+ * secret-typed. Each redaction is listed in the document's `warnings`.
  *
  * The rule can only see what the rows say: a step input whose type is defined on
  * the action (not in the step's payload) carries no type here. Documents are
@@ -77,7 +78,19 @@ export function redactRecord<T extends FlowRecord>(record: T, label: string, war
     }
     payloads = next;
   }
-  return { ...record, fields, ...(payloads !== undefined ? { payloads } : {}) };
+  const variableValues = record.variableValues?.map((entry) => {
+    const inputType = entry.fields["variable.internal_type"];
+    if (!FLOW_SECRET_TYPES.has(inputType) || entry.fields.value === undefined) return entry;
+    const name = entry.fields["variable.element"] ?? entry.fields.variable ?? entry.sys_id;
+    warnings.push(`${label} ${record.sys_id}: input ${name} withheld (${inputType})`);
+    return { ...entry, fields: { ...entry.fields, value: redactedMarker(inputType) } };
+  });
+  return {
+    ...record,
+    fields,
+    ...(payloads !== undefined ? { payloads } : {}),
+    ...(variableValues !== undefined ? { variableValues } : {}),
+  };
 }
 
 function redactSteps(steps: FlowStep[], warnings: string[]): FlowStep[] {

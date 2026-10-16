@@ -6,11 +6,17 @@ import { detectFlowValues, GZIP_BASE64_PREFIX, type FlowValuesFormat } from "./f
  * that can be written as `<flow>.flow.json` and diffed in git.
  *
  * The definition is spread over several tables: the `sys_hub_flow` row itself,
- * one row per trigger, action, logic and subflow step (`*_instance_v2`), and the
- * flow's inputs, outputs, variables and stages. Steps form a tree through
- * `ui_id` / `parent_ui_id`, ordered by `order`. The payload columns of those rows
+ * one row per trigger, action, logic and subflow step, and the flow's inputs,
+ * outputs, variables and stages. Steps form a tree through `ui_id` /
+ * `parent_ui_id`, ordered by `order`. The payload columns of those rows
  * (`values`, `trigger_inputs`, ...) are decoded so the document shows the
  * configuration, not a base64 blob.
+ *
+ * Two step models coexist. Newer flows keep their steps in the `*_instance_v2`
+ * tables with the inputs inside a gzip payload; older ones keep them in
+ * `sys_hub_action_instance`, `sys_hub_flow_logic`, ... with each input as a
+ * `sys_variable_value` row, which lands in the owning record's `variableValues`.
+ * A step's `sys_class_name` field says which table it came from.
  *
  * The document is lossless for everything except audit stamps: every other
  * non-empty column is kept, and each payload records the format it was stored
@@ -35,6 +41,8 @@ export type FlowRows = {
   outputs: FlowRow[];
   variables: FlowRow[];
   stages: FlowRow[];
+  /** `sys_variable_value` rows of the older step model, linked by `document_key`. */
+  variableValues?: FlowRow[];
 };
 
 /** A decoded payload column. An undecodable one keeps its raw text in `value`. */
@@ -44,6 +52,8 @@ export type FlowRecord = {
   sys_id: string;
   fields: Record<string, string>;
   payloads?: Record<string, FlowPayload>;
+  /** The record's inputs when they are stored as `sys_variable_value` rows. */
+  variableValues?: FlowRecord[];
 };
 
 export type FlowStepKind = "action" | "logic" | "subflow";
@@ -77,18 +87,17 @@ const AUDIT_COLUMNS = new Set([
   "sys_updated_on",
 ]);
 
-/** Columns known to hold a JSON or base64 + gzip JSON payload. */
-export const FLOW_PAYLOAD_COLUMNS: ReadonlySet<string> = new Set([
-  "flow_variables_assigned",
-  "outputs_assigned",
-  "subflow_inputs",
-  "trigger_inputs",
-  "values",
-]);
+/**
+ * Columns known to hold a JSON or base64 + gzip JSON payload. Not
+ * `outputs_assigned` / `flow_variables_assigned`: instances store those as
+ * comma-separated name lists, so they stay plain fields.
+ */
+export const FLOW_PAYLOAD_COLUMNS: ReadonlySet<string> = new Set(["subflow_inputs", "trigger_inputs", "values"]);
 
 /** Columns lifted out of `fields` on a step, or redundant with the document. */
 const STEP_LIFTED = new Set(["sys_id", "ui_id", "parent_ui_id", "order", "flow"]);
 export const CHILD_LIFTED = new Set(["sys_id", "flow", "model"]);
+const VALUE_LIFTED = new Set(["sys_id", "document", "document_key"]);
 
 export function cellText(value: unknown): string {
   if (value == null) return "";
@@ -259,12 +268,54 @@ function buildStepTree(rows: FlowRows, warnings: string[]): FlowStep[] {
   return roots;
 }
 
+function collectSteps(steps: readonly FlowStep[], into: FlowRecord[]): void {
+  for (const step of steps) {
+    into.push(step);
+    collectSteps(step.children, into);
+  }
+}
+
+// Each value row names its owner by sys_id; sys_ids are unique across tables,
+// so the owner's table need not match.
+function attachVariableValues(rows: readonly FlowRow[], owners: readonly FlowRecord[], warnings: string[]): void {
+  if (rows.length === 0) return;
+  const bySysId = new Map<string, FlowRecord>();
+  for (const owner of owners) if (owner.sys_id !== "") bySysId.set(owner.sys_id, owner);
+  const grouped = new Map<FlowRecord, FlowRow[]>();
+  for (const row of rows) {
+    const key = cellText(row.document_key);
+    const owner = bySysId.get(key);
+    if (owner === undefined) {
+      warnings.push(
+        `variable value ${cellText(row.sys_id)} belongs to ${cellText(row.document)} ${key}, which is not a trigger or step of this flow; left out`
+      );
+      continue;
+    }
+    grouped.set(owner, [...(grouped.get(owner) ?? []), row]);
+  }
+  for (const [owner, ownRows] of grouped) {
+    owner.variableValues = ownRows
+      .map((row) => ({
+        order: parseOrder(row.order),
+        tie: cellText(row["variable.element"]) || cellText(row.variable),
+        record: toRecord(row, VALUE_LIFTED, warnings, `variable value ${cellText(row.sys_id)}`),
+      }))
+      .sort(
+        (a, b) => byOrder(a.order, b.order) || byCodeUnit(a.tie, b.tie) || byCodeUnit(a.record.sys_id, b.record.sys_id)
+      )
+      .map((entry) => entry.record);
+  }
+}
+
 /** Assemble the rows of one flow into a document. Pure; never throws. */
 export function assembleFlowDocument(rows: FlowRows): FlowDocument {
   const warnings: string[] = [];
   const flow = toRecord(rows.flow, new Set(["sys_id"]), warnings, "flow");
   const triggers = sortedRecords(rows.triggers, "ui_id", warnings, "trigger");
   const steps = buildStepTree(rows, warnings);
+  const owners: FlowRecord[] = [...triggers];
+  collectSteps(steps, owners);
+  attachVariableValues(rows.variableValues ?? [], owners, warnings);
   return {
     schema: FLOW_DOCUMENT_SCHEMA,
     flow,

@@ -153,3 +153,82 @@ export function flowRows(): FlowRows {
     ],
   };
 }
+
+export const LEGACY_FLOW_ID = "fedcba9876543210fedcba9876543210";
+
+export const LEGACY_UI = {
+  root: "66666666-6666-4666-8666-666666666666",
+  lookup: "77777777-7777-4777-8777-777777777777",
+};
+
+/**
+ * The same kind of flow in the older step model: steps in sys_hub_action_instance
+ * / sys_hub_flow_logic / sys_hub_trigger_instance, each input a sys_variable_value
+ * row with the dot-walked name and type of the input it fills.
+ */
+export function legacyFlowRows(): Required<FlowRows> {
+  const value = (n: number, document: string, key: string, element: string, internalType: string, val: string, order: string) => ({
+    ...audit,
+    sys_id: `c${String(n).padStart(31, "0")}`,
+    document,
+    document_key: key,
+    order,
+    value: val,
+    variable: `d${String(n).padStart(31, "0")}`,
+    "variable.element": element,
+    "variable.internal_type": internalType,
+  });
+  return {
+    flow: { ...audit, sys_id: LEGACY_FLOW_ID, name: "Legacy Flow", internal_name: "legacy_flow", type: "flow" },
+    triggers: [
+      {
+        ...audit,
+        sys_id: "b1000000000000000000000000000001",
+        sys_class_name: "sys_hub_trigger_instance",
+        flow: LEGACY_FLOW_ID,
+        name: "Created or Updated",
+        trigger_type: "record_create_or_update",
+        trigger_definition: "c1000000000000000000000000000001",
+        trigger_inputs: "",
+      },
+    ],
+    actions: [
+      {
+        ...audit,
+        sys_id: "a1000000000000000000000000000002",
+        sys_class_name: "sys_hub_action_instance",
+        flow: LEGACY_FLOW_ID,
+        ui_id: LEGACY_UI.lookup,
+        parent_ui_id: LEGACY_UI.root,
+        order: "2",
+        action_type: "d1000000000000000000000000000001",
+        action_inputs: "",
+      },
+    ],
+    logic: [
+      {
+        ...audit,
+        sys_id: "e1000000000000000000000000000001",
+        sys_class_name: "sys_hub_flow_logic",
+        flow: LEGACY_FLOW_ID,
+        ui_id: LEGACY_UI.root,
+        parent_ui_id: "",
+        order: "1",
+        logic_definition: "f1000000000000000000000000000001",
+        inputs: "",
+        outputs_assigned: "",
+      },
+    ],
+    subflows: [],
+    inputs: [],
+    outputs: [],
+    variables: [],
+    stages: [],
+    // Out of order on purpose: assembly must sort each owner's values by `order`.
+    variableValues: [
+      value(3, "sys_hub_action_instance", "a1000000000000000000000000000002", "conditions", "conditions", "state=0", "3"),
+      value(2, "sys_hub_action_instance", "a1000000000000000000000000000002", "table_name", "table_name", "x_example_record", "2"),
+      value(1, "sys_hub_trigger_instance", "b1000000000000000000000000000001", "table", "table_name", "x_example_record", "1"),
+    ],
+  };
+}

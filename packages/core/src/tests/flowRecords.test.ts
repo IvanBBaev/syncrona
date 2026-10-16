@@ -4,7 +4,7 @@ import { FLOW_TABLES } from "../flow/flowReader.js";
 import { FlowEncodeError, flowDocumentChanges, flowDocumentRecords, type FlowRecordUpdate } from "../flow/flowRecords.js";
 import { redactFlowSecrets } from "../flow/flowSecrets.js";
 import { detectFlowValues } from "../flow/flowValues.js";
-import { FLOW_ID, flowRows, gz, UI } from "./fixtures/flowRows.js";
+import { FLOW_ID, flowRows, gz, legacyFlowRows, UI } from "./fixtures/flowRows.js";
 
 const AUDIT = new Set(["sys_created_by", "sys_created_on", "sys_mod_count", "sys_tags", "sys_updated_by", "sys_updated_on"]);
 const PAYLOADS = new Set(["values", "trigger_inputs", "subflow_inputs", "flow_variables_assigned", "outputs_assigned"]);
@@ -145,6 +145,35 @@ describe("flowDocumentRecords", () => {
       "inputs 70000000000000000000000000000002: default_value holds a redacted placeholder, not the value",
     ]);
     expect(error.message).toContain("cannot be written back");
+  });
+
+  it("writes an older-model flow back to its own tables, with its inputs as sys_variable_value rows", () => {
+    const legacy = legacyFlowRows();
+    const records = flowDocumentRecords(assembleFlowDocument(legacy));
+    const expected = [
+      { table: "sys_hub_flow", row: legacy.flow },
+      ...legacy.triggers.map((row) => ({ table: "sys_hub_trigger_instance", row })),
+      ...legacy.logic.map((row) => ({ table: "sys_hub_flow_logic", row })),
+      ...legacy.actions.map((row) => ({ table: "sys_hub_action_instance", row })),
+      ...legacy.variableValues.map((row) => ({ table: "sys_variable_value", row })),
+    ];
+    expect(records.map((r) => `${r.table} ${r.sys_id}`).sort()).toEqual(
+      expected.map(({ table, row }) => `${table} ${String(row.sys_id)}`).sort(),
+    );
+    for (const { row } of expected) {
+      const update = records.find((r) => r.sys_id === row.sys_id);
+      const want = Object.fromEntries(Object.entries(fromRow(row)).filter(([name]) => !name.includes(".")));
+      expect(fromUpdate(update as FlowRecordUpdate)).toEqual(want);
+    }
+  });
+
+  it("refuses a redacted older-model input", () => {
+    const legacy = legacyFlowRows();
+    legacy.variableValues[0]["variable.internal_type"] = "password2";
+    const error = encodeError(() => flowDocumentRecords(redactFlowSecrets(assembleFlowDocument(legacy))));
+    expect(error.problems).toEqual([
+      "input c0000000000000000000000000000003: value holds a redacted placeholder, not the value",
+    ]);
   });
 
   it("refuses a document whose steps assembly had to move", () => {
