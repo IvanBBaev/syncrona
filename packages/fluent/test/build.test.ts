@@ -295,7 +295,11 @@ describe("nativeBuild", () => {
     const update = fs.readdirSync(path.join(dir, "dist/app/update"));
     const pkg = update
       .map((file) => moduleContent(dir, file))
-      .find((content) => content.includes('"dependencies"'))!;
+      .find(
+        (content) =>
+          content.includes('"dependencies"') &&
+          !content.includes('"bomFormat"'),
+      )!;
     expect(JSON.parse(pkg)).toEqual({
       name: "bare-app",
       version: "1.2.3",
