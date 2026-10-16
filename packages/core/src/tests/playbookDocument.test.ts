@@ -158,6 +158,15 @@ describe("assemblePlaybookDocument", () => {
     expect(doc.warnings).toContainEqual(`process ${PD}: 1 secret value(s) withheld from extra_state`);
   });
 
+  it("withholds a secret input default that was decoded as a gzip payload", () => {
+    const input = rows();
+    input.inputs[0].default_value = gzipSync(Buffer.from(JSON.stringify({ k: "hunter5" }))).toString("base64");
+    const doc = assemblePlaybookDocument(input);
+    expect(doc.inputs[1].fields.default_value).toBe("<redacted:password2>");
+    expect(doc.inputs[1]).not.toHaveProperty("payloads");
+    expect(serializePlaybookDocument(doc)).not.toContain("hunter5");
+  });
+
   it("keeps an empty secret value as it is", () => {
     const input = rows();
     input.values = [value("sys_pd_activity", ACT_1, "api_key", "password", "")];

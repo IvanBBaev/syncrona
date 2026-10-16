@@ -55,6 +55,23 @@ function redactValue(value: unknown, count: { n: number }): unknown {
   return out;
 }
 
+type ColumnHolder = { fields: Record<string, string>; payloads?: Record<string, FlowPayload> };
+
+/**
+ * `record` with `column` replaced by the marker, or undefined when it holds no
+ * value. A value whose text was gzip-encoded JSON was decoded into `payloads`
+ * rather than `fields`, so it is withheld from there too.
+ */
+export function withholdColumn<T extends ColumnHolder>(record: T, column: string, type: string): T | undefined {
+  const payload = record.payloads?.[column];
+  if (record.fields[column] === undefined && payload === undefined) return undefined;
+  const fields = { ...record.fields, [column]: redactedMarker(type) };
+  if (payload === undefined || record.payloads === undefined) return { ...record, fields };
+  const payloads = Object.fromEntries(Object.entries(record.payloads).filter(([key]) => key !== column));
+  const { payloads: _dropped, ...rest } = record;
+  return { ...rest, fields, ...(Object.keys(payloads).length > 0 ? { payloads } : {}) } as T;
+}
+
 /**
  * Withholds the secret-typed values inside decoded payloads; `label` prefixes
  * each warning. Shared with the playbook document, whose payloads carry the
@@ -81,24 +98,25 @@ export function redactPayloads(
 }
 
 export function redactRecord<T extends FlowRecord>(record: T, label: string, warnings: string[]): T {
-  let fields = record.fields;
-  const type = fields.internal_type;
-  if (FLOW_SECRET_TYPES.has(type) && fields.default_value !== undefined) {
-    fields = { ...fields, default_value: redactedMarker(type) };
+  let current = record;
+  const type = record.fields.internal_type;
+  const withheld = FLOW_SECRET_TYPES.has(type) ? withholdColumn(current, "default_value", type) : undefined;
+  if (withheld !== undefined) {
+    current = withheld;
     warnings.push(`${label} ${record.sys_id}: default_value withheld (${type})`);
   }
   const payloads =
-    record.payloads !== undefined ? redactPayloads(record.payloads, `${label} ${record.sys_id}`, warnings) : undefined;
-  const variableValues = record.variableValues?.map((entry) => {
+    current.payloads !== undefined ? redactPayloads(current.payloads, `${label} ${record.sys_id}`, warnings) : undefined;
+  const variableValues = current.variableValues?.map((entry) => {
     const inputType = entry.fields["variable.internal_type"];
-    if (!FLOW_SECRET_TYPES.has(inputType) || entry.fields.value === undefined) return entry;
+    const redacted = FLOW_SECRET_TYPES.has(inputType) ? withholdColumn(entry, "value", inputType) : undefined;
+    if (redacted === undefined) return entry;
     const name = entry.fields["variable.element"] ?? entry.fields.variable ?? entry.sys_id;
     warnings.push(`${label} ${record.sys_id}: input ${name} withheld (${inputType})`);
-    return { ...entry, fields: { ...entry.fields, value: redactedMarker(inputType) } };
+    return redacted;
   });
   return {
-    ...record,
-    fields,
+    ...current,
     ...(payloads !== undefined ? { payloads } : {}),
     ...(variableValues !== undefined ? { variableValues } : {}),
   };

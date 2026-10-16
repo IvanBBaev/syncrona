@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { FlowPayload, FlowRow } from "./flowDocument.js";
-import { FLOW_SECRET_TYPES, redactedMarker, redactPayloads } from "./flowSecrets.js";
+import { FLOW_SECRET_TYPES, redactedMarker, redactPayloads, withholdColumn } from "./flowSecrets.js";
 import { detectFlowValues, GZIP_BASE64_PREFIX } from "./flowValues.js";
 
 /**
@@ -202,13 +202,15 @@ function toRecord(row: FlowRow, ctx: RecordContext): PlaybookRecord {
       fields[column] = text;
     }
   }
+  let record: PlaybookRecord = { sys_id: sysId, fields };
+  if (Object.keys(payloads).length > 0) record.payloads = payloads;
   const type = fields.internal_type;
-  if (type !== undefined && FLOW_SECRET_TYPES.has(type) && fields.default_value !== undefined) {
-    fields.default_value = redactedMarker(type);
+  const withheld = type !== undefined && FLOW_SECRET_TYPES.has(type) ? withholdColumn(record, "default_value", type) : undefined;
+  if (withheld !== undefined) {
+    record = withheld;
     ctx.warnings.push(`${label}: default_value withheld (${type})`);
   }
-  const record: PlaybookRecord = { sys_id: sysId, fields };
-  if (Object.keys(payloads).length > 0) record.payloads = redactPayloads(payloads, label, ctx.warnings);
+  if (record.payloads !== undefined) record.payloads = redactPayloads(record.payloads, label, ctx.warnings);
   if (ctx.document !== undefined) {
     const variables = ctx.groups.get(`${ctx.document}:${sysId}`);
     if (variables !== undefined) record.variables = redactVariables(variables, label, ctx.warnings);

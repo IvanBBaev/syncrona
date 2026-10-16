@@ -2,6 +2,7 @@
 //
 // WP2: custom Flow Designer actions — reading their rows, assembling them into
 // one document, and withholding secrets.
+import { gzipSync } from "node:zlib";
 import { jest } from "@jest/globals";
 import {
   ACTION_DOCUMENT_SCHEMA,
@@ -198,6 +199,23 @@ describe("redactActionSecrets", () => {
     ]);
     // The input document is left as it was.
     expect(serializeActionDocument(before)).toContain("hunter2");
+  });
+
+  it("withholds a secret step value that was decoded as a gzip payload", () => {
+    const rows = actionRows();
+    rows.stepValues.push({
+      sys_id: "v4",
+      document_key: STEP2,
+      "variable.element": "rest_password",
+      "variable.internal_type": "password2",
+      value: gzipSync(Buffer.from(JSON.stringify("hunter4"))).toString("base64"),
+    });
+    const doc = redactActionSecrets(assembleActionDocument(rows));
+    const v4 = doc.steps[1].values.find((v) => v.sys_id === "v4");
+    expect(v4?.fields.value).toBe("<redacted:password2>");
+    expect(v4).not.toHaveProperty("payloads");
+    expect(serializeActionDocument(doc)).not.toContain("hunter4");
+    expect(doc.warnings).toContain("step value v4: value withheld (password2)");
   });
 });
 

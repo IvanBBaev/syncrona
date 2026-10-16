@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import type { ActionDocument, ActionStep } from "./actionDocument.js";
 import type { FlowRecord } from "./flowDocument.js";
-import { FLOW_SECRET_TYPES, redactedMarker, redactRecord } from "./flowSecrets.js";
+import { FLOW_SECRET_TYPES, redactRecord, withholdColumn } from "./flowSecrets.js";
 
 /**
  * Withholds secret values from an action document, by the rules of
@@ -12,9 +12,10 @@ import { FLOW_SECRET_TYPES, redactedMarker, redactRecord } from "./flowSecrets.j
 
 function redactStepValue(record: FlowRecord, warnings: string[]): FlowRecord {
   const type = record.fields["variable.internal_type"];
-  if (type === undefined || !FLOW_SECRET_TYPES.has(type) || record.fields.value === undefined) return record;
+  const withheld = type !== undefined && FLOW_SECRET_TYPES.has(type) ? withholdColumn(record, "value", type) : undefined;
+  if (withheld === undefined) return record;
   warnings.push(`step value ${record.sys_id}: value withheld (${type})`);
-  return { ...record, fields: { ...record.fields, value: redactedMarker(type) } };
+  return withheld;
 }
 
 /** A copy of `doc` with secret values replaced by `<redacted:type>`. */

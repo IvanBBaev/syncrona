@@ -119,4 +119,20 @@ describe("redactFlowSecrets", () => {
       `action ${id(20)}: input api_key withheld (password2)`,
     ]);
   });
+
+  it("withholds a secret default or input value that was decoded as a gzip payload", () => {
+    const zipped = (v: unknown) => ({ format: "base64-gzip-json" as const, value: v });
+    const input = record(30, { internal_type: "password2" }, { default_value: zipped({ secret: "hunter2" }) });
+    const legacy = record(32, { "variable.element": "key", "variable.internal_type": "masked" }, { value: zipped("hunter3") });
+    const owner: FlowStep = { ...step(31, undefined), variableValues: [legacy] };
+    const out = redactFlowSecrets(doc({ inputs: [input], steps: [owner] }));
+    expect(out.inputs[0].fields.default_value).toBe(redactedMarker("password2"));
+    expect(out.inputs[0]).not.toHaveProperty("payloads");
+    expect(out.steps[0].variableValues?.[0].fields.value).toBe(redactedMarker("masked"));
+    expect(JSON.stringify(out)).not.toMatch(/hunter[23]/);
+    expect(out.warnings).toEqual([
+      `input ${id(30)}: default_value withheld (password2)`,
+      `action ${id(31)}: input key withheld (masked)`,
+    ]);
+  });
 });
