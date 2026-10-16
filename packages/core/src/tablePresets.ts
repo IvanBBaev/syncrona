@@ -11,7 +11,14 @@ import { Sync } from "@syncrona/types";
  * change here. The lists hold configuration only: runtime tables (executions,
  * sessions, history) and generated ones (`sys_uxf_snapshot`) are left out on
  * purpose — their records are not authored, and a pushed snapshot would bypass
- * the regeneration UI Builder does on publish.
+ * the regeneration UI Builder does on publish. Per-user records
+ * (`sys_ux_user_override`, `sys_ux_diagnostic_rule_dismiss`) and analytics
+ * (`sys_uxa_*`) are left out for the same reason.
+ *
+ * The lists were checked against a live instance's `sys_dictionary` on
+ * 2026-10-16: every table exists, extends `sys_metadata` and has at least one
+ * JSON column. Tables such as `sys_ux_app_route`, `sys_ux_list` or
+ * `sn_aia_agent` hold no JSON and sync through the regular field rules.
  *
  * Opt-in through `tablePresets` in sync.config.js. An empty list (the default)
  * leaves every existing workspace exactly as it was.
@@ -50,6 +57,7 @@ export const TABLE_PRESETS = {
     sys_ux_style: [],
     sys_ux_theme_customization: [],
     sys_ux_theme_m2m_asset: [],
+    sys_ux_atf_action: [],
   },
   /** Workspace and app shell configuration. */
   workspace: {
@@ -63,15 +71,23 @@ export const TABLE_PRESETS = {
     sys_ux_search_result_component: [],
     sys_ux_auto_reflow_rule: [],
     sys_ux_macroponent_rule: [],
+    sys_ux_keyboard_shortcut_deny_list: [],
     par_dashboard_widget: [],
+    par_component: [],
   },
-  /** AI Agent tools and external agent cards. */
+  /** AI Agent tools, external agent cards and Now Assist skill definitions. */
   ai: {
     sn_aia_tool: [],
     sn_aia_agent_tool_m2m: [],
     sn_aia_external_agent_card: [],
     sn_aia_external_agent_configuration: [],
     sn_aia_external_agent_skill: [],
+    sys_gen_ai_feature_mapping: [],
+    sys_one_extend_capability: [],
+    sys_one_extend_capability_definition: [],
+    sys_one_extend_definition_attribute: [],
+    sys_one_extend_capability_attribute_resource_lookup: [],
+    sys_one_extend_resource_mapping: [],
   },
 } as const satisfies Record<string, Record<string, readonly string[]>>;
 

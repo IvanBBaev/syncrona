@@ -921,7 +921,7 @@ The documented tables, the naming rules and the push contract are in
 
 #### JSON columns (`tablePresets`)
 
-UI Builder pages, workspaces and AI Agent tools keep their configuration in JSON
+UI Builder pages, workspaces, AI Agent tools and Now Assist skills keep their configuration in JSON
 columns, which a default workspace only sees as strings inside a `.meta.json`
 sidecar. `tablePresets` turns those columns into `.json` field files:
 
@@ -935,9 +935,9 @@ module.exports = {
 
 | Preset | Tables |
 |---|---|
-| `uib` | `sys_ux_macroponent` (composition, data, layout, props, root component config and definition), screens, client scripts, data brokers, events, page properties, presets, controllers, widgets, extension points, themes and styles |
-| `workspace` | `sys_ux_app`, `sys_ux_app_config`, the page registry, route mappings, keyboard shortcuts, layout bounds, search result components, reflow and macroponent rules, `par_dashboard_widget` |
-| `ai` | `sn_aia_tool`, `sn_aia_agent_tool_m2m` and the external agent cards, configurations and skills |
+| `uib` | `sys_ux_macroponent` (composition, data, layout, props, root component config and definition), screens, client scripts, data brokers, events, page properties, presets, controllers, widgets, extension points, themes, styles and UX ATF actions |
+| `workspace` | `sys_ux_app`, `sys_ux_app_config`, the page registry, route mappings, keyboard shortcuts, layout bounds, search result components, reflow and macroponent rules, `par_dashboard_widget`, `par_component` |
+| `ai` | `sn_aia_tool`, `sn_aia_agent_tool_m2m` and the external agent cards, configurations and skills, the Generative AI feature mappings and the OneExtend (Now Assist skill) capability, definition, attribute and resource-mapping tables |
 
 On those tables every column the dictionary types `json` or `json_translations`
 becomes a field file, plus the string columns the preset names when this

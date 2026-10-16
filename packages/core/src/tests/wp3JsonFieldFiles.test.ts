@@ -31,6 +31,14 @@ describe("table presets", () => {
     expect(isTablePresetName(1)).toBe(false);
   });
 
+  it("never lists a per-user or analytics table", () => {
+    for (const preset of Object.values(TABLE_PRESETS)) {
+      for (const table of Object.keys(preset)) {
+        expect(table).not.toMatch(/^sys_uxa_|^sys_ux_user_override$|^sys_ux_diagnostic_rule_dismiss$/);
+      }
+    }
+  });
+
   it("never lists the generated UI Builder snapshot table", () => {
     for (const preset of Object.values(TABLE_PRESETS)) {
       expect(Object.keys(preset)).not.toContain("sys_uxf_snapshot");

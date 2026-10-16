@@ -217,10 +217,15 @@ Being honest about the gaps:
   records. `dataModelLayout: "composite"` keeps a table, its columns and their
   choices as one document (`data-model/<table>.json`); a workspace that mixes
   both layouts is refused.
-- **Flow Designer and UI Builder editing.** The file-based tier does not
-  edit flows or UI Builder pages as source. Whatever the SDK supports in
-  Fluent still builds and installs through `syncrona fluent`, because the SDK
-  does that work.
+- **Flow Designer editing.** The file-based tier does not edit flows as
+  source. Whatever the SDK supports in Fluent still builds and installs
+  through `syncrona fluent`, because the SDK does that work.
+- **UI Builder, workspaces and AI agents are JSON files, not a DSL.**
+  `tablePresets: ["uib", "workspace", "ai"]` syncs their JSON columns as
+  `.json` field files (see the README), so they diff, review and push like
+  any other file. They are not decomposed into typed source the way the SDK's
+  Fluent APIs describe them, and the generated `sys_uxf_snapshot` is never
+  pushed: publish the page in UI Builder to regenerate it.
 - **Injecting a raw UI session** (`SN_SDK_SESSION_TOKEN` /
   `SN_SDK_SESSION_COOKIE`) is not supported. A pre-issued bearer token is
   (`SN_BEARER_TOKEN`, see the table above).
