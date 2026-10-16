@@ -27,13 +27,7 @@ const audit = {
   sys_updated_on: "2020-07-28 22:59:38",
 };
 
-const value = (
-  key: string,
-  element: string,
-  v: string,
-  type = "string",
-  order = "100",
-) => ({
+const value = (key: string, element: string, v: string, type = "string", order = "100") => ({
   sys_id: `v-${key}-${element}`,
   document: "wf_activity",
   document_key: key,
@@ -168,54 +162,57 @@ describe("assembleWorkflowDocument", () => {
         value: { activities: {}, ends: [], stages: {}, subflows: [] },
       },
     });
-    expect(doc.stages.map((s) => s.fields.name)).toEqual([
-      "Approved",
-      "Rejected",
-    ]);
+    expect(doc.stages.map((s) => s.fields.name)).toEqual(["Approved", "Rejected"]);
     expect(doc.stages[0].fields.workflow_version).toBeUndefined();
 
-    expect(doc.activities.map((a) => a.fields.name)).toEqual([
-      "Approval - User",
-      "Begin",
-      "End",
-    ]);
+    expect(doc.activities.map((a) => a.fields.name)).toEqual(["Approval - User", "Begin", "End"]);
     const [approve, begin, end] = doc.activities;
     expect(approve.payloads?.input).toEqual({ format: "json", value: {} });
-    expect(approve.conditions.map((c) => c.fields.name)).toEqual([
-      "Approved",
-      "Rejected",
-    ]);
+    expect(approve.conditions.map((c) => c.fields.name)).toEqual(["Approved", "Rejected"]);
     expect(approve.conditions[0].fields.activity).toBeUndefined();
-    expect(
-      approve.variables?.map((v) => [v.element, v.order, v.value]),
-    ).toEqual([
+    expect(approve.variables?.map((v) => [v.element, v.order, v.value])).toEqual([
       ["comment", 50, "Please approve"],
       ["approvers", 100, "a0000000000000000000000000000001"],
     ]);
     expect(end.fields.sys_created_by).toBeUndefined();
     expect(end.variables).toBeUndefined();
     expect(end.conditions).toEqual([]);
-    expect(begin.variables?.find((v) => v.element === "token")?.value).toBe(
-      "<redacted:password2>",
-    );
-    expect(
-      begin.variables?.find((v) => v.element === "empty_secret")?.value,
-    ).toBe("");
+    expect(begin.variables?.find((v) => v.element === "token")?.value).toBe("<redacted:password2>");
+    expect(begin.variables?.find((v) => v.element === "empty_secret")?.value).toBe("");
 
     expect(doc.transitions.map((t) => [t.fields.from, t.fields.to])).toEqual([
       [BEGIN, APPROVE],
       [APPROVE, END],
     ]);
     expect(doc.unassigned).toEqual([]);
-    expect(doc.warnings).toEqual([
-      `activity ${BEGIN}: token withheld (password2)`,
-    ]);
+    expect(doc.warnings).toEqual([`activity ${BEGIN}: token withheld (password2)`]);
   });
 
   it("never lets a secret value into the serialized document", () => {
-    expect(
-      serializeWorkflowDocument(assembleWorkflowDocument(rows())),
-    ).not.toContain("s3cr3t");
+    expect(serializeWorkflowDocument(assembleWorkflowDocument(rows()))).not.toContain("s3cr3t");
+  });
+
+  it("withholds secret-typed values inside decoded payloads, gzip ones included", () => {
+    const input = rows();
+    input.activities[2].input = JSON.stringify({ vars: [{ name: "pw", type: "password2", value: "s3cr3t" }] });
+    input.activities[0].note = gzipSync(
+      Buffer.from(JSON.stringify([{ internal_type: "password", value: "hunter2" }]))
+    ).toString("base64");
+    const doc = assembleWorkflowDocument(input);
+    const [approve, , end] = doc.activities;
+    expect(approve.payloads?.input?.value).toEqual({
+      vars: [{ name: "pw", type: "password2", value: "<redacted:password2>" }],
+    });
+    expect(end.payloads?.note?.value).toEqual([{ internal_type: "password", value: "<redacted:password>" }]);
+    expect(doc.warnings).toEqual(
+      expect.arrayContaining([
+        `activity ${APPROVE}: 1 secret value(s) withheld from input`,
+        `activity ${END}: 1 secret value(s) withheld from note`,
+      ])
+    );
+    const text = serializeWorkflowDocument(doc);
+    expect(text).not.toContain("s3cr3t");
+    expect(text).not.toContain("hunter2");
   });
 
   it("lists conditions of unknown activities under unassigned and keeps where they pointed", () => {
@@ -226,12 +223,10 @@ describe("assembleWorkflowDocument", () => {
         activity: "ac00000000000000000000000000dead",
         name: "Lost",
       },
-      { sys_id: "c0000000000000000000000000000004", name: "Loose" },
+      { sys_id: "c0000000000000000000000000000004", name: "Loose" }
     );
     const doc = assembleWorkflowDocument(input);
-    expect(
-      doc.unassigned.map((c) => [c.fields.name, c.fields.activity]),
-    ).toEqual([
+    expect(doc.unassigned.map((c) => [c.fields.name, c.fields.activity])).toEqual([
       ["Loose", undefined],
       ["Lost", "ac00000000000000000000000000dead"],
     ]);
@@ -239,7 +234,7 @@ describe("assembleWorkflowDocument", () => {
       expect.arrayContaining([
         "condition c0000000000000000000000000000004 has no activity; listed under unassigned",
         "condition c0000000000000000000000000000003 names activity ac00000000000000000000000000dead, which is not an activity of this version; listed under unassigned",
-      ]),
+      ])
     );
   });
 
@@ -256,11 +251,11 @@ describe("assembleWorkflowDocument", () => {
       expect.arrayContaining([
         `version ${VER} starts at activity ac00000000000000000000000000beef, which is not an activity of this version`,
         "transition 7a000000000000000000000000000003: to is empty",
-      ]),
+      ])
     );
     input.transitions[2].to = "ac00000000000000000000000000beef";
     expect(assembleWorkflowDocument(input).warnings).toContain(
-      "transition 7a000000000000000000000000000003: to names activity ac00000000000000000000000000beef, which is not an activity of this version",
+      "transition 7a000000000000000000000000000003: to names activity ac00000000000000000000000000beef, which is not an activity of this version"
     );
   });
 
@@ -268,7 +263,7 @@ describe("assembleWorkflowDocument", () => {
     const input = rows();
     input.skippedVersions = ["b0000000000000000000000000000009"];
     expect(assembleWorkflowDocument(input).warnings).toContain(
-      `version b0000000000000000000000000000009 is published too; the document shows version ${VER}`,
+      `version b0000000000000000000000000000009 is published too; the document shows version ${VER}`
     );
   });
 
@@ -282,14 +277,8 @@ describe("assembleWorkflowDocument", () => {
       format: "unknown",
       value: "{not json",
     });
-    expect(
-      doc.warnings.some((w) =>
-        w.startsWith(`version ${VER}: activity_stages could not be decoded`),
-      ),
-    ).toBe(true);
-    expect(
-      doc.activities.find((a) => a.sys_id === END)?.payloads?.note,
-    ).toEqual({
+    expect(doc.warnings.some((w) => w.startsWith(`version ${VER}: activity_stages could not be decoded`))).toBe(true);
+    expect(doc.activities.find((a) => a.sys_id === END)?.payloads?.note).toEqual({
       format: "base64-gzip-json",
       value: { a: 1 },
     });
@@ -299,7 +288,7 @@ describe("assembleWorkflowDocument", () => {
     const input = rows();
     input.stages.push(
       { sys_id: "5a000000000000000000000000000004", name: "Unordered" },
-      { sys_id: "5a000000000000000000000000000003", name: "Unordered" },
+      { sys_id: "5a000000000000000000000000000003", name: "Unordered" }
     );
     const doc = assembleWorkflowDocument(input);
     expect(doc.stages.map((s) => s.sys_id)).toEqual([

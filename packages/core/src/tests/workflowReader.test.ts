@@ -33,25 +33,15 @@ function matches(row: Row, condition: string): boolean {
 
 function fakeClient(tables: Record<string, Row[]>) {
   const calls: Call[] = [];
-  const tableAPIGet = jest.fn(
-    async (
-      table: string,
-      query: string,
-      fields: string,
-      limit = 500,
-      offset = 0,
-    ) => {
-      calls.push({ table, query, fields, limit, offset });
-      const conditions = query.replace(/\^ORDERBYsys_id$/, "").split("^");
-      const rows = (tables[table] ?? []).filter((row) =>
-        conditions.every((c) => matches(row, c)),
-      );
-      return {
-        data: { result: rows.slice(offset, offset + limit) },
-        headers: {},
-      };
-    },
-  );
+  const tableAPIGet = jest.fn(async (table: string, query: string, fields: string, limit = 500, offset = 0) => {
+    calls.push({ table, query, fields, limit, offset });
+    const conditions = query.replace(/\^ORDERBYsys_id$/, "").split("^");
+    const rows = (tables[table] ?? []).filter((row) => conditions.every((c) => matches(row, c)));
+    return {
+      data: { result: rows.slice(offset, offset + limit) },
+      headers: {},
+    };
+  });
   return { client: { tableAPIGet } as unknown as FlowReadClient, calls };
 }
 
@@ -166,24 +156,14 @@ describe("readWorkflowRows", () => {
         expect.objectContaining({
           table,
           query: `${link}=${VER}^ORDERBYsys_id`,
-        }),
+        })
       );
     }
-    const valueCalls = calls.filter(
-      (c) => c.table === "sys_variable_value" && c.offset === 0,
-    );
-    expect(valueCalls.map((c) => c.query)).toEqual([
-      `document=wf_activity^document_keyIN${ACT},${END}^ORDERBYsys_id`,
-    ]);
-    expect(valueCalls.every((c) => c.fields === WORKFLOW_VALUE_FIELDS)).toBe(
-      true,
-    );
+    const valueCalls = calls.filter((c) => c.table === "sys_variable_value" && c.offset === 0);
+    expect(valueCalls.map((c) => c.query)).toEqual([`document=wf_activity^document_keyIN${ACT},${END}^ORDERBYsys_id`]);
+    expect(valueCalls.every((c) => c.fields === WORKFLOW_VALUE_FIELDS)).toBe(true);
     // Runtime tables are never read.
-    expect(
-      calls.some((c) =>
-        /^wf_(context|executing|history|log|transition_history)/.test(c.table),
-      ),
-    ).toBe(false);
+    expect(calls.some((c) => /^wf_(context|executing|history|log|transition_history)/.test(c.table))).toBe(false);
   });
 
   it("picks the newest published version and names the ones it passed over", async () => {
@@ -208,43 +188,30 @@ describe("readWorkflowRows", () => {
       sys_id: `ac${i.toString(16).padStart(30, "0")}`,
       workflow_version: VER,
     }));
-    tables.wf_activity = [
-      ...many,
-      { sys_id: "not-a-sys-id", workflow_version: VER },
-    ];
+    tables.wf_activity = [...many, { sys_id: "not-a-sys-id", workflow_version: VER }];
     const { client, calls } = fakeClient(tables);
     await readWorkflowRows(client, WF);
-    const queries = calls
-      .filter((c) => c.table === "sys_variable_value" && c.offset === 0)
-      .map((c) => c.query);
+    const queries = calls.filter((c) => c.table === "sys_variable_value" && c.offset === 0).map((c) => c.query);
     expect(queries).toHaveLength(2);
-    expect(
-      queries[0].split("IN")[1].replace("^ORDERBYsys_id", "").split(","),
-    ).toHaveLength(WORKFLOW_VALUE_CHUNK);
-    expect(queries[1]).toBe(
-      `document=wf_activity^document_keyIN${many[WORKFLOW_VALUE_CHUNK].sys_id}^ORDERBYsys_id`,
-    );
+    expect(queries[0].split("IN")[1].replace("^ORDERBYsys_id", "").split(",")).toHaveLength(WORKFLOW_VALUE_CHUNK);
+    expect(queries[1]).toBe(`document=wf_activity^document_keyIN${many[WORKFLOW_VALUE_CHUNK].sys_id}^ORDERBYsys_id`);
 
     tables.wf_activity = [];
     const empty = fakeClient(tables);
     expect((await readWorkflowRows(empty.client, WF)).values).toEqual([]);
-    expect(empty.calls.some((c) => c.table === "sys_variable_value")).toBe(
-      false,
-    );
+    expect(empty.calls.some((c) => c.table === "sys_variable_value")).toBe(false);
   });
 
   it("refuses a value that is not a sys_id before reading anything", async () => {
     const { client, calls } = fakeClient(instance());
-    await expect(readWorkflowRows(client, `${WF}^ORsys_id!=x`)).rejects.toThrow(
-      "is not a sys_id",
-    );
+    await expect(readWorkflowRows(client, `${WF}^ORsys_id!=x`)).rejects.toThrow("is not a sys_id");
     expect(calls).toEqual([]);
   });
 
   it("throws when the workflow does not exist", async () => {
     const { client, calls } = fakeClient(instance());
     await expect(readWorkflowRows(client, "f".repeat(32))).rejects.toThrow(
-      "Workflow ffffffffffffffffffffffffffffffff was not found in wf_workflow.",
+      "Workflow ffffffffffffffffffffffffffffffff was not found in wf_workflow."
     );
     expect(calls).toHaveLength(1);
   });
@@ -252,13 +219,9 @@ describe("readWorkflowRows", () => {
   it("throws when the workflow has no published version", async () => {
     const { client, calls } = fakeClient(instance());
     await expect(readWorkflowRows(client, OTHER_WF)).rejects.toThrow(
-      `Workflow ${OTHER_WF} has no published version in wf_workflow_version.`,
+      `Workflow ${OTHER_WF} has no published version in wf_workflow_version.`
     );
-    expect(calls.map((c) => c.table)).toEqual([
-      "wf_workflow",
-      "wf_workflow",
-      "wf_workflow_version",
-    ]);
+    expect(calls.map((c) => c.table)).toEqual(["wf_workflow", "wf_workflow", "wf_workflow_version"]);
   });
 
   it("surfaces a non-API response", async () => {
@@ -266,9 +229,9 @@ describe("readWorkflowRows", () => {
       data: "<html>login</html>",
       headers: { "content-type": "text/html" },
     }));
-    await expect(
-      readWorkflowRows({ tableAPIGet } as unknown as FlowReadClient, WF),
-    ).rejects.toBeInstanceOf(NonApiResponseError);
+    await expect(readWorkflowRows({ tableAPIGet } as unknown as FlowReadClient, WF)).rejects.toBeInstanceOf(
+      NonApiResponseError
+    );
   });
 });
 
@@ -282,9 +245,7 @@ describe("readWorkflowDocument", () => {
       value: { stages: {} },
     });
     expect(doc.activities.map((a) => a.fields.name)).toEqual(["Begin", "End"]);
-    expect(doc.activities[0].variables?.map((v) => v.value)).toEqual([
-      "status=300^EQ",
-    ]);
+    expect(doc.activities[0].variables?.map((v) => v.value)).toEqual(["status=300^EQ"]);
     expect(doc.activities[0].conditions.map((c) => c.sys_id)).toEqual([COND]);
     expect(doc.warnings).toEqual([]);
   });
@@ -317,9 +278,7 @@ describe("listScopeWorkflows", () => {
 
   it("refuses a scope that would add query conditions", async () => {
     const { client, calls } = fakeClient({});
-    await expect(
-      listScopeWorkflows(client, "x_demo^ORactive=true"),
-    ).rejects.toThrow("is not a scope name");
+    await expect(listScopeWorkflows(client, "x_demo^ORactive=true")).rejects.toThrow("is not a scope name");
     expect(calls).toEqual([]);
   });
 });

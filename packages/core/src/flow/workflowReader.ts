@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { cellText, type FlowRow } from "./flowDocument.js";
-import {
-  FLOW_PAGE_SIZE,
-  readAll,
-  SCOPE_NAME,
-  SYS_ID,
-  type FlowReadClient,
-} from "./flowReader.js";
+import { FLOW_PAGE_SIZE, readAll, SCOPE_NAME, SYS_ID, type FlowReadClient } from "./flowReader.js";
 import {
   assembleWorkflowDocument,
   WORKFLOW_VARIABLE_DOCUMENT,
@@ -28,10 +22,7 @@ export const WORKFLOW_TABLES = {
   conditions: { table: "wf_condition", link: "activity.workflow_version" },
   transitions: { table: "wf_transition", link: "from.workflow_version" },
 } as const satisfies Record<
-  Exclude<
-    keyof WorkflowRows,
-    "workflow" | "version" | "skippedVersions" | "values"
-  >,
+  Exclude<keyof WorkflowRows, "workflow" | "version" | "skippedVersions" | "values">,
   { table: string; link: string }
 >;
 
@@ -52,9 +43,7 @@ export const WORKFLOW_VALUE_FIELDS = [
 export const WORKFLOW_VALUE_CHUNK = 50;
 
 const sysIdsOf = (rows: readonly FlowRow[]): string[] =>
-  rows
-    .map((row) => row.sys_id)
-    .filter((id): id is string => typeof id === "string" && SYS_ID.test(id));
+  rows.map((row) => row.sys_id).filter((id): id is string => typeof id === "string" && SYS_ID.test(id));
 
 /** The newest published version first; sys_id breaks a tie so the pick is stable. */
 function newestFirst(a: FlowRow, b: FlowRow): number {
@@ -70,34 +59,20 @@ function newestFirst(a: FlowRow, b: FlowRow): number {
 export async function readWorkflowRows(
   client: FlowReadClient,
   workflowSysId: string,
-  pageSize: number = FLOW_PAGE_SIZE,
+  pageSize: number = FLOW_PAGE_SIZE
 ): Promise<WorkflowRows> {
   if (!SYS_ID.test(workflowSysId)) {
-    throw new Error(
-      `"${workflowSysId}" is not a sys_id (32 lowercase hex characters).`,
-    );
+    throw new Error(`"${workflowSysId}" is not a sys_id (32 lowercase hex characters).`);
   }
-  const [workflow] = await readAll(
-    client,
-    "wf_workflow",
-    `sys_id=${workflowSysId}`,
-    1,
-  );
+  const [workflow] = await readAll(client, "wf_workflow", `sys_id=${workflowSysId}`, 1);
   if (workflow === undefined) {
     throw new Error(`Workflow ${workflowSysId} was not found in wf_workflow.`);
   }
   const published = (
-    await readAll(
-      client,
-      "wf_workflow_version",
-      `workflow=${workflowSysId}^published=true`,
-      pageSize,
-    )
+    await readAll(client, "wf_workflow_version", `workflow=${workflowSysId}^published=true`, pageSize)
   ).filter((row) => SYS_ID.test(cellText(row.sys_id)));
   if (published.length === 0) {
-    throw new Error(
-      `Workflow ${workflowSysId} has no published version in wf_workflow_version.`,
-    );
+    throw new Error(`Workflow ${workflowSysId} has no published version in wf_workflow_version.`);
   }
   const [version, ...others] = published.sort(newestFirst);
   const versionId = cellText(version.sys_id);
@@ -121,13 +96,12 @@ export async function readWorkflowRows(
         "sys_variable_value",
         `document=${WORKFLOW_VARIABLE_DOCUMENT}^document_keyIN${chunk}`,
         pageSize,
-        WORKFLOW_VALUE_FIELDS,
-      )),
+        WORKFLOW_VALUE_FIELDS
+      ))
     );
   }
   const rows: WorkflowRows = { workflow, version, ...parts, values };
-  if (others.length > 0)
-    rows.skippedVersions = others.map((row) => cellText(row.sys_id));
+  if (others.length > 0) rows.skippedVersions = others.map((row) => cellText(row.sys_id));
   return rows;
 }
 
@@ -135,11 +109,9 @@ export async function readWorkflowRows(
 export async function readWorkflowDocument(
   client: FlowReadClient,
   workflowSysId: string,
-  pageSize?: number,
+  pageSize?: number
 ): Promise<WorkflowDocument> {
-  return assembleWorkflowDocument(
-    await readWorkflowRows(client, workflowSysId, pageSize),
-  );
+  return assembleWorkflowDocument(await readWorkflowRows(client, workflowSysId, pageSize));
 }
 
 /** A workflow as listed for a scope: enough to name its file. */
@@ -149,20 +121,12 @@ export type WorkflowListing = { sys_id: string; name: string };
 export async function listScopeWorkflows(
   client: FlowReadClient,
   scope: string,
-  pageSize: number = FLOW_PAGE_SIZE,
+  pageSize: number = FLOW_PAGE_SIZE
 ): Promise<WorkflowListing[]> {
   // The scope goes into an encoded query; `^` or `=` in it would add conditions.
-  if (!SCOPE_NAME.test(scope))
-    throw new Error(`"${scope}" is not a scope name.`);
-  const rows = await readAll(
-    client,
-    "wf_workflow",
-    `sys_scope.scope=${scope}`,
-    pageSize,
-    "sys_id,name",
-  );
-  const text = (value: unknown): string =>
-    typeof value === "string" ? value : "";
+  if (!SCOPE_NAME.test(scope)) throw new Error(`"${scope}" is not a scope name.`);
+  const rows = await readAll(client, "wf_workflow", `sys_scope.scope=${scope}`, pageSize, "sys_id,name");
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
   return rows
     .map((row) => ({ sys_id: text(row.sys_id), name: text(row.name) }))
     .filter((workflow) => SYS_ID.test(workflow.sys_id));

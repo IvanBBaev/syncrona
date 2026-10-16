@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import {
-  byCodeUnit,
-  byOrder,
-  cellText,
-  parseOrder,
-  toRecord,
-  type FlowRecord,
-  type FlowRow,
-} from "./flowDocument.js";
-import { FLOW_SECRET_TYPES, redactedMarker } from "./flowSecrets.js";
+import { byCodeUnit, byOrder, cellText, parseOrder, toRecord, type FlowRecord, type FlowRow } from "./flowDocument.js";
+import { FLOW_SECRET_TYPES, redactedMarker, redactPayloads } from "./flowSecrets.js";
 
 /**
  * WP2f: one legacy Workflow (`wf_workflow`) as a single diffable document,
@@ -22,7 +14,8 @@ import { FLOW_SECRET_TYPES, redactedMarker } from "./flowSecrets.js";
  * from; transitions and stages are listed for the version.
  *
  * Secrets never reach the document: a variable value whose type is a secret
- * type becomes `<redacted:type>`, and each one is listed in `warnings`.
+ * type, and a secret-typed value inside a decoded payload, becomes
+ * `<redacted:type>`, and each one is listed in `warnings`.
  */
 
 export const WORKFLOW_DOCUMENT_SCHEMA = "syncrona.workflow/1";
@@ -79,10 +72,7 @@ export type WorkflowDocument = {
 export const WORKFLOW_VARIABLE_DOCUMENT = "wf_activity";
 
 /** Columns known to hold a JSON payload. */
-export const WORKFLOW_PAYLOAD_COLUMNS: ReadonlySet<string> = new Set([
-  "activity_stages",
-  "input",
-]);
+export const WORKFLOW_PAYLOAD_COLUMNS: ReadonlySet<string> = new Set(["activity_stages", "input"]);
 
 const WORKFLOW_LIFTED = new Set(["sys_id"]);
 const VERSION_LIFTED = new Set(["sys_id", "workflow"]);
@@ -112,9 +102,7 @@ function compareVariables(a: WorkflowVariable, b: WorkflowVariable): number {
 }
 
 /** The activities' `sys_variable_value` rows grouped by `document_key`. */
-function groupValues(
-  values: readonly FlowRow[],
-): Map<string, WorkflowVariable[]> {
+function groupValues(values: readonly FlowRow[]): Map<string, WorkflowVariable[]> {
   const groups = new Map<string, WorkflowVariable[]>();
   for (const row of values) {
     if (cellText(row.document) !== WORKFLOW_VARIABLE_DOCUMENT) continue;
@@ -127,64 +115,39 @@ function groupValues(
   return groups;
 }
 
-function redactVariables(
-  variables: WorkflowVariable[],
-  label: string,
-  warnings: string[],
-): WorkflowVariable[] {
+function redactVariables(variables: WorkflowVariable[], label: string, warnings: string[]): WorkflowVariable[] {
   return variables.map((variable) => {
-    if (!FLOW_SECRET_TYPES.has(variable.type) || variable.value === "")
-      return variable;
-    warnings.push(
-      `${label}: ${variable.element || variable.variable} withheld (${variable.type})`,
-    );
+    if (!FLOW_SECRET_TYPES.has(variable.type) || variable.value === "") return variable;
+    warnings.push(`${label}: ${variable.element || variable.variable} withheld (${variable.type})`);
     return { ...variable, value: redactedMarker(variable.type) };
   });
 }
 
 type Sortable<T> = { keys: (number | null | string)[]; record: T };
 
-function compareKeys(
-  a: (number | null | string)[],
-  b: (number | null | string)[],
-): number {
+function compareKeys(a: (number | null | string)[], b: (number | null | string)[]): number {
   for (let i = 0; i < a.length; i++) {
     const x = a[i];
     const y = b[i];
-    const diff =
-      typeof x === "string" || typeof y === "string"
-        ? byCodeUnit(String(x), String(y))
-        : byOrder(x, y);
+    const diff = typeof x === "string" || typeof y === "string" ? byCodeUnit(String(x), String(y)) : byOrder(x, y);
     if (diff !== 0) return diff;
   }
   return 0;
 }
 
-function sortRecords<T extends { sys_id: string }>(
-  entries: Sortable<T>[],
-): T[] {
+function sortRecords<T extends { sys_id: string }>(entries: Sortable<T>[]): T[] {
   return entries
-    .sort(
-      (a, b) =>
-        compareKeys(a.keys, b.keys) ||
-        byCodeUnit(a.record.sys_id, b.record.sys_id),
-    )
+    .sort((a, b) => compareKeys(a.keys, b.keys) || byCodeUnit(a.record.sys_id, b.record.sys_id))
     .map((entry) => entry.record);
 }
 
-const record = (
-  row: FlowRow,
-  lifted: ReadonlySet<string>,
-  warnings: string[],
-  label: string,
-): WorkflowRecord =>
-  toRecord(
-    row,
-    lifted,
-    warnings,
-    `${label} ${cellText(row.sys_id)}`,
-    WORKFLOW_PAYLOAD_COLUMNS,
-  );
+const record = (row: FlowRow, lifted: ReadonlySet<string>, warnings: string[], label: string): WorkflowRecord => {
+  const name = `${label} ${cellText(row.sys_id)}`;
+  const result = toRecord(row, lifted, warnings, name, WORKFLOW_PAYLOAD_COLUMNS);
+  // Decoded payloads (an activity's `input`, gzip columns) can carry secret-typed values too.
+  if (result.payloads !== undefined) result.payloads = redactPayloads(result.payloads, name, warnings);
+  return result;
+};
 
 /** Assemble the rows of one workflow version into a document. Pure; never throws. */
 export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
@@ -194,9 +157,7 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
   const workflow = record(rows.workflow, WORKFLOW_LIFTED, warnings, "workflow");
   const version = record(rows.version, VERSION_LIFTED, warnings, "version");
   for (const skipped of rows.skippedVersions ?? []) {
-    warnings.push(
-      `version ${skipped} is published too; the document shows version ${version.sys_id}`,
-    );
+    warnings.push(`version ${skipped} is published too; the document shows version ${version.sys_id}`);
   }
 
   const activities: WorkflowActivity[] = sortRecords(
@@ -204,23 +165,13 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
       const base = record(row, CHILD_LIFTED, warnings, "activity");
       const activity: WorkflowActivity = { ...base, conditions: [] };
       const variables = groups.get(base.sys_id);
-      if (variables !== undefined)
-        activity.variables = redactVariables(
-          variables,
-          `activity ${base.sys_id}`,
-          warnings,
-        );
+      if (variables !== undefined) activity.variables = redactVariables(variables, `activity ${base.sys_id}`, warnings);
       return { keys: [cellText(row.name)], record: activity };
-    }),
+    })
   );
-  const activityById = new Map(
-    activities.map((activity) => [activity.sys_id, activity]),
-  );
+  const activityById = new Map(activities.map((activity) => [activity.sys_id, activity]));
 
-  const placed = new Map<
-    WorkflowActivity | undefined,
-    Sortable<WorkflowRecord>[]
-  >();
+  const placed = new Map<WorkflowActivity | undefined, Sortable<WorkflowRecord>[]>();
   for (const row of rows.conditions) {
     const condition = record(row, CONDITION_LIFTED, warnings, "condition");
     const activityId = cellText(row.activity);
@@ -229,7 +180,7 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
       warnings.push(
         activityId === ""
           ? `condition ${condition.sys_id} has no activity; listed under unassigned`
-          : `condition ${condition.sys_id} names activity ${activityId}, which is not an activity of this version; listed under unassigned`,
+          : `condition ${condition.sys_id} names activity ${activityId}, which is not an activity of this version; listed under unassigned`
       );
       // The activity it names is kept, so the document still shows where it pointed.
       if (activityId !== "") condition.fields.activity = activityId;
@@ -241,14 +192,11 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
     });
     placed.set(activity, list);
   }
-  for (const activity of activities)
-    activity.conditions = sortRecords(placed.get(activity) ?? []);
+  for (const activity of activities) activity.conditions = sortRecords(placed.get(activity) ?? []);
 
   const start = version.fields.start;
   if (start !== undefined && !activityById.has(start)) {
-    warnings.push(
-      `version ${version.sys_id} starts at activity ${start}, which is not an activity of this version`,
-    );
+    warnings.push(`version ${version.sys_id} starts at activity ${start}, which is not an activity of this version`);
   }
 
   const transitions = sortRecords(
@@ -258,7 +206,7 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
         const target = transition.fields[end];
         if (target === undefined || !activityById.has(target)) {
           warnings.push(
-            `transition ${transition.sys_id}: ${end} ${target === undefined ? "is empty" : `names activity ${target}, which is not an activity of this version`}`,
+            `transition ${transition.sys_id}: ${end} ${target === undefined ? "is empty" : `names activity ${target}, which is not an activity of this version`}`
           );
         }
       }
@@ -266,7 +214,7 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
         keys: [cellText(row.from), cellText(row.to), cellText(row.condition)],
         record: transition,
       };
-    }),
+    })
   );
 
   return {
@@ -277,7 +225,7 @@ export function assembleWorkflowDocument(rows: WorkflowRows): WorkflowDocument {
       rows.stages.map((row) => ({
         keys: [parseOrder(row.order), cellText(row.name)],
         record: record(row, CHILD_LIFTED, warnings, "stage"),
-      })),
+      }))
     ),
     activities,
     transitions,
