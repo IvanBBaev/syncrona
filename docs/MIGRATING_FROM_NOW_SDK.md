@@ -94,7 +94,7 @@ other `syncrona` command ([MULTI_INSTANCE.md](MULTI_INSTANCE.md)).
 | `SN_SDK_NODE_ENV=SN_SDK_CI_INSTALL` | `--ci` | syncrona has no CI mode switch. `--ci` skips the prompts, and credentials come from the environment when they are present. |
 | `SN_SDK_AUTH_TYPE=basic` with `SN_SDK_USER` / `SN_SDK_USER_PWD` | `SN_USER` / `SN_PASSWORD` | Basic is the default method (`SN_AUTH_METHOD=basic`). |
 | `SN_SDK_AUTH_TYPE=oauth` with `SN_SDK_OAUTH_CLIENT_ID` / `SN_SDK_OAUTH_CLIENT_SECRET` | `SN_AUTH_METHOD=oauth-client-credentials` with `SN_OAUTH_CLIENT_ID` / `SN_OAUTH_CLIENT_SECRET` | The SDK's `oauth` type is the client-credentials grant. In syncrona, `SN_AUTH_METHOD=oauth` is an alias for `oauth-password`, which also needs `SN_USER` / `SN_PASSWORD`. JWT-bearer (`SN_JWT_*`) is supported too. |
-| `SN_SDK_SESSION_BEARER_TOKEN` | — | syncrona obtains and refreshes the OAuth token itself. There is no variable to inject a pre-issued bearer token. |
+| `SN_SDK_SESSION_BEARER_TOKEN` | `SN_BEARER_TOKEN` | A pre-issued OAuth access token, sent as `Authorization: Bearer <token>`. Like the SDK, a token in the environment wins over every other credential unless `SN_AUTH_METHOD` names a different method. syncrona does not refresh it, and `syncrona login` never stores it. |
 | `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE` | — | syncrona never accepts a raw UI session. A Basic profile logs in to the UI session for you when an SDK action needs one. |
 | `NO_TELEMETRY=1` | (always on) | `@syncrona/fluent` sets `NO_TELEMETRY=1` before it loads the SDK. syncrona itself sends no telemetry. |
 | one set of variables per shell | `--instance-profile <name>` | Reads `SN_INSTANCE_<NAME>`, `SN_USER_<NAME>`, `SN_PASSWORD_<NAME>` (and the other `SN_*` variables with the same suffix), falling back to the base variables. |
@@ -122,14 +122,15 @@ The SDK and syncrona authenticate differently:
   (`angular.do`) and then carries a session token and cookie. syncrona's own
   commands (`push`, `download`, `query`, `cicd`, …) use real REST
   authentication: HTTP Basic, OAuth 2.0 (password, client-credentials and
-  JWT-bearer grants), an inbound REST API key, and optionally mutual TLS.
+  JWT-bearer grants), a pre-issued bearer token, an inbound REST API key, and
+  optionally mutual TLS.
 - **Three SDK endpoints accept only a UI session:**
   `sn_appclient_upload_processor.do` (install), `xmlhttp.do` (reinstall and
   clean) and `fluent_update_set_export.do` (`transform --update-set`). For
   those, the Fluent tier bridges your syncrona profile into the SDK:
   - A **Basic** profile performs the UI-session login on your behalf, and
     never logs the credentials.
-  - An **OAuth** profile hands its bearer token to the SDK, which bootstraps
+  - An **OAuth** profile (or a pre-issued `SN_BEARER_TOKEN`) hands its bearer token to the SDK, which bootstraps
     the session's CSRF token itself. That bootstrap reads `sys_user_session`,
     so the integration user needs read access to it.
   - A **mutual-TLS** client certificate (`SN_CLIENT_CERT` / `SN_CLIENT_KEY`)
@@ -220,9 +221,9 @@ Being honest about the gaps:
   edit flows or UI Builder pages as source. Whatever the SDK supports in
   Fluent still builds and installs through `syncrona fluent`, because the SDK
   does that work.
-- **Injecting a pre-issued session or bearer token** (`SN_SDK_SESSION_*`) is
-  not supported. syncrona always authenticates from a stored or environment
-  credential.
+- **Injecting a raw UI session** (`SN_SDK_SESSION_TOKEN` /
+  `SN_SDK_SESSION_COOKIE`) is not supported. A pre-issued bearer token is
+  (`SN_BEARER_TOKEN`, see the table above).
 - **Some 1.1.0 write paths are verified by mocked tests only.**
   `push --create` / `--prune`, `init --new`, the data-model sidecars,
   `cicd run-suite` / `run-test`, `fluent install` and the read paths were run

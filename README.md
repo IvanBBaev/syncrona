@@ -195,9 +195,11 @@ for backward compatibility. Every auth variable also accepts a per-profile
 | OAuth client credentials — `oauth-client-credentials` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET` | OAuth 2.0 Client Credentials grant — service-to-service, no user password (Tokyo+). |
 | OAuth JWT bearer — `oauth-jwt-bearer` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET`, `SN_JWT_KEY` | OAuth 2.0 JWT Bearer grant. `SN_JWT_KEY` is a path to (or inline) RS256 private-key PEM; a fresh signed assertion is minted per token. Optional `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` override the JWT header/claims (defaults derived from client id + user + instance). |
 | API key — `api-key` | `SN_API_KEY` | Inbound REST API Key sent as a header — default `x-sn-apikey`, override with `SN_API_KEY_HEADER` (Vancouver+). |
+| Bearer token — `bearer` | `SN_BEARER_TOKEN` | A pre-issued OAuth access token sent as `Authorization: Bearer <token>` (the counterpart of now-sdk's `SN_SDK_SESSION_BEARER_TOKEN`). Environment-only: never stored by `syncrona login` and never refreshed. When present it is inferred ahead of every other method. |
 
-Without `SN_AUTH_METHOD` the method is inferred exactly as before — OAuth password
-when a client id/secret pair **and** a password are present, otherwise Basic — so
+Without `SN_AUTH_METHOD` the method is inferred exactly as before — bearer when
+`SN_BEARER_TOKEN` is set, then OAuth password when a client id/secret pair **and**
+a password are present, otherwise Basic — so
 existing setups keep working unchanged. An **unrecognized** value is an error
 rather than a fallback: `syncrona doctor` reports `Unknown SN_AUTH_METHOD "<value>"`
 and the MCP server refuses to start, so a typo can no longer resolve silently to a

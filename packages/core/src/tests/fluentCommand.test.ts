@@ -27,6 +27,7 @@ const AUTH_ENV_VARS = [
   "SN_AUTH_METHOD",
   "SN_API_KEY",
   "SN_API_KEY_HEADER",
+  "SN_BEARER_TOKEN",
   "SN_OAUTH_CLIENT_ID",
   "SN_OAUTH_CLIENT_SECRET",
   "SN_INSTANCE_PROFILE",
@@ -1439,6 +1440,26 @@ describe("default dependencies", () => {
     await writeFile(key, "KEY-PEM");
     return { cert, key };
   }
+
+  it("hands a pre-issued bearer token to the SDK as an OAuth token, with the TLS material", async () => {
+    process.env.SN_INSTANCE = "dev1.service-now.com";
+    process.env.SN_BEARER_TOKEN = "tok-1";
+    const { cert, key } = await clientCert();
+    process.env.SN_CLIENT_CERT = cert;
+    process.env.SN_CLIENT_KEY = key;
+    const { rec, deps } = harness();
+    const { resolveCredential: _c, ...rest } = deps;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    const input = rec.authInputs[0].input as Extract<SN.FluentCredentialInput, { kind: "oauth" }>;
+    expect(input.kind).toBe("oauth");
+    expect(await input.getToken()).toBe("tok-1");
+    expect(String(input.tls?.cert)).toBe("CERT-PEM");
+
+    delete process.env.SN_CLIENT_CERT;
+    delete process.env.SN_CLIENT_KEY;
+    expect(await run({ action: "types" }, rest)).toBe(0);
+    expect(rec.authInputs[1].input).not.toHaveProperty("tls");
+  });
 
   it("marks an API-key profile unsupported, with or without a client certificate", async () => {
     process.env.SN_INSTANCE = "dev1.service-now.com";

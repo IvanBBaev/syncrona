@@ -65,6 +65,7 @@ const AUTH_ENV_VARS = [
   'SN_AUTH_METHOD',
   'SN_API_KEY',
   'SN_API_KEY_HEADER',
+  'SN_BEARER_TOKEN',
   'SN_OAUTH_CLIENT_ID',
   'SN_OAUTH_CLIENT_SECRET',
   'SN_JWT_KEY',
@@ -162,6 +163,69 @@ test('api-key method honours a custom header name (apiKeyHeader override)', asyn
     assert.ok(!call.headers['x-sn-apikey'], 'default header not used when overridden');
   } finally {
     await close(server);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pre-issued bearer token (env-only)
+// ---------------------------------------------------------------------------
+
+test('bearer method sends the pre-issued token as Authorization: Bearer and never hits the token endpoint', async () => {
+  clearTokenManagerCache();
+  const seen = [];
+  const { server, base } = await startServer((req, res) => {
+    seen.push({ url: req.url, headers: req.headers });
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ result: [] }));
+  });
+
+  try {
+    const config = {
+      instance: base,
+      user: 'admin',
+      password: 'pw',
+      authMethod: 'bearer',
+      bearerToken: 'tok-123',
+    };
+    const out = await snRequestWithConfig(config, 'GET', 'api/now/table/incident', undefined, 5000);
+    assert.equal(out.status, 200);
+    const call = seen.find((s) => s.url.includes('/api/now/table/incident'));
+    assert.equal(call.headers.authorization, 'Bearer tok-123');
+    assert.ok(!seen.some((s) => s.url.endsWith('oauth_token.do')), 'token endpoint not hit');
+  } finally {
+    await close(server);
+  }
+});
+
+test('resolveServiceNowSecrets infers bearer from SN_BEARER_TOKEN ahead of Basic', () => {
+  const saved = snapshotEnv();
+  try {
+    process.env.SN_BEARER_TOKEN = 'tok-1';
+    const cfg = resolveServiceNowSecrets(
+      '/nonexistent-project',
+      fixedProviders({ SN_INSTANCE: 'https://dev.example.com', SN_USER: 'admin', SN_PASSWORD: 'pw' })
+    );
+    assert.equal(cfg.authMethod, 'bearer');
+    assert.equal(cfg.bearerToken, 'tok-1');
+  } finally {
+    restoreEnv(saved);
+  }
+});
+
+test('resolveServiceNowSecrets refuses SN_AUTH_METHOD=bearer without a token', () => {
+  const saved = snapshotEnv();
+  try {
+    process.env.SN_AUTH_METHOD = 'bearer';
+    assert.throws(
+      () =>
+        resolveServiceNowSecrets(
+          '/nonexistent-project',
+          fixedProviders({ SN_INSTANCE: 'https://dev.example.com', SN_USER: '', SN_PASSWORD: '' })
+        ),
+      /SN_BEARER_TOKEN/
+    );
+  } finally {
+    restoreEnv(saved);
   }
 });
 

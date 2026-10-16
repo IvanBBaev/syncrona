@@ -251,6 +251,17 @@ async function nodeResolveCredential(profile?: string): Promise<FluentCredential
   }
   const instanceUrl = `https://${credentials.instance}/`;
   const { oauth, apiKey } = buildClientAuth(credentials);
+  // A pre-issued bearer token reaches the SDK as an OAuth token, just as its own
+  // SN_SDK_SESSION_BEARER_TOKEN does. It is never refreshed: once it expires,
+  // the instance answers 401 and the action fails.
+  if (credentials.authMethod === "bearer" && credentials.bearerToken) {
+    const token = credentials.bearerToken;
+    const tls = resolveTlsMaterial();
+    return {
+      instanceUrl,
+      input: { kind: "oauth", getToken: async () => token, ...(tls ? { tls } : {}) },
+    };
+  }
   // An API key is refused with or without a client certificate: the SDK's
   // session-only endpoints accept a UI session or a bearer token, never a key.
   if (apiKey) {

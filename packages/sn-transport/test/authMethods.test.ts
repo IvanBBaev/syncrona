@@ -288,6 +288,9 @@ describe("normalizeAuthMethod", () => {
     expect(normalizeAuthMethod("jwt-bearer")).toBe("oauth-jwt-bearer");
     expect(normalizeAuthMethod("APIKEY")).toBe("api-key");
     expect(normalizeAuthMethod("api-key")).toBe("api-key");
+    expect(normalizeAuthMethod("Bearer")).toBe("bearer");
+    expect(normalizeAuthMethod("bearer_token")).toBe("bearer");
+    expect(normalizeAuthMethod("access-token")).toBe("bearer");
   });
 
   it("returns undefined for empty or unknown values", () => {
@@ -314,7 +317,7 @@ describe("normalizeAuthMethod", () => {
     expect(resolved.explicit).toBe(false);
     expect(resolved.unknownExplicit).toBe(true);
     expect(resolved.issues).toEqual([
-      'Unknown SN_AUTH_METHOD "constructor"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+      'Unknown SN_AUTH_METHOD "constructor"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key, bearer.',
       "basic requires SN_PASSWORD.",
     ]);
   });
@@ -344,6 +347,21 @@ describe("resolveAuthMethod", () => {
     ).toBe("basic");
   });
 
+  it("infers bearer from a pre-issued token, ahead of every other credential", () => {
+    const r = resolveAuthMethod({
+      hasBearerToken: true,
+      hasClientId: true,
+      hasClientSecret: true,
+      hasPassword: true,
+    });
+    expect(r.method).toBe("bearer");
+    expect(r.explicit).toBe(false);
+    expect(r.issues).toEqual([]);
+    expect(resolveAuthMethod({ explicit: "basic", hasBearerToken: true, hasPassword: true }).method).toBe(
+      "basic"
+    );
+  });
+
   it("honors an explicit selector over inference", () => {
     const r = resolveAuthMethod({
       explicit: "api-key",
@@ -360,6 +378,9 @@ describe("resolveAuthMethod", () => {
   it("reports missing fields per method", () => {
     expect(resolveAuthMethod({ explicit: "api-key" }).issues).toEqual([
       "api-key requires SN_API_KEY.",
+    ]);
+    expect(resolveAuthMethod({ explicit: "bearer" }).issues).toEqual([
+      "bearer requires SN_BEARER_TOKEN.",
     ]);
     expect(resolveAuthMethod({ explicit: "oauth-client-credentials" }).issues).toEqual([
       "oauth-client-credentials requires SN_OAUTH_CLIENT_ID.",
@@ -401,14 +422,14 @@ describe("resolveAuthMethod", () => {
     expect(r.method).toBe("oauth-password");
     expect(r.unknownExplicit).toBe(true);
     expect(r.issues).toEqual([
-      'Unknown SN_AUTH_METHOD "oauth-jwt"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+      'Unknown SN_AUTH_METHOD "oauth-jwt"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key, bearer.',
     ]);
   });
 
   it("reports the trimmed raw value and keeps the per-method issues", () => {
     const r = resolveAuthMethod({ explicit: "  Kerberos  " });
     expect(r.issues).toEqual([
-      'Unknown SN_AUTH_METHOD "Kerberos"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key.',
+      'Unknown SN_AUTH_METHOD "Kerberos"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key, bearer.',
       "basic requires SN_PASSWORD.",
     ]);
   });
@@ -433,6 +454,7 @@ describe("resolveAuthMethod", () => {
       "oauth-client-credentials",
       "oauth-jwt-bearer",
       "api-key",
+      "bearer",
     ]);
   });
 });

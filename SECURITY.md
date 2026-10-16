@@ -45,6 +45,8 @@ understand what it touches:
     Tokens are held in memory per process and **never written to disk**.
   - **Inbound REST API key** — `SN_API_KEY` sent as a header (default
     `x-sn-apikey`, override `SN_API_KEY_HEADER`).
+  - **Pre-issued bearer token** — `SN_BEARER_TOKEN`, read from the environment
+    only: never written to the credential store, never logged, never refreshed.
   - **Mutual TLS** — client certificate/key at `SN_CLIENT_CERT` / `SN_CLIENT_KEY`
     (optional `SN_CLIENT_KEY_PASSPHRASE`), applied at the TLS layer and
     combinable with any of the above.

@@ -97,8 +97,8 @@ The last check is cached in `~/.syncrona/update-check.json`.
 
 `SN_AUTH_METHOD` selects the ServiceNow inbound REST auth method: `basic`
 (default), `oauth-password`, `oauth-client-credentials`, `oauth-jwt-bearer`, or
-`api-key`. When unset it is inferred for backward compatibility (OAuth password
-when a client id/secret pair **and** a password are present, otherwise Basic). An
+`api-key` or `bearer`. When unset it is inferred for backward compatibility
+(bearer when `SN_BEARER_TOKEN` is set, then OAuth password when a client id/secret pair **and** a password are present, otherwise Basic). An
 unrecognized value is reported as a configuration issue (`syncrona doctor`, MCP
 server startup) instead of falling back to inference.
 Every variable below also accepts a per-profile `_<NAME>` suffix.
@@ -108,6 +108,7 @@ Every variable below also accepts a per-profile `_<NAME>` suffix.
 | `SN_OAUTH_CLIENT_ID` / `SN_OAUTH_CLIENT_SECRET` | oauth-* | OAuth client id/secret (reused by password, client-credentials, jwt-bearer). |
 | `SN_API_KEY` | api-key | Inbound REST API key value. |
 | `SN_API_KEY_HEADER` | api-key | Header name override (default `x-sn-apikey`). |
+| `SN_BEARER_TOKEN` | bearer | Pre-issued OAuth access token sent as `Authorization: Bearer`; env-only, never stored or refreshed. |
 | `SN_JWT_KEY` | oauth-jwt-bearer | Path to (or inline) RS256 private-key PEM used to sign the assertion. |
 | `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` | oauth-jwt-bearer | Optional JWT header `kid` and `iss`/`sub`/`aud` claim overrides (defaults derived from client id + user + instance). |
 | `SN_CLIENT_CERT` / `SN_CLIENT_KEY` | mTLS | Client certificate + private-key PEM paths (mutual TLS, combinable with any method). |

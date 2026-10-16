@@ -115,6 +115,7 @@ function missingCredentialEnvVars(credentials: SNCredentials): string[] {
     hasClientId: !!credentials.clientId,
     hasClientSecret: !!credentials.clientSecret,
     hasApiKey: !!credentials.apiKey,
+    hasBearerToken: !!credentials.bearerToken,
     hasJwtKey: !!credentials.jwtKey,
   });
   // Basic and the OAuth password grant authenticate AS a user, so they still

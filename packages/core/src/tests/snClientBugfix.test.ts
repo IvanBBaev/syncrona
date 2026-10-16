@@ -269,6 +269,7 @@ describe("snClient critical bugfixes", () => {
     ["SN_JWT_ISS", "iss-b"],
     ["SN_JWT_SUB", "sub-b"],
     ["SN_JWT_AUD", "aud-b"],
+    ["SN_BEARER_TOKEN", "token-b"],
   ])("defaultClient rebuilds the client when %s changes", async (name, value) => {
     const { defaultClient, resetClient } = await import("../snClient.js");
     const saved = process.env[name];

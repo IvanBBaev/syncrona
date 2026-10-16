@@ -15,6 +15,7 @@ import {
   AUTH_METHOD_ENV,
   API_KEY_ENV,
   API_KEY_HEADER_ENV,
+  BEARER_TOKEN_ENV,
   OAUTH_CLIENT_ID_ENV,
   OAUTH_CLIENT_SECRET_ENV,
   JWT_KEY_ENV,
@@ -296,7 +297,10 @@ export type TableAPIGetExtra = {
   timeout?: number;
 };
 
-/** Inbound-REST API key auth: a static key sent as a fixed HTTP header. */
+/**
+ * Static-header auth: an inbound-REST API key under its header, or a pre-issued
+ * bearer token as `Authorization: Bearer <token>`. Sent as is, never refreshed.
+ */
 export type ApiKeyAuth = { header: string; value: string };
 
 export const snClient = (
@@ -309,7 +313,8 @@ export const snClient = (
   // Authorization modes, in precedence order:
   //  - OAuth (G1): Bearer token (password / client_credentials / jwt-bearer),
   //    refreshed on expiry/401.
-  //  - API key: a static header (default `x-sn-apikey`), no Basic/Bearer.
+  //  - Static header: an API key (default `x-sn-apikey`) or a pre-issued bearer
+  //    token, never refreshed.
   //  - Basic (default): username + password, used whenever both are present and
   //    no OAuth/API-key mode is selected. Empty credentials send no Authorization
   //    header (supports mTLS-only, where the client cert maps to a user).
@@ -855,6 +860,8 @@ export type SNCredentials = {
   authMethod?: AuthMethod;
   apiKey?: string;
   apiKeyHeader?: string;
+  /** A pre-issued OAuth access token (`SN_BEARER_TOKEN`), environment only. */
+  bearerToken?: string;
   /** Path to (or inline PEM of) the JWT bearer signing key. */
   jwtKey?: string;
   jwtKid?: string;
@@ -1013,6 +1020,7 @@ function resolveCredentialsInternal(profile?: string): {
   const clientSecret = envVar(OAUTH_CLIENT_SECRET_ENV);
   const apiKey = envVar(API_KEY_ENV);
   const apiKeyHeader = envVar(API_KEY_HEADER_ENV);
+  const bearerToken = envVar(BEARER_TOKEN_ENV);
   const jwtKey = envVar(JWT_KEY_ENV);
   const jwtKid = envVar(JWT_KID_ENV);
   const jwtIss = envVar(JWT_ISS_ENV);
@@ -1023,9 +1031,9 @@ function resolveCredentialsInternal(profile?: string): {
 
   // Env vars take priority only when a usable credential is present; instance-only
   // env vars do not suppress the credential store so a stale .env cannot block a
-  // fresh login. "Usable" now spans every method: a user, an OAuth client, or an
-  // API key.
-  const hasEnvCreds = !!(SN_USER || userFromProfile || clientId || apiKey);
+  // fresh login. "Usable" now spans every method: a user, an OAuth client, an
+  // API key, or a pre-issued bearer token.
+  const hasEnvCreds = !!(SN_USER || userFromProfile || clientId || apiKey || bearerToken);
   if (!hasEnvCreds && storedCredentialsCache && !normalizedProfile) {
     return {
       creds: credentialsFromStore(storedCredentialsCache),
@@ -1040,6 +1048,7 @@ function resolveCredentialsInternal(profile?: string): {
     hasClientSecret: !!clientSecret,
     hasApiKey: !!apiKey,
     hasJwtKey: !!jwtKey,
+    hasBearerToken: !!bearerToken,
   });
   warnAboutAuthIssues(
     resolved,
@@ -1065,6 +1074,7 @@ function resolveCredentialsInternal(profile?: string): {
     authMethod: resolved.method,
     apiKey: apiKey || undefined,
     apiKeyHeader: apiKeyHeader || undefined,
+    bearerToken: bearerToken || undefined,
     jwtKey: jwtKey || undefined,
     jwtKid: jwtKid || undefined,
     jwtIss: jwtIss || undefined,
@@ -1078,10 +1088,14 @@ function resolveCredentialsInternal(profile?: string): {
     !!normalizedProfile &&
     (!!userFromProfile ||
       !!process.env[profileEnvVar(API_KEY_ENV, normalizedProfile)] ||
+      !!process.env[profileEnvVar(BEARER_TOKEN_ENV, normalizedProfile)] ||
       !!process.env[profileEnvVar(OAUTH_CLIENT_ID_ENV, normalizedProfile)]);
   // A configuration is "present" when any method has its identifying credential.
   const hasCredential =
-    !!creds.user || !!creds.apiKey || !!(creds.clientId && creds.clientSecret);
+    !!creds.user ||
+    !!creds.apiKey ||
+    !!creds.bearerToken ||
+    !!(creds.clientId && creds.clientSecret);
   const source: CredentialSource = hasCredential
     ? usedProfile
       ? "instance profile env vars"
@@ -1188,6 +1202,7 @@ function credentialsKey(credentials: SNCredentials): string {
     credentials.authMethod || "",
     credentials.apiKey || "",
     credentials.apiKeyHeader || "",
+    credentials.bearerToken || "",
     credentials.jwtKey || "",
     credentials.jwtKid || "",
     credentials.jwtIss || "",
@@ -1250,8 +1265,8 @@ function readPemMaterial(value: string): string {
 }
 
 // Translate resolved credentials into the transport-level auth descriptor the
-// snClient factory consumes: an OAuth config (for the three OAuth grants) or an
-// API-key header. Basic auth needs neither — username/password flow directly.
+// snClient factory consumes: an OAuth config (for the three OAuth grants) or a
+// static header (an API key, or a pre-issued bearer token). Basic auth needs neither — username/password flow directly.
 // mTLS is orthogonal and applied by buildHttpsAgent, so it is not represented here.
 export function buildClientAuth(credentials: SNCredentials): {
   oauth?: OAuthConfig;
@@ -1267,6 +1282,11 @@ export function buildClientAuth(credentials: SNCredentials): {
         header: apiKeyHeaderName(credentials.apiKeyHeader),
         value: credentials.apiKey,
       },
+    };
+  }
+  if (method === "bearer" && credentials.bearerToken) {
+    return {
+      apiKey: { header: "Authorization", value: `Bearer ${credentials.bearerToken}` },
     };
   }
   if (method === "oauth-client-credentials" && hasOAuthClient) {
@@ -1335,6 +1355,10 @@ function missingAuthMaterial(method: AuthMethod, credentials: SNCredentials): st
 
   if (method === "api-key") {
     if (!credentials.apiKey) missing.push("API key (SN_API_KEY)");
+    return missing;
+  }
+  if (method === "bearer") {
+    if (!credentials.bearerToken) missing.push("bearer token (SN_BEARER_TOKEN)");
     return missing;
   }
   if (method === "oauth-client-credentials" || method === "oauth-password") {

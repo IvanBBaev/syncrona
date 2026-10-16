@@ -377,7 +377,7 @@ test('resolveServiceNowSecrets: unrecognized SN_AUTH_METHOD is rejected, not sil
     // reports it as an issue, so the resolver refuses the config instead.
     assert.throws(
       () => resolveServiceNowSecrets(tempDir),
-      /Unknown SN_AUTH_METHOD "totally-bogus-method"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key\./
+      /Unknown SN_AUTH_METHOD "totally-bogus-method"; expected one of: basic, oauth-password, oauth-client-credentials, oauth-jwt-bearer, api-key, bearer\./
     );
   } finally {
     restoreEnv(snap);

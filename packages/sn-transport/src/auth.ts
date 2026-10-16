@@ -13,6 +13,8 @@
  * - `oauth-client-credentials` — OAuth 2.0 Client Credentials grant (service-to-service).
  * - `oauth-jwt-bearer` — OAuth 2.0 JWT Bearer grant (signed assertion, RFC 7523).
  * - `api-key` — inbound REST API Key sent as an HTTP header (Vancouver+).
+ * - `bearer` — a pre-issued OAuth access token, sent as is and never refreshed
+ *   (the counterpart of the SDK's `SN_SDK_SESSION_BEARER_TOKEN`).
  *
  * Mutual TLS (client certificate) is orthogonal to this enum — it is applied at
  * the transport layer via {@link ResolvedTlsPolicy} and combines with ANY method.
@@ -22,7 +24,8 @@ export type AuthMethod =
   | "oauth-password"
   | "oauth-client-credentials"
   | "oauth-jwt-bearer"
-  | "api-key";
+  | "api-key"
+  | "bearer";
 
 /** All auth methods, in a stable order (for help text and pickers). */
 export const AUTH_METHODS: readonly AuthMethod[] = [
@@ -31,6 +34,7 @@ export const AUTH_METHODS: readonly AuthMethod[] = [
   "oauth-client-credentials",
   "oauth-jwt-bearer",
   "api-key",
+  "bearer",
 ];
 
 /* ----------------------------------------------------------------------------
@@ -41,6 +45,7 @@ export const AUTH_METHODS: readonly AuthMethod[] = [
 export const AUTH_METHOD_ENV = "SN_AUTH_METHOD";
 export const API_KEY_ENV = "SN_API_KEY";
 export const API_KEY_HEADER_ENV = "SN_API_KEY_HEADER";
+export const BEARER_TOKEN_ENV = "SN_BEARER_TOKEN";
 export const OAUTH_CLIENT_ID_ENV = "SN_OAUTH_CLIENT_ID";
 export const OAUTH_CLIENT_SECRET_ENV = "SN_OAUTH_CLIENT_SECRET";
 export const JWT_KEY_ENV = "SN_JWT_KEY";
@@ -72,6 +77,9 @@ const METHOD_ALIASES: Record<string, AuthMethod> = {
   "oauth-jwt-bearer": "oauth-jwt-bearer",
   apikey: "api-key",
   "api-key": "api-key",
+  bearer: "bearer",
+  "bearer-token": "bearer",
+  "access-token": "bearer",
 };
 
 /**
@@ -104,6 +112,7 @@ export type AuthMethodInputs = {
   hasClientSecret?: boolean;
   hasApiKey?: boolean;
   hasJwtKey?: boolean;
+  hasBearerToken?: boolean;
 };
 
 export type ResolvedAuthMethod = {
@@ -188,6 +197,9 @@ function validateAuthMethod(method: AuthMethod, inputs: AuthMethodInputs): strin
     case "api-key":
       need(inputs.hasApiKey, API_KEY_ENV, "api-key");
       break;
+    case "bearer":
+      need(inputs.hasBearerToken, BEARER_TOKEN_ENV, "bearer");
+      break;
   }
   return issues;
 }
@@ -196,9 +208,10 @@ function validateAuthMethod(method: AuthMethod, inputs: AuthMethodInputs): strin
  * Resolve which authentication method a configuration selects.
  *
  * An explicit `SN_AUTH_METHOD` always wins. When it is absent (or unrecognized),
- * the method is inferred exactly as SyncroNow AI did before the multi-method
- * work — OAuth password when a client id + secret + password are all present,
- * otherwise Basic — so existing setups keep behaving identically. The returned
+ * the method is inferred: a pre-issued bearer token when one is present, then
+ * exactly as SyncroNow AI did before the multi-method work — OAuth password when
+ * a client id + secret + password are all present, otherwise Basic — so
+ * existing setups keep behaving identically. The returned
  * `issues` list reports any credential fields the chosen method still needs, and
  * an unrecognized explicit selector.
  */
@@ -209,6 +222,10 @@ export function resolveAuthMethod(inputs: AuthMethodInputs): ResolvedAuthMethod 
   let method: AuthMethod;
   if (explicit) {
     method = explicit;
+  } else if (inputs.hasBearerToken) {
+    // A pre-issued token is a deliberate choice for this run, as SN_SDK_SESSION_BEARER_TOKEN
+    // is for the SDK; no setup that predates the variable can carry one by accident.
+    method = "bearer";
   } else if (inputs.hasClientId && inputs.hasClientSecret && inputs.hasPassword) {
     method = "oauth-password";
   } else {

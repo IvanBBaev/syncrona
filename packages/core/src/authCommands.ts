@@ -17,6 +17,7 @@ import {
   CLIENT_CERT_ENV,
   CLIENT_KEY_ENV,
   CLIENT_KEY_PASSPHRASE_ENV,
+  BEARER_TOKEN_ENV,
 } from "@syncrona/sn-transport";
 import { logger } from "./Logger.js";
 import {
@@ -136,6 +137,7 @@ const MANAGED_AUTH_ENV: string[] = [
   CLIENT_CERT_ENV,
   CLIENT_KEY_ENV,
   CLIENT_KEY_PASSPHRASE_ENV,
+  BEARER_TOKEN_ENV,
 ];
 
 function normalizeLoginMethod(raw?: string): LoginMethod | undefined {
@@ -388,6 +390,12 @@ export async function loginCommand(args: LoginArgs): Promise<void> {
   // Pick the authentication method: honour --auth-method when given (rejecting
   // an unknown value), otherwise prompt. Basic stays the default.
   let method = normalizeLoginMethod(args.authMethod);
+  if (String(args.authMethod || "").trim().toLowerCase() === "bearer") {
+    logger.error(
+      `A bearer token is not stored: set SN_AUTH_METHOD=bearer and ${BEARER_TOKEN_ENV} in the environment instead.`
+    );
+    process.exit(1);
+  }
   if (args.authMethod && !method) {
     logger.error(
       `Unknown auth method "${args.authMethod}". Valid values: ${[

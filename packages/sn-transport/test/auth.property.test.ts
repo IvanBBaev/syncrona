@@ -23,6 +23,7 @@ import {
   OAUTH_CLIENT_ID_ENV,
   OAUTH_CLIENT_SECRET_ENV,
   API_KEY_ENV,
+  BEARER_TOKEN_ENV,
   normalizeAuthMethod,
   resolveAuthMethod,
   type AuthMethod,
@@ -92,6 +93,7 @@ const inputsArbitrary: fc.Arbitrary<AuthMethodInputs> = fc.record(
     hasClientSecret: fc.oneof(fc.boolean(), fc.constant(undefined)),
     hasApiKey: fc.oneof(fc.boolean(), fc.constant(undefined)),
     hasJwtKey: fc.oneof(fc.boolean(), fc.constant(undefined)),
+    hasBearerToken: fc.oneof(fc.boolean(), fc.constant(undefined)),
   },
   { requiredKeys: [] }
 );
@@ -115,6 +117,7 @@ const REQUIRED_FLAGS: Record<AuthMethod, Array<{ flag: keyof AuthMethodInputs; e
     { flag: "hasJwtKey", env: JWT_KEY_ENV },
   ],
   "api-key": [{ flag: "hasApiKey", env: API_KEY_ENV }],
+  bearer: [{ flag: "hasBearerToken", env: BEARER_TOKEN_ENV }],
 };
 
 describe("resolveAuthMethod properties", () => {
@@ -172,13 +175,14 @@ describe("resolveAuthMethod properties", () => {
     );
   });
 
-  it("falls back to the pre-multi-method inference whenever no selector applies", () => {
+  it("falls back to the pre-multi-method inference whenever no selector or token applies", () => {
     fc.assert(
       fc.property(inputsArbitrary, (inputs) => {
         fc.pre(normalizeAuthMethod(inputs.explicit) === undefined);
         const resolved = resolveAuthMethod(inputs);
-        const expected =
-          inputs.hasClientId && inputs.hasClientSecret && inputs.hasPassword
+        const expected = inputs.hasBearerToken
+          ? "bearer"
+          : inputs.hasClientId && inputs.hasClientSecret && inputs.hasPassword
             ? "oauth-password"
             : "basic";
         expect(resolved.method).toBe(expected);

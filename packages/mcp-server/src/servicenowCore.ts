@@ -37,6 +37,7 @@ import {
   CLIENT_CERT_ENV,
   CLIENT_KEY_ENV,
   CLIENT_KEY_PASSPHRASE_ENV,
+  BEARER_TOKEN_ENV,
   type AuthMethod,
   type OAuthConfig,
   type TokenManager,
@@ -73,6 +74,8 @@ type SNConfig = {
   // Inbound REST API Key (api-key method).
   apiKey?: string;
   apiKeyHeader?: string;
+  // Pre-issued OAuth access token (bearer method, env-only).
+  bearerToken?: string;
   // JWT bearer grant material (oauth-jwt-bearer method).
   jwtKey?: string;
   jwtKid?: string;
@@ -283,6 +286,9 @@ function usesOAuth(config: SNConfig): boolean {
 function staticAuthHeaders(config: SNConfig): Record<string, string> {
   if (config.authMethod === "api-key" && config.apiKey) {
     return { [apiKeyHeaderName(config.apiKeyHeader)]: config.apiKey };
+  }
+  if (config.authMethod === "bearer" && config.bearerToken) {
+    return { Authorization: `Bearer ${config.bearerToken}` };
   }
   if (config.user && config.password) {
     return {
@@ -840,6 +846,8 @@ export function resolveServiceNowSecrets(
   let clientSecret = env(OAUTH_CLIENT_SECRET_ENV);
   let apiKey = env(API_KEY_ENV);
   let apiKeyHeader = env(API_KEY_HEADER_ENV);
+  // A pre-issued bearer token is env-only: `syncrona login` never stores one.
+  const bearerToken = env(BEARER_TOKEN_ENV);
   let jwtKey = env(JWT_KEY_ENV);
   let jwtKid = env(JWT_KID_ENV);
   let jwtIss = env(JWT_ISS_ENV);
@@ -865,6 +873,7 @@ export function resolveServiceNowSecrets(
     clientId ||
     clientSecret ||
     apiKey ||
+    bearerToken ||
     jwtKey
   );
   if (!identityFromEnv && !hasEnvAuthMaterial) {
@@ -895,6 +904,7 @@ export function resolveServiceNowSecrets(
     hasClientSecret: !!clientSecret,
     hasApiKey: !!apiKey,
     hasJwtKey: !!jwtKey,
+    hasBearerToken: !!bearerToken,
   });
 
   // Mutual TLS / custom CA is orthogonal to the Authorization method.
@@ -947,6 +957,7 @@ export function resolveServiceNowSecrets(
     authMethod: resolved.method,
     apiKey: apiKey || undefined,
     apiKeyHeader: apiKeyHeader || undefined,
+    bearerToken: bearerToken || undefined,
     jwtKey: jwtKey || undefined,
     jwtKid: jwtKid || undefined,
     jwtIss: jwtIss || undefined,
