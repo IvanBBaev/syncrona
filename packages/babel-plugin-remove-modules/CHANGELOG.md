@@ -1,10 +1,10 @@
 # @syncrona/babel-plugin-remove-modules
 
-## 1.2.0-beta.0
+## 1.2.0
 
 ### Patch Changes
 
-- c8b489a: - The build plugin packages (babel, babel-plugin-remove-modules, babel-preset-servicenow, eslint, prettier, sass, typescript, webpack) are re-implemented from their documented behaviour; options, exports and output are unchanged.
+- - The build plugin packages (babel, babel-plugin-remove-modules, babel-preset-servicenow, eslint, prettier, sass, typescript, webpack) are re-implemented from their documented behaviour; options, exports and output are unchanged.
   - `babel-plugin-remove-modules` rejects `@expandModule` on an import with a string name (`import { "a-b" as x }`) instead of leaving that name unbound; without `@expandModule` such an import is still removed.
 
 ## 1.1.0

@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/mirror",
-  "version": "1.2.0-beta.0",
+  "version": "1.2.0",
   "description": "Full-instance ServiceNow git mirror engine for SyncroNow AI: deterministic, byte-stable serialization of Table API rows into a git-friendly working tree.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,9 +20,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@syncrona/credential-store": "^1.2.0-beta.0",
-    "@syncrona/redaction": "^1.2.0-beta.0",
-    "@syncrona/sn-transport": "^1.2.0-beta.0"
+    "@syncrona/credential-store": "^1.2.0",
+    "@syncrona/redaction": "^1.2.0",
+    "@syncrona/sn-transport": "^1.2.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

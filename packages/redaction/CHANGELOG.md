@@ -1,6 +1,6 @@
 # @syncrona/redaction
 
-## 1.2.0-beta.0
+## 1.2.0
 
 ## 1.1.0
 

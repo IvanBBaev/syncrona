@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/types",
-  "version": "1.2.0-beta.0",
+  "version": "1.2.0",
   "description": "Shared TypeScript type declarations for the SyncroNow AI toolchain — the Sync and SN namespaces consumed by the core CLI, MCP server, and build plugins.",
   "main": "index.d.ts",
   "scripts": {

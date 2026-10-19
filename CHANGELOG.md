@@ -4,10 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.2.0-beta.0] - 2026-10-19
+## [1.2.0] - 2026-10-19
 
-**Independent codebase, Table API only.** First beta of 1.2.0, published under
-the npm `beta` dist-tag (`npm install syncrona@beta`); `latest` stays on 1.1.0.
+**Independent codebase, Table API only.**
 
 - The CLI and the MCP server no longer use a scoped application's REST API on
   the instance. Manifests, file contents and the session scope come from the

@@ -1,10 +1,10 @@
 # @syncrona/jira
 
-## 1.2.0-beta.0
+## 1.2.0
 
 ### Patch Changes
 
-- @syncrona/credential-store@1.2.0-beta.0
+- @syncrona/credential-store@1.2.0
 
 ## 1.1.0
 

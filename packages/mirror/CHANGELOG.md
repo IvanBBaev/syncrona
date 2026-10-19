@@ -1,16 +1,16 @@
 # @syncrona/mirror
 
-## 1.2.0-beta.0
+## 1.2.0
 
 ### Patch Changes
 
-- Updated dependencies [cd08ae2]
-- Updated dependencies [f88a98e]
-- Updated dependencies [bc33b76]
-- Updated dependencies [3f54d54]
-  - @syncrona/sn-transport@1.2.0-beta.0
-  - @syncrona/credential-store@1.2.0-beta.0
-  - @syncrona/redaction@1.2.0-beta.0
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @syncrona/sn-transport@1.2.0
+  - @syncrona/credential-store@1.2.0
+  - @syncrona/redaction@1.2.0
 
 ## 1.1.0
 

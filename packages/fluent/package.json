@@ -1,6 +1,6 @@
 {
   "name": "@syncrona/fluent",
-  "version": "1.2.0-beta.0",
+  "version": "1.2.0",
   "description": "Optional Fluent tier for SyncroNow AI: drives the ServiceNow SDK (@servicenow/sdk) orchestrator behind `syncrona fluent` - init, build, transform, pack, install, status, types, dependencies, run, explain and move-to-app.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +20,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@syncrona/types": "^1.2.0-beta.0"
+    "@syncrona/types": "^1.2.0"
   },
   "peerDependencies": {
     "@servicenow/sdk": "~4.13",

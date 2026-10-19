@@ -1,16 +1,16 @@
 # @syncrona/sn-transport
 
-## 1.2.0-beta.0
+## 1.2.0
 
 ### Minor Changes
 
-- cd08ae2: - New `bearer` auth method for a pre-issued OAuth access token, the counterpart of now-sdk's `SN_SDK_SESSION_BEARER_TOKEN`. Set `SN_BEARER_TOKEN` (optionally with `SN_AUTH_METHOD=bearer`, aliases `bearer-token` and `access-token`), and the CLI, the MCP server and the Fluent tier send `Authorization: Bearer <token>`. Like the SDK, a token in the environment is inferred ahead of every other method unless `SN_AUTH_METHOD` names a different one. The token is environment-only: `syncrona login` refuses `--auth-method bearer` and clears a stale `SN_BEARER_TOKEN` from `.env` on a re-login, and syncrona never refreshes the token. The per-profile `SN_BEARER_TOKEN_<PROFILE>` suffix works like every other auth variable.
-- bc33b76: Inject a UI session into the Fluent tier, the counterpart of now-sdk's `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE`. When `SN_SESSION_COOKIE` (with its `SN_SESSION_TOKEN` CSRF token) is set, the `fluent` actions hand that session to the SDK as is, ahead of the profile's method and without a login; a token without a cookie is refused. `FluentCredentialInput` gains a `session` kind, which `createFluentAuthResolver` returns unchanged. The variables are environment-only: `syncrona login` never stores them and clears stale ones from `.env`, and syncrona never renews the session. Other commands, and `fluent types --native`, keep using the profile.
-- 3f54d54: The scoped API prefix helpers are removed: `DEFAULT_SCOPED_API_PREFIXES`, `sanitizeScopedPrefix`, `SCOPED_API_PREFIXES_ENV`, `parseConfiguredScopedApiPrefixes` and `orderScopedApiPrefixes` are no longer exported, and `SYNCRONA_SCOPED_API_PREFIXES` has no effect. Neither client calls a scoped application's REST API any more.
+- - New `bearer` auth method for a pre-issued OAuth access token, the counterpart of now-sdk's `SN_SDK_SESSION_BEARER_TOKEN`. Set `SN_BEARER_TOKEN` (optionally with `SN_AUTH_METHOD=bearer`, aliases `bearer-token` and `access-token`), and the CLI, the MCP server and the Fluent tier send `Authorization: Bearer <token>`. Like the SDK, a token in the environment is inferred ahead of every other method unless `SN_AUTH_METHOD` names a different one. The token is environment-only: `syncrona login` refuses `--auth-method bearer` and clears a stale `SN_BEARER_TOKEN` from `.env` on a re-login, and syncrona never refreshes the token. The per-profile `SN_BEARER_TOKEN_<PROFILE>` suffix works like every other auth variable.
+- Inject a UI session into the Fluent tier, the counterpart of now-sdk's `SN_SDK_SESSION_TOKEN` / `SN_SDK_SESSION_COOKIE`. When `SN_SESSION_COOKIE` (with its `SN_SESSION_TOKEN` CSRF token) is set, the `fluent` actions hand that session to the SDK as is, ahead of the profile's method and without a login; a token without a cookie is refused. `FluentCredentialInput` gains a `session` kind, which `createFluentAuthResolver` returns unchanged. The variables are environment-only: `syncrona login` never stores them and clears stale ones from `.env`, and syncrona never renews the session. Other commands, and `fluent types --native`, keep using the profile.
+- The scoped API prefix helpers are removed: `DEFAULT_SCOPED_API_PREFIXES`, `sanitizeScopedPrefix`, `SCOPED_API_PREFIXES_ENV`, `parseConfiguredScopedApiPrefixes` and `orderScopedApiPrefixes` are no longer exported, and `SYNCRONA_SCOPED_API_PREFIXES` has no effect. Neither client calls a scoped application's REST API any more.
 
 ### Patch Changes
 
-- f88a98e: Docs: package READMEs drop the legacy upstream references. The fluent README states the ServiceNow SDK licensing notes inline, the MCP server examples use a neutral `x_acme_*` scope, and the repository `NOTICE` now carries only the project copyright and the ServiceNow trademark notice.
+- Docs: package READMEs drop the legacy upstream references. The fluent README states the ServiceNow SDK licensing notes inline, the MCP server examples use a neutral `x_acme_*` scope, and the repository `NOTICE` now carries only the project copyright and the ServiceNow trademark notice.
 
 ## 1.1.0
 

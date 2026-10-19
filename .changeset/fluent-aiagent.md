@@ -1,5 +1,0 @@
----
-"@syncrona/fluent": minor
----
-
-- The native Fluent compiler supports `AiAgent()` (`sn_aia_agent`, `sn_aia_agent_config`, `sn_aia_version`, the execute `sys_security_acl` with its `sys_security_acl_role` records, `sys_agent_access_role_configuration` and `sys_agent_access_role_mapping`, `sn_aia_trigger_configuration` with `sn_aia_trigger_agent_usecase_m2m`, `sn_aia_agent_tool_m2m` with `sn_aia_tool`, and `sn_aia_ltm_category_mapping`), byte for byte as SDK 4.13.6 writes it: a draft version when `versionDetails` is absent, the published version's instructions on the agent, the three ACL types, roleList / roleMap data access, scheduled triggers, out-of-the-box tools (web search, knowledge graph) linked without a tool record, tool target documents by type, memory categories, and the SDK's diagnostics for a missing or invalid `securityAcl`, multiple published versions, invalid data access and duplicate tool names. RAG, search retrieval and CRUD tools, and tool inputs other than an array, are reported as not supported yet.
