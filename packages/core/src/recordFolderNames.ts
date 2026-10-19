@@ -402,7 +402,14 @@ const exists = async (target: string): Promise<boolean> => {
 /** True when both paths exist and are the same filesystem entry. */
 const sameEntry = async (a: string, b: string): Promise<boolean> => {
   try {
-    const [sa, sb] = await Promise.all([fsp.stat(a), fsp.stat(b)]);
+    // BigInt stats: NTFS file ids exceed 2^53, so as numbers two different
+    // folders can round to the same inode. A zero id means the volume reports
+    // none, and the real paths decide instead.
+    const [sa, sb] = await Promise.all([fsp.stat(a, { bigint: true }), fsp.stat(b, { bigint: true })]);
+    if (sa.ino === 0n || sb.ino === 0n) {
+      const [ra, rb] = await Promise.all([fsp.realpath(a), fsp.realpath(b)]);
+      return ra === rb;
+    }
     return sa.dev === sb.dev && sa.ino === sb.ino;
   } catch {
     return false;

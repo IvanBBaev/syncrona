@@ -363,7 +363,7 @@ const MODULE_FLOORS = [
   { pattern: 'dist/processRunner.js', line: 95, branch: 88 }, // measured 97.59 / 91.89 (also 98.19 / 91.89: V8 range granularity, 34/37 vs 34/37 branches and 162/166 vs 163/166 lines on unchanged source, the higher reading re-measured with --test-reporter=lcov under the gate's flags)
   { pattern: 'dist/gracefulShutdown.js', line: 95, branch: 95 }, // measured 100.00 / 100.00
   { pattern: 'dist/healthServer.js', line: 97, branch: 66 }, // measured 100.00 / 69.70
-  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 98.99 (also 100.00 / 100.00: V8 range granularity, 98/99 vs 98/98 branches on unchanged source, no uncovered lines in either reading; the lower reading appears under full-gate load)
+  { pattern: 'dist/handlers/serviceNowCrudHandlers.js', line: 96, branch: 95 }, // measured 100.00 / 98.99 (also 100.00 / 99.07, 100.00 / 100.00: V8 range granularity, 98/99 vs 98/98 branches on unchanged source, 99.07 on macos-latest CI, no uncovered lines in either reading; the lower reading appears under full-gate load)
   // SDK-F6: the Fluent build resolves a caller-supplied project path against the
   // workspace (symlinks included) and swaps the process console while it runs.
   { pattern: 'dist/handlers/fluentHandlers.js', line: 97, branch: 91 }, // measured 100.00 / 93.75
@@ -372,7 +372,7 @@ const MODULE_FLOORS = [
   // 88.17 once the walk's refusal arms were pinned, the metrics store from 93.01/82.93
   // once its prune's two load-bearing catches were driven on purpose. A module that
   // jumps and is not pinned can fall back just as far under the defaults.
-  { pattern: 'dist/semanticIndexState.js', line: 97, branch: 95 }, // measured 100.00 / 98.59 (also 100.00 / 98.61: V8 range granularity, 70/71 vs 71/72 branches, macOS vs ubuntu-latest on unchanged source, the only uncovered branch is the __importDefault helper in both readings)
+  { pattern: 'dist/semanticIndexState.js', line: 97, branch: 95 }, // measured 100.00 / 98.59 (also 100.00 / 98.61, 100.00 / 98.65: V8 range granularity, 70/71 vs 71/72 branches, macOS vs ubuntu-latest on unchanged source, 98.65 on ubuntu-latest CI, the only uncovered branch is the __importDefault helper in both readings)
   { pattern: 'dist/runtimeConfig.js', line: 97, branch: 84 }, // measured 100.00 / 87.50
   { pattern: 'dist/metricsStore.js', line: 96, branch: 89 }, // measured 98.93 / 93.62
   // The dependency graph and the scope-knowledge index that `sync_scope_docs` renders.
