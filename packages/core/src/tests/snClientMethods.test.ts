@@ -1,0 +1,1245 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { generateKeyPairSync } from "crypto";
+
+// Mirrors @syncrona/sn-transport's CA_BUNDLE_ENV / TLS_REJECT_UNAUTHORIZED_ENV
+// (kept inline so the test file stays a leaf with no workspace-package imports).
+const CA_BUNDLE_ENV = "SYNCRONA_CA_BUNDLE";
+const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
+// Mirrors @syncrona/sn-transport's mutual-TLS + multi-method auth env var names.
+const CLIENT_CERT_ENV = "SN_CLIENT_CERT";
+const CLIENT_KEY_ENV = "SN_CLIENT_KEY";
+const CLIENT_KEY_PASSPHRASE_ENV = "SN_CLIENT_KEY_PASSPHRASE";
+
+// Exercises the snClient request wrappers (endpoint + params), the session
+// scope lookup, the ATF step script write, the OAuth 401 refresh interceptor, the response unwrap
+// helpers, and the credential-cache / active-profile accessors — all offline
+// against a mocked axios instance.
+
+const mockGet = jest.fn();
+const mockPost = jest.fn();
+const mockPut = jest.fn();
+const mockPatch = jest.fn();
+const mockDelete = jest.fn();
+const mockRequest = jest.fn();
+
+type InterceptorRefs = {
+  request?: (cfg: unknown) => unknown;
+  responseError?: (err: unknown) => unknown;
+};
+const mockInterceptors: InterceptorRefs = {};
+
+// Captures every axios.create(config) call so tests can assert the request
+// defaults (auth headers, basic auth, https agent) the factory wired in.
+const mockAxiosCreate = jest.fn((_config?: unknown) => ({
+  get: mockGet,
+  post: mockPost,
+  put: mockPut,
+  patch: mockPatch,
+  delete: mockDelete,
+  request: mockRequest,
+  interceptors: {
+    request: { use: (fn: (cfg: unknown) => unknown) => { mockInterceptors.request = fn; } },
+    response: {
+      use: (_ok: unknown, errFn: (err: unknown) => unknown) => {
+        mockInterceptors.responseError = errFn;
+      },
+    },
+  },
+}));
+
+const mockGetToken = jest.fn();
+const mockForceRefresh = jest.fn();
+const mockResolveStore = jest.fn();
+
+const mockLoggerError = jest.fn();
+const mockLoggerWarn = jest.fn();
+
+jest.unstable_mockModule("axios", () => ({
+  __esModule: true,
+  default: {
+    isAxiosError: (value: unknown) => {
+      const candidate = value as { response?: unknown } | null;
+      return Boolean(candidate && typeof candidate === "object" && "response" in candidate);
+    },
+    create: mockAxiosCreate,
+  },
+}));
+
+jest.unstable_mockModule("axios-rate-limit", () => ({
+  __esModule: true,
+  default: (client: unknown) => client,
+}));
+
+jest.unstable_mockModule("../oauth.js", () => ({
+  OAuthConfig: jest.fn(),
+  TokenPoster: jest.fn(),
+  createTokenManager: () => ({ getToken: mockGetToken, forceRefresh: mockForceRefresh }),
+}));
+
+jest.unstable_mockModule("../auth.js", () => ({
+  resolveCredentialsFromStore: (...a: unknown[]) => mockResolveStore(...a),
+}));
+
+jest.unstable_mockModule("../Logger.js", () => ({
+  logger: {
+    error: (...a: unknown[]) => mockLoggerError(...a),
+    warn: (...a: unknown[]) => mockLoggerWarn(...a),
+    info: jest.fn(),
+    debug: jest.fn(),
+    silly: jest.fn(),
+  },
+}));
+
+const okResult = (result: unknown) => ({ status: 200, data: { result } });
+
+const ENV_KEYS = [
+  "SN_USER",
+  "SN_PASSWORD",
+  "SN_INSTANCE",
+  "SN_OAUTH_CLIENT_ID",
+  "SN_OAUTH_CLIENT_SECRET",
+  "SN_API_KEY",
+] as const;
+
+describe("snClient request wrappers", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    mockGet.mockResolvedValue(okResult([]));
+    mockPost.mockResolvedValue(okResult({}));
+    mockPut.mockResolvedValue({ status: 200, data: {} });
+    mockPatch.mockResolvedValue({ status: 200, data: {} });
+    mockRequest.mockResolvedValue({ status: 200, data: {} });
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k] as string;
+    }
+  });
+
+  const makeClient = async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    return snClient("https://example.service-now.com/", "u", "p");
+  };
+
+  it("getScopeId queries sys_scope by scope name", async () => {
+    const client = await makeClient();
+    await client.getScopeId("x_acme_app");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_scope", {
+      params: { sysparm_query: "scope=x_acme_app", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getUserSysId queries sys_user by user name", async () => {
+    const client = await makeClient();
+    await client.getUserSysId("admin");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user", {
+      params: { sysparm_query: "user_name=admin", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getScopeId neutralizes caret separators so a scope cannot smuggle extra conditions", async () => {
+    // `^` separates conditions in a ServiceNow encoded query; an unescaped value
+    // could widen `scope=...` into an attacker-chosen instance-wide lookup.
+    const client = await makeClient();
+    await client.getScopeId("x_acme_app^sys_id=ADMIN");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_scope", {
+      params: { sysparm_query: "scope=x_acme_app sys_id=ADMIN", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getUserSysId asks for the session user when no user name is configured", async () => {
+    // An API-key login has no user name, and `user_name=` would match every
+    // user whose name is empty.
+    delete process.env.SN_USER;
+    process.env.SN_API_KEY = "key-1";
+    const client = await makeClient();
+    await client.getUserSysId();
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user", {
+      params: {
+        sysparm_query: "sys_idDYNAMIC90d1921e5f510100a9ad2572f2b477fe",
+        sysparm_fields: "sys_id",
+      },
+    });
+  });
+
+  it("getUserSysId neutralizes caret separators in the user name", async () => {
+    const client = await makeClient();
+    await client.getUserSysId("admin^ORuser_name=guest");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user", {
+      params: { sysparm_query: "user_name=admin ORuser_name=guest", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("getCurrentAppUserPrefSysId queries the apps.current_app preference", async () => {
+    const client = await makeClient();
+    await client.getCurrentAppUserPrefSysId("user-1");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user_preference", {
+      params: { sysparm_query: "user=user-1^name=apps.current_app", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("updateCurrentAppUserPref PUTs the new app value", async () => {
+    const client = await makeClient();
+    await client.updateCurrentAppUserPref("app-9", "pref-3");
+    expect(mockPut).toHaveBeenCalledWith("api/now/table/sys_user_preference/pref-3", {
+      value: "app-9",
+    });
+  });
+
+  it("createCurrentAppUserPref POSTs a new preference row", async () => {
+    const client = await makeClient();
+    await client.createCurrentAppUserPref("app-9", "user-1");
+    expect(mockPost).toHaveBeenCalledWith("api/now/table/sys_user_preference", {
+      value: "app-9",
+      name: "apps.current_app",
+      type: "string",
+      user: "user-1",
+    });
+  });
+
+  it("getSessionScope reads the apps.current_app preference and its sys_scope row", async () => {
+    const client = await makeClient();
+    mockGet.mockReset();
+    mockGet
+      .mockResolvedValueOnce(okResult([{ sys_id: "user-1" }]))
+      .mockResolvedValueOnce(okResult([{ value: "scope-9" }]))
+      .mockResolvedValueOnce(okResult([{ sys_id: "scope-9", scope: "x_acme_app" }]));
+    await expect(client.getSessionScope()).resolves.toEqual({ scope: "x_acme_app", sys_id: "scope-9" });
+    expect(mockGet).toHaveBeenNthCalledWith(2, "api/now/table/sys_user_preference", {
+      params: {
+        sysparm_query: "user=user-1^name=apps.current_app^ORDERBYDESCsys_updated_on",
+        sysparm_fields: "value",
+        sysparm_limit: "1",
+      },
+    });
+    expect(mockGet).toHaveBeenNthCalledWith(3, "api/now/table/sys_scope", {
+      params: { sysparm_query: "sys_id=scope-9", sysparm_fields: "sys_id,scope", sysparm_limit: "1" },
+    });
+  });
+
+  it("getSessionScope falls back to global without a preference, for global, and for an unknown scope", async () => {
+    const client = await makeClient();
+    const global = { scope: "global", sys_id: "global" };
+    mockGet.mockReset();
+    mockGet
+      .mockResolvedValueOnce(okResult([{ sys_id: "user-1" }]))
+      .mockResolvedValueOnce(okResult([]));
+    await expect(client.getSessionScope()).resolves.toEqual(global);
+    mockGet
+      .mockResolvedValueOnce(okResult([{ sys_id: "user-1" }]))
+      .mockResolvedValueOnce(okResult([{ value: "global" }]));
+    await expect(client.getSessionScope()).resolves.toEqual(global);
+    mockGet
+      .mockResolvedValueOnce(okResult([{ sys_id: "user-1" }]))
+      .mockResolvedValueOnce(okResult([{ value: "gone" }]))
+      .mockResolvedValueOnce(okResult([]));
+    await expect(client.getSessionScope()).resolves.toEqual(global);
+  });
+
+  it("getSessionScope throws when the session user cannot be resolved", async () => {
+    const client = await makeClient();
+    mockGet.mockReset();
+    mockGet.mockResolvedValueOnce(okResult([]));
+    await expect(client.getSessionScope()).rejects.toThrow("Could not resolve the session user");
+  });
+
+  it("createUpdateSet POSTs a named update set", async () => {
+    const client = await makeClient();
+    await client.createUpdateSet("My Set");
+    expect(mockPost).toHaveBeenCalledWith("api/now/table/sys_update_set", { name: "My Set" });
+  });
+
+  it("getCurrentUpdateSetUserPref queries the sys_update_set preference", async () => {
+    const client = await makeClient();
+    await client.getCurrentUpdateSetUserPref("user-1");
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_user_preference", {
+      params: { sysparm_query: "user=user-1^name=sys_update_set", sysparm_fields: "sys_id" },
+    });
+  });
+
+  it("updateCurrentUpdateSetUserPref PUTs the new update set value", async () => {
+    const client = await makeClient();
+    await client.updateCurrentUpdateSetUserPref("set-2", "pref-7");
+    expect(mockPut).toHaveBeenCalledWith("api/now/table/sys_user_preference/pref-7", {
+      value: "set-2",
+    });
+  });
+
+  it("cicdPost POSTs under api/sn_cicd with the arguments as query params and no body (WP-5)", async () => {
+    const client = await makeClient();
+    await client.cicdPost("/testsuite/run", { test_suite_name: "Smoke" });
+    expect(mockPost).toHaveBeenCalledWith("api/sn_cicd/testsuite/run", undefined, {
+      params: { test_suite_name: "Smoke" },
+      maxRedirects: 20,
+    });
+    await client.cicdPost("app_repo/publish");
+    expect(mockPost).toHaveBeenLastCalledWith("api/sn_cicd/app_repo/publish", undefined, {
+      params: {},
+      maxRedirects: 20,
+    });
+  });
+
+  it("cicdGet GETs under api/sn_cicd (WP-5)", async () => {
+    const client = await makeClient();
+    await client.cicdGet("//progress/abc");
+    expect(mockGet).toHaveBeenCalledWith("api/sn_cicd/progress/abc", { maxRedirects: 20 });
+  });
+
+  it("tableAPIGet includes a sysparm_offset only when offset > 0", async () => {
+    const client = await makeClient();
+    await client.tableAPIGet("sys_script", "active=true", "sys_id", 100, 50);
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_script", {
+      params: {
+        sysparm_query: "active=true",
+        sysparm_fields: "sys_id",
+        sysparm_limit: "100",
+        sysparm_offset: "50",
+      },
+    });
+  });
+
+  it("tableAPIGet merges extra sysparm params and a per-request timeout when given", async () => {
+    const client = await makeClient();
+    await client.tableAPIGet("incident", "active=true", "", 11, 0, {
+      params: { sysparm_display_value: "all", sysparm_no_count: "true" },
+      timeout: 30000,
+    });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/incident", {
+      params: {
+        sysparm_query: "active=true",
+        sysparm_fields: "",
+        sysparm_limit: "11",
+        sysparm_display_value: "all",
+        sysparm_no_count: "true",
+      },
+      timeout: 30000,
+    });
+  });
+
+  it("tableAPIGet adds no timeout key when the extras carry params only", async () => {
+    const client = await makeClient();
+    await client.tableAPIGet("incident", "", "", 1, 0, { params: { sysparm_view: "ess" } });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/incident", {
+      params: { sysparm_query: "", sysparm_fields: "", sysparm_limit: "1", sysparm_view: "ess" },
+    });
+  });
+
+  it("updateRecord PATCHes the record for non-ATF tables", async () => {
+    const client = await makeClient();
+    await client.updateRecord("sys_script", "rec-1", { script: "x" });
+    expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_script/rec-1", { script: "x" });
+  });
+
+  it("updateRecord stores an ATF step script in its sys_variable_value row", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "val-1" }]));
+    await client.updateRecord("sys_atf_step", "step-1", { "inputs.script": "gs.info(1);" });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_variable_value", {
+      params: {
+        sysparm_query: "document=sys_atf_step^document_key=step-1^variable.element=script",
+        sysparm_fields: "sys_id",
+        sysparm_limit: "1",
+      },
+    });
+    expect(mockPatch).toHaveBeenNthCalledWith(1, "api/now/table/sys_variable_value/val-1", {
+      value: "gs.info(1);",
+    });
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("updateRecord names an ACL refusal of the script write and does not retry it", async () => {
+    const { isRetryableRequestError } = await import("../snClient.js");
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "val-1" }]));
+    mockPatch.mockRejectedValueOnce({ response: { status: 403 } });
+    const error = await client
+      .updateRecord("sys_atf_step", "step-9", { "inputs.script": "x" })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      "The instance refused to store the script of ATF step step-9 (HTTP 403 on sys_variable_value)"
+    );
+    expect(isRetryableRequestError(error)).toBe(false);
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("updateRecord passes a non-ACL script write error through unchanged", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "val-1" }]));
+    mockPatch.mockRejectedValueOnce({ response: { status: 500 } });
+    await expect(
+      client.updateRecord("sys_atf_step", "step-9", { "inputs.script": "x" })
+    ).rejects.toEqual({ response: { status: 500 } });
+  });
+
+  it("updateRecord refuses a step without a script input and patches nothing", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([]));
+    await expect(
+      client.updateRecord("sys_atf_step", "step-9", { "inputs.script": "x" })
+    ).rejects.toThrow("The ATF step step-9 has no script input on the instance");
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("createRecord writes an ATF step script after the insert", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-1" } } });
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "val-1" }]));
+    await client.createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_variable_value/val-1", {
+      value: "gs.info(1);",
+    });
+  });
+
+  it("createRecord reports a created step whose script could not be sent", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-3" } } });
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "val-3" }]));
+    mockPatch.mockRejectedValueOnce({ response: { status: 403 } });
+    await expect(
+      client.createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" })
+    ).rejects.toThrow(
+      /^Created the sys_atf_step record step-3, but its script was not sent: The instance refused/
+    );
+  });
+
+  it("createRecord keeps a non-Error ATF rejection's text", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-4" } } });
+    mockGet.mockRejectedValueOnce("socket hang up");
+    await expect(
+      client.createRecord("sys_atf_step", { "inputs.script": "gs.info(1);" })
+    ).rejects.toThrow(
+      "Created the sys_atf_step record step-4, but its script was not sent: socket hang up"
+    );
+  });
+
+  it("updateRecord skips the ATF side-call for a step update without a script", async () => {
+    const client = await makeClient();
+    await client.updateRecord("sys_atf_step", "step-1", { description: "d" });
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockPatch).toHaveBeenCalledWith("api/now/table/sys_atf_step/step-1", { description: "d" });
+  });
+
+  it("createRecord POSTs once, asks only for sys_id, and returns it", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "new-1" } } });
+    await expect(
+      client.createRecord("sys_script_include", { name: "Util", script: "x" })
+    ).resolves.toEqual({ sys_id: "new-1" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      "api/now/table/sys_script_include",
+      { name: "Util", script: "x" },
+      { params: { sysparm_fields: "sys_id" } }
+    );
+  });
+
+  it("createRecord throws when the instance answers without a sys_id", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: {} } });
+    await expect(client.createRecord("sys_script_include", { name: "U" })).rejects.toThrow(
+      "Creating a sys_script_include record returned no sys_id (HTTP 201)."
+    );
+  });
+
+  it("createRecord does not retry a failed POST (it is not idempotent)", async () => {
+    const client = await makeClient();
+    mockPost.mockRejectedValueOnce({ response: { status: 503 } });
+    await expect(client.createRecord("sys_script_include", { name: "U" })).rejects.toEqual({
+      response: { status: 503 },
+    });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("createRecord skips the ATF side-call for a step without a script", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "step-2" } } });
+    await client.createRecord("sys_atf_step", { description: "d" });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("checkConnection pings one sys_scope row and rethrows a failure", async () => {
+    const client = await makeClient();
+    await client.checkConnection(1000);
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_scope", {
+      params: { sysparm_limit: "1", sysparm_fields: "sys_id" },
+      timeout: 1000,
+    });
+    mockGet.mockRejectedValueOnce({ response: { status: 500 } });
+    await expect(client.checkConnection(1000)).rejects.toEqual({ response: { status: 500 } });
+  });
+
+  it("createRecord sends boolean fields as JSON booleans (init --new sys_app body)", async () => {
+    const client = await makeClient();
+    mockPost.mockResolvedValueOnce({ status: 201, data: { result: { sys_id: "app-1" } } });
+    await expect(
+      client.createRecord("sys_app", { name: "My App", active: true })
+    ).resolves.toEqual({ sys_id: "app-1" });
+    expect(mockPost).toHaveBeenCalledWith(
+      "api/now/table/sys_app",
+      { name: "My App", active: true },
+      { params: { sysparm_fields: "sys_id" } }
+    );
+  });
+
+  it("getVendorPrefix GETs the App Creator vendor prefix resource (WP-3)", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult("x_acme_"));
+    const resp = await client.getVendorPrefix();
+    expect(mockGet).toHaveBeenCalledWith("api/now/appcreator/app/vendorprefix");
+    expect(resp.data.result).toBe("x_acme_");
+  });
+
+  it("findRecordByName scopes and escapes the lookup and fetches at most two rows", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult([{ sys_id: "a" }, { sys_id: "" }, {}]));
+    await expect(
+      client.findRecordByName("sys_script_include", "name", "Util^ORname=x", "scope-1")
+    ).resolves.toEqual(["a"]);
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_script_include", {
+      params: {
+        sysparm_query: "name=Util ORname=x^sys_scope=scope-1",
+        sysparm_fields: "sys_id",
+        sysparm_limit: "2",
+      },
+    });
+  });
+
+  it("findRecordByName returns an empty list for a non-array result", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({}));
+    await expect(client.findRecordByName("t", "name", "n", "s")).resolves.toEqual([]);
+  });
+
+  // R2, `push --prune`: the scope read before a DELETE, and the DELETE itself.
+  it("getRecordScope reads only sys_id and sys_scope from the encoded record URL", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({ sys_id: "abc", sys_scope: "scope-1" }));
+    await expect(client.getRecordScope("sys_script", "a/b")).resolves.toEqual({
+      sys_id: "abc",
+      sys_scope: "scope-1",
+    });
+    expect(mockGet).toHaveBeenCalledWith("api/now/table/sys_script/a%2Fb", {
+      params: {
+        sysparm_fields: "sys_id,sys_scope",
+        sysparm_exclude_reference_link: "true",
+      },
+    });
+  });
+
+  it("getRecordScope normalizes a reference-shaped sys_scope and a missing sys_id", async () => {
+    const client = await makeClient();
+    mockGet.mockResolvedValueOnce(okResult({ sys_scope: { value: "scope-2", link: "x" } }));
+    await expect(client.getRecordScope("t", "id-1")).resolves.toEqual({
+      sys_id: "id-1",
+      sys_scope: "scope-2",
+    });
+    mockGet.mockResolvedValueOnce(okResult({ sys_id: "id-2", sys_scope: { value: 7 } }));
+    await expect(client.getRecordScope("t", "id-2")).resolves.toEqual({
+      sys_id: "id-2",
+      sys_scope: "",
+    });
+    mockGet.mockResolvedValueOnce(okResult(null));
+    await expect(client.getRecordScope("t", "id-3")).resolves.toEqual({
+      sys_id: "id-3",
+      sys_scope: "",
+    });
+  });
+
+  it("getRecordScope resolves undefined on 404 and rethrows anything else", async () => {
+    const client = await makeClient();
+    mockGet.mockRejectedValueOnce({ response: { status: 404 } });
+    await expect(client.getRecordScope("t", "gone")).resolves.toBeUndefined();
+    mockGet.mockRejectedValueOnce({ response: { status: 403 } });
+    await expect(client.getRecordScope("t", "denied")).rejects.toEqual({
+      response: { status: 403 },
+    });
+  });
+
+  it("deleteRecord sends one DELETE to the encoded record URL", async () => {
+    const client = await makeClient();
+    mockDelete.mockResolvedValueOnce({ status: 204, data: "" });
+    await client.deleteRecord("sys_script include", "id-1");
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(mockDelete).toHaveBeenCalledWith("api/now/table/sys_script%20include/id-1");
+  });
+
+});
+
+describe("isRetryableRequestError", () => {
+  it("retries when there is no HTTP response (network error)", async () => {
+    const { isRetryableRequestError } = await import("../snClient.js");
+    expect(isRetryableRequestError(new Error("ECONNRESET"))).toBe(true);
+  });
+
+  it("delegates to the shared retry-status policy for HTTP errors", async () => {
+    const { isRetryableRequestError } = await import("../snClient.js");
+    expect(isRetryableRequestError({ response: { status: 503 } })).toBe(true);
+    expect(isRetryableRequestError({ response: { status: 404 } })).toBe(false);
+  });
+});
+
+describe("snClient OAuth refresh interceptor", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetToken.mockResolvedValue("access-token");
+    mockForceRefresh.mockResolvedValue("refreshed-token");
+    mockRequest.mockResolvedValue({ status: 200, data: { result: {} } });
+  });
+
+  it("attaches a Bearer token on request and refreshes once on a 401", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "u", "p", {
+      clientId: "cid",
+      clientSecret: "secret",
+    });
+
+    const cfg = await mockInterceptors.request?.({ headers: {} as Record<string, string> });
+    expect((cfg as { headers: Record<string, string> }).headers.Authorization).toBe(
+      "Bearer access-token"
+    );
+
+    const retryCfg = { headers: {} as Record<string, string> };
+    await mockInterceptors.responseError?.({ response: { status: 401 }, config: retryCfg });
+    expect(mockForceRefresh).toHaveBeenCalledTimes(1);
+    expect(retryCfg.headers.Authorization).toBe("Bearer refreshed-token");
+    expect(mockRequest).toHaveBeenCalledWith(retryCfg);
+  });
+
+  it("rejects a non-401 response without refreshing", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "u", "p", {
+      clientId: "cid",
+      clientSecret: "secret",
+    });
+
+    const err = { response: { status: 500 }, config: { headers: {} } };
+    await expect(mockInterceptors.responseError?.(err)).rejects.toBe(err);
+    expect(mockForceRefresh).not.toHaveBeenCalled();
+  });
+});
+
+describe("snClient response unwrap helpers", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("unwrapSNResponse returns the result payload", async () => {
+    const { unwrapSNResponse } = await import("../snClient.js");
+    const out = await unwrapSNResponse(
+      Promise.resolve({ data: { result: { scope: "x_app" } } }) as never
+    );
+    expect(out).toEqual({ scope: "x_app" });
+  });
+
+  it("unwrapSNResponse logs and rethrows on an unexpected (non-404) error", async () => {
+    const { unwrapSNResponse } = await import("../snClient.js");
+    const err = { response: { status: 500 }, message: "boom" };
+    // Pre-handled on purpose: `expect(...).rejects` attaches a handler to what
+    // unwrapSNResponse RETURNS, not to what it is given. A change that stops it
+    // awaiting its argument would leave this rejection unhandled and take the
+    // Jest worker down with exit code 1 instead of failing the assertion. See
+    // the same guard in genericUtils.test.ts for the mutation run that proved it.
+    const failing = Promise.reject(err);
+    failing.catch(() => undefined);
+    await expect(unwrapSNResponse(failing as never)).rejects.toBe(err);
+    expect(mockLoggerError).toHaveBeenCalledWith("Error processing server response");
+  });
+
+  it("unwrapSNResponse stays quiet on an expected 404 fallback", async () => {
+    const { unwrapSNResponse } = await import("../snClient.js");
+    const err = { response: { status: 404 } };
+    const failing = Promise.reject(err); // pre-handled below, see the 500 case
+    failing.catch(() => undefined);
+    await expect(unwrapSNResponse(failing as never)).rejects.toBe(err);
+    expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+
+  // #12: a hibernating PDI, SSO redirect, or proxy error page is served 200 with
+  // an HTML body. Without a shape check the old code returned `undefined` and the
+  // first downstream `Object.keys()` crashed with an opaque error. The guard now
+  // throws a typed NonApiResponseError that names the real cause.
+  it("unwrapSNResponse throws a typed NonApiResponseError on a 200 HTML body", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
+    const htmlBody = "<!DOCTYPE html><html><body>Instance hibernating…</body></html>";
+    const promise = unwrapSNResponse(
+      Promise.resolve({
+        status: 200,
+        data: htmlBody,
+        headers: { "content-type": "text/html; charset=UTF-8" },
+      }) as never
+    );
+    await expect(promise).rejects.toBeInstanceOf(NonApiResponseError);
+    await expect(promise).rejects.toThrow(/non-API response/);
+    await expect(promise).rejects.toThrow(/text\/html/);
+    await expect(promise).rejects.toThrow(/hibernating/); // snippet of the body echoed back
+    // the guard fires the DX taxonomy log path (not an expected fallback)
+    expect(mockLoggerError).toHaveBeenCalledWith("Error processing server response");
+  });
+
+  it("unwrapSNResponse rejects a 200 object body that lacks a `result` key", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
+    await expect(
+      unwrapSNResponse(
+        Promise.resolve({ status: 200, data: { error: "no api here" }, headers: {} }) as never
+      )
+    ).rejects.toBeInstanceOf(NonApiResponseError);
+  });
+
+  it("unwrapSNResponse rejects a 200 with a null/undefined body", async () => {
+    const { unwrapSNResponse, NonApiResponseError } = await import("../snClient.js");
+    await expect(
+      unwrapSNResponse(Promise.resolve({ status: 200, data: undefined, headers: {} }) as never)
+    ).rejects.toBeInstanceOf(NonApiResponseError);
+  });
+
+  it("unwrapSNResponse accepts a valid { result } body even when result is falsy", async () => {
+    const { unwrapSNResponse } = await import("../snClient.js");
+    // `result: null` is a legitimate API response (e.g. a not-found single record)
+    // and must pass the shape guard — only a *missing* result key is rejected.
+    await expect(
+      unwrapSNResponse(Promise.resolve({ status: 200, data: { result: null } }) as never)
+    ).resolves.toBeNull();
+  });
+
+  it("unwrapTableAPIFirstItem returns the first row or an extracted field", async () => {
+    const { unwrapTableAPIFirstItem } = await import("../snClient.js");
+    const rows = [{ sys_id: "1", name: "A" }];
+    await expect(
+      unwrapTableAPIFirstItem(Promise.resolve({ data: { result: rows } }) as never)
+    ).resolves.toEqual({ sys_id: "1", name: "A" });
+    await expect(
+      unwrapTableAPIFirstItem(Promise.resolve({ data: { result: rows } }) as never, "sys_id")
+    ).resolves.toBe("1");
+  });
+
+  it("unwrapTableAPIFirstItem throws on an empty result", async () => {
+    const { unwrapTableAPIFirstItem } = await import("../snClient.js");
+    await expect(
+      unwrapTableAPIFirstItem(Promise.resolve({ data: { result: [] } }) as never)
+    ).rejects.toThrow("Response was not a populated array!");
+  });
+
+  it("unwrapTableAPIFirstItemOrEmpty returns '' on empty and the field otherwise", async () => {
+    const { unwrapTableAPIFirstItemOrEmpty } = await import("../snClient.js");
+    await expect(
+      unwrapTableAPIFirstItemOrEmpty(Promise.resolve({ data: { result: [] } }) as never, "sys_id")
+    ).resolves.toBe("");
+    await expect(
+      unwrapTableAPIFirstItemOrEmpty(
+        Promise.resolve({ data: { result: [{ sys_id: "42" }] } }) as never,
+        "sys_id"
+      )
+    ).resolves.toBe("42");
+  });
+
+  it("unwrapTableAPIFirstItemOrEmpty reads only the first row and stringifies a missing or non-text field", async () => {
+    const { unwrapTableAPIFirstItemOrEmpty } = await import("../snClient.js");
+    const respond = (result: unknown[]) => Promise.resolve({ data: { result } }) as never;
+    await expect(unwrapTableAPIFirstItemOrEmpty(respond([{ name: "a" }, { sys_id: "2" }]), "sys_id")).resolves.toBe("");
+    await expect(unwrapTableAPIFirstItemOrEmpty(respond([{ sys_id: 7 }]), "sys_id")).resolves.toBe("7");
+  });
+});
+
+describe("snClient credential cache and active profile", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  });
+
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k] as string;
+    }
+  });
+
+  it("preloadStoredCredentials feeds resolveCredentials and clear empties it again", async () => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    mockResolveStore.mockResolvedValue({
+      user: "store.user",
+      password: "store.pass",
+      instance: "store.service-now.com",
+    });
+    const {
+      preloadStoredCredentials,
+      clearStoredCredentialsCache,
+      resolveCredentials,
+      describeCredentialSource,
+      setActiveInstanceProfile,
+    } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+
+    await preloadStoredCredentials();
+    expect(resolveCredentials().user).toBe("store.user");
+    expect(describeCredentialSource()).toBe("credential store (syncrona login)");
+
+    clearStoredCredentialsCache();
+    expect(resolveCredentials().user).toBe("");
+  });
+
+  it("setActiveInstanceProfile normalizes and getActiveInstanceProfile reads it back", async () => {
+    const { setActiveInstanceProfile, getActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile("dev-instance");
+    expect(getActiveInstanceProfile()).toBe("DEV_INSTANCE");
+    setActiveInstanceProfile(undefined);
+    expect(getActiveInstanceProfile()).toBeUndefined();
+  });
+
+  it("diagnoseCredentials reports base and profile env presence", async () => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    process.env.SN_USER = "base.user";
+    process.env.SN_INSTANCE = "base.service-now.com";
+    process.env.SN_USER_DEV = "dev.user";
+    process.env.SN_INSTANCE_DEV = "dev.service-now.com";
+    const { diagnoseCredentials } = await import("../snClient.js");
+
+    const diag = diagnoseCredentials("dev");
+    expect(diag.profile).toBe("DEV");
+    expect(diag.baseEnvPresent.user).toBe(true);
+    expect(diag.baseEnvPresent.password).toBe(false);
+    expect(diag.profileEnvPresent?.user).toBe(true);
+    expect(diag.resolvedUser).toBe("dev.user");
+    expect(diag.source).toBe("instance profile env vars");
+
+    delete process.env.SN_USER_DEV;
+    delete process.env.SN_INSTANCE_DEV;
+  });
+});
+
+describe("buildHttpsAgent", () => {
+  const savedCa = process.env[CA_BUNDLE_ENV];
+  const savedReject = process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+  let caFile: string;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    caFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-ca-")), "ca.pem");
+    fs.writeFileSync(caFile, "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
+  });
+
+  afterEach(() => {
+    if (savedCa === undefined) delete process.env[CA_BUNDLE_ENV];
+    else process.env[CA_BUNDLE_ENV] = savedCa;
+    if (savedReject === undefined) delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+    else process.env[TLS_REJECT_UNAUTHORIZED_ENV] = savedReject;
+    fs.rmSync(path.dirname(caFile), { recursive: true, force: true });
+  });
+
+  it("returns undefined when no custom TLS policy is configured", async () => {
+    delete process.env[CA_BUNDLE_ENV];
+    delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+    const { buildHttpsAgent } = await import("../snClient.js");
+    expect(buildHttpsAgent()).toBeUndefined();
+  });
+
+  it("builds an agent loaded with the configured CA bundle", async () => {
+    process.env[CA_BUNDLE_ENV] = caFile;
+    delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent).toBeDefined();
+    expect(agent?.options.ca).toBeInstanceOf(Buffer);
+  });
+
+  it("warns when the CA bundle cannot be read", async () => {
+    process.env[CA_BUNDLE_ENV] = path.join(path.dirname(caFile), "missing.pem");
+    const { buildHttpsAgent } = await import("../snClient.js");
+    expect(buildHttpsAgent()).toBeDefined();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Could not read CA bundle")
+    );
+  });
+
+  it("warns and disables verification when TLS rejection is turned off", async () => {
+    delete process.env[CA_BUNDLE_ENV];
+    process.env[TLS_REJECT_UNAUTHORIZED_ENV] = "0";
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent?.options.rejectUnauthorized).toBe(false);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("TLS certificate verification is DISABLED")
+    );
+  });
+});
+
+describe("buildHttpsAgent mutual TLS", () => {
+  const TLS_ENV = [CLIENT_CERT_ENV, CLIENT_KEY_ENV, CLIENT_KEY_PASSPHRASE_ENV] as const;
+  const saved: Record<string, string | undefined> = {};
+  let dir: string;
+  let certFile: string;
+  let keyFile: string;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of TLS_ENV) saved[k] = process.env[k];
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-mtls-"));
+    certFile = path.join(dir, "client.crt");
+    keyFile = path.join(dir, "client.key");
+    fs.writeFileSync(certFile, "-----BEGIN CERTIFICATE-----\nMIICerr\n-----END CERTIFICATE-----\n");
+    fs.writeFileSync(keyFile, "-----BEGIN PRIVATE KEY-----\nMIIEkey\n-----END PRIVATE KEY-----\n");
+  });
+
+  afterEach(() => {
+    for (const k of TLS_ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k] as string;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("loads the client certificate and key into the agent for mTLS", async () => {
+    process.env[CLIENT_CERT_ENV] = certFile;
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent?.options.cert).toBeInstanceOf(Buffer);
+    expect(agent?.options.key).toBeInstanceOf(Buffer);
+    // No passphrase configured ⇒ the option is omitted, not set to undefined.
+    expect("passphrase" in (agent?.options ?? {})).toBe(false);
+  });
+
+  it("passes through the private-key passphrase when configured", async () => {
+    process.env[CLIENT_CERT_ENV] = certFile;
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    process.env[CLIENT_KEY_PASSPHRASE_ENV] = "s3cret";
+    const { buildHttpsAgent } = await import("../snClient.js");
+    const agent = buildHttpsAgent();
+    expect(agent?.options.passphrase).toBe("s3cret");
+  });
+
+  it("throws loudly when the client certificate cannot be read", async () => {
+    process.env[CLIENT_CERT_ENV] = path.join(dir, "missing.crt");
+    process.env[CLIENT_KEY_ENV] = keyFile;
+    const { buildHttpsAgent } = await import("../snClient.js");
+    // Unlike the (warn-only) CA bundle, an unreadable mTLS cert is fatal.
+    expect(() => buildHttpsAgent()).toThrow();
+  });
+});
+
+describe("snClient authorization modes", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env[CA_BUNDLE_ENV];
+    delete process.env[TLS_REJECT_UNAUTHORIZED_ENV];
+    delete process.env[CLIENT_CERT_ENV];
+    delete process.env[CLIENT_KEY_ENV];
+  });
+
+  const baseConfig = () => mockAxiosCreate.mock.calls[0][0] as {
+    headers: Record<string, string>;
+    auth?: { username: string; password: string };
+  };
+
+  it("sends Basic auth when a username and password are provided", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "u", "p");
+    expect(baseConfig().auth).toEqual({ username: "u", password: "p" });
+    expect(baseConfig().headers["x-sn-apikey"]).toBeUndefined();
+  });
+
+  it("sends the API key header (and no Basic auth) in api-key mode", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "", undefined, {
+      header: "x-sn-apikey",
+      value: "APIKEY-123",
+    });
+    expect(baseConfig().headers["x-sn-apikey"]).toBe("APIKEY-123");
+    expect(baseConfig().auth).toBeUndefined();
+  });
+
+  it("honors a custom API key header name", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "", undefined, {
+      header: "X-Company-Key",
+      value: "ZZZ",
+    });
+    expect(baseConfig().headers["X-Company-Key"]).toBe("ZZZ");
+  });
+
+  it("sends no Authorization for an mTLS-only config (empty credentials)", async () => {
+    const { snClient, resetClient } = await import("../snClient.js");
+    resetClient();
+    snClient("https://example.service-now.com/", "", "");
+    expect(baseConfig().auth).toBeUndefined();
+    expect(baseConfig().headers["x-sn-apikey"]).toBeUndefined();
+  });
+});
+
+describe("resolveCredentials multi-method auth resolution", () => {
+  const AUTH_ENV = [
+    "SN_USER",
+    "SN_PASSWORD",
+    "SN_INSTANCE",
+    "SN_AUTH_METHOD",
+    "SN_API_KEY",
+    "SN_API_KEY_HEADER",
+    "SN_OAUTH_CLIENT_ID",
+    "SN_OAUTH_CLIENT_SECRET",
+    "SN_JWT_KEY",
+    "SN_JWT_KID",
+    "SN_JWT_ISS",
+    "SN_JWT_SUB",
+    "SN_JWT_AUD",
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    for (const k of AUTH_ENV) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of AUTH_ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k] as string;
+    }
+  });
+
+  it("infers oauth-password from client id + secret + password (backward compatible)", async () => {
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("oauth-password");
+  });
+
+  it("defaults to basic when only a username and password are present", async () => {
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("basic");
+  });
+
+  it("resolves an explicit api-key method with its key and header override", async () => {
+    process.env.SN_AUTH_METHOD = "api-key";
+    process.env.SN_API_KEY = "APIKEY-9";
+    process.env.SN_API_KEY_HEADER = "X-Company-Key";
+    const { resolveCredentials, describeCredentialSource, setActiveInstanceProfile } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    const creds = resolveCredentials();
+    expect(creds.authMethod).toBe("api-key");
+    expect(creds.apiKey).toBe("APIKEY-9");
+    expect(creds.apiKeyHeader).toBe("X-Company-Key");
+    // An API key alone is a usable env credential (no SN_USER required).
+    expect(describeCredentialSource()).toBe("environment (.env / shell SN_* vars)");
+  });
+
+  it("resolves an explicit client-credentials method", async () => {
+    process.env.SN_AUTH_METHOD = "client-credentials";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    expect(resolveCredentials().authMethod).toBe("oauth-client-credentials");
+  });
+
+  it("captures the JWT bearer claim overrides", async () => {
+    process.env.SN_AUTH_METHOD = "jwt-bearer";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "secret";
+    process.env.SN_JWT_KEY = "/path/to/key.pem";
+    process.env.SN_JWT_KID = "kid-1";
+    process.env.SN_JWT_ISS = "issuer";
+    process.env.SN_JWT_SUB = "subject";
+    process.env.SN_JWT_AUD = "https://aud/";
+    const { resolveCredentials, setActiveInstanceProfile } = await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    const creds = resolveCredentials();
+    expect(creds.authMethod).toBe("oauth-jwt-bearer");
+    expect(creds).toMatchObject({
+      jwtKey: "/path/to/key.pem",
+      jwtKid: "kid-1",
+      jwtIss: "issuer",
+      jwtSub: "subject",
+      jwtAud: "https://aud/",
+    });
+  });
+
+  // REV-201: `resolveAuthMethod`'s issues list was computed here and dropped — only
+  // `.method` was read. `doctor` reports those issues and the MCP server refuses to
+  // start on them, so the commands that actually transmit the credential were the
+  // one place a typo'd SN_AUTH_METHOD stayed completely silent: it fell through to
+  // inference, and when leftover credentials happened to complete the inferred
+  // method nothing surfaced at all.
+  it("warns that a typo'd SN_AUTH_METHOD fell back to an inferred method", async () => {
+    process.env.SN_AUTH_METHOD = "oauth-jwt"; // the real alias is jwt-bearer
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw-must-not-appear";
+    process.env.SN_OAUTH_CLIENT_ID = "cid";
+    process.env.SN_OAUTH_CLIENT_SECRET = "cs-must-not-appear";
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    // Silently resolving to oauth-password is exactly the danger: the user asked for
+    // a JWT assertion and would instead post their password to /oauth_token.do.
+    expect(resolveCredentials().authMethod).toBe("oauth-password");
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+    const line = String(mockLoggerWarn.mock.calls[0]?.[0]);
+    expect(line).toContain('Unknown SN_AUTH_METHOD "oauth-jwt"');
+    expect(line).toContain("Falling back to oauth-password.");
+    expect(line).not.toContain("must-not-appear");
+  });
+
+  it("warns only once even though credentials resolve on every command", async () => {
+    // Credential resolution has eight call sites and no memoization, so an
+    // unconditional warn would repeat the same line several times per invocation.
+    process.env.SN_AUTH_METHOD = "bogus";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "pw";
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    resolveCredentials();
+    resolveCredentials();
+    resolveCredentials();
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent for a merely incomplete configuration", async () => {
+    // This pins the scope of the warning. `init`, `login` and `check-env` all resolve
+    // credentials before any exist, so warning about every issue would print
+    // "basic requires SN_PASSWORD." during ordinary first-run setup. A missing field
+    // announces itself the moment a request is attempted; an unrecognized selector
+    // never does, which is why only the latter warns.
+    process.env.SN_USER = "admin"; // no SN_PASSWORD -> basic is incomplete
+    const { resolveCredentials, setActiveInstanceProfile, resetAuthIssueWarnings } =
+      await import("../snClient.js");
+    setActiveInstanceProfile(undefined);
+    resetAuthIssueWarnings();
+
+    expect(resolveCredentials().authMethod).toBe("basic");
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildClientAuth per-method descriptor", () => {
+  const creds = (overrides: Record<string, unknown>) => ({
+    user: "svc",
+    password: "",
+    instance: "example.service-now.com",
+    ...overrides,
+  });
+
+  it("builds an API-key descriptor with the default header", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(creds({ authMethod: "api-key", apiKey: "K1" }) as never);
+    expect(out.apiKey).toEqual({ header: "x-sn-apikey", value: "K1" });
+    expect(out.oauth).toBeUndefined();
+  });
+
+  it("builds an API-key descriptor with a custom header", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({ authMethod: "api-key", apiKey: "K1", apiKeyHeader: "X-Custom" }) as never
+    );
+    expect(out.apiKey).toEqual({ header: "X-Custom", value: "K1" });
+  });
+
+  it("builds a client-credentials OAuth config", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({
+        authMethod: "oauth-client-credentials",
+        clientId: "cid",
+        clientSecret: "secret",
+      }) as never
+    );
+    expect(out.oauth).toEqual({
+      clientId: "cid",
+      clientSecret: "secret",
+      grantType: "client_credentials",
+    });
+  });
+
+  it("builds an oauth-password config", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({ authMethod: "oauth-password", clientId: "cid", clientSecret: "secret" }) as never
+    );
+    expect(out.oauth).toEqual({ clientId: "cid", clientSecret: "secret", grantType: "password" });
+  });
+
+  it("returns an empty descriptor for basic auth", async () => {
+    const { buildClientAuth } = await import("../snClient.js");
+    expect(buildClientAuth(creds({ authMethod: "basic" }) as never)).toEqual({});
+  });
+
+  it("builds a jwt-bearer config that mints a signed assertion from an inline PEM key", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const { buildClientAuth } = await import("../snClient.js");
+    const out = buildClientAuth(
+      creds({
+        authMethod: "oauth-jwt-bearer",
+        clientId: "cid",
+        clientSecret: "secret",
+        jwtKey: privateKey,
+        jwtKid: "kid-1",
+      }) as never
+    );
+    expect(out.oauth?.grantType).toBe("jwt-bearer");
+    const assertion = await out.oauth?.buildAssertion?.();
+    // A compact JWS has three base64url segments.
+    expect((assertion ?? "").split(".")).toHaveLength(3);
+  });
+
+  it("reads the jwt-bearer key from a filesystem path when not inline PEM", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "syncrona-jwt-"));
+    const keyPath = path.join(dir, "jwt.pem");
+    fs.writeFileSync(keyPath, privateKey);
+    try {
+      const { buildClientAuth } = await import("../snClient.js");
+      const out = buildClientAuth(
+        creds({
+          authMethod: "oauth-jwt-bearer",
+          clientId: "cid",
+          clientSecret: "secret",
+          jwtKey: keyPath,
+        }) as never
+      );
+      const assertion = await out.oauth?.buildAssertion?.();
+      expect((assertion ?? "").split(".")).toHaveLength(3);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -1,0 +1,267 @@
+// The `includes` unsafe-type rule and its warnings on the Table API manifest
+// build. Regression tests for review findings: an included column whose type
+// could not be read was kept without a word unless the lookup threw.
+import { jest } from "@jest/globals";
+import { SN, Sync } from "@syncrona/types";
+import { buildManifestFromTableAPI } from "../manifestBuilder.js";
+import { classifyColumn, columnTypeOf } from "../metaFields.js";
+import { logger } from "../Logger.js";
+
+type Row = Record<string, unknown>;
+type Get = jest.Mock<Promise<{ data: { result: Row[] } }>, [string, string, string, number?, number?]>;
+const createClient = (tableAPIGet: Get) => ({ tableAPIGet }) as unknown as import("../snClient").SNClient;
+const LINK = "https://x/api/now/table/sys_glide_object/abc";
+const ref = (type: string) => ({ link: LINK, value: type });
+const forbidden = () =>
+  Object.assign(new Error("Request failed with status code 403"), { response: { status: 403 } });
+
+const fakeInstance = (o: {
+  fileColumns?: Row[];
+  columns?: Row[];
+  includeLookup?: (query: string) => Row[];
+  records?: Record<string, Row[]>;
+}): Get => {
+  const tableAPIGet: Get = jest.fn();
+  tableAPIGet.mockImplementation(async (table: string, query: string) => {
+    const q = String(query);
+    if (table === "sys_app") return { data: { result: [{ sys_id: "scope-1" }] } };
+    if (table === "sys_metadata") {
+      if (q.includes("sys_class_name=")) return { data: { result: [] } };
+      return { data: { result: [{ sys_class_name: "x_demo_cred" }] } };
+    }
+    if (table === "sys_db_object") {
+      const name = /name=([^^]+)/.exec(q)?.[1] ?? "";
+      return { data: { result: [{ name }] } };
+    }
+    if (table === "sys_dictionary") {
+      if (q.includes("internal_type=")) return { data: { result: o.fileColumns ?? [] } };
+      if (q.includes("elementIN") && o.includeLookup) return { data: { result: o.includeLookup(q) } };
+      return { data: { result: o.columns ?? [] } };
+    }
+    const rows = o.records?.[table] ?? [];
+    if (q.startsWith("sys_idIN")) {
+      const ids = q.slice("sys_idIN".length).split("^")[0].split(",");
+      return { data: { result: rows.filter((r) => ids.includes(String(r.sys_id))) } };
+    }
+    return { data: { result: rows } };
+  });
+  return tableAPIGet;
+};
+
+type BuildConfig = Pick<Sync.Config, "includes" | "excludes" | "tableOptions" | "meta" | "dataModelTables">;
+
+const COLUMNS: Row[] = [
+  { element: "name", internal_type: ref("string") },
+  { element: "script", internal_type: ref("script") },
+  { element: "u_token", internal_type: ref("password2") },
+  { element: "u_pw", internal_type: ref("password") },
+  { element: "u_notes", internal_type: ref("journal") },
+  { element: "u_pic", internal_type: ref("user_image") },
+  { element: "u_label", internal_type: ref("string") },
+];
+const SCRIPT_ONLY: Row[] = [{ element: "script", internal_type: ref("script") }];
+const RECORDS: Row[] = [{ sys_id: "c1", name: "cred-one", script: "gs.info(1)", u_label: "label" }];
+const INCLUDED = ["u_token", "u_pw", "u_notes", "u_pic", "u_label"];
+const includeAll = (): Sync.TablePropMap =>
+  ({
+    x_demo_cred: Object.fromEntries(INCLUDED.map((name) => [name, { type: "txt" as SN.FileType }])),
+  }) as Sync.TablePropMap;
+const buildConfig = (): BuildConfig =>
+  ({ includes: includeAll(), excludes: {}, tableOptions: {}, meta: false }) as BuildConfig;
+
+const unsafeWarning = (column: string, type: string) =>
+  `Table x_demo_cred: ignoring the includes entry for column "${column}" — its dictionary type is ` +
+  `${type}, and a value of that type is never written to the working tree.`;
+const untypedWarning = (columns: string, reason: string) =>
+  `Table x_demo_cred: could not read the dictionary type of included column(s) ${columns} ` +
+  `(${reason}); they are kept without the unsafe-type check.`;
+const NO_TYPE = "no dictionary row or an empty internal_type";
+
+let warn: jest.SpiedFunction<typeof logger.warn>;
+const warnings = () => warn.mock.calls.map((call) => String(call[0]));
+
+beforeEach(() => {
+  for (const level of ["info", "debug", "error"] as const) {
+    jest.spyOn(logger, level).mockImplementation((() => undefined) as never);
+  }
+  warn = jest.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+});
+afterEach(() => {
+  jest.restoreAllMocks();
+  delete process.env.SYNCRONA_DATA_TABLES;
+});
+
+const builtFiles = async (tableAPIGet: Get): Promise<string[]> => {
+  const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), buildConfig());
+  return (manifest.tables.x_demo_cred?.records["cred-one"]?.files ?? []).map((f) => f.name).sort();
+};
+
+describe("classifyColumn", () => {
+  it.each<[string | undefined, string, unknown, string]>([
+    ["x_demo_cred", "u_token", "password2", "unsafe"],
+    ["x_demo_cred", "u_notes", ref("journal"), "unsafe"],
+    // A credential type wins over the record rule: never written, not judged per row.
+    ["sys_properties", "value", "password", "unsafe"],
+    ["sys_properties", "value", "string", "secret"],
+    ["sys_properties", "value", undefined, "secret"],
+    ["sys_properties", "description", "string", "safe"],
+    ["x_demo_cred", "u_ghost", undefined, "unknown"],
+    ["x_demo_cred", "u_ghost", { link: LINK, value: "" }, "unknown"],
+    [undefined, "script", "script", "safe"],
+  ])("%s.%s typed %j is %s", (table, column, type, expected) => {
+    expect(classifyColumn(table, column, type)).toBe(expected);
+  });
+});
+
+describe("includes on the Table API build: a type that cannot be read is named", () => {
+  it("E1: the lookup answers 200 with no row — every included column is kept, with one warning", async () => {
+    const files = await builtFiles(
+      fakeInstance({ fileColumns: SCRIPT_ONLY, columns: COLUMNS, includeLookup: () => [], records: { x_demo_cred: RECORDS } })
+    );
+    expect(files).toEqual(["script", ...INCLUDED].sort());
+    expect(warnings().filter((m) => m.includes("included column"))).toEqual([
+      untypedWarning(INCLUDED.join(", "), NO_TYPE),
+    ]);
+  });
+
+  it("E2: rows with an empty type are kept with a warning; typed ones are judged", async () => {
+    const files = await builtFiles(
+      fakeInstance({
+        fileColumns: SCRIPT_ONLY,
+        columns: COLUMNS,
+        includeLookup: () => [
+          { element: "u_token", internal_type: "" },
+          { element: "u_pw", internal_type: { link: LINK, value: "" } },
+          { element: "u_notes" },
+          { element: "u_pic", internal_type: ref("user_image") },
+          { element: "u_label", internal_type: ref("string") },
+        ],
+        records: { x_demo_cred: RECORDS },
+      })
+    );
+    expect(files).toEqual(["script", "u_label", "u_notes", "u_pw", "u_token"]);
+    expect(warnings()).toEqual(
+      expect.arrayContaining([
+        unsafeWarning("u_pic", "user_image"),
+        untypedWarning("u_token, u_pw, u_notes", NO_TYPE),
+      ])
+    );
+    expect(warnings().filter((m) => m.includes("u_label"))).toEqual([]);
+  });
+
+  it("E3: the data-field fallback warns for included columns its all-columns read has no row for", async () => {
+    process.env.SYNCRONA_DATA_TABLES = "x_demo_cred";
+    const files = await builtFiles(
+      fakeInstance({
+        fileColumns: [],
+        columns: COLUMNS.filter((c) => c.element !== "u_token" && c.element !== "u_pw"),
+        records: { x_demo_cred: RECORDS },
+      })
+    );
+    expect(files).toEqual(expect.arrayContaining(["u_token", "u_pw", "u_label"]));
+    expect(files).not.toContain("u_notes");
+    expect(files).not.toContain("u_pic");
+    const untyped = warnings().filter((m) => m.includes("could not read the dictionary type"));
+    expect(untyped).toHaveLength(1);
+    expect(untyped[0]).toContain("u_token, u_pw");
+    expect(warnings()).toEqual(
+      expect.arrayContaining([unsafeWarning("u_notes", "journal"), unsafeWarning("u_pic", "user_image")])
+    );
+  });
+
+  it("E4: a lookup that throws keeps every included column and names the error", async () => {
+    const tableAPIGet = fakeInstance({ fileColumns: SCRIPT_ONLY, columns: COLUMNS, records: { x_demo_cred: RECORDS } });
+    const inner = tableAPIGet.getMockImplementation()!;
+    tableAPIGet.mockImplementation(async (table, query, ...rest) => {
+      if (table === "sys_dictionary" && String(query).includes("elementIN")) throw forbidden();
+      return inner(table, query, ...rest);
+    });
+    expect(await builtFiles(tableAPIGet)).toEqual(["script", ...INCLUDED].sort());
+    expect(warnings().filter((m) => m.includes("included column"))).toEqual([
+      untypedWarning(INCLUDED.join(", "), "Request failed with status code 403"),
+    ]);
+  });
+
+  it("warns once per column per build, and again on the next build", async () => {
+    const tableAPIGet = fakeInstance({ fileColumns: SCRIPT_ONLY, columns: COLUMNS, includeLookup: () => [], records: { x_demo_cred: RECORDS } });
+    await builtFiles(tableAPIGet);
+    await builtFiles(tableAPIGet);
+    expect(warnings().filter((m) => m.includes("included column"))).toEqual([
+      untypedWarning(INCLUDED.join(", "), NO_TYPE),
+      untypedWarning(INCLUDED.join(", "), NO_TYPE),
+    ]);
+  });
+});
+
+// Case variants of one element are one column to the instance. An exact-case
+// match used to win, so a safe `U_S` hid an unsafe `u_s` — and the value the
+// instance returns for `U_S` is the credential.
+describe("case variants of one column: an unsafe type on any variant wins", () => {
+  it.each<[string, Array<[string, string]>, string, string | undefined]>([
+    ["a safe exact match does not hide an unsafe variant", [["U_S", "string"], ["u_s", "password2"]], "U_S", "password2"],
+    ["the unsafe exact match wins over a safe variant", [["U_S", "password2"], ["u_s", "string"]], "u_s", "password2"],
+    ["the order of the map does not matter", [["u_s", "password2"], ["U_S", "string"]], "U_S", "password2"],
+    ["a mixed-case, padded unsafe type counts", [["U_S", "string"], ["u_s", " Password "]], "U_S", " Password "],
+    ["without an unsafe variant the exact match wins", [["U_S", "string"], ["u_s", "script"]], "u_s", "script"],
+    ["without an exact match the first variant answers", [["U_S", "string"], ["u_S", "script"]], "u_s", "string"],
+    ["no variant is no type", [["u_other", "password2"]], "u_s", undefined],
+  ])("%s", (_label, entries, column, expected) => {
+    expect(columnTypeOf(new Map(entries), column)).toBe(expected);
+  });
+
+  const variantRows: Row[] = [
+    { element: "U_S", internal_type: ref("string") },
+    { element: "u_s", internal_type: ref("password2") },
+  ];
+
+  it("an included U_S is dropped when its u_s variant is a credential", async () => {
+    const tableAPIGet = fakeInstance({
+      fileColumns: SCRIPT_ONLY,
+      includeLookup: () => variantRows,
+      records: { x_demo_cred: RECORDS },
+    });
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+      includes: { x_demo_cred: { U_S: { type: "txt" } } },
+      excludes: {},
+      tableOptions: {},
+      meta: false,
+    } as never);
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["script"]);
+    expect(warnings()).toContain(unsafeWarning("U_S", "password2"));
+  });
+
+  it("an included u_s is dropped when its U_S variant is the credential", async () => {
+    const tableAPIGet = fakeInstance({
+      fileColumns: SCRIPT_ONLY,
+      includeLookup: () => [
+        { element: "U_S", internal_type: ref("password2") },
+        { element: "u_s", internal_type: ref("string") },
+      ],
+      records: { x_demo_cred: RECORDS },
+    });
+    const manifest = await buildManifestFromTableAPI("x_demo", createClient(tableAPIGet), {
+      includes: { x_demo_cred: { u_s: { type: "txt" } } },
+      excludes: {},
+      tableOptions: {},
+      meta: false,
+    } as never);
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["script"]);
+    expect(warnings()).toContain(unsafeWarning("u_s", "password2"));
+  });
+
+  it("the data-field fallback lists neither variant of a credential column", async () => {
+    process.env.SYNCRONA_DATA_TABLES = "x_demo_cred";
+    const manifest = await buildManifestFromTableAPI(
+      "x_demo",
+      createClient(
+        fakeInstance({
+          fileColumns: [],
+          columns: [{ element: "name", internal_type: ref("string") }, ...variantRows],
+          records: { x_demo_cred: RECORDS },
+        })
+      ),
+      { includes: {}, excludes: {}, tableOptions: {}, meta: false } as never
+    );
+    expect(manifest.tables.x_demo_cred.records["cred-one"].files.map((f) => f.name)).toEqual(["name"]);
+  });
+});

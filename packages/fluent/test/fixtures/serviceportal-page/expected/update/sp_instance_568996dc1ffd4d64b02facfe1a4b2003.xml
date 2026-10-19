@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<record_update table="sp_instance">
+  <sp_instance action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>568996dc1ffd4d64b02facfe1a4b2003</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_instance_568996dc1ffd4d64b02facfe1a4b2003</sys_update_name>
+    <active>false</active>
+    <advanced_placeholder_dimensions>true</advanced_placeholder_dimensions>
+    <async_load>true</async_load>
+    <async_load_device_type>mobile</async_load_device_type>
+    <async_load_trigger>parallel</async_load_trigger>
+    <class_name>icc</class_name>
+    <color>primary</color>
+    <css>ic</css>
+    <glyph>home</glyph>
+    <id>inst</id>
+    <order>5</order>
+    <placeholder_dimensions>{"mobile":{"height":"1px"}}</placeholder_dimensions>
+    <placeholder_dimensions_script>function x() {}</placeholder_dimensions_script>
+    <placeholder_template>&lt;i&gt;&lt;/i&gt;</placeholder_template>
+    <preserve_placeholder_size>true</preserve_placeholder_size>
+    <roles>x_snc_bprobe.p_user,admin</roles>
+    <short_description>isd</short_description>
+    <size>lg</size>
+    <sp_column>e08c4b760aae4d398e0bc24745c4dfe6</sp_column>
+    <sp_widget>5f41b53498566648389c9b40286de458</sp_widget>
+    <title>I</title>
+    <url>/u</url>
+    <widget_parameters>{"a":{"value":"1","displayValue":"1"},"b":{"value":"true","displayValue":"true"},"c":{"value":"x","displayValue":"x"}}</widget_parameters>
+  </sp_instance>
+</record_update>

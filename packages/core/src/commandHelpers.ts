@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import { promises as fsp, readFileSync } from "fs";
+import path from "path";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
+import { logger } from "./Logger.js";
+import { scopeCheckMessage } from "./logMessages.js";
+import { classifyError, isPromptAbort } from "./errorTaxonomy.js";
+import { setActiveInstanceProfile } from "./snClient.js";
+import { getActiveInstance, loadCredentials } from "./auth.js";
+
+export const LOGIN_DEFAULT_SOURCE_DIRECTORY = "src";
+
+export type ActiveStoreHealth = { active: string | null; decrypts: boolean; error?: string };
+
+// Health of the active stored instance: does its credential file decrypt?
+// resolveCredentialsFromStore swallows decryption failures and returns null,
+// so this is the single place that turns that silence into a clear signal
+// (used by status, push, and download).
+export async function activeStoreHealth(): Promise<ActiveStoreHealth> {
+  let active: string | null = null;
+  try {
+    active = await getActiveInstance();
+  } catch {
+    return { active: null, decrypts: false };
+  }
+  if (!active) {
+    return { active: null, decrypts: false };
+  }
+  try {
+    await loadCredentials(active);
+    return { active, decrypts: true };
+  } catch (e) {
+    return { active, decrypts: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// One actionable warning when a prior login left a stored instance that no
+// longer decrypts (the silent cause of "credentials missing"); null otherwise.
+export async function getActiveStoreDecryptWarning(): Promise<string | null> {
+  const health = await activeStoreHealth();
+  if (health.active && !health.decrypts) {
+    return (
+      `Stored credentials for "${health.active}" failed to decrypt` +
+      (health.error ? ` (${health.error})` : "") +
+      " — likely encrypted on a different machine or user. Re-run 'syncrona login'."
+    );
+  }
+  return null;
+}
+export const LOCAL_CONFIG_FILE = ".syncrona-local";
+
+// DX7: a gitignored .syncrona-local in the working directory can set a default
+// instance profile so you don't pass --instance-profile on every command.
+function readLocalInstanceProfile(): string | undefined {
+  try {
+    const raw = readFileSync(path.join(process.cwd(), LOCAL_CONFIG_FILE), "utf-8");
+    // An editor's UTF-8 BOM would fail the parse and silently drop the profile.
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, "")) as { instanceProfile?: unknown };
+    const profile = typeof parsed.instanceProfile === "string" ? parsed.instanceProfile.trim() : "";
+    return profile || undefined;
+  } catch (_) {
+    // Missing or unparseable .syncrona-local → no local default.
+    return undefined;
+  }
+}
+
+// Explicit --instance-profile wins over .syncrona-local, which wins over none.
+export function resolveInstanceProfile(args: { instanceProfile?: string }): string | undefined {
+  if (args.instanceProfile) {
+    return args.instanceProfile;
+  }
+  return readLocalInstanceProfile();
+}
+
+export function setLogLevel(args: Sync.SharedCmdArgs) {
+  // Commands registered without the shared options (login, logout, instances,
+  // use) have no --log-level, so args.logLevel is undefined there. That is the
+  // default level, not a typo: don't let the Logger warn about it.
+  logger.setLogLevel(args.logLevel ?? "info");
+  const profile = resolveInstanceProfile(args);
+  if (profile && !args.instanceProfile) {
+    logger.debug(`Using instance profile "${profile}" from ${LOCAL_CONFIG_FILE}`);
+  }
+  setActiveInstanceProfile(profile);
+}
+
+// DX19: single home for the actionable next-step line so the `→ <hint>`
+// presentation policy is not copy-pasted across the CLI error sinks (it would
+// otherwise drift). classifyError stays pure (no logger); this is the one
+// place that renders + logs it.
+export function logErrorHint(e: unknown): void {
+  logger.info(`→ ${classifyError(e).hint}`);
+}
+
+export async function scopeCheck(
+  successFunc: () => void | Promise<void>,
+  swapScopes: boolean = false,
+  options: { dryRun?: boolean } = {}
+) {
+  const dryRun = options.dryRun === true;
+  // Keep the scope check and the command body in separate try blocks so a
+  // command failure is never misreported as a scope-configuration problem.
+  let scopeMatches: boolean;
+  try {
+    // A dry run must not write anything, and a scope swap writes the user's
+    // sys_user_preference. So a dry run never swaps, and a mismatch only warns:
+    // the preview reads records through the Table API, which does not depend on
+    // the session scope. Refusing used to leave no way to preview a push
+    // without first writing the scope preference through --scopeSwap.
+    const scopeCheckResult = await AppUtils.checkScope(swapScopes && !dryRun);
+    scopeMatches = scopeCheckResult.match;
+    if (!scopeMatches && dryRun) {
+      logger.warn(
+        `Dry run: your user's scope is ${scopeCheckResult.sessionScope} but this project is configured for ${scopeCheckResult.manifestScope}. ` +
+          "Previewing anyway; the real run needs the scope switched in ServiceNow (or --scopeSwap where the command offers it)."
+      );
+      scopeMatches = true;
+    } else if (!scopeMatches) {
+      scopeCheckMessage(scopeCheckResult);
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (message) {
+      logger.error(message);
+    }
+    logger.error(
+      "Failed to check your scope! You may want to make sure your project is configured correctly or run `npx syncrona init`"
+    );
+    logErrorHint(e); // DX19: actionable next step
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!scopeMatches) {
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await successFunc();
+  } catch (e) {
+    // Ctrl-C during a prompt inside the command body (inquirer 14 rejects with
+    // ExitPromptError instead of killing the process) is a user cancellation,
+    // not a command failure. This sink caught it BEFORE commander.ts could, so
+    // every scope-checked command printed a bogus "force closed the prompt"
+    // error banner with an unhelpful hint and exited 1 instead of 130.
+    if (isPromptAbort(e)) {
+      process.exitCode = 130;
+      return;
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message || "Command failed with an unknown error.");
+    logErrorHint(e); // DX19: actionable next step
+    process.exitCode = 1;
+  }
+}
+
+export async function bootstrapWorkspaceOnLogin(): Promise<{
+  createdConfig: boolean;
+  sourcePath: string;
+}> {
+  const workspaceRoot = process.cwd();
+  const configPath = path.join(workspaceRoot, "sync.config.js");
+  const sourcePath = path.join(workspaceRoot, LOGIN_DEFAULT_SOURCE_DIRECTORY);
+
+  let createdConfig = false;
+  try {
+    await fsp.stat(configPath);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw e;
+    }
+
+    await fsp.writeFile(
+      configPath,
+      ConfigManager.getDefaultConfigFile(LOGIN_DEFAULT_SOURCE_DIRECTORY),
+      "utf8"
+    );
+    createdConfig = true;
+  }
+
+  await fsp.mkdir(sourcePath, { recursive: true });
+  return { createdConfig, sourcePath };
+}

@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<record_update table="sysauto_script">
+  <sysauto_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b6e41d1f685247af93721a2e666ed50d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysauto_script_b6e41d1f685247af93721a2e666ed50d</sys_update_name>
+    <active>true</active>
+    <advanced>false</advanced>
+    <business_calendar/>
+    <condition/>
+    <conditional>false</conditional>
+    <entered_run_end/>
+    <entered_run_start/>
+    <entered_time>1970-01-01 09:15:00</entered_time>
+    <max_drift/>
+    <name>Weekly Sofia</name>
+    <offset/>
+    <offset_type>0</offset_type>
+    <repeat_every/>
+    <run_as/>
+    <run_as_tz/>
+    <run_dayofmonth>1</run_dayofmonth>
+    <run_dayofweek>5</run_dayofweek>
+    <run_daysofweek>137</run_daysofweek>
+    <run_end/>
+    <run_month/>
+    <run_period/>
+    <run_start/>
+    <run_time>1970-01-01 07:15:00</run_time>
+    <run_type>weekly</run_type>
+    <run_weekinmonth/>
+    <script><![CDATA[gs.info("weekly <&>");]]></script>
+    <sys_name>Weekly Sofia</sys_name>
+    <sys_policy/>
+    <time_zone>Europe/Sofia</time_zone>
+    <upgrade_safe>false</upgrade_safe>
+  </sysauto_script>
+</record_update>

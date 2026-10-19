@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard_answer">
+  <sys_wizard_answer action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3f36f47e6cf64b9faca9174f5937e188</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_answer_3f36f47e6cf64b9faca9174f5937e188</sys_update_name>
+    <active>true</active>
+    <answer>Choose one</answer>
+    <button_label/>
+    <dependent_value/>
+    <element/>
+    <name>Choose one</name>
+    <next_question/>
+    <order>700</order>
+    <payload_name/>
+    <question name="Full &quot;quoted&quot; Interceptor">ea91a27f9e6749ec90cfcaea7a3c5323</question>
+    <roles/>
+    <script/>
+    <table/>
+    <target_url/>
+    <type>3</type>
+  </sys_wizard_answer>
+</record_update>

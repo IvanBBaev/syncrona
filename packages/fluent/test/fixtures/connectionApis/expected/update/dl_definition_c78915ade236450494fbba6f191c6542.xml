@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="dl_definition">
+  <dl_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c78915ade236450494fbba6f191c6542</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>dl_definition_c78915ade236450494fbba6f191c6542</sys_update_name>
+    <active>false</active>
+    <matcher_table>x_snc_bprobe_matcher</matcher_table>
+    <name>Full Lookup</name>
+    <run_on_form_change>false</run_on_form_change>
+    <run_on_insert>false</run_on_insert>
+    <run_on_update>true</run_on_update>
+    <source_table>x_snc_bprobe_src</source_table>
+    <sys_policy>protected</sys_policy>
+  </dl_definition>
+</record_update>

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_portal_taxonomy">
+  <m2m_sp_portal_taxonomy action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4afd39575f8f418289d85eb622b208ea</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_portal_taxonomy_4afd39575f8f418289d85eb622b208ea</sys_update_name>
+    <active>false</active>
+    <order>100</order>
+    <sp_portal>a2fbb68d123e4b4a9b35c1d3a7f38348</sp_portal>
+    <taxonomy>44444444444444444444444444444444</taxonomy>
+  </m2m_sp_portal_taxonomy>
+</record_update>

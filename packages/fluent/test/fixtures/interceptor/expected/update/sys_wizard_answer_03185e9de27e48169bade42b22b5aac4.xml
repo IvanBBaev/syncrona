@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard_answer">
+  <sys_wizard_answer action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>03185e9de27e48169bade42b22b5aac4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_answer_03185e9de27e48169bade42b22b5aac4</sys_update_name>
+    <active>true</active>
+    <answer>Custom code</answer>
+    <button_label/>
+    <dependent_value/>
+    <element/>
+    <name>Custom code</name>
+    <next_question name="Record wizard">b6c0cd79c32c468d9fe829c11b42da97</next_question>
+    <order>800</order>
+    <payload_name/>
+    <question name="Full &quot;quoted&quot; Interceptor">ea91a27f9e6749ec90cfcaea7a3c5323</question>
+    <roles/>
+    <script/>
+    <table/>
+    <target_url/>
+    <type>7</type>
+  </sys_wizard_answer>
+</record_update>

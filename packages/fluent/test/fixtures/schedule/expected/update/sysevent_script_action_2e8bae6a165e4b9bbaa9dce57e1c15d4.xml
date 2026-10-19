@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_script_action">
+  <sysevent_script_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2e8bae6a165e4b9bbaa9dce57e1c15d4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_script_action_2e8bae6a165e4b9bbaa9dce57e1c15d4</sys_update_name>
+    <active>false</active>
+    <condition_script/>
+    <description/>
+    <event_name>x_snc_bprobe.min</event_name>
+    <name>Min SA</name>
+    <order>100</order>
+    <script><![CDATA[gs.info('sa');]]></script>
+    <sys_name>Min SA</sys_name>
+  </sysevent_script_action>
+</record_update>

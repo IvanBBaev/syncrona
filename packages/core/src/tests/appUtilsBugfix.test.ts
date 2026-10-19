@@ -1,0 +1,264 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
+import { SN } from "@syncrona/types";
+
+const createDirRecursively = jest.fn(async () => undefined);
+const writeSNFileCurry = jest.fn(() => async () => undefined);
+const writeFileForce = jest.fn(async () => undefined);
+const writeManifestFile = jest.fn(async () => undefined);
+const pathExists = jest.fn(async () => true);
+const SNFileExists = jest.fn(() => async () => true);
+
+const getSourcePath = jest.fn(() => "/tmp/source");
+const getManifestPath = jest.fn(() => "/tmp/manifest.json");
+const getConfig = jest.fn(() => ({}));
+const updateManifest = jest.fn();
+const getManifest = jest.fn();
+
+const updateRecordApi = jest.fn();
+const retryOnErrApi = jest.fn(async (fn: () => Promise<unknown>) => fn());
+const processPushResponseApi = jest.fn(() => ({ success: true, message: "ok" }));
+const mockBuildManifestFromTableAPI = jest.fn();
+const mockBuildBulkDownloadFromTableAPI = jest.fn();
+
+jest.unstable_mockModule("../FileUtils.js", () => ({
+  createDirRecursively,
+  writeSNFileCurry,
+  writeFileForce,
+  writeManifestFile,
+  pathExists,
+  SNFileExists,
+  appendToPath: (prefix: string) => (suffix: string) => `${prefix}/${suffix}`,
+  getFileContextFromPath: jest.fn(),
+  encodedPathsToFilePaths: jest.fn(async () => []),
+  summarizeFile: jest.fn(() => ""),
+}));
+
+jest.unstable_mockModule("../config.js", () => ({
+  getSourcePath,
+  getManifestPath,
+  getConfig,
+  updateManifest,
+  getManifest,
+}));
+
+jest.unstable_mockModule("../snClient.js", () => ({
+  getErrorResponseStatus: jest.fn(),
+  isRetryableRequestError: jest.fn(),
+  SNClient: jest.fn(),
+  unwrapTableAPIFirstItemOrEmpty: jest.fn(),
+  defaultClient: () => ({
+    updateRecord: updateRecordApi,
+  }),
+  processPushResponse: (...args: any[]) => (processPushResponseApi as any)(...args),
+  retryOnErr: (...args: any[]) => (retryOnErrApi as any)(...args),
+  unwrapSNResponse: async (p: Promise<{ data: { result: unknown } }>) => (await p).data.result,
+  unwrapTableAPIFirstItem: jest.fn(),
+}));
+
+jest.unstable_mockModule("../PluginManager.js", () => ({
+  __esModule: true,
+  default: {
+    getFinalFileContents: jest.fn(async () => "built-content"),
+  },
+}));
+
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
+  buildManifestFromTableAPI: (...args: unknown[]) => mockBuildManifestFromTableAPI(...args),
+  buildBulkDownloadFromTableAPI: (...args: unknown[]) => mockBuildBulkDownloadFromTableAPI(...args),
+  isNotFoundError: (e: unknown) => {
+    const err = e as { response?: { status?: number } } | null;
+    return Boolean(err && [400, 403, 404].includes(err.response?.status as number));
+  },
+}));
+
+describe("appUtils critical bugfixes", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockBuildManifestFromTableAPI.mockResolvedValue({ scope: "x_test", tables: {} });
+    mockBuildBulkDownloadFromTableAPI.mockResolvedValue({});
+  });
+
+  it("processManifest uses overwrite mode when forceWrite=true", async () => {
+    const { processManifest } = await import("../appUtils.js");
+
+    const manifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js", content: "gs.info('x');" }],
+            },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
+
+    await processManifest(manifest, true);
+
+    expect(writeSNFileCurry).toHaveBeenCalledWith(false);
+  });
+
+  it("processManifest uses non-overwrite mode when forceWrite=false", async () => {
+    const { processManifest } = await import("../appUtils.js");
+
+    const manifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js", content: "gs.info('x');" }],
+            },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
+
+    await processManifest(manifest, false);
+
+    expect(writeSNFileCurry).toHaveBeenCalledWith(true);
+  });
+
+  it("syncManifest waits for manifest write before processing missing files", async () => {
+    let manifestWritten = false;
+    writeManifestFile.mockImplementation(async () => {
+      manifestWritten = true;
+      return undefined;
+    });
+
+    // The fresh manifest carries one record whose file is absent on disk
+    // (SNFileExists -> false), so processMissingFiles actually fetches it and the
+    // ordering assertion inside the Table API fetch runs. With an empty manifest
+    // the per-table fetch loop would never execute and the guard would be vacuous.
+    const freshManifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js" }],
+            },
+          },
+        },
+      },
+    };
+    getManifest.mockResolvedValue({ scope: "x_test", tables: {} });
+    mockBuildManifestFromTableAPI.mockResolvedValue(freshManifest);
+    SNFileExists.mockReturnValue(async () => false);
+    mockBuildBulkDownloadFromTableAPI.mockImplementation(async () => {
+      expect(manifestWritten).toBe(true);
+      return {};
+    });
+
+    const { syncManifest } = await import("../appUtils.js");
+
+    await syncManifest();
+
+    expect(writeManifestFile).toHaveBeenCalledTimes(1);
+    // One missing table -> one fetch (PERF-3, REV-91: one fetch per table).
+    expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledTimes(1);
+  });
+
+  it("syncManifest builds the manifest through the Table API", async () => {
+    getManifest.mockResolvedValue({ scope: "x_test", tables: {} });
+    getConfig.mockReturnValue({});
+
+    const { syncManifest } = await import("../appUtils.js");
+    await syncManifest();
+
+    expect(mockBuildManifestFromTableAPI).toHaveBeenCalledWith(
+      "x_test",
+      expect.anything(),
+      {},
+      // No scopeId in the current manifest: the empty-manifest refusal stays.
+      { allowEmpty: false }
+    );
+    expect(writeManifestFile).toHaveBeenCalledWith({ scope: "x_test", tables: {} });
+  });
+
+  it("processMissingFiles fetches missing files through the Table API", async () => {
+    getConfig.mockReturnValue({ tableOptions: {} });
+    // Force one record's file to be reported missing so the per-table fetch loop
+    // runs; an empty manifest would skip the fetch.
+    SNFileExists.mockReturnValue(async () => false);
+    mockBuildBulkDownloadFromTableAPI.mockResolvedValue({});
+
+    const manifest = {
+      scope: "x_test",
+      tables: {
+        sys_script: {
+          records: {
+            rec1: {
+              name: "rec1",
+              sys_id: "abc",
+              files: [{ name: "script", type: "js" }],
+            },
+          },
+        },
+      },
+    } as unknown as SN.AppManifest;
+
+    const { processMissingFiles } = await import("../appUtils.js");
+    await processMissingFiles(manifest);
+
+    // PERF-3 (REV-91): the fetch receives the single-table missing map for the
+    // table currently being streamed, not the whole scope's missing map.
+    // The 4th argument is the manifest's own record names (table -> sys_id -> name):
+    // the fetch must write each record at the path the manifest already claims,
+    // not at a name re-derived from the row it just fetched.
+    // The 5th (DX22) is the manifest's metaFields per table — empty here, because
+    // this manifest carries no metadata layer.
+    expect(mockBuildBulkDownloadFromTableAPI).toHaveBeenCalledWith(
+      expect.objectContaining({ sys_script: expect.anything() }),
+      expect.anything(),
+      {},
+      expect.objectContaining({ sys_script: { abc: "rec1" } }),
+      {}
+    );
+  });
+
+  it("pushFiles limits parallel pushes based on pushConcurrency", async () => {
+    getConfig.mockReturnValue({ pushConcurrency: 2 });
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    updateRecordApi.mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return { status: 200, data: { result: {} } };
+    });
+
+    const { pushFiles } = await import("../appUtils.js");
+    const records = Array.from({ length: 6 }, (_, index) => ({
+      table: "sys_script",
+      sysId: `id_${index}`,
+      fields: {
+        script: {
+          name: `record_${index}`,
+          tableName: "sys_script",
+          targetField: "script",
+          filePath: `/tmp/record_${index}.js`,
+          ext: ".js",
+          sys_id: `id_${index}`,
+          scope: "x_test",
+        },
+      },
+    }));
+
+    const results = await pushFiles(records as any);
+
+    expect(results).toHaveLength(6);
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+    expect(updateRecordApi).toHaveBeenCalledTimes(6);
+  });
+});

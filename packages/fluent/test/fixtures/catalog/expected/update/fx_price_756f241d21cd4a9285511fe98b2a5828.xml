@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="fx_price">
+  <fx_price action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>756f241d21cd4a9285511fe98b2a5828</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>fx_price_756f241d21cd4a9285511fe98b2a5828</sys_update_name>
+    <amount>5</amount>
+    <currency>USD</currency>
+    <field>price</field>
+    <id>0ce566396239491d9acef0aa4a9ba040</id>
+    <table>item_option_new</table>
+    <type>calculated</type>
+  </fx_price>
+</record_update>

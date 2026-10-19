@@ -1,0 +1,38 @@
+{
+  "name": "@syncrona/typescript-plugin",
+  "version": "1.2.0-beta.0",
+  "description": "SyncroNow AI build plugin that type-checks and transpiles .ts files with the TypeScript compiler (honors tsconfig.json).",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "npx tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "peerDependencies": {
+    "typescript": ">=5"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/typescript-plugin"
+  },
+  "dependencies": {
+    "@syncrona/types": "^1.2.0-beta.0"
+  },
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

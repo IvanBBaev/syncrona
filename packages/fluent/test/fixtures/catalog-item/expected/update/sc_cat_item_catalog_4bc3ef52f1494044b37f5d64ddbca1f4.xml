@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sc_cat_item_catalog">
+  <sc_cat_item_catalog action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4bc3ef52f1494044b37f5d64ddbca1f4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sc_cat_item_catalog_4bc3ef52f1494044b37f5d64ddbca1f4</sys_update_name>
+    <sc_cat_item>c8788f2b2e384d1493b66797ecfb49bf</sc_cat_item>
+    <sc_catalog>742ce428d7211100f2d224837e61036d</sc_catalog>
+  </sc_cat_item_catalog>
+</record_update>

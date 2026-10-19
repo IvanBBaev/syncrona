@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="fx_price">
+  <fx_price action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1eed6ddb9ff64138acb1bc12194736ee</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>fx_price_1eed6ddb9ff64138acb1bc12194736ee</sys_update_name>
+    <amount>2</amount>
+    <currency>EUR</currency>
+    <field>recurring_price</field>
+    <id>86560332ec744f91a60e87453718af62</id>
+    <table>question_choice</table>
+    <type>calculated</type>
+  </fx_price>
+</record_update>

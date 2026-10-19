@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="question_choice">
+  <question_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>71a12435f59e437bae24ba4d5d0dcdeb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>question_choice_71a12435f59e437bae24ba4d5d0dcdeb</sys_update_name>
+    <inactive>true</inactive>
+    <order>0</order>
+    <question cat_item="NULL" variable_set="45149637c2784e6e9b1189aa3eaafc53" name="size">d33da8a69d76427da0f2f0a555a856e2</question>
+    <text>Large</text>
+    <value>l</value>
+  </question_choice>
+</record_update>

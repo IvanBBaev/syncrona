@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * @syncrona/sn-transport — shared ServiceNow transport policy.
+ *
+ * The SyncroNow AI project ships two independent ServiceNow HTTP clients: the core
+ * CLI client (`packages/core/src/snClient.ts`, built on axios) and the MCP
+ * server client (`packages/mcp-server/src/servicenowCore.ts`, built on native
+ * fetch). The clients differ by design (CLI vs. long-lived MCP runtime), but
+ * they MUST agree on shared transport policies — which HTTP status codes are
+ * worth retrying, how query values are escaped, TLS and OAuth handling.
+ *
+ * Those policies were previously copy-pasted in both clients and were the most
+ * likely to silently drift. This package is the single source of truth for
+ * them. It is intentionally pure (no I/O, no node globals): callers read the
+ * environment and pass the raw value in.
+ */
+
+/** HTTP status codes considered transient/retryable for ServiceNow requests. */
+export const RETRYABLE_HTTP_STATUSES: readonly number[] = [
+  408, 425, 429, 500, 502, 503, 504,
+];
+
+const retryableStatusSet = new Set<number>(RETRYABLE_HTTP_STATUSES);
+
+/** Whether a response with the given HTTP status code should be retried. */
+export function shouldRetryStatus(status: number): boolean {
+  return retryableStatusSet.has(status);
+}
+
+/**
+ * Neutralize a user/config-supplied value before it is interpolated into a
+ * ServiceNow encoded query. `^` separates query conditions, so an unescaped `^`
+ * in a value lets a caller inject extra conditions and slip past a scope filter
+ * (e.g. `scope=app^sys_id=...`). Replacing `^` with a space keeps the value as a
+ * single condition operand. Use this for EVERY interpolated value, never on an
+ * already-assembled query string. Shared here so the CLI and the MCP server
+ * cannot drift on the escaping rule.
+ */
+export function escapeQueryValue(value: string): string {
+  return value.replace(/\^/g, " ");
+}
+
+/**
+ * Maximum sustained request rate against a ServiceNow instance. The core CLI
+ * enforces this via axios-rate-limit; the MCP server spaces requests by
+ * 1000 / MAX_REQUESTS_PER_SECOND ms. Keep the two clients in agreement.
+ */
+export const MAX_REQUESTS_PER_SECOND = 20;
+
+/** Environment variable that lowers the per-client request-rate cap. */
+export const MAX_RPS_ENV = "SN_MAX_RPS";
+
+/**
+ * Resolve the effective request-rate cap from a raw `SN_MAX_RPS` value.
+ *
+ * An absent or blank value yields {@link MAX_REQUESTS_PER_SECOND}. The knob can
+ * only lower the cap: anything that is not a whole number from 1 to
+ * MAX_REQUESTS_PER_SECOND throws, because silently falling back to the full
+ * rate would defeat an operator who set the limit to protect an instance.
+ */
+export function resolveMaxRequestsPerSecond(rawEnvValue: string | undefined): number {
+  const raw = String(rawEnvValue ?? "").trim();
+  if (raw === "") {
+    return MAX_REQUESTS_PER_SECOND;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_REQUESTS_PER_SECOND) {
+    throw new Error(
+      `${MAX_RPS_ENV} must be a whole number from 1 to ${MAX_REQUESTS_PER_SECOND} (got "${raw}"); it can only lower the request-rate cap.`
+    );
+  }
+  return parsed;
+}
+
+/**
+ * HTTP status codes that mean "this endpoint, table or record is not available
+ * to this user on this instance" (missing table, blocked by ACL, or a path that
+ * does not exist). Callers treat them as a skip, not as a transport failure.
+ */
+export const ENDPOINT_NOT_FOUND_STATUSES: readonly number[] = [400, 403, 404];
+
+const endpointNotFoundStatusSet = new Set<number>(ENDPOINT_NOT_FOUND_STATUSES);
+
+/** Whether the given HTTP status marks the endpoint as unavailable. */
+export function isEndpointNotFoundStatus(status: number): boolean {
+  return endpointNotFoundStatusSet.has(status);
+}
+
+/**
+ * Env var: path to a PEM CA bundle to trust for ServiceNow TLS. Use it for a
+ * corporate/self-signed certificate authority. (Node's built-in
+ * `NODE_EXTRA_CA_CERTS` also works and additionally covers the MCP server's
+ * native-fetch client; this variable gives the CLI an explicit, per-process
+ * override without touching the global trust store.)
+ */
+export const CA_BUNDLE_ENV = "SYNCRONA_CA_BUNDLE";
+
+/**
+ * Env var: set to `0` / `false` / `no` to DISABLE TLS certificate verification.
+ * Insecure — intended only for throwaway/test instances with a self-signed
+ * cert you cannot add to a bundle. Verification is on by default.
+ */
+export const TLS_REJECT_UNAUTHORIZED_ENV = "SYNCRONA_TLS_REJECT_UNAUTHORIZED";
+
+/** Resolved TLS policy for a ServiceNow client (see {@link resolveTlsPolicy}). */
+export interface ResolvedTlsPolicy {
+  /** Path to a CA bundle file the caller should read and trust, if configured. */
+  caBundlePath?: string;
+  /** Path to a client certificate (PEM) for mutual TLS, if configured. */
+  clientCertPath?: string;
+  /** Path to the client private key (PEM) for mutual TLS, if configured. */
+  clientKeyPath?: string;
+  /** Passphrase for the client private key, if it is encrypted. */
+  clientKeyPassphrase?: string;
+  /** Whether the server certificate must be verified. False only on explicit opt-out. */
+  rejectUnauthorized: boolean;
+  /** True when any non-default TLS setting is in effect (caller builds a custom agent). */
+  custom: boolean;
+}
+
+/**
+ * Resolve the ServiceNow TLS policy from raw environment values. Pure (no I/O):
+ * the caller passes the env strings in and performs the actual file reads and
+ * HTTPS-agent/dispatcher construction. Shared so every client agrees on the
+ * same opt-out and mutual-TLS semantics. An unset/blank reject value keeps
+ * verification ON; only the explicit falsey tokens (`0`, `false`, `no`) turn it
+ * off. Mutual TLS engages when both a client cert and key path are provided.
+ */
+export function resolveTlsPolicy(
+  caBundleEnv: string | undefined,
+  rejectUnauthorizedEnv: string | undefined,
+  clientCertEnv?: string | undefined,
+  clientKeyEnv?: string | undefined,
+  clientKeyPassphraseEnv?: string | undefined
+): ResolvedTlsPolicy {
+  const caBundlePath = (caBundleEnv || "").trim() || undefined;
+  const clientCertPath = (clientCertEnv || "").trim() || undefined;
+  const clientKeyPath = (clientKeyEnv || "").trim() || undefined;
+  const clientKeyPassphrase = (clientKeyPassphraseEnv || "").trim() || undefined;
+  const raw = (rejectUnauthorizedEnv || "").trim().toLowerCase();
+  const rejectUnauthorized = !(raw === "0" || raw === "false" || raw === "no");
+  return {
+    caBundlePath,
+    clientCertPath,
+    clientKeyPath,
+    clientKeyPassphrase,
+    rejectUnauthorized,
+    custom:
+      !!caBundlePath ||
+      !!clientCertPath ||
+      !!clientKeyPath ||
+      !rejectUnauthorized,
+  };
+}
+
+// Shared OAuth 2.0 token manager (IO-free; HTTP injected). Used by both clients.
+export * from "./oauth";
+// Shared auth-method resolution (basic / oauth-* / api-key) and env var names.
+export * from "./auth";
+// Shared JWT bearer-assertion builder (RS256 via node:crypto; IO-free).
+export * from "./jwt";
+// Full-instance mirror transport policy (WP-M0): error-envelope classification,
+// reachability tri-state, retry backoff and keyset paging. Pure decisions.
+export * from "./mirrorPolicy";
+// Path-safety rules shared with the v1 core download pipeline, plus the D18
+// mirror guards (NFC, UTF-8 byte cap, case-insensitive uniqueness).
+export * from "./pathSafety";
+// Record-creation table policy (deny list + env allowlist) shared by the MCP
+// `sn_create_record` tool and the core CLI's `push --create`.
+export * from "./createPolicy";

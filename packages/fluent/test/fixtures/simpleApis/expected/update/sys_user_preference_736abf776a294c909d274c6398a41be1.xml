@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_preference">
+  <sys_user_preference action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>736abf776a294c909d274c6398a41be1</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_preference_736abf776a294c909d274c6398a41be1</sys_update_name>
+    <name>x_snc_bprobe.flag</name>
+    <type>boolean</type>
+    <value>false</value>
+  </sys_user_preference>
+</record_update>

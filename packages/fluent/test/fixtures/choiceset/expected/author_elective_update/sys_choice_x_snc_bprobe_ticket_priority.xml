@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_choice_set action="INSERT_OR_UPDATE" field="priority" table="x_snc_bprobe_ticket" version="3" apply_defaults="true">
+    <sys_choice_set action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>11ea88a2146148f1bb0e8f7793d89e0a</sys_id>
+      <element>priority</element>
+      <sys_update_name>sys_choice_x_snc_bprobe_ticket_priority</sys_update_name>
+      <name>x_snc_bprobe_ticket</name>
+      <sys_class_name>sys_choice_set</sys_class_name>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_package display_value="x_snc_bprobe" source="db22ea00d7ff49d9b5d64061202ea510">db22ea00d7ff49d9b5d64061202ea510</sys_package>
+      <sys_name>priority</sys_name>
+    </sys_choice_set>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>1e2ef4e3370a41b9add5babfd0f8d1aa</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>priority</element>
+      <label>Critical</label>
+      <value>1</value>
+      <sequence>1</sequence>
+      <dependent_value/>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>6d1269602fd44203804c9f00efdab618</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>priority</element>
+      <label>High</label>
+      <value>2</value>
+      <sequence>2</sequence>
+      <dependent_value/>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>f935c69ba1604e9982da1a608dc1ed38</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>priority</element>
+      <label>Low &amp; &lt;slow&gt;</label>
+      <value>low</value>
+      <sequence>3</sequence>
+      <dependent_value/>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+  </sys_choice_set>
+</record_update>

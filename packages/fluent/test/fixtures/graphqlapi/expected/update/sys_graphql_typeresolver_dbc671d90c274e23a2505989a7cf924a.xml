@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_graphql_typeresolver">
+  <sys_graphql_typeresolver action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dbc671d90c274e23a2505989a7cf924a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_graphql_typeresolver_dbc671d90c274e23a2505989a7cf924a</sys_update_name>
+    <schema>7e13ee453839472f89318d37f909bfa2</schema>
+    <script><![CDATA[return "Dog";]]></script>
+    <type_name>Pet</type_name>
+  </sys_graphql_typeresolver>
+</record_update>

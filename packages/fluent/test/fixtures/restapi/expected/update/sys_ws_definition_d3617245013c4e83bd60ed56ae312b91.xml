@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_definition">
+  <sys_ws_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d3617245013c4e83bd60ed56ae312b91</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_definition_d3617245013c4e83bd60ed56ae312b91</sys_update_name>
+    <active>true</active>
+    <base_uri>/api/x_snc_bprobe/items</base_uri>
+    <consumes>application/json</consumes>
+    <consumes_customized>true</consumes_customized>
+    <default_version>v2</default_version>
+    <doc_link>https://docs.example.com</doc_link>
+    <enforce_acl>e68465a2793e4a8ca7e3a911e617416e,a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5</enforce_acl>
+    <is_versioned>true</is_versioned>
+    <name>Items</name>
+    <namespace>x_snc_bprobe</namespace>
+    <produces>application/json,application/xml,text/xml</produces>
+    <produces_customized>false</produces_customized>
+    <service_id>items</service_id>
+    <short_description>Item API</short_description>
+    <sys_policy>read</sys_policy>
+  </sys_ws_definition>
+</record_update>

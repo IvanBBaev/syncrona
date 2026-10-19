@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_retry_policy">
+  <sys_retry_policy action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>70e99cf7fb744eb69441f1cd9491f166</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_retry_policy_70e99cf7fb744eb69441f1cd9491f166</sys_update_name>
+    <condition/>
+    <connection_type>http_retry_conditions</connection_type>
+    <count/>
+    <interval/>
+    <max_elapsed_time>120</max_elapsed_time>
+    <name>Retry After</name>
+    <restrict_to/>
+    <retry_strategy>retry_after</retry_strategy>
+    <sys_policy>read</sys_policy>
+  </sys_retry_policy>
+</record_update>

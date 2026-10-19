@@ -1,0 +1,882 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
+import path from "path";
+import {
+  summarizeMetrics,
+  type MetadataType,
+  type ToolMetricEvent,
+} from "./analysis";
+import { isEffectiveDryRun, isMutatingTool } from "./safetyPolicy";
+import { logger } from "./logger";
+import { sanitizeForAudit, writeAuditEvent } from "./audit";
+import { appendMetricEvent } from "./metricsStore";
+import {
+  commandResultToText,
+  escapeQueryValue,
+  structuredErrorText,
+  toJsonText,
+} from "./runtimeUtils";
+import {
+  describeNonRecordPayload,
+  probeBackgroundScriptPage,
+  runBackgroundScript,
+  snRequest,
+  toTableResultRows,
+} from "./servicenowCore";
+import { getCurrentScope, getSessionContext } from "./sessionContext";
+import { MCP_TOOLS } from "./toolSchemas";
+import type { ToolResponse } from "./toolResponse";
+import { getScopeDocsPaths, getScopeTableDocPath, resolveContainedPath } from "./scopePaths";
+import {
+  classifyRelationVisibility,
+  toGraphFromUnknown,
+  hydrateScopeKnowledgeInputs,
+} from "./analysis/scopeDiscovery";
+import {
+  cloneDefaultGuardrailConfig,
+  createInvalidGuardrailConfig,
+  parseGuardrailConfig,
+  shouldEnforcePreflight,
+  type GuardrailConfig,
+} from "./policyConfig";
+import {
+  AUDIT_DIR,
+  AUDIT_FILE,
+  DEFAULT_TIMEOUT_MS,
+  GUARDRAIL_CONFIG_FILE,
+  METRICS_FILE,
+  PROJECT_DIR,
+  SERVER_NAME,
+  SERVER_VERSION,
+} from "./runtimeConfig";
+import { asRecord, toStringField } from "./recordUtils";
+import { readWorkspaceLayout, recordFieldFilePath } from "./workspaceLayout";
+import {
+  runSyncroCliCommand,
+  type CmdResult,
+} from "./processRunner";
+import { handleScopeKnowledgeTool } from "./handlers/scopeKnowledgeHandlers";
+import { handleRelationOnboardingTool } from "./handlers/relationOnboardingHandlers";
+import { handleWorkflowTool } from "./handlers/workflowHandlers";
+
+export type UnifiedTaskType = "script" | "metadata" | "hybrid";
+
+let LAST_AUDIT_INTEGRITY_STATUS = "unknown";
+
+export function setAuditIntegrityStatus(status: string): void {
+  LAST_AUDIT_INTEGRITY_STATUS = status;
+}
+
+// AR11: the in-memory tool-metrics ring buffer is module-level mutable state.
+// It is encapsulated behind explicit accessors (mirroring
+// clearServiceNowSecretsCache) so it is mutated in
+// exactly one place (pushToolMetric) and can be reset/rehydrated in tests and
+// on startup instead of being spliced from across the codebase.
+const MAX_TOOL_METRICS = 500;
+const toolMetrics: ToolMetricEvent[] = [];
+
+/** Read-only view of the recorded tool metrics (newest last). */
+export function getToolMetrics(): readonly ToolMetricEvent[] {
+  return toolMetrics;
+}
+
+/** Drop all recorded metrics (used by tests and explicit resets). */
+export function clearToolMetrics(): void {
+  toolMetrics.length = 0;
+}
+
+/** Replace the buffer wholesale, e.g. rehydrating from the persisted log. */
+export function replaceToolMetrics(events: ToolMetricEvent[]): void {
+  toolMetrics.splice(0, toolMetrics.length, ...events.slice(-MAX_TOOL_METRICS));
+}
+
+function pushToolMetric(event: ToolMetricEvent): void {
+  toolMetrics.push(event);
+  if (toolMetrics.length > MAX_TOOL_METRICS) {
+    toolMetrics.splice(0, toolMetrics.length - MAX_TOOL_METRICS);
+  }
+}
+
+export function normalizeTimeout(timeoutMs: unknown): number {
+  if (typeof timeoutMs !== "number" || Number.isNaN(timeoutMs)) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+
+  return Math.min(Math.max(timeoutMs, 1000), 900000);
+}
+
+export function loadGuardrailConfig(projectDir: string = PROJECT_DIR): GuardrailConfig {
+  const cfgPath = path.join(projectDir, "sync.mcp.guardrails.json");
+  if (!existsSync(cfgPath)) {
+    // An ABSENT config is a legitimate "no guardrails configured" state, so the
+    // permissive default applies. Hand out a deep clone (never the shared frozen
+    // instance) so a caller can never mutate the default's nested policy.
+    return cloneDefaultGuardrailConfig();
+  }
+
+  try {
+    const raw = readFileSync(cfgPath, "utf-8");
+    return parseGuardrailConfig(JSON.parse(raw));
+  } catch (error) {
+    // SEC-3 (REV-84): a PRESENT-but-unreadable guardrail file must FAIL CLOSED.
+    // Previously this returned the fully-permissive default, so one appended byte
+    // silently disabled every guardrail. Return a deny-all config and surface the
+    // failure on stderr; the next tool call is then refused by evaluateToolPolicy.
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("guardrail config unreadable — failing closed (denying all tools)", {
+      path: cfgPath,
+      error: message,
+    });
+    return createInvalidGuardrailConfig(`unreadable guardrail config at ${cfgPath}: ${message}`);
+  }
+}
+
+export function makeDryRunResponse(toolName: string, details: Record<string, unknown>): ToolResponse {
+  const payload = {
+    dryRun: true,
+    tool: toolName,
+    planned: details,
+  };
+  const text = toJsonText(payload);
+  return {
+    isError: false,
+    content: [{ type: "text", text }],
+    // Dry-run results are success results: tools that declare an outputSchema
+    // must still carry structuredContent here, so mirror the JSON text block.
+    structuredContent: JSON.parse(text) as Record<string, unknown>,
+  };
+}
+
+export function buildHealthHttpSnapshot(): Record<string, unknown> {
+  const metricsSummary = summarizeMetrics([...getToolMetrics()]);
+  return {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    metrics: {
+      tools: asRecord(metricsSummary.tools),
+      windows: Array.isArray(metricsSummary.windows) ? metricsSummary.windows : [],
+    },
+    server: {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      transport: "stdio",
+      toolCount: MCP_TOOLS.length,
+    },
+    audit: {
+      integrity: LAST_AUDIT_INTEGRITY_STATUS,
+    },
+  };
+}
+
+export function makeDryRunAuditResponse(
+  toolName: string,
+  args: Record<string, unknown>,
+  details: Record<string, unknown>,
+  correlationId?: string
+) {
+  auditMutatingTool(toolName, args, {
+    dryRun: true,
+    planned: details,
+  }, undefined, correlationId);
+  return makeDryRunResponse(toolName, details);
+}
+
+export function generateCorrelationId(seedMs: number = Date.now()): string {
+  const tsPart = Math.max(seedMs, 0).toString(36);
+  const randPart = Math.random().toString(36).slice(2, 10);
+  return `corr_${tsPart}_${randPart}`;
+}
+
+export function resolveCorrelationId(args: Record<string, unknown>, seedMs: number = Date.now()): string {
+  const explicit = typeof args.correlationId === "string" ? args.correlationId.trim() : "";
+  if (explicit) {
+    return explicit.replace(/[^a-z0-9._-]/gi, "_").slice(0, 120);
+  }
+  return generateCorrelationId(seedMs);
+}
+
+export function withCorrelationIdInResponse(
+  response: ToolResponse,
+  correlationId: string
+): ToolResponse {
+  if (!Array.isArray(response.content) || response.content.length === 0) {
+    return response;
+  }
+
+  const first = asRecord(response.content[0]);
+  const text = toStringField(first.text);
+  if (!text.trim()) {
+    return response;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return convergePlainTextError(response, text, correlationId);
+    }
+    const payload = parsed as Record<string, unknown>;
+    if (typeof payload.correlationId === "string" && payload.correlationId.trim()) {
+      return response;
+    }
+    payload.correlationId = correlationId;
+    return {
+      ...response,
+      content: [{ type: "text", text: toJsonText(payload) }, ...response.content.slice(1)],
+      // Keep structuredContent identical to the (rebuilt) JSON text payload.
+      // Only mirror when the handler opted into structuredContent — injecting
+      // it for every tool would silently change the wire shape of tools that
+      // never declared structured output.
+      ...(response.structuredContent !== undefined ? { structuredContent: payload } : {}),
+    };
+  } catch (_) {
+    return convergePlainTextError(response, text, correlationId);
+  }
+}
+
+/**
+ * Converge a plain-text response (one whose first content block is not a JSON
+ * object) onto the single structured error envelope. Only error responses are
+ * rewritten — successful plain-text output is left untouched — so every error
+ * the client sees carries a stable `code` and a `correlationId`, closing the
+ * gap where handler-local `errorResponse` strings had neither. Text already in
+ * the `Tool execution failed [CODE]:` envelope is left as-is.
+ */
+function convergePlainTextError(
+  response: ToolResponse,
+  text: string,
+  correlationId: string
+): ToolResponse {
+  if (response.isError !== true) {
+    return response;
+  }
+  if (/^Tool execution failed \[/.test(text)) {
+    return response;
+  }
+  return {
+    ...response,
+    content: [
+      {
+        type: "text",
+        text: structuredErrorText(text, "TOOL_EXECUTION", { correlationId }),
+      },
+      ...response.content.slice(1),
+    ],
+  };
+}
+
+
+export function writeFileWithStableBackup(filePath: string, content: string): void {
+  const backupPath = `${filePath}.bak`;
+  if (existsSync(filePath)) {
+    try {
+      const previous = readFileSync(filePath, "utf-8");
+      writeFileSync(backupPath, previous, "utf-8");
+    } catch (_) {
+      // Keep best-effort backup behavior.
+    }
+  }
+
+  writeFileSync(filePath, content, "utf-8");
+}
+
+export function parseUnifiedTaskType(value: unknown): UnifiedTaskType {
+  if (value === "script" || value === "metadata" || value === "hybrid") {
+    return value;
+  }
+  return "hybrid";
+}
+
+export function isDeepAnalysisSatisfied(
+  taskType: UnifiedTaskType,
+  hasScript: boolean,
+  hasMetadata: boolean
+): boolean {
+  if (taskType === "script") {
+    return hasScript;
+  }
+  if (taskType === "metadata") {
+    return hasMetadata;
+  }
+  return hasScript || hasMetadata;
+}
+
+export async function safeGetSessionContext(timeoutMs: number): Promise<Record<string, unknown> | null> {
+  try {
+    return await getSessionContext(timeoutMs);
+  } catch (_) {
+    return null;
+  }
+}
+
+export async function resolveScopeCode(preferredScope: string, timeoutMs: number): Promise<string> {
+  if (preferredScope.trim().length > 0) {
+    return preferredScope.trim();
+  }
+
+  const context = await safeGetSessionContext(timeoutMs);
+  if (!context) {
+    return "unknown_scope";
+  }
+  return toStringField(asRecord(context.scope).scope) || "unknown_scope";
+}
+
+export function auditMutatingTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  outcome: Record<string, unknown>,
+  durationMs?: number,
+  correlationId?: string
+): void {
+  if (!isMutatingTool(toolName, args)) {
+    return;
+  }
+
+  const entry: Record<string, unknown> = {
+    timestamp: new Date().toISOString(),
+    tool: toolName,
+    args: sanitizeForAudit(args),
+    outcome: sanitizeForAudit(outcome),
+    durationMs: typeof durationMs === "number" ? Math.max(durationMs, 0) : 0,
+    // SEC-6 follow-up (REV-151): report whether the run WAS a simulation, not whether one
+    // was requested. See isEffectiveDryRun — a flag the tool ignores used to stamp a real
+    // mutation as `dryRun: true` in the tamper-evident log, which is the one place that
+    // must never overstate safety.
+    dryRun: isEffectiveDryRun(toolName, args),
+  };
+  if (typeof correlationId === "string" && correlationId.trim()) {
+    entry.correlationId = correlationId.trim();
+  }
+  writeAuditEvent(AUDIT_DIR, AUDIT_FILE, entry);
+}
+
+export function auditToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+  outcome: {
+    isError: boolean;
+    error?: string;
+  },
+  durationMs: number,
+  auditDir: string = AUDIT_DIR,
+  auditFile: string = AUDIT_FILE,
+  correlationId?: string
+): void {
+  const entry: Record<string, unknown> = {
+    timestamp: new Date().toISOString(),
+    event: "tool.call",
+    tool: toolName,
+    mutating: isMutatingTool(toolName, args),
+    // SEC-6 follow-up (REV-151): same correction as auditMutatingTool above.
+    dryRun: isEffectiveDryRun(toolName, args),
+    args: sanitizeForAudit(args),
+    ok: !outcome.isError,
+    error: outcome.error ? sanitizeForAudit(outcome.error) : "",
+    durationMs: Math.max(durationMs, 0),
+  };
+  if (typeof correlationId === "string" && correlationId.trim()) {
+    entry.correlationId = correlationId.trim();
+  }
+  writeAuditEvent(auditDir, auditFile, entry);
+}
+
+export function shouldInvalidateSemanticIndex(toolName: string, args: Record<string, unknown>): boolean {
+  // SEC-6 follow-up (REV-151): the early return trusted the REQUESTED dryRun. For a tool
+  // that ignores the flag the workspace really did change, so skipping the invalidation
+  // left every later analysis answering from a stale semantic index — wrong output with no
+  // error anywhere. Only a dry run the tool actually implements means "nothing changed".
+  if (isEffectiveDryRun(toolName, args)) {
+    return false;
+  }
+
+  const toolsThatCanChangeWorkspace = new Set([
+    "run_syncro_command",
+    "run_workspace_command",
+    "run_node_code",
+    "sync_create_script_include",
+    "sync_create_script_include_and_sync",
+  ]);
+
+  return toolsThatCanChangeWorkspace.has(toolName);
+}
+
+export function parseMetadataType(value: unknown): MetadataType | null {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  const allowed: MetadataType[] = [
+    "business_rule",
+    "client_script",
+    "ui_script",
+    "ui_action",
+    "ui_formatter",
+    "acl",
+    "dictionary",
+    "ui_policy",
+    "scripted_rest",
+    "scheduled_job",
+  ];
+  return allowed.includes(normalized as MetadataType)
+    ? (normalized as MetadataType)
+    : null;
+}
+
+export function recordToolMetric(
+  tool: string,
+  isError: boolean,
+  startedAt: number,
+  correlationId?: string
+): void {
+  const event = {
+    tool,
+    ok: !isError,
+    latencyMs: Math.max(Date.now() - startedAt, 0),
+    timestamp: new Date().toISOString(),
+    correlationId:
+      typeof correlationId === "string" && correlationId.trim()
+        ? correlationId.trim()
+        : undefined,
+  };
+
+  pushToolMetric(event);
+
+  appendMetricEvent(AUDIT_DIR, METRICS_FILE, event);
+}
+
+// Read-only probes of the instance APIs the server relies on: the Table API, the
+// current-scope lookup (a user preference), the scope record, and the
+// background-script page. None of them writes or runs anything.
+export async function checkSyncronaCapabilities(
+  timeoutMs: number,
+  scopeCode?: string
+): Promise<
+  Record<string, unknown>
+> {
+  const results: Record<string, unknown> = {};
+  const probe = async (
+    name: string,
+    endpoint: string,
+    run: () => Promise<{ status: number; usedEndpoint?: string; text?: string }>
+  ): Promise<void> => {
+    try {
+      const response = await run();
+      const ok = response.status >= 200 && response.status < 300;
+      results[name] = {
+        endpoint: response.usedEndpoint || endpoint,
+        status: response.status,
+        ok,
+        ...(!ok && response.text ? { error: response.text.slice(0, 500) } : {}),
+      };
+    } catch (error) {
+      results[name] = {
+        endpoint,
+        status: 0,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  await probe("tableApi", "/api/now/table/sys_scope", () =>
+    snRequest("GET", "/api/now/table/sys_scope?sysparm_limit=1&sysparm_fields=sys_id", undefined, timeoutMs, PROJECT_DIR)
+  );
+
+  let resolvedScope = scopeCode || "";
+  await probe("currentScope", "/api/now/table/sys_user_preference", async () => {
+    const current = await getCurrentScope(timeoutMs);
+    if (!resolvedScope) {
+      resolvedScope = current.scope;
+    }
+    return { status: 200 };
+  });
+
+  // The scope is caller input; snRequest receives it as an encoded query value
+  // (escapeQueryValue + URL encoding), never as a path segment.
+  await probe("scopeRecord", "/api/now/table/sys_scope", async () => {
+    if (!resolvedScope) {
+      return { status: 404, text: "No scope given and the current scope could not be resolved" };
+    }
+    const query = encodeURIComponent(`scope=${escapeQueryValue(resolvedScope)}`);
+    const response = await snRequest(
+      "GET",
+      `/api/now/table/sys_scope?sysparm_query=${query}&sysparm_limit=1&sysparm_fields=sys_id,scope`,
+      undefined,
+      timeoutMs,
+      PROJECT_DIR
+    );
+    if (response.status >= 200 && response.status < 300 && toTableResultRows(response.data).length === 0) {
+      return { status: 404, text: `Scope not found: ${resolvedScope}` };
+    }
+    return response;
+  });
+
+  await probe("backgroundScript", "/sys.scripts.do", () => probeBackgroundScriptPage(timeoutMs, PROJECT_DIR));
+
+  return results;
+}
+
+export async function buildPreflightReport(
+  timeoutMs: number,
+  overrideConfig?: Partial<GuardrailConfig>
+): Promise<Record<string, unknown>> {
+  const cfg = {
+    ...loadGuardrailConfig(),
+    ...(overrideConfig || {}),
+  };
+  const context = await getSessionContext(timeoutMs);
+  const scopeObj = asRecord(context.scope);
+  const updateObj = asRecord(context.updateSet);
+
+  const currentScope = toStringField(scopeObj.scope);
+  const currentUpdateSetName = toStringField(updateObj.name);
+  const currentUpdateSetSysId = toStringField(updateObj.sysId);
+
+  const scopeOk = !cfg.expectedScope || cfg.expectedScope === currentScope;
+  const updateSetOkBySysId =
+    !cfg.expectedUpdateSetSysId || cfg.expectedUpdateSetSysId === currentUpdateSetSysId;
+  const updateSetOkByName =
+    !cfg.expectedUpdateSetName || cfg.expectedUpdateSetName === currentUpdateSetName;
+  const updateSetOk = updateSetOkBySysId && updateSetOkByName;
+
+  return {
+    expected: {
+      scope: cfg.expectedScope,
+      updateSetName: cfg.expectedUpdateSetName,
+      updateSetSysId: cfg.expectedUpdateSetSysId,
+    },
+    current: {
+      scope: currentScope,
+      updateSetName: currentUpdateSetName,
+      updateSetSysId: currentUpdateSetSysId,
+    },
+    checks: {
+      scopeOk,
+      updateSetOk,
+      allOk: scopeOk && updateSetOk,
+    },
+    context,
+  };
+}
+
+export async function enforcePreflightForTool(toolName: string, timeoutMs: number): Promise<void> {
+  if (!isMutatingTool(toolName)) {
+    return;
+  }
+
+  const cfg = loadGuardrailConfig();
+  if (!shouldEnforcePreflight(cfg, toolName)) {
+    return;
+  }
+
+  const report = await buildPreflightReport(timeoutMs, cfg);
+  const checks = asRecord(report.checks);
+  if (checks.allOk !== true) {
+    throw new Error(
+      `Preflight failed for mutating tool ${toolName}. Run sync_prepare_session or fix guardrails in sync.mcp.guardrails.json.`
+    );
+  }
+}
+
+export async function createAndSyncScriptInclude(
+  params: {
+    name: string;
+    apiName?: string;
+    script?: string;
+    active?: boolean;
+    clientCallable?: boolean;
+    refreshAfterCreate?: boolean;
+  },
+  timeoutMs: number
+): Promise<Record<string, unknown>> {
+  const name = params.name.trim();
+  const apiName = toStringField(params.apiName).trim();
+  const script = toStringField(params.script);
+  const active = params.active !== false;
+  const clientCallable = params.clientCallable === true;
+  const refreshAfterCreate = params.refreshAfterCreate !== false;
+
+  const createPayload: Record<string, unknown> = {
+    name,
+    script,
+    active,
+    client_callable: clientCallable,
+  };
+
+  if (apiName.length > 0) {
+    createPayload.api_name = apiName;
+  }
+
+  const createRes = await snRequest(
+    "POST",
+    "/api/now/table/sys_script_include",
+    createPayload,
+    timeoutMs
+  );
+  const created = asRecord(asRecord(createRes.data).result);
+  const createOk = createRes.status >= 200 && createRes.status < 300;
+  // A 2xx login page or empty body created nothing that a refresh could pull.
+  const badPayload = createOk ? describeNonRecordPayload(createRes.status, createRes.data) : null;
+
+  let refreshResult: CmdResult | null = null;
+  if (createOk && !badPayload && refreshAfterCreate) {
+    refreshResult = await runSyncroCliCommand("refresh", ["--logLevel", "warn"], timeoutMs);
+  }
+
+  const localPaths = findScriptIncludeLocalPaths(name);
+
+  return {
+    createStatus: createRes.status,
+    ...(badPayload
+      ? { createError: `No Script Include is known to have been created: ${badPayload}.` }
+      : {}),
+    created,
+    refreshTriggered: refreshAfterCreate,
+    refreshResult:
+      refreshResult === null ? null : commandResultToText(refreshResult),
+    localPaths,
+    nextStep:
+      localPaths.length > 0
+        ? "Ask AI to edit one of the localPaths directly."
+        : "No local path found in manifest yet. Run syncrona refresh again and retry.",
+    isFailure:
+      !createOk ||
+      badPayload !== null ||
+      (refreshResult !== null && refreshResult.exitCode !== 0),
+  };
+}
+
+// DX17: kept as the narrow "which directory?" question for callers that only need
+// that. The sync.config.js parsing itself lives in workspaceLayout.ts, which reads
+// the `flat` flag in the same pass — anything that builds a record FILE path must
+// go through that seam instead, or it will silently guess the wrong layout.
+export function getSourceDirectory(projectDir: string = PROJECT_DIR): string {
+  return readWorkspaceLayout(projectDir).sourceDirectory;
+}
+
+export function findScriptIncludeLocalPaths(
+  recordName: string,
+  projectDir: string = PROJECT_DIR
+): string[] {
+  const manifestPath = path.join(projectDir, "sync.manifest.json");
+  if (!existsSync(manifestPath)) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  } catch (_) {
+    return [];
+  }
+
+  const root = asRecord(parsed);
+  const tables = asRecord(root.tables);
+  const sysScriptInclude = asRecord(tables.sys_script_include);
+  const records = asRecord(sysScriptInclude.records);
+  const layout = readWorkspaceLayout(projectDir);
+
+  const paths: string[] = [];
+  for (const key of Object.keys(records)) {
+    const rec = asRecord(records[key]);
+    const recName = typeof rec.name === "string" ? rec.name : "";
+    if (recName !== recordName) {
+      continue;
+    }
+
+    const files = Array.isArray(rec.files) ? rec.files : [];
+    for (const fileRaw of files) {
+      const file = asRecord(fileRaw);
+      const fileName = typeof file.name === "string" ? file.name : "script";
+      const fileType = typeof file.type === "string" ? file.type : "js";
+      paths.push(
+        recordFieldFilePath(
+          projectDir,
+          layout,
+          "sys_script_include",
+          recName,
+          fileName,
+          fileType
+        )
+      );
+    }
+  }
+
+  return paths;
+}
+
+export async function executeMcpToolIntegration(
+  toolName: string,
+  args: Record<string, unknown>,
+  opts?: {
+    timeoutMs?: number;
+    dryRun?: boolean;
+    correlationId?: string;
+    preflight?: Record<string, unknown>;
+    sessionContext?: Record<string, unknown>;
+    remoteExecutor?: (
+      script: string,
+      timeoutMs: number,
+      endpointPath?: string
+    ) => Promise<{ status: number; data: unknown; text: string; usedEndpoint: string }>;
+  }
+): Promise<Record<string, unknown>> {
+  const dryRun = opts?.dryRun === true;
+  const timeoutMs = normalizeTimeout(opts?.timeoutMs);
+  const startedAt = Date.now();
+  const correlationId =
+    typeof opts?.correlationId === "string" && opts.correlationId.trim()
+      ? opts.correlationId.trim()
+      : resolveCorrelationId(args, startedAt);
+
+  const toIntegrationResult = (response: {
+    isError: boolean;
+    content: Array<{ type: string; text: string }>;
+  }): Record<string, unknown> => {
+    const text = Array.isArray(response.content) && response.content.length > 0
+      ? String(asRecord(response.content[0]).text || "")
+      : "";
+
+    if (!text.trim()) {
+      return {
+        isError: response.isError,
+        payload: {},
+      };
+    }
+
+    try {
+      const parsedRaw = JSON.parse(text);
+      if (!parsedRaw || typeof parsedRaw !== "object" || Array.isArray(parsedRaw)) {
+        return {
+          isError: response.isError,
+          payload: {
+            value: parsedRaw,
+            correlationId,
+          },
+        };
+      }
+      const parsed = parsedRaw as Record<string, unknown>;
+      if (!(typeof parsed.correlationId === "string" && parsed.correlationId.trim())) {
+        parsed.correlationId = correlationId;
+      }
+      return {
+        isError: response.isError,
+        payload: parsed,
+      };
+    } catch (_) {
+      return {
+        isError: response.isError,
+        payload: { message: text, correlationId },
+      };
+    }
+  };
+
+  const integrationResolveScopeCode = async (scopeArg: string): Promise<string> => {
+    if (scopeArg.trim().length > 0) {
+      return scopeArg.trim();
+    }
+    return "unknown_scope";
+  };
+
+  const scopeKnowledgeToolResponse = await handleScopeKnowledgeTool(toolName, args, {
+    timeoutMs,
+    dryRun,
+    resolveScopeCode: (scopeArg) => integrationResolveScopeCode(scopeArg),
+    hydrateScopeKnowledgeInputs,
+    safeGetSessionContext: async () => opts?.sessionContext || safeGetSessionContext(timeoutMs),
+    asRecord,
+    toGraphFromUnknown,
+    writeJsonAndMarkdown: (paths, index, markdown) => {
+      mkdirSync(paths.dir, { recursive: true });
+      writeFileWithStableBackup(paths.jsonPath, `${JSON.stringify(index, null, 2)}\n`);
+      writeFileWithStableBackup(paths.markdownPath, markdown);
+    },
+    writeTableDocs: (scopeCode, docs) => {
+      const writtenPaths: string[] = [];
+      for (const doc of docs) {
+        const targetPath = getScopeTableDocPath(scopeCode, doc.tableName);
+        mkdirSync(path.dirname(targetPath), { recursive: true });
+        writeFileWithStableBackup(targetPath, doc.markdown);
+        writtenPaths.push(targetPath);
+      }
+      return writtenPaths.sort((a, b) => a.localeCompare(b));
+    },
+    writeScopeDocsBundle: (scopeCode, files) => {
+      const docsRoot = getScopeDocsPaths(scopeCode);
+      const writtenPaths: string[] = [];
+      for (const file of files) {
+        // relativePath is model-supplied; keep every write inside the bundle.
+        const targetPath = resolveContainedPath(docsRoot.dir, file.relativePath);
+        mkdirSync(path.dirname(targetPath), { recursive: true });
+        writeFileWithStableBackup(targetPath, file.content);
+        writtenPaths.push(targetPath);
+      }
+      return writtenPaths.sort((a, b) => a.localeCompare(b));
+    },
+  });
+  if (scopeKnowledgeToolResponse) {
+    return toIntegrationResult(scopeKnowledgeToolResponse);
+  }
+
+  const relationOnboardingToolResponse = await handleRelationOnboardingTool(toolName, args, {
+    timeoutMs,
+    projectDir: PROJECT_DIR,
+    guardrailConfigFile: GUARDRAIL_CONFIG_FILE,
+    resolveScopeCode: (scopeArg) => integrationResolveScopeCode(scopeArg),
+    hydrateScopeKnowledgeInputs,
+    toGraphFromUnknown,
+    classifyRelationVisibility,
+    existsSync,
+    joinPath: path.join,
+  });
+  if (relationOnboardingToolResponse) {
+    return toIntegrationResult(relationOnboardingToolResponse);
+  }
+
+  const workflowToolResponse = await handleWorkflowTool(toolName, args, {
+    timeoutMs,
+    startedAt: Date.now(),
+    // SEC-6 follow-up (REV-150): the integration entry point honours dryRun for every
+    // other module, so the workflow module must receive it here too — otherwise the
+    // same "dry run that applies for real" hole reopens through this caller.
+    dryRun,
+    makeDryRunAuditResponse: (innerToolName, innerArgs, details) =>
+      makeDryRunAuditResponse(innerToolName, innerArgs, details, correlationId),
+    parseUnifiedTaskType,
+    isDeepAnalysisSatisfied,
+    buildPreflightReport: async (resolvedTimeoutMs) => {
+      if (opts?.preflight) {
+        return opts.preflight;
+      }
+      return buildPreflightReport(resolvedTimeoutMs);
+    },
+    asRecord,
+    toGraphFromUnknown,
+    safeGetSessionContext: async () => opts?.sessionContext || safeGetSessionContext(timeoutMs),
+    toStringField,
+    writeJsonAndMarkdown: (paths, index, markdown) => {
+      mkdirSync(paths.dir, { recursive: true });
+      writeFileWithStableBackup(paths.jsonPath, `${JSON.stringify(index, null, 2)}\n`);
+      writeFileWithStableBackup(paths.markdownPath, markdown);
+    },
+    runRemoteScript: (script, resolvedTimeoutMs, endpointPath) =>
+      opts?.remoteExecutor
+        ? opts.remoteExecutor(script, resolvedTimeoutMs, endpointPath)
+        : runBackgroundScript(script, resolvedTimeoutMs, endpointPath, PROJECT_DIR),
+    auditMutatingTool: (innerToolName, innerArgs, outcome, durationMs) =>
+      auditMutatingTool(innerToolName, innerArgs, outcome, durationMs, correlationId),
+  });
+  if (workflowToolResponse) {
+    return toIntegrationResult(workflowToolResponse);
+  }
+
+  return {
+    isError: true,
+    payload: {
+      error: `Unsupported tool in integration helper: ${toolName}`,
+      correlationId,
+    },
+  };
+}

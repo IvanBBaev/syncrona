@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_list table="x_snc_bprobe_sub" parent="" relationship="0123456789abcdef0123456789abcdef" sys_domain="global" view="x_snc_bprobe_detailed">
+    <sys_ui_list action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>c262350a8e4e4fe5b70d88954ed83d20</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <view name="x_snc_bprobe_detailed">e44dd44c7d824eb6a255e5bfd2a56937</view>
+      <name>x_snc_bprobe_sub</name>
+      <relationship>0123456789abcdef0123456789abcdef</relationship>
+      <sys_domain>global</sys_domain>
+    </sys_ui_list>
+  </sys_ui_list>
+</record_update>

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_model_user_criteria_hide_mtom">
+  <sttrm_model_user_criteria_hide_mtom action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>26db75d2666c4ee98d3f4f3200fa7072</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_model_user_criteria_hide_mtom_26db75d2666c4ee98d3f4f3200fa7072</sys_update_name>
+    <sttrm_model>241e9bfb2ce143139130a28d0c8eeb89</sttrm_model>
+    <user_criteria>0c441abbc6112275000025157c651c89</user_criteria>
+  </sttrm_model_user_criteria_hide_mtom>
+</record_update>

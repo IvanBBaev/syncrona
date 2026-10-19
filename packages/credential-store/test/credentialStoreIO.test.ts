@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { mkdirSync, mkdtempSync, promises as fsp, readdirSync, rmSync, writeFileSync } from "fs";
+import os from "os";
+import path from "path";
+import {
+  saveCredentials,
+  loadCredentials,
+  listInstances,
+  removeCredentials,
+  removeAllCredentials,
+  setActiveInstance,
+  getActiveInstance,
+  resolveCredentialsFromStore,
+  getActiveInstanceSync,
+  loadCredentialsSync,
+  getSyncronaDir,
+} from "../src/index";
+
+// CRITICAL: the store resolves its directory from os.homedir(), which on macOS
+// ignores $HOME. Mock it to a temp dir so these tests NEVER touch the real
+// ~/.syncrona. Pin an explicit key so the round-trip is deterministic.
+let tmpHome: string;
+let homedirSpy: jest.SpyInstance;
+
+beforeAll(() => {
+  process.env.SYNCRONA_STORE_KEY = "a".repeat(64); // 32-byte hex key
+});
+
+beforeEach(() => {
+  tmpHome = mkdtempSync(path.join(os.tmpdir(), "sync-store-"));
+  homedirSpy = jest.spyOn(os, "homedir").mockReturnValue(tmpHome);
+});
+
+afterEach(() => {
+  homedirSpy.mockRestore();
+  rmSync(tmpHome, { recursive: true, force: true });
+});
+
+const INSTANCE = "dev12345.service-now.com";
+
+test("saveCredentials -> loadCredentials round-trips the stored secret", async () => {
+  await saveCredentials(INSTANCE, "admin", "s3cret");
+  const loaded = await loadCredentials(INSTANCE);
+  expect(loaded).toEqual({ instance: INSTANCE, user: "admin", password: "s3cret" });
+});
+
+test("loadCredentials throws a helpful error when the instance is unknown", async () => {
+  await expect(loadCredentials("nope.service-now.com")).rejects.toThrow(
+    /No credentials found/
+  );
+});
+
+test("listInstances reflects saved and removed instances", async () => {
+  expect(await listInstances()).toEqual([]);
+  await saveCredentials(INSTANCE, "admin", "x");
+  await saveCredentials("prod.service-now.com", "admin", "y");
+  expect((await listInstances()).sort()).toEqual(
+    ["dev12345.service-now.com", "prod.service-now.com"].sort()
+  );
+  await removeCredentials(INSTANCE);
+  expect(await listInstances()).toEqual(["prod.service-now.com"]);
+});
+
+test("removeAllCredentials clears the store and reports the count", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  expect(await removeAllCredentials()).toBe(2);
+  expect(await listInstances()).toEqual([]);
+});
+
+test("listInstances skips an undecodable filename and still lists the valid instances", async () => {
+  await saveCredentials(INSTANCE, "admin", "x");
+  await saveCredentials("prod.service-now.com", "admin", "y");
+  // Seed a deliberately malformed filename: "%zz" is not valid percent-encoding,
+  // so filenameToInstance's decodeURIComponent throws on it. A single bad name
+  // must not abort the loop and hide the successfully-decoded instances.
+  const badFile = path.join(getSyncronaDir(), "credentials", "%zz.enc");
+  writeFileSync(badFile, "garbage", "utf8");
+
+  expect((await listInstances()).sort()).toEqual(
+    ["dev12345.service-now.com", "prod.service-now.com"].sort()
+  );
+});
+
+test("removeAllCredentials removes the valid instances despite an undecodable filename", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const badFile = path.join(getSyncronaDir(), "credentials", "%zz.enc");
+  writeFileSync(badFile, "garbage", "utf8");
+
+  // The bad file used to abort listInstances, making removeAllCredentials a silent
+  // no-op; the valid instances must now be removed and reported.
+  expect(await removeAllCredentials()).toBe(2);
+  expect(await listInstances()).toEqual([]);
+});
+
+test("removeCredentials reports whether a file was actually deleted", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  expect(await removeCredentials(INSTANCE)).toBe(true);
+  // Already gone is not a failure — it just deleted nothing.
+  expect(await removeCredentials(INSTANCE)).toBe(false);
+});
+
+test("removeCredentials surfaces a non-ENOENT unlink failure instead of swallowing it", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+  // The secret is still on disk, so reporting a clean removal would be a lie.
+  await expect(removeCredentials(INSTANCE)).rejects.toThrow(/permission denied/);
+  unlinkSpy.mockRestore();
+});
+
+test("removeAllCredentials reports the files it could not delete instead of over-counting", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
+
+  // It used to return instances.length (2) while both encrypted files remained,
+  // so `logout --all` announced a purge that never happened.
+  await expect(removeAllCredentials()).rejects.toThrow(
+    /Removed credentials for 0 instance\(s\), but 2 could not be removed/
+  );
+  unlinkSpy.mockRestore();
+  expect((await listInstances()).sort()).toEqual(
+    ["dev12345.service-now.com", "prod.service-now.com"].sort()
+  );
+});
+
+test("removeAllCredentials counts only real deletions when one file vanishes mid-run", async () => {
+  await saveCredentials(INSTANCE, "a", "1");
+  await saveCredentials("prod.service-now.com", "b", "2");
+  const realUnlink = fsp.unlink.bind(fsp);
+  const unlinkSpy = jest
+    .spyOn(fsp, "unlink")
+    .mockImplementation(async (target) => {
+      if (String(target).includes("prod")) {
+        // Concurrently removed by another process: nothing left to delete.
+        throw Object.assign(new Error("no such file"), { code: "ENOENT" });
+      }
+      return realUnlink(target);
+    });
+
+  expect(await removeAllCredentials()).toBe(1);
+  unlinkSpy.mockRestore();
+});
+
+test("getActiveInstance survives a valid-JSON but non-object config.json", async () => {
+  // JSON.parse succeeds for each of these, so loadGlobalConfig's catch never
+  // fires and the bad value used to reach the callers' property access.
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  for (const body of ["null", '"hello"', "42", "[]", "true"]) {
+    writeFileSync(path.join(getSyncronaDir(), "config.json"), body, "utf8");
+    await expect(getActiveInstance()).resolves.toBeNull();
+    // The sync twin has always survived these — the async path must match.
+    expect(getActiveInstanceSync()).toBeNull();
+  }
+});
+
+test("getActiveInstance trims the stored value and maps blank to null, like the sync reader", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw");
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  const configPath = path.join(getSyncronaDir(), "config.json");
+
+  writeFileSync(configPath, JSON.stringify({ activeInstance: "  " }), "utf8");
+  await expect(getActiveInstance()).resolves.toBeNull();
+  expect(getActiveInstanceSync()).toBeNull();
+
+  writeFileSync(configPath, JSON.stringify({ activeInstance: ` ${INSTANCE} ` }), "utf8");
+  await expect(getActiveInstance()).resolves.toBe(INSTANCE);
+  expect(getActiveInstanceSync()).toBe(INSTANCE);
+  // The padded marker must still resolve the credentials the sync path finds.
+  expect((await resolveCredentialsFromStore())?.user).toBe("admin");
+});
+
+test("setActiveInstance repairs a non-object config.json instead of throwing", async () => {
+  mkdirSync(getSyncronaDir(), { recursive: true });
+  writeFileSync(path.join(getSyncronaDir(), "config.json"), "null", "utf8");
+  await expect(setActiveInstance(INSTANCE)).resolves.toBeUndefined();
+  // `[]` used to resolve but silently drop the property on JSON.stringify, so
+  // `syncrona use dev` reported success while nothing was persisted.
+  expect(await getActiveInstance()).toBe(INSTANCE);
+
+  writeFileSync(path.join(getSyncronaDir(), "config.json"), "[]", "utf8");
+  await setActiveInstance(INSTANCE);
+  expect(await getActiveInstance()).toBe(INSTANCE);
+});
+
+test("active instance can be set, read, and resolves credentials", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw");
+  expect(await getActiveInstance()).toBeNull();
+  await setActiveInstance(INSTANCE);
+  expect(await getActiveInstance()).toBe(INSTANCE);
+  // resolveCredentialsFromStore with no arg uses the active instance
+  expect(await resolveCredentialsFromStore()).toEqual({
+    instance: INSTANCE,
+    user: "admin",
+    password: "pw",
+  });
+});
+
+test("setActiveInstance writes config atomically and leaves no temp residue", async () => {
+  // Concurrent writers must not corrupt config.json; the temp+rename strategy
+  // means the directory never retains a half-written ".tmp" file afterwards.
+  await Promise.all([
+    setActiveInstance("a.service-now.com"),
+    setActiveInstance("b.service-now.com"),
+    setActiveInstance("c.service-now.com"),
+  ]);
+
+  const active = await getActiveInstance();
+  expect(["a.service-now.com", "b.service-now.com", "c.service-now.com"]).toContain(active);
+
+  const leftovers = readdirSync(getSyncronaDir()).filter((name) => name.endsWith(".tmp"));
+  expect(leftovers).toEqual([]);
+});
+
+test("resolveCredentialsFromStore returns null when nothing matches", async () => {
+  expect(await resolveCredentialsFromStore()).toBeNull();
+  expect(await resolveCredentialsFromStore("ghost.service-now.com")).toBeNull();
+});
+
+test("sync API mirrors the async reads", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw");
+  await setActiveInstance(INSTANCE);
+  expect(getActiveInstanceSync()).toBe(INSTANCE);
+  const synced = loadCredentialsSync(INSTANCE);
+  expect(synced).toMatchObject({ instance: INSTANCE, user: "admin", password: "pw" });
+});
+
+test("loadCredentialsSync returns null for an unknown instance", () => {
+  expect(loadCredentialsSync("missing.service-now.com")).toBeNull();
+});
+
+test("saveCredentials persists the richer multi-method record and omits blanks", async () => {
+  await saveCredentials(INSTANCE, "", "", {
+    authMethod: "oauth-jwt-bearer",
+    clientId: "cid",
+    clientSecret: "csecret",
+    jwtKeyPath: "/keys/sn.pem",
+    jwtKid: "kid-1",
+    clientCertPath: "/certs/client.pem",
+  });
+  const loaded = await loadCredentials(INSTANCE);
+  // Provided fields round-trip; absent optionals (apiKey, jwtIss, …) are omitted
+  // so the record stays minimal. Cert/key are stored by PATH only.
+  expect(loaded).toEqual({
+    instance: INSTANCE,
+    user: "",
+    password: "",
+    authMethod: "oauth-jwt-bearer",
+    clientId: "cid",
+    clientSecret: "csecret",
+    jwtKeyPath: "/keys/sn.pem",
+    jwtKid: "kid-1",
+    clientCertPath: "/certs/client.pem",
+  });
+});
+
+test("saveCredentials round-trips an api-key record with a header override", async () => {
+  await saveCredentials(INSTANCE, "", "", {
+    authMethod: "api-key",
+    apiKey: "KEY-123",
+    apiKeyHeader: "x-custom-key",
+  });
+  expect(await loadCredentials(INSTANCE)).toEqual({
+    instance: INSTANCE,
+    user: "",
+    password: "",
+    authMethod: "api-key",
+    apiKey: "KEY-123",
+    apiKeyHeader: "x-custom-key",
+  });
+});
+
+test("saveCredentials drops an unrecognized authMethod so it can be re-inferred", async () => {
+  await saveCredentials(INSTANCE, "admin", "pw", { authMethod: "bogus" as never });
+  // A value outside the StoredAuthMethod union is dropped rather than persisted,
+  // leaving a clean legacy-shaped record.
+  expect(await loadCredentials(INSTANCE)).toEqual({
+    instance: INSTANCE,
+    user: "admin",
+    password: "pw",
+  });
+});
+
+// POSIX permission bits are not meaningful on Windows — skip the mode assertions there.
+const posixIt = process.platform === "win32" ? test.skip : test;
+
+posixIt("saveCredentials tightens a pre-existing world-readable credential file to 0600", async () => {
+  // A file created by an older release / a backup restore with 0644 must not stay
+  // readable by other users after a re-login: the old in-place writeFile only
+  // applied `mode` on create, so the existing 0644 survived every save.
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const file = path.join(credDir, readdirSync(credDir).find((f) => f.endsWith(".enc"))!);
+  await fsp.chmod(file, 0o644);
+  await saveCredentials(INSTANCE, "admin", "new");
+  expect((await fsp.stat(file)).mode & 0o777).toBe(0o600);
+  expect((await loadCredentials(INSTANCE)).password).toBe("new");
+});
+
+test("saveCredentials writes via a temp file + rename and leaves no temp file behind", async () => {
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const [name] = readdirSync(credDir);
+  const inodeBefore = (await fsp.stat(path.join(credDir, name))).ino;
+  await saveCredentials(INSTANCE, "admin", "new");
+  // A rename-over replaces the inode; an in-place truncate keeps it.
+  expect((await fsp.stat(path.join(credDir, name))).ino).not.toBe(inodeBefore);
+  expect(readdirSync(credDir)).toEqual([name]);
+});
+
+test("a failed credential write rethrows and removes its temp file", async () => {
+  await saveCredentials(INSTANCE, "admin", "old");
+  const credDir = path.join(getSyncronaDir(), "credentials");
+  const [name] = readdirSync(credDir);
+  // Replace the credential file with a non-empty directory so the final rename
+  // over it fails after the temp file was already written.
+  rmSync(path.join(credDir, name));
+  mkdirSync(path.join(credDir, name, "occupied"), { recursive: true });
+  await expect(saveCredentials(INSTANCE, "admin", "new")).rejects.toThrow();
+  expect(readdirSync(credDir)).toEqual([name]);
+});

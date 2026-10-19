@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_version">
+  <sys_ws_version action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c766d9dec6bf4cae8945c0905b51df37</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_version_c766d9dec6bf4cae8945c0905b51df37</sys_update_name>
+    <active>true</active>
+    <deprecated>false</deprecated>
+    <is_default>false</is_default>
+    <short_description>First</short_description>
+    <version>1</version>
+    <version_id>v1</version_id>
+    <web_service_definition>d3617245013c4e83bd60ed56ae312b91</web_service_definition>
+  </sys_ws_version>
+</record_update>

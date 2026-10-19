@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_page">
+  <sys_ui_page action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6b545bed88c547039fe0a8aa5c18bd0d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_page_6b545bed88c547039fe0a8aa5c18bd0d</sys_update_name>
+    <category>general</category>
+    <client_script><![CDATA[function onClick() { alert("hi"); }]]></client_script>
+    <description>A full page</description>
+    <direct>true</direct>
+    <endpoint>x_snc_bprobe_full.do</endpoint>
+    <html><![CDATA[<?xml version="1.0" encoding="utf-8"?>
+<j:jelly trim="false" xmlns:j="jelly:core" xmlns:g="glide" xmlns:j2="null" xmlns:g2="null">
+  <g:evaluate var="jvar_count">var n = 1 &lt; 2; n;</g:evaluate>
+  <!-- a comment - - here -->
+  <div class="a" id="b" data-x="1 &amp; 2">Hello $[AMP]nbsp; ${jvar_count}</div>
+  <br></br>
+  <script>if (a &lt; b &amp;&amp; c < d) { x(); }</script>
+  <style>a > b { color: red; }</style>
+  <textarea name="t">plain text</textarea>
+  <span>7</span>
+  <span>1.5</span>
+</j:jelly>]]></html>
+    <name>full</name>
+    <processing_script><![CDATA[gs.info("processed");]]></processing_script>
+    <sys_name>full</sys_name>
+  </sys_ui_page>
+</record_update>

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_version">
+  <sn_aia_version action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>74ef5c5d5c984394abf21da6d6f207df</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_version_74ef5c5d5c984394abf21da6d6f207df</sys_update_name>
+    <condition/>
+    <instructions>Do things.</instructions>
+    <state>published</state>
+    <sys_domain>global</sys_domain>
+    <target_id>cd65f04152944317a4d531140b8ad539</target_id>
+    <target_table>sn_aia_agent</target_table>
+    <version_name>V1</version_name>
+    <version_number>1</version_number>
+  </sn_aia_version>
+</record_update>

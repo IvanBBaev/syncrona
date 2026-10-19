@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_step">
+  <sys_atf_step action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4a444a3d2e2e4cee84fbec6a56904d61</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <active>true</active>
+    <description/>
+    <display_name>Impersonate</display_name>
+    <notes/>
+    <order>2</order>
+    <step_config>071ee5b253331200040729cac2dc348d</step_config>
+    <table/>
+    <test>61a3c5f832594d81a97e269197542477</test>
+    <timeout/>
+    <warning_message/>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_step_4a444a3d2e2e4cee84fbec6a56904d61</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_atf_step>
+  <sys_variable_value action="delete_multiple" query="document_key=4a444a3d2e2e4cee84fbec6a56904d61"/>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fbf06bf418234d29926fb088622c6d43</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>4a444a3d2e2e4cee84fbec6a56904d61</document_key>
+    <value>d3d29aae5b5d4009a5718a7216a6b147</value>
+    <variable>586e2c4253e0220002c6435723dc3415</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_fbf06bf418234d29926fb088622c6d43</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+</record_update>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_documentation">
+  <sys_documentation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c264c0b5bc29481086e50215f658c192</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_documentation_x_snc_bprobe_ticket_detail_en</sys_update_name>
+    <element>detail</element>
+    <help/>
+    <hint/>
+    <label>Detail</label>
+    <language>en</language>
+    <name>x_snc_bprobe_ticket</name>
+    <plural>Details</plural>
+    <url/>
+    <url_target/>
+  </sys_documentation>
+</record_update>

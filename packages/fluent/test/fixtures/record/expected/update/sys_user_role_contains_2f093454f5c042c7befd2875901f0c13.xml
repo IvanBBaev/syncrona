@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_role_contains">
+  <sys_user_role_contains action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2f093454f5c042c7befd2875901f0c13</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_role_contains_2f093454f5c042c7befd2875901f0c13</sys_update_name>
+    <contains name="itil">b0eeab4ab4674c5299db0362212fdbef</contains>
+    <role name="x_snc_bprobe.via_record">79e35298f74f4470b694cb03fe4af2f9</role>
+  </sys_user_role_contains>
+</record_update>

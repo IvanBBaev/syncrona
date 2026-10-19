@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<database>
+  <element name="x_snc_bprobe_child" type="collection" label="Bprobe Child" extends="task" is_extendable="false" text_index="false" read_only="false" audit="false" access="public" caller_access="0" scriptable_table="false" attributes="">
+    <element name="weight" type="integer" active="true" array="false" audit="false" unique="false" label="Weight" mandatory="false" read_only="true" read_only_option="instance_configured" choice="0" display="false" function_field="false" attributes="edge_encryption_enabled=true" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Weights"/>
+  </element>
+</database>

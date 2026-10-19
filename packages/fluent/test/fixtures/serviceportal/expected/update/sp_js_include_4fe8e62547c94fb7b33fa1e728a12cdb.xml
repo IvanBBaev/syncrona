@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sp_js_include">
+  <sp_js_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4fe8e62547c94fb7b33fa1e728a12cdb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_js_include_4fe8e62547c94fb7b33fa1e728a12cdb</sys_update_name>
+    <display_name>Chart.js</display_name>
+    <source>url</source>
+    <sys_ui_script/>
+    <url>https://cdn.example.com/chart.js</url>
+  </sp_js_include>
+</record_update>

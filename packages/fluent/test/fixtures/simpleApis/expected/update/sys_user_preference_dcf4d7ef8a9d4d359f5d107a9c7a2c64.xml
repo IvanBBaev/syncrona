@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_preference">
+  <sys_user_preference action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dcf4d7ef8a9d4d359f5d107a9c7a2c64</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_preference_dcf4d7ef8a9d4d359f5d107a9c7a2c64</sys_update_name>
+    <name>x_snc_bprobe.min</name>
+    <type>string</type>
+    <value>hello</value>
+  </sys_user_preference>
+</record_update>

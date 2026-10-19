@@ -1,0 +1,420 @@
+# SyncroNow AI MCP Server
+
+<!-- badges:start -->
+| [![npm](https://img.shields.io/npm/v/@syncrona/mcp-server?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncrona/mcp-server) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+|:--:|:--:|:--:|:--:|:--:|
+<!-- badges:end -->
+
+MCP server package for automating SyncroNow AI + ServiceNow operational tasks from AI chat clients.
+
+## What it adds
+
+- SyncroNow AI command tools: status, refresh, build, push
+- ServiceNow table tools: query and create records
+- Background script execution through the platform Scripts - Background page (`sys.scripts.do`), no scoped app required
+- Workflow tool: create Script Include record and auto-refresh SyncroNow AI
+
+## Requirements
+
+- Node 22
+- ServiceNow credentials (`SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`) from any of
+  the supported sources, resolved in this order (first non-empty value wins,
+  mirroring the core CLI where project-local sources beat the global store):
+  1. process environment variables
+  2. `.syncrona-mcp/secrets.json` (or `SYNCRONA_SECRETS_FILE`)
+  3. `.env` in project root
+  4. global credential store (`syncrona login`)
+
+  The resolved secrets are cached for 30 seconds per project directory.
+- SyncroNow AI CLI available in the target project (`npx syncrona ...`)
+
+## Build
+
+```bash
+npm run --workspace=@syncrona/mcp-server build
+```
+
+## Test
+
+```bash
+npm run --workspace=@syncrona/mcp-server test
+```
+
+## Run
+
+```bash
+node packages/mcp-server/dist/index.js
+```
+
+This server communicates over stdio (MCP standard transport).
+
+On startup, MCP now auto-pulls all ServiceNow scoped apps (`x_*`) into local workspace folders under `packages/<scope>/`.
+For each discovered scope it creates/updates:
+
+- `packages/<scope>/sync.config.js`
+- `packages/<scope>/src/**` (downloaded record files)
+- `packages/<scope>/sync.manifest.json`
+
+To disable this startup auto-sync, set:
+
+- `SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES=false`
+
+Optional HTTP health endpoint can be enabled with environment variables:
+
+- `SYNCRONA_HEALTH_HTTP_PORT` (required to enable endpoint)
+- `SYNCRONA_HEALTH_HTTP_HOST` (optional, default: `127.0.0.1`)
+- `SYNCRONA_HEALTH_HTTP_PATH` (optional, default: `/healthz`)
+
+## Logging
+
+The server writes structured diagnostics to **stderr** only (stdout is reserved
+for the JSON-RPC protocol stream). Each tool call is logged with its
+`correlationId`, `tool`, and `durationMs`. Configure logging with:
+
+- `SYNCRONA_LOG_LEVEL` (optional, one of `debug` | `info` | `warn` | `error` | `silent`, default: `info`)
+- `SYNCRONA_LOG_FORMAT` (optional, `text` | `json`, default: `text`) — or pass the CLI flag `--log-format=json`
+
+Set `SYNCRONA_LOG_LEVEL=debug` to surface otherwise-swallowed diagnostics, such
+as failed secrets/`.env` loading and audit-log write failures.
+
+## Environment variables
+
+The server reads the following environment variables (all optional):
+
+| Variable              | Purpose                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SYNCRONA_ENV`        | Selects the active guardrail environment by name, overriding `policy.activeEnvironment` in the guardrails config (drives per-environment policy such as `allowFullNodeAccess` and preflight enforcement). Defaults to `default`. |
+| `SYNCRONA_LOG_LEVEL`  | Log verbosity: `debug` \| `info` \| `warn` \| `error` \| `silent` (default `info`). See [Logging](#logging).                                |
+| `SYNCRONA_LOG_FORMAT` | Log output format: `text` \| `json` (default `text`); equivalent to `--log-format=json`. See [Logging](#logging).                          |
+| `SYNCRONA_MCP_AUTO_PULL_ALL_SCOPES` | Set to `false` to disable the startup auto-pull of every `x_*` scoped app into `packages/<scope>/`. Enabled by default. See [Run](#run). |
+| `SYNCRONA_MCP_CREATE_TABLE_ALLOWLIST` | Comma-separated list of extra tables that `sn_create_record` may write to, on top of the default allowlist of scoped-app artifact tables. High-risk system tables (`sys_user`, `sys_user_has_role`, `sys_user_role`, `sys_user_group`, `sys_properties`, `cmdb_ci`) stay denied even if listed. |
+| `SYNCRONA_SECRETS_FILE` | Absolute path to the MCP secrets JSON file, overriding the default `.syncrona-mcp/secrets.json` lookup in the project directory.        |
+| `SYNCRONA_HEALTH_HTTP_PORT` | Port for the optional HTTP health endpoint. Setting it is what enables the endpoint; unset means no HTTP listener.                  |
+| `SYNCRONA_HEALTH_HTTP_HOST` | Bind address for the health endpoint (default `127.0.0.1`). Only read when the port is set.                                        |
+| `SYNCRONA_HEALTH_HTTP_PATH` | Request path for the health endpoint (default `/healthz`). Only read when the port is set.                                         |
+| `SN_MAX_RPS` | Lowers the 20 requests/second cap on ServiceNow calls to a whole number from 1 to 20. Read from this process's environment only (not the project `.env`); an out-of-range value fails every ServiceNow request with an error instead of running at full rate. |
+
+ServiceNow credentials (`SN_INSTANCE`, `SN_USER`, `SN_PASSWORD`) and Jira
+credentials (`JIRA_BASE_URL`, `JIRA_TOKEN`, `JIRA_EMAIL`, `JIRA_DEPLOYMENT`)
+**are** read from bare environment variables, and those take precedence over
+every other source. For ServiceNow the full order is process environment → MCP
+secrets file → project `.env` → encrypted CredentialStore, merged per key (see
+[Requirements](#requirements)). For Jira, a complete set of `JIRA_*` env vars
+wins over the stored profile, except when a profile is named explicitly. Env
+vars are convenient for CI; prefer `syncrona login` / `syncrona jira-login`
+for developer machines so secrets stay encrypted at rest.
+
+## Example MCP client config
+
+```json
+{
+  "mcpServers": {
+    "syncrona": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/syncrona_ai/packages/mcp-server/dist/index.js"
+      ],
+      "cwd": "/absolute/path/to/your-syncrona-project"
+    }
+  }
+}
+```
+
+## Workspace MCP config
+
+This repository also includes a ready-to-use config at [../../../.vscode/mcp.json](../../../.vscode/mcp.json).
+
+## Key tools
+
+- `sync_get_session_context`
+  - Returns current user session scope and update set
+- `sync_set_scope`
+  - Switches current user session to target scope code
+- `sync_list_scopes`
+  - Lists available scopes so you can choose the right one before switching
+- `sync_set_update_set`
+  - Switches current user session to target update set (optionally creates it)
+- `sync_list_update_sets`
+  - Lists available update sets so you can select by name or sys_id
+- `sync_prepare_session`
+  - One-call setup to ensure expected scope and update set before work starts
+- `sync_preflight_check`
+  - Validates current context against guardrail expectations
+- `sync_check_instance_capabilities`
+  - Probes the Table API, the current scope, the scope record and the background-script page before automation starts
+  - Uses current session scope by default (or explicit scope input)
+- `sn_query_records`
+  - Query table records with `sysparm_query`
+  - Optional grouped analysis with `analyzeField`
+- `sn_create_record`
+  - Creates table records with validated payloads
+- `sn_execute_background_script`
+  - Executes background scripts and returns output for analysis
+- `sync_create_script_include`
+  - Creates record in `sys_script_include`
+  - Optionally runs `syncrona refresh` so local file is downloaded
+- `sync_create_script_include_and_sync`
+  - Creates Script Include
+  - Runs `syncrona refresh`
+  - Returns candidate local file path(s) from manifest so AI can edit immediately
+- `sn_list_metadata_records`
+  - Inventory tool for key metadata families (BR, Client Script, ACL, Dictionary, UI Policy, Scripted REST)
+- `sn_get_metadata_record`
+  - Reads one metadata record by `sys_id` with normalized schema
+- `sn_update_metadata_record`
+  - Controlled metadata update tool with confirmation and dry-run gate
+- `sn_build_dependency_graph`
+  - Builds graph nodes/edges from metadata scripts, inferred references, and declared meta relations
+  - Returns cycle detection and hotspot summary
+- `sn_analyze_impact`
+  - Ranks downstream impact severity if a target node changes
+  - Returns blast-radius summary by node kind and severity
+- `sn_diff_dependency_graphs`
+  - Compares before/after graphs and returns deterministic added/removed nodes/edges
+- `sync_detect_drift`
+  - Compares local vs instance snapshots and returns drift summary + actions
+- `sync_validate_change_package`
+  - Detects missing dependencies before push
+- `sync_build_semantic_index` / `sync_search_semantic_index`
+  - Symbol-level local code indexing and lookup
+- `sn_analyze_script_architecture` / `sn_analyze_script_security` / `sn_analyze_script_performance`
+  - Static analysis packs with severity and remediation hints
+- `sn_analyze_script_full`
+  - Unified script analysis with weighted risk scoring and optional `suppressedIds`
+- `sync_symbol_cross_reference`
+  - Summarizes semantic symbol occurrences by file and count
+- `sn_autonomous_remediation_workflow`
+  - detect -> propose patch -> dry-run/apply -> validate flow with approval gate
+- `sync_health_check`
+  - Reliability metrics + diagnostics timeline
+  - Includes HTTP endpoint status when optional health endpoint is enabled
+- `sync_metrics_trend`
+  - Compares previous/current metric windows and returns latency + failure-ratio deltas
+- `sync_tool_contract_info`
+  - Returns tool-contract version, declared MCP tools, deterministic contract hash, and per-tool lifecycle metadata (`version`, `deprecated`, replacement hints)
+- `sync_list_recent_changes`
+  - Lists recent scope changes from `sys_update_xml` since a timestamp (default 24h), grouped by record
+- `sn_search_scripts`
+  - Full-text search across ServiceNow script tables (script includes, business rules, client/UI scripts, scripted REST, transform scripts) with excerpts
+- `sn_get_record_history`
+  - Field-level change history from `sys_audit` for a single record
+- `sync_generate_release_notes`
+  - Generates release notes from an Update Set's `sys_update_xml` records in markdown or json
+- `sync_run_atf_tests`
+  - Triggers ATF test/suite execution in the instance and polls `sys_atf_test_result` / `sys_atf_test_suite_result` for pass/fail results
+- `sync_cicd_run`
+  - Runs an ATF suite or test, or installs, publishes or rolls back an application, through the CI/CD REST API (`sn_cicd`) — the same requests as `syncrona cicd`; polls the progress tracker and returns `succeeded` / `failed` / `incomplete` with the CLI exit code (gated by `confirmDestructive`, supports `dryRun`); a `progressId` from an `incomplete` run resumes polling that tracker without dispatching new work
+- `sync_fluent_build`
+  - Builds a Fluent project (a directory with `now.config.json`, confined to the workspace) through the optional `@syncrona/fluent` package — the same build as `syncrona fluent build`, with `frozenKeys` / `errorOnConflict` / `skipClean`; returns errors, warnings, `dist/` output paths and the CLI exit code (0 succeeded, 2 failed, 1 incomplete), or `FLUENT_NOT_INSTALLED` / `FLUENT_SDK_MISSING` with an install hint (local build — mutating: writes `dist/` and runs the project's build code in-process; supports `dryRun`)
+- `sync_validate_before_push`
+  - Pre-push validation: runs security/architecture analysis on a scope's scripts, checks recent conflicting changes, reports ready or blocked per record
+- `sync_compare_instances`
+  - Compares a scope's script records between two stored instance profiles (for example dev vs prod) by name and content hash
+- `sync_export_update_set`
+  - Exports an Update Set as XML via the `export_update_set` processor and optionally writes it under `.syncrona-mcp/exports`
+- `sync_suggest_tests`
+  - Generates an ATF server-side test skeleton from a Script Include by analyzing its public methods, returning a ready-to-paste test script plus import instructions
+- `sync_diff_instance_vs_local`
+  - Compares local scoped files against the instance records for a table/scope and reports changed, added (local-only) and removed (instance-only) records with diff summaries and race-condition warnings
+- `sync_status` / `sync_refresh` / `sync_build` / `sync_push`
+  - Wrapper tools for common SyncroNow AI workspace command flows
+- `run_node_code`
+  - Executes local Node snippets in a child process — **disabled by default**: the call needs `confirmDestructive: true` *and* the guardrail policy must enable `allowFullNodeAccess` (default `false`), because in-process sandboxing of arbitrary Node code is not a real security boundary
+- `run_workspace_command`
+  - Runs a local command (for example `node`, `npm`, `npx`) in the workspace for automation tasks, with a bounded `timeoutMs`
+  - Blocks unsafe shell-interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk; confirmation is **default-deny** — only the bare commands `git`, `ls`, `cat`, `pwd`, `echo` and `syncrona` may run without `confirmDestructive: true` (and even those confirm for mutating `git` / `syncrona` subcommands); anything else, including any command given as a path such as `./git`, always requires it
+- `sn_render_analysis_markdown`
+  - Renders unified analysis report into deterministic markdown
+- `sync_unified_change_workflow`
+  - One-command flow with preflight, deep-analysis gate, approval gate, footprint and rollback checks
+  - Returns explicit `executionMode` to avoid confusion between mocked and remote execution
+- `sync_table_api_coverage_matrix`
+  - Returns current metadata/object coverage matrix via Table API
+- `sync_plan_minimal_footprint`
+  - Ranks where-to-modify targets by minimal footprint and confidence
+- `sync_ai_next_actions`
+  - Converts a natural-language objective into prioritized, tool-aware next action steps
+  - Includes recommended tool args and dry-run-first guidance for safer AI orchestration
+- `sync_generate_scope_knowledge`
+  - Generates scope knowledge JSON and Markdown artifacts
+- `sync_generate_scope_docs`
+  - Generates full scope docs bundle under `.syncrona-mcp/docs/{scope}/` including overview, dependencies, relationships, and per-object pages
+- `sync_validate_scope_knowledge`
+  - Validates scope knowledge JSON against required schema fields
+- `sync_scope_knowledge_auto_update`
+  - Trigger-based scope knowledge update contract (init/refresh/successful_change/drift)
+- `sync_generate_table_dependency_report`
+  - One-command table dependency report generation with deterministic output paths under `.syncrona-mcp/reports/`
+- `sync_analyze_scope_relations`
+  - Builds comprehensive table relation map for a scope (explicit dictionary links, hidden attribute hints, inferred workspace links)
+- `sync_onboarding_bootstrap`
+  - Returns onboarding checklist and readiness state
+- `jira_get_issue`
+  - Fetches rich context for the Jira issue you are working on (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, linked issues, fix versions, recent comments)
+  - Resolves the issue key from the argument or the current git branch name; supports Jira Cloud and Server/Data Center
+
+## Typical flow
+
+1. Run `sync_get_session_context`
+2. Option A: run `sync_set_scope` and `sync_set_update_set`
+3. Option B: run `sync_prepare_session` for one-call setup
+4. Run `sync_check_instance_capabilities`
+5. Ask AI to create Script Include through `sync_create_script_include_and_sync`
+6. Auto-refresh pulls the new include locally
+7. AI receives candidate local path(s) and can edit immediately
+8. Build and push using `syncrona build` and `syncrona push`
+
+## Safety note
+
+`run_workspace_command` blocks unsafe shell interpreter patterns (`bash -c`, `sh -c`, etc.) to reduce command-injection risk.
+
+All MCP tool handlers are wrapped with a top-level error boundary so failures return structured tool errors instead of crashing the server.
+
+**The safety policy is a guardrail, not a security boundary.** The workspace
+command filter is a deny-list (`rm`, `sudo`, shell interpreters with `-c`,
+shell metacharacters in arguments) and can be bypassed by interpreters or
+tools it does not list (`node -e`, `python -c`, `npx <pkg>` and similar).
+Likewise, the approval metadata accepted by workflow tools
+(`approvalId`/`approvers`) is recorded for audit purposes but is **not
+verified** against any external system. Run the server only with credentials
+and OS permissions you would trust the calling AI agent to hold directly.
+
+### Background script execution
+
+`sn_execute_background_script` runs the script through the platform's own
+Scripts - Background page (`/sys.scripts.do`), so no scoped application has to
+be installed on the instance. With Basic credentials the server signs in to a
+short-lived UI session (`login.do`), reads the form's CSRF token
+(`sysparm_ck`), posts the script in the `global` scope, returns the printed
+output, and signs out again. Every run is recorded by the instance in
+`sys_script_execution_history`. The account needs the `admin` role (and, on
+instances that enforce it, an elevated security_admin session); accounts that
+sign in only through SSO or MFA cannot open a UI session, and the tool then
+reports the login page instead of running anything. Pass `endpointPath` to
+POST `{ "script": "..." }` as JSON to your own REST endpoint instead.
+
+## Guardrails config
+
+Create `sync.mcp.guardrails.json` in project root:
+
+```json
+{
+  "enforcePreflightForMutations": true,
+  "expectedScope": "x_acme_app",
+  "expectedUpdateSetName": "AI Work",
+  "expectedUpdateSetSysId": ""
+}
+```
+
+When enforcement is enabled, mutating tools are blocked if preflight fails.
+
+The preflight reads the instance session (current scope and update set), so it
+is skipped for local mutating tools, which never call the instance:
+`sync_fluent_build` is exempt from `enforcePreflightForMutations` (top-level or
+per environment) and runs even when the instance is unreachable. It still goes
+through the tool policy and the mutating audit trail. To preflight it anyway,
+set `policy.tools.sync_fluent_build.requirePreflight: true`.
+
+## Dry-run support
+
+Mutating tools support `dryRun=true` and return planned actions without applying changes.
+
+## Runbook and governance
+
+- Operator runbook: `packages/mcp-server/docs/operator-runbook.md`
+- Troubleshooting playbook: `packages/mcp-server/docs/troubleshooting-playbook.md`
+- Release governance checklist: `packages/mcp-server/docs/release-governance.md`
+
+## AI context pack
+
+For long-running AI sessions, use the context pack in `packages/mcp-server/docs/ai-context/`:
+
+- `README.md` (entry point)
+- `architecture.md`
+- `workflow-and-safety.md`
+- `tools-catalog.md`
+- `testing-and-quality.md`
+- `backlog-and-roadmap.md`
+
+## Meta relation input examples
+
+You can enrich graph inputs with explicit meta relations:
+
+- `metaRelations`: `[{"type":"table","target":"task"},{"type":"include","target":"MyUtil"}]`
+- `affectsTables`: `['incident', 'task']`
+- `callsIncludes`: `['RiskHelper']`
+
+## Full analysis suppressions
+
+`sn_analyze_script_full` accepts optional `suppressedIds` so temporary or accepted risks can be tracked separately from active findings.
+
+It also accepts optional `policy`:
+
+```json
+{
+  "weights": { "high": 5, "medium": 3, "low": 1 },
+  "suppressions": [{ "id": "arch.logging.noise", "expiresAt": "2030-01-01T00:00:00.000Z" }]
+}
+```
+
+## Unified workflow example
+
+```json
+{
+  "task": "Update validation logic for incident handler",
+  "taskType": "hybrid",
+  "executionMode": "mocked",
+  "script": "gs.log('debug');",
+  "proposedChanges": [
+    { "filePath": "src/sys_script_include/IncidentHandler/script.js", "objectId": "script:IncidentHandler", "estimatedLines": 20 }
+  ],
+  "approval": { "approvalId": "APR-42", "approvers": ["alice", "bob"] },
+  "rollbackEvidence": {
+    "reason": "safety rollback coverage",
+    "impactedEntities": ["script:IncidentHandler"],
+    "revertSteps": ["restore previous script body"],
+    "validationPlan": "run analysis and smoke checks"
+  },
+  "apply": false
+}
+```
+
+## Scope knowledge generation example
+
+```json
+{
+  "scope": "x_acme_app",
+  "task": "optimize incident validation",
+  "entities": [
+    { "id": "script:IncidentHandler", "name": "IncidentHandler", "tableName": "incident" }
+  ],
+  "graph": {
+    "nodes": [
+      { "id": "script:IncidentHandler", "kind": "script", "label": "IncidentHandler" },
+      { "id": "table:incident", "kind": "table", "label": "incident" }
+    ],
+    "edges": [
+      { "from": "script:IncidentHandler", "to": "table:incident", "relation": "reads", "why": "GlideRecord reference" }
+    ]
+  },
+  "writeFiles": false,
+  "trigger": "manual"
+}
+```
+
+Set `writeFiles: true` only when you explicitly want to persist artifacts under `.syncrona-mcp/`.
+
+## One-command table dependency report example
+
+```json
+{
+  "scope": "x_acme_app",
+  "task": "table dependencies report",
+  "writeFiles": false
+}
+```
+
+Expected outputs:
+
+- `.syncrona-mcp/reports/<scope>-table-dependencies.md`
+- `.syncrona-mcp/reports/<scope>-table-dependencies.json`

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_form_sections form_id="dde62569b1904442be2b7cbdcb62a14b" sys_domain="global" table="x_snc_bprobe_task">
+    <sys_ui_form_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <position>0</position>
+      <sys_id>bc91ea74164a4f7f87650c3a013dc167</sys_id>
+      <sys_ui_form display_value="x_snc_bprobe_task" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">dde62569b1904442be2b7cbdcb62a14b</sys_ui_form>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+    </sys_ui_form_section>
+    <sys_ui_form_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <position>1</position>
+      <sys_id>e348d61c1a2a4a3aad1265ed6a92b966</sys_id>
+      <sys_ui_form display_value="x_snc_bprobe_task" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">dde62569b1904442be2b7cbdcb62a14b</sys_ui_form>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+    </sys_ui_form_section>
+    <sys_ui_form action="INSERT_OR_UPDATE" apply_defaults="true">
+      <name>x_snc_bprobe_task</name>
+      <roles>admin,itil</roles>
+      <sys_id>dde62569b1904442be2b7cbdcb62a14b</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user>abel.tuter</sys_user>
+      <view name="x_snc_bprobe_ops" display_value="Operations">672ee96223d6408bb98d39d3c1c7b2f3</view>
+      <view_name/>
+    </sys_ui_form>
+  </sys_ui_form_sections>
+</record_update>

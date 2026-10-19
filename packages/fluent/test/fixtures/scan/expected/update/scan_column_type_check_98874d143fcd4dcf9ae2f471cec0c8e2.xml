@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="scan_column_type_check">
+  <scan_column_type_check action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>98874d143fcd4dcf9ae2f471cec0c8e2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>scan_column_type_check_98874d143fcd4dcf9ae2f471cec0c8e2</sys_update_name>
+    <active>true</active>
+    <category>upgradability</category>
+    <column_type>html</column_type>
+    <description/>
+    <documentation_url/>
+    <finding_type>scan_finding</finding_type>
+    <name>Bare column check</name>
+    <priority>1</priority>
+    <resolution_details/>
+    <run_condition/>
+    <score_max>100</score_max>
+    <score_min>0</score_min>
+    <score_scale>1</score_scale>
+    <script/>
+    <short_description>Bare</short_description>
+  </scan_column_type_check>
+</record_update>

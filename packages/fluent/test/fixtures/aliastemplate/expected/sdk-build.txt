@@ -1,0 +1,7 @@
+
+> syncrona-build-probe@0.0.1 build
+> now-sdk build
+
+[now-sdk] Initiating the build process with SDK 4.13.6...
+[now-sdk] Building project from /Users/ivanbaev/Development/_temp/syncrona-wp4-alias-template-probe...
+[now-sdk] Build completed successfully

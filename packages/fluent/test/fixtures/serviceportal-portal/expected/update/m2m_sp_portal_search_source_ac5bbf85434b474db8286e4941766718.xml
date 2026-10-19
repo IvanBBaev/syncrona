@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_portal_search_source">
+  <m2m_sp_portal_search_source action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ac5bbf85434b474db8286e4941766718</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_portal_search_source_ac5bbf85434b474db8286e4941766718</sys_update_name>
+    <order>5</order>
+    <sp_portal>a2fbb68d123e4b4a9b35c1d3a7f38348</sp_portal>
+    <sp_search_source>22222222222222222222222222222222</sp_search_source>
+  </m2m_sp_portal_search_source>
+</record_update>

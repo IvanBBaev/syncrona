@@ -1,0 +1,666 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import { promises as fsp, readFileSync } from "fs";
+import { execFileSync } from "child_process";
+import os from "os";
+import path from "path";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
+import { resolveAuthMethod } from "@syncrona/sn-transport";
+import {
+  defaultClient,
+  resolveCredentials,
+  describeCredentialSource,
+  diagnoseCredentials,
+  type SNCredentials,
+} from "./snClient.js";
+import { listInstances } from "./auth.js";
+import { inspectCompositeLayout } from "./dataModelComposite.js";
+import { KNOWN_PLUGINS, OPTIONAL_PACKAGES, findKnownPlugin, renderPluginRule } from "./pluginCatalog.js";
+import {
+  setLogLevel,
+  activeStoreHealth,
+  getActiveStoreDecryptWarning,
+} from "./commandHelpers.js";
+
+type StatusSummary = {
+  ok: boolean;
+  instance: string;
+  user: string;
+  scope: string;
+  configPath: string;
+  sourcePath: string;
+  buildPath: string;
+  manifestPath: string;
+  credentialSource: string;
+  includeRules: number;
+  excludeRules: number;
+  envReady: boolean;
+  /** SDK-F2: the data-model layout, when the workspace could be inspected. */
+  dataModelLayout?: string;
+  connectivityOk: boolean;
+  errors: string[];
+};
+
+// DX9: how many include/exclude table rules are active in the merged config.
+function countConfigRules(): { includeRules: number; excludeRules: number } {
+  try {
+    const cfg = ConfigManager.getConfig();
+    return {
+      includeRules: Object.keys(cfg.includes ?? {}).length,
+      excludeRules: Object.keys(cfg.excludes ?? {}).length,
+    };
+  } catch (_) {
+    return { includeRules: 0, excludeRules: 0 };
+  }
+}
+
+type DoctorCheck = {
+  name: string;
+  ok: boolean;
+  details: string;
+};
+
+type PluginDiagnostic = {
+  name: string;
+  installed: boolean;
+  rulesMatched: number;
+};
+
+type PluginsSummary = {
+  totalRules: number;
+  totalPlugins: number;
+  plugins: PluginDiagnostic[];
+};
+
+function safeConfigPath(): string {
+  const configPath = ConfigManager.checkConfigPath();
+  return configPath ? configPath : "<not found>";
+}
+
+function safeConfigGet(getter: () => string): string {
+  try {
+    return getter();
+  } catch (_) {
+    return "<unresolved>";
+  }
+}
+
+// resolveAuthMethod() reports a gap as prose ("api-key requires SN_API_KEY."),
+// while status and doctor list bare variable names. Presentation only: the
+// verdict stays the resolver's, and an unrecognized shape falls back to the
+// whole issue so a gap can never be dropped from the report.
+function envVarFromIssue(issue: string): string {
+  const match = /requires ([A-Z][A-Z0-9_]*)\.?$/.exec(issue.trim());
+  return match ? match[1] : issue;
+}
+
+// Which environment variables the configuration still needs, for the auth method
+// it actually selects. Demanding SN_USER + SN_PASSWORD unconditionally would
+// report every method that identifies the caller by client id or API key — not
+// as a user — as unconfigured, and skip its connectivity check. Asking the
+// transport's own resolver (the one that decides how the client authenticates)
+// keeps the two from ever drifting apart.
+function missingCredentialEnvVars(credentials: SNCredentials): string[] {
+  const missing: string[] = [];
+  if (!credentials.instance) {
+    missing.push("SN_INSTANCE");
+  }
+  const resolved = resolveAuthMethod({
+    explicit: credentials.authMethod,
+    hasPassword: !!credentials.password,
+    hasClientId: !!credentials.clientId,
+    hasClientSecret: !!credentials.clientSecret,
+    hasApiKey: !!credentials.apiKey,
+    hasBearerToken: !!credentials.bearerToken,
+    hasJwtKey: !!credentials.jwtKey,
+  });
+  // Basic and the OAuth password grant authenticate AS a user, so they still
+  // need SN_USER; the resolver only validates the secret side of each method.
+  if (
+    (resolved.method === "basic" || resolved.method === "oauth-password") &&
+    !credentials.user
+  ) {
+    missing.push("SN_USER");
+  }
+  missing.push(...resolved.issues.map(envVarFromIssue));
+  return missing;
+}
+
+export async function statusCommand(
+  args: Sync.SharedCmdArgs & { debugCredentials?: boolean }
+): Promise<StatusSummary> {
+  setLogLevel(args);
+  const credentials = resolveCredentials(args.instanceProfile);
+  const instance = credentials.instance;
+  const user = credentials.user;
+  const missingEnvVars = missingCredentialEnvVars(credentials);
+  const envReady = missingEnvVars.length === 0;
+
+  let scope = "<unknown>";
+  let connectivityOk = false;
+  const errors: string[] = [];
+
+  if (envReady) {
+    try {
+      const client = defaultClient(args.instanceProfile);
+      await client.checkConnection(5000);
+      connectivityOk = true;
+      try {
+        const scopeObj = await client.getSessionScope();
+        scope = scopeObj.scope || "<unknown>";
+      } catch (e) {
+        // The connection check passed, so this is not a connection failure.
+        errors.push(
+          e instanceof Error && e.message.trim()
+            ? `Could not read the current session scope: ${e.message}`
+            : "Could not read the current session scope."
+        );
+      }
+    } catch (e) {
+      let message = "Unable to connect to ServiceNow instance.";
+      if (e instanceof Error && e.message.trim()) {
+        message = `Unable to connect to ServiceNow instance: ${e.message}`;
+      }
+      errors.push(message);
+    }
+  } else {
+    errors.push(`Missing environment variables: ${missingEnvVars.join(", ")}`);
+    // DX20b: if a prior login left a stored instance that no longer decrypts,
+    // that — not a truly empty config — is why creds look missing. Say so.
+    const decryptWarning = await getActiveStoreDecryptWarning();
+    if (decryptWarning) {
+      errors.push(decryptWarning);
+    }
+  }
+
+  // SDK-F2: name the data-model layout and report a workspace holding both
+  // layouts (or the one it does not use). Best-effort: a status run never fails
+  // because the workspace could not be inspected.
+  let dataModelLayout: string | undefined;
+  try {
+    const report = await inspectCompositeLayout(
+      ConfigManager.getManifest(),
+      ConfigManager.getConfig() as Sync.Config,
+      ConfigManager.getSourcePath()
+    );
+    dataModelLayout =
+      report.layout === "composite"
+        ? `composite (${report.documents.length} document(s))`
+        : report.layout;
+    errors.push(...report.conflicts.map((conflict) => `data model: ${conflict}`));
+  } catch (_e) {
+    dataModelLayout = undefined;
+  }
+
+  const summary: StatusSummary = {
+    ok: envReady && connectivityOk,
+    instance,
+    user,
+    scope,
+    configPath: safeConfigPath(),
+    sourcePath: safeConfigGet(() => ConfigManager.getSourcePath()),
+    buildPath: safeConfigGet(() => ConfigManager.getBuildPath()),
+    manifestPath: safeConfigGet(() => ConfigManager.getManifestPath()),
+    credentialSource: describeCredentialSource(args.instanceProfile),
+    ...countConfigRules(),
+    envReady,
+    connectivityOk,
+    errors,
+    ...(dataModelLayout !== undefined ? { dataModelLayout } : {}),
+  };
+
+  logger.info(`Instance: ${summary.instance || "<missing>"}`);
+  logger.info(`User: ${summary.user || "<missing>"}`);
+  logger.info(`Credentials from: ${summary.credentialSource}`);
+  logger.info(`Scope: ${summary.scope}`);
+  logger.info(`Config: ${summary.configPath}`);
+  logger.info(`Source: ${summary.sourcePath}`);
+  logger.info(`Build: ${summary.buildPath}`);
+  logger.info(`Manifest: ${summary.manifestPath}`);
+  logger.info(
+    `Config rules: ${summary.includeRules} include, ${summary.excludeRules} exclude (defaults + overrides)`
+  );
+  if (summary.dataModelLayout !== undefined) {
+    logger.info(`Data model layout: ${summary.dataModelLayout}`);
+  }
+  logger.info(`Environment Ready: ${summary.envReady ? "yes" : "no"}`);
+  logger.info(`Connectivity: ${summary.connectivityOk ? "ok" : "failed"}`);
+  for (const error of summary.errors) {
+    logger.warn(`status: ${error}`);
+  }
+
+  if (args.debugCredentials) {
+    await printCredentialDiagnostics(args.instanceProfile);
+  }
+
+  // Like doctor and check-env: the handler never inspects `ok`, so without this
+  // `syncrona status && next-step` went on with no credentials or no connection.
+  if (!summary.ok) {
+    process.exitCode = 1;
+  }
+
+  return summary;
+}
+
+// DX20: explain every credential source and which one the resolver picked, so
+// "why am I talking to the wrong instance?" is answerable without guessing.
+async function printCredentialDiagnostics(profile?: string): Promise<void> {
+  const diag = diagnoseCredentials(profile);
+  const yn = (present: boolean): string => (present ? "set" : "missing");
+
+  logger.info("--- credential diagnostics ---");
+  logger.info(
+    `Base env: SN_INSTANCE ${yn(diag.baseEnvPresent.instance)}, ` +
+      `SN_USER ${yn(diag.baseEnvPresent.user)}, SN_PASSWORD ${yn(diag.baseEnvPresent.password)}`
+  );
+  if (diag.profile && diag.profileEnvPresent) {
+    logger.info(
+      `Profile "${diag.profile}" env: SN_INSTANCE_${diag.profile} ${yn(diag.profileEnvPresent.instance)}, ` +
+        `SN_USER_${diag.profile} ${yn(diag.profileEnvPresent.user)}, ` +
+        `SN_PASSWORD_${diag.profile} ${yn(diag.profileEnvPresent.password)}`
+    );
+  }
+  try {
+    const stored = await listInstances();
+    const health = await activeStoreHealth();
+    logger.info(
+      `Credential store: ${stored.length} instance(s)${stored.length ? ` [${stored.join(", ")}]` : ""}` +
+        `${health.active ? `, active: ${health.active}` : ", no active instance"}`
+    );
+    if (health.active) {
+      if (health.decrypts) {
+        logger.info(`Active stored instance "${health.active}" decrypts: yes`);
+      } else {
+        logger.warn(
+          `Active stored instance "${health.active}" FAILED to decrypt: ${health.error}. ` +
+            "The credential file was likely encrypted on a different machine or user — re-run 'syncrona login'."
+        );
+      }
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.info(`Credential store: unreadable (${message})`);
+  }
+  logger.info(`Resolved source (winner): ${diag.source}`);
+  logger.info(
+    `Resolved instance: ${diag.resolvedInstance || "<missing>"}, user: ${diag.resolvedUser || "<missing>"}`
+  );
+}
+
+export async function doctorCommand(args: Sync.SharedCmdArgs): Promise<{ ok: boolean; checks: DoctorCheck[] }> {
+  setLogLevel(args);
+  const checks: DoctorCheck[] = [];
+
+  const configPath = ConfigManager.checkConfigPath();
+  checks.push({
+    name: "configPath",
+    ok: Boolean(configPath),
+    details: configPath
+      ? `Found config at ${configPath}`
+      : "No sync.config.js discovered from current working directory.",
+  });
+
+  try {
+    const sourcePath = ConfigManager.getSourcePath();
+    checks.push({
+      name: "sourcePath",
+      ok: true,
+      details: `Resolved source path: ${sourcePath}`,
+    });
+  } catch (_) {
+    checks.push({
+      name: "sourcePath",
+      ok: false,
+      details: "Unable to resolve source path from configuration.",
+    });
+  }
+
+  try {
+    const buildPath = ConfigManager.getBuildPath();
+    checks.push({
+      name: "buildPath",
+      ok: true,
+      details: `Resolved build path: ${buildPath}`,
+    });
+  } catch (_) {
+    checks.push({
+      name: "buildPath",
+      ok: false,
+      details: "Unable to resolve build path from configuration.",
+    });
+  }
+
+  const credentials = resolveCredentials(args.instanceProfile);
+  const missingEnvVars = missingCredentialEnvVars(credentials);
+  checks.push({
+    name: "env",
+    ok: missingEnvVars.length === 0,
+    details:
+      missingEnvVars.length === 0
+        ? "ServiceNow credentials are present in environment."
+        : `Missing environment variables: ${missingEnvVars.join(", ")}`,
+  });
+
+  if (missingEnvVars.length === 0) {
+    try {
+      const client = defaultClient(args.instanceProfile);
+      await client.checkConnection(5000);
+      checks.push({
+        name: "connectivity",
+        ok: true,
+        details: `Successfully connected to ${credentials.instance}.`,
+      });
+    } catch (_) {
+      checks.push({
+        name: "connectivity",
+        ok: false,
+        details:
+          "Unable to reach ServiceNow instance. Verify credentials and network connectivity.",
+      });
+    }
+  } else {
+    checks.push({
+      name: "connectivity",
+      ok: false,
+      details: "Skipped connectivity check because required environment variables are missing.",
+    });
+  }
+
+  for (const check of checks) {
+    if (check.ok) {
+      logger.success(`doctor:${check.name} OK - ${check.details}`);
+    } else {
+      logger.warn(`doctor:${check.name} FAIL - ${check.details}`);
+    }
+  }
+
+  const ok = checks.every((check) => check.ok);
+  if (ok) {
+    logger.success("Doctor checks passed. ✅");
+  } else {
+    logger.warn("Doctor checks found issues. See messages above.");
+    // Signal failure to the shell: the CLI handler forwards the return value but
+    // never inspects `ok`, so without this a failing `syncrona doctor` still exits
+    // 0 and CI/`&&` chains treat a broken environment as healthy.
+    process.exitCode = 1;
+  }
+
+  return { ok, checks };
+}
+
+export async function pluginsCommand(args: Sync.SharedCmdArgs): Promise<PluginsSummary> {
+  setLogLevel(args);
+
+  let rules: Sync.PluginRule[] = [];
+  try {
+    const config = ConfigManager.getConfig();
+    if (Array.isArray(config.rules)) {
+      rules = config.rules;
+    }
+  } catch (_) {
+    rules = [];
+  }
+
+  const pluginUseCount = new Map<string, number>();
+  for (const rule of rules) {
+    const plugins = Array.isArray(rule.plugins) ? rule.plugins : [];
+    for (const plugin of plugins) {
+      const name = typeof plugin?.name === "string" ? plugin.name.trim() : "";
+      if (!name) {
+        continue;
+      }
+      pluginUseCount.set(name, (pluginUseCount.get(name) || 0) + 1);
+    }
+  }
+
+  let rootDir = process.cwd();
+  try {
+    rootDir = ConfigManager.getRootDir();
+  } catch (_) {
+    rootDir = process.cwd();
+  }
+
+  const plugins: PluginDiagnostic[] = [];
+  for (const [name, rulesMatched] of [...pluginUseCount.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const candidatePath = path.join(rootDir, "node_modules", name);
+    let installed = false;
+    try {
+      await fsp.stat(candidatePath);
+      installed = true;
+    } catch (_) {
+      installed = false;
+    }
+
+    plugins.push({
+      name,
+      installed,
+      rulesMatched,
+    });
+  }
+
+  const summary: PluginsSummary = {
+    totalRules: rules.length,
+    totalPlugins: plugins.length,
+    plugins,
+  };
+
+  logger.info(`Plugin rules: ${summary.totalRules}`);
+  logger.info(`Configured plugins: ${summary.totalPlugins}`);
+
+  if (summary.totalPlugins === 0) {
+    logger.info("No plugins configured in sync.config.js rules.");
+  }
+
+  for (const plugin of summary.plugins) {
+    const status = plugin.installed ? "installed" : "missing";
+    logger.info(`plugin:${plugin.name} status=${status} rules=${plugin.rulesMatched}`);
+    if (!plugin.installed) {
+      logger.warn(`plugin:${plugin.name} is configured but not installed in node_modules.`);
+    }
+  }
+
+  // Optional command tiers: availability only, never a warning, and kept out of
+  // the summary so its shape (and the `plugins` JSON consumers) stay unchanged.
+  for (const optional of OPTIONAL_PACKAGES) {
+    let present = false;
+    try {
+      await fsp.stat(path.join(rootDir, "node_modules", optional.pkg));
+      present = true;
+    } catch (_) {
+      present = false;
+    }
+    logger.info(`optional:${optional.pkg} status=${present ? "installed" : "missing"} — ${optional.description}`);
+  }
+
+  return summary;
+}
+
+// DX9 / DX8: inspect and modify configuration.
+//   show-defaults — print the built-in defaults applied before a project's
+//                   sync.config.js overrides.
+//   add-plugin    — help wire a first-party build plugin: pass --plugin <name>
+//                   for its install command + a paste-ready rules snippet, or
+//                   omit it to list the available plugins and what's installed.
+export async function configCommand(
+  args: Sync.SharedCmdArgs & { action: string; plugin?: string }
+): Promise<void> {
+  setLogLevel(args);
+  const action = String(args.action || "").trim();
+  if (action === "show-defaults") {
+    const def = ConfigManager.getDefaultConfig();
+    logger.info("SyncroNow AI default configuration (applied before sync.config.js overrides):");
+    logger.info(`  sourceDirectory: ${def.sourceDirectory}`);
+    logger.info(`  buildDirectory:  ${def.buildDirectory}`);
+    logger.info(`  pushConcurrency: ${def.pushConcurrency}`);
+    logger.info(`  refreshInterval: ${def.refreshInterval}s`);
+    logger.info(`  dataModelLayout: ${def.dataModelLayout ?? "records"}`);
+    const includeTables = Object.keys(def.includes ?? {});
+    const excludeTables = Object.keys(def.excludes ?? {});
+    logger.info(`  default include table rules: ${includeTables.length}`);
+    for (const line of wrapTableNames(includeTables)) logger.info(line);
+    logger.info(`  default exclude table rules: ${excludeTables.length}`);
+    for (const line of wrapTableNames(excludeTables)) logger.info(line);
+    logger.info(
+      "Override any of these in sync.config.js (includes/excludes merge on top of these defaults) — see the README Configuration section."
+    );
+    return;
+  }
+  if (action === "add-plugin") {
+    await addPluginAction(args.plugin);
+    return;
+  }
+  logger.error(
+    `Unknown config action "${action}". Supported actions: show-defaults, add-plugin.`
+  );
+  process.exitCode = 1;
+}
+
+const TABLE_LIST_INDENT = "    ";
+const TABLE_LIST_WIDTH = 100;
+
+// Sorted table names as comma-separated lines of at most TABLE_LIST_WIDTH
+// columns (a single longer name still gets a line of its own).
+function wrapTableNames(names: string[]): string[] {
+  if (names.length === 0) return [`${TABLE_LIST_INDENT}(none)`];
+  const lines: string[] = [];
+  let current = "";
+  for (const name of [...names].sort()) {
+    const candidate = current ? `${current}, ${name}` : name;
+    if (current && TABLE_LIST_INDENT.length + candidate.length + 1 > TABLE_LIST_WIDTH) {
+      lines.push(`${TABLE_LIST_INDENT}${current},`);
+      current = name;
+    } else {
+      current = candidate;
+    }
+  }
+  lines.push(`${TABLE_LIST_INDENT}${current}`);
+  return lines;
+}
+
+// True when the named package exists under the project's node_modules.
+async function isPluginInstalled(pkg: string): Promise<boolean> {
+  let rootDir = process.cwd();
+  try {
+    rootDir = ConfigManager.getRootDir();
+  } catch (_) {
+    rootDir = process.cwd();
+  }
+  try {
+    await fsp.stat(path.join(rootDir, "node_modules", pkg));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function addPluginAction(pluginQuery?: string): Promise<void> {
+  const query = String(pluginQuery || "").trim();
+  if (!query) {
+    logger.info("Available SyncroNow AI build plugins (pass --plugin <name> to wire one):");
+    for (const plugin of KNOWN_PLUGINS) {
+      const installed = await isPluginInstalled(plugin.pkg);
+      logger.info(
+        `  ${plugin.short.padEnd(11)} ${installed ? "[installed]" : "[missing]   "} ${plugin.pkg} — ${plugin.description}`
+      );
+    }
+    logger.info("Example: syncrona config add-plugin --plugin typescript");
+    return;
+  }
+
+  const plugin = findKnownPlugin(query);
+  if (!plugin) {
+    logger.error(
+      `Unknown plugin "${query}". Available: ${KNOWN_PLUGINS.map((p) => p.short).join(", ")}.`
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const installed = await isPluginInstalled(plugin.pkg);
+  logger.info(`Plugin: ${plugin.pkg} — ${plugin.description}`);
+  if (installed) {
+    logger.info("Status: installed ✅");
+  } else {
+    logger.warn(`Status: not installed — run \`npm i -D ${plugin.pkg}\` first.`);
+  }
+  logger.info(renderPluginRule(plugin));
+  logger.info(
+    "Order rules most-specific-first; the first matching rule is the only one that runs."
+  );
+}
+
+type EnvCheck = { name: string; ok: boolean; details: string };
+
+function detectWsl(): boolean {
+  if (process.env.WSL_DISTRO_NAME) {
+    return true;
+  }
+  try {
+    return readFileSync("/proc/version", "utf-8").toLowerCase().includes("microsoft");
+  } catch (_) {
+    return false;
+  }
+}
+
+// DX1: verify the machine meets SyncroNow AI's prerequisites (Node 22+, supported
+// platform/WSL, Git) and print actionable next steps — needs no instance.
+export function checkEnvCommand(
+  args: Sync.SharedCmdArgs
+): { ok: boolean; checks: EnvCheck[] } {
+  setLogLevel(args);
+  const checks: EnvCheck[] = [];
+
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  checks.push({
+    name: "node",
+    ok: Number.isFinite(nodeMajor) && nodeMajor >= 22,
+    details:
+      nodeMajor >= 22
+        ? `Node.js ${process.versions.node} (>= 22 required)`
+        : `Node.js ${process.versions.node} is too old — SyncroNow AI requires Node 22+. Install via nvm: 'nvm install 22 && nvm use 22'.`,
+  });
+
+  if (process.platform === "win32") {
+    checks.push({
+      name: "platform",
+      ok: false,
+      details:
+        "Native Windows is not supported yet — run SyncroNow AI inside WSL (Ubuntu). See the README \"Windows users\" section.",
+    });
+  } else if (process.platform === "linux") {
+    const wsl = detectWsl();
+    checks.push({
+      name: "platform",
+      ok: true,
+      details: wsl ? `Linux / WSL (${process.env.WSL_DISTRO_NAME || "detected"})` : "Linux",
+    });
+  } else {
+    checks.push({ name: "platform", ok: true, details: `${process.platform} (${os.release()})` });
+  }
+
+  let gitOk = false;
+  let gitDetails = "git not found on PATH — install Git from https://git-scm.com.";
+  try {
+    gitDetails = execFileSync("git", ["--version"], { encoding: "utf-8" }).trim();
+    gitOk = true;
+  } catch (_) {
+    gitOk = false;
+  }
+  checks.push({ name: "git", ok: gitOk, details: gitDetails });
+
+  const ok = checks.every((c) => c.ok);
+  for (const c of checks) {
+    const line = `${c.ok ? "✓" : "✗"} ${c.name}: ${c.details}`;
+    if (c.ok) {
+      logger.info(line);
+    } else {
+      logger.warn(line);
+    }
+  }
+  logger.info(ok ? "Environment looks good ✅" : "Environment has issues — address the ✗ items above.");
+  if (!ok) {
+    process.exitCode = 1;
+  }
+  return { ok, checks };
+}

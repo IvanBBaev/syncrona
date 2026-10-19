@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_graphql_resolver">
+  <sys_graphql_resolver action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>bd3bc87faee143b9a1871a8ed044c617</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_graphql_resolver_bd3bc87faee143b9a1871a8ed044c617</sys_update_name>
+    <name>hello</name>
+    <schema>7e13ee453839472f89318d37f909bfa2</schema>
+    <script><![CDATA[(function process(env) {
+    return 'Hello ' + env.getArguments().name;
+})(env);
+]]></script>
+  </sys_graphql_resolver>
+</record_update>

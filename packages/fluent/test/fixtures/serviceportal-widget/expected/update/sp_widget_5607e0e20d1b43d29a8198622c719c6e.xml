@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<record_update table="sp_widget">
+  <sp_widget action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5607e0e20d1b43d29a8198622c719c6e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_widget_5607e0e20d1b43d29a8198622c719c6e</sys_update_name>
+    <category>custom</category>
+    <client_script>api.controller = function () {
+    /* widget controller */
+    var c = this;
+};
+</client_script>
+    <controller_as>c</controller_as>
+    <css/>
+    <data_table>sp_instance</data_table>
+    <demo_data>{"a":1}</demo_data>
+    <description/>
+    <docs/>
+    <field_list/>
+    <has_preview>false</has_preview>
+    <id/>
+    <internal>false</internal>
+    <link>function link(scope, element, attrs, controller) {
+}</link>
+    <name>Str Demo</name>
+    <option_schema/>
+    <public>false</public>
+    <roles/>
+    <script>(function () {
+    /* populate the 'data' object */
+    /* e.g., data.table = $sp.getValue('table'); */
+})();</script>
+    <servicenow>false</servicenow>
+    <template>&lt;div&gt;&lt;!-- your widget template --&gt;&lt;/div&gt;</template>
+  </sp_widget>
+</record_update>

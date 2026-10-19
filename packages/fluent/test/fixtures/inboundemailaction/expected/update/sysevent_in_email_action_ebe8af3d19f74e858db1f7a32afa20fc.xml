@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_in_email_action">
+  <sysevent_in_email_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ebe8af3d19f74e858db1f7a32afa20fc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_in_email_action_ebe8af3d19f74e858db1f7a32afa20fc</sys_update_name>
+    <action>record_action</action>
+    <active>true</active>
+    <assignment_operator>=</assignment_operator>
+    <condition_script><![CDATA[email.subject != ""]]></condition_script>
+    <description>Full</description>
+    <event_name>email.custom</event_name>
+    <filter_condition>subjectLIKEhelp^EQ</filter_condition>
+    <from>6816f79cc0a8016401c5a33be04be441</from>
+    <name>Create incident &amp; &lt;go&gt;</name>
+    <order>50</order>
+    <reply_email><![CDATA[<p>Thanks</p>]]></reply_email>
+    <required_roles>admin,x_snc_bprobe.mailer</required_roles>
+    <script><![CDATA[current.short_description = email.subject;
+current.insert();]]></script>
+    <stop_processing>true</stop_processing>
+    <table>incident</table>
+    <template><![CDATA[short_description=x^EQ]]></template>
+    <type>reply</type>
+  </sysevent_in_email_action>
+</record_update>

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="io_set_item">
+  <io_set_item action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1a40d4a25a6244cb97b6ee29861027e0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>io_set_item_1a40d4a25a6244cb97b6ee29861027e0</sys_update_name>
+    <order>200</order>
+    <sc_cat_item>0c3558f7598f459fa8138a58179ae36c</sc_cat_item>
+    <variable_set>794482ecc3a743fa82e554f338b0aa5b</variable_set>
+  </io_set_item>
+</record_update>

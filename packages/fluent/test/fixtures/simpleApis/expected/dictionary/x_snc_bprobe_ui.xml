@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<database>
+  <element name="x_snc_bprobe_ui" type="collection" label="Bprobe UI" is_extendable="false" text_index="false" read_only="false" audit="false" access="public" caller_access="0" scriptable_table="false" attributes="">
+    <element name="short_description" type="string" active="true" array="false" audit="false" unique="false" label="Short description" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Short descriptions"/>
+    <element name="description" type="string" active="true" array="false" audit="false" unique="false" label="Description" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Descriptions"/>
+    <element name="caller_id" type="string" active="true" array="false" audit="false" unique="false" label="Caller" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Callers"/>
+  </element>
+</database>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f7f7c82d69b848059a248368f3caab2f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_f7f7c82d69b848059a248368f3caab2f</sys_update_name>
+    <configuration_template>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</configuration_template>
+    <connection_type>jdbc_connection</connection_type>
+    <description>A JDBC alias</description>
+    <id>x_snc_bprobe.Full_Alias</id>
+    <multiple_connections>true</multiple_connections>
+    <name>Full Alias</name>
+    <parent>166f08fb6e94450db6d90f4f73fb26b0</parent>
+    <retry_policy>68bbb3201eb54dfa972a37f8fb91d2db</retry_policy>
+    <sys_policy/>
+    <type>connection</type>
+  </sys_alias>
+</record_update>

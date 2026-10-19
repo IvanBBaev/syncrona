@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_script_include">
+  <sys_script_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5df66cafb0354009a7e5e24662f5ed2a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_script_include_5df66cafb0354009a7e5e24662f5ed2a</sys_update_name>
+    <access>package_private</access>
+    <active>true</active>
+    <api_name>x_snc_bprobe.MinSI</api_name>
+    <caller_access/>
+    <client_callable>false</client_callable>
+    <description/>
+    <mobile_callable>false</mobile_callable>
+    <name>MinSI</name>
+    <sandbox_callable>false</sandbox_callable>
+    <script><![CDATA[var MinSI = function() {};]]></script>
+    <sys_name>MinSI</sys_name>
+  </sys_script_include>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_model">
+  <sttrm_model action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>850cd87983fe491486c5aea83d60a322</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_model_850cd87983fe491486c5aea83d60a322</sys_update_name>
+    <active>true</active>
+    <advanced_security>false</advanced_security>
+    <name>Minimal</name>
+    <read_roles/>
+    <state_field>state</state_field>
+    <table_name>x_snc_bprobe_t</table_name>
+    <template_approval_groups/>
+    <template_approval_users/>
+    <template_proposal_access/>
+    <write_roles/>
+  </sttrm_model>
+</record_update>

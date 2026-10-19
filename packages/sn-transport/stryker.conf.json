@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing for the transport policy helpers + OAuth token manager. Non-blocking (break: null) — run via `npm run test:mutation` to surface a baseline mutation score, not as a CI gate.",
+  "packageManager": "npm",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.config.js"
+  },
+  "mutate": ["src/**/*.ts", "!src/**/*.d.ts"],
+  "reporters": ["clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": null
+  }
+}

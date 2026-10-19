@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e1f72aa3c7f94760b6814edda14ba11f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_e1f72aa3c7f94760b6814edda14ba11f</sys_update_name>
+    <description/>
+    <name>chrome_tab</name>
+    <page>753753ea582f49f8a8813edc182b31b9</page>
+    <route/>
+    <suffix>chrome_tab</suffix>
+    <type>json</type>
+    <value>{"contextual":["record"],"newTabMenu":[],"maxMainTabLimit":10,"maxTotalSubTabLimit":30}</value>
+  </sys_ux_page_property>
+</record_update>

@@ -1,0 +1,1018 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from "fs";
+import { createHash, createHmac } from "crypto";
+import { homedir } from "os";
+import path from "path";
+import { getStoreKey } from "@syncrona/credential-store";
+import { isSensitiveKey, looksLikeSecretValue } from "@syncrona/redaction";
+import { logger } from "./logger";
+
+const DEFAULT_AUDIT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_AUDIT_MAX_BACKUPS = 5;
+// CONC-3 (REV-94): retention cap for `.corrupt.` quarantine files. Without a cap
+// a crash-loop that keeps torn/interior-corrupt logs would leak `.corrupt.` files
+// unbounded. We keep the newest K and prune the rest.
+const DEFAULT_AUDIT_MAX_CORRUPT = 5;
+
+// SEC-5 (REV-86): tamper-evident hash chain. Each record carries a monotonic `seq`
+// and `prevHash` = keyed hash of the immediately preceding record line. The first
+// record of a chain uses this genesis sentinel (64 hex chars, matching the digest
+// width) so the integrity walk can recognise a legitimate chain start.
+const GENESIS_PREV_HASH = "0".repeat(64);
+
+// Delete the oldest size-rotated backups so the audit directory stays bounded.
+// Rotation alone (rename to a timestamped file) would otherwise let backups
+// accumulate forever. `.corrupt.` quarantine files are left untouched — they are
+// forensic and rare.
+function pruneRotatedAuditFiles(
+  dir: string,
+  base: string,
+  ext: string,
+  maxBackups: number
+): void {
+  try {
+    const prefix = `${base}.`;
+    const active = `${base}${ext}`;
+    const rotated = readdirSync(dir)
+      .filter(
+        (name) =>
+          name.startsWith(prefix) &&
+          name.endsWith(ext) &&
+          name !== active &&
+          !name.includes(".corrupt.")
+      )
+      .map((name) => {
+        const full = path.join(dir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs;
+        } catch (_) {
+          mtimeMs = 0;
+        }
+        return { full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const stale of rotated.slice(maxBackups)) {
+      try {
+        unlinkSync(stale.full);
+      } catch (_) {
+        // best-effort prune
+      }
+    }
+  } catch (_) {
+    // Cleanup is best-effort; never let it break an audit write.
+  }
+}
+
+type AuditIntegrityResult = {
+  ok: boolean;
+  // `tampered` (SEC-5): hash-chain break, seq gap, or a file shorter/longer than the
+  //   persisted high-water seq — an adversarial edit, not accidental corruption.
+  // `recovered` (CONC-3): a torn trailing line was dropped and valid history kept.
+  status: "missing" | "valid" | "recovered" | "tampered" | "quarantined" | "error";
+  totalLines: number;
+  malformedLines: number;
+  quarantinedFile: string;
+  reason?: string;
+};
+
+// SEC-5 (REV-86): derive the per-install HMAC key for the tamper-evident chain.
+// SYNCRONA_STORE_KEY wins when present (unchanged historical behavior); otherwise the
+// credential store's per-install secret keys the chain. Only when neither resolves do we
+// fall back to a plain SHA-256 hash chain, which still detects truncation, reordering and
+// interior deletion (a naive editor cannot silently drop or shuffle lines without leaving
+// a seq gap or high-water mismatch).
+//
+// REV-127 (honest-limits): the strength of the keyed chain depends on WHICH store key
+// backs it. A random OS-keychain secret an attacker cannot read gives real forgery
+// resistance. But getStoreKey() may return the MACHINE-derived key, computed from
+// public-ish inputs (hostname / username) — an attacker who knows those can recompute it
+// and forge the whole downstream chain plus the high-water marker. So the chain is only
+// as forgery-resistant as its key is secret: strong under SYNCRONA_STORE_KEY or a random
+// keychain secret, weak (tamper-evident against naive edits only) under the recomputable
+// machine key. Set SYNCRONA_STORE_KEY (or provision a random keychain secret) for a
+// threat model that includes a local attacker.
+let cachedChainKey: Buffer | null | undefined;
+
+function auditChainKey(): Buffer | null {
+  if (cachedChainKey !== undefined) {
+    return cachedChainKey;
+  }
+  // Prefer an explicit env key (unchanged historical behavior).
+  const raw = process.env.SYNCRONA_STORE_KEY;
+  if (raw && raw.trim()) {
+    cachedChainKey = createHash("sha256")
+      .update(`syncrona-audit-integrity:${raw}`)
+      .digest();
+    return cachedChainKey;
+  }
+  // SEC-5 follow-up (REV-120): on a default install SYNCRONA_STORE_KEY is unset, but the
+  // credential store still resolves a real per-install secret (a random OS-keychain key,
+  // or the machine-derived key). Derive the chain HMAC key from it so the chain is keyed
+  // even without SYNCRONA_STORE_KEY. Forgery resistance then holds only against an
+  // attacker who cannot reconstruct that key (see the REV-127 note above: the machine key
+  // is recomputable). Fall back to an unkeyed chain only if no key resolves.
+  try {
+    const storeKey = getStoreKey();
+    cachedChainKey = createHash("sha256")
+      .update("syncrona-audit-integrity:")
+      .update(storeKey)
+      .digest();
+  } catch {
+    cachedChainKey = null;
+  }
+  return cachedChainKey;
+}
+
+// Test-only: drop the memoized chain key so a test can toggle SYNCRONA_STORE_KEY.
+export function __resetAuditChainKeyForTests(): void {
+  cachedChainKey = undefined;
+}
+
+function hashAuditLine(line: string): string {
+  const key = auditChainKey();
+  if (key) {
+    return createHmac("sha256", key).update(line).digest("hex");
+  }
+  return createHash("sha256").update(line).digest("hex");
+}
+
+// The high-water marker is the truncation tripwire. It is persisted OUTSIDE the audit
+// directory (in a per-user state dir keyed by the audit file's absolute path) so it
+// never appears as an entry when the audit dir is enumerated, and so rotation/prune of the
+// log cannot disturb it. It survives process restarts; if it is absent (first run, or the
+// state dir was cleared) tail-truncation across that gap is not detectable, but reordering
+// / interior deletion / forgery still are via the in-file seq+hash chain. This is the
+// documented reduced guarantee.
+// `prefix` (REV-191) is the number of UNCHAINED ("legacy") lines that precede the first
+// chained record. It is fixed at the moment the chain starts and can never legitimately
+// change afterwards, so a later increase is proof that lines were spliced in ahead of the
+// chain. Optional so markers written by an earlier version stay readable.
+type HighWater = { seq: number; hash?: string; prefix?: number };
+
+/**
+ * SEC-5 follow-up (REV-143): the marker used to live under `os.tmpdir()`. On Linux that
+ * is the WORLD-WRITABLE /tmp, at a path any local user can compute (it is just a hash of
+ * the audit file's absolute path), so an attacker could (a) pre-plant a symlink there and
+ * have us clobber a file of their choosing with our JSON, and (b) pre-plant a bogus marker
+ * — or simply keep re-creating one with seq 0 — to disable the truncation tripwire, which
+ * is the one control that survives a whole-log deletion. Both defeats are silent because
+ * every failure was swallowed. The marker now lives in a per-user state directory
+ * (0700), matching the credential store's `~/.syncrona` convention.
+ */
+function auditStateDir(): string {
+  const override = process.env.SYNCRONA_AUDIT_STATE_DIR;
+  if (override && override.trim()) {
+    return path.resolve(override.trim());
+  }
+  const xdgState = process.env.XDG_STATE_HOME;
+  if (xdgState && xdgState.trim()) {
+    return path.join(path.resolve(xdgState.trim()), "syncrona", "audit-integrity");
+  }
+  return path.join(homedir(), ".syncrona", "audit-integrity");
+}
+
+function highWaterPath(auditFile: string): string {
+  const id = createHash("sha256").update(path.resolve(auditFile)).digest("hex").slice(0, 40);
+  return path.join(auditStateDir(), `${id}.json`);
+}
+
+/** True when `target` exists and is anything other than a regular file (symlink, dir, …). */
+function isNonRegularFile(target: string): boolean {
+  try {
+    return !lstatSync(target).isFile();
+  } catch (_) {
+    return false; // absent: nothing to refuse
+  }
+}
+
+/** True when `target` itself is a symbolic link (never follows it). */
+function isSymlinkPath(target: string): boolean {
+  try {
+    return lstatSync(target).isSymbolicLink();
+  } catch (_) {
+    return false; // absent: nothing to refuse
+  }
+}
+
+function readHighWater(auditFile: string): HighWater | null {
+  try {
+    const p = highWaterPath(auditFile);
+    if (!existsSync(p) || isNonRegularFile(p)) {
+      return null;
+    }
+    const parsed = JSON.parse(readFileSync(p, "utf-8")) as Record<string, unknown>;
+    if (parsed && typeof parsed.seq === "number") {
+      return {
+        seq: parsed.seq,
+        hash: typeof parsed.hash === "string" ? parsed.hash : undefined,
+        prefix: typeof parsed.prefix === "number" ? parsed.prefix : undefined,
+      };
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeHighWater(auditFile: string, hw: HighWater): void {
+  try {
+    const p = highWaterPath(auditFile);
+    mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+    // SEC-5 follow-up (REV-143): writeFileSync FOLLOWS symlinks, so a pre-planted link at
+    // the marker path redirected our write onto the target. Refuse anything that is not a
+    // plain regular file.
+    if (isNonRegularFile(p)) {
+      throw new Error(`refusing to write audit high-water through a non-regular file: ${p}`);
+    }
+    writeFileSync(p, JSON.stringify(hw), "utf-8");
+  } catch (error) {
+    // SEC-5 follow-up (REV-143): the old handler was empty, so a marker that could not be
+    // written — including one refused as a planted symlink — disabled the truncation
+    // tripwire with no trace anywhere. Still non-fatal (a missing marker must never block
+    // an audit write), but no longer invisible.
+    logger.warn("audit.high_water_write_failed", {
+      auditFile,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function resetHighWater(auditFile: string): void {
+  try {
+    const p = highWaterPath(auditFile);
+    if (existsSync(p)) {
+      unlinkSync(p);
+    }
+  } catch (_) {
+    // best-effort
+  }
+}
+
+// CONC-8 (REV-146): the chain append is a read-modify-write — read the tail (readChainTail),
+// derive seq/prevHash from it, append, then update the high-water. Nothing serialised it, so
+// two writers (two MCP server processes on the same workspace, or the health server and the
+// tool dispatcher) could interleave between the read and the append and BOTH emit the same
+// seq with the same prevHash. That is unrecoverable: the log then permanently reads as
+// `tampered` ("sequence gap"), which destroys the forensic value of every later record. The
+// rotation branch had the same race — two writers could both rename, and the second rename
+// would drop the first's freshly created file. An O_EXCL lockfile next to the audit file
+// serialises the whole critical section across processes.
+const AUDIT_LOCK_STALE_MS = 10_000;
+const AUDIT_LOCK_RETRY_MS = 2;
+const AUDIT_LOCK_MAX_WAIT_MS = 500;
+
+function sleepSyncMs(ms: number): void {
+  // writeAuditEvent is synchronous end to end, so the wait has to be too.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireAuditLock(auditFile: string): string | null {
+  const lockPath = `${auditFile}.lock`;
+  const deadline = Date.now() + AUDIT_LOCK_MAX_WAIT_MS;
+  for (;;) {
+    try {
+      // "wx" is O_CREAT|O_EXCL: it fails if anything already exists at the path, and it
+      // never follows a symlink, so the lock doubles as a plant-resistant handshake.
+      const fd = openSync(lockPath, "wx");
+      try {
+        writeSync(fd, String(process.pid));
+      } finally {
+        closeSync(fd);
+      }
+      return lockPath;
+    } catch (_) {
+      // A writer that crashed mid-section would otherwise wedge every later write, so an
+      // old lock is reclaimed rather than waited on.
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > AUDIT_LOCK_STALE_MS) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch (_) {
+        // The lock vanished between the two calls; retry immediately.
+      }
+      if (Date.now() >= deadline) {
+        // Losing the lock must never lose the record: fall through unlocked (the pre-fix
+        // behavior) rather than dropping an audit entry.
+        return null;
+      }
+      sleepSyncMs(AUDIT_LOCK_RETRY_MS);
+    }
+  }
+}
+
+function releaseAuditLock(lockPath: string | null): void {
+  if (!lockPath) {
+    return;
+  }
+  try {
+    unlinkSync(lockPath);
+  } catch (_) {
+    // best-effort
+  }
+}
+
+/** True for a line that carries the chain fields (`seq` + `prevHash`). */
+function isChainedLine(line: string): boolean {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    return (
+      !!parsed && typeof parsed.seq === "number" && typeof parsed.prevHash === "string"
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Number of leading UNCHAINED lines — the legacy prefix the chain walk tolerates. */
+function countLegacyPrefix(lines: string[]): number {
+  let count = 0;
+  for (const line of lines) {
+    if (isChainedLine(line)) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+// Read the last CHAINED line of the active log so a new record can extend the chain.
+// `link` is null when the file is absent/empty or its last line is legacy (no seq/prevHash)
+// or unparseable — in which case a fresh chain is started (seq 1, genesis prevHash). This
+// reads the authoritative file rather than the volatile high-water marker so a cleared
+// marker can never cause a duplicate-seq false positive. `prefix` is reported from the same
+// read so the caller never has to walk the file twice (REV-191).
+function readChainTail(auditFile: string): {
+  link: { seq: number; hashOfLine: string } | null;
+  prefix: number;
+} {
+  try {
+    if (!existsSync(auditFile)) {
+      return { link: null, prefix: 0 };
+    }
+    const lines = readFileSync(auditFile, "utf-8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      return { link: null, prefix: 0 };
+    }
+    const prefix = countLegacyPrefix(lines);
+    const last = lines[lines.length - 1];
+    const parsed = JSON.parse(last) as Record<string, unknown>;
+    if (parsed && typeof parsed.seq === "number" && typeof parsed.prevHash === "string") {
+      return { link: { seq: parsed.seq, hashOfLine: hashAuditLine(last) }, prefix };
+    }
+    return { link: null, prefix };
+  } catch (_) {
+    return { link: null, prefix: 0 };
+  }
+}
+
+// True when the active log is non-empty and its last byte is not a newline: a writer was
+// killed mid-append (a second server on the same workspace, a short write on a full disk)
+// and left a partial line. The startup integrity check repairs that, but a record written
+// before the next check would otherwise be glued onto the fragment and become part of one
+// unparseable line, unreadable to every consumer although the write reported success.
+function endsWithPartialLine(auditFile: string, size: number): boolean {
+  if (size === 0) {
+    return false;
+  }
+  const fd = openSync(auditFile, "r");
+  try {
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+// SEC-6 (REV-87): decide whether a failed write belongs to a MUTATING tool. Mutating
+// records must fail loudly (logger.error), read-only/lifecycle records stay tolerant
+// (logger.debug). `auditToolCall` sets an explicit `mutating` flag; `auditMutatingTool`
+// emits a tool record with no `event` field and is mutating by construction.
+function isMutatingAuditRecord(entry: Record<string, unknown>): boolean {
+  if (entry.mutating === true) {
+    return true;
+  }
+  if (entry.mutating === false) {
+    return false;
+  }
+  return typeof entry.event === "undefined" && typeof entry.tool === "string";
+}
+
+export type AuditWriteResult = { ok: boolean; mutating: boolean; error?: string };
+
+// SEC-8 (REV-96 → REV-126 → REV-145 → REV-147 → REV-190): the sensitive-key list and the
+// value-shape scanner used to live here, hardened one review at a time. They moved to
+// `@syncrona/redaction` (WP-M1) when the full-instance git mirror needed the same
+// detection: a copy-paste would have left two corpora to drift apart, and the copy nobody
+// is currently reviewing is the one that falls behind — with the leak landing in the
+// consumer that writes to a REPOSITORY rather than to a local log file.
+//
+// Nothing about the behaviour changed in the move; the audit suite that pins it was not
+// touched. The rationale for each individual pattern, and the honest limit each one
+// accepts, travelled with the code — see `packages/redaction/src/{sensitiveKeys,
+// secretValues}.ts`, and the two-sided corpus (true positives AND the near-miss prose that
+// must survive verbatim) in `packages/redaction/test/corpus.ts`.
+//
+// Two things worth keeping in view from here. The scan budget FAILS CLOSED: an
+// over-budget value is reported as a secret rather than waved through, because the
+// historical fail-open meant padding a secret past 8 KB was enough to land it in this log
+// in cleartext (REV-145). And a match redacts the WHOLE value, which is why the value
+// patterns are narrow — an over-eager one replaces the entire operator-facing message,
+// destroying exactly the forensic detail an audit record exists to keep (REV-147, REV-190).
+
+// REV-211: the walk has to be bounded on both axes, because everything it visits
+// is attacker-influenced — `args` is whatever a model sent, `outcome` is whatever
+// the instance returned — and this runs INSIDE the audit write, while the audit
+// lock is held.
+//
+// Depth: an unbounded self-call overflows the stack on a deeply nested argument,
+// and a RangeError raised here propagates out of the audit write for a mutating
+// tool call — losing exactly the record the trail exists to keep. A CYCLIC graph
+// is worse: it never terminates, and even if it did, `JSON.stringify` in
+// writeAuditEvent would throw "Converting circular structure to JSON". Capping
+// depth turns a cycle into a finite chain, so both cases degrade to a marker
+// instead of a lost record. 8 is far past anything real: the deepest argument
+// shape in the tool contract nests 4.
+//
+// Breadth: depth alone bounds nothing — one flat array of 5 million
+// secret-shaped strings is depth 1 and still runs the detector 5 million times.
+// 200 leaves every real payload intact (these handlers cap `sysparm_limit` at 50
+// rows) and the omission is COUNTED in the output, so a truncated entry can never
+// be misread as a complete one.
+const AUDIT_SANITIZE_MAX_DEPTH = 8;
+const AUDIT_SANITIZE_MAX_ENTRIES = 200;
+const AUDIT_TRUNCATED_KEY = "<audit-truncated>";
+
+// `out[k] = v` is not total: for the single key "__proto__" an object literal
+// invokes the inherited setter instead of creating a property, so that field
+// silently VANISHED from the audit record (and, when its value was an object,
+// re-pointed `out`'s prototype instead). `__proto__` is a legal JSON key, so any
+// model-supplied argument or instance response could carry it. defineProperty
+// stores the own, enumerable, JSON-serializable property every consumer expects,
+// and behaves identically to assignment for every ordinary key.
+function setAuditField(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+export function sanitizeForAudit(value: unknown): unknown {
+  return sanitizeAuditValue(value, 0);
+}
+
+function sanitizeAuditValue(value: unknown, depth: number): unknown {
+  // SEC-8 follow-up (REV-123): a BARE string (not an object property) reaches here when
+  // a raw error message is audited directly. It must be inspected too, else a
+  // secret-shaped error string is logged in cleartext.
+  if (typeof value === "string") {
+    return looksLikeSecretValue(value) ? "<redacted>" : value;
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  // Nothing past the cap is inspected, so nothing past it may be reproduced
+  // either: the marker carries the container's type and size, never a value.
+  if (depth >= AUDIT_SANITIZE_MAX_DEPTH) {
+    return Array.isArray(value)
+      ? `<depth-capped: array(${value.length})>`
+      : `<depth-capped: object(${Object.keys(value).length} keys)>`;
+  }
+
+  if (Array.isArray(value)) {
+    // NOT `value.map(sanitizeAuditValue)`: map passes (item, INDEX, array), so the
+    // index would arrive as `depth` — element 0 would recurse with a full budget
+    // while element 8 was capped outright, making redaction depend on array
+    // position. The arrow is load-bearing.
+    const kept: unknown[] = value
+      .slice(0, AUDIT_SANITIZE_MAX_ENTRIES)
+      .map((item) => sanitizeAuditValue(item, depth + 1));
+    if (value.length > AUDIT_SANITIZE_MAX_ENTRIES) {
+      kept.push(
+        `<${value.length - AUDIT_SANITIZE_MAX_ENTRIES} more item(s) omitted>`
+      );
+    }
+    return kept;
+  }
+
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const entries = Object.entries(obj);
+  for (const [k, v] of entries.slice(0, AUDIT_SANITIZE_MAX_ENTRIES)) {
+    if (isSensitiveKey(k)) {
+      setAuditField(out, k, "<redacted>");
+    } else if (k.toLowerCase() === "script" && typeof v === "string") {
+      setAuditField(out, k, `<script:${v.length} chars>`);
+    } else if (typeof v === "string" && looksLikeSecretValue(v)) {
+      setAuditField(out, k, "<redacted>");
+    } else {
+      setAuditField(out, k, sanitizeAuditValue(v, depth + 1));
+    }
+  }
+  if (entries.length > AUDIT_SANITIZE_MAX_ENTRIES) {
+    setAuditField(
+      out,
+      AUDIT_TRUNCATED_KEY,
+      `${entries.length - AUDIT_SANITIZE_MAX_ENTRIES} more key(s) omitted`
+    );
+  }
+  return out;
+}
+
+export function writeAuditEvent(
+  auditDir: string,
+  auditFile: string,
+  entry: Record<string, unknown>,
+  maxBytes = DEFAULT_AUDIT_MAX_BYTES,
+  maxBackups = DEFAULT_AUDIT_MAX_BACKUPS
+): AuditWriteResult {
+  const mutating = isMutatingAuditRecord(entry);
+  try {
+    if (!existsSync(auditDir)) {
+      mkdirSync(auditDir, { recursive: true });
+    }
+
+    // SEC-6 follow-up (REV-121): the final-component symlink check below is not enough —
+    // a symlinked audit DIRECTORY (pre-planted `.syncrona-mcp` -> attacker dir) would be
+    // followed silently. Refuse when the audit dir itself is a symlink. (Portable; no
+    // O_NOFOLLOW needed.)
+    //
+    // REV-128 (honest-limits): this checks only the audit dir (final component) and,
+    // below, the audit file — NOT every ANCESTOR of the path. A symlinked ANCESTOR
+    // directory higher up (e.g. the project root) is not resolved here. We do not fully
+    // realpath the ancestor chain on purpose: PROJECT_DIR is process.cwd(), which the OS
+    // already resolves through symlinks at capture, and a strict realpath guard would
+    // reject legitimately symlinked working roots (macOS /var -> /private/var, a symlinked
+    // temp dir) and our own tests. The guarantee here is therefore: the audit dir and file
+    // are not themselves attacker-planted symlinks — not that no ancestor is.
+    let dirStat: ReturnType<typeof lstatSync> | null = null;
+    try {
+      dirStat = lstatSync(auditDir);
+    } catch (_) {
+      dirStat = null;
+    }
+    if (dirStat && dirStat.isSymbolicLink()) {
+      throw new Error(`refusing to write audit through a symlinked directory: ${auditDir}`);
+    }
+
+    // CONC-8 (REV-146): everything below is the critical section — the rotation decision,
+    // the chain-tail read, the append and the high-water update must be one indivisible
+    // step, or two concurrent writers duplicate a seq (permanently `tampered`) or drop one
+    // another's rotated file.
+    const lockPath = acquireAuditLock(auditFile);
+    try {
+      // SEC-6 (REV-87): never follow a symlink. An attacker who pre-plants `audit.log` as a
+      // symlink (e.g. -> /dev/null) must not silently redirect the audit stream. lstat the
+      // final component and refuse if it is a link. (There is a small TOCTOU window between
+      // lstat and append; O_NOFOLLOW would close it but is not portable, so we refuse here.)
+      let stat: ReturnType<typeof lstatSync> | null = null;
+      try {
+        stat = lstatSync(auditFile);
+      } catch (_) {
+        stat = null;
+      }
+      if (stat && stat.isSymbolicLink()) {
+        throw new Error(`refusing to write audit through a symlink: ${auditFile}`);
+      }
+
+      let rotated = false;
+      if (stat && stat.isFile() && stat.size >= maxBytes) {
+        const dir = path.dirname(auditFile);
+        const ext = path.extname(auditFile);
+        const base = path.basename(auditFile, ext);
+        const rotatedPath = toRotatedAuditPath(auditFile);
+        renameSync(auditFile, rotatedPath);
+        pruneRotatedAuditFiles(dir, base, ext, maxBackups);
+        // Fresh active file: reset the high-water so a failed append below cannot leave a
+        // stale marker that would later be misread as truncation.
+        resetHighWater(auditFile);
+        rotated = true;
+      }
+
+      // SEC-5 (REV-86): extend the tamper-evident chain. `seq` is monotonic within the
+      // active file; `prevHash` links to the previous line's keyed hash (or genesis when a
+      // new chain begins on an empty/rotated/legacy-tailed file).
+      const tail = rotated ? { link: null, prefix: 0 } : readChainTail(auditFile);
+      const prev = tail.link;
+      // SEC-5 follow-up (REV-142): the seq used to be derived from the FILE alone, so an
+      // attacker who deleted (or truncated) the log got a chain restarting at seq 1 and a
+      // high-water marker overwritten with that 1 — the erasure erased its own evidence
+      // too, and the next integrity check reported a clean log. The out-of-band marker is
+      // authoritative for "how far this chain has already got": never move backwards from
+      // it. Continuing at hw.seq + 1 over an emptied file leaves a chain that does not
+      // start at genesis, which is precisely the durable evidence the tripwire owes us.
+      // Legitimate fresh starts (rotation, quarantine) reset the marker explicitly.
+      const hw = rotated ? null : readHighWater(auditFile);
+      const seq = Math.max(prev ? prev.seq : 0, hw ? hw.seq : 0) + 1;
+      const prevHash = prev ? prev.hashOfLine : GENESIS_PREV_HASH;
+      const record = { ...entry, seq, prevHash };
+      const line = JSON.stringify(record);
+
+      // A torn fragment keeps its own (malformed) line so the record after it stays whole;
+      // the integrity check then quarantines the log with both lines intact.
+      const separator =
+        !rotated && stat && stat.isFile() && endsWithPartialLine(auditFile, stat.size)
+          ? "\n"
+          : "";
+      appendFileSync(auditFile, `${separator}${line}\n`, "utf-8");
+      // SEC-5 follow-up (REV-191): the chain walk tolerates a legacy prefix for backward
+      // compatibility, so an attacker could PREPEND forged unchained records ("approved by
+      // admin") to an intact chain and the integrity check still reported `valid` — nothing
+      // pinned how long that prefix is allowed to be. Pin it in the marker at the moment the
+      // chain starts and never move it afterwards, so a later splice is detectable even
+      // though the forged lines carry no chain fields of their own.
+      const prefix = hw && typeof hw.prefix === "number" ? hw.prefix : tail.prefix;
+      writeHighWater(auditFile, { seq, hash: hashAuditLine(line), prefix });
+    } finally {
+      releaseAuditLock(lockPath);
+    }
+    return { ok: true, mutating };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // SEC-6 (REV-87): fail-closed for mutating tools — surface the failure loudly instead
+    // of the old blanket `logger.debug`. Read-only / lifecycle records stay tolerant so
+    // accidental corruption never breaks core flows.
+    if (mutating) {
+      logger.error("audit.write_failed", { auditFile, error: message });
+    } else {
+      logger.debug("audit.write_failed", { auditFile, error: message });
+    }
+    return { ok: false, mutating, error: message };
+  }
+}
+
+// CONC-3 follow-up (REV-205). Both ways this module retires a log — rotation on size, and
+// quarantine on corruption — name the retired file after the instant it was retired, and
+// both therefore collide when the same file is retired twice inside one millisecond. The
+// loop below is the only thing standing between such a collision and `renameSync` writing
+// the second file on top of the first, i.e. destroying exactly the history the audit log
+// exists to keep. This used to be two copies of the same block, so it is now one.
+//
+// `now` is a parameter rather than an embedded `new Date()` because the collision arm was
+// otherwise unreachable on purpose: whether it ran came down to how fast the machine
+// happened to execute a test that retires the same file repeatedly, and `dist/audit.js`
+// duly reported 96.57 / 92.12 on some runs of an unchanged tree and 96.25 / 91.70 on
+// others. Production still calls the one-argument form; only the tests pass an instant.
+function withCollisionSuffix(auditFile: string, infix: string, now: Date): string {
+  const dir = path.dirname(auditFile);
+  const ext = path.extname(auditFile);
+  const base = path.basename(auditFile, ext);
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  let candidate = path.join(dir, `${base}.${infix}${stamp}${ext}`);
+  let suffix = 0;
+  while (existsSync(candidate)) {
+    suffix += 1;
+    candidate = path.join(dir, `${base}.${infix}${stamp}.${suffix}${ext}`);
+  }
+  return candidate;
+}
+
+// `audit.log` -> `audit.<stamp>.log`, the name a size rotation retires the chain under.
+export function toRotatedAuditPath(auditFile: string, now: Date = new Date()): string {
+  return withCollisionSuffix(auditFile, "", now);
+}
+
+// `audit.log` -> `audit.corrupt.<stamp>.log`. `pruneCorruptAuditFiles` and
+// `pruneRotatedAuditFiles` both key off this `corrupt.` marker to tell the two kinds of
+// retired file apart, so the infix is load-bearing, not decoration.
+export function toCorruptAuditPath(auditFile: string, now: Date = new Date()): string {
+  return withCollisionSuffix(auditFile, "corrupt.", now);
+}
+
+// CONC-3 (REV-94): prune old `.corrupt.` quarantine files so a crash-loop that keeps
+// producing torn/interior-corrupt logs cannot leak them unbounded. Keeps the newest
+// `maxCorrupt` (the just-created one is always newest, so it is never the pruned one) and
+// deletes the rest. Best-effort — never let cleanup break the integrity check.
+function pruneCorruptAuditFiles(
+  dir: string,
+  base: string,
+  ext: string,
+  maxCorrupt: number
+): void {
+  try {
+    const prefix = `${base}.corrupt.`;
+    const corrupt = readdirSync(dir)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(ext))
+      .map((name) => {
+        const full = path.join(dir, name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = statSync(full).mtimeMs;
+        } catch (_) {
+          mtimeMs = 0;
+        }
+        return { full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const stale of corrupt.slice(Math.max(maxCorrupt, 0))) {
+      try {
+        unlinkSync(stale.full);
+      } catch (_) {
+        // best-effort prune
+      }
+    }
+  } catch (_) {
+    // Cleanup is best-effort; never let it break the integrity check.
+  }
+}
+
+// SEC-5 (REV-86): walk the tamper-evident chain. Legacy lines (no seq/prevHash) that
+// precede the first chained record are tolerated for backward compatibility, and a
+// fully-legacy log is considered valid (returns null). Once the chain starts it must begin
+// at genesis (seq 1, genesis prevHash) and every subsequent line must be chained, carry the
+// expected monotonic seq, and reference the keyed hash of the preceding line. The persisted
+// high-water marker is the truncation tripwire. Returns the first violation reason, or null
+// when the chain is intact. NOTE: the guarantee assumes SYNCRONA_STORE_KEY presence is
+// stable across writes and this check — a key that appears/disappears between the two
+// changes every recomputed hash and would read as a chain break.
+function validateAuditChain(lines: string[], auditFile: string): string | null {
+  let started = false;
+  let expectedSeq = 0;
+  let prevLineHash = GENESIS_PREV_HASH;
+  let legacyPrefix = 0;
+
+  for (const line of lines) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch (_) {
+      // Callers only pass JSON-valid lines here; a surprise parse failure is a break.
+      return "unparseable line inside chain";
+    }
+    const hasChain =
+      typeof parsed.seq === "number" && typeof parsed.prevHash === "string";
+
+    if (!started) {
+      if (!hasChain) {
+        legacyPrefix += 1;
+        continue; // tolerate a legacy prefix (bounded by the marker — REV-191)
+      }
+      started = true;
+      if (parsed.prevHash !== GENESIS_PREV_HASH || parsed.seq !== 1) {
+        return "chain does not start at genesis";
+      }
+      expectedSeq = 1;
+      prevLineHash = hashAuditLine(line);
+    } else {
+      if (!hasChain) {
+        return "legacy line inside chain";
+      }
+      expectedSeq += 1;
+      if (parsed.seq !== expectedSeq) {
+        return "sequence gap";
+      }
+      if (parsed.prevHash !== prevLineHash) {
+        return "hash-chain break";
+      }
+      prevLineHash = hashAuditLine(line);
+    }
+  }
+
+  // Truncation tripwire: the high-water records the seq (and hash) of the last line written
+  // in a previous session. A last chained seq BELOW the high-water means complete lines were
+  // removed after the fact; an in-place edit of the last line is caught by the hash compare
+  // at equal seq. More lines than the high-water is a legitimate append (the marker is
+  // best-effort) and is not flagged.
+  const hw = readHighWater(auditFile);
+
+  if (!started) {
+    // SEC-5 follow-up (REV-142): this used to `return null` BEFORE the marker was read, so
+    // the two cheapest attacks on the chain — empty the log, or overwrite it with
+    // legacy-shaped JSON that carries no seq/prevHash — both reported `valid`. The whole
+    // point of an OUT-OF-BAND marker is that it survives destruction of the file, so it has
+    // to be consulted exactly when the file has nothing left to say. A genuinely legacy log
+    // (pre-REV-86 install, no marker ever written) still validates.
+    if (hw && hw.seq >= 1) {
+      return "chain erased below high-water seq";
+    }
+    return null; // fully-legacy log: nothing to verify
+  }
+
+  if (hw) {
+    if (expectedSeq < hw.seq) {
+      return "truncated below high-water seq";
+    }
+    if (expectedSeq === hw.seq && hw.hash && prevLineHash !== hw.hash) {
+      return "last line altered in place";
+    }
+    // SEC-5 follow-up (REV-191): the tolerated legacy prefix was unbounded, so unchained
+    // lines spliced in AHEAD of the chain (which the walk skips by design) left no trace at
+    // all. The prefix is pinned when the chain starts and nothing legitimate ever changes
+    // it, so any difference is an insertion or a deletion in that region.
+    if (typeof hw.prefix === "number" && legacyPrefix !== hw.prefix) {
+      return "legacy prefix line count changed";
+    }
+  }
+  return null;
+}
+
+export function checkAuditLogIntegrity(
+  auditDir: string,
+  auditFile: string,
+  maxCorrupt = DEFAULT_AUDIT_MAX_CORRUPT
+): AuditIntegrityResult {
+  try {
+    if (!existsSync(auditDir)) {
+      mkdirSync(auditDir, { recursive: true });
+    }
+
+    // SEC-6 follow-up (REV-144): the WRITE path refuses a symlinked audit dir/file, but this
+    // path had no guard at all — and it does far more than read: the torn-tail branch
+    // `writeFileSync`s the audit file and the quarantine branch `renameSync`s it. Both
+    // follow symlinks, so a pre-planted `audit.log -> /victim/file` had this check
+    // truncate-and-rewrite (or rename away) an arbitrary file the process can reach, at
+    // server startup, before any tool ran. Refuse instead of operating on the link.
+    if (isSymlinkPath(auditDir) || isSymlinkPath(auditFile)) {
+      logger.warn("audit.integrity_symlink_refused", { auditDir, auditFile });
+      return {
+        ok: false,
+        status: "error",
+        totalLines: 0,
+        malformedLines: 0,
+        quarantinedFile: "",
+        reason: "audit path is a symlink",
+      };
+    }
+
+    if (!existsSync(auditFile)) {
+      // SEC-5 follow-up (REV-142): "missing" was reported as ok WITHOUT ever consulting the
+      // high-water marker. Deleting the entire log is the most obvious tamper there is, and
+      // it was the single case this check waved through — while the next writeAuditEvent
+      // quietly restarted the chain at seq 1 and overwrote the marker, destroying the last
+      // evidence. index.ts surfaces this status at startup, so it has to be honest.
+      const hw = readHighWater(auditFile);
+      if (hw && hw.seq >= 1) {
+        return {
+          ok: false,
+          status: "tampered",
+          totalLines: 0,
+          malformedLines: 0,
+          quarantinedFile: "",
+          reason: "audit log deleted below high-water seq",
+        };
+      }
+      return {
+        ok: true,
+        status: "missing",
+        totalLines: 0,
+        malformedLines: 0,
+        quarantinedFile: "",
+      };
+    }
+
+    const raw = readFileSync(auditFile, "utf-8");
+    let lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const malformedIndices: number[] = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      try {
+        JSON.parse(lines[i]);
+      } catch (_) {
+        malformedIndices.push(i);
+      }
+    }
+    const malformedLines = malformedIndices.length;
+    const originalTotal = lines.length;
+
+    let recovered = false;
+    if (malformedLines > 0) {
+      // CONC-3 (REV-94): a lone malformed line that is the physical LAST line AND was never
+      // terminated with a newline is a torn tail (a crash mid-append). Drop just that line and
+      // keep the valid history instead of quarantining the whole log. The missing terminator
+      // is what distinguishes a genuinely interrupted write from a complete-but-garbage line:
+      // a fully written line ends in "\n" (and would normally parse), so a newline-terminated
+      // malformed line is treated as corruption and quarantined. Interior corruption or
+      // multiple malformed lines also quarantine — we cannot tell which side is trustworthy.
+      const rawEndsWithNewline = raw.endsWith("\n") || raw.endsWith("\r");
+      const tornTail =
+        malformedLines === 1 &&
+        malformedIndices[0] === lines.length - 1 &&
+        !rawEndsWithNewline;
+      if (tornTail) {
+        lines = lines.slice(0, -1);
+        try {
+          writeFileSync(
+            auditFile,
+            lines.length > 0 ? `${lines.join("\n")}\n` : "",
+            "utf-8"
+          );
+          recovered = true;
+        } catch (error) {
+          logger.debug("audit.torn_tail_rewrite_failed", {
+            auditFile,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (!recovered) {
+        const dir = path.dirname(auditFile);
+        const ext = path.extname(auditFile);
+        const base = path.basename(auditFile, ext);
+        const quarantinedFile = toCorruptAuditPath(auditFile);
+        renameSync(auditFile, quarantinedFile);
+        pruneCorruptAuditFiles(dir, base, ext, maxCorrupt);
+        // SEC-5 follow-up (REV-142): quarantine is a LEGITIMATE fresh start, exactly like
+        // rotation — the old chain moved to the `.corrupt.` file. Now that writeAuditEvent
+        // refuses to move backwards from the marker, the marker has to be cleared here too,
+        // otherwise the replacement log would open at hw.seq + 1 and read as tampered
+        // forever.
+        resetHighWater(auditFile);
+        writeAuditEvent(auditDir, auditFile, {
+          timestamp: new Date().toISOString(),
+          event: "audit.integrity.recovered",
+          malformedLines,
+          totalLines: originalTotal,
+          quarantinedFile,
+        });
+
+        return {
+          ok: false,
+          status: "quarantined",
+          totalLines: originalTotal,
+          malformedLines,
+          quarantinedFile,
+        };
+      }
+    }
+
+    // SEC-5 (REV-86): verify the tamper-evident chain over the (possibly tail-recovered)
+    // lines. A broken chain, a seq gap, or a truncation below the high-water is an
+    // adversarial edit rather than accidental corruption.
+    const chainReason = validateAuditChain(lines, auditFile);
+    if (chainReason) {
+      return {
+        ok: false,
+        status: "tampered",
+        totalLines: lines.length,
+        malformedLines,
+        quarantinedFile: "",
+        reason: chainReason,
+      };
+    }
+
+    if (recovered) {
+      return {
+        ok: true,
+        status: "recovered",
+        totalLines: lines.length,
+        malformedLines,
+        quarantinedFile: "",
+        reason: "dropped torn trailing line",
+      };
+    }
+
+    return {
+      ok: true,
+      status: "valid",
+      totalLines: lines.length,
+      malformedLines: 0,
+      quarantinedFile: "",
+    };
+  } catch (error) {
+    logger.debug("audit.integrity_check_failed", {
+      auditFile,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      ok: false,
+      status: "error",
+      totalLines: 0,
+      malformedLines: 0,
+      quarantinedFile: "",
+    };
+  }
+}

@@ -1,0 +1,252 @@
+# SyncroNow AI — Product State
+
+> Last updated: 2026-08-25. Companion document: [ARCHITECTURE.md](ARCHITECTURE.md).
+> Working journals: `TODO` (open work), `DONE` (completed work, chronological).
+
+## TL;DR
+
+| | |
+|---|---|
+| Readiness | **~85%** — 8.5/10 toward the 9.5 "real-world ready" target (≈89% of the target); main blocker: D5 distribution |
+| CLI | 27 commands (registry-driven, `cliCommands.ts`), end-to-end usable against scoped apps through the Table API, with nothing installed on the instance |
+| MCP server | 63 tools in 13 registry modules (`toolModules.ts`), governance stack (validation → policy → preflight → audit → metrics) in place |
+| Tests | **4942 passing** — core **116 suites / 1332 tests** (jest, incl. dist-binary e2e smoke + AR2 keychain); mcp **1712** (node:test, against `dist`); mirror **46 suites / 1336 tests** (jest, incl. the INV-1 byte-identical re-sync e2e); shared jira **126** / credential-store **70** / redaction **132** / sn-transport **151**; the eight build plugins **83** — all gated (re-measured 2026-08-25) |
+| Coverage | core **97.85%** lines / 88.51% branches; mcp **97.87%** lines / 91.31% branches; mirror **100%** on all four axes (re-measured 2026-08-25) — a 90% floor is enforced via `codecov.yml` (project + patch) plus the core jest ratchet (92/79/89/92) and mirror's own 100/100/100/100 floors; historical detail in [Metrics snapshot](#metrics-snapshot-2026-06-12) |
+| Lint / security | eslint `--max-warnings=0` on core **and** mcp-server; dependency-cruiser module boundaries (G10); `npm audit --omit=dev` = **0 vulnerabilities** (re-measured 2026-08-21, after bumping `undici` 6.27.0 → 6.28.0 to clear a moderate advisory trio on the mcp-server dispatcher path). CI/release gates now fail at `--audit-level=moderate` (was `high`, which could not catch that advisory). Dev dependencies are audited too since 2026-08-25 — the full tree is also **0 vulnerabilities** (was 11: 5 low, 3 moderate, 3 high, all dev-only), gated in `ci.yml` by a blocking `npm audit --audit-level=high` plus a non-blocking low+moderate report; see [Dependency audit posture](../SECURITY.md#dependency-audit-posture) for why the two trees have different thresholds |
+| Version control | git on `main`; remote `origin` → github.com/IvanBBaev/syncrona (**public** since 2026-06-21) |
+| Biggest gaps | distribution beyond npm (Homebrew tap, native Windows installer), live-instance compatibility matrix, live-instance verification of the remaining 1.1.0 write paths (`cicd install`/`publish`/`rollback`, `fluent move-to-app`, composite data-model layout, mutual TLS), DX backlog (DX1–DX24) |
+
+## Metrics snapshot (2026-06-12)
+
+Measured after the CR fix series, modularization, and best-practice hardening.
+Re-measure with `npx jest --coverage` (core) and
+`node scripts/check-coverage-gate.js` (mcp-server).
+
+| Package | Lines | Statements | Branches | Functions | Tests | Gate |
+|---|---|---|---|---|---|---|
+| syncrona | **70.3%** | 70.6% | 55.8% | 60.7% | 152 (jest, whole src) | ratchet 68/54/58/68 → target 80 (CR26) |
+| @syncrona/mcp-server | **82.7%** | — | 75.0% | 84.9% | 172 (node:test) | 70% lines + 70% branches (G12 ✅) |
+
+Notes:
+- `credential-store` and `sn-transport` are covered through their consumers'
+  suites; the build plugin packages (babel/webpack/sass/…) have **no tests**
+  (tracked via G13).
+- Fastest coverage wins: core branch coverage (55.8% — error paths in
+  `snClient`/`manifestBuilder`) and first tests for the plugin packages.
+
+## Phase history
+
+```mermaid
+timeline
+    title Delivery phases
+    2026-05-28 : Iterations 1–6 of the MCP tool platform : dispatcher modularization
+    2026-05-29 : Quality program — strict TS, coverage gates, audit hardening, governance slices
+    2026-05-30 : Runtime stabilization (Node 22) : scoped-endpoint de-hardcoding : auto-pull bootstrap
+    2026-05-31 : Phase D dev tools — sync_suggest_tests, sync_diff_instance_vs_local
+    2026-06-10 : Phase A/B/C closed — code quality, npm publish pipeline, architecture decomposition
+    2026-06-11 : Architecture review AR1–AR12 (10 closed) : structured logging : tool versioning : update notifier
+    2026-06-12 : Deep code review CR1–CR30 : fix series (26 closed) : git baseline : docs refresh
+    2026-06-12 : Registry modularization (CLI + MCP) : MCP suite green 172/172 : 0 audit vulns : core lint gate : gap analysis G1–G16
+```
+
+| Phase | Scope | Status |
+|---|---|---|
+| A — Code quality | fallback tests, static imports, wizard UX | ✅ closed (2026-06-10) |
+| B — Standalone MVP | `npm i -g` works end-to-end, publish pipeline | ✅ closed (2026-06-10) |
+| C — Architecture | decomposition, typed CLI, config reload | ✅ closed (2026-06-10) |
+| D — Feature completion | ATF generation, instance diff, logging, **distribution** | 🟡 D1–D4 done; **D5 distribution open** |
+| AR — Architecture review 2026-06-11 | 12 findings | 🟡 10 closed; AR1/AR2/AR9/AR11 residuals |
+| CR — Deep review 2026-06-12 | 30 findings (senior/architect/QA) | 🟡 27 closed; CR1/CR2/CR26 residuals |
+| Modularization 2026-06-12 | registry-driven CLI commands + MCP tool modules, module contract in ARCHITECTURE §5 | ✅ closed |
+| Best-practice hardening 2026-06-12 | 0 audit vulnerabilities, core lint gate, package metadata, CONTRIBUTING.md | ✅ closed |
+| G — Triple gap analysis 2026-06-12 | 16 missing-capability findings (OAuth, E2E, CI matrix, release automation…) | 🟡 G2/G5 done; G15/G16 partial (Linux CI job + audit gate); rest open (order in TODO) |
+| DX — DX research backlog | 24 usability findings | 🔴 open backlog (5 quick wins identified) |
+
+## What works today
+
+### CLI (`npx syncrona …`)
+
+| Command | State | Notes |
+|---|---|---|
+| `init` | ✅ | wizard, or non-interactive all-scope bootstrap when `.env` present; `init --new` creates a new scoped application (`sys_app`) and binds the directory to it (1.1.0, verified live 2026-10-13) |
+| `download <scope>` | ✅ | scoped endpoint with full Table-API fallback (paginated, chunked) |
+| `refresh` / `dev` | ✅ | manifest sync + watch mode; serialized watcher queue, overlap-guarded interval |
+| `push` | ✅ | confirm → atomic collaboration lock → checkpoint/resume → concurrent push; `--diff`, `--dry-run`, `--ci`, `--updateSet`, `--scopeSwap`; `--create` creates or adopts records for unmapped files and `--prune` deletes in-scope records whose files were all removed (1.1.0, verified live 2026-10-13) |
+| `build` / `deploy` | ✅ | plugin pipeline (babel/ts/webpack/sass/prettier) → build dir → deploy |
+| `docs` | ✅ | per-scope Markdown + mermaid docs generated from the manifest |
+| `repair` | ✅ | reconciles the manifest with local files; report-only by default, `--apply` re-downloads, `--apply --prune` deletes orphan files git holds committed and unchanged (never records awaiting `push --create` or files of unlisted tables; refused without git evidence) |
+| `query <table>` | ✅ | read-only Table API query with the `now-sdk query` flag set and its `-o json` envelope (1.1.0) |
+| `cicd <action>` | ✅ | `sn_cicd` driver: ATF suite/test runs and app-repo install/publish/rollback with exit codes 0/1/2 (1.1.0; `run-suite`/`run-test` verified live 2026-10-13, app-repo actions mocked only) |
+| `fluent <action>` | ✅ | Fluent (`.now.ts`) toolchain through the optional `@syncrona/fluent` + `@servicenow/sdk` tier; Basic and OAuth profiles only (1.1.0; `install`/`status`/`types`/`explain` verified live 2026-10-13, `move-to-app` mocked only) |
+| `mirror <action>` | ✅ | full-instance git mirror (`init`, `sync`, `status`, `verify`, `report`), GET-only |
+| `status` / `doctor` / `plugins` | ✅ | diagnostics, connectivity, plugin-rule report |
+| `check-env` / `config <action>` / `completion [shell]` | ✅ | machine prerequisites, config inspection and plugin snippets, bash/zsh completion |
+| `login` / `logout` / `instances` / `use` | ✅ | global encrypted credential store with active-instance marker |
+| `mcp` | ✅ | starts MCP server, auto-configures `.vscode/mcp.json` + secrets file |
+| `jira [key]` | ✅ | rich read-only Jira issue context; key from argument or current git branch; Cloud + Server/Data Center |
+| `jira-login` / `jira-logout` | ✅ | Jira credentials in the same encrypted global store; Cloud (Basic) vs Server/DC (Bearer PAT) auto-detected |
+
+Cross-cutting CLI behavior: strict yargs surface (unknown commands fail),
+every async handler reports real errors with non-zero exit; update notifier
+(1×/day, stderr, opt-out envs); works against any instance through the
+standard Table API, with nothing installed on it.
+
+### MCP server
+
+- 63 tools across 13 handler modules: session/preflight, workspace commands,
+  ServiceNow CRUD, insights (including the CI/CD runner `sync_cicd_run`),
+  Fluent build (`sync_fluent_build`), metadata analysis, script analysis,
+  health/planning, scope knowledge, relation onboarding, unified workflow,
+  developer tools (ATF test suggestion, instance-vs-local diff), Jira issue
+  context (`jira_get_issue`).
+- Governance: zod validation (all mutating tools schema-covered), guardrail
+  policy file, preflight enforcement for mutations, dry-run everywhere,
+  redacted audit JSONL with rotation + startup integrity quarantine,
+  per-tool metrics persisted across restarts, correlation IDs end-to-end,
+  structured stderr logging (text/JSON), graceful shutdown with drain,
+  optional health HTTP endpoint, tool lifecycle/version metadata with a
+  dormant deprecation-warning mechanism.
+- Startup: connects stdio first, then auto-pulls scopes in the background.
+
+### Shared foundation
+
+- `@syncrona/credential-store` — single source of truth for at-rest crypto
+  (AES-256-GCM), async API for the CLI + sync API for the MCP server. Key source
+  precedence: explicit `SYNCRONA_STORE_KEY` > OS keychain (DEFAULT backend via the
+  optional `@napi-rs/keyring`; opt out with `SYNCRONA_USE_KEYCHAIN=0`) >
+  machine-derived fallback (obfuscation-grade; keeps old files decrypting). Also
+  stores Jira credential profiles.
+- `@syncrona/sn-transport` — shared scoped-prefix, retry-status, and
+  endpoint-not-found policies consumed by both HTTP clients, plus the instance
+  error taxonomy (`transient` / `auth` / `acl` / `not-found` / `fatal` with
+  tri-state reachability) and the path-safety rules that turn a ServiceNow record
+  name into a filename legal on every supported filesystem.
+- `@syncrona/jira` — shared read-only Jira client (Cloud v3 + Server/DC v2),
+  ADF-to-text rendering, branch-key inference, and config/credential resolution;
+  consumed by both the CLI `jira` command and the MCP `jira_get_issue` tool.
+- `@syncrona/redaction` — the single credential-detection primitive: sensitive key
+  names, secret-shaped values (connection strings, JWTs, PEM keys, vendor API keys,
+  raw key material), a fail-closed scan budget, and the stable
+  `__SYNCRONA_REDACTED__<sha256-12>` marker. A leaf by acceptance criterion — it
+  imports no other `@syncrona` package, `types` included — so the MCP audit trail
+  and any future consumer cannot fork the detection rules.
+- `@syncrona/mirror` — the full-instance git mirror engine behind `syncrona mirror`
+  (design: [full-instance-git-mirror.md](design/full-instance-git-mirror.md),
+  [mirror-architecture.md](design/mirror-architecture.md)). Catalogs the instance
+  from `sys_dictionary`, sweeps every in-scope table over the Table API, and writes
+  a sharded, deterministically ordered tree whose re-sync is byte-identical (INV-1).
+  It is **GET-only by construction** (INV-2): the OAuth token exchange is the one
+  POST the design needs, and it lives in the CLI (`mirrorCommand.ts`), which hands
+  the engine a ready `Authorization` header. Ships CommonJS so the ESM CLI can reach
+  it through Node's interop.
+
+## 2026-06-12 fix series — what changed (CR1–CR30)
+
+Reliability-focused hardening after a three-perspective review. Full detail in
+`DONE`; the headline changes:
+
+```mermaid
+mindmap
+  root((CR fix series))
+    Correctness
+      create user-preference paths reachable again
+      store-based logins fixed for scope swap
+      404 push message restored
+    Push safety
+      checkpoint only after confirmation
+      atomic lock + guaranteed release
+      lock anchored to project root
+    Error honesty
+      broken config = hard fail
+      refresh reports real outcome
+      scopeCheck no longer masks errors
+      yargs handlers surface failures
+    Scale and perf
+      Table API pagination everywhere
+      sys_idIN chunking
+      secrets cached, scrypt off hot path
+      MCP handshake no longer blocked
+    Consistency
+      endpoint policy unified 400 403 404
+      credential precedence CLI = MCP
+    QA
+      coverage gate measures whole source
+      zod schemas for all mutating tools
+      4 push-state regression tests
+      2 pre-existing broken suites repaired
+```
+
+## What is NOT done
+
+1. **D5 distribution** — the npm half is **done**: 1.0.0 is live on npm for all 16
+   packages with build provenance, published from the `release` workflow off the
+   `v1.0.0` tag (2026-08-25), so `npx syncrona` works for anyone. That release is
+   also the first where `changeset publish` created and pushed all 16 per-package
+   tags. macOS/Windows/libsecret keychain for the
+   at-rest key shipped via AR2 (opt-in). The **Homebrew formula body is
+   verified**: rendered with the real 0.9.4 registry URL and sha256, it passes
+   `brew style` and `brew audit --strict --online`, builds from source, installs,
+   passes `brew test`, and the installed binary prints its version — and the
+   `release.yml` substitution step was run for real against it (it is now
+   anchored and fails loudly if the placeholder ever moves). Remaining: the
+   `homebrew-tap` **repo does not exist**, so `brew tap IvanBBaev/tap` has never
+   run; the `update-homebrew` job is gated on an unset `HOMEBREW_TAP_READY` and
+   has never executed; no bottle exists; and Homebrew's 1-day
+   `--min-release-age` cooldown means `brew install syncrona` fails for roughly
+   the first 24 hours after each release (documented on the job). Plus native
+   Windows support beyond WSL — [`packaging/`](../packaging/) holds the Windows
+   `install.ps1`, still unverified for lack of a Windows host.
+2. **Manual/infra residuals** — rotate the old dev-instance password (AR1/CR2).
+   CR22 is closed: the `sys.scripts.do` fallback was live-verified 2026-07-03
+   (fixed a 404-only trigger that missed the real `400` response; confirmed it
+   stays non-executing under Basic-only auth, as documented). A second manual
+   pass on **2026-08-21** ran the primary workflow end to end against a live
+   **Yokohama patch 13** instance — `download` returned byte-exact content, a
+   `push` edit landed and was restored, and `build --diff`, `deploy --ci`,
+   `--json` and `--dry-run` behaved as their contracts state; see
+   [`COMPATIBILITY.md`](COMPATIBILITY.md). Both runs are **manual and dated**,
+   not reproducible by a third party: G11 (E2E against an instance in CI) is
+   still open and is what would turn either into evidence.
+3. **Engineering debt accepted knowingly** — mcp tests run against `dist/`
+   (AR9, high-risk migration); module-level state pending a context object
+   (AR11); coverage ratchet heading to 80 (CR26).
+4. **Gap backlog G1–G16** (triple analysis, 2026-06-12 — details and order in
+   `TODO`). **Shipped since:** OAuth 2.0 (G1), config schema validation (G2),
+   MCP rate limiting (G4), typed CLI args (G5), release automation via Changesets
+   (G6), corporate proxy + TLS support (G9 — `HTTPS_PROXY`/`NO_PROXY` and mTLS
+   in both clients), machine-enforced module boundaries (G10), mcp branch
+   coverage (G12), performance baselines (G14 — `scripts/bench.mjs`, enforced by
+   `bench:guard` in `npm run check` and in CI), OS matrix in CI (G15), security
+   automation (G16), download resume/progress (G3 — `downloadCheckpoint.ts`
+   records each completed table so an interrupted pull resumes). **Shipped but
+   not enforced:** mutation testing (G13) — Stryker is configured for `core`,
+   `mcp-server`, `credential-store` and `sn-transport` and runs on demand via
+   `npm run test:mutation`, but no workflow executes it, so no mutation score is
+   a gate. **Remaining:** CLI telemetry (G7), plugin API contract (G8), E2E
+   tests against an instance (G11).
+5. **now-sdk parity follow-ups (1.1.0)** — the commands that close the gap to the
+   ServiceNow SDK (`push --create`/`--prune`, `init --new`, `query`, `cicd`,
+   `fluent`, opt-in data-model records) were verified against a live instance on
+   2026-10-13 (`push --create`/`--prune`, `init --new`, data-model sidecars,
+   `cicd run-suite`/`run-test`, `fluent install`, `query`); `cicd install`/
+   `publish`/`rollback`, `fluent move-to-app` and the composite layout are
+   covered by mocked tests only. Still open past 1.1.0: API-key
+   profiles in the Fluent tier (mutual TLS with a Basic or OAuth profile is
+   supported, but not yet verified against an instance that enforces it). The opt-in composite data-model
+   layout (`dataModelLayout: "composite"`) has shipped. Native type generation from
+   `sys_dictionary` (`fluent types --native`) and the `fluent explain` /
+   `fluent move-to-app` counterparts have shipped, covered by mocked tests. See [MIGRATING_FROM_NOW_SDK.md](MIGRATING_FROM_NOW_SDK.md)
+   and `ROADMAP.md`.
+6. **DX backlog (DX1–DX24)** — onboarding (`check-env`, credential-source
+   visibility), help examples, multi-instance guide, plugin-dev docs, error
+   taxonomy, progress bars. Quick wins shortlisted in `TODO`.
+
+## Operating constraints
+
+- Node ≥ 22, npm ≥ 10 (enforced via `engines`; CI runs Node 22).
+- ServiceNow auth defaults to Basic (user/password); OAuth 2.0 is available
+  opt-in on both the CLI and the MCP server (`SN_OAUTH_*`).
+- The MCP safety layer is a guardrail, not a sandbox — run it with credentials
+  you would trust the calling agent to hold (see mcp README "Safety note").
+- Windows support is best-effort (WSL recommended; `differentiatorField`
+  naming can produce non-Windows-safe paths — DX11).

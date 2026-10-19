@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<record_update table="change_risk_asmt">
+  <change_risk_asmt action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>92a17095559242dfbea8640bb3eb9bcd</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>change_risk_asmt_92a17095559242dfbea8640bb3eb9bcd</sys_update_name>
+    <active>true</active>
+    <allow_public>false</allow_public>
+    <allow_retake>false</allow_retake>
+    <anonymize>false</anonymize>
+    <business_rule/>
+    <chat_survey>false</chat_survey>
+    <condition/>
+    <default_filter/>
+    <delete_business_rule/>
+    <description/>
+    <disable_ui_action/>
+    <display_all_filters>false</display_all_filters>
+    <display_field/>
+    <duration>1970-01-02 00:00:00</duration>
+    <enable_ui_action/>
+    <end_note/>
+    <enforce_condition>false</enforce_condition>
+    <evaluation_method>risk_assessment</evaluation_method>
+    <filter_condition/>
+    <filter_table/>
+    <introduction/>
+    <job/>
+    <live_feed>false</live_feed>
+    <name>Change Risk</name>
+    <not_show_intro_note>false</not_show_intro_note>
+    <notify_if_overdue>false</notify_if_overdue>
+    <notify_user>true</notify_user>
+    <one_click_survey>false</one_click_survey>
+    <overdue_notify_user/>
+    <portal_pagination>category</portal_pagination>
+    <publish_state>draft</publish_state>
+    <roles/>
+    <sample_metric/>
+    <scale_factor>50</scale_factor>
+    <schedule_period>0</schedule_period>
+    <schedule_type>on_demand</schedule_type>
+    <scoring_type>percent</scoring_type>
+    <signature/>
+    <source_table/>
+    <survey_owners/>
+    <sys_domain>global</sys_domain>
+    <sys_domain_path>/</sys_domain_path>
+    <table>change_request</table>
+    <url/>
+    <user_field/>
+    <user_field_business_rule/>
+  </change_risk_asmt>
+</record_update>

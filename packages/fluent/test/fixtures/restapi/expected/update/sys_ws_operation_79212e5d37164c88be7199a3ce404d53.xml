@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_operation">
+  <sys_ws_operation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>79212e5d37164c88be7199a3ce404d53</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_operation_79212e5d37164c88be7199a3ce404d53</sys_update_name>
+    <active>false</active>
+    <consumes>text/plain</consumes>
+    <consumes_customized>true</consumes_customized>
+    <default_operation_uri>/api/x_snc_bprobe/items/create</default_operation_uri>
+    <enforce_acl>e68465a2793e4a8ca7e3a911e617416e</enforce_acl>
+    <http_method>POST</http_method>
+    <name>/create</name>
+    <operation_script><![CDATA[gs.info("create")]]></operation_script>
+    <operation_uri>/api/x_snc_bprobe/v2/items/create</operation_uri>
+    <produces>application/json</produces>
+    <produces_customized>true</produces_customized>
+    <relative_path>/create</relative_path>
+    <request_example>{"a":1}</request_example>
+    <requires_acl_authorization>false</requires_acl_authorization>
+    <requires_authentication>false</requires_authentication>
+    <requires_snc_internal_role>false</requires_snc_internal_role>
+    <short_description/>
+    <sys_policy>protected</sys_policy>
+    <web_service_definition>d3617245013c4e83bd60ed56ae312b91</web_service_definition>
+    <web_service_version>e4692ac0bc414cfb857d3f2a80182e07</web_service_version>
+  </sys_ws_operation>
+</record_update>

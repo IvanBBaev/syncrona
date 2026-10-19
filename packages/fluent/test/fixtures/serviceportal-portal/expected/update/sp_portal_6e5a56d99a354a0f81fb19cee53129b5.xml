@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<record_update table="sp_portal">
+  <sp_portal action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6e5a56d99a354a0f81fb19cee53129b5</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_portal_6e5a56d99a354a0f81fb19cee53129b5</sys_update_name>
+    <alternate_portal/>
+    <communication_channels/>
+    <css_variables/>
+    <dark_theme/>
+    <default>false</default>
+    <embeddable_macroponents/>
+    <enable_ais>false</enable_ais>
+    <enable_certificate_based_authentication>false</enable_certificate_based_authentication>
+    <enable_embeddables>false</enable_embeddables>
+    <enable_favorites>false</enable_favorites>
+    <hide_portal_name>false</hide_portal_name>
+    <homepage/>
+    <icon/>
+    <inactive>false</inactive>
+    <kb_knowledge_base>fda06637df9145929c272447c1a03ca3</kb_knowledge_base>
+    <kb_knowledge_page/>
+    <login_page/>
+    <logo/>
+    <logo_alt_text/>
+    <notfound_page/>
+    <quick_start_config/>
+    <rtl_enabled>false</rtl_enabled>
+    <sc_catalog>77777777777777777777777777777777</sc_catalog>
+    <sc_catalog_page/>
+    <sc_category_page/>
+    <search_application/>
+    <search_results_configuration/>
+    <sp_chat_queue/>
+    <sp_rectangle_menu/>
+    <theme/>
+    <title>Deprecated Portal</title>
+    <ts_index_group/>
+    <url_suffix>dep</url_suffix>
+  </sp_portal>
+</record_update>

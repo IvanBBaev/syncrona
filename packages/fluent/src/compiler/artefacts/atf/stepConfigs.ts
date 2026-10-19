@@ -1,0 +1,2562 @@
+// SPDX-License-Identifier: MIT
+//
+// Copyright (c) 2024 ServiceNow Inc.
+//
+// The ATF step configurations SDK 4.13.6 compiles Test() steps against,
+// generated verbatim from @servicenow/sdk-build-plugins 4.13.6
+// (atf/step-configs, ToRecordStepConfigs), which is MIT-licensed:
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+/** One Fluent option of an ATF step: the input variable it writes. */
+export interface StepVariable {
+  readonly field: string;
+  readonly order: number;
+  readonly inputVariableId: string;
+  readonly type: string;
+  readonly default?: string | number | boolean;
+  readonly mandatory?: boolean;
+}
+
+/** One `atf.<category>.<step>()` call: the step configuration it records. */
+export interface StepConfig {
+  readonly name: string;
+  readonly stepConfigId: string;
+  readonly defaultTimeout?: string;
+  readonly variables: Readonly<Record<string, StepVariable>>;
+}
+
+/** Every ATF step SDK 4.13.6 compiles, by category and step name. */
+export const STEP_CONFIGS: Readonly<
+  Record<string, Readonly<Record<string, StepConfig>>>
+> = {
+  applicationNavigator: {
+    applicationMenuVisibility: {
+      name: "Application Menu Visibility",
+      stepConfigId: "6228cf753752030064a52f3c8e41f1a8",
+      variables: {
+        notVisible: {
+          field: "not_visible_applications",
+          order: 400,
+          inputVariableId: "1b52683573220300c79260bdfaf6a763",
+          type: "glide_list",
+        },
+        assertVisible: {
+          field: "visible_assert_type",
+          order: 100,
+          inputVariableId: "746a8fb53752030064a52f3c8e41f14c",
+          type: "choice",
+          default: "at_least_applications_visible",
+        },
+        assertNotVisible: {
+          field: "not_visible_assert_type",
+          order: 300,
+          inputVariableId: "abc1e03573220300c79260bdfaf6a7f0",
+          type: "choice",
+          default: "at_least_applications_not_visible",
+        },
+        navigator: {
+          field: "navigator",
+          order: 50,
+          inputVariableId: "e26225ab73f22010ac1560bdfaf6a7e0",
+          type: "choice",
+          default: "ui15",
+        },
+        visible: {
+          field: "visible_applications",
+          order: 200,
+          inputVariableId: "e9994bb53752030064a52f3c8e41f1a9",
+          type: "glide_list",
+        },
+      },
+    },
+    navigateToModule: {
+      name: "Navigate to Module",
+      stepConfigId: "c832fc4073720300c79260bdfaf6a7a0",
+      variables: {
+        module: {
+          field: "module",
+          order: 100,
+          inputVariableId: "b6d2b40c73720300c79260bdfaf6a786",
+          type: "reference",
+        },
+      },
+    },
+    moduleVisibility: {
+      name: "Module Visibility",
+      stepConfigId: "f7cfc1973702030064a52f3c8e41f1d3",
+      variables: {
+        visibleModules: {
+          field: "visible_modules",
+          order: 200,
+          inputVariableId: "4a3319d73702030064a52f3c8e41f1a9",
+          type: "glide_list",
+        },
+        assertNotVisible: {
+          field: "not_visible_assert_type",
+          order: 300,
+          inputVariableId: "8570e0e33756030064a52f3c8e41f16c",
+          type: "choice",
+          default: "at_least_modules_not_visible",
+        },
+        assertVisible: {
+          field: "visible_assert_type",
+          order: 100,
+          inputVariableId: "90749dd73702030064a52f3c8e41f12d",
+          type: "choice",
+          default: "at_least_modules_visible",
+        },
+        notVisibleModules: {
+          field: "not_visible_modules",
+          order: 400,
+          inputVariableId: "932d14a33756030064a52f3c8e41f120",
+          type: "glide_list",
+        },
+        navigator: {
+          field: "navigator",
+          order: 50,
+          inputVariableId: "b4e438ae73322010ac1560bdfaf6a7a2",
+          type: "choice",
+          default: "ui15",
+        },
+      },
+    },
+  },
+  email: {
+    validateOutboundEmailGeneratedByFlow: {
+      name: "Validate Outbound Email Generated by Flow",
+      stepConfigId: "0d09dae4c3033300eaac11fe81d3ae1a",
+      variables: {
+        conditions: {
+          field: "conditions",
+          order: 100,
+          inputVariableId: "5b6d7bf8c3033300eaac11fe81d3ae4a",
+          type: "conditions",
+          default:
+            "stateANYTHING^recipientsANYTHING^user_idANYTHING^subjectANYTHING^bodyANYTHING^EQ",
+        },
+        sourceFlow: {
+          field: "source_flow",
+          order: 100,
+          inputVariableId: "822fb73cc3033300eaac11fe81d3ae34",
+          type: "reference",
+          mandatory: true,
+        },
+        table: {
+          field: "table_name",
+          order: 100,
+          inputVariableId: "bd5df7f8c3033300eaac11fe81d3aef1",
+          type: "table_name",
+          default: "sys_email",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:30",
+    },
+    generateRandomString: {
+      name: "Generate Random String",
+      stepConfigId: "263313e4c3123300eaac11fe81d3aef9",
+      variables: {
+        length: {
+          field: "length",
+          order: 100,
+          inputVariableId: "594393e4c3123300eaac11fe81d3aef0",
+          type: "integer",
+          default: 10,
+        },
+      },
+    },
+    validateOutboundEmail: {
+      name: "Validate Outbound Email",
+      stepConfigId: "32911152c3833300eaac11fe81d3ae82",
+      variables: {
+        conditions: {
+          field: "conditions",
+          order: 100,
+          inputVariableId: "7d821952c3833300eaac11fe81d3ae2e",
+          type: "conditions",
+          default:
+            "stateANYTHING^recipientsANYTHING^user_idANYTHING^subjectANYTHING^bodyANYTHING^headersANYTHING^EQ",
+          mandatory: true,
+        },
+        table: {
+          field: "table_name",
+          order: 100,
+          inputVariableId: "80625552c3833300eaac11fe81d3aedc",
+          type: "table_name",
+          default: "sys_email",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:30",
+    },
+    validateOutboundEmailGeneratedByNotification: {
+      name: "Validate Outbound Email Generated by Notification",
+      stepConfigId: "a5600fa0c3033300eaac11fe81d3ae6a",
+      variables: {
+        table: {
+          field: "table_name",
+          order: 100,
+          inputVariableId: "13a08fa0c3033300eaac11fe81d3aecf",
+          type: "table_name",
+          default: "sys_email",
+        },
+        sourceNotification: {
+          field: "source_notification",
+          order: 100,
+          inputVariableId: "92c42ff0c3033300eaac11fe81d3aec0",
+          type: "reference",
+          mandatory: true,
+        },
+        conditions: {
+          field: "conditions",
+          order: 100,
+          inputVariableId: "d30577f4c3033300eaac11fe81d3ae3e",
+          type: "conditions",
+          default:
+            "stateANYTHING^recipientsANYTHING^user_idANYTHING^subjectANYTHING^bodyANYTHING^EQ",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:30",
+    },
+    generateInboundReplyEmail: {
+      name: "Generate Inbound Reply Email",
+      stepConfigId: "b4549a71c3623300eaac11fe81d3ae15",
+      variables: {
+        targetRecord: {
+          field: "target_record",
+          order: 100,
+          inputVariableId: "70c7df8ac3223300eaac11fe81d3aef2",
+          type: "document_id",
+          mandatory: true,
+        },
+        subject: {
+          field: "subject",
+          order: 100,
+          inputVariableId: "991516b1c3623300eaac11fe81d3aefa",
+          type: "string",
+        },
+        body: {
+          field: "body",
+          order: 100,
+          inputVariableId: "a12596b1c3623300eaac11fe81d3ae1f",
+          type: "string",
+        },
+        targetTable: {
+          field: "target_table",
+          order: 100,
+          inputVariableId: "b7948756c3323300eaac11fe81d3ae2d",
+          type: "table_name",
+          mandatory: true,
+        },
+        from: {
+          field: "from",
+          order: 100,
+          inputVariableId: "cc05d2b1c3623300eaac11fe81d3aeda",
+          type: "string",
+        },
+        to: {
+          field: "to",
+          order: 100,
+          inputVariableId: "e274d271c3623300eaac11fe81d3aebe",
+          type: "string",
+          mandatory: true,
+        },
+      },
+    },
+    generateInboundEmail: {
+      name: "Generate Inbound Email",
+      stepConfigId: "e0e6f84ac3523300eaac11fe81d3ae03",
+      variables: {
+        from: {
+          field: "from",
+          order: 100,
+          inputVariableId: "41a99fe1c3323300eaac11fe81d3ae7d",
+          type: "string",
+        },
+        to: {
+          field: "to",
+          order: 100,
+          inputVariableId: "61991fe1c3323300eaac11fe81d3aef1",
+          type: "string",
+          mandatory: true,
+        },
+        subject: {
+          field: "subject",
+          order: 100,
+          inputVariableId: "63a9dfe1c3323300eaac11fe81d3ae70",
+          type: "string",
+        },
+        body: {
+          field: "body",
+          order: 100,
+          inputVariableId: "85899be1c3323300eaac11fe81d3aea1",
+          type: "string",
+        },
+      },
+    },
+  },
+  form: {
+    openNewForm: {
+      name: "Open a New Form",
+      stepConfigId: "05317cd10b10220050192f15d6673af8",
+      variables: {
+        view: {
+          field: "view",
+          order: 200,
+          inputVariableId: "27d4e1c25320220002c6435723dc3486",
+          type: "string",
+        },
+        recordPath: {
+          field: "record_path",
+          order: 100,
+          inputVariableId: "3a662f60a3023110571967d1361e6134",
+          type: "string",
+          default: "record",
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "6f2a59a4e7133300b5646ea8c2f6a975",
+          type: "choice",
+          default: "standard_ui",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "bb84ed825320220002c6435723dc3400",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    clickUIAction: {
+      name: "Click a UI Action",
+      stepConfigId: "0f4a128297202200abe4bb7503ac4af0",
+      variables: {
+        actionType: {
+          field: "action_type",
+          order: 150,
+          inputVariableId: "334ea2f153212110248dddeeff7b1255",
+          type: "choice",
+          default: "ui_action",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "3eee292353e0220002c6435723dc343c",
+          type: "table_name",
+          mandatory: true,
+        },
+        declarativeAction: {
+          field: "declarative_action",
+          order: 400,
+          inputVariableId: "51547e3953212110248dddeeff7b126b",
+          type: "reference",
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "535cb5ab53233300f06fddeeff7b1247",
+          type: "choice",
+          default: "standard_ui",
+        },
+        assert: {
+          field: "assert_type",
+          order: 500,
+          inputVariableId: "7600f16353e0220002c6435723dc34d5",
+          type: "choice",
+        },
+        uiAction: {
+          field: "ui_action",
+          order: 400,
+          inputVariableId: "7c5f6d2353e0220002c6435723dc34f6",
+          type: "reference",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    fieldValueValidation: {
+      name: "Field Values Validation",
+      stepConfigId: "1b97cd31872022008182c9ded0e3ece5",
+      variables: {
+        conditions: {
+          field: "conditions",
+          order: 200,
+          inputVariableId: "4aa838f25320220002c6435723dc34e1",
+          type: "conditions",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "a0e13cc35320220002c6435723dc3467",
+          type: "table_name",
+          mandatory: true,
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "c83b5337e7633300e12127d8d2f6a98b",
+          type: "choice",
+          default: "standard_ui",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    fieldStateValidation: {
+      name: "Field State Validation",
+      stepConfigId: "1dfece935332120028bc29cac2dc3478",
+      variables: {
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "0cd9df135320220002c6435723dc3426",
+          type: "field_list",
+        },
+        readOnly: {
+          field: "read_only",
+          order: 300,
+          inputVariableId: "592a17535320220002c6435723dc34d7",
+          type: "field_list",
+        },
+        mandatory: {
+          field: "mandatory",
+          order: 400,
+          inputVariableId: "6e5a1b535320220002c6435723dc3498",
+          type: "field_list",
+        },
+        notMandatory: {
+          field: "not_mandatory",
+          order: 410,
+          inputVariableId: "787a9b535320220002c6435723dc3455",
+          type: "field_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "80f953535320220002c6435723dc340f",
+          type: "table_name",
+          mandatory: true,
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "b1fefcde73633300b19898b8caf6a7af",
+          type: "choice",
+          default: "standard_ui",
+        },
+        notReadOnly: {
+          field: "not_read_only",
+          order: 310,
+          inputVariableId: "e63a97535320220002c6435723dc34b8",
+          type: "field_list",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 210,
+          inputVariableId: "e81ad3535320220002c6435723dc340c",
+          type: "field_list",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    clickModalButton: {
+      name: "Click Modal Button",
+      stepConfigId: "22aed143dfe0220062fe6c7a4df2639d",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "22cf38c26721130091d005225685ef81",
+          type: "choice",
+        },
+        assertTimeout: {
+          field: "assertion_timeout",
+          order: 100,
+          inputVariableId: "6354395e6761130091d005225685ef4e",
+          type: "glide_duration",
+          default: "00:00:05",
+        },
+        uiPage: {
+          field: "ui_page",
+          order: 100,
+          inputVariableId: "6fe5aad0c3302200f25d174292d3aeba",
+          type: "reference",
+        },
+        button: {
+          field: "button",
+          order: 200,
+          inputVariableId: "a325ae60c3302200f25d174292d3aebf",
+          type: "string",
+        },
+        values: {
+          field: "modal_values",
+          order: 250,
+          inputVariableId: "d7c942e753a33300ac15ddeeff7b128e",
+          type: "simple_name_values",
+        },
+        action: {
+          field: "modal_action",
+          order: 300,
+          inputVariableId: "e5a3e12353633300ac15ddeeff7b125c",
+          type: "choice",
+          default: "confirm",
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "e9b1cdde53233300ac15ddeeff7b12c2",
+          type: "choice",
+          default: "standard_ui",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    clickDeclarativeAction: {
+      name: "Click a Declarative Action",
+      stepConfigId: "49e34cbe433131106580a9bb1cb8f25c",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 400,
+          inputVariableId: "7cd44032437131106580a9bb1cb8f283",
+          type: "choice",
+        },
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "bc1400fe433131106580a9bb1cb8f2d9",
+          type: "table_name",
+          mandatory: true,
+        },
+        formUI: {
+          field: "form_ui",
+          order: 100,
+          inputVariableId: "eb5dd0b6433131106580a9bb1cb8f2c8",
+          type: "choice",
+        },
+        declarativeAction: {
+          field: "declarative_action",
+          order: 300,
+          inputVariableId: "f27484fe433131106580a9bb1cb8f273",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    openExistingRecord: {
+      name: "Open an Existing Record",
+      stepConfigId: "5f2e0e535332120028bc29cac2dc34d3",
+      variables: {
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "17d732a9c7a333005e5c45b881c26007",
+          type: "choice",
+          default: "standard_ui",
+        },
+        view: {
+          field: "view",
+          order: 300,
+          inputVariableId: "6e55da4e53a0220002c6435723dc34a0",
+          type: "string",
+        },
+        recordPath: {
+          field: "record_path",
+          order: 100,
+          inputVariableId: "74d6e7a0a3023110571967d1361e616b",
+          type: "string",
+          default: "record",
+        },
+        recordId: {
+          field: "record_id",
+          order: 200,
+          inputVariableId: "ad351a4e53a0220002c6435723dc34f0",
+          type: "document_id",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "b124164e53a0220002c6435723dc34c5",
+          type: "table_name",
+          mandatory: true,
+        },
+        selectedTabIndex: {
+          field: "selected_tab_index",
+          order: 400,
+          inputVariableId: "c2eb56e853422110248dddeeff7b1261",
+          type: "integer",
+          default: 1,
+        },
+      },
+    },
+    addAttachmentsToForm: {
+      name: "Add Attachments to Form",
+      stepConfigId: "6932ee40b760330044026848ee11a960",
+      variables: {},
+    },
+    submitForm: {
+      name: "Submit a Form",
+      stepConfigId: "be8e0a935332120028bc29cac2dc34e4",
+      variables: {
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "ae8b91c9ffa333008d3f5d9ad53bf1ba",
+          type: "choice",
+          default: "standard_ui",
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "c796d40497302200abe4bb7503ac4ad8",
+          type: "choice",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    declarativeActionVisibility: {
+      name: "Declarative Action Visibility",
+      stepConfigId: "c52ed987437131106580a9bb1cb8f2b8",
+      variables: {
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "2a3e91c7437131106580a9bb1cb8f283",
+          type: "choice",
+          default: "standard_ui",
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "692ed987437131106580a9bb1cb8f2bc",
+          type: "glide_list",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "c03e51c7437131106580a9bb1cb8f2bd",
+          type: "glide_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "d13e91c7437131106580a9bb1cb8f22d",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    uiActionVisibility: {
+      name: "UI Action Visibility",
+      stepConfigId: "d8fdf5e10b1022009cfdc71437673adc",
+      variables: {
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "56e6bee65320220002c6435723dc34b9",
+          type: "glide_list",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "6619c7aa5320220002c6435723dc34e2",
+          type: "glide_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "ba62b4075320220002c6435723dc34b9",
+          type: "table_name",
+          mandatory: true,
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "bc43e004c76733005e5c45b881c26046",
+          type: "choice",
+          default: "standard_ui",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    setFieldValue: {
+      name: "Set Field Values",
+      stepConfigId: "fcae4a935332120028bc29cac2dc340e",
+      variables: {
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "424ca6465320220002c6435723dc34b5",
+          type: "table_name",
+          mandatory: true,
+        },
+        formUI: {
+          field: "form_ui",
+          order: 50,
+          inputVariableId: "946f3c1a0f23330072e6452bc4767eda",
+          type: "choice",
+          default: "standard_ui",
+        },
+        fieldValues: {
+          field: "field_values",
+          order: 100,
+          inputVariableId: "b3dba2465320220002c6435723dc34f0",
+          type: "template_value",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  reporting: {
+    reportVisibility: {
+      name: "Report Visibility",
+      stepConfigId: "e6b32c570b10230083332dc3b6673a14",
+      variables: {
+        report: {
+          field: "report_id",
+          order: 100,
+          inputVariableId: "6f5d6cd30b10230083332dc3b6673a78",
+          type: "reference",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 200,
+          inputVariableId: "ebcd20170b10230083332dc3b6673aa5",
+          type: "choice",
+          default: "can_view_report",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  responsiveDashboard: {
+    responsiveDashboardVisibility: {
+      name: "Responsive Dashboard Visibility",
+      stepConfigId: "60a41086b31023003e5362ff86a8dc28",
+      variables: {
+        dashboard: {
+          field: "dashboard_id",
+          order: 100,
+          inputVariableId: "27f558c6b31023003e5362ff86a8dc5b",
+          type: "reference",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 200,
+          inputVariableId: "4bb8c906b31023003e5362ff86a8dc9f",
+          type: "choice",
+          default: "dashboard_is_visible",
+          mandatory: true,
+        },
+      },
+    },
+    responsiveDashboardSharing: {
+      name: "Responsive Dashboard Sharing",
+      stepConfigId: "d4df4ce30b13130083332dc3b6673a29",
+      variables: {
+        dashboard: {
+          field: "dashboard_id",
+          order: 100,
+          inputVariableId: "1e6094270b13130083332dc3b6673a42",
+          type: "reference",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 200,
+          inputVariableId: "4a23d0670b13130083332dc3b6673adb",
+          type: "choice",
+          default: "can_share_dashboard",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  rest: {
+    assertStatusCode: {
+      name: "Assert Status Code",
+      stepConfigId: "2f4fa7309f132200ef4afa7dc67fcf0f",
+      variables: {
+        operation: {
+          field: "response_operation",
+          order: 100,
+          inputVariableId: "1d94cb1f3b8032000774229c93efc419",
+          type: "choice",
+          default: "equals",
+        },
+        statusCode: {
+          field: "status_code",
+          order: 110,
+          inputVariableId: "9f5f67709f132200ef4afa7dc67fcf94",
+          type: "integer",
+          mandatory: true,
+        },
+      },
+    },
+    assertStatusCodeName: {
+      name: "Assert Status Code Name",
+      stepConfigId: "49213f709f132200ef4afa7dc67fcfd0",
+      variables: {
+        codeName: {
+          field: "code_name",
+          order: 110,
+          inputVariableId: "6a61b3b09f132200ef4afa7dc67fcf36",
+          type: "string",
+        },
+        operation: {
+          field: "response_operation",
+          order: 100,
+          inputVariableId: "813133b09f132200ef4afa7dc67fcf6b",
+          type: "choice",
+          default: "contains",
+        },
+      },
+    },
+    assertXMLResponsePayloadElement: {
+      name: "Assert XML Response Payload Element",
+      stepConfigId: "7b403b079f132200ef4afa7dc67fcf8c",
+      variables: {
+        operation: {
+          field: "response_operation",
+          order: 110,
+          inputVariableId: "588e23959f232200ef4afa7dc67fcfd4",
+          type: "choice",
+          default: "exists",
+        },
+        elementPath: {
+          field: "element_name",
+          order: 100,
+          inputVariableId: "9afdef559f232200ef4afa7dc67fcf6a",
+          type: "string",
+          mandatory: true,
+        },
+        elementValue: {
+          field: "element_value",
+          order: 120,
+          inputVariableId: "d9dfab959f232200ef4afa7dc67fcf2c",
+          type: "string",
+        },
+      },
+    },
+    assertResponseTime: {
+      name: "Assert Response Time",
+      stepConfigId: "8afa37419f132200ef4afa7dc67fcf7f",
+      variables: {
+        operation: {
+          field: "response_operation",
+          order: 100,
+          inputVariableId: "480b3b819f132200ef4afa7dc67fcf33",
+          type: "choice",
+          default: "less_than",
+        },
+        responseTime: {
+          field: "response_time",
+          order: 110,
+          inputVariableId: "ddab3f819f132200ef4afa7dc67fcf2b",
+          type: "integer",
+          mandatory: true,
+        },
+      },
+    },
+    assertJsonResponsePayloadElement: {
+      name: "Assert JSON Response Payload Element",
+      stepConfigId: "afc114199f132200ef4afa7dc67fcf64",
+      variables: {
+        operation: {
+          field: "response_operation",
+          order: 110,
+          inputVariableId: "2db298199f132200ef4afa7dc67fcfbc",
+          type: "choice",
+          default: "exists",
+        },
+        elementName: {
+          field: "element_name",
+          order: 100,
+          inputVariableId: "5a9258199f132200ef4afa7dc67fcfb4",
+          type: "string",
+          mandatory: true,
+        },
+        elementValue: {
+          field: "element_value",
+          order: 120,
+          inputVariableId: "7b139c199f132200ef4afa7dc67fcfb3",
+          type: "string",
+        },
+      },
+    },
+    assertResponseHeader: {
+      name: "Assert Response Header",
+      stepConfigId: "ccd64c519f132200ef4afa7dc67fcf6a",
+      variables: {
+        headerValue: {
+          field: "header_value",
+          order: 120,
+          inputVariableId: "19280c919f132200ef4afa7dc67fcf16",
+          type: "string",
+        },
+        operation: {
+          field: "response_operation",
+          order: 110,
+          inputVariableId: "416784919f132200ef4afa7dc67fcff4",
+          type: "choice",
+          default: "exists",
+        },
+        headerName: {
+          field: "header_name",
+          order: 100,
+          inputVariableId: "cd4744919f132200ef4afa7dc67fcf6e",
+          type: "string",
+          mandatory: true,
+        },
+      },
+    },
+    assertResponsePayload: {
+      name: "Assert Response Payload",
+      stepConfigId: "d53e40d59f132200ef4afa7dc67fcfc7",
+      variables: {
+        operation: {
+          field: "response_operation",
+          order: 100,
+          inputVariableId: "ccae44d59f132200ef4afa7dc67fcf1e",
+          type: "choice",
+          default: "contains",
+        },
+        responseBody: {
+          field: "response_body",
+          order: 110,
+          inputVariableId: "f0eec4d59f132200ef4afa7dc67fcf6d",
+          type: "string",
+        },
+      },
+    },
+    sendRestRequest: {
+      name: "Send REST Request - Inbound",
+      stepConfigId: "e00571a10b3222000b7da95e93673a8f",
+      variables: {
+        basicAuthentication: {
+          field: "basic_auth",
+          order: 100,
+          inputVariableId: "020a6af09fd32200ef4afa7dc67fcfec",
+          type: "reference",
+        },
+        path: {
+          field: "end_point",
+          order: 2,
+          inputVariableId: "50bff9250b3222000b7da95e93673a9b",
+          type: "string",
+          mandatory: true,
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 3,
+          inputVariableId: "58408e250b3222000b7da95e93673a5c",
+          type: "simple_name_values",
+        },
+        method: {
+          field: "http_method",
+          order: 1,
+          inputVariableId: "59877da10b3222000b7da95e93673a56",
+          type: "choice",
+          default: "get",
+          mandatory: true,
+        },
+        auth: {
+          field: "auth_type",
+          order: 100,
+          inputVariableId: "6cdd0ab543010210b6f9a0246bb8f2f2",
+          type: "choice",
+          default: "basic",
+        },
+        body: {
+          field: "request_body",
+          order: 5,
+          inputVariableId: "81e042650b3222000b7da95e93673aa2",
+          type: "string",
+        },
+        mutualAuth: {
+          field: "mutual_auth",
+          order: 100,
+          inputVariableId: "89ad06b543010210b6f9a0246bb8f2d7",
+          type: "reference",
+        },
+        headers: {
+          field: "headers",
+          order: 4,
+          inputVariableId: "cec002650b3222000b7da95e93673aae",
+          type: "simple_name_values",
+        },
+      },
+    },
+    assertResponseJSONPayloadIsValid: {
+      name: "Assert Response JSON Payload Is Valid",
+      stepConfigId: "f100f7079f132200ef4afa7dc67fcf42",
+      variables: {},
+    },
+    assertResponseXMLPayloadIsWellFormed: {
+      name: "Assert Response XML Payload Is Well-Formed",
+      stepConfigId: "f530dcd59f132200ef4afa7dc67fcf03",
+      variables: {},
+    },
+  },
+  server: {
+    impersonate: {
+      name: "Impersonate",
+      stepConfigId: "071ee5b253331200040729cac2dc348d",
+      variables: {
+        user: {
+          field: "user",
+          order: 100,
+          inputVariableId: "586e2c4253e0220002c6435723dc3415",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    recordInsert: {
+      name: "Record Insert",
+      stepConfigId: "14872288df60220062fe6c7a4df26319",
+      variables: {
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "90144b535320220002c6435723dc3488",
+          type: "table_name",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "9024a37f671003007ba405225685efe5",
+          type: "choice",
+          default: "record_successfully_inserted",
+        },
+        fieldValues: {
+          field: "field_values",
+          order: 400,
+          inputVariableId: "dd54cf535320220002c6435723dc34fd",
+          type: "template_value",
+          mandatory: true,
+        },
+        enforceSecurity: {
+          field: "enforce_security",
+          order: 100,
+          inputVariableId: "e6e3c7535320220002c6435723dc3496",
+          type: "boolean",
+          default: true,
+        },
+      },
+    },
+    recordUpdate: {
+      name: "Record Update",
+      stepConfigId: "17a72288df60220062fe6c7a4df26397",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "334b7bb7675003007ba405225685ef72",
+          type: "choice",
+          default: "record_successfully_updated",
+        },
+        enforceSecurity: {
+          field: "enforce_security",
+          order: 100,
+          inputVariableId: "46dbcb535320220002c6435723dc3409",
+          type: "boolean",
+          default: true,
+        },
+        recordId: {
+          field: "record_id",
+          order: 300,
+          inputVariableId: "501c8f535320220002c6435723dc34da",
+          type: "document_id",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "53fb0f535320220002c6435723dc34ec",
+          type: "table_name",
+          mandatory: true,
+        },
+        fieldValues: {
+          field: "field_values",
+          order: 400,
+          inputVariableId: "bc4c43935320220002c6435723dc34a2",
+          type: "template_value",
+          mandatory: true,
+        },
+      },
+    },
+    recordValidation: {
+      name: "Record Validation",
+      stepConfigId: "1f39a288df60220062fe6c7a4df2639d",
+      variables: {
+        recordId: {
+          field: "record_id",
+          order: 200,
+          inputVariableId: "52ed1e5b5360220002c6435723dc3421",
+          type: "document_id",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "67400008676003007ba405225685efa4",
+          type: "choice",
+          default: "record_validated",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "6aad5a575360220002c6435723dc34b0",
+          type: "table_name",
+          mandatory: true,
+        },
+        enforceSecurity: {
+          field: "enforce_security",
+          order: 10,
+          inputVariableId: "cbddfa135320220002c6435723dc3415",
+          type: "boolean",
+          default: true,
+        },
+        fieldValues: {
+          field: "field_values",
+          order: 300,
+          inputVariableId: "ff6e125353a0220002c6435723dc3442",
+          type: "conditions",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    setOutputVariables: {
+      name: "Set Output Variables",
+      stepConfigId: "26302752a33012100df567d1361e61ef",
+      variables: {},
+    },
+    recordQuery: {
+      name: "Record Query",
+      stepConfigId: "2d82e3c7531400109e02ddeeff7b12a7",
+      variables: {
+        enforceSecurity: {
+          field: "enforce_security",
+          order: 100,
+          inputVariableId: "02fb0027531000109e02ddeeff7b120b",
+          type: "boolean",
+        },
+        table: {
+          field: "table",
+          order: 300,
+          inputVariableId: "78b8d86b531000109e02ddeeff7b12f3",
+          type: "table_name",
+          mandatory: true,
+        },
+        fieldValues: {
+          field: "field_values",
+          order: 400,
+          inputVariableId: "915990ab531000109e02ddeeff7b12f8",
+          type: "conditions",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 200,
+          inputVariableId: "b86c0427531000109e02ddeeff7b1227",
+          type: "choice",
+          default: "records_match_query",
+        },
+      },
+      defaultTimeout: "1970-01-01 00:00:05",
+    },
+    runServerSideScript: {
+      name: "Run Server Side Script",
+      stepConfigId: "41de4a935332120028bc29cac2dc349a",
+      variables: {
+        jasmineVersion: {
+          field: "jasmine_version",
+          order: 100,
+          inputVariableId: "42f2564b73031300440211d8faf6a777",
+          type: "choice",
+          default: "3.1",
+          mandatory: true,
+        },
+        script: {
+          field: "script",
+          order: 200,
+          inputVariableId: "989d9e235324220002c6435723dc3484",
+          type: "script",
+          default:
+            "// You can use this step to execute a variety of server-side javascript tests including\n// jasmine tests and custom assertions\n//\n//\n// Pass or fail a step: Override the step outcome to pass or fail. This is ignored\n//                      by jasmine tests\n//\n//  - Return true from the main function body to pass the step\n//  - Return false from the main function body to fail the step\n//\n//\n// outputs:       Pre-defined Step config Output variables to set on this step during\n//                execution that are available to later steps\n//\n// steps(SYS_ID): A function to retrieve Output variable data from a step that executed\n//                earlier in the test. The desired step's sys_id is required\n//\n// params:        The current test run data set's parameter data including both\n//                exclusive and shared parameters\n//\n//  Example:\n//\n//      // Test step 1 - add data\n//      var gr = new GlideRecord('sc_task');\n//      // If parameterized testing is enabled, parameters are stored in the params object\n//      gr.setValue('short_description', params.u_my_short_description)\n//      gr.setValue('caller', params.u_my_user.manager)\n//      // this sample step's Step config has Output variables named table and record_id\n//      outputs.table = 'sc_task';\n//      outputs.record_id = gr.insert();\n//\n//      // Test step 2 - access added data and validate\n//      // check that the record exists (or that business logic changed it)\n//      var gr = new GlideRecord(\"sc_task\");\n//      gr.get(steps(PREVIOUS_STEP_SYS_ID).record_id);\n//      assertEqual({name: \"task gr exists\", shouldbe: true, value: gr.isValidRecord()});\n//\n//\n// stepResult.setOutputMessage: Log a message to step results after step executes.\n//                              Can only be called once or will overwrite previous\n//                              message\n//\n//  Example:\n//\n//      var gr = new GlideRecord('sc_task');\n//      gr.setValue('short_description', 'verify task can be inserted');\n//      var grSysId = gr.insert();\n//      var justCreatedGR = new GlideRecord('sc_task');\n//      if (justCreatedGR.get(grSysId)) {\n//            stepResult.setOutputMessage(\"Successfully inserted task record\");\n//            return true; // pass the step\n//      } else {\n//            stepResult.setOutputMessage(\"Failed to insert task record\");\n//            return false; // fail the step\n//      }\n//\n//\n// Note: describe is only supported in Global scope.\n// Use 'describe' to create a suite of test scripts and 'it' to define test expectations\n//\n//  Example jasmine test:\n//\n//      describe('my suite of script tests', function() {\n//            it('should meet expectations', function() {\n//                  expect(true).not.toBe(false);\n//            });\n//      });\n//      // make sure to uncomment jasmine.getEnv().execute(); outside the function body\n//\n//\n// assertEqual: A function used to compare that assertion.shouldbe == assertion.value;\n//              in case of failure it throws an Error and logs that the assertion by\n//              name has failed\n//\n//  Example:\n//\n//      var testAssertion = {\n//            name: \"my test assertion\",\n//            shouldbe: \"expected value\"\n//            value: \"actual value\",\n//      };\n//      assertEqual(testAssertion); // throws Error, logs message to test step output\n//\n(function(outputs, steps, params, stepResult, assertEqual) {\n    // add test script here\n\n})(outputs, steps, params, stepResult, assertEqual);\n// uncomment the next line to execute this script as a jasmine test\n//jasmine.getEnv().execute();\n",
+        },
+      },
+    },
+    addAttachmentsToExistingRecord: {
+      name: "Add Attachments to Existing Record",
+      stepConfigId: "52c6cdb3b710330044026848ee11a91d",
+      variables: {
+        recordId: {
+          field: "record_id",
+          order: 200,
+          inputVariableId: "96f2dd0673203300440211d8faf6a77c",
+          type: "document_id",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "dd184137b710330044026848ee11a96b",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    log: {
+      name: "Log",
+      stepConfigId: "58ab71985f30220012b44adb7f46661e",
+      variables: {
+        log: {
+          field: "log",
+          order: 100,
+          inputVariableId: "523c79985f30220012b44adb7f46663a",
+          type: "string",
+        },
+      },
+    },
+    replayRequestItem: {
+      name: "Replay Request Item",
+      stepConfigId: "7f49ec32532022008aaec57906dc3473",
+      variables: {
+        request_item: {
+          field: "request_item",
+          order: 100,
+          inputVariableId: "7ed0d66f53e0220002c6435723dc3441",
+          type: "reference",
+        },
+      },
+    },
+    recordDelete: {
+      name: "Record Delete",
+      stepConfigId: "8df72288df60220062fe6c7a4df2636d",
+      variables: {
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "3d6d8b935320220002c6435723dc349c",
+          type: "table_name",
+          mandatory: true,
+        },
+        recordId: {
+          field: "record_id",
+          order: 300,
+          inputVariableId: "8f7d0f935320220002c6435723dc3471",
+          type: "document_id",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "c7e483f3671003007ba405225685effb",
+          type: "choice",
+          default: "record_successfully_deleted",
+        },
+        enforceSecurity: {
+          field: "enforce_security",
+          order: 100,
+          inputVariableId: "d13d0b935320220002c6435723dc34c8",
+          type: "boolean",
+          default: true,
+        },
+      },
+    },
+    searchForCatalogItem: {
+      name: "Search for a Catalog Item",
+      stepConfigId: "96103fdfc3e0320076173b0ac3d3ae57",
+      variables: {
+        assertItem: {
+          field: "assert_item",
+          order: 400,
+          inputVariableId: "0ddfbbd3c324320076173b0ac3d3ae07",
+          type: "reference",
+          mandatory: true,
+        },
+        searchInPortal: {
+          field: "search_in_portal",
+          order: 100,
+          inputVariableId: "16bb323787221300bcbf480688cb0bce",
+          type: "boolean",
+        },
+        catalog: {
+          field: "catalog",
+          order: 200,
+          inputVariableId: "45623b13c324320076173b0ac3d3aefc",
+          type: "reference",
+        },
+        searchTerm: {
+          field: "search_term",
+          order: 100,
+          inputVariableId: "4f32f713c324320076173b0ac3d3ae7e",
+          type: "string",
+          mandatory: true,
+        },
+        category: {
+          field: "category",
+          order: 300,
+          inputVariableId: "82233f13c324320076173b0ac3d3aef7",
+          type: "reference",
+        },
+        assert: {
+          field: "assert_type",
+          order: 500,
+          inputVariableId: "a588587787a91300e0ef0cf888cb0b01",
+          type: "choice",
+          default: "assert_item_present",
+        },
+      },
+    },
+    checkoutShoppingCart: {
+      name: "Checkout Shopping Cart",
+      stepConfigId: "9a351369536303000a51ddeeff7b125b",
+      variables: {
+        deliveryAddress: {
+          field: "delivery_address",
+          order: 300,
+          inputVariableId: "4bd3647953a303000a51ddeeff7b126a",
+          type: "string",
+        },
+        specialInstructions: {
+          field: "special_instructions",
+          order: 400,
+          inputVariableId: "6573647953a303000a51ddeeff7b120b",
+          type: "string",
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "9c661769536303000a51ddeeff7b12d0",
+          type: "choice",
+          default: "checkout_successfull",
+          mandatory: true,
+        },
+        requestedFor: {
+          field: "requested_for",
+          order: 200,
+          inputVariableId: "f4d2607953a303000a51ddeeff7b1263",
+          type: "reference",
+        },
+      },
+    },
+    createUser: {
+      name: "Create a User",
+      stepConfigId: "d9bc5f21ff6033008d3f5d9ad53bf12d",
+      variables: {
+        fieldValues: {
+          field: "field_values",
+          order: 100,
+          inputVariableId: "1778a7480f20101091d0f00c97767e03",
+          type: "template_value",
+        },
+        firstName: {
+          field: "first_name",
+          order: 100,
+          inputVariableId: "1985e0ceff2433008d3f5d9ad53bf1ba",
+          type: "string",
+        },
+        lastName: {
+          field: "last_name",
+          order: 100,
+          inputVariableId: "6f69fc4aff6433008d3f5d9ad53bf18c",
+          type: "string",
+        },
+        roles: {
+          field: "roles",
+          order: 100,
+          inputVariableId: "8c07aba5ff6033008d3f5d9ad53bf13b",
+          type: "glide_list",
+        },
+        impersonate: {
+          field: "impersonate",
+          order: 100,
+          inputVariableId: "98c44875ffa033008d3f5d9ad53bf1fa",
+          type: "boolean",
+          default: true,
+        },
+        groups: {
+          field: "groups",
+          order: 100,
+          inputVariableId: "b27b2b29ff6033008d3f5d9ad53bf164",
+          type: "glide_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "ff06ab840f20101091d0f00c97767e6d",
+          type: "table_name",
+          default: "sys_user",
+        },
+      },
+    },
+  },
+  catalog: {
+    openCatalogItem: {
+      name: "Open a Catalog Item",
+      stepConfigId: "2516c0e1c332220076173b0ac3d3ae39",
+      variables: {
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "b0d64ce1c332220076173b0ac3d3ae95",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    setVariableValue: {
+      name: "Set Variable Values",
+      stepConfigId: "323ca6e1c3b2220076173b0ac3d3aec1",
+      variables: {
+        variableValues: {
+          field: "variable_values",
+          order: 200,
+          inputVariableId: "346eea25c3b2220076173b0ac3d3ae8b",
+          type: "variable_template_value",
+        },
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "571e6a25c3b2220076173b0ac3d3ae46",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    variableStateValidation: {
+      name: "Variable State Validation",
+      stepConfigId: "33f637e8c3ba220076173b0ac3d3aee1",
+      variables: {
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "32e8ffe8c3ba220076173b0ac3d3ae6e",
+          type: "slushbucket",
+        },
+        mandatory: {
+          field: "mandatory",
+          order: 600,
+          inputVariableId: "5149372cc3ba220076173b0ac3d3ae98",
+          type: "slushbucket",
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "a7987fe8c3ba220076173b0ac3d3ae1d",
+          type: "slushbucket",
+        },
+        notMandatory: {
+          field: "not_mandatory",
+          order: 700,
+          inputVariableId: "ab59772cc3ba220076173b0ac3d3ae9c",
+          type: "slushbucket",
+        },
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "ae58fbe8c3ba220076173b0ac3d3aeac",
+          type: "reference",
+          mandatory: true,
+        },
+        readOnly: {
+          field: "read_only",
+          order: 400,
+          inputVariableId: "d829b32cc3ba220076173b0ac3d3aea1",
+          type: "slushbucket",
+        },
+        notReadOnly: {
+          field: "not_read_only",
+          order: 500,
+          inputVariableId: "e439f32cc3ba220076173b0ac3d3ae90",
+          type: "slushbucket",
+        },
+      },
+    },
+    addItemToShoppingCart: {
+      name: "Add Item to Shopping Cart",
+      stepConfigId: "550270f2c310320076173b0ac3d3aeec",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "939234f2c310320076173b0ac3d3ae14",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    validateVariableValue: {
+      name: "Validate Variable Values",
+      stepConfigId: "5a36c681c37e220076173b0ac3d3aecf",
+      variables: {
+        catalogConditions: {
+          field: "catalog_conditions",
+          order: 200,
+          inputVariableId: "8a682649c37e220076173b0ac3d3ae47",
+          type: "variable_conditions",
+        },
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "b46842c1c37e220076173b0ac3d3aebc",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    validatePriceAndRecurringPrice: {
+      name: "Validate Price and Recurring Price",
+      stepConfigId: "70a083b0c323220076173b0ac3d3aee8",
+      variables: {
+        recurringPrice: {
+          field: "recurring_price",
+          order: 200,
+          inputVariableId: "0aae0520c390320076173b0ac3d3ae3a",
+          type: "string",
+        },
+        frequency: {
+          field: "recurring_frequency",
+          order: 300,
+          inputVariableId: "7011ccb1c333220076173b0ac3d3aef3",
+          type: "choice",
+        },
+        price: {
+          field: "price",
+          order: 100,
+          inputVariableId: "f49ec120c390320076173b0ac3d3ae10",
+          type: "string",
+        },
+      },
+    },
+    openRecordProducer: {
+      name: "Open a Record Producer",
+      stepConfigId: "77409f72c300320076173b0ac3d3ae19",
+      variables: {
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "a9145b43c300320076173b0ac3d3ae0e",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    orderCatalogItem: {
+      name: "Order Catalog Item",
+      stepConfigId: "c930b4b2c310320076173b0ac3d3aeec",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "17513cb2c310320076173b0ac3d3ae64",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    setCatalogItemQuantity: {
+      name: "Set Catalog Item Quantity",
+      stepConfigId: "d5d9e7e7c3d7220076173b0ac3d3ae0b",
+      variables: {
+        quantity: {
+          field: "quantity",
+          order: 100,
+          inputVariableId: "3c267f6bc3d7220076173b0ac3d3ae56",
+          type: "choice",
+          default: "1",
+          mandatory: true,
+        },
+      },
+    },
+    submitRecordProducer: {
+      name: "Submit Record Producer",
+      stepConfigId: "ed59d8e5c332220076173b0ac3d3ae6a",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 200,
+          inputVariableId: "ffaf5469c332220076173b0ac3d3aea9",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  catalog_SP: {
+    addItemtoShoppingCart: {
+      name: "Add Item to Shopping Cart (SP)",
+      stepConfigId: "00696ee073330300688e0d573cf6a71a",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "25abf57873730300688e0d573cf6a7af",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    validatePriceAndRecurringPrice: {
+      name: "Validate Price and Recurring Price (SP)",
+      stepConfigId: "095c4877732b03008e6b0d573cf6a717",
+      variables: {
+        frequency: {
+          field: "recurring_frequency",
+          order: 300,
+          inputVariableId: "6ccd00b7732b03008e6b0d573cf6a7ba",
+          type: "choice",
+        },
+        recurringPrice: {
+          field: "recurring_price",
+          order: 200,
+          inputVariableId: "7a9dcc77732b03008e6b0d573cf6a786",
+          type: "string",
+        },
+        price: {
+          field: "price",
+          order: 100,
+          inputVariableId: "935d4c77732b03008e6b0d573cf6a748",
+          type: "string",
+        },
+      },
+    },
+    navigatewithinOrderGuide: {
+      name: "Navigate within Order Guide (SP)",
+      stepConfigId: "0ae5f9f2739713008e6b0d573cf6a718",
+      variables: {
+        guideStep: {
+          field: "guide_step",
+          order: 200,
+          inputVariableId: "812616fa739713008e6b0d573cf6a7b6",
+          type: "choice",
+          default: "1",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 300,
+          inputVariableId: "b935deba739713008e6b0d573cf6a71b",
+          type: "choice",
+          default: "navigate_success",
+          mandatory: true,
+        },
+      },
+    },
+    reviewOrderGuideSummary: {
+      name: "Review Order Guide Summary (SP)",
+      stepConfigId: "1df5d27073a71300688e0d573cf6a751",
+      variables: {
+        price: {
+          field: "price",
+          order: 200,
+          inputVariableId: "4f84767c736b1300688e0d573cf6a70c",
+          type: "string",
+        },
+        items: {
+          field: "catalog_items",
+          order: 100,
+          inputVariableId: "a196d6f873a71300688e0d573cf6a761",
+          type: "glide_list",
+          mandatory: true,
+        },
+      },
+    },
+    variableStateValidation: {
+      name: "Variable State Validation (SP)",
+      stepConfigId: "1ebb17799f1303002528d4b4232e70c0",
+      variables: {
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "00eb17799f1303002528d4b4232e70fe",
+          type: "reference",
+          mandatory: true,
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "080e93b99f1303002528d4b4232e706d",
+          type: "slushbucket",
+        },
+        notReadOnly: {
+          field: "not_read_only",
+          order: 500,
+          inputVariableId: "41ae57b99f1303002528d4b4232e7076",
+          type: "slushbucket",
+        },
+        readOnly: {
+          field: "read_only",
+          order: 400,
+          inputVariableId: "516e57b99f1303002528d4b4232e700b",
+          type: "slushbucket",
+        },
+        mandatory: {
+          field: "mandatory",
+          order: 600,
+          inputVariableId: "b3be97b99f1303002528d4b4232e70ce",
+          type: "slushbucket",
+        },
+        notMandatory: {
+          field: "not_mandatory",
+          order: 700,
+          inputVariableId: "b4de97b99f1303002528d4b4232e7077",
+          type: "slushbucket",
+        },
+        variableSet: {
+          field: "variable_set",
+          order: 150,
+          inputVariableId: "d92b4dd673142300688e0d573cf6a7c3",
+          type: "reference",
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "fe5d9f799f1303002528d4b4232e70d7",
+          type: "slushbucket",
+        },
+      },
+    },
+    reviewIteminOrderGuide: {
+      name: "Review Item in Order Guide (SP)",
+      stepConfigId: "2098710873631300688e0d573cf6a7d7",
+      variables: {
+        included: {
+          field: "included",
+          order: 200,
+          inputVariableId: "aa3a45a873e31300688e0d573cf6a784",
+          type: "boolean",
+          default: true,
+        },
+        item: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "ff05052873e31300688e0d573cf6a7ed",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    validateVariableValue: {
+      name: "Validate Variable Values (SP)",
+      stepConfigId: "2c8882759f1303002528d4b4232e708a",
+      variables: {
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "9b5b4e759f1303002528d4b4232e7026",
+          type: "reference",
+          mandatory: true,
+        },
+        variableValues: {
+          field: "catalog_conditions",
+          order: 200,
+          inputVariableId: "e0cc42b59f1303002528d4b4232e70f9",
+          type: "variable_conditions",
+        },
+        variableSet: {
+          field: "variable_set",
+          order: 150,
+          inputVariableId: "f2fac9d673142300688e0d573cf6a7e0",
+          type: "reference",
+        },
+      },
+    },
+    setVariableValue: {
+      name: "Set Variable Values (SP)",
+      stepConfigId: "2e4229b48703030070870cf888cb0b5c",
+      variables: {
+        variableSet: {
+          field: "variable_set",
+          order: 150,
+          inputVariableId: "2fba49d673142300688e0d573cf6a748",
+          type: "reference",
+        },
+        variableValues: {
+          field: "variable_values",
+          order: 200,
+          inputVariableId: "3f3525f48703030070870cf888cb0b37",
+          type: "variable_template_value",
+        },
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "d164adb48703030070870cf888cb0b30",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    addOrderGuidetoShoppingCart: {
+      name: "Add Order Guide to Shopping Cart (SP)",
+      stepConfigId: "559099f287131300b179480688cb0b1a",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "d482697a87131300b179480688cb0b65",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    setCatalogItemQuantity: {
+      name: "Set Catalog Item Quantity (SP)",
+      stepConfigId: "697ce2d87323030076860d573cf6a708",
+      variables: {
+        quantity: {
+          field: "quantity",
+          order: 100,
+          inputVariableId: "c73fe21c7323030076860d573cf6a736",
+          type: "choice",
+          default: "1",
+          mandatory: true,
+        },
+      },
+    },
+    submitOrderGuide: {
+      name: "Submit an Order Guide (SP)",
+      stepConfigId: "6ad01e9387131300b179480688cb0b8f",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "5befded787131300b179480688cb0bf4",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    openRecordProducer: {
+      name: "Open a Record Producer (SP)",
+      stepConfigId: "775638f29f3203002899d4b4232e70e5",
+      variables: {
+        portal: {
+          field: "portal_id",
+          order: 100,
+          inputVariableId: "37a7bcf29f3203002899d4b4232e7090",
+          type: "reference",
+          default: "81b75d3147032100ba13a5554ee4902b",
+          mandatory: true,
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 400,
+          inputVariableId: "5258f0369f3203002899d4b4232e704a",
+          type: "simple_name_values",
+        },
+        page: {
+          field: "page_id",
+          order: 200,
+          inputVariableId: "908942839f3203002899d4b4232e7016",
+          type: "reference",
+          default: "9f12251147132100ba13a5554ee490f4",
+          mandatory: true,
+        },
+        recordProducer: {
+          field: "catalog_item",
+          order: 300,
+          inputVariableId: "de1c3dbc8703030070870cf888cb0b68",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    submitRecordProducer: {
+      name: "Submit Record Producer (SP)",
+      stepConfigId: "7c69d2788743030070870cf888cb0b5f",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "3c2ad2788743030070870cf888cb0b0c",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    openOrderGuide: {
+      name: "Open an Order Guide (SP)",
+      stepConfigId: "aced8452731b13008e6b0d573cf6a783",
+      variables: {
+        portal: {
+          field: "portal_id",
+          order: 100,
+          inputVariableId: "1a6e4896731b13008e6b0d573cf6a78f",
+          type: "reference",
+          default: "81b75d3147032100ba13a5554ee4902b",
+          mandatory: true,
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 400,
+          inputVariableId: "a410505a731b13008e6b0d573cf6a71c",
+          type: "simple_name_values",
+        },
+        orderGuide: {
+          field: "catalog_item",
+          order: 300,
+          inputVariableId: "ab1de4ae73d313008e6b0d573cf6a76b",
+          type: "reference",
+          mandatory: true,
+        },
+        page: {
+          field: "page_id",
+          order: 200,
+          inputVariableId: "b7be4cd6731b13008e6b0d573cf6a746",
+          type: "reference",
+          default: "sc_cat_item_guide",
+          mandatory: true,
+        },
+      },
+    },
+    saveCurrentRowOfMultiRowVariableSet: {
+      name: "Save current row of multi-row variable set (SP)",
+      stepConfigId: "adf6884273902300688e0d573cf6a72a",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "7f15580673902300688e0d573cf6a795",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    orderCatalogItem: {
+      name: "Order a Catalog Item (SP)",
+      stepConfigId: "c0fede515f23030076861f9f2f7313db",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "b27f92915f23030076861f9f2f731356",
+          type: "choice",
+          default: "form_submitted_to_server",
+          mandatory: true,
+        },
+      },
+    },
+    addRowToMultiRowVariableSet: {
+      name: "Add row to multi-row variable set (SP)",
+      stepConfigId: "c7d557d673002300688e0d573cf6a74f",
+      variables: {
+        catalogItem: {
+          field: "catalog_item",
+          order: 100,
+          inputVariableId: "20594c3673802300688e0d573cf6a722",
+          type: "reference",
+          mandatory: true,
+        },
+        variableSet: {
+          field: "variable_set",
+          order: 200,
+          inputVariableId: "c6f9407673802300688e0d573cf6a789",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+    validateOrderGuideItem: {
+      name: "Validate Order Guide Items (SP)",
+      stepConfigId: "d7c0d0ef5f9b1300688e1f9f2f7313b7",
+      variables: {
+        items: {
+          field: "catalog_items",
+          order: 100,
+          inputVariableId: "7e6350235fdb1300688e1f9f2f7313e9",
+          type: "glide_list",
+          mandatory: true,
+        },
+      },
+    },
+    openCatalogItem: {
+      name: "Open a Catalog Item (SP)",
+      stepConfigId: "e81f02dc73e703008e6b0d573cf6a76f",
+      variables: {
+        portal: {
+          field: "portal_id",
+          order: 100,
+          inputVariableId: "3731d6dc73e703008e6b0d573cf6a788",
+          type: "reference",
+          default: "81b75d3147032100ba13a5554ee4902b",
+          mandatory: true,
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 150,
+          inputVariableId: "3a6e5fb15f1013001f1e1f9f2f7313e3",
+          type: "simple_name_values",
+        },
+        page: {
+          field: "page_id",
+          order: 110,
+          inputVariableId: "83d1dadc73e703008e6b0d573cf6a779",
+          type: "reference",
+          default: "sc_cat_item",
+          mandatory: true,
+        },
+        catalogItem: {
+          field: "catalog_item",
+          order: 120,
+          inputVariableId: "ac615adc73e703008e6b0d573cf6a702",
+          type: "reference",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  form_SP: {
+    uiActionVisibilityValidation: {
+      name: "UI Action Visibility Validation (SP)",
+      stepConfigId: "02b5128223230300ab65ff5e17bf658e",
+      variables: {
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "1f1c920623230300ab65ff5e17bf6504",
+          type: "glide_list",
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "7acbdec223230300ab65ff5e17bf65ea",
+          type: "glide_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "cd5b1ec223230300ab65ff5e17bf65c9",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    addAttachmentsToForm: {
+      name: "Add Attachments to Form (SP)",
+      stepConfigId: "5415748677120010e46abe41a910616a",
+      variables: {},
+    },
+    clickUIAction: {
+      name: "Click a UI Action (SP)",
+      stepConfigId: "86ec986123630300ab65ff5e17bf65a5",
+      variables: {
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "535064a123630300ab65ff5e17bf65d3",
+          type: "table_name",
+          mandatory: true,
+        },
+        uiAction: {
+          field: "ui_action",
+          order: 200,
+          inputVariableId: "d670a4a123630300ab65ff5e17bf65f4",
+          type: "reference",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 300,
+          inputVariableId: "dee0e8a123630300ab65ff5e17bf657d",
+          type: "choice",
+        },
+      },
+    },
+    fieldStateValidation: {
+      name: "Field State Validation (SP)",
+      stepConfigId: "af1e769223220300ab65ff5e17bf6580",
+      variables: {
+        readOnly: {
+          field: "read_only",
+          order: 300,
+          inputVariableId: "5208475623220300ab65ff5e17bf6516",
+          type: "field_list",
+        },
+        notReadOnly: {
+          field: "not_read_only",
+          order: 310,
+          inputVariableId: "5f48c75623220300ab65ff5e17bf6541",
+          type: "field_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "7e53031623220300ab65ff5e17bf6558",
+          type: "table_name",
+          mandatory: true,
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "87260f1623220300ab65ff5e17bf65d1",
+          type: "field_list",
+        },
+        mandatory: {
+          field: "mandatory",
+          order: 400,
+          inputVariableId: "9b980b5623220300ab65ff5e17bf6542",
+          type: "field_list",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 210,
+          inputVariableId: "cfa7835623220300ab65ff5e17bf6587",
+          type: "field_list",
+        },
+        notMandatory: {
+          field: "not_mandatory",
+          order: 410,
+          inputVariableId: "f2e84b5623220300ab65ff5e17bf656d",
+          type: "field_list",
+        },
+      },
+    },
+    setFieldValue: {
+      name: "Set Field Values (SP)",
+      stepConfigId: "ba49e51de7420300b2888f49c2f6a93c",
+      variables: {
+        fieldValues: {
+          field: "field_values",
+          order: 200,
+          inputVariableId: "5c297551e7020300b2888f49c2f6a933",
+          type: "template_value",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "adf8f511e7020300b2888f49c2f6a9f3",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    openNewForm: {
+      name: "Open a Form (SP)",
+      stepConfigId: "ca58a941e7020300b2888f49c2f6a95e",
+      variables: {
+        paramID: {
+          field: "param_sys_id",
+          order: 400,
+          inputVariableId: "38a5351b23101300ab65ff5e17bf65fa",
+          type: "string",
+        },
+        portal: {
+          field: "portal_id",
+          order: 100,
+          inputVariableId: "5d5a2181e7020300b2888f49c2f6a9dc",
+          type: "reference",
+          default: "81b75d3147032100ba13a5554ee4902b",
+          mandatory: true,
+        },
+        page: {
+          field: "page_id",
+          order: 200,
+          inputVariableId: "757a6181e7020300b2888f49c2f6a9f7",
+          type: "reference",
+          default: "form",
+          mandatory: true,
+        },
+        view: {
+          field: "param_view",
+          order: 500,
+          inputVariableId: "a266791b23101300ab65ff5e17bf654b",
+          type: "string",
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 600,
+          inputVariableId: "a38ae181e7020300b2888f49c2f6a92e",
+          type: "simple_name_values",
+        },
+        table: {
+          field: "table",
+          order: 300,
+          inputVariableId: "ee6aa11723101300ab65ff5e17bf65db",
+          type: "table_name",
+          mandatory: true,
+        },
+      },
+    },
+    fieldValueValidation: {
+      name: "Field Values Validation (SP)",
+      stepConfigId: "d72d0556e7020300b2888f49c2f6a916",
+      variables: {
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "819f0596e7020300b2888f49c2f6a9c7",
+          type: "table_name",
+          mandatory: true,
+        },
+        conditions: {
+          field: "conditions",
+          order: 200,
+          inputVariableId: "88cf4596e7020300b2888f49c2f6a992",
+          type: "conditions",
+          mandatory: true,
+        },
+      },
+    },
+    submitForm: {
+      name: "Submit a Form (SP)",
+      stepConfigId: "f410c93423220300ab65ff5e17bf651e",
+      variables: {
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "14874d1523320300ab65ff5e17bf650e",
+          type: "choice",
+        },
+      },
+    },
+    openServicePortalPage: {
+      name: "Open Service Portal Page",
+      stepConfigId: "fc7e65d577332300e46abe41a9106106",
+      variables: {
+        portal: {
+          field: "portal_id",
+          order: 100,
+          inputVariableId: "5a7e65d577332300e46abe41a91061cb",
+          type: "reference",
+        },
+        queryParameters: {
+          field: "query_params",
+          order: 300,
+          inputVariableId: "839e29d577332300e46abe41a9106134",
+          type: "simple_name_values",
+        },
+        page: {
+          field: "page_id",
+          order: 200,
+          inputVariableId: "ca8ea5d577332300e46abe41a91061b6",
+          type: "reference",
+        },
+      },
+    },
+  },
+  uiTestScript: {
+    runTest: {
+      name: "UI Test Script",
+      stepConfigId: "bfb48f59ffdf3210f972ffffffffffb3",
+      variables: {
+        script: {
+          field: "script",
+          order: 100,
+          inputVariableId: "e216835dffdf3210f972ffffffffff53",
+          type: "script",
+          mandatory: true,
+        },
+      },
+    },
+  },
+  list: {
+    relatedListVisibility: {
+      name: "Validate Related List Visibility",
+      stepConfigId: "8b84e5e837b1030064a52f3c8e41f170",
+      variables: {
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "2c77697437f1030064a52f3c8e41f15a",
+          type: "table_name",
+          mandatory: true,
+        },
+        visible: {
+          field: "visible",
+          order: 200,
+          inputVariableId: "820ec4e93735030064a52f3c8e41f1a4",
+          type: "slushbucket",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 300,
+          inputVariableId: "2bf688e637310300b8a62f3c8e41f1d0",
+          type: "slushbucket",
+        },
+      },
+    },
+    applyFilterToList: {
+      name: "Apply Filter to List",
+      stepConfigId: "a69843f2531332007e7829cac2dc34d7",
+      variables: {
+        listType: {
+          field: "list_type",
+          order: 50,
+          inputVariableId: "2c4b1ce173533300099f98b8caf6a7f1",
+          type: "choice",
+          default: "related_list",
+        },
+        table: {
+          field: "table",
+          order: 200,
+          inputVariableId: "719b8ff2531332007e7829cac2dc34da",
+          type: "table_name",
+          mandatory: true,
+        },
+        relatedList: {
+          field: "related_list",
+          order: 300,
+          inputVariableId: "94a947f2531332007e7829cac2dc34b1",
+          type: "choice",
+          mandatory: true,
+        },
+        relatedListTable: {
+          field: "related_list_table",
+          order: 500,
+          inputVariableId: "856caf14532332007e7829cac2dc34eb",
+          type: "table_name",
+          mandatory: true,
+        },
+        filterConditions: {
+          field: "filter_conditions",
+          order: 400,
+          inputVariableId: "31e9c7f2531332007e7829cac2dc3445",
+          type: "conditions",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "0568fd3573213300440211d8faf6a781",
+          type: "choice",
+        },
+      },
+    },
+    recordPresentInList: {
+      name: "Validate Record Present in List",
+      stepConfigId: "7bdce31387400300709861fb97cb0b5a",
+      variables: {
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "0111b39387400300709861fb97cb0bbb",
+          type: "table_name",
+          mandatory: true,
+        },
+        listType: {
+          field: "list_type",
+          order: 50,
+          inputVariableId: "5e9a0958d7033300bfe22d358e6103f5",
+          type: "choice",
+          default: "related_list",
+          mandatory: true,
+        },
+        relatedList: {
+          field: "related_list",
+          order: 200,
+          inputVariableId: "ac08887587100300709861fb97cb0b21",
+          type: "choice",
+          mandatory: true,
+        },
+        relatedListTable: {
+          field: "related_list_table",
+          order: 300,
+          inputVariableId: "25b3b3f187100300709861fb97cb0b91",
+          type: "table_name",
+          mandatory: true,
+        },
+        recordId: {
+          field: "record_id",
+          order: 400,
+          inputVariableId: "a7cfaf1387400300709861fb97cb0bce",
+          type: "document_id",
+          mandatory: true,
+        },
+        assert: {
+          field: "assert_type",
+          order: 100,
+          inputVariableId: "66515b0c53213300f06fddeeff7b12fb",
+          type: "choice",
+          default: "record_present",
+        },
+      },
+    },
+    openRecordInList: {
+      name: "Open a Record in List",
+      stepConfigId: "0200ac2fe72003005c85cd19d2f6a942",
+      variables: {
+        listType: {
+          field: "list_type",
+          order: 50,
+          inputVariableId: "b8c89a36538333009e02ddeeff7b12f6",
+          type: "choice",
+          default: "related_list",
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "6fb0a06fe72003005c85cd19d2f6a9da",
+          type: "table_name",
+          mandatory: true,
+        },
+        relatedList: {
+          field: "related_list",
+          order: 200,
+          inputVariableId: "5121646fe72003005c85cd19d2f6a99a",
+          type: "choice",
+          mandatory: true,
+        },
+        relatedListTable: {
+          field: "related_list_table",
+          order: 300,
+          inputVariableId: "c181286fe72003005c85cd19d2f6a93b",
+          type: "table_name",
+          mandatory: true,
+        },
+        recordId: {
+          field: "record_id",
+          order: 400,
+          inputVariableId: "b076e295531233009e02ddeeff7b12d9",
+          type: "document_id",
+          mandatory: true,
+        },
+      },
+    },
+    listUIActionVisibility: {
+      name: "Validate List UI Action Visibility",
+      stepConfigId: "012105620fe2330091d0f00c97767ec4",
+      variables: {
+        listType: {
+          field: "list_type",
+          order: 50,
+          inputVariableId: "ae1a857ddb5f3300f2410f95ca96191f",
+          type: "choice",
+          default: "related_list",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "1cd3cda20fe2330091d0f00c97767e37",
+          type: "table_name",
+          mandatory: true,
+        },
+        relatedList: {
+          field: "related_list",
+          order: 200,
+          inputVariableId: "992489e20fe2330091d0f00c97767e25",
+          type: "choice",
+          mandatory: true,
+        },
+        relatedListTable: {
+          field: "related_list_table",
+          order: 300,
+          inputVariableId: "e664cde20fe2330091d0f00c97767e45",
+          type: "table_name",
+        },
+        visible: {
+          field: "visible",
+          order: 400,
+          inputVariableId: "a78481260fe2330091d0f00c97767e7c",
+          type: "glide_list",
+        },
+        notVisible: {
+          field: "not_visible",
+          order: 500,
+          inputVariableId: "e4650d260fe2330091d0f00c97767ec9",
+          type: "glide_list",
+        },
+      },
+    },
+    clickListUIAction: {
+      name: "Click a List UI Action",
+      stepConfigId: "c5f44934532332007e7829cac2dc342e",
+      variables: {
+        listType: {
+          field: "list_type",
+          order: 50,
+          inputVariableId: "bfde05a373833300c79260bdfaf6a731",
+          type: "choice",
+          default: "related_list",
+          mandatory: true,
+        },
+        table: {
+          field: "table",
+          order: 100,
+          inputVariableId: "d8691db0532332007e7829cac2dc34ee",
+          type: "table_name",
+          mandatory: true,
+        },
+        relatedList: {
+          field: "related_list",
+          order: 200,
+          inputVariableId: "fb2a91f0532332007e7829cac2dc3403",
+          type: "choice",
+          mandatory: true,
+        },
+        relatedListTable: {
+          field: "related_list_table",
+          order: 300,
+          inputVariableId: "26a99db0532332007e7829cac2dc3479",
+          type: "table_name",
+          mandatory: true,
+        },
+        listAction: {
+          field: "list_action",
+          order: 400,
+          inputVariableId: "b46b59f0532332007e7829cac2dc341d",
+          type: "reference",
+          mandatory: true,
+        },
+        actionType: {
+          field: "action_type",
+          order: 500,
+          inputVariableId: "be33f503533a3300c792ddeeff7b1233",
+          type: "choice",
+          mandatory: true,
+        },
+        applyTo: {
+          field: "apply_to",
+          order: 600,
+          inputVariableId: "bb660fc0533e3300c792ddeeff7b12cc",
+          type: "choice",
+        },
+        recordId: {
+          field: "record_id",
+          order: 650,
+          inputVariableId: "48f74344533e3300c792ddeeff7b12c3",
+          type: "document_id",
+        },
+        assert: {
+          field: "assert_type",
+          order: 700,
+          inputVariableId: "9d48c744533e3300c792ddeeff7b1233",
+          type: "choice",
+        },
+      },
+    },
+  },
+};

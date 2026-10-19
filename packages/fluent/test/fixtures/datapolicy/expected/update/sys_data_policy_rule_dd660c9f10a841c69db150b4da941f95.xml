@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_data_policy_rule">
+  <sys_data_policy_rule action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dd660c9f10a841c69db150b4da941f95</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_data_policy_rule_dd660c9f10a841c69db150b4da941f95</sys_update_name>
+    <disabled>ignore</disabled>
+    <field>code</field>
+    <mandatory>true</mandatory>
+    <sys_data_policy>6be00c234bd645b5b959ab0d2ef41ef8</sys_data_policy>
+    <table>x_snc_bprobe_dp</table>
+  </sys_data_policy_rule>
+</record_update>

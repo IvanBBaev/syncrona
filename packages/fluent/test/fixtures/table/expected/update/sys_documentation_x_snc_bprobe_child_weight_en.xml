@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_documentation">
+  <sys_documentation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ed98ed2b20094c95a2e763844b4e5763</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_documentation_x_snc_bprobe_child_weight_en</sys_update_name>
+    <element>weight</element>
+    <help/>
+    <hint/>
+    <label>Weight</label>
+    <language>en</language>
+    <name>x_snc_bprobe_child</name>
+    <plural>Weights</plural>
+    <url/>
+    <url_target/>
+  </sys_documentation>
+</record_update>

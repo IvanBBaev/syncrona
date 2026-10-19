@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_action_view">
+  <sys_ui_action_view action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e16b6fdc8ac5417582045ec4ae0e6a52</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_action_view_e16b6fdc8ac5417582045ec4ae0e6a52</sys_update_name>
+    <sys_policy>read</sys_policy>
+    <sys_ui_action>f3f802813f7449e3a7b6de3a2907528d</sys_ui_action>
+    <sys_ui_view name="default">ff95c756bce8438fa037217adbe8cec2</sys_ui_view>
+    <visibility>include</visibility>
+  </sys_ui_action_view>
+</record_update>

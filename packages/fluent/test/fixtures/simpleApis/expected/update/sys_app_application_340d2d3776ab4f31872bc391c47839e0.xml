@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_app_application">
+  <sys_app_application action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>340d2d3776ab4f31872bc391c47839e0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_app_application_340d2d3776ab4f31872bc391c47839e0</sys_update_name>
+    <active>true</active>
+    <category/>
+    <description/>
+    <device_type>browser</device_type>
+    <hint/>
+    <name/>
+    <order>100</order>
+    <roles/>
+    <title>Probe Menu</title>
+  </sys_app_application>
+</record_update>

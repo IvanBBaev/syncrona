@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<record_update table="asmt_metric_type">
+  <asmt_metric_type action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>56cd31053f5e405e9091253ff2aa5448</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>asmt_metric_type_56cd31053f5e405e9091253ff2aa5448</sys_update_name>
+    <active>true</active>
+    <allow_public>false</allow_public>
+    <allow_retake>false</allow_retake>
+    <anonymize>false</anonymize>
+    <business_rule>60ce41070e9949ccbfc678c65a606ba0</business_rule>
+    <chat_survey>false</chat_survey>
+    <condition/>
+    <default_filter/>
+    <delete_business_rule>668e8b891f63478a91beca7d68153577</delete_business_rule>
+    <description/>
+    <disable_ui_action/>
+    <display_all_filters>false</display_all_filters>
+    <display_field/>
+    <duration>1970-01-15 00:00:00</duration>
+    <enable_ui_action/>
+    <end_note/>
+    <enforce_condition>false</enforce_condition>
+    <evaluation_method>assessment</evaluation_method>
+    <filter_condition/>
+    <filter_table>task</filter_table>
+    <introduction/>
+    <job/>
+    <live_feed>false</live_feed>
+    <name>Bare</name>
+    <not_show_intro_note>false</not_show_intro_note>
+    <notify_if_overdue>false</notify_if_overdue>
+    <notify_user>true</notify_user>
+    <one_click_survey>false</one_click_survey>
+    <overdue_notify_user/>
+    <portal_pagination>category</portal_pagination>
+    <publish_state>draft</publish_state>
+    <roles/>
+    <sample_metric/>
+    <scale_factor>10</scale_factor>
+    <schedule_period>0</schedule_period>
+    <schedule_type>on_demand</schedule_type>
+    <scoring_type>percent</scoring_type>
+    <signature/>
+    <source_table/>
+    <survey_owners/>
+    <sys_domain>global</sys_domain>
+    <sys_domain_path>/</sys_domain_path>
+    <table>task</table>
+    <url/>
+    <user_field/>
+    <user_field_business_rule/>
+  </asmt_metric_type>
+</record_update>

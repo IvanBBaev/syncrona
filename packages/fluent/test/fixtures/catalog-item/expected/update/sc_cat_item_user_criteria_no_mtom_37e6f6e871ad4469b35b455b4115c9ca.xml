@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sc_cat_item_user_criteria_no_mtom">
+  <sc_cat_item_user_criteria_no_mtom action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>37e6f6e871ad4469b35b455b4115c9ca</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sc_cat_item_user_criteria_no_mtom_37e6f6e871ad4469b35b455b4115c9ca</sys_update_name>
+    <sc_cat_item>c8788f2b2e384d1493b66797ecfb49bf</sc_cat_item>
+    <user_criteria>33333333333333333333333333333333</user_criteria>
+  </sc_cat_item_user_criteria_no_mtom>
+</record_update>

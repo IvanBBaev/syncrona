@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_page">
+  <sys_ui_page action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>28818abb179f4465b7d1b9d5b533cdc3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_page_28818abb179f4465b7d1b9d5b533cdc3</sys_update_name>
+    <category>kb</category>
+    <client_script/>
+    <description/>
+    <direct>false</direct>
+    <endpoint>x_snc_bprobe_globals_theme.do</endpoint>
+    <html><![CDATA[
+<html>
+  <head>
+    <!-- @sdk:now-ux-globals -->
+    <!-- Resolved from sdk:now-ux-globals tag at NowSDK build time to support earlier Glide releases -->
+    <script>window.NOW = {};
+window.NOW.user = {};
+window.NOW.batch_glide_ajax_requests = false;
+window.NOW.isUsingPolaris = true;
+window.NOW.exclude_dark_theme = "false";
+window.g_ck = "$[gs.getSession().getSessionToken() || gs.getSessionToken()]";</script>
+    <!-- Include ServiceNow's required scripts -->
+    <g:requires name="scripts/doctype/functions_bootstrap14.js"></g:requires>
+    <g:requires name="scripts/lib/prototype.js"></g:requires>
+    <g:requires name="scripts/classes/ajax/GlideURL.js"></g:requires>
+    <g:requires name="scripts/doctype/CustomEventManager.js"></g:requires>
+    <g:requires name="scripts/classes/ajax/GlideAjax.js"></g:requires>
+    <g:requires name="scripts/classes/GlideUser.js"></g:requires>
+    <g2:client_script type="user"></g2:client_script>
+    <link rel="preload" href="/uxasset/set-cache-buster/$[UxFrameworkScriptables.getFlushTimestamp()].js" as="script"></link>
+    <g:requires name="scripts/polaris_theme_refresh_observer.js"></g:requires>
+    <link data-source-id="glide-theme" id="polarisberg_theme_variables" rel="stylesheet" href="/$uxappimmutables.do?sysparm_request_type=ux_theme$[AMP]sysparm_app_sys_id=t1$[AMP]uxpcb=$[sn_ui.PolarisUI.getThemeVariableCssCacheKey()]"></link>
+    <script type="module" src="/uxasset/externals/@devsnc/library-uxf/index.jsdbx"></script>
+    <script type="text/javascript">
+    (function () {
+    var testWorks = (function () {
+        try {
+        var result = Array.from(new Set([1, 2]));
+        return (
+            Array.isArray(result) $[AMP]$[AMP] result.length === 2 $[AMP]$[AMP] result[0] === 1
+        );
+        } catch (e) {
+        return false;
+        }
+    })();
+    if (testWorks) return;
+    var originalArrayFrom = Array.from;
+    function specArrayFrom(arrayLike, mapFn, thisArg) {
+        if (arrayLike == null)
+        throw new TypeError(
+            "Array.from requires an array-like or iterable object"
+        );
+        var C = this;
+        if (typeof C !== "function" || C === Window || C === Object) {
+        C = Array;
+        }
+        var mapping = typeof mapFn === "function";
+        var iterFn = arrayLike[Symbol.iterator];
+        if (typeof iterFn === "function") {
+        var result = [];
+        var i = 0;
+        var iterator = iterFn.call(arrayLike);
+        var step;
+        while (!(step = iterator.next()).done) {
+            result[i] = mapping
+            ? mapFn.call(thisArg, step.value, i)
+            : step.value;
+            i++;
+        }
+        result.length = i;
+        return result;
+        }
+        var items = Object(arrayLike);
+        var len = Math.min(
+        Math.max(Number(items.length) || 0, 0),
+        Number.MAX_SAFE_INTEGER
+        );
+        var result = new C(len);
+        for (var k = 0; k < len; k++) {
+        result[k] = mapping ? mapFn.call(thisArg, items[k], k) : items[k];
+        }
+        result.length = len;
+        return result;
+    }
+    Array.from = function (arrayLike, mapFn, thisArg) {
+        if (
+        arrayLike != null $[AMP]$[AMP]
+        typeof arrayLike[Symbol.iterator] === "function"
+        ) {
+        try {
+            return specArrayFrom.call(this, arrayLike, mapFn, thisArg);
+        } catch (e) {
+            console.error("Array.from failed with error:", e);
+            return originalArrayFrom.call(this, arrayLike, mapFn, thisArg);
+        }
+        }
+        return originalArrayFrom.call(this, arrayLike, mapFn, thisArg);
+    };
+    })();
+    if (window.Element $[AMP]$[AMP] Element.Methods) {
+    Element.Methods.remove = function (element) {
+        element = $(element);
+        if (element.parentNode) {
+        element.parentNode.removeChild(element);
+        }
+        return element;
+    };
+    Element.addMethods();
+    }</script>
+    <!-- @sdk:now-ux-globals -->
+  </head>
+  <body></body>
+</html>]]></html>
+    <name>globals_theme</name>
+    <processing_script/>
+    <sys_name>globals_theme</sys_name>
+  </sys_ui_page>
+</record_update>

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard">
+  <sys_wizard action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>855cef9fabb04903be20c4444a518c3a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_855cef9fabb04903be20c4444a518c3a</sys_update_name>
+    <back_panel name="Record wizard">b6c0cd79c32c468d9fe829c11b42da97</back_panel>
+    <intercepts/>
+    <name>Demo wizard</name>
+    <next_panel>fedcba9876543210fedcba9876543210</next_panel>
+    <question/>
+    <sys_policy/>
+  </sys_wizard>
+</record_update>

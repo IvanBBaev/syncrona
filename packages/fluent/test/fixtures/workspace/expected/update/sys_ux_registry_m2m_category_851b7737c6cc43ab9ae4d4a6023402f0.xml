@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_registry_m2m_category">
+  <sys_ux_registry_m2m_category action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>851b7737c6cc43ab9ae4d4a6023402f0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_registry_m2m_category_851b7737c6cc43ab9ae4d4a6023402f0</sys_update_name>
+    <experience_category>afb4e3e173322010f0ca1e666bf6a726</experience_category>
+    <order>1000</order>
+    <page_registry>3e9b81b8e94545e59c93cd781b066ef7</page_registry>
+  </sys_ux_registry_m2m_category>
+</record_update>

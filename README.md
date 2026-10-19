@@ -1,0 +1,1316 @@
+# SyncroNow AI
+
+<!-- badges:start -->
+| ![status: stable](https://img.shields.io/badge/status-stable-brightgreen?style=flat-square) | [![npm](https://img.shields.io/npm/v/syncrona?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/syncrona) | [![downloads](https://img.shields.io/npm/dm/syncrona?style=flat-square&logo=npm&logoColor=white&label=downloads)](https://www.npmjs.com/package/syncrona) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](LICENSE) |
+|:--:|:--:|:--:|:--:|
+| [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) | [![platform: ServiceNow](https://img.shields.io/badge/platform-ServiceNow-62D84E?style=flat-square)](https://www.servicenow.com/) | [![last commit](https://img.shields.io/github/last-commit/IvanBBaev/syncrona?style=flat-square&logo=git&logoColor=white&label=last%20commit)](https://github.com/IvanBBaev/syncrona/commits/main) |
+| [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![CodeQL](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/codeql.yml?branch=main&style=flat-square&logo=github&logoColor=white&label=CodeQL)](https://github.com/IvanBBaev/syncrona/actions/workflows/codeql.yml) | [![coverage](https://img.shields.io/codecov/c/github/IvanBBaev/syncrona/main?style=flat-square&logo=codecov&logoColor=white&label=coverage)](https://codecov.io/gh/IvanBBaev/syncrona) | [![Known Vulnerabilities](https://snyk.io/test/github/IvanBBaev/syncrona/badge.svg)](https://snyk.io/test/github/IvanBBaev/syncrona) |
+<!-- badges:end -->
+
+_Built and maintained in my own time. If SyncroNow AI helps you or your team,
+a sponsorship keeps it moving — it directly funds new features, fixes and
+keeping pace with ServiceNow's REST surface._
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/IvanBBaev)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/ivanbbaev)
+[![Donate via Donatree](https://img.shields.io/badge/Donate-Donatree-22c55e?style=flat-square&logo=liberapay&logoColor=white)](https://donatr.ee/ivanbbaev/)
+
+## Overview
+
+SyncroNow AI is a tool for managing ServiceNow code in a more modern way. It allows you to:
+
+1. Store scoped app code in GitHub in an editable way.🐙 (Looking at you studio source control👀)
+2. Run your code through build pipelines that enable you to write modern JavaScript and use modern development tools such as [TypeScript](https://www.typescriptlang.org/), [Babel](https://babeljs.io/), and [Webpack](https://webpack.js.org/). 🎉
+3. Take control of your development process in ServiceNow! 💪
+
+Because your scoped-app code is downloaded as plain, editable files in a project folder, SyncroNow AI is well suited for **tracking your ServiceNow source code in Git** — giving you real diffs, history, branches and pull requests over code that would otherwise live only inside the instance.
+
+> **Coming from now-sdk?** The ServiceNow SDK's everyday commands have a
+> `syncrona` counterpart: `query`, `cicd`, `push --create` / `--prune`,
+> `init --new`, and the whole Fluent (`.now.ts`) toolchain through
+> `syncrona fluent` (which drives `@servicenow/sdk` when you install it). See
+> [docs/MIGRATING_FROM_NOW_SDK.md](docs/MIGRATING_FROM_NOW_SDK.md) for the
+> command and environment-variable mapping and the honest list of what is not
+> covered yet. `push --create` / `--prune`, `init --new`, the data-model
+> sidecars, `cicd run-suite` / `run-test`, `fluent install` and `query` were
+> verified against a live instance on 2026-10-13. Still covered only by mocked
+> tests: `cicd install` / `publish` / `rollback`, `fluent move-to-app`, the
+> `sync_fluent_build` MCP tool and the composite data-model layout. Try those
+> on a development instance first.
+
+**Project documentation**
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — package graph, the two
+  ServiceNow clients and their shared transport policy, push/manifest flows,
+  MCP request pipeline, and the **module contract** for adding/removing CLI
+  commands and MCP tool families (mermaid diagrams).
+- [docs/PRODUCT_STATE.md](docs/PRODUCT_STATE.md) — what works today, phase
+  history, known gaps and operating constraints.
+- [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md) — credential precedence,
+  instance profiles, the dev→prod workflow, and CI.
+- [docs/MONOREPO_GUIDE.md](docs/MONOREPO_GUIDE.md) — multi-scope layout,
+  per-scope vs shared config, and CI matrices.
+- [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) — the plugin
+  contract and how to write and wire your own build plugin.
+- [docs/BUSINESS_ANALYSIS.md](docs/BUSINESS_ANALYSIS.md) — product vision,
+  personas, value proposition, competitive positioning, KPIs, prioritized
+  roadmap and risk register.
+- [docs/COMPARISON.md](docs/COMPARISON.md) — SyncroNow AI vs ServiceNow native Git,
+  the ServiceNow SDK (`now-sdk` / Fluent), and update sets (one-page
+  comparison).
+- [docs/MIGRATING_FROM_NOW_SDK.md](docs/MIGRATING_FROM_NOW_SDK.md) — coming
+  from the ServiceNow SDK (`now-sdk` / Fluent): command and environment-variable
+  mapping, authentication differences, and what is not covered yet.
+- [docs/ENTERPRISE_READINESS.md](docs/ENTERPRISE_READINESS.md) — what remains
+  for a public 1.0 / enterprise release (done / scheduled / owner-gated).
+- [ROADMAP.md](ROADMAP.md) — shipped capabilities, what 1.0 closed, and what is
+  still open past it (with owner-gated items called out).
+- [SECURITY.md](SECURITY.md) — vulnerability reporting and data-handling.
+- [SUPPORT.md](SUPPORT.md) — getting help, diagnostics, support scope.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — symptom → cause → fix
+  index for auth, connectivity, proxy/TLS, manifest, watch-mode and MCP issues.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, quality gates, conventions.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards.
+- [packages/mcp-server/README.md](packages/mcp-server/README.md) — MCP server
+  setup, tools, guardrails, and safety notes.
+- [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) — autogenerated API reference for all
+  63 MCP tools (parameters, safety flags; regenerated via
+  `generate-tool-reference.js`, drift-gated by its `--check` mode).
+- [packages/credential-store/README.md](packages/credential-store/README.md) —
+  the global encrypted credential store (AES-256-GCM at rest, key derivation)
+  shared by the CLI and MCP server.
+- [packages/redaction/README.md](packages/redaction/README.md) — the shared
+  secret-detection and redaction primitive: which key names and value shapes count
+  as credentials, why detection fails closed, and what the redaction marker encodes.
+- [docs/VERSIONING.md](docs/VERSIONING.md) — semver policy, lockstep releases,
+  the MCP tool-contract stability promise, and the Node.js support window.
+- [CHANGELOG.md](CHANGELOG.md) — notable changes per release.
+
+**Table of Contents**
+
+- [SyncroNow AI](#syncronow-ai)
+  - [Overview](#overview)
+  - [Installation](#installation)
+    - [Requirements](#requirements)
+    - [Instructions](#instructions)
+  - [How does it work?](#how-does-it-work)
+    - [Commands](#commands)
+      - [Using the diff option](#using-the-diff-option)
+    - [Workflow](#workflow)
+    - [File Structure](#file-structure)
+      - [sync.config.js](#syncconfigjs)
+      - [sync.manifest.json](#syncmanifestjson)
+      - [sync.diff.manifest.json](#syncdiffmanifestjson)
+      - [.env](#env)
+    - [Asymmetric Source Code](#asymmetric-source-code)
+    - [Power of Extensions](#power-of-extensions)
+  - [Configuration](#configuration)
+    - [There are WAY too many files in here!](#there-are-way-too-many-files-in-here)
+    - [I'm not seeing all my code files!](#im-not-seeing-all-my-code-files)
+    - [Plugin Configuration](#plugin-configuration)
+    - [Table Options](#table-options)
+  - [FAQ](#faq)
+    - [How do I Delete Something?](#how-do-i-delete-something)
+    - [How do I Add New Scripts?](#how-do-i-add-new-scripts)
+    - [How do I work with multiple instances?](#how-do-i-work-with-multiple-instances)
+    - [How do I work with several scoped apps in one repo?](#how-do-i-work-with-several-scoped-apps-in-one-repo)
+    - [Getting unstuck](#getting-unstuck)
+  - [Examples](#examples)
+  - [Plugin List](#plugin-list)
+
+## Installation
+
+`syncrona` and all fifteen `@syncrona/*` packages are published on npm with build
+provenance, so no build step is needed to use the CLI.
+
+### Global CLI quick start
+
+```bash
+npm i -g syncrona
+syncrona login
+syncrona init
+```
+
+Or without installing anything: `npx syncrona init`.
+
+### Install from source
+
+For contributing, or to run an unreleased commit:
+
+```bash
+git clone https://github.com/IvanBBaev/syncrona
+cd syncrona
+npm ci
+npm run build
+# expose the CLI as `syncrona` on your PATH:
+npm link --workspace syncrona
+syncrona login
+syncrona init
+```
+
+Prefer not to link globally? Run the built CLI directly from the repo with
+`node packages/core/dist/index.js <command>`.
+
+### Requirements
+
+In order to use SyncroNow AI, you will need:
+
+- [Node.js](https://nodejs.org/en/) version 22.0 or later
+
+> ⚠️ **Windows users:** WSL (Windows Subsystem for Linux) is currently
+> **required** — native Windows is not yet supported.
+>
+> - Install WSL with an Ubuntu distribution (Windows version 1903+; earlier
+>   versions are untested/not working)
+> - Run all `syncrona` commands from inside the WSL shell
+> - (Optional) Windows Terminal is recommended for proper text rendering
+>
+> Native Windows support (PowerShell install, Windows Credential Manager) is
+> on the roadmap.
+
+**ServiceNow compatibility:** SyncroNow AI talks only to standard ServiceNow
+REST/Table APIs and needs nothing installed on the instance, so it is broadly
+release-agnostic. It is actively used against recent ServiceNow releases; a
+formal supported-version matrix is being established — if you hit a
+release-specific issue, please open an issue with your instance version.
+
+**Authentication:** SyncroNow AI supports every inbound REST authentication method
+ServiceNow offers, in **both** clients (CLI axios and the MCP server's native
+fetch). Select the method explicitly with `SN_AUTH_METHOD`, or let it be inferred
+for backward compatibility. Every auth variable also accepts a per-profile
+`_<PROFILE>` suffix.
+
+| Method (`SN_AUTH_METHOD`) | Required vars | Notes |
+| --- | --- | --- |
+| Basic — `basic` (default) | `SN_USER`, `SN_PASSWORD` | HTTP Basic over HTTPS. |
+| OAuth password — `oauth-password` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET`, `SN_USER`, `SN_PASSWORD` | OAuth 2.0 Resource Owner Password grant; Bearer token from `oauth_token.do`, refreshed on expiry/401. |
+| OAuth client credentials — `oauth-client-credentials` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET` | OAuth 2.0 Client Credentials grant — service-to-service, no user password (Tokyo+). |
+| OAuth JWT bearer — `oauth-jwt-bearer` | `SN_OAUTH_CLIENT_ID`, `SN_OAUTH_CLIENT_SECRET`, `SN_JWT_KEY` | OAuth 2.0 JWT Bearer grant. `SN_JWT_KEY` is a path to (or inline) RS256 private-key PEM; a fresh signed assertion is minted per token. Optional `SN_JWT_KID` / `SN_JWT_ISS` / `SN_JWT_SUB` / `SN_JWT_AUD` override the JWT header/claims (defaults derived from client id + user + instance). |
+| API key — `api-key` | `SN_API_KEY` | Inbound REST API Key sent as a header — default `x-sn-apikey`, override with `SN_API_KEY_HEADER` (Vancouver+). |
+| Bearer token — `bearer` | `SN_BEARER_TOKEN` | A pre-issued OAuth access token sent as `Authorization: Bearer <token>` (the counterpart of now-sdk's `SN_SDK_SESSION_BEARER_TOKEN`). Environment-only: never stored by `syncrona login` and never refreshed. When present it is inferred ahead of every other method. |
+
+Without `SN_AUTH_METHOD` the method is inferred exactly as before — bearer when
+`SN_BEARER_TOKEN` is set, then OAuth password when a client id/secret pair **and**
+a password are present, otherwise Basic — so
+existing setups keep working unchanged. An **unrecognized** value is an error
+rather than a fallback: `syncrona doctor` reports `Unknown SN_AUTH_METHOD "<value>"`
+and the MCP server refuses to start, so a typo can no longer resolve silently to a
+different method. Use a dedicated least-privilege integration user.
+
+**An injected UI session (Fluent tier only).** `SN_SESSION_COOKIE` (the session's
+`Cookie` header) and `SN_SESSION_TOKEN` (its `X-UserToken` CSRF token) are the
+counterparts of now-sdk's `SN_SDK_SESSION_COOKIE` / `SN_SDK_SESSION_TOKEN`. When
+`SN_SESSION_COOKIE` is set, the `fluent` actions hand that session to the SDK as is,
+ahead of the profile's method and without a login; a token without a cookie is an
+error. It is not an auth method: every other command ignores it, and so does
+`fluent types --native`, which uses the profile. Environment-only and un-suffixed:
+`syncrona login` never stores it, clears a stale one from `.env`, and syncrona
+never renews it — once the session expires, the action fails with the instance's 401.
+
+**Mutual TLS (client certificate)** is orthogonal to the method above and combines
+with any of them (or works alone): point `SN_CLIENT_CERT` and `SN_CLIENT_KEY` at
+PEM files (plus `SN_CLIENT_KEY_PASSPHRASE` if the key is encrypted). It is applied
+at the TLS layer in both the CLI and the MCP server.
+
+`syncrona login` walks you through any of these interactively (method picker), or
+runs non-interactively with flags — for example
+`syncrona login --auth-method api-key --api-key XXXX` or
+`syncrona login --auth-method oauth-client-credentials --client-id … --client-secret …`.
+Secrets are kept in the encrypted global credential store; the JWT key and TLS
+cert/key are referenced **by path**, never copied into it. See
+[SECURITY.md](SECURITY.md) and [docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
+
+**Corporate proxies & custom TLS (G9):** the CLI honors the standard
+`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` environment variables automatically, so
+it works behind a corporate proxy with no extra configuration. For a corporate
+or self-signed certificate authority, point `SYNCRONA_CA_BUNDLE` at a PEM CA
+bundle (or set Node's built-in `NODE_EXTRA_CA_CERTS`, which also covers the MCP
+server's native-fetch client, which ignores `SYNCRONA_CA_BUNDLE`). As a last resort for a throwaway test instance,
+`SYNCRONA_TLS_REJECT_UNAUTHORIZED=0` disables certificate verification — insecure,
+never use it against a real instance.
+
+**Request timeout:** every ServiceNow request the CLI makes (data path and OAuth
+token endpoint alike) is bounded at 120 seconds. Raise or lower it with
+`SN_REQUEST_TIMEOUT` in milliseconds — a large bulk download over a slow link may
+need more, and `0` restores the old unbounded behaviour. An unparseable or
+negative value falls back to the 120-second default rather than disabling the
+timeout.
+
+**Request rate:** each client (the CLI and the MCP server alike) sends at most 20
+requests per second to an instance. Set `SN_MAX_RPS` to a whole number from 1 to
+20 to go slower — on a shared or fragile instance, say. It can only lower the
+cap: a value outside that range, or one that is not a whole number, stops the
+command with an error rather than silently running at full rate. The MCP server
+reads it from its own environment (the `env` block of the MCP client
+configuration), not from the project `.env`.
+
+### Instructions
+
+1. Create a folder to store the scoped app code.
+2. In a terminal, run `npm init` inside the newly created folder and follow the instructions to set up your node module.
+3. Install `syncrona` (nothing needs to be installed on the instance — the CLI works against the standard ServiceNow REST/Table APIs)
+
+```bash
+npm i -D syncrona
+```
+
+4. Initialize your SyncroNow AI project
+
+```bash
+npx syncrona init
+```
+
+If your repository is a monorepo with many scoped apps under `packages/`, run SyncroNow AI from the specific scope directory, for example `packages/cs`. Each scope package should get its own `.env`, `sync.config.js`, and `sync.manifest.json`.
+
+5. [Configure your project!](#configuration)
+6. **OPTIONAL BUT HIGHLY RECOMMENDED** Once your project is configured the way you like, you can commit and push it to a git repository for superior tracking and version control! Make sure to create a `.gitignore` file and ignore `node_modules` and `.env` because you **really** don't want those files in your repository.
+7. Start dev mode and start working! Every time you save a file that is tracked by SyncroNow AI, it will be built with your ruleset and the result will be placed in ServiceNow!
+
+```bash
+npx syncrona dev
+```
+
+## How does it work?
+
+SyncroNow AI takes a two-pronged approach to managing your ServiceNow scoped app. Architecture, creation of records, deletion of records, metadata and other ServiceNow objects besides your actual source code will be managed normally. Your _source code itself_ will be managed inside of your SyncroNow AI project.
+
+### Commands
+
+SyncroNow AI has a few basic commands to help you get the job done
+
+| Command            | Aliases  | Description                                                                                                                                                 | Usage                           |
+| ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `refresh`          | `r`      | Refreshes the `sync.manifest.json` file and downloads all new files created in ServiceNow since the last refresh. Does not override existing file contents. | `npx syncrona refresh`              |
+| `dev`              | `d`      | Starts development mode. Watches files for changes, then builds and pushes them to the corresponding record. Only works on files in the manifest file.      | `npx syncrona dev`                  |
+| `init`             | **none** | Walks you through creating a basic SyncroNow AI project. This is the recommended way to create a SyncroNow AI project from scratch. Use `--ci` to provision every scope the detected `.env` exposes without prompting. `--new --name "<display>"` instead creates a new scoped application on the instance (scope `x_<vendor-prefix>_<name>`, or `--scope`; `--vendor-prefix` skips the instance lookup) and binds the directory to it; `--dry-run` prints the `sys_app` body without creating anything. | `npx syncrona init`                 |
+| `push`             | **none** | Builds and pushes all files in your local SyncroNow AI project to the ServiceNow instance in your `.env` file. Takes an optional path argument (`push src/sys_script/MyBusinessRule`, absolute or relative to the current directory) to push just that file or folder; the path must resolve inside the configured source or build directory, otherwise the push is refused with a warning. `--create` also creates (or adopts) records for files not in the manifest yet (`--no-create` overrides `createRecords: true` in `sync.config.js`); `--prune` deletes in-scope records whose tracked files git shows deleted (destructive, confirmed unless `--ci`; `--allow-mass-delete` lifts the volume limit). | `npx syncrona push`                 |
+| `download <scope>` | **none** | Downloads the specified scoped app, overwriting all local files in the way. **Only use this if you know what you are doing!**                               | `npx syncrona download my_test_app` |
+| `build`            | **none** | Builds the local SyncroNow AI project and stores the files locally                                                                                             | `npx syncrona build`                |
+| `deploy`           | **none** | Deploys the files in the build folder to the ServiceNow instance. Use `--ci` to skip the interactive prompts in noninteractive runs — it deploys the diff manifest when `build --diff` produced one, and the full build scope otherwise. | `npx syncrona deploy`               |
+| `docs`             | **none** | Generates or logically updates Markdown documentation and Mermaid diagrams describing the downloaded scope (overview, tables, per-record files).            | `npx syncrona docs`                 |
+| `repair`           | **none** | Reconciles the manifest with local files: reports (default) or re-downloads files the manifest expects but are missing locally, and optionally prunes orphan files — files under the source directory that carry the manifest's `<table>/<record>/<field>.<ext>` layout (or its flat `<table>/<record>~<field>.<ext>` form) but that no manifest record claims. Hand-written sources, dot-directories, files of tables the manifest does not list, and anything of another shape are never orphans. Use `--apply` to re-download missing files (it also re-fetches secret-rule values such as `sys_properties.value`, restoring a non-secret value and keeping a password one withheld), `--prune` (with `--apply`) to delete orphans, and `--ci` for non-interactive runs. `--prune` deletes only orphans that git holds committed and unchanged, byte for byte, so git can restore them — new or edited files, files that match HEAD only after a line-ending or clean-filter conversion, and the files of records awaiting `push --create` even when committed, are kept and listed; `--apply --prune --dry-run` previews the decision — and is refused outright outside a git repository, without a commit, or when `sourceDirectory` resolves to the project root. | `npx syncrona repair`               |
+| `status`           | **none** | Shows extended workspace status: instance/user/scope, config paths, env readiness, and connectivity diagnostics. Exits 1 when credentials are missing or the instance cannot be reached.                                           | `npx syncrona status`               |
+| `query`            | **none** | Queries any table through the Table API with the `now-sdk query` flag set (`-q` required, `--limit 100`, `--offset`, `-f/--fields`, `--display-value`, `--no-count`, `--view`, `--timeout`). Read-only; `-o json` prints the `now-sdk` envelope `{ok, hasMore, nextOffset, records}` for scripts. | `npx syncrona query incident -q active=true` |
+| `check-env`        | **none** | Checks machine prerequisites (Node 22+, supported platform/WSL, Git) and prints actionable fixes.                                                          | `npx syncrona check-env`            |
+| `doctor`           | **none** | Runs local configuration and ServiceNow connectivity diagnostics, and reports actionable failures.                                                         | `npx syncrona doctor`               |
+| `plugins`          | **none** | Shows configured plugin rules and reports plugin package availability (installed or missing) from the current workspace.                                  | `npx syncrona plugins`              |
+| `config <action>`  | **none** | Inspect or extend configuration. `config show-defaults` prints the built-in default includes/excludes; `config add-plugin [--plugin <name>]` lists the first-party build plugins (with install status) and prints a paste-ready `rules` snippet. | `npx syncrona config add-plugin --plugin typescript` |
+| `completion [shell]` | **none** | Prints a shell tab-completion script covering every `syncrona` command. Pass `bash` or `zsh`, or omit the argument to auto-detect the shell from `$SHELL`; append the output to your shell rc file to install it. | `npx syncrona completion`           |
+| `mcp`              | **none** | Starts standalone MCP server and can auto-configure local MCP client files (`.vscode/mcp.json`, `.syncrona-mcp/secrets.json`).                            | `npx syncrona mcp`                  |
+| `login [instance]` | **none** | Saves ServiceNow credentials in the encrypted global CredentialStore and optionally sets active instance.                                                  | `npx syncrona login dev123.service-now.com` |
+| `logout [instance]`| **none** | Removes stored credentials for one instance (or all with `--all`) from the global CredentialStore.                                                       | `npx syncrona logout dev123.service-now.com` |
+| `instances`        | **none** | Lists instances saved in the global CredentialStore and marks the active one.                                                                              | `npx syncrona instances`            |
+| `use <instance>`   | **none** | Sets active instance from the global CredentialStore for subsequent commands.                                                                              | `npx syncrona use dev123.service-now.com` |
+| `jira [key]`       | `--profile`, `--comments`, `--json` | Fetches rich context for a Jira issue (summary, description, status, type, priority, assignee/reporter, labels, components, parent, subtasks, links, fix versions, recent comments). Resolves the key from the argument or the current git branch name. Supports Jira Cloud and Server/Data Center. | `npx syncrona jira SCRUM-123` |
+| `jira-login`       | `--profile` | Saves Jira credentials in the encrypted global CredentialStore. Auto-detects Cloud vs Server/Data Center from the base URL and verifies the connection. | `npx syncrona jira-login` |
+| `jira-logout`      | `--profile`, `--all` | Removes stored Jira credentials for one profile (or all with `--all`) from the global CredentialStore. | `npx syncrona jira-logout` |
+| `mirror <action>`  | `--full`, `--reconcile`, `--verify-quiescent`, `--deep`, `--json` | Full-instance git mirror. `mirror init` provisions the current repository for a mirror-sized checkout (`feature.manyFiles`, `core.fsmonitor`, `core.precomposeunicode`, scheduled `git maintenance`, `.gitattributes`); `mirror sync` sweeps the instance into the tree (`--full` for a complete baseline, `--reconcile` to propagate instance-side deletions now instead of waiting for the every-Nth-sync cadence, `--verify-quiescent` to report tables that changed under the sweep) and prints a suggested commit message without ever committing; `mirror status` compares the tree against the live instance; `mirror verify` checks the tree against its own manifests with no network access; `mirror report` re-prints the last sweep's report. `status` and `verify` take `--deep` to re-hash sampled records instead of comparing aggregates alone. Exit codes: 0 clean, 1 the run could not finish, 2 completed with drift or findings. | `npx syncrona mirror sync --full` |
+| `cicd <action>`    | **none** | Drives the ServiceNow CI/CD REST API (`api/sn_cicd`) and follows its progress tracker until the work finishes. `cicd run-suite` runs an ATF suite (`--suite-id` or `--suite-name`, optional `--browser-name`, `--os-name`, `--run-in-cloud`, `--performance`); `cicd run-test` runs one ATF test (`--test-id`); `cicd install`, `cicd publish` and `cicd rollback` act on an application in the app repository (`--scope` or `--app-sys-id`, `--app-version` — required for `rollback` — plus `--base-app-version`, `--auto-upgrade-base-app`, `--dev-notes`). `--poll-ms` and `--timeout` (seconds) tune the wait; `--progress-id <sys_id>` resumes waiting on a run that outlived `--timeout` without dispatching new work; `--json` prints the machine result (and, when the run could not finish, a failure document with `exitCode` 1, the `error` and any `progressId` to resume); every JSON document carries a `verdict` (`passed`, `failed`, `no_tests`, `incomplete` or `unknown`) and a `reason`, so a suite that ran no tests is told apart from failed tests; `--poll-ms` is between 250 and 60000, and no wait between polls runs past `--timeout`. The user needs the `sn_cicd.sys_ci_automation` role. Exit codes: 0 succeeded, 1 the run could not finish, 2 tests failed or the work ended in error. | `npx syncrona cicd run-suite --suite-name "Smoke tests"` |
+| `fluent <action>`  | `--project`, `--json`, `--ci`, `--reinstall`, `--from`, `--paths`, `--update-set`, `--native`, `--engine`, `--ids`, `--list`, `--peek`, `--dry-run` | Fluent (`.now.ts`) applications through the optional Fluent tier: `@syncrona/fluent` drives the ServiceNow SDK (`@servicenow/sdk`, MIT, not bundled; install both with `npm install --save-dev @syncrona/fluent @servicenow/sdk`). Actions: `init` (new project, or `--from <scope sys_id>` to convert an instance application), `build`, `transform` (local `--paths`, one `--update-set`, `--incremental` or complete), `pack`, `install` (asks first unless `--ci`, and without a terminal or with `--json` exits 1 asking for `--ci`; `--reinstall` uninstalls first), `types`, `dependencies`, `run --script` (runs a project script locally, with no instance credential), `status`, `explain [topic]` (the SDK's bundled documentation, offline: `--list` for the topic index, `--peek` for summaries; needs no project or instance), `move-to-app --ids <sys_id,...>` (moves global records into a global application's project as Fluent sources; creates `sys_claim` records on the instance, so it asks first unless `--ci`, and like `install` exits 1 asking for `--ci` without a terminal or with `--json`). `types --native` writes table types (`@types/syncrona/tables.d.ts`, or `--out`) from `sys_db_object`, `sys_dictionary` and `sys_choice` for the project scope, `--scope` or `--table`, without the SDK; a plain `types` uses the SDK when it is installed and falls back to native generation when it is not. `build`, `pack`, `install` and `status` also run on syncrona's native engine inside `@syncrona/fluent`, without the SDK (the native `build` covers the compiler's Fluent APIs and refuses server modules, client content, `metadata/` XML, runtime policies and a logo file, which still need the SDK): by default they use the SDK when it is installed and otherwise fall back to the native engine with a one-line notice, and `--engine sdk` or `--engine native` forces one (`--engine native` never loads the SDK; `@syncrona/fluent` is still needed). Basic and OAuth profiles (or an injected UI session, `SN_SESSION_COOKIE` / `SN_SESSION_TOKEN`) only for the SDK actions, with or without a mutual-TLS client certificate: API-key profiles cannot reach the SDK's session-only endpoints and are refused (`types --native`, and a plain `types` that falls back to it, accept every profile). Neither package is loaded until an action needs it (`--dry-run` included, which checks both are installed and reports a native fallback; `types --native` needs neither); when one is missing the command prints an install hint and exits 1. Exit codes: 0 success (`install` once the install is submitted), 1 failure (including an `explain` topic that matches nothing), 2 build errors, a `status` whose install is still running, or a `move-to-app` that moved no records. The client certificate, `SYNCRONA_CA_BUNDLE` and `SYNCRONA_TLS_REJECT_UNAUTHORIZED` apply to the SDK's own requests too: the Fluent tier installs a TLS-configured fetch dispatcher for the duration of each instance-side action. | `npx syncrona fluent build` |
+
+`init` wizard behavior notes:
+
+1. Prefers credentials from environment when available.
+2. Falls back to the active CredentialStore instance before prompting.
+3. Persists selected credentials to the global CredentialStore and writes `.env`.
+4. Runs a lightweight initial doctor connection check at the end of setup.
+
+#### Credential storage security
+
+The global CredentialStore writes each instance's credentials to
+`~/.syncrona/credentials/<instance>.enc`, encrypted with AES-256-GCM. The
+encryption key is resolved with this precedence:
+
+1. **`SYNCRONA_STORE_KEY`** — an explicit 32-byte key (64 hex characters or
+   base64). Use this for CI/CD and shared environments, sourced from a secrets
+   manager. This is the strongest option.
+2. **OS keychain (default)** — used automatically when the optional
+   `@napi-rs/keyring` dependency is installed; opt out with
+   `SYNCRONA_USE_KEYCHAIN=0` (e.g. headless CI with no keychain). A random
+   256-bit master key is generated once and stored in the OS keychain (macOS
+   Keychain / Windows Credential Manager / libsecret). The on-disk files stay
+   useless without keychain access.
+3. **Machine-derived key (fallback)** — derived from your machine hostname and
+   username, used automatically when the keychain / `@napi-rs/keyring` is
+   unavailable. This is **obfuscation-grade, not strong cryptography**. Reads
+   retry with this key so stores written before the keychain default keep
+   decrypting.
+
+> ⚠️ With the machine-derived fallback key, anyone who can read the `.enc` file
+> **and** run code as your user on the same machine (or who knows your hostname +
+> username) can decrypt the credentials. It guards against casual inspection and
+> accidental file sharing — not a compromised account, stolen disk, or malware
+> running as your user. Configure an explicit key or the keychain for real
+> at-rest protection.
+
+Reads fall back to the machine-derived key, so credential files written before
+this change keep decrypting; the next `syncrona login` re-encrypts them with the
+resolved key.
+
+Recommendations:
+
+- Treat the machine as a trust boundary. Rely on OS file permissions
+  (`~/.syncrona` is created with user-only access) and full-disk encryption.
+- For **CI/CD and shared environments**, set `SYNCRONA_STORE_KEY` from a secrets
+  manager (or prefer plain environment variables over the on-disk store).
+- On a workstation, the OS keychain is used automatically (as long as the
+  optional `@napi-rs/keyring` dependency is installed) — no flag needed. Set
+  `SYNCRONA_USE_KEYCHAIN=0` only to opt out (e.g. headless environments).
+- Always use a dedicated integration user with least-privilege roles, and rotate
+  its password if a credential file may have been exposed.
+
+#### Using the diff option
+
+`--diff <branch>` means **different things for `push` and `build`** — both use
+`git diff <branch>...` against your source folder, but apply it differently:
+
+- **`syncrona push --diff <branch>`** pushes **only the files that changed**
+  versus that branch. This is the "changed-only" push — use it to push just your
+  feature's edits instead of the whole scope.
+
+  ```bash
+  npx syncrona push --diff main
+  ```
+
+- **`syncrona build --diff <branch>`** builds **all** source files but also
+  writes a `sync.diff.manifest.json` recording which files changed, so a later
+  `syncrona deploy` can target just those (an audit/deploy-tracking trail).
+
+  ```bash
+  npx syncrona build --diff main
+  ```
+
+Without `--diff`, `push` and `build` act on the entire source folder.
+
+#### Other push options
+
+`push` accepts a few more flags for scope handling, change tracking and
+automation:
+
+- `--scope-swap` (`--ss`) — auto-swap to the correct application scope for the
+  files being pushed instead of failing on a scope mismatch.
+- `--update-set <name>` (`--us <name>`) — create a new update set with the given
+  name and record all pushed changes into it.
+- `--push-concurrency <n>` (`--concurrency <n>`) — max records pushed in parallel
+  (1–50; overrides `pushConcurrency` in `sync.config.js`, default 10).
+- `--ci` — skip all confirmation prompts (for CI/automation). `init`, `download`,
+  `deploy` and `repair` accept `--ci` too, to skip their own confirmations.
+- `--create` (`--no-create`) — also create records for local files that no
+  manifest record claims yet. Without the flag, `createRecords: true` in
+  `sync.config.js` turns it on; the flag wins either way, and the default is off.
+  Files must follow the download layout (`<table>/<record>/<field>.<ext>`, or
+  `<table>/<record>~<field>.<ext>` in a flat project). Before each create, push
+  looks the record up by display name inside the app scope: one match is
+  **adopted** into the manifest instead of duplicated, more than one is an error.
+  Only tables that extend `sys_metadata` (application files) are allowed, plus
+  tables listed under `createTables` in `sync.config.js` or in the
+  `SYNCRONA_CREATE_TABLE_ALLOWLIST` environment variable (comma-separated);
+  `sys_user`, `sys_user_has_role`, `sys_user_role`, `sys_user_group`,
+  `sys_properties` and `cmdb_ci` stay denied even if listed. Tables with a
+  `differentiatorField` are refused. `--dry-run` shows an `Action` column
+  (`update` / `create` / `adopt` / `error`) and sends only GET requests.
+- `--prune` — **destructive**: also delete the instance records whose local
+  files were deleted. A record is a candidate only when git shows its files as
+  deleted — in the working tree against `HEAD`, or, with `--diff <branch>`, in
+  that diff (deleted or renamed away) — **every** file it lists is missing and
+  its `.meta.json` sidecar is gone too; a file that is simply absent (never
+  downloaded, or lost outside git) never makes a record a candidate, and a
+  record that lost one file of two is left alone. With a path argument, only
+  records under that path are considered. Push refuses to prune when
+  `sourceDirectory` is blank, the project root, or a directory that is missing
+  or empty; when a download is unfinished (`sync.download.checkpoint.json`
+  exists); and when git cannot list the deleted files. Before deleting, push
+  reads each record's `sys_scope` and refuses any record outside the app scope
+  recorded in the manifest; a record the instance answers with 404 is reported
+  as unverified and keeps its manifest entry. The `--create` deny list applies,
+  and so do the tables `sync.config.js` excludes by default unless a
+  `tableOptions` entry opts the table in. More than 25 deletions, or more than
+  20% of the manifest (once more than 5 records are candidates), is refused unless
+  `--allow-mass-delete` is given, and under `--ci` a prune needs `--diff`, a
+  path argument or `--allow-mass-delete`. When one push both deletes and creates
+  records of a table, push warns that a rename is a delete plus a create under a
+  new `sys_id`. Push asks `Delete <n> record(s) from <instance>? This cannot be
+  undone.` (default no; declining cancels the whole run with exit code 130 and
+  changes nothing, not even the stored app scope), and `--ci` skips that prompt.
+  Each deleted record is removed from the manifest. There is no config switch:
+  pruning happens only when the flag is given. `--dry-run` lists the candidates
+  as `delete` (or `error`) rows in the `Action` column, warns about the volume
+  limit instead of refusing, and sends only GET requests.
+
+```bash
+npx syncrona push --update-set "PRJ-123 changes" --scope-swap
+npx syncrona push --ci --concurrency 5
+npx syncrona push --create --dry-run
+npx syncrona push --diff main --prune --dry-run
+```
+
+#### Using dry-run mode
+
+Seven commands implement a preview and accept `--dry-run`: `push`, `deploy`,
+`download`, `build`, `init`, `repair` and `fluent`. They report exactly what they
+would do and write nothing — locally or on the instance. (`fluent --dry-run`
+prints the call it would hand to the ServiceNow SDK without resolving any
+credentials; it loads the adapter and the SDK only to check that they are
+installed, and fails with the install hint where the real run would.)
+
+```bash
+npx syncrona push --dry-run
+```
+
+Every other command that takes the shared options **refuses** `--dry-run`
+rather than accepting and ignoring it (the credential, Jira and `completion`
+commands take no shared options, so they do not know the flag at all), because a flag that is parsed and then does nothing turns a request for a
+preview into a real run that reports nothing unusual:
+
+```console
+$ npx syncrona docs --dry-run
+`syncrona docs` has no preview mode, so --dry-run would run it for real. Re-run without --dry-run.
+```
+
+`init --dry-run` previews the `.env`-driven path and `init --new` (which prints
+the `sys_app` body it would create). With no `.env` in the directory and no
+`--new`, `init` would fall back to the interactive setup wizard, which has no
+preview mode — so it stops and tells you instead of provisioning the project.
+
+#### Using instance profiles
+
+To work with multiple ServiceNow instances from one workspace, define profile-specific env vars and select them with `--instance-profile`.
+
+```bash
+SN_INSTANCE_DEV=dev123.service-now.com
+SN_USER_DEV=dev.user
+SN_PASSWORD_DEV=dev.password
+
+npx syncrona status --instance-profile dev
+```
+
+Profile vars (`SN_INSTANCE_<PROFILE>`, `SN_USER_<PROFILE>`, `SN_PASSWORD_<PROFILE>`) fall back to base vars when a specific value is missing.
+
+#### Manifest refresh in dev mode
+
+In `dev` mode SyncroNow AI periodically re-reads the instance manifest to pick up
+records created in ServiceNow since you started (it does **not** overwrite local
+file contents). The interval defaults to **30 seconds** (`refreshInterval` in
+`sync.config.js`). Overlapping refreshes are guarded — a slow refresh never
+stacks. On a slow network, raise the interval or disable polling:
+
+```bash
+npx syncrona dev --refresh-interval 60   # poll every 60s
+npx syncrona dev --refresh-interval 0    # disable polling; refresh manually with `syncrona refresh`
+```
+
+Run with `--log-level debug` to see `Manifest refresh took Xms` and per-file
+rule matches.
+
+#### Jira integration
+
+`syncrona jira [key]` pulls read-only context for a Jira issue (summary,
+description, status, type, priority, assignee/reporter, labels, components,
+parent, subtasks, links, fix versions and recent comments) — handy for pairing
+an issue with the ServiceNow change you are working on. If you omit the key, the
+CLI parses it from the current git branch name (e.g. `feature/SCRUM-123-foo` →
+`SCRUM-123`). It supports both **Jira Cloud** and **Jira Server / Data Center**.
+
+Save credentials once with `syncrona jira-login`; they are stored in the
+same encrypted global CredentialStore as ServiceNow credentials. Configuration
+is resolved with this precedence (first match wins):
+
+1. `--profile <name>` — a named profile in the CredentialStore.
+2. Environment variables (below).
+3. The default stored Jira profile.
+
+| Variable           | Purpose                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| `JIRA_BASE_URL`    | Jira base URL, e.g. `https://acme.atlassian.net` (Cloud) or `https://jira.acme.com` (Server / DC). |
+| `JIRA_TOKEN`       | Cloud API token, or a Server / Data Center Personal Access Token (PAT).                      |
+| `JIRA_EMAIL`       | Account email — **required for Cloud** (paired with the API token as Basic auth). Omit for Server / DC PAT (Bearer) auth. |
+| `JIRA_DEPLOYMENT`  | Force the deployment type: `cloud` or `server`. Auto-detected from the base URL when unset.  |
+
+See [packages/jira/README.md](packages/jira/README.md) for the full
+configuration reference (Cloud vs Server/DC auth semantics, profiles and
+precedence).
+
+### Workflow
+
+**Development workflow** — you author code on your ServiceNow dev instance,
+SyncroNow AI pulls a local copy, and every save is built and pushed back to the
+matching record automatically.
+
+```mermaid
+flowchart TD
+    subgraph SN["ServiceNow Dev Instance"]
+        A["Create new code file<br/>(ex. script include)"]
+        B["Create tables,<br/>metadata, etc"]
+        C["Create update set,<br/>push to team dev, etc"]
+        OK["Results of build are placed into<br/>the corresponding record field"]:::ok
+        A --> B --> C
+    end
+
+    subgraph SY["SyncroNow AI Project"]
+        REF["npx syncrona refresh"]:::cmd
+        LC["Local copy gets created"]
+        CE["Change extension if desired"]
+        DEV["npx syncrona dev"]:::cmd
+        SV["Save changes"]
+        BP["Build process starts automatically"]
+        REF --> LC --> CE --> DEV --> SV --> BP
+    end
+
+    A -->|new record| REF
+    BP -->|Successful build| OK
+    BP -->|Errors| ERR["Errors printed to console"]:::err
+
+    classDef cmd fill:#3f3f46,color:#ffffff,stroke:#27272a;
+    classDef ok fill:#d3ecd3,color:#14532d,stroke:#4caf50;
+    classDef err fill:#f6c9c9,color:#7f1d1d,stroke:#e57373;
+```
+
+**Deployment** — point the same project at a higher instance (e.g. prod) and
+`push` the master version of the code up.
+
+```mermaid
+flowchart TD
+    subgraph SN["ServiceNow Prod Instance"]
+        L["Load changes from dev instance"]
+        U["Code files are updated<br/>in ServiceNow"]:::ok
+    end
+
+    subgraph SY["SyncroNow AI Project (prod)"]
+        LM["Load master version of code"]
+        PUSH["npx syncrona push"]:::cmd
+        AB["All files get built"]
+        LM --> PUSH --> AB
+    end
+
+    L --> LM
+    AB -->|Successful build| U
+    AB -->|Errors| ERR2["Errors printed to console"]:::err
+
+    classDef cmd fill:#3f3f46,color:#ffffff,stroke:#27272a;
+    classDef ok fill:#d3ecd3,color:#14532d,stroke:#4caf50;
+    classDef err fill:#f6c9c9,color:#7f1d1d,stroke:#e57373;
+```
+
+### File Structure
+
+When you download your source code using SyncroNow AI, it creates a folder structure that goes as follows:
+
+```text
+project_folder/
+  src/
+    table_name/
+      record_name/
+        field_name.extension
+```
+
+Records are shown as folders because there are times where there are multiple code files per record. This makes it very important that you **never have records with the exact same display value in the same table!** If you do, then you will notice issues building your files to the right record in ServiceNow.
+
+#### sync.config.js
+
+This is the configuration file for SyncroNow AI. [Learn More](#configuration)
+
+#### sync.manifest.json
+
+Keeps track of all ServiceNow files that are watched by SyncroNow AI. **Do not manually modify it**
+
+#### sync.diff.manifest.json
+
+Tracks changed files for build and deploy commands when using diff option.
+
+#### .env
+
+Stores login credentials and and the instance URL. **Do not commit this to git**
+
+### Asymmetric Source Code
+
+When you download your source code using SyncroNow AI, you are effectively 'taking control' of that code. **Once the code is in your project, you no longer want to edit it directly in ServiceNow!** This is why putting your code into source control is highly recommended. **Anything else besides code, such as tables, configuration of script records, metadata, etc. must still be tracked in ServiceNow and passed along with your preferred method of moving ServiceNow architecture**
+
+Modern javascript development workflows are **asymmetric**, meaning that the source code you write is usually not the code that gets executed. It is built using various tools and compiled/transpiled into some more compatible or smaller javascript code that is run by browsers or node environments.
+
+SyncroNow AI takes advantage of this same principle by allowing you to leverage some of those same tools. This means that you will no longer be able to store your source code directly in ServiceNow, instead you will have a local version of your source code that gets built and the result of that build will be put into ServiceNow.
+
+**EXAMPLE**
+
+Let's say I want to develop using TypeScript. Once I have the right plugin configuration for my needs, this Typescript file:
+
+```typescript
+// Example/script.ts
+class Example {
+  constructor(message: string) {
+    gs.info(message);
+  }
+  sayHello() {
+    gs.info("Hello, SyncroNow AI!");
+  }
+}
+```
+
+becomes
+
+```javascript
+// ServiceNow `Example` script include.
+"use strict";
+
+function _classCallCheck(instance, Constructor) {
+  if (!(instance instanceof Constructor)) {
+    throw new TypeError("Cannot call a class as a function");
+  }
+}
+
+function _defineProperties(target, props) {
+  for (var i = 0; i < props.length; i++) {
+    var descriptor = props[i];
+    descriptor.enumerable = descriptor.enumerable || false;
+    descriptor.configurable = true;
+    if ("value" in descriptor) descriptor.writable = true;
+    Object.defineProperty(target, descriptor.key, descriptor);
+  }
+}
+
+function _createClass(Constructor, protoProps, staticProps) {
+  if (protoProps) _defineProperties(Constructor.prototype, protoProps);
+  if (staticProps) _defineProperties(Constructor, staticProps);
+  return Constructor;
+}
+
+var Example =
+  /*#__PURE__*/
+  (function () {
+    function Example(message) {
+      _classCallCheck(this, Example);
+
+      gs.info(message);
+    }
+
+    _createClass(Example, [
+      {
+        key: "sayHello",
+        value: function sayHello() {
+          gs.info("Hello, SyncroNow AI!");
+        },
+      },
+    ]);
+
+    return Example;
+  })();
+```
+
+### Power of Extensions
+
+File extensions are typically only one short blurb (e.g. `.js`, `.css`, etc.). When you use SyncroNow AI, you may find that you want to treat one `.js` file differently than another. That's where extensions can become more powerful! You could create an extension in your project such as `.server.js` and `.client.js` which you could combine with the [rules](#plugin-configuration) configuration of SyncroNow AI to have _two different build pipelines_. You could use Webpack for client scripts and Babel for server scripts! Pretty cool huh?
+
+As long as the main filename stays the same, you can add as many extensions as you want.
+
+**EXAMPLE**
+
+`script.js` becomes `script.servicenow.js` or `script.ts` or `script.what.ever.you.want.js`
+
+## Configuration
+
+SyncroNow AI aims to be as configurable as possible. To do that, it creates a special javascript file in your project directory called `sync.config.js`. It's contents will look something like this:
+
+```javascript
+module.exports = {
+  // Directory where your source files will be kept and will be watched by SyncroNow AI
+  // during development.
+  sourceDirectory: "src",
+  //Directory where local builds will be stored
+  buildDirectory: "build",
+  // This is where you will configure your plugins. You match based on plugins.
+  // Order your rules by MOST SPECIFIC extension first! The first match is the
+  // only one that gets executed.
+  rules: [],
+  // === INCLUDES/EXCLUDES apply on top of the default config! See more below ===
+  // Tables/fields to exclude (AKA not download or track) from SyncroNow AI
+  excludes: {},
+  // Tables/fields to explicitly include in your SyncroNow AI project.
+  // Can override excludes if necessary.
+  includes: {},
+  //How often syncrona will refresh the manifest in development mode
+  refreshInterval: 30,
+  // (Experimental, opt-in) Use a flat local layout
+  // <table>/<record>~<field>.<ext> instead of per-record folders. The mapping
+  // is lossless and reversible (see "Flat layout" below).
+  flat: false,
+  // Write a `.meta.json` sidecar next to each record's field files, holding the
+  // record's non-file columns (see "Record metadata" below). Set to false to
+  // stop writing it.
+  meta: true,
+  // Push local edits to that sidecar back to the instance. Set to false to keep
+  // it as read-only reference data.
+  metaPush: true,
+  // (Opt-in) Data-model tables to track as editable records, e.g.
+  // ["sys_dictionary", "sys_choice"] (see "Data model" below). Empty by default.
+  dataModelTables: [],
+  // Keep sys_db_object, sys_dictionary and sys_choice records as one
+  // `data-model/<table>.json` document per table ("composite") instead of one
+  // sidecar per record ("records", the default). See "Data model" below.
+  dataModelLayout: "records",
+  // (Opt-in) Sync the JSON columns of UI Builder, workspace and AI Agent
+  // configuration tables as `.json` field files: any of "uib", "workspace",
+  // "ai"; "flow" writes read-only Flow Designer documents, "playbook"
+  // read-only Process Automation Designer documents and "workflow" read-only
+  // legacy workflow documents (see "JSON columns" below). Empty by default.
+  tablePresets: [],
+};
+```
+
+If you find that your config is getting too large, you can use typical nodejs techniques for splitting it into smaller modules and loading them into the `sync.config.js`.
+
+#### Flat layout (experimental)
+
+By default each record is stored as a folder of field files
+(`<table>/<record>/<field>.<ext>`). Setting `flat: true` selects a flatter
+layout that collapses the per-record folder into one file per field, keeping
+table, record and field so the mapping stays **lossless and reversible**:
+
+```
+sys_script_include/MyUtil/script.js      ->  sys_script_include/MyUtil~script.js
+```
+
+The `~` separator never appears in a ServiceNow dictionary field name, so the
+record is everything before the last `~` and the field everything after it. The
+conversion is implemented as pure, fully-tested helpers
+(`folderRelToFlat` / `flatRelToFolder` in `packages/core/src/flatLayout.ts`).
+`download`/`refresh`/`push`/`build` honour `flat: true` automatically — files are
+written and read back in the flat shape, and the build tree mirrors it so
+`deploy` works unchanged. It remains opt-in and labelled experimental pending
+broad validation against a live instance. **Switching `flat` on an existing
+workspace does not convert what is already on disk**: nothing re-lays the tree,
+and `refresh` only fetches files the manifest does not have yet, so the old
+per-record folders stay where they are and new files land in the other shape.
+Delete the downloaded tree (or start a fresh workspace) and re-download after
+changing the setting.
+
+#### Record metadata (`.meta.json`)
+
+A record is more than its code. A script include also carries `api_name`,
+`access`, `client_callable`, `active` and `description`; a business rule carries
+`when`, `order`, `condition` and `collection`. None of those is a *file field* —
+ServiceNow types them as string, boolean, choice or reference — so they used to
+be invisible: a workspace held the script and nothing else.
+
+Each record now also gets a metadata sidecar holding its non-file columns:
+
+```
+sys_script_include/MyUtil/script.js
+sys_script_include/MyUtil/.meta.json      <- and flat: MyUtil~.meta.json
+```
+
+```json
+{
+  "access": "public",
+  "active": "true",
+  "api_name": "x_demo.MyUtil",
+  "caller_access": "",
+  "client_callable": "false",
+  "description": "Shared helpers",
+  "sys_class_name": "sys_script_include",
+  "sys_policy": "",
+  "sys_scope": "5b1e53bc1b6624501aba63166e4bcb1c"
+}
+```
+
+The columns are discovered from the dictionary, walking the table's parents so
+an inherited column counts, and the manifest records the list it used per table
+in `metaFields`.
+
+**What is excluded, and only that**: every file field (it already has its own
+file); `password`/`password2` and the other credential types (a secret must
+never reach the working tree); journal fields and binaries (no stable string
+form); and the six columns that describe the *last save* rather than the record —
+`sys_id`, `sys_created_by`, `sys_created_on`, `sys_updated_by`, `sys_updated_on`,
+`sys_mod_count`. Everything else is kept, including the `sys_*` columns that do
+describe the artifact: `sys_scope`, `sys_package`, `sys_name`, `sys_class_name`,
+`sys_policy`, `sys_overrides`, `sys_update_name`, `sys_domain`,
+`sys_customer_update`, `sys_replace_on_upgrade`.
+
+Keys are sorted and every tracked column is written **even when it is empty on
+the instance** — a blank `caller_access` you cannot see is a column you cannot
+set, and the point of the sidecar is that it is editable. A column the instance
+did not return at all (a read ACL hides it) is left out rather than claimed as
+`""`; that distinction is what keeps a push from clearing a field it never read.
+Re-downloading an unchanged record still produces no diff.
+
+**The sidecar is editable.** `push`, `dev` and `deploy` expand it back into an
+update of the record's real columns, in the same request that carries the field
+files. Three rules, each there because the alternative loses an edit silently:
+
+- **A column the table does not track is an error.** ServiceNow ignores unknown
+  columns in an update and still answers `200`, so a typo (`descripton`) would
+  otherwise be reported as a successful push that changed nothing. The push fails
+  for that record and names the keys.
+- **A read-only or virtual column is withheld, not rejected.** `api_name` is
+  derived server-side; it is written into the sidecar because it is worth reading
+  next to the script, and skipped on the way back because the instance would
+  discard it and still answer `200`. The push logs what it withheld. Those
+  columns are recorded in the manifest as `metaReadOnlyFields`.
+- **A missing key is not a request to clear the column.** A key that is absent
+  from the sidecar is almost always a merge artefact or a hand-trimmed file, not
+  an intent to blank the field, so it is left untouched. Clearing is spelled
+  `""` — which is also exactly what the file already shows you for a column that
+  is empty on the instance, so the edit is a one-character change either way.
+
+A fourth rule covers the case where the metadata layer itself failed to build:
+if the manifest records **no** columns for the table, the push does not report
+"unknown column" for every key in a perfectly good file. It says the manifest is
+the thing that is missing a metadata layer and sends you to `syncrona refresh`.
+Correspondingly, `refresh` warns — at `warn`, not `debug` — naming each table
+whose dictionary it could not read, the cause, and both ways out. A dictionary
+that cannot be read never fails the download: the scripts still land.
+
+Everything on the instance still applies on top: write ACLs, business rules and
+data policies can reject or rewrite a value the push sent.
+
+Set `metaPush: false` in `sync.config.js` to keep the sidecar as read-only
+reference data — the field files still push, and each skipped record says so.
+Set `meta: false` to stop writing sidecars at all. To control which columns a
+given table records, list them explicitly — that replaces discovery for that
+table, so it can also re-add a column the default rules exclude. It does not lift
+the unsafe-type rule: a column the list names whose dictionary type is a
+credential, journal or binary (`password2`, `journal`, `image`, …) is dropped with
+a warning naming the table and column, exactly as an `includes` entry is. A
+dot-walked name (`manager.user_password`) is always dropped with a warning: it
+reads another record's column, which this table's dictionary cannot type. When the
+types cannot be read (a user without `sys_dictionary` access, which is what the
+explicit list is for), the list is kept as written and the run warns that its
+columns went unchecked.
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  tableOptions: {
+    sys_script: {
+      metaFields: ["when", "order", "condition", "collection", "sys_overrides"],
+    },
+  },
+};
+```
+
+The full design — the model, every discovery and serialization rule with its
+rationale, the push contract, how a degraded metadata layer behaves, the cost of
+building it, and the measurements taken against a live instance — is in
+[docs/design/record-metadata-layer.md](docs/design/record-metadata-layer.md).
+
+#### Data model (`dataModelTables`)
+
+A scoped app's tables, columns, choices, properties, roles, ACLs and UI
+policies can be tracked as local records too. They are opt-in: list the tables
+in `dataModelTables` (the default is `[]`):
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  dataModelTables: ["sys_db_object", "sys_dictionary", "sys_choice"],
+};
+```
+
+A listed table is re-included even when it is excluded by default. Its records
+with no file field are written as a `.meta.json` sidecar alone. Tables whose
+display value is not unique get a stable name: a dictionary entry is
+`<name>.<element>`, a choice is `<name>.<element>.<value>`, and an ACL is
+`<name>.<operation>`. Colliding names get a `_<sys_id>` suffix. A push of an
+edited sidecar sends only the columns that differ from the instance.
+`push --create` can create sidecar-only records. Create stays denied for
+`sys_properties` and `sys_user_role`, and pruning these tables is never allowed.
+With `dataModelLayout: "composite"`, a table, its columns and their choices are
+kept as one byte-stable document, `data-model/<table>.json`, instead of one
+sidecar per record. Push stays diff-only and goes table, then columns, then
+choices. A workspace that mixes both layouts is refused.
+The documented tables, the naming rules and the push contract are in
+[docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+
+#### JSON columns (`tablePresets`)
+
+UI Builder pages, workspaces, AI Agent tools and Now Assist skills keep their configuration in JSON
+columns, which a default workspace only sees as strings inside a `.meta.json`
+sidecar. `tablePresets` turns those columns into `.json` field files:
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  tablePresets: ["uib", "workspace", "ai"],
+};
+```
+
+| Preset | Tables |
+|---|---|
+| `uib` | `sys_ux_macroponent` (composition, data, layout, props, root component config and definition), screens, client scripts, data brokers, events, page properties, presets, controllers, widgets, extension points, themes, styles and UX ATF actions |
+| `workspace` | `sys_ux_app`, `sys_ux_app_config`, the page registry, route mappings, keyboard shortcuts, layout bounds, search result components, reflow and macroponent rules, `par_dashboard_widget`, `par_component` |
+| `ai` | `sn_aia_tool`, `sn_aia_agent_tool_m2m` and the external agent cards, configurations and skills, the Generative AI feature mappings and the OneExtend (Now Assist skill) capability, definition, attribute and resource-mapping tables |
+| `flow` | No field files: one read-only `sys_hub_flow/<name>.flow.json` document per flow and subflow (see below) |
+| `playbook` | No field files: one read-only `sys_pd_process_definition/<name>.playbook.json` document per playbook (see below) |
+| `workflow` | No field files: one read-only `wf_workflow/<name>.workflow.json` document per legacy workflow (see below) |
+
+On those tables every column the dictionary types `json` or `json_translations`
+becomes a field file, plus the string columns the preset names when this
+instance's dictionary has them. A field file is never also a sidecar column.
+
+- **Download** pretty-prints a value only when it is stored minified (exactly
+  `JSON.stringify` of itself). Any other value — indented, spaced, with escaped
+  unicode — is written byte for byte, so nothing is rewritten into a form it
+  was not.
+- **Push** refuses a `.json` field file that is not JSON, and minifies a file that
+  is exactly the 2-space form of its value, so a downloaded-then-pushed value
+  comes back unchanged. A value the instance holds as 2-space indented JSON is
+  minified by its first push; the JSON is the same.
+- A value with a credential-named key (`password`, `api_key`, `client_secret`,
+  `access_token`, …) holding a non-empty string is **not written**; the download
+  warns with the key path. Move the value to a credential record or a system
+  property.
+- `sys_uxf_snapshot` is never synced: UI Builder regenerates it on publish, and
+  `push` refuses one.
+
+Unknown preset names fail config validation. Tables the project switched off in
+`includes`/`excludes` stay off.
+
+##### Flow Designer documents (`flow`)
+
+The `flow` preset makes `refresh` and `download` write every flow and subflow of
+the scope as one decoded document, `sys_hub_flow/<internal name>.flow.json`:
+the flow row, its triggers, inputs, outputs, variables and stages, and its steps
+as a tree, with the gzip/base64 value payloads decoded to JSON. Two flows whose
+names differ only in case get their sys_id appended.
+
+It also writes every custom action of the scope as
+`sys_hub_action_type_definition/<internal name>.action.json`: the action row
+(with its `label_cache` decoded), its inputs and outputs, its output mappings
+(`{{step[<cid>].x}}`), and its steps in order, each with the inputs and outputs
+added to it, its static input values (a Script step's script, a Create Record
+step's table) and its data-pill input mappings. The rules below apply to both
+kinds of document.
+
+- The documents are **read-only**. `push` skips them with a warning; edit the
+  flow or action in Flow Designer and run `syncrona refresh`. They are not manifest
+  records, so `repair` never prunes them and `push --create` never creates from
+  them.
+- A file is rewritten only when its content changed. A document whose flow or
+  action is gone is left in place and named in a warning.
+- Flows built before the v2 step tables (many shipped flows among them) are
+  read from the older tables (`sys_hub_action_instance`, `sys_hub_flow_logic`,
+  ...), and each of their steps carries its inputs from `sys_variable_value`
+  as `variableValues`. When a migrated flow still keeps those older rows next
+  to its v2 rows, they are stale copies and are left out.
+- A value typed `password`, `password2`, `glide_encrypted`, `encrypted_text` or
+  `masked` is replaced by `<redacted:<type>>` and listed in the document's
+  `warnings`.
+- A flow or action that cannot be read makes the command exit 1; the others
+  are still written.
+
+##### Playbook documents (`playbook`)
+
+The `playbook` preset makes `refresh` and `download` write every Process
+Automation Designer playbook of the scope as one decoded document,
+`sys_pd_process_definition/<name>.playbook.json`: the process definition, its
+inputs and outputs, triggers, variants and timers, and its lanes with their
+activities in order. The values of the `glide_var` columns (launcher inputs,
+start rules, activity inputs and outputs), which the Table API returns empty,
+are read from `sys_variable_value` and attached to their row.
+
+It is a preset of its own, not part of `flow`, because Process Automation
+Designer is not installed on every instance: turn it on where it is.
+
+- The documents follow the rules of the Flow Designer documents above: they are
+  read-only (`push` skips them with a warning; edit the playbook in Process
+  Automation Designer and run `syncrona refresh`), rewritten only when their
+  content changed, left in place with a warning when their playbook is gone, and
+  secret-typed values are replaced by `<redacted:<type>>`.
+- A playbook that cannot be read, or a playbook listing the instance refuses,
+  makes the command exit 1.
+
+##### Legacy workflow documents (`workflow`)
+
+The `workflow` preset makes `refresh` and `download` write every legacy
+(Workflow Editor) workflow of the scope as one decoded document,
+`wf_workflow/<name>.workflow.json`, built from its published version: the
+workflow, its stages, its activities with their conditions nested under them,
+and its transitions. The values of an activity's `vars` column, which the Table
+API returns empty, are read from `sys_variable_value` and attached to the
+activity. Runtime tables (`wf_context`, `wf_executing`, `wf_history`) are never
+read.
+
+- The documents follow the rules of the playbook documents above: read-only
+  (`push` skips them with a warning; edit the workflow in the Workflow Editor
+  and run `syncrona refresh`), rewritten only when their content changed, left
+  in place with a warning when their workflow is gone, and secret-typed values,
+  inside decoded payloads too, are replaced by `<redacted:<type>>`.
+- A workflow that cannot be read, or a workflow listing the instance refuses,
+  makes the command exit 1.
+
+### There are WAY too many files in here!
+
+**OR**
+
+### I'm not seeing all my code files!
+
+When you first set up your project, you may notice you may have more files than you want to manage or some files are missing. This can be easily resolved by tweaking your `includes` and `excludes` section of your `sync.config.js`. SyncroNow AI attempts to establish sane defaults for these values [here](packages/core/src/defaultOptions.ts) (and you can list them with `syncrona config show-defaults`).
+
+If you think there is something wrong with the default setup, feel free to submit a pull request! 🐙👍
+
+The `excludes` and `includes` sections in your `sync.config.js` act as additions to that default setting. You can override parts of it or turn parts of it off.
+
+Once you have updated your includes and excludes, run `npx syncrona refresh` to load the new files and update the manifest. You will have to manually delete any newly excluded tables/fields.
+
+```javascript
+// sync.config.js
+module.exports = {
+  excludes: {
+    // Turns off the default exclusion of the `sys_scope_privilege` table
+    sys_scope_privilege: false,
+    // Excludes everything from the `my_cool_table` table
+    my_cool_table: true,
+    // Excludes the `cool_script` field specifically from the `new_cool_table` table.
+    // Other valid fields will be included.
+    new_cool_table: {
+      cool_script: true,
+    },
+  },
+  includes: {
+    // Turns off the default inclusion of the `content_css` table
+    content_css: false,
+    // Explicitly includes the `sys_report` table. Overrides any excludes on the
+    // same table.
+    sys_report: true,
+    // Explicitly pulls in the `neat_script_field` as a `js` file in spite of whatever
+    // type of field it might be in ServiceNow. Useful for text fields that
+    // represent code.
+    special_code_table: {
+      neat_script_field: {
+        type: "js",
+      },
+    },
+  },
+};
+```
+
+A field-level `includes` entry names a column of the record itself. A
+dot-walked name (`sys_created_by.user_password`) reads another record's column,
+so it is dropped with a warning and never requested or written — and so is a
+field file a hand-edited `sync.manifest.json` lists under such a name. The ATF
+step script (`sys_atf_step` `inputs.script`) is the one dotted field the CLI
+keeps.
+
+### Plugin Configuration
+
+Plugins are where the true 💪 **POWER** 💪 of SyncroNow AI comes from! The `rules` section is used to configure plugins. When configuring plugins, **Make sure to always put your rules in the order you want them matched! The first rule that gets matched will be the only one that runs!**
+
+```javascript
+// sync.config.js
+module.exports = {
+  rules: [
+    {
+      // The match argument is a regular expression that will match on your desired files
+      // The order matters, so put your most specific rules first!
+      // If there is a file that ends in `.secret.ts` it will match here and
+      // NO PLUGINS WILL BE RUN
+      match: /\.secret\.ts$/,
+      plugins: [],
+    },
+    {
+      // If there are just generic TypeScript files that have no other extension, they will
+      // match on this rule instead.
+      match: /\.ts$/,
+      // List of plugins to run on the matched files. Each plugin will run in order.
+      // THE RESULT OF THE PREVIOUS PLUGIN WILL BE PASSED TO THE NEXT PLUGIN so make
+      // sure they are in the right order!
+      plugins: [
+        {
+          // The name of the plugin, it is the same as the name of the NPM package of
+          // the plugin.
+          name: "@syncrona/typescript-plugin",
+          // Options to pass to the plugin. This will be defined by the plugin itself.
+          // In this case, we are telling the typescript plugin to only type check and
+          // not transpile.
+          options: {
+            transpile: false,
+          },
+        },
+      ],
+    },
+  ],
+};
+```
+
+### Table Options
+
+**This is a relatively new feature and potentially subject to change**
+
+The `tableOptions` section allows for special setups on any table. Example:
+
+```javascript
+// sync.config.js
+module.exports = {
+  // ...
+  tableOptions: {
+    some_table: {
+      // sets the field used for the record folder name
+      displayField: "some_field",
+      // Allows to de-duplicate records based on certain fields
+      differentiatorField: "sys_id",
+      // can be an array, if there isn't a value in a field, it moves to the next one
+      differentiatorField: ["some_field", "sys_id"],
+      // an encoded query to filter records by
+      query: "some_field=test",
+      // the columns written into each record's .meta.json sidecar; replaces
+      // dictionary discovery for this table
+      metaFields: ["active", "order"],
+      // names each record by several columns joined with "." (ignored when
+      // displayField is set)
+      nameFields: ["name", "element"],
+    },
+  },
+};
+```
+
+**When to use each option**
+
+- **`displayField`** — the field whose value names each record's folder. Use it
+  when a table's default display value is empty, non-unique, or not filesystem-
+  friendly (e.g. records keyed by a code field rather than `name`). Picking a
+  field with a clear, unique value per record keeps the folder tree readable.
+- **`differentiatorField`** — appended in parentheses to disambiguate records
+  that share the same `displayField` value (otherwise they would collide on the
+  same folder and one would overwrite the other — see the "never have records
+  with the same display value" warning under [File Structure](#file-structure)).
+  Use it when a table legitimately has duplicate display values; point it at a
+  field that differs between them (e.g. `version`, or `sys_id` as a last resort).
+  An array tries each field in order until one has a value.
+- **`query`** — an encoded query that limits which records are tracked for the
+  table. Use it to scope large tables down to the records you actually edit.
+- **`metaFields`** — the exact columns written into this table's `.meta.json`
+  sidecars, replacing dictionary discovery. Use it to trim a noisy sidecar down
+  to the handful of columns you care about, or to re-add one the default rules
+  exclude (`sys_overrides`, say). File fields are always removed from the list —
+  they already have their own file. An explicit list is taken as a decision, so
+  the dictionary's read-only flags do not withhold its columns from a push. Four
+  platform-owned columns still never go back — `sys_scope`, `sys_package`,
+  `sys_policy` and `sys_update_name` — because writing them would move the record
+  to another application or rename its update-set identity, and the instance
+  still has the final say on a column it will not write. See
+  [Record metadata](#record-metadata-metajson).
+- **`nameFields`** — names each record's folder by several columns, joining
+  their non-empty values with `.` (a dotted entry such as `operation.name` is a
+  dot-walk). Records whose names still collide get a `_<sys_id>` suffix. This is
+  how the data-model tables get stable names, and setting it on such a table
+  replaces the built-in rule. `displayField` takes precedence when both are set.
+  See [docs/DATA_MODEL.md](docs/DATA_MODEL.md).
+
+**Note on differentiatorField**
+
+This feature will currently put a colon in the filename, which breaks the
+Windows filesystem (and WSL paths under `/mnt`). Prefer a non-`sys_id`
+differentiator where possible, and avoid it entirely if your team works on
+native Windows.
+
+## FAQ
+
+### How do I Delete Something?
+
+From your project: delete the record's files, then run
+`npx syncrona push --prune --dry-run` to preview and `npx syncrona push --prune`
+to delete the in-scope records whose tracked files git shows deleted (it asks
+first and refuses mass deletions; see [Other push options](#other-push-options)).
+
+From the instance:
+
+1. Turn off dev mode if you are currently running SyncroNow AI
+2. Delete the record in ServiceNow
+3. Run `npx syncrona refresh`
+4. Remove the files from your project
+
+Why is this not automatic? Deleting files can be a dangerous game and it should be a deliberate action!
+
+### How do I Add New Scripts?
+
+From your project: create the files in the download layout
+(`<table>/<record>/<field>.<ext>`) and run `npx syncrona push --create` — it
+creates the records on the instance (preview with `--dry-run`).
+
+From the instance:
+
+1. Turn off dev mode if you are currently running SyncroNow AI
+2. Create the record in ServiceNow
+3. Run `npx syncrona refresh` and the files will get created automatically 👍
+
+### How do I work with multiple instances?
+
+Use the global credential store (`syncrona login` / `syncrona use`) or
+instance-profile env vars and `--instance-profile`. `syncrona status` shows
+which instance and credential source are active. Full guide:
+[docs/MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md).
+
+### How do I work with several scoped apps in one repo?
+
+Treat each scope as its own project under `packages/`, run commands from the
+scope directory, and share `node_modules`/plugins at the root. Full guide:
+[docs/MONOREPO_GUIDE.md](docs/MONOREPO_GUIDE.md).
+
+### Getting unstuck
+
+- **"credentials missing" after logging in** — the stored credential file may
+  not decrypt on this machine. Run `syncrona status --debug-credentials`; if it
+  reports a decrypt failure, re-run `syncrona login`.
+- **Connecting to the wrong instance** — run `syncrona status` and check
+  `Credentials from:`. A stale project `.env` wins over the store; fix or remove
+  it, or pass `--instance-profile`.
+- **`syncrona download` overwrote my edits** — `download` is destructive by
+  design (it confirms first; `--ci` skips the prompt). Keep your source in git
+  so a bad download is a `git checkout` away.
+- **A push failed partway** — fix the cause and run `syncrona push` again; it
+  offers to resume only the records that failed last time.
+- **A download failed partway** — just run `syncrona download <scope>` again;
+  it records completed tables in `sync.download.checkpoint.json` and resumes with
+  the tables it has not fetched yet instead of starting over.
+- **Slow network** — `syncrona dev --refresh-interval 60` polls less often, and
+  `syncrona push --concurrency 5` throttles parallel pushes.
+- **Environment problems** — `syncrona check-env` verifies Node, platform/WSL,
+  and Git, and prints actionable fixes.
+
+## Examples
+
+After downloading a scope, run `npx syncrona docs` to generate Markdown
+documentation and Mermaid diagrams for it (overview, tables, per-record files) —
+a quick way to explore what a real SyncroNow AI project looks like.
+
+## Plugin List
+
+| Name                                                                       | Description                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------- |
+| [@syncrona/babel-plugin](packages/babel-plugin/README.md)                 | Runs Babel on .js/.ts files                 |
+| [@syncrona/prettier-plugin](packages/prettier-plugin/README.md)           | Prettifies your output files using Prettier |
+| [@syncrona/sass-plugin](packages/sass-plugin/README.md)                   | Runs the Sass compiler on your files        |
+| [@syncrona/typescript-plugin](packages/typescript-plugin/README.md)       | Type checks and compiles TypeScript files   |
+| [@syncrona/webpack-plugin](packages/webpack-plugin/README.md)             | Creates Webpack bundles with your files     |
+| [@syncrona/eslint-plugin](packages/eslint-plugin/README.md)               | Runs ESLint on your files on build          |
+
+## Support
+
+This project is built and maintained in my own time. If it saves you or your team
+time, please consider supporting its continued development — sponsorship directly
+funds new features, fixes and maintenance.
+
+- **[GitHub Sponsors](https://github.com/sponsors/IvanBBaev)** — one-off or
+  recurring, with no platform fee taken out (the preferred option).
+- **[Ko-fi](https://ko-fi.com/ivanbbaev)** — quick one-off support; it also
+  accepts **PayPal**, so it's the fallback for anyone without a GitHub account.
+- **[Donate (Donatree)](https://donatr.ee/ivanbbaev/)** — a no-account donation
+  page (card, PayPal and more) for a one-off tip.
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/IvanBBaev)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support-ff5e5b?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/ivanbbaev)
+[![Donate via Donatree](https://img.shields.io/badge/Donate-Donatree-22c55e?style=flat-square&logo=liberapay&logoColor=white)](https://donatr.ee/ivanbbaev/)
+
+## Trademarks & license
+
+ServiceNow is a registered trademark of ServiceNow, Inc. This project is an
+independent, third-party tool and is not affiliated with, endorsed by, or
+sponsored by ServiceNow, Inc. All other trademarks are the property of their
+respective owners.
+
+SyncroNow AI is licensed under the **[GNU General Public License v3.0](LICENSE)**
+(GPL-3.0-or-later). See [NOTICE](NOTICE) for the copyright and trademark
+notices. As required by the GPL, redistributions must preserve these notices and
+make the corresponding source available.

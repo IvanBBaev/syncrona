@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message">
+  <sys_rest_message action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7aa73d18d57b4673a5b72c30a34dc552</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_7aa73d18d57b4673a5b72c30a34dc552</sys_update_name>
+    <access>package_private</access>
+    <authentication_type>oauth2</authentication_type>
+    <basic_auth_profile/>
+    <description>Outbound CRM &lt;integration&gt; &amp; "more"</description>
+    <name>CRM Integration</name>
+    <oauth2_profile>00000000000000000000000000000002</oauth2_profile>
+    <rest_endpoint>https://crm.example.com/api</rest_endpoint>
+  </sys_rest_message>
+</record_update>

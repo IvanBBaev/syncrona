@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_role_contains">
+  <sys_user_role_contains action="DELETE" apply_defaults="true">
+    <sys_id>d33bcf1d72de425bb13c313be100f1f6</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_role_contains_d33bcf1d72de425bb13c313be100f1f6</sys_update_name>
+    <contains>b1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6</contains>
+    <role name="x_snc_bprobe.ovr">8729a1ac51d74e97acf864d17b827dfe</role>
+  </sys_user_role_contains>
+</record_update>

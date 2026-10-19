@@ -1,0 +1,37 @@
+{
+  "name": "@syncrona/babel-preset-servicenow",
+  "version": "1.2.0-beta.0",
+  "description": "Babel preset for ServiceNow scoped apps (SyncroNow AI).",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@babel/core": "^8.0.0",
+    "@babel/types": "^8.0.0"
+  },
+  "devDependencies": {
+    "@syncrona/types": "^1.2.0-beta.0",
+    "typescript": "~6.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/babel-preset-servicenow"
+  },
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

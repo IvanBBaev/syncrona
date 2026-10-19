@@ -1,0 +1,872 @@
+<?xml version="1.0"?>
+<record_update table="sys_pd_process_definition">
+  <sys_pd_lane action="delete_multiple" query="process_definition=d7211147a4b445e1be7087c05c3966b3^sys_idNOT IN53273984f4be4e28a61a0d069f8a2dad,27e7f3d5e8c34f2cba118f9a75d4d6b4"/>
+  <sys_pd_activity action="delete_multiple" query="process_definition=d7211147a4b445e1be7087c05c3966b3^sys_idNOT IN2179b008a1864cf6946896d0c434a188,6dcc3a29d41d4095b5ab4c9b3c5828c8,50d1068e1cf443e7803e8ff367733d6f"/>
+  <sys_pd_process_variant action="delete_multiple" query="process_definition=d7211147a4b445e1be7087c05c3966b3"/>
+  <sys_pd_process_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d7211147a4b445e1be7087c05c3966b3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_process_definition_d7211147a4b445e1be7087c05c3966b3</sys_update_name>
+    <access>public</access>
+    <active>true</active>
+    <allow_as_nested>false</allow_as_nested>
+    <copied_from/>
+    <copied_from_label/>
+    <data_retention_period_override>6_week</data_retention_period_override>
+    <description>Handles P1 incidents</description>
+    <designer_state/>
+    <engine_major_version/>
+    <execution_type>record_driven</execution_type>
+    <label>Simple Playbook</label>
+    <launcher_description/>
+    <launcher_record_form_view/>
+    <launcher_show_record_form>false</launcher_show_record_form>
+    <launcher_template_fields/>
+    <launcher_title/>
+    <name>simple_playbook</name>
+    <now_assist_kb/>
+    <now_assist_prompt/>
+    <permission>{}</permission>
+    <process_type>52c6d3eeff1be2102c2fffffffffff44</process_type>
+    <public_access>false</public_access>
+    <restartable>RESTARTABLE_TRUE</restartable>
+    <run_on_pad_engine>false</run_on_pad_engine>
+    <run_strategy>run_once</run_strategy>
+    <run_strategy_on_process_definition>true</run_strategy_on_process_definition>
+    <schema_version>3</schema_version>
+    <snapshot/>
+    <start_non_blocking>true</start_non_blocking>
+    <status>draft</status>
+    <view_type>DIAGRAM</view_type>
+  </sys_pd_process_definition>
+  <sys_pd_lane action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>53273984f4be4e28a61a0d069f8a2dad</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_lane_53273984f4be4e28a61a0d069f8a2dad</sys_update_name>
+    <active>true</active>
+    <condition_to_run/>
+    <description/>
+    <label>Main Lane</label>
+    <name>main_lane</name>
+    <order>1</order>
+    <permission>{}</permission>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <restart_rule>RUN_ONLY_ONCE</restart_rule>
+    <start_rule>immediate</start_rule>
+    <start_rule_name>immediate</start_rule_name>
+    <starts_after_activities/>
+    <starts_after_branches/>
+    <starts_after_lanes/>
+  </sys_pd_lane>
+  <sys_pd_activity action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2179b008a1864cf6946896d0c434a188</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_activity_2179b008a1864cf6946896d0c434a188</sys_update_name>
+    <active>true</active>
+    <activity_definition>b0c35e2b1b630010affd0e55cc4bcbca</activity_definition>
+    <ai_agent_execution_mode/>
+    <ai_agent_obj_additional_detail/>
+    <ai_agent_objective/>
+    <ai_agent_run_as/>
+    <ai_agent_run_with_roles/>
+    <ai_agent_supported_actions/>
+    <ai_agent_user/>
+    <condition_to_run/>
+    <conversational_agents/>
+    <description/>
+    <enable_ai_agent/>
+    <label>First</label>
+    <lane>53273984f4be4e28a61a0d069f8a2dad</lane>
+    <launch_agent_when_activity_start/>
+    <name>first</name>
+    <order>1</order>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <restart_rule>RUN_ONLY_ONCE</restart_rule>
+    <start_rule_name>immediate</start_rule_name>
+    <starts_after_activities/>
+    <starts_after_branches/>
+    <starts_after_lanes/>
+    <variant/>
+  </sys_pd_activity>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>58d087f7ee6b42aa9a1b7d4efa0dd866</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_58d087f7ee6b42aa9a1b7d4efa0dd866</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>6c9c4ee31b630010affd0e55cc4bcbbf</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>381484acb631421dbda17cfd005d5bf9</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_381484acb631421dbda17cfd005d5bf9</sys_update_name>
+    <field>message</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_hub_flow_input_2b8b42e31b630010affd0e55cc4bcbe9</table>
+    <value>{{act.2179b008a1864cf6946896d0c434a188.description}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>493c8ae5027946a7ae85036e7520587a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_493c8ae5027946a7ae85036e7520587a</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value>yes</value>
+    <variable>c23322e91bbb001094630f28cc4bcbae</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8c3d883dda494bcd8f36d952993562b3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_8c3d883dda494bcd8f36d952993562b3</sys_update_name>
+    <field>wait</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_hub_flow_input_2b8b42e31b630010affd0e55cc4bcbe9</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ed6eb7a387a646a690f109d901a9ff5b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_ed6eb7a387a646a690f109d901a9ff5b</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>eb0474b8c763001085f5532bb4c260f5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>112b4804cc0b4ccd877b1fe791fe6c10</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_112b4804cc0b4ccd877b1fe791fe6c10</sys_update_name>
+    <field>associated_record</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f3b8bd53121d417d8ac1f9a4eef9371b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f3b8bd53121d417d8ac1f9a4eef9371b</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value>sys_flow_data</value>
+    <variable>78f334b8c763001085f5532bb4c26009</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f71bf55572e34971903a1413258f8978</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_f71bf55572e34971903a1413258f8978</sys_update_name>
+    <field>associated_table</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>83c9c537e6934e8cab50889494136b96</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_83c9c537e6934e8cab50889494136b96</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>267e68875b00001070e4492c11f91a34</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1b97f2f0889e47c7b15fd225ed93397b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_1b97f2f0889e47c7b15fd225ed93397b</sys_update_name>
+    <field>description</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction./start.message}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f333dc9b8af4417db1666cce4019f9ff</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f333dc9b8af4417db1666cce4019f9ff</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>55628762c3211010381b60bc0eba8fec</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9c272ad61b7b4b5c9328db2ba3c972ec</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_9c272ad61b7b4b5c9328db2ba3c972ec</sys_update_name>
+    <field>experience_status_record</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>038b37018f434d19bd7ff86ff2b49294</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_038b37018f434d19bd7ff86ff2b49294</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value>sys_flow_data</value>
+    <variable>9c6b7e22c3211010381b60bc0eba8f98</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0a2b772bb61346fd9a21472b6a593655</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_0a2b772bb61346fd9a21472b6a593655</sys_update_name>
+    <field>experience_status_table</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>82eae5fff6944bd494b4362531d26dc2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_82eae5fff6944bd494b4362531d26dc2</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value>circle_info_outline</value>
+    <variable>24bdf44673030010fe4a6da44cf6a707</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3e2c633144194a528f571e5ee0bc7137</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_3e2c633144194a528f571e5ee0bc7137</sys_update_name>
+    <field>icon</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>717a769559b04494b908532aa9f3fd73</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_717a769559b04494b908532aa9f3fd73</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>ec5d96eac7e60010bfbaf89f51c2605d</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e869912af7ac444e952d12ab4a554f09</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_e869912af7ac444e952d12ab4a554f09</sys_update_name>
+    <field>is_automated</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction./start.automated}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2148743f00124ee6917ab8f04d40de06</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_2148743f00124ee6917ab8f04d40de06</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value>Instructional</value>
+    <variable>661d304673030010fe4a6da44cf6a7b1</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2ba72dc97b6841a5815ff814f2f0aacc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_2ba72dc97b6841a5815ff814f2f0aacc</sys_update_name>
+    <field>tagline</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ea21151140ea4236a890c236452fe2ce</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_ea21151140ea4236a890c236452fe2ce</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>2179b008a1864cf6946896d0c434a188</document_key>
+    <value/>
+    <variable>49ed24875b00001070e4492c11f91aa5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>64eedc634fb246d5880622473208f30d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_64eedc634fb246d5880622473208f30d</sys_update_name>
+    <field>title</field>
+    <id>2179b008a1864cf6946896d0c434a188</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{act.2179b008a1864cf6946896d0c434a188.label}}</value>
+  </sys_element_mapping>
+  <sys_pd_activity action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6dcc3a29d41d4095b5ab4c9b3c5828c8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_activity_6dcc3a29d41d4095b5ab4c9b3c5828c8</sys_update_name>
+    <active>true</active>
+    <activity_definition>d8f4d66b1b630010affd0e55cc4bcbc7</activity_definition>
+    <ai_agent_execution_mode/>
+    <ai_agent_obj_additional_detail/>
+    <ai_agent_objective/>
+    <ai_agent_run_as/>
+    <ai_agent_run_with_roles/>
+    <ai_agent_supported_actions/>
+    <ai_agent_user/>
+    <condition_to_run/>
+    <conversational_agents/>
+    <description>Second step</description>
+    <enable_ai_agent/>
+    <label>Review it</label>
+    <lane>53273984f4be4e28a61a0d069f8a2dad</lane>
+    <launch_agent_when_activity_start/>
+    <name>review</name>
+    <order>2</order>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <restart_rule>RUN_ALWAYS</restart_rule>
+    <start_rule_name>after_items</start_rule_name>
+    <starts_after_activities>2179b008a1864cf6946896d0c434a188</starts_after_activities>
+    <starts_after_branches/>
+    <starts_after_lanes/>
+    <variant/>
+  </sys_pd_activity>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>907cf4e0ab264ea1a242cdec86d0ed4a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_907cf4e0ab264ea1a242cdec86d0ed4a</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>Start now</value>
+    <variable>a73fce671b630010affd0e55cc4bcbbb</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a9805552e4524afeb973cc7376b13979</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_a9805552e4524afeb973cc7376b13979</sys_update_name>
+    <field>initial_message</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_hub_flow_input_a7cd02671b630010affd0e55cc4bcbd1</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c2796eefb838407fbb1aada70f348c77</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_c2796eefb838407fbb1aada70f348c77</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>Done</value>
+    <variable>233fce671b630010affd0e55cc4bcbcd</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>493ab9d21df44f98aa40adbf9f34d720</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_493ab9d21df44f98aa40adbf9f34d720</sys_update_name>
+    <field>completed_message</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_hub_flow_input_a7cd02671b630010affd0e55cc4bcbd1</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>423e5697052144c6b28a36e2c1f041af</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_423e5697052144c6b28a36e2c1f041af</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>ffcd02671b630010affd0e55cc4bcbdf</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4ed5cca5143149cf9e154b29a8d3b381</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_4ed5cca5143149cf9e154b29a8d3b381</sys_update_name>
+    <field>assigned_to</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_hub_flow_input_a7cd02671b630010affd0e55cc4bcbd1</table>
+    <value>{{pd.inputRecord.assigned_to}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a2eb79b4e3df4992b6d3a11c2ee7a460</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_a2eb79b4e3df4992b6d3a11c2ee7a460</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>f8b3aae91bbb001094630f28cc4bcb2b</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>85e456c7f2c74d01a952ec4e161e13b7</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_85e456c7f2c74d01a952ec4e161e13b7</sys_update_name>
+    <field>assignment_group</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_hub_flow_input_a7cd02671b630010affd0e55cc4bcbd1</table>
+    <value>{{pd.inputRecord.assignment_group}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>592c04ad05ee44ebb157bff628783603</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_592c04ad05ee44ebb157bff628783603</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>Custom tagline</value>
+    <variable>661d304673030010fe4a6da44cf6a7b1</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2d43d9b659bf4c74be11e614dba8629b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_2d43d9b659bf4c74be11e614dba8629b</sys_update_name>
+    <field>tagline</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>beaebf45ba214d6eada39063bf5afe86</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_beaebf45ba214d6eada39063bf5afe86</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>star</value>
+    <variable>24bdf44673030010fe4a6da44cf6a707</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5de2df0295834a7290c49df11a67270c</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_5de2df0295834a7290c49df11a67270c</sys_update_name>
+    <field>icon</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c8e6bc50da284cbf9161be4aed186a87</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_c8e6bc50da284cbf9161be4aed186a87</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>eb0474b8c763001085f5532bb4c260f5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5308346b3a344bd7b88117bea7a045b8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_5308346b3a344bd7b88117bea7a045b8</sys_update_name>
+    <field>associated_record</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Two Step Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>bfa9ec84a8c44a379ed50837557e7bff</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_bfa9ec84a8c44a379ed50837557e7bff</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>sys_flow_data</value>
+    <variable>78f334b8c763001085f5532bb4c26009</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5c561097b1cd4087a934572de3d95f62</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_5c561097b1cd4087a934572de3d95f62</sys_update_name>
+    <field>associated_table</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>04bc3b262382485fac0c44ac23072909</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_04bc3b262382485fac0c44ac23072909</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>267e68875b00001070e4492c11f91a34</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d4b31faf82ef4543b9db99e507197d53</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_d4b31faf82ef4543b9db99e507197d53</sys_update_name>
+    <field>description</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Two Step Instruction./end.message}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ec9a62dbf4c245afb061940b89df13dc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_ec9a62dbf4c245afb061940b89df13dc</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>55628762c3211010381b60bc0eba8fec</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6670519397cb416da2adf4b5f6299afb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_6670519397cb416da2adf4b5f6299afb</sys_update_name>
+    <field>experience_status_record</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Two Step Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6c7624a2e4fa4fecafa9feb37c885777</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_6c7624a2e4fa4fecafa9feb37c885777</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>sys_flow_data</value>
+    <variable>9c6b7e22c3211010381b60bc0eba8f98</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c62841b1d57a44faa712aaf690a6174f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_c62841b1d57a44faa712aaf690a6174f</sys_update_name>
+    <field>experience_status_table</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7284d51756294b61a02be5674a53049b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_7284d51756294b61a02be5674a53049b</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value>0</value>
+    <variable>ec5d96eac7e60010bfbaf89f51c2605d</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>922044f3f0c64b31aa2dd727037ab42b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_922044f3f0c64b31aa2dd727037ab42b</sys_update_name>
+    <field>is_automated</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9c7d87bf34ea4b509f5e54fe1af5c1b2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_9c7d87bf34ea4b509f5e54fe1af5c1b2</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>6dcc3a29d41d4095b5ab4c9b3c5828c8</document_key>
+    <value/>
+    <variable>49ed24875b00001070e4492c11f91aa5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>602129ffc38b45d7844a29f13c242415</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_602129ffc38b45d7844a29f13c242415</sys_update_name>
+    <field>title</field>
+    <id>6dcc3a29d41d4095b5ab4c9b3c5828c8</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{act.6dcc3a29d41d4095b5ab4c9b3c5828c8.label}}</value>
+  </sys_element_mapping>
+  <sys_pd_lane action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>27e7f3d5e8c34f2cba118f9a75d4d6b4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_lane_27e7f3d5e8c34f2cba118f9a75d4d6b4</sys_update_name>
+    <active>true</active>
+    <condition_to_run/>
+    <description>Later work</description>
+    <label>Follow up</label>
+    <name>follow_up</name>
+    <order>2</order>
+    <permission>{}</permission>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <restart_rule>RUN_ALWAYS</restart_rule>
+    <start_rule>after_items</start_rule>
+    <start_rule_name>after_items</start_rule_name>
+    <starts_after_activities/>
+    <starts_after_branches/>
+    <starts_after_lanes>53273984f4be4e28a61a0d069f8a2dad</starts_after_lanes>
+  </sys_pd_lane>
+  <sys_pd_activity action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>50d1068e1cf443e7803e8ff367733d6f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_activity_50d1068e1cf443e7803e8ff367733d6f</sys_update_name>
+    <active>true</active>
+    <activity_definition>b0c35e2b1b630010affd0e55cc4bcbca</activity_definition>
+    <ai_agent_execution_mode/>
+    <ai_agent_obj_additional_detail/>
+    <ai_agent_objective/>
+    <ai_agent_run_as/>
+    <ai_agent_run_with_roles/>
+    <ai_agent_supported_actions/>
+    <ai_agent_user/>
+    <condition_to_run/>
+    <conversational_agents/>
+    <description/>
+    <enable_ai_agent/>
+    <label>First</label>
+    <lane>27e7f3d5e8c34f2cba118f9a75d4d6b4</lane>
+    <launch_agent_when_activity_start/>
+    <name>first</name>
+    <order>1</order>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <restart_rule>RUN_ONLY_ONCE</restart_rule>
+    <start_rule_name>immediate</start_rule_name>
+    <starts_after_activities/>
+    <starts_after_branches/>
+    <starts_after_lanes/>
+    <variant/>
+  </sys_pd_activity>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9eb2958ec8e145ec90fdbae6e0b30cb7</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_9eb2958ec8e145ec90fdbae6e0b30cb7</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>Hello</value>
+    <variable>6c9c4ee31b630010affd0e55cc4bcbbf</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6cdf9377f57f48948f8a6b6da51bb9fc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_6cdf9377f57f48948f8a6b6da51bb9fc</sys_update_name>
+    <field>message</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_hub_flow_input_2b8b42e31b630010affd0e55cc4bcbe9</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b962389c9c554be481844ca53b6b0ee1</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_b962389c9c554be481844ca53b6b0ee1</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>no</value>
+    <variable>c23322e91bbb001094630f28cc4bcbae</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9d8efe30d29a43b7aa5625f7d9774549</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_9d8efe30d29a43b7aa5625f7d9774549</sys_update_name>
+    <field>wait</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_hub_flow_input_2b8b42e31b630010affd0e55cc4bcbe9</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c3713171e8124f3fa61ab434dcf54608</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_c3713171e8124f3fa61ab434dcf54608</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value/>
+    <variable>eb0474b8c763001085f5532bb4c260f5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>741ddd682f4143cc873a8c831f4db001</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_741ddd682f4143cc873a8c831f4db001</sys_update_name>
+    <field>associated_record</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>acb3271598d54077b3346d811a0c9ff8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_acb3271598d54077b3346d811a0c9ff8</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>sys_flow_data</value>
+    <variable>78f334b8c763001085f5532bb4c26009</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f7381b503693442d9c985ad41140e07b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_f7381b503693442d9c985ad41140e07b</sys_update_name>
+    <field>associated_table</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e49d5d0e8d5c4db58b92f73e60aaad7e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_e49d5d0e8d5c4db58b92f73e60aaad7e</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value/>
+    <variable>267e68875b00001070e4492c11f91a34</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7a3920845edd46b69ea66bc6a27ccaf5</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_7a3920845edd46b69ea66bc6a27ccaf5</sys_update_name>
+    <field>description</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction./start.message}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>36f5ba31141045c69ac93d98fccacff4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_36f5ba31141045c69ac93d98fccacff4</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value/>
+    <variable>55628762c3211010381b60bc0eba8fec</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>868121e4868d400abe7e08a7d6997ff1</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_868121e4868d400abe7e08a7d6997ff1</sys_update_name>
+    <field>experience_status_record</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction.e17e6678-8e97-4584-a903-cfa6e47fd378./end.record}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c3681ac0264642f0aa4f6d4bc45c36df</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_c3681ac0264642f0aa4f6d4bc45c36df</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>sys_flow_data</value>
+    <variable>9c6b7e22c3211010381b60bc0eba8f98</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5d2b032c2d22445c939e929860cf8416</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_5d2b032c2d22445c939e929860cf8416</sys_update_name>
+    <field>experience_status_table</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f81c87d1c57e413eb36a3b7ac47d6cf3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f81c87d1c57e413eb36a3b7ac47d6cf3</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>circle_info_outline</value>
+    <variable>24bdf44673030010fe4a6da44cf6a707</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1d279eb614814d34b06061f97b607231</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_1d279eb614814d34b06061f97b607231</sys_update_name>
+    <field>icon</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>64c72ee70e584db5b32586d63cbc1183</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_64c72ee70e584db5b32586d63cbc1183</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value/>
+    <variable>ec5d96eac7e60010bfbaf89f51c2605d</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0baac2cc15b949e88a16fa52636e939d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_0baac2cc15b949e88a16fa52636e939d</sys_update_name>
+    <field>is_automated</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{vl.Simple Instruction./start.automated}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c58558261aeb4cb7b94ab28cb395fb34</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_c58558261aeb4cb7b94ab28cb395fb34</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value>Instructional</value>
+    <variable>661d304673030010fe4a6da44cf6a7b1</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ff899364047641f7a713743ed5e712b9</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_ff899364047641f7a713743ed5e712b9</sys_update_name>
+    <field>tagline</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value/>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8d829eb790b14a5891f8b62202281daf</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_8d829eb790b14a5891f8b62202281daf</sys_update_name>
+    <document>sys_pd_activity</document>
+    <document_key>50d1068e1cf443e7803e8ff367733d6f</document_key>
+    <value/>
+    <variable>49ed24875b00001070e4492c11f91aa5</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ebe82a8050ad48fd9f19fe335031f60b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_ebe82a8050ad48fd9f19fe335031f60b</sys_update_name>
+    <field>title</field>
+    <id>50d1068e1cf443e7803e8ff367733d6f</id>
+    <table>var__m_sys_pd_activity_type_prop_d4dde0875b00001070e4492c11f91a90</table>
+    <value>{{act.50d1068e1cf443e7803e8ff367733d6f.label}}</value>
+  </sys_element_mapping>
+  <sys_pd_trigger_instance action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d62752047bda40f9983b41ad265614e4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_trigger_instance_d62752047bda40f9983b41ad265614e4</sys_update_name>
+    <label>On update</label>
+    <name>on_update</name>
+    <process_definition>d7211147a4b445e1be7087c05c3966b3</process_definition>
+    <trigger_type>b08951170f1200108c87f4f0ff767e54</trigger_type>
+  </sys_pd_trigger_instance>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d19bf69d3ab141e6adb135ea502802e4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_d19bf69d3ab141e6adb135ea502802e4</sys_update_name>
+    <document>sys_pd_trigger_instance</document>
+    <document_key>d62752047bda40f9983b41ad265614e4</document_key>
+    <value>incident</value>
+    <variable>82be38d1ff2200108c8733af793bf1a7</variable>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>90883a1e074c4eb4a246e77303b456a8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_90883a1e074c4eb4a246e77303b456a8</sys_update_name>
+    <document>sys_pd_trigger_instance</document>
+    <document_key>d62752047bda40f9983b41ad265614e4</document_key>
+    <value>priority=1</value>
+    <variable>52ce78d1ff2200108c8733af793bf1b3</variable>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1706229d28ee4f55ba3441cd5732c9da</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_1706229d28ee4f55ba3441cd5732c9da</sys_update_name>
+    <document>sys_pd_trigger_instance</document>
+    <document_key>d62752047bda40f9983b41ad265614e4</document_key>
+    <value>true</value>
+    <variable>fb1af07d0f0010108c87f4f0ff767e00</variable>
+  </sys_variable_value>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>30f579fa9e0f47e3b448af1da1f1d92b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_30f579fa9e0f47e3b448af1da1f1d92b</sys_update_name>
+    <field>parent_record</field>
+    <id>d62752047bda40f9983b41ad265614e4</id>
+    <table>var__m_sys_pd_process_input_d7211147a4b445e1be7087c05c3966b3</table>
+    <value>{{triggerRecord}}</value>
+  </sys_element_mapping>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e59f8db3f9f24646a742ee342c0d6425</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_e59f8db3f9f24646a742ee342c0d6425</sys_update_name>
+    <document>sys_pd_trigger_instance</document>
+    <document_key>d62752047bda40f9983b41ad265614e4</document_key>
+    <value/>
+    <variable>35a59ac2425a4efcbb38537c2a18d558</variable>
+  </sys_variable_value>
+  <sys_pd_process_input action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>35a59ac2425a4efcbb38537c2a18d558</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_pd_process_input_35a59ac2425a4efcbb38537c2a18d558</sys_update_name>
+    <active>true</active>
+    <attributes>element_mapping_provider=com.snc.pd.designer.elementmapping.PlaybookInputElementMapper</attributes>
+    <element>parent_record</element>
+    <internal_type>reference</internal_type>
+    <label>Parent record</label>
+    <mandatory>false</mandatory>
+    <max_length>32</max_length>
+    <model>d7211147a4b445e1be7087c05c3966b3</model>
+    <model_id>d7211147a4b445e1be7087c05c3966b3</model_id>
+    <model_table/>
+    <name>var__m_sys_pd_process_input_d7211147a4b445e1be7087c05c3966b3</name>
+    <order>1</order>
+    <reference>incident</reference>
+  </sys_pd_process_input>
+</record_update>

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sn_nowassist_skill_config_status action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>bdbcf9a6ec884ca786fee63d45ec0147</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_nowassist_skill_config_status_bdbcf9a6ec884ca786fee63d45ec0147</sys_update_name>
+    <skill_config skill_id="e0156365ac94450b86885804ae35ed6b">4cda03a1515e403ab48930d0e6f96409</skill_config>
+  </sn_nowassist_skill_config_status>
+</record_update>

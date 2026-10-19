@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_list_menu_config">
+  <sys_ux_list_menu_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9c12beba98b74b7fb593c367389602e8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_list_menu_config_9c12beba98b74b7fb593c367389602e8</sys_update_name>
+    <active>true</active>
+    <description>List configuration for workspace</description>
+    <name>Workspace List Config</name>
+  </sys_ux_list_menu_config>
+</record_update>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_documentation">
+  <sys_documentation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2bc7220535cb437bb1f519ea0e7ed3d3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_documentation_x_snc_bprobe_ui_caller_id_en</sys_update_name>
+    <element>caller_id</element>
+    <help/>
+    <hint/>
+    <label>Caller</label>
+    <language>en</language>
+    <name>x_snc_bprobe_ui</name>
+    <plural>Callers</plural>
+    <url/>
+    <url_target/>
+  </sys_documentation>
+</record_update>

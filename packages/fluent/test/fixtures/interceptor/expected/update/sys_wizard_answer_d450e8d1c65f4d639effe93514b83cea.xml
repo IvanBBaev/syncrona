@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard_answer">
+  <sys_wizard_answer action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d450e8d1c65f4d639effe93514b83cea</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_answer_d450e8d1c65f4d639effe93514b83cea</sys_update_name>
+    <active>true</active>
+    <answer>Pick a subcategory</answer>
+    <button_label/>
+    <dependent_value>network</dependent_value>
+    <element>subcategory</element>
+    <name>Pick a subcategory</name>
+    <next_question/>
+    <order>400</order>
+    <payload_name/>
+    <question name="Full &quot;quoted&quot; Interceptor">ea91a27f9e6749ec90cfcaea7a3c5323</question>
+    <roles/>
+    <script><![CDATA[gs.info('external & <chosen>');]]></script>
+    <table>incident</table>
+    <target_url/>
+    <type>9</type>
+  </sys_wizard_answer>
+</record_update>

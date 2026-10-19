@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_section caption="Activity &amp; lists" section_id="1dc4291a8ac6434c8840e7dbdae43196" sys_domain="global" table="x_snc_bprobe_task" view="x_snc_bprobe_ops">
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>activity.xml</element>
+      <position>0</position>
+      <sys_id>030bd4f4989d40a4a411beabce9d5a76</sys_id>
+      <sys_ui_formatter>444ea5c6bf310100e628555b3f0739d6</sys_ui_formatter>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>formatter</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>attached_knowledge</element>
+      <position>1</position>
+      <sys_id>8d3ef502fb6e4e3e8f6f9e1b2fbca701</sys_id>
+      <sys_ui_formatter>cfa76e850a0a0b1f01446f67c8538d00</sys_ui_formatter>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>formatter</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>custom.xml</element>
+      <position>2</position>
+      <sys_id>105b61384b514a5f8d945c22f5bbfa48</sys_id>
+      <sys_ui_formatter>0123456789abcdef0123456789abcdef</sys_ui_formatter>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>formatter</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>12M.x_snc_bprobe_task.task_sla.task</element>
+      <position>3</position>
+      <sys_id>a43971167b84452b85e28fc71433789c</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>list</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>M2M.x_snc_bprobe_task.x_m2m.parent</element>
+      <position>4</position>
+      <sys_id>b27c349871e9490d97bbd3c52a026c51</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>list</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>REL.x_snc_bprobe_task.REL:8187a844639441188c068499555beb89</element>
+      <position>5</position>
+      <sys_id>6247a5719057469fb772f7c7faf2882f</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>list</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>REL.x_snc_bprobe_task.REL:fedcba9876543210fedcba9876543210</element>
+      <position>6</position>
+      <sys_id>877a4fcfcd2a43e6bbc0212d6b9a0dc0</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Activity &amp; lists" display_value="Activity &amp; lists" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">1dc4291a8ac6434c8840e7dbdae43196</sys_ui_section>
+      <sys_user/>
+      <type>list</type>
+    </sys_ui_element>
+    <sys_ui_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <caption>Activity &amp; lists</caption>
+      <header>false</header>
+      <name>x_snc_bprobe_task</name>
+      <roles/>
+      <sys_domain>global</sys_domain>
+      <sys_id>1dc4291a8ac6434c8840e7dbdae43196</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user/>
+      <title>false</title>
+      <view_name/>
+      <view name="x_snc_bprobe_ops" display_value="Operations">672ee96223d6408bb98d39d3c1c7b2f3</view>
+    </sys_ui_section>
+  </sys_ui_section>
+</record_update>

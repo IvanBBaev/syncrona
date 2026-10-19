@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sp_js_include">
+  <sp_js_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a5f3151df8144dca8272912c7befa093</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_js_include_a5f3151df8144dca8272912c7befa093</sys_update_name>
+    <display_name>UI Script</display_name>
+    <source>local</source>
+    <sys_ui_script>5f41b53498566648389c9b40286de458</sys_ui_script>
+    <url/>
+  </sp_js_include>
+</record_update>

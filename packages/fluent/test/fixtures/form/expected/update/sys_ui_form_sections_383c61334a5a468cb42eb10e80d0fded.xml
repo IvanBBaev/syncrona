@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_form_sections form_id="383c61334a5a468cb42eb10e80d0fded" sys_domain="global" table="incident">
+    <sys_ui_form_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <position>0</position>
+      <sys_id>614180e00ed24c3bbc12e4e2f5182927</sys_id>
+      <sys_ui_form display_value="incident" name="incident" sys_domain="global" view="Default view">383c61334a5a468cb42eb10e80d0fded</sys_ui_form>
+      <sys_ui_section caption="Details" display_value="Details" name="incident" sys_domain="global" view="Default view">087fb62848f045c09af37c2011ec4f6b</sys_ui_section>
+    </sys_ui_form_section>
+    <sys_ui_form action="INSERT_OR_UPDATE" apply_defaults="true">
+      <name>incident</name>
+      <roles/>
+      <sys_id>383c61334a5a468cb42eb10e80d0fded</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user/>
+      <view name="NULL" display_value="Default view">Default view</view>
+      <view_name/>
+    </sys_ui_form>
+  </sys_ui_form_sections>
+</record_update>

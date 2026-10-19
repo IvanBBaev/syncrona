@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_step">
+  <sys_atf_step action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dc79c3d492514a97aafd83f7bc98acd4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <active>true</active>
+    <description>insert it</description>
+    <display_name>Record Insert</display_name>
+    <notes>n</notes>
+    <order>3</order>
+    <step_config>14872288df60220062fe6c7a4df26319</step_config>
+    <table>incident</table>
+    <test>61a3c5f832594d81a97e269197542477</test>
+    <timeout/>
+    <warning_message>w</warning_message>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_step_dc79c3d492514a97aafd83f7bc98acd4</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_atf_step>
+  <sys_variable_value action="delete_multiple" query="document_key=dc79c3d492514a97aafd83f7bc98acd4"/>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f0eac44292e24f068149118975475e9c</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>dc79c3d492514a97aafd83f7bc98acd4</document_key>
+    <value>incident</value>
+    <variable>90144b535320220002c6435723dc3488</variable>
+    <order>200</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f0eac44292e24f068149118975475e9c</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3d9a6617a4434d4788d949800754b0dc</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>dc79c3d492514a97aafd83f7bc98acd4</document_key>
+    <value>record_successfully_inserted</value>
+    <variable>9024a37f671003007ba405225685efe5</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_3d9a6617a4434d4788d949800754b0dc</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>463ee03382b54249bd0d6297633d6672</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>dc79c3d492514a97aafd83f7bc98acd4</document_key>
+    <value>short_description=a^^b^priority=1^active=true^EQ</value>
+    <variable>dd54cf535320220002c6435723dc34fd</variable>
+    <order>400</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_463ee03382b54249bd0d6297633d6672</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>689261dba32745798feecb3fbe133007</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>dc79c3d492514a97aafd83f7bc98acd4</document_key>
+    <value>1</value>
+    <variable>e6e3c7535320220002c6435723dc3496</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_689261dba32745798feecb3fbe133007</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+</record_update>

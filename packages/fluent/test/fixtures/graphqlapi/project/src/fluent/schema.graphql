@@ -1,0 +1,13 @@
+type Query {
+    hello(name: String): String
+    pets: [Pet]
+}
+
+interface Pet {
+    name: String
+}
+
+type Dog implements Pet {
+    name: String
+    barks: Boolean
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_state">
+  <sttrm_state action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>19a3820868174207bfb21bbc784d0f00</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_state_19a3820868174207bfb21bbc784d0f00</sys_update_name>
+    <initial_state>false</initial_state>
+    <state_label>Done</state_label>
+    <state_sequence>3</state_sequence>
+    <state_value>3</state_value>
+    <sttrm_model>241e9bfb2ce143139130a28d0c8eeb89</sttrm_model>
+  </sttrm_state>
+</record_update>

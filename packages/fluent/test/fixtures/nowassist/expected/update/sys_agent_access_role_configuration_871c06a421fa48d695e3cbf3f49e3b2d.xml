@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sys_agent_access_role_configuration action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>871c06a421fa48d695e3cbf3f49e3b2d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_agent_access_role_configuration_871c06a421fa48d695e3cbf3f49e3b2d</sys_update_name>
+    <action>limit_to_roles</action>
+    <agent>4cda03a1515e403ab48930d0e6f96409</agent>
+    <agent_table>sn_nowassist_skill_config</agent_table>
+    <name>Customer Support Helper</name>
+    <role_list>2831a114c611228501d4ea6c309d626d</role_list>
+  </sys_agent_access_role_configuration>
+</record_update>

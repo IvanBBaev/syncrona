@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_ng_pro_sp_ng_pro">
+  <m2m_sp_ng_pro_sp_ng_pro action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0901c18130b342d883b0b26649fcdc76</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_ng_pro_sp_ng_pro_0901c18130b342d883b0b26649fcdc76</sys_update_name>
+    <required_by>9b0a809582bc41019863ed82210aac6b</required_by>
+    <requires>5f41b53498566648389c9b40286de458</requires>
+  </m2m_sp_ng_pro_sp_ng_pro>
+</record_update>

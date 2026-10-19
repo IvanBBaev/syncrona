@@ -1,0 +1,60 @@
+{
+  "name": "syncrona",
+  "version": "1.2.0-beta.0",
+  "description": "SyncroNow AI — next-gen CLI to sync ServiceNow scoped applications to local files.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "main": "./dist/index.js",
+  "author": "Ivan Baev",
+  "private": false,
+  "scripts": {
+    "prepack": "tsc",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --ci --reporters=jest-junit --reporters=default --coverage --coverageReporters=lcov --coverageReporters=cobertura --coverageReporters=html --coverageReporters=json-summary",
+    "test:mutation": "NODE_OPTIONS=--experimental-vm-modules stryker run"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/lodash": "^4.14.199",
+    "@types/node": "^26.1.0",
+    "fast-check": "^3.23.0",
+    "jest": "^30.4.2",
+    "jest-junit": "^17.0.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "@syncrona/credential-store": "^1.2.0-beta.0",
+    "@syncrona/jira": "^1.2.0-beta.0",
+    "@syncrona/mirror": "^1.2.0-beta.0",
+    "@syncrona/sn-transport": "^1.2.0-beta.0",
+    "@syncrona/types": "^1.2.0-beta.0",
+    "axios": "^1.18.1",
+    "axios-rate-limit": "^1.9.0",
+    "chalk": "^5.6.2",
+    "chokidar": "^5.0.0",
+    "dotenv": "^17.4.2",
+    "inquirer": "^14.0.2",
+    "lodash": "^4.17.21",
+    "winston": "^3.19.0",
+    "yargs": "^18.0.0"
+  },
+  "bin": {
+    "syncrona": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/core"
+  },
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<record_update table="sys_graphql_schema">
+  <sys_graphql_schema action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7e13ee453839472f89318d37f909bfa2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_graphql_schema_7e13ee453839472f89318d37f909bfa2</sys_update_name>
+    <active>false</active>
+    <application_namespace>xSncBprobe</application_namespace>
+    <contextual_acl_max_depth>2</contextual_acl_max_depth>
+    <enforce_acl>80feeb8ea765457dad3a01d87a98e66a,cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+    <name>Pets API</name>
+    <namespace>pets</namespace>
+    <requires_acl_authorization>false</requires_acl_authorization>
+    <requires_authentication>false</requires_authentication>
+    <requires_snc_internal_role>false</requires_snc_internal_role>
+    <schema><![CDATA[type Query {
+    hello(name: String): String
+    pets: [Pet]
+}
+
+interface Pet {
+    name: String
+}
+
+type Dog implements Pet {
+    name: String
+    barks: Boolean
+}
+]]></schema>
+  </sys_graphql_schema>
+</record_update>

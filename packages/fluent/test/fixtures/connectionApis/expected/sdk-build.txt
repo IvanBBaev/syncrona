@@ -1,0 +1,27 @@
+
+> syncrona-build-probe@0.0.1 build
+> now-sdk build
+
+[now-sdk] Initiating the build process with SDK 4.13.6...
+[now-sdk] Building project from /Users/ivanbaev/Development/_temp/syncrona-wp4-simple-apis-2-probe...
+[now-sdk] WARN: src/fluent/probe.now.ts:52:13 - warning TS11: 'parent' field is not visible in the UI when type is 'credential'. Parent aliases are only supported for 'connection' type aliases.
+
+52     parent: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+[now-sdk] WARN: src/fluent/probe.now.ts:53:18 - warning TS11: 'retryPolicy' is ignored when type is 'credential'. It only applies to 'connection' type aliases.
+
+53     retryPolicy: 'cccccccccccccccccccccccccccccccc',
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+[now-sdk] WARN: src/fluent/probe.now.ts:99:21 - warning TS11: 'connectionType' is ignored when type is 'credential'. It only applies to 'connection' type aliases.
+
+99     connectionType: 'basicConnection',
+                       ~~~~~~~~~~~~~~~~~
+
+[now-sdk] WARN: src/fluent/probe.now.ts:100:26 - warning TS97: 'multipleConnections' is ignored when type is 'credential'. It only applies to 'connection' type aliases.
+
+100     multipleConnections: false,
+                             ~~~~~
+
+[now-sdk] Build completed successfully

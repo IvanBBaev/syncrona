@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<record_update table="sp_portal">
+  <sp_portal action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a2fbb68d123e4b4a9b35c1d3a7f38348</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_portal_a2fbb68d123e4b4a9b35c1d3a7f38348</sys_update_name>
+    <alternate_portal>11111111111111111111111111111111</alternate_portal>
+    <communication_channels>c1,c2</communication_channels>
+    <css_variables>$a: 1;</css_variables>
+    <dark_theme>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</dark_theme>
+    <default>true</default>
+    <embeddable_macroponents>m1,m2</embeddable_macroponents>
+    <enable_ais>true</enable_ais>
+    <enable_certificate_based_authentication>true</enable_certificate_based_authentication>
+    <enable_embeddables>true</enable_embeddables>
+    <enable_favorites>true</enable_favorites>
+    <hide_portal_name>true</hide_portal_name>
+    <homepage id="portal_home">b073ad636c6642aeaad4401bba501432</homepage>
+    <icon>icon-id</icon>
+    <inactive>true</inactive>
+    <kb_knowledge_page>88888888888888888888888888888888</kb_knowledge_page>
+    <login_page id="portal_home">b073ad636c6642aeaad4401bba501432</login_page>
+    <logo>logo-id</logo>
+    <logo_alt_text>Logo</logo_alt_text>
+    <notfound_page id="portal_home">b073ad636c6642aeaad4401bba501432</notfound_page>
+    <quick_start_config>{"a":1}</quick_start_config>
+    <rtl_enabled>true</rtl_enabled>
+    <sc_catalog_page>dddddddddddddddddddddddddddddddd</sc_catalog_page>
+    <sc_category_page id="portal_home">b073ad636c6642aeaad4401bba501432</sc_category_page>
+    <search_application>cccccccccccccccccccccccccccccccc</search_application>
+    <search_results_configuration>bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</search_results_configuration>
+    <sp_chat_queue>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee</sp_chat_queue>
+    <sp_rectangle_menu>e170d52af25247cb9f69018d5ed7a69e</sp_rectangle_menu>
+    <theme>e5f45bc476a94985b2b94bec9b1e7036</theme>
+    <title>Full Portal</title>
+    <ts_index_group>ffffffffffffffffffffffffffffffff</ts_index_group>
+    <url_suffix>full-portal_x</url_suffix>
+  </sp_portal>
+</record_update>

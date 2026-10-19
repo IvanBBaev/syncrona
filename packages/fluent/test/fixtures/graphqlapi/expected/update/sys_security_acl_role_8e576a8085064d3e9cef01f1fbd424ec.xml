@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl_role">
+  <sys_security_acl_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8e576a8085064d3e9cef01f1fbd424ec</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_role_8e576a8085064d3e9cef01f1fbd424ec</sys_update_name>
+    <sys_name>xSncBprobe.pets.admin</sys_name>
+    <sys_security_acl>80feeb8ea765457dad3a01d87a98e66a</sys_security_acl>
+    <sys_user_role name="admin">b5ae25b8d3064953a648062aa32fc876</sys_user_role>
+  </sys_security_acl_role>
+</record_update>

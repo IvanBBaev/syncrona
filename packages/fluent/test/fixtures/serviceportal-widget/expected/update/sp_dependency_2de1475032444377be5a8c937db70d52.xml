@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sp_dependency">
+  <sp_dependency action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2de1475032444377be5a8c937db70d52</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_dependency_2de1475032444377be5a8c937db70d52</sys_update_name>
+    <module/>
+    <name>Widget Dep</name>
+    <page_load>false</page_load>
+    <sp_portals/>
+  </sp_dependency>
+</record_update>

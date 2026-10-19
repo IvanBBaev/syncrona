@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_properties">
+  <sys_properties action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>663a94fe7f044111a345222cc47c655b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_properties_663a94fe7f044111a345222cc47c655b</sys_update_name>
+    <choices>a,b</choices>
+    <description>d</description>
+    <ignore_cache>false</ignore_cache>
+    <is_private>false</is_private>
+    <name>x_snc_bprobe.ovr_prop</name>
+    <private>true</private>
+    <read_roles/>
+    <suffix>ovr_prop</suffix>
+    <type>string</type>
+    <value>v</value>
+    <write_roles/>
+  </sys_properties>
+</record_update>

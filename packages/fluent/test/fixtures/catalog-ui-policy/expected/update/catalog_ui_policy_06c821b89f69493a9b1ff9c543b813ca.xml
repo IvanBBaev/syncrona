@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<record_update table="catalog_ui_policy">
+  <catalog_ui_policy action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>06c821b89f69493a9b1ff9c543b813ca</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>catalog_ui_policy_06c821b89f69493a9b1ff9c543b813ca</sys_update_name>
+    <active>false</active>
+    <applies_catalog>true</applies_catalog>
+    <applies_req_item>false</applies_req_item>
+    <applies_sc_task>false</applies_sc_task>
+    <applies_target_record>false</applies_target_record>
+    <applies_to>item</applies_to>
+    <catalog_conditions>IO:055f9af2598b416a8ff001d9b411409f=x^IO:8348c667ad7d47338fe87138fd5b4b9c=true^EQ</catalog_conditions>
+    <catalog_item>3813e86653aa4f21acf1c0afdf1c4500</catalog_item>
+    <conditions/>
+    <description>desc</description>
+    <global>true</global>
+    <inherit>false</inherit>
+    <isolate_script>true</isolate_script>
+    <model_id/>
+    <model_table/>
+    <on_load>false</on_load>
+    <order>50</order>
+    <published_ref/>
+    <reverse_if_false>false</reverse_if_false>
+    <run_scripts>true</run_scripts>
+    <script_false>function onCondition() {
+
+}</script_false>
+    <script_true><![CDATA[function onCondition() { g_form.addInfoMessage("t"); }]]></script_true>
+    <set_values/>
+    <short_description>Full &amp; &lt;policy&gt;</short_description>
+    <table/>
+    <ui_type>0</ui_type>
+    <va_supported>false</va_supported>
+    <variable_set/>
+    <view/>
+  </catalog_ui_policy>
+</record_update>

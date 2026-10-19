@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_fn_param_defs">
+  <sys_rest_message_fn_param_defs action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f44f27fd85c448c7b2e411d76ddac293</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_fn_param_defs_f44f27fd85c448c7b2e411d76ddac293</sys_update_name>
+    <name>b</name>
+    <order>0</order>
+    <rest_message_function rest_message="7aa73d18d57b4673a5b72c30a34dc552" function_name="createContact">2efb9b14587048caa1d0a5546f0d3406</rest_message_function>
+    <value/>
+  </sys_rest_message_fn_param_defs>
+</record_update>

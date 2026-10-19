@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_applicability">
+  <sys_ux_applicability action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>52eb3d5a75fe47a7b35f3e9e8e07d05f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_applicability_52eb3d5a75fe47a7b35f3e9e8e07d05f</sys_update_name>
+    <active>true</active>
+    <description/>
+    <name>By sys_id</name>
+    <role_names/>
+    <roles>282bf1fac6112285017366cb5f867469,2831a114c611228501d4ea6c309d626d</roles>
+  </sys_ux_applicability>
+</record_update>

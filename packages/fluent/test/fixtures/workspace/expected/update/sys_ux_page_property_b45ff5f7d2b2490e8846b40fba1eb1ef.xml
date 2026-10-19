@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b45ff5f7d2b2490e8846b40fba1eb1ef</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_b45ff5f7d2b2490e8846b40fba1eb1ef</sys_update_name>
+    <description/>
+    <name>listConfigId</name>
+    <page>3e9b81b8e94545e59c93cd781b066ef7</page>
+    <route/>
+    <suffix>listConfigId</suffix>
+    <type>string</type>
+    <value>9c12beba98b74b7fb593c367389602e8</value>
+  </sys_ux_page_property>
+</record_update>

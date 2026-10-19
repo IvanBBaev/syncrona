@@ -1,0 +1,375 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import inquirer from "inquirer";
+import {
+  detectDeployment,
+  extractIssueKey,
+  getIssue,
+  resolveJiraConfig,
+  verifyAuth,
+  isJiraHttpError,
+  jiraAuthRecheckHint,
+  jiraUndecryptableMessage,
+  noJiraConfigMessage,
+  type JiraComment,
+  type JiraDeployment,
+  type JiraIssue,
+} from "@syncrona/jira";
+import {
+  saveJiraCredentials,
+  removeJiraCredentials,
+  removeAllJiraCredentials,
+  jiraCredentialHealth,
+} from "@syncrona/credential-store";
+import { logger } from "./Logger.js";
+import { getCurrentBranch } from "./gitUtils.js";
+import { setLogLevel } from "./commandHelpers.js";
+
+const DEFAULT_COMMENT_LIMIT = 5;
+
+/**
+ * Issue text is written by anyone who can edit the issue, and it goes straight
+ * to the terminal. Drop C0/C1 control characters (keeping tab and newline) so an
+ * escape sequence in a summary or comment cannot recolour, rewrite or hide the
+ * lines around it. `\r\n` becomes `\n` first so line structure survives.
+ */
+function terminalText(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
+/** Print one labelled line, but only when the value is non-empty. */
+function field(label: string, value: string): void {
+  if (value && value.trim().length > 0) {
+    logger.info(`${label}: ${terminalText(value)}`);
+  }
+}
+
+/** Indent a (possibly multi-line) block under a header for readability. */
+function block(text: string): void {
+  const lines = terminalText(text).split("\n");
+  for (const ln of lines) {
+    logger.info(`  ${ln}`);
+  }
+}
+
+function formatComment(comment: JiraComment): string {
+  const when = comment.updated || comment.created;
+  const header = [comment.author || "unknown", when].filter(Boolean).join(" — ");
+  return `${header}\n${comment.body}`.trimEnd();
+}
+
+/**
+ * Emit a Jira-tailored, actionable next step after a failed request. The shared
+ * ServiceNow error taxonomy (`logErrorHint`) gives ServiceNow-specific advice
+ * (`syncrona login`, `SN_INSTANCE`) that would mislead here, so the `jira`
+ * commands classify their own errors and point at the Jira equivalents.
+ *
+ * Classification follows the client's structured `kind` where the error carries
+ * one: 401 and 403 both read as "auth" in prose, but only 401 is fixable by
+ * logging in again — a 403 caller is authenticated and merely unauthorized, and
+ * sending them to `jira-login` contradicts the message the client itself prints.
+ * Failures raised before any response (timeouts, DNS) are plain Errors with no
+ * status, so the message-based branches remain as the fallback.
+ *
+ * REV-203: the 401 branch takes its wording from the caller, because only the caller
+ * knows where the credentials came from. The generic text names both `jira-login` and
+ * JIRA_EMAIL/JIRA_TOKEN, which is right only when either could have supplied them —
+ * on an explicit `--profile` the environment is deliberately ignored (REV-130), and
+ * inside `jira-login` the user typed them a second ago, so in both cases the generic
+ * text points at something that had no bearing on the request that failed.
+ */
+function logJiraErrorHint(e: unknown, authRecheckHint = jiraAuthRecheckHint()): void {
+  if (isJiraHttpError(e)) {
+    switch (e.kind) {
+      case "unauthorized":
+        logger.info(authRecheckHint);
+        return;
+      case "forbidden":
+        logger.info(
+          "Hint: your token authenticates but is not permitted here — check the project's permission scheme and the token's scope. Re-login will not help."
+        );
+        return;
+      case "not-found":
+        logger.info("Hint: verify the issue key and that your account can view it.");
+        return;
+      case "rate-limited":
+        logger.info("Hint: Jira is throttling this token — wait for the rate limit to reset, then retry.");
+        return;
+      default:
+        break;
+    }
+  }
+
+  const message = e instanceof Error ? e.message : String(e);
+  if (/HTTP 401|authentication failed/i.test(message)) {
+    logger.info(authRecheckHint);
+  } else if (/HTTP 404|not found/i.test(message)) {
+    logger.info("Hint: verify the issue key and that your account can view it.");
+  } else if (/timed out|timeout/i.test(message)) {
+    logger.info(
+      "Hint: the request timed out — check your network/VPN and the Jira base URL, then retry."
+    );
+  } else {
+    logger.info("Hint: re-run with `--log-level debug` for more detail.");
+  }
+}
+
+/** Human-readable rich rendering of a normalized issue. */
+function printIssue(issue: JiraIssue): void {
+  logger.success(terminalText(`${issue.key}  ${issue.summary}`.trim()));
+  field("URL", issue.url);
+  field("Type", issue.type);
+  const statusLine = issue.statusCategory
+    ? `${issue.status} (${issue.statusCategory})`
+    : issue.status;
+  field("Status", statusLine);
+  field("Priority", issue.priority);
+  field("Assignee", issue.assignee);
+  field("Reporter", issue.reporter);
+  field("Labels", issue.labels.join(", "));
+  field("Components", issue.components.join(", "));
+  field("Fix versions", issue.fixVersions.join(", "));
+  field("Created", issue.created);
+  field("Updated", issue.updated);
+
+  if (issue.parent) {
+    field("Parent", `${issue.parent.key} ${issue.parent.summary}`.trim());
+  }
+
+  if (issue.subtasks.length > 0) {
+    logger.info("Subtasks:");
+    for (const sub of issue.subtasks) {
+      const status = sub.status ? ` [${sub.status}]` : "";
+      block(`${sub.key} ${sub.summary}${status}`.trim());
+    }
+  }
+
+  if (issue.links.length > 0) {
+    logger.info("Linked issues:");
+    for (const link of issue.links) {
+      block(`${link.relationship}: ${link.issue.key} ${link.issue.summary}`.trim());
+    }
+  }
+
+  if (issue.description && issue.description.trim().length > 0) {
+    logger.info("Description:");
+    block(issue.description);
+  }
+
+  if (issue.comments.length > 0) {
+    logger.info(`Comments (${issue.comments.length}):`);
+    for (const comment of issue.comments) {
+      block(formatComment(comment));
+    }
+  }
+}
+
+/** Resolve the issue key from an explicit arg, falling back to the git branch. */
+async function resolveIssueKey(explicit?: string): Promise<string | null> {
+  const fromArg = (explicit || "").trim();
+  if (fromArg) {
+    return fromArg.toUpperCase();
+  }
+  const branch = await getCurrentBranch();
+  if (!branch) {
+    return null;
+  }
+  return extractIssueKey(branch);
+}
+
+export async function jiraCommand(
+  args: Sync.SharedCmdArgs & {
+    key?: string;
+    profile?: string;
+    comments?: number;
+    json?: boolean;
+  }
+): Promise<void> {
+  setLogLevel(args);
+
+  const key = await resolveIssueKey(args.key);
+  if (!key) {
+    logger.error(
+      "No Jira issue key given and none could be inferred from the current git branch."
+    );
+    logger.info("Pass a key explicitly, e.g. `syncrona jira PROJ-123`.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const explicitProfile = (args.profile || "").trim();
+  const config = await resolveJiraConfig({ profile: args.profile });
+  if (!config) {
+    const profile = explicitProfile || "default";
+    // Distinguish "nothing configured" from "a stored profile exists but won't
+    // decrypt" so the user re-logs in instead of assuming they never set it up.
+    if (jiraCredentialHealth(profile) === "undecryptable") {
+      logger.error(jiraUndecryptableMessage(profile));
+    } else {
+      // REV-203: the remediation has to name the path the caller took — an explicit
+      // profile is never served from JIRA_BASE_URL/JIRA_TOKEN (REV-130), so the
+      // env half of the generic message is a dead end for it.
+      logger.error(noJiraConfigMessage(explicitProfile));
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  const comments =
+    typeof args.comments === "number" && args.comments >= 0
+      ? Math.floor(args.comments)
+      : DEFAULT_COMMENT_LIMIT;
+
+  let issue: JiraIssue;
+  try {
+    issue = await getIssue(config, key, { comments });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
+    logJiraErrorHint(e, jiraAuthRecheckHint(explicitProfile));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (args.json) {
+    // Raw, pipe-friendly JSON (no log coloring) for scripting and AI consumption.
+    process.stdout.write(`${JSON.stringify(issue, null, 2)}\n`);
+    return;
+  }
+
+  printIssue(issue);
+}
+
+export async function jiraLoginCommand(
+  args: Sync.SharedCmdArgs & { profile?: string }
+): Promise<void> {
+  setLogLevel(args);
+
+  const profile = (args.profile || "").trim() || "default";
+
+  const { baseUrlRaw } = await inquirer.prompt<{ baseUrlRaw: string }>([
+    {
+      type: "input",
+      name: "baseUrlRaw",
+      message: "Jira base URL (e.g. https://your-org.atlassian.net):",
+      validate: (v: string) =>
+        v.trim().length > 0 ? true : "Base URL is required.",
+    },
+  ]);
+  const baseUrl = baseUrlRaw.trim().replace(/\/$/, "");
+
+  const detected = detectDeployment(baseUrl);
+  const { deployment } = await inquirer.prompt<{ deployment: JiraDeployment }>([
+    {
+      type: "list",
+      name: "deployment",
+      message: "Deployment type:",
+      choices: [
+        { name: "Jira Cloud (atlassian.net) — email + API token", value: "cloud" },
+        { name: "Jira Server / Data Center — personal access token", value: "server" },
+      ],
+      default: detected,
+    },
+  ]);
+
+  let email = "";
+  if (deployment === "cloud") {
+    const answer = await inquirer.prompt<{ email: string }>([
+      {
+        type: "input",
+        name: "email",
+        message: "Atlassian account email:",
+        validate: (v: string) =>
+          v.trim().length > 0 ? true : "Email is required for Jira Cloud.",
+      },
+    ]);
+    email = answer.email.trim();
+  }
+
+  const tokenPrompt =
+    deployment === "cloud" ? "API token:" : "Personal access token:";
+  const { token } = await inquirer.prompt<{ token: string }>([
+    {
+      type: "password",
+      name: "token",
+      message: tokenPrompt,
+      mask: "*",
+      validate: (v: string) => (v.trim().length > 0 ? true : "Token is required."),
+    },
+  ]);
+
+  // Do not trim the token — surrounding whitespace can be significant.
+  const config = {
+    baseUrl,
+    deployment,
+    token,
+    ...(email ? { email } : {}),
+  };
+
+  logger.info(`Verifying credentials against ${baseUrl}...`);
+  let who: string;
+  try {
+    who = await verifyAuth(config);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Could not authenticate to Jira: ${message}`);
+    // REV-203: these credentials were typed at the prompt seconds ago, so neither
+    // `jira-login` nor JIRA_EMAIL/JIRA_TOKEN is the thing to re-check.
+    logJiraErrorHint(
+      e,
+      "Hint: the base URL, deployment type, or the token you just entered was rejected — for Jira Cloud the email must be the account that owns the API token."
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  await saveJiraCredentials({
+    profile,
+    baseUrl,
+    deployment,
+    token,
+    ...(email ? { email } : {}),
+  });
+
+  logger.success(
+    `Authenticated as ${who}. Saved Jira credentials under profile "${profile}".`
+  );
+}
+
+export async function jiraLogoutCommand(
+  args: Sync.SharedCmdArgs & { profile?: string; all?: boolean }
+): Promise<void> {
+  setLogLevel(args);
+
+  if (args.all) {
+    let count: number;
+    try {
+      count = await removeAllJiraCredentials();
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e));
+      process.exitCode = 1;
+      return;
+    }
+    logger.success(`Removed Jira credentials for ${count} profile(s).`);
+    return;
+  }
+
+  const profile = (args.profile || "").trim() || "default";
+  let removed: boolean;
+  try {
+    removed = await removeJiraCredentials(profile);
+  } catch (e) {
+    logger.error(
+      `Could not remove Jira credentials for profile "${profile}": ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (removed) {
+    logger.success(`Removed Jira credentials for profile "${profile}".`);
+  } else {
+    logger.info(`No stored Jira credentials for profile "${profile}".`);
+  }
+}

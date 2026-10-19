@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_app_application">
+  <sys_app_application action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>486a2bbec8144051b728c6b49825deb1</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_app_application_486a2bbec8144051b728c6b49825deb1</sys_update_name>
+    <active>false</active>
+    <category>b6a0b4c9c0a8016400b98a06818d57c7</category>
+    <description>All the things</description>
+    <device_type>browser</device_type>
+    <hint>Hover text</hint>
+    <name>probe_full</name>
+    <order>300</order>
+    <roles>x_snc_bprobe.menu_user,admin</roles>
+    <sys_policy>protected</sys_policy>
+    <title>Probe Full Menu</title>
+  </sys_app_application>
+</record_update>

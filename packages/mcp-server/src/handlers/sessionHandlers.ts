@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { toJsonText } from "../runtimeUtils";
+import {
+  getSessionContext,
+  listScopes,
+  listUpdateSets,
+  setCurrentScope,
+  setCurrentUpdateSet,
+} from "../sessionContext";
+
+import type { ToolResponse } from "../toolResponse";
+
+type SessionToolContext = {
+  timeoutMs: number;
+  dryRun: boolean;
+  startedAt: number;
+  buildPreflightReport: (
+    timeoutMs: number,
+    overrideConfig?: {
+      expectedScope?: string;
+      expectedUpdateSetName?: string;
+      expectedUpdateSetSysId?: string;
+    }
+  ) => Promise<Record<string, unknown>>;
+  checkSyncronaCapabilities: (
+    timeoutMs: number,
+    scopeCode?: string
+  ) => Promise<Record<string, unknown>>;
+  makeDryRunAuditResponse: (
+    toolName: string,
+    args: Record<string, unknown>,
+    details: Record<string, unknown>
+  ) => ToolResponse;
+  auditMutatingTool: (
+    toolName: string,
+    args: Record<string, unknown>,
+    outcome: Record<string, unknown>,
+    durationMs?: number
+  ) => void;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toStringField(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Success response whose JSON text block is mirrored into MCP
+ * structuredContent. The mirror is re-parsed from the serialized text so both
+ * views are identical by construction (JSON.stringify normalization cannot
+ * make them diverge). The session tools declare an outputSchema, so every
+ * success result they return must carry conforming structuredContent.
+ */
+function structuredJsonResponse(payload: Record<string, unknown>): ToolResponse {
+  const text = toJsonText(payload);
+  return {
+    isError: false,
+    content: [{ type: "text", text }],
+    structuredContent: JSON.parse(text) as Record<string, unknown>,
+  };
+}
+
+export async function handleSessionTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: SessionToolContext
+): Promise<ToolResponse | null> {
+  const { timeoutMs, dryRun, startedAt } = context;
+
+  switch (toolName) {
+    case "sync_preflight_check": {
+      const expectedScope =
+        typeof args.expectedScope === "string" ? args.expectedScope.trim() : "";
+      const expectedUpdateSetName =
+        typeof args.expectedUpdateSetName === "string"
+          ? args.expectedUpdateSetName.trim()
+          : "";
+      const expectedUpdateSetSysId =
+        typeof args.expectedUpdateSetSysId === "string"
+          ? args.expectedUpdateSetSysId.trim()
+          : "";
+
+      // Forward only overrides that were actually supplied. Passing empty strings
+      // would clobber the guardrails/config expected values inside
+      // buildPreflightReport, blanking the expectation so the comparison trivially
+      // matches and the report returns a false allOk:true all-clear.
+      const report = await context.buildPreflightReport(timeoutMs, {
+        ...(expectedScope ? { expectedScope } : {}),
+        ...(expectedUpdateSetName ? { expectedUpdateSetName } : {}),
+        ...(expectedUpdateSetSysId ? { expectedUpdateSetSysId } : {}),
+      });
+      const checks = asRecord(report.checks);
+      return {
+        isError: checks.allOk !== true,
+        content: [{ type: "text", text: toJsonText(report) }],
+      };
+    }
+
+    case "sync_get_session_context": {
+      const sessionContext = await getSessionContext(timeoutMs);
+      return structuredJsonResponse(sessionContext);
+    }
+
+    case "sync_set_scope": {
+      const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+      if (!scope) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Missing required field: scope" }],
+        };
+      }
+
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, { scope });
+      }
+
+      const result = await setCurrentScope(scope, timeoutMs);
+      context.auditMutatingTool(toolName, args, result, Date.now() - startedAt);
+      return structuredJsonResponse(result);
+    }
+
+    case "sync_list_scopes": {
+      const query = typeof args.query === "string" ? args.query : "";
+      const limit =
+        typeof args.limit === "number" && Number.isFinite(args.limit)
+          ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
+          : 100;
+      // One row past the limit tells a full page from a truncated one.
+      const result = await listScopes(timeoutMs, query, limit + 1);
+      const rows = result.slice(0, limit);
+      return structuredJsonResponse({
+        count: rows.length,
+        truncated: result.length > limit,
+        rows,
+      });
+    }
+
+    case "sync_set_update_set": {
+      const updateSetName =
+        typeof args.updateSetName === "string" ? args.updateSetName.trim() : "";
+      const updateSetSysId =
+        typeof args.updateSetSysId === "string" ? args.updateSetSysId.trim() : "";
+      const createIfMissing = args.createIfMissing !== false;
+
+      if (!updateSetName && !updateSetSysId) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "Provide at least one of updateSetName or updateSetSysId.",
+            },
+          ],
+        };
+      }
+
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          updateSetName,
+          updateSetSysId,
+          createIfMissing,
+        });
+      }
+
+      const result = await setCurrentUpdateSet(
+        {
+          updateSetName,
+          updateSetSysId,
+          createIfMissing,
+        },
+        timeoutMs
+      );
+
+      context.auditMutatingTool(toolName, args, result, Date.now() - startedAt);
+
+      return structuredJsonResponse(result);
+    }
+
+    case "sync_list_update_sets": {
+      const query = typeof args.query === "string" ? args.query : "";
+      const limit =
+        typeof args.limit === "number" && Number.isFinite(args.limit)
+          ? Math.min(Math.max(Math.floor(args.limit), 1), 500)
+          : 100;
+      // One row past the limit tells a full page from a truncated one.
+      const result = await listUpdateSets(timeoutMs, query, limit + 1);
+      const rows = result.slice(0, limit);
+      return structuredJsonResponse({
+        count: rows.length,
+        truncated: result.length > limit,
+        rows,
+      });
+    }
+
+    case "sync_prepare_session": {
+      const expectedScope =
+        typeof args.expectedScope === "string" ? args.expectedScope.trim() : "";
+      const expectedUpdateSetName =
+        typeof args.expectedUpdateSetName === "string"
+          ? args.expectedUpdateSetName.trim()
+          : "";
+      const expectedUpdateSetSysId =
+        typeof args.expectedUpdateSetSysId === "string"
+          ? args.expectedUpdateSetSysId.trim()
+          : "";
+      const createUpdateSetIfMissing = args.createUpdateSetIfMissing !== false;
+
+      if (dryRun) {
+        return context.makeDryRunAuditResponse(toolName, args, {
+          expectedScope,
+          expectedUpdateSetName,
+          expectedUpdateSetSysId,
+          createUpdateSetIfMissing,
+        });
+      }
+
+      const initialContext = await getSessionContext(timeoutMs);
+      const actions: string[] = [];
+
+      const initialScope = toStringField(asRecord(initialContext.scope).scope);
+      if (expectedScope && initialScope !== expectedScope) {
+        await setCurrentScope(expectedScope, timeoutMs);
+        actions.push(`scope changed: ${initialScope || "<empty>"} -> ${expectedScope}`);
+      }
+
+      if (expectedUpdateSetName || expectedUpdateSetSysId) {
+        const initialUpdateSetSysId = toStringField(
+          asRecord(initialContext.updateSet).sysId
+        );
+        const needsChange =
+          (expectedUpdateSetSysId && initialUpdateSetSysId !== expectedUpdateSetSysId) ||
+          (!!expectedUpdateSetName && !expectedUpdateSetSysId);
+
+        if (needsChange) {
+          let updateRes: Record<string, unknown>;
+          try {
+            updateRes = await setCurrentUpdateSet(
+              {
+                updateSetName: expectedUpdateSetName,
+                updateSetSysId: expectedUpdateSetSysId,
+                createIfMissing: createUpdateSetIfMissing,
+              },
+              timeoutMs
+            );
+          } catch (error) {
+            // The scope switch above already happened; a bare thrown error would
+            // read as "nothing changed" and leave the session in a scope the
+            // caller was never told about.
+            if (actions.length === 0) {
+              throw error;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            const partial = { actions, changed: true, error: message, initialContext };
+            context.auditMutatingTool(toolName, args, partial, Date.now() - startedAt);
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: toJsonText({
+                    ...partial,
+                    error: `The update set was not changed, but the scope already was: ${message}`,
+                  }),
+                },
+              ],
+            };
+          }
+          const targetSysId = toStringField(asRecord(updateRes.targetUpdateSet).sysId);
+          // A name-only request always resolves through setCurrentUpdateSet, which
+          // may land on the set that was already current; that is not a change.
+          if (targetSysId !== initialUpdateSetSysId) {
+            actions.push(
+              `update set changed: ${initialUpdateSetSysId || "<empty>"} -> ${targetSysId}`
+            );
+          }
+        }
+      }
+
+      const finalContext = await getSessionContext(timeoutMs);
+
+      const resultPayload = {
+        actions,
+        changed: actions.length > 0,
+        initialContext,
+        finalContext,
+      };
+
+      context.auditMutatingTool(toolName, args, resultPayload, Date.now() - startedAt);
+
+      return structuredJsonResponse(resultPayload);
+    }
+
+    case "sync_check_instance_capabilities": {
+      const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+      const capabilityResults = await context.checkSyncronaCapabilities(
+        timeoutMs,
+        scope || undefined
+      );
+      const records = Object.values(capabilityResults).filter(
+        (value): value is Record<string, unknown> => !!value && typeof value === "object"
+      );
+      const hasFailures = records.some((value) => value.ok !== true);
+      return {
+        isError: hasFailures,
+        content: [{ type: "text", text: toJsonText(capabilityResults) }],
+      };
+    }
+
+    default:
+      return null;
+  }
+}

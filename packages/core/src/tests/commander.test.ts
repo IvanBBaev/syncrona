@@ -1,0 +1,388 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
+import winston from "winston";
+export {};
+
+// #17: runHandler in commander.ts is the SINGLE sink that turns an async command
+// failure into `logger.error(message)` + `logErrorHint(e)` (the actionable `-> hint`
+// line) + `process.exitCode = 1`. Nothing referenced it before, so the user-visible
+// failure path (message + hint + non-zero exit) was unverified above the pure
+// classifier. This drives the real sink through initCommands()/yargs by registering a
+// synthetic command that rejects, then asserts all three effects — including that an
+// auth-shaped error (HTTP 401) renders the AUTH hint, not a generic one.
+
+const mockLoggerError = jest.fn();
+const mockLoggerInfo = jest.fn();
+
+jest.unstable_mockModule("../Logger.js", () => ({
+  logger: {
+    error: (...a: unknown[]) => mockLoggerError(...a),
+    info: (...a: unknown[]) => mockLoggerInfo(...a),
+  },
+  // The registry's shared --log-level option takes its `choices` from here, so
+  // the mock has to carry the real level set for cliCommands.js to link.
+  LOG_LEVELS: Object.keys(winston.config.npm.levels),
+}));
+
+import { type CliCommandModule } from "../cliCommands.js";
+
+// The SUT (commander.js) and the shared CLI_COMMANDS registry it reads are
+// imported dynamically AFTER the Logger mock is registered: jest.unstable_mockModule
+// does not hoist, so a static import of commander.js would bind the real logger
+// before the mock takes effect. CLI_COMMANDS must come from the same deferred
+// import so the synthetic commands the test appends are the ones commander sees.
+let CLI_COMMANDS: typeof import("../cliCommands.js").CLI_COMMANDS;
+let initCommands: typeof import("../commander.js").initCommands;
+
+// initCommands(argv) builds an ISOLATED yargs parser (exitProcess(false)) from
+// the given argv, so each run is independent and a strict/validation failure
+// never kills the jest worker.
+const runArgv = async (argv: string[]): Promise<void> => {
+  await initCommands(argv);
+};
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+describe("commander runHandler failure sink (#17)", () => {
+  const registered: CliCommandModule[] = [];
+  let prevExit: typeof process.exitCode;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ CLI_COMMANDS } = await import("../cliCommands.js"));
+    ({ initCommands } = await import("../commander.js"));
+    prevExit = process.exitCode;
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    // Remove any synthetic commands we appended so the real registry is intact.
+    for (const mod of registered) {
+      const idx = CLI_COMMANDS.indexOf(mod);
+      if (idx >= 0) CLI_COMMANDS.splice(idx, 1);
+    }
+    registered.length = 0;
+    process.exitCode = prevExit;
+  });
+
+  const registerFailing = (name: string, error: unknown): void => {
+    const mod: CliCommandModule = {
+      command: name,
+      describe: `synthetic failing ${name}`,
+      includeSharedOptions: false,
+      handler: () => Promise.reject(error),
+    };
+    CLI_COMMANDS.push(mod);
+    registered.push(mod);
+  };
+
+  it("logs the error message, renders the actionable hint and sets exit code 1", async () => {
+    registerFailing("boom", new Error("kaboom"));
+
+    await runArgv(["boom"]);
+    // The rejection is caught asynchronously inside runHandler.
+    await flush();
+
+    expect(mockLoggerError).toHaveBeenCalledWith("kaboom");
+    // logErrorHint renders "-> <hint>" via logger.info — the exact line the pure
+    // classifier alone never proved reaches the user.
+    expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringMatching(/^→ /));
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("classifies an HTTP 401 command failure as an AUTH problem in the hint", async () => {
+    // Shape mirrors an axios error so the DX19 taxonomy routes it to the auth hint.
+    registerFailing("authfail", { response: { status: 401 } });
+
+    await runArgv(["authfail"]);
+    await flush();
+
+    const hintCall = mockLoggerInfo.mock.calls.find((c) =>
+      String(c[0]).startsWith("→ ")
+    );
+    expect(hintCall).toBeDefined();
+    expect(String(hintCall?.[0])).toContain("Authentication issue");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("falls back to a generic message when the rejection is not an Error", async () => {
+    registerFailing("weird", "");
+
+    await runArgv(["weird"]);
+    await flush();
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "Command failed with an unknown error."
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  // DEP1: inquirer 14 rejects with ExitPromptError on Ctrl-C instead of killing
+  // the process — the sink must treat that as a quiet cancellation (exit 130,
+  // no error banner, no hint), not as a command failure.
+  it("treats a prompt abort (ExitPromptError) as a quiet cancellation with exit code 130", async () => {
+    const abort = new Error("User force closed the prompt with SIGINT");
+    abort.name = "ExitPromptError";
+    registerFailing("cancelled", abort);
+
+    await runArgv(["cancelled"]);
+    await flush();
+
+    expect(mockLoggerError).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(130);
+  });
+});
+
+// `--dry-run` is one of the three shared options, so every command that takes
+// the shared set used to ACCEPT it — including the ten that have no preview
+// path at all. `syncrona docs --dry-run` regenerated the docs for real,
+// `syncrona mcp --dry-run` wrote .vscode/mcp.json for real, and neither said a
+// word about it. commander.ts now refuses the flag on those commands.
+describe("commander --dry-run contract", () => {
+  const registered: CliCommandModule[] = [];
+  const handlerSpy = jest.fn();
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ CLI_COMMANDS } = await import("../cliCommands.js"));
+    ({ initCommands } = await import("../commander.js"));
+  });
+
+  afterEach(() => {
+    for (const mod of registered) {
+      const idx = CLI_COMMANDS.indexOf(mod);
+      if (idx >= 0) CLI_COMMANDS.splice(idx, 1);
+    }
+    registered.length = 0;
+  });
+
+  const register = (name: string, supportsDryRun?: boolean): void => {
+    const mod: CliCommandModule = {
+      command: name,
+      describe: `synthetic ${name}`,
+      supportsDryRun,
+      handler: (args) => handlerSpy(args),
+    };
+    CLI_COMMANDS.push(mod);
+    registered.push(mod);
+  };
+
+  it("refuses --dry-run on a command that has no preview mode", async () => {
+    register("nopreview", false);
+
+    // exitProcess(false) turns a validation failure into a thrown error rather
+    // than killing the runner, so the refusal is observable here.
+    await expect(runArgv(["nopreview", "--dry-run"])).rejects.toThrow(
+      /`syncrona nopreview` has no preview mode/
+    );
+    await flush();
+    expect(handlerSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the option out of --help rather than advertising a flag that always fails", async () => {
+    register("nopreview", false);
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runArgv(["nopreview", "--help"]);
+
+    const help = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    logSpy.mockRestore();
+    // The other two shared options are still offered — only dry-run is hidden.
+    expect(help).toContain("--logLevel");
+    expect(help).not.toContain("dry-run");
+  });
+
+  it("still accepts --no-dry-run, which asks for the behaviour the command already has", async () => {
+    register("nopreview", false);
+
+    await runArgv(["nopreview", "--no-dry-run"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves --dry-run working for a command that does preview", async () => {
+    register("canpreview");
+
+    await runArgv(["canpreview", "--dry-run"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: true })
+    );
+  });
+
+  // Every option is declared per command, so the top-level parse does not know
+  // a leading `--dry-run` is a boolean and takes the command name as its value.
+  // The run is still refused; the message now says why and what to type.
+  describe("a leading flag that swallowed the command name", () => {
+    let prevExit: typeof process.exitCode;
+    beforeEach(() => {
+      prevExit = process.exitCode;
+      process.exitCode = 0;
+    });
+    afterEach(() => {
+      process.exitCode = prevExit;
+    });
+
+    it("refuses the run and prints the corrected order", async () => {
+      register("canpreview");
+
+      await runArgv(["--dry-run", "canpreview"]);
+      await flush();
+
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "Specify a command to run. Options go after the command: `--dry-run` took " +
+          "`canpreview` as its value. Run `syncrona canpreview --dry-run` instead."
+      );
+    });
+
+    it("keeps every leading flag and the trailing arguments in the corrected order", async () => {
+      register("canpreview");
+
+      await runArgv(["-l", "--dry-run", "canpreview", "extra"]);
+      await flush();
+
+      expect(handlerSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      expect(String(mockLoggerError.mock.calls[0][0])).toContain(
+        "Run `syncrona canpreview -l --dry-run extra` instead."
+      );
+    });
+
+    it.each([
+      ["no command name follows the flags", ["--dry-run", "nosuchcommand"]],
+      ["the last flag carries its value", ["--dry-run=true", "canpreview"]],
+      ["the last flag is a negation", ["--no-dry-run", "canpreview"]],
+      ["a later token names the command yargs runs", ["--label", "canpreview", "other"]],
+    ])("leaves the parse to yargs when %s", async (_label, argv) => {
+      register("canpreview");
+      register("other");
+
+      try {
+        await runArgv(argv);
+      } catch {
+        // yargs' own refusal, if any, is not under test here.
+      }
+      await flush();
+
+      expect(mockLoggerError).not.toHaveBeenCalledWith(
+        expect.stringContaining("Options go after the command")
+      );
+    });
+
+    it("leaves --help in front of a command to yargs", async () => {
+      register("canpreview");
+      const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+      await runArgv(["--help", "canpreview"]);
+
+      logSpy.mockRestore();
+      expect(mockLoggerError).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(0);
+    });
+  });
+
+  // yargs parses any value of a boolean other than `true` as false, so
+  // `--dry-run=1` used to run the command for real.
+  describe("a --dry-run value other than true or false", () => {
+    let prevExit: typeof process.exitCode;
+    beforeEach(() => {
+      prevExit = process.exitCode;
+      process.exitCode = 0;
+    });
+    afterEach(() => {
+      process.exitCode = prevExit;
+    });
+
+    it.each([["--dry-run=1"], ["--dry-run=yes"], ["--dryRun=TRUE"], ["--dry-run="]])(
+      "refuses %s instead of running for real",
+      async (flag) => {
+        register("canpreview");
+
+        await runArgv(["canpreview", flag]);
+        await flush();
+
+        expect(handlerSpy).not.toHaveBeenCalled();
+        expect(process.exitCode).toBe(1);
+        expect(mockLoggerError).toHaveBeenCalledWith(
+          `\`${flag}\` is not a dry-run switch: only --dry-run, --dry-run=true and ` +
+            "--dry-run=false are accepted. Re-run with --dry-run to preview."
+        );
+      }
+    );
+
+    it.each([
+      ["--dry-run=true", true],
+      ["--dry-run=false", false],
+    ])("accepts %s", async (flag, expected) => {
+      register("canpreview");
+
+      await runArgv(["canpreview", flag]);
+      await flush();
+
+      expect(handlerSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: expected }));
+    });
+
+    it("ignores the spelling after a -- terminator", async () => {
+      register("canpreview");
+
+      try {
+        await runArgv(["canpreview", "--", "--dry-run=1"]);
+      } catch {
+        // yargs' own handling of the trailing argument is not under test here.
+      }
+      await flush();
+
+      expect(mockLoggerError).not.toHaveBeenCalledWith(
+        expect.stringContaining("is not a dry-run switch")
+      );
+    });
+  });
+
+  it("runs a no-preview command normally when the flag is absent", async () => {
+    register("nopreview", false);
+
+    await runArgv(["nopreview"]);
+    await flush();
+
+    expect(handlerSpy).toHaveBeenCalledTimes(1);
+    // No default is declared for the refused option, so the key is absent from
+    // argv entirely and nothing downstream can mistake a missing flag for an
+    // explicit `--dry-run=false`.
+    expect(handlerSpy.mock.calls[0][0]).not.toHaveProperty("dryRun");
+  });
+});
+
+// Companion drift guard for the registry itself: a new command that takes the
+// shared options must state which side of the contract it is on, or this fails.
+// Membership here is decided by whether the implementation actually branches on
+// args.dryRun — grep for `dryRun` in the handler's module before editing it.
+describe("CLI registry dry-run declarations", () => {
+  const PREVIEWS = new Set([
+    "push", // pushCommand.ts
+    "download", // commands.ts
+    "init", // commands.ts (both the .env path and the wizard refusal)
+    "build", // commands.ts
+    "deploy", // commands.ts
+    "repair", // repairCommand.ts
+    "fluent", // fluentCommand.ts (prints the SDK call it would make)
+  ]);
+
+  it("marks every shared-option command as previewing or not", async () => {
+    ({ CLI_COMMANDS } = await import("../cliCommands.js"));
+
+    for (const mod of CLI_COMMANDS) {
+      if (mod.includeSharedOptions === false) continue;
+      const spec = Array.isArray(mod.command) ? mod.command[0] : mod.command;
+      const name = spec.trim().split(/\s+/)[0];
+      expect({ name, previews: mod.supportsDryRun !== false }).toEqual({
+        name,
+        previews: PREVIEWS.has(name),
+      });
+    }
+  });
+});

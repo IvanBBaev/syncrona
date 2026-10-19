@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_choice_set action="INSERT_OR_UPDATE" field="state" table="x_snc_bprobe_task" version="3" apply_defaults="true">
+    <sys_choice_set action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>43e96a89eae440378b0f64882f3f5203</sys_id>
+      <element>state</element>
+      <sys_update_name>sys_choice_x_snc_bprobe_task_state</sys_update_name>
+      <name>x_snc_bprobe_task</name>
+      <sys_class_name>sys_choice_set</sys_class_name>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_package display_value="x_snc_bprobe" source="db22ea00d7ff49d9b5d64061202ea510">db22ea00d7ff49d9b5d64061202ea510</sys_package>
+      <sys_name>state</sys_name>
+    </sys_choice_set>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>810eb403ff3d4948bf0e7ad5514e0ab4</sys_id>
+      <name>x_snc_bprobe_task</name>
+      <element>state</element>
+      <label>Open</label>
+      <value>open</value>
+      <sequence>0</sequence>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>4232e3f7ed3e443183497781287a9939</sys_id>
+      <name>x_snc_bprobe_task</name>
+      <element>state</element>
+      <label>Closed</label>
+      <value>closed</value>
+      <sequence>1</sequence>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+    </sys_choice>
+  </sys_choice_set>
+</record_update>

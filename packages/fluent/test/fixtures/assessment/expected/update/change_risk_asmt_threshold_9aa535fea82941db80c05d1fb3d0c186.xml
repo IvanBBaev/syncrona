@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="change_risk_asmt_threshold">
+  <change_risk_asmt_threshold action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9aa535fea82941db80c05d1fb3d0c186</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>change_risk_asmt_threshold_9aa535fea82941db80c05d1fb3d0c186</sys_update_name>
+    <assessment>92a17095559242dfbea8640bb3eb9bcd</assessment>
+    <risk>2</risk>
+    <score_greater_than>80</score_greater_than>
+  </change_risk_asmt_threshold>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fb070d63d27b4fb3a015bd9aeefb282e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_fb070d63d27b4fb3a015bd9aeefb282e</sys_update_name>
+    <configuration_template/>
+    <connection_type>sys_connection</connection_type>
+    <description/>
+    <id>x_snc_bprobe.Basic</id>
+    <multiple_connections>false</multiple_connections>
+    <name>Basic</name>
+    <parent/>
+    <retry_policy>e385484773100010e3a71afe2ff6a709</retry_policy>
+    <sys_policy/>
+    <type>connection</type>
+  </sys_alias>
+</record_update>

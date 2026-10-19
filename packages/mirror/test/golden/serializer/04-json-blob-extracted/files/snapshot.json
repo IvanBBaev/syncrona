@@ -1,0 +1,14 @@
+{
+  "active": true,
+  "name": "Flow",
+  "steps": [
+    {
+      "id": "b",
+      "order": 2
+    },
+    {
+      "id": "a",
+      "order": 1
+    }
+  ]
+}

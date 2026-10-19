@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_fn">
+  <sys_rest_message_fn action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f5556db024384a46b1f3a278f79733fc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_fn_f5556db024384a46b1f3a278f79733fc</sys_update_name>
+    <authentication_type>inherit_from_parent</authentication_type>
+    <basic_auth_profile/>
+    <content/>
+    <function_name>head</function_name>
+    <http_method>head</http_method>
+    <lock>false</lock>
+    <oauth2_profile/>
+    <rest_endpoint/>
+    <rest_message>d46e75c26830456e98241763d7915f6c</rest_message>
+    <use_mid_server/>
+  </sys_rest_message_fn>
+</record_update>

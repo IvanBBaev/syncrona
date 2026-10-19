@@ -1,0 +1,39 @@
+{
+  "name": "@syncrona/prettier-plugin",
+  "version": "1.2.0-beta.0",
+  "description": "SyncroNow AI build plugin that formats synced files with Prettier (honors .prettierrc and sync.config.js options).",
+  "main": "./dist/index.js",
+  "scripts": {
+    "prepack": "tsc",
+    "pretest": "npm run prepack",
+    "test": "node --test test/*.test.js"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "peerDependencies": {
+    "prettier": "^3"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.4",
+    "typescript": "~6.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/prettier-plugin"
+  },
+  "dependencies": {
+    "@syncrona/types": "^1.2.0-beta.0"
+  },
+  "types": "./dist/index.d.ts",
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

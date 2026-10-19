@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard">
+  <sys_wizard action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ea91a27f9e6749ec90cfcaea7a3c5323</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_ea91a27f9e6749ec90cfcaea7a3c5323</sys_update_name>
+    <back_panel>0123456789abcdef0123456789abcdef</back_panel>
+    <intercepts>x_snc_bprobe_task.do</intercepts>
+    <name>Full "quoted" Interceptor</name>
+    <next_panel name="Minimal">4c1ec0a527cb494e980a73415c7c473f</next_panel>
+    <question>Create &lt;what&gt; &amp; "why"?</question>
+    <sys_policy>read</sys_policy>
+  </sys_wizard>
+</record_update>

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4baaa174f1494faa9b5e15e915a273af</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_4baaa174f1494faa9b5e15e915a273af</sys_update_name>
+    <description/>
+    <name>chrome_header</name>
+    <page>753753ea582f49f8a8813edc182b31b9</page>
+    <route/>
+    <suffix>chrome_header</suffix>
+    <type>json</type>
+    <value>{"privatePage":{"userPrefsEnabled":false,"searchEnabled":false,"currentScreenLinkConfiguration":{},"globalTools":{"collapsingMenuId":0,"primaryItems":[],"secondaryItems":[]}},"publicPage":{"menuEnabled":false,"searchEnabled":false,"logoRoute":{},"actionButtons":[]}}</value>
+  </sys_ux_page_property>
+</record_update>

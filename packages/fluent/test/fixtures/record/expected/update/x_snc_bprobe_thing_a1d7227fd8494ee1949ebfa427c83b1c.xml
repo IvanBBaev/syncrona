@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="x_snc_bprobe_thing">
+  <x_snc_bprobe_thing action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a1d7227fd8494ee1949ebfa427c83b1c</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>x_snc_bprobe_thing_a1d7227fd8494ee1949ebfa427c83b1c</sys_update_name>
+    <multi>line one
+line two</multi>
+    <nul/>
+    <nums>1,2</nums>
+    <role_by_guid>2831a114c611228501d4ea6c309d626d</role_by_guid>
+    <special>a &lt; b &amp; c &gt; d "q" 's'</special>
+    <tpl>templated</tpl>
+  </x_snc_bprobe_thing>
+</record_update>

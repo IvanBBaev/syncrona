@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_agent">
+  <sn_aia_agent action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>cd65f04152944317a4d531140b8ad539</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_agent_cd65f04152944317a4d531140b8ad539</sys_update_name>
+    <acl>4b2318fdb42d4ce9b63cdf0360974a38</acl>
+    <active>false</active>
+    <advanced_mode>true</advanced_mode>
+    <agent_type>internal</agent_type>
+    <channel>nap</channel>
+    <compiled_handbook/>
+    <condition/>
+    <context_processing_script><![CDATA[function process(context) { return context; }]]></context_processing_script>
+    <description>Full agent</description>
+    <external>false</external>
+    <external_agent_configuration/>
+    <instructions>Do things.</instructions>
+    <internal_name>global.x_snc_bprobe.Full Agent</internal_name>
+    <name>Full Agent</name>
+    <parent/>
+    <post_processing_message>Done</post_processing_message>
+    <processing_message>Working...</processing_message>
+    <record_type>custom</record_type>
+    <role>Specialist</role>
+    <source_id/>
+    <strategy>f0bff21f9f13c6108f431597d90a1c74</strategy>
+    <sys_domain>global</sys_domain>
+  </sn_aia_agent>
+</record_update>

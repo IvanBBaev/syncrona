@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_app_config">
+  <sys_ux_app_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>64739e81d80b47a295d7c0d45c34cb52</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_app_config_64739e81d80b47a295d7c0d45c34cb52</sys_update_name>
+    <active>true</active>
+    <custom_icon/>
+    <description>Workspace created by Fluent</description>
+    <disable_auto_reflow>false</disable_auto_reflow>
+    <encode_query_string>false</encode_query_string>
+    <icon/>
+    <landing_path>home</landing_path>
+    <name>Space</name>
+  </sys_ux_app_config>
+</record_update>

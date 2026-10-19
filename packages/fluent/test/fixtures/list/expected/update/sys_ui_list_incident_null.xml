@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_list table="incident" parent="" relationship="" sys_domain="global" view="">
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>f05ff16d915547f0b3aa02760b42794a</sys_id>
+      <list_id display_value="incident" name="incident" view="Default view" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">0830c086c37c44b1aa4649b8823376ee</list_id>
+      <element>number</element>
+      <position>0</position>
+    </sys_ui_list_element>
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>4ed066dc5dfe438992614f6dc5f2372a</sys_id>
+      <list_id display_value="incident" name="incident" view="Default view" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">0830c086c37c44b1aa4649b8823376ee</list_id>
+      <element>short_description</element>
+      <position>1</position>
+    </sys_ui_list_element>
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>a60e14e0b35d4b9cb6fa9ed34d0d80b2</sys_id>
+      <list_id display_value="incident" name="incident" view="Default view" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">0830c086c37c44b1aa4649b8823376ee</list_id>
+      <element>caller_id.name</element>
+      <position>2</position>
+    </sys_ui_list_element>
+    <sys_ui_list action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>0830c086c37c44b1aa4649b8823376ee</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <view name="NULL">Default view</view>
+      <name>incident</name>
+      <sys_domain>global</sys_domain>
+    </sys_ui_list>
+  </sys_ui_list>
+</record_update>

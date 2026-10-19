@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_choice_set action="INSERT_OR_UPDATE" field="state" table="x_snc_bprobe_ticket" version="3" apply_defaults="true">
+    <sys_choice_set action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>7683581e3c9046a49244c696665fd9e9</sys_id>
+      <element>state</element>
+      <sys_update_name>sys_choice_x_snc_bprobe_ticket_state</sys_update_name>
+      <name>x_snc_bprobe_ticket</name>
+      <sys_class_name>sys_choice_set</sys_class_name>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_package display_value="x_snc_bprobe" source="db22ea00d7ff49d9b5d64061202ea510">db22ea00d7ff49d9b5d64061202ea510</sys_package>
+      <sys_name>state</sys_name>
+    </sys_choice_set>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>cefce862ee764d4b9a994b47b70b6edf</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>state</element>
+      <label>Pending</label>
+      <value>10</value>
+      <sequence>10</sequence>
+      <dependent_value/>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>438f1e8035f8454eae154d0c45fbd55a</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>state</element>
+      <label>Running</label>
+      <value>11</value>
+      <dependent_value/>
+      <hint>In flight</hint>
+      <inactive>true</inactive>
+      <inactive_on_update>true</inactive_on_update>
+      <language>en</language>
+      <synonyms>busy,active</synonyms>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>ad15659a219048788dc7125df501e87b</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>state</element>
+      <label>Done</label>
+      <value>12</value>
+      <sequence>12</sequence>
+      <dependent_value/>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>e173ff41d1204371af25a49576892aed</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>state</element>
+      <label>Fertig</label>
+      <value>12</value>
+      <sequence>12</sequence>
+      <dependent_value>3</dependent_value>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>de</language>
+      <synonyms/>
+    </sys_choice>
+    <sys_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>4cf658db71184e3d8e13478800905379</sys_id>
+      <name>x_snc_bprobe_ticket</name>
+      <element>state</element>
+      <label>Failed</label>
+      <value>13</value>
+      <dependent_value>x</dependent_value>
+      <hint/>
+      <inactive>false</inactive>
+      <inactive_on_update>false</inactive_on_update>
+      <language>en</language>
+      <synonyms/>
+    </sys_choice>
+  </sys_choice_set>
+</record_update>

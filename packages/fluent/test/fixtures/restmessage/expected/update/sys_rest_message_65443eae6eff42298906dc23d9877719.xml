@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message">
+  <sys_rest_message action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>65443eae6eff42298906dc23d9877719</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_65443eae6eff42298906dc23d9877719</sys_update_name>
+    <access>package_private</access>
+    <authentication_type>no_authentication</authentication_type>
+    <basic_auth_profile/>
+    <description/>
+    <name>Minimal</name>
+    <oauth2_profile/>
+    <rest_endpoint>https://min.example.com</rest_endpoint>
+  </sys_rest_message>
+</record_update>

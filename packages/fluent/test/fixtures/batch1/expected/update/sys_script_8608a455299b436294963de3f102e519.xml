@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<record_update table="sys_script">
+  <sys_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8608a455299b436294963de3f102e519</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_script_8608a455299b436294963de3f102e519</sys_update_name>
+    <abort_action>true</abort_action>
+    <access>public</access>
+    <action_delete>true</action_delete>
+    <action_insert>true</action_insert>
+    <action_query>true</action_query>
+    <action_update>true</action_update>
+    <active>false</active>
+    <add_message>true</add_message>
+    <advanced>true</advanced>
+    <change_fields>true</change_fields>
+    <client_callable>true</client_callable>
+    <collection>incident</collection>
+    <condition>current.active == true</condition>
+    <description>Full BR</description>
+    <execute_function>true</execute_function>
+    <filter_condition>priority=1^EQ</filter_condition>
+    <is_rest>false</is_rest>
+    <message>Hello</message>
+    <name>FullBR</name>
+    <order>50</order>
+    <priority>10</priority>
+    <rest_method/>
+    <rest_method_text/>
+    <rest_service/>
+    <rest_service_text/>
+    <rest_variables/>
+    <role_conditions>itil,x_snc_bprobe.manager</role_conditions>
+    <script><![CDATA[(function executeRule(current, previous) {
+    gs.info('x');
+})(current, previous);]]></script>
+    <sys_name>FullBR</sys_name>
+    <sys_policy>protected</sys_policy>
+    <template>state=2^EQ</template>
+    <when>before</when>
+  </sys_script>
+</record_update>

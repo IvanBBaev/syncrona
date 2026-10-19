@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import dotenv from "dotenv";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
+import { preloadStoredCredentials } from "./snClient.js";
+import { runUpdateNotifier } from "./updateNotifier.js";
+
+// Commands whose stdout is a machine channel, not human-readable text: `mcp`
+// (the parent's stdout is inherited by the spawned MCP server as its JSON-RPC
+// transport) and `completion` (the shell-completion script is piped to a file).
+// For these, every logger line — including the bootstrap-phase notices that
+// loadConfigs() can emit (e.g. the `flat: true` layout notice) — must go to
+// stderr so stdout stays byte-clean. Detected here because loadConfigs() below
+// is the first thing that can log, long before yargs resolves the command.
+//
+// `--json` joins them for the same reason: `jira` and `mirror` promise a
+// pipeable JSON document on stdout, but every logger level except warn/error
+// defaults to stdout, so a bootstrap notice, a capability line, or the `→ hint`
+// that follows a failure would be interleaved with (or emitted instead of) the
+// document and break `| jq`. The JSON payloads themselves are written with
+// process.stdout.write, not the logger, so nothing that belongs on stdout moves.
+//
+// `query -o json|raw` (`--output`) is the same contract: queryCommand routes
+// the logger to stderr itself, but only once yargs has dispatched it, which is
+// after loadConfigs() could already have printed a notice onto stdout.
+// yargs resolves `-o` and `--o` to the same `o` key (the `output` alias), so
+// every spelling it accepts counts: `-o x`, `-o=x`, `--o x`, `--o=x`,
+// `--output x` and `--output=x`. yargs does no unique-prefix matching, so
+// `--out` is an unknown argument (strict mode rejects it) and is not covered.
+// The attached `-ojson` form is kept as well: yargs rejects it, and routing a
+// run that is about to fail to stderr costs nothing.
+function isOutputOption(tok: string): boolean {
+  return /^(?:-o|--o|--output)(?:=|$)/.test(tok) || /^-o[a-z]+$/i.test(tok);
+}
+
+function queryOutputRequested(rest: string[]): boolean {
+  for (const tok of rest) {
+    if (tok === "--") {
+      return false;
+    }
+    if (isOutputOption(tok)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// yargs finds the command with a first parse that knows only the top-level
+// options (`--help`, `--version`); command options such as `-q`, `--limit` or
+// even the boolean `--dry-run` are unknown there. yargs-parser lets an unknown
+// option consume the following token as its value unless that token is itself
+// an option, so `-q active=true query incident` dispatches `query` while
+// `--dry-run query` does not dispatch anything. The walk below mirrors that.
+const VALUELESS_LEADING_OPTIONS = new Set(["--help", "--version"]);
+
+function consumesNextToken(tok: string, next: string | undefined): boolean {
+  if (next === undefined || next.startsWith("-")) {
+    return false;
+  }
+  // `--flag=value` / `-o=x` is self-contained; `--no-flag` is a negation.
+  if (tok.includes("=") || tok.startsWith("--no-")) {
+    return false;
+  }
+  return !VALUELESS_LEADING_OPTIONS.has(tok);
+}
+
+function stdoutIsProtocolChannel(argv: string[]): boolean {
+  // `--json` can appear anywhere after the command, so it is scanned for over
+  // the whole argv rather than in the leading-options walk below. Only the
+  // truthy spellings engage; `--no-json` / `--json=false` ask for text output.
+  if (argv.some((tok) => tok === "--json" || tok === "--json=true")) {
+    return true;
+  }
+  // The yargs command is the first positional token once every leading option
+  // and the value it consumes are skipped (see consumesNextToken). yargs also
+  // accepts `-o` / `--output` before the command (`syncrona -o json query`).
+  let leadingOutput = false;
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (tok === "--") {
+      // Everything past the separator is positional data, not a command.
+      return false;
+    }
+    if (!tok.startsWith("-")) {
+      if (tok === "query") {
+        return leadingOutput || queryOutputRequested(argv.slice(i + 1));
+      }
+      return tok === "mcp" || tok === "completion";
+    }
+    if (isOutputOption(tok)) {
+      leadingOutput = true;
+    }
+    if (consumesNextToken(tok, argv[i + 1])) {
+      i++;
+    }
+  }
+  return false;
+}
+
+export async function init() {
+  // Engage stderr routing up front for protocol-channel commands so no
+  // bootstrap-phase notice can corrupt stdout (see stdoutIsProtocolChannel).
+  if (stdoutIsProtocolChannel(process.argv.slice(2))) {
+    logger.routeAllToStderr();
+  }
+
+  try {
+    await ConfigManager.loadConfigs();
+  } catch (e) {
+    // A discovered-but-broken sync.config.js is a hard error: continuing
+    // would silently run with default includes/excludes.
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(message);
+    process.exitCode = 1;
+    return;
+  }
+
+  const path = ConfigManager.getEnvPath();
+  // quiet: dotenv v17 prints an injection tip to stdout by default; stdout must
+  // stay clean for pipeable commands like `syncrona completion bash >> ~/.bashrc`.
+  dotenv.config({
+    path,
+    quiet: true,
+  });
+
+  // Load credentials from global store into memory (no-op if .env already has them)
+  if (!process.env.JEST_WORKER_ID) {
+    try {
+      await preloadStoredCredentials();
+    } catch (_) {
+      // Store not configured yet — first run, continue normally
+    }
+  }
+
+  if (process.env.JEST_WORKER_ID) {
+    return;
+  }
+
+  // Best-effort "new version available" notice (once/day, opt-out, never blocks).
+  await runUpdateNotifier();
+
+  (await import("./commander.js")).initCommands();
+}

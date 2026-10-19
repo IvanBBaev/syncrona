@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sys_gen_ai_strategy_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>10e5ddc6f4c04eeea17dfb2ac89847cb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_gen_ai_strategy_mapping_10e5ddc6f4c04eeea17dfb2ac89847cb</sys_update_name>
+    <active>true</active>
+    <feature feature_name="Customer Support Helper" document="e0156365ac94450b86885804ae35ed6b">5266b71084f748d4af9319785ac249ac</feature>
+    <strategy>CAPABILITY_EXECUTION</strategy>
+  </sys_gen_ai_strategy_mapping>
+</record_update>

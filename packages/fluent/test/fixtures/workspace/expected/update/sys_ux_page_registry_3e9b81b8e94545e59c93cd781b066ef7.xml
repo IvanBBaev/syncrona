@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_registry">
+  <sys_ux_page_registry action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3e9b81b8e94545e59c93cd781b066ef7</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_registry_3e9b81b8e94545e59c93cd781b066ef7</sys_update_name>
+    <active>true</active>
+    <admin_panel>bf6ce86f098346ec8c4d720f261f75c2</admin_panel>
+    <admin_panel_table>sys_ux_app_config</admin_panel_table>
+    <auth_routes/>
+    <page/>
+    <parent_app>c86a62e2c7022010099a308dc7c26022</parent_app>
+    <path>probe-space</path>
+    <root_macroponent>c276387cc331101080d6d3658940ddd2</root_macroponent>
+    <title>Probe Space</title>
+  </sys_ux_page_registry>
+</record_update>

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="scan_script_only_check">
+  <scan_script_only_check action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a04149bfedf54f7ab69b9327bedc9100</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>scan_script_only_check_a04149bfedf54f7ab69b9327bedc9100</sys_update_name>
+    <active>true</active>
+    <category>user_experience</category>
+    <description>desc</description>
+    <documentation_url/>
+    <finding_type>scan_finding</finding_type>
+    <name>Script only</name>
+    <priority>2</priority>
+    <resolution_details/>
+    <run_condition/>
+    <score_max>100</score_max>
+    <score_min>0</score_min>
+    <score_scale>1</score_scale>
+    <script><![CDATA[(function (engine) { engine.finding.increment() })(engine)]]></script>
+    <short_description>Script only check</short_description>
+  </scan_script_only_check>
+</record_update>

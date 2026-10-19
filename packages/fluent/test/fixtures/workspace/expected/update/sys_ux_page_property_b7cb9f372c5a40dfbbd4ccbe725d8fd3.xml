@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b7cb9f372c5a40dfbbd4ccbe725d8fd3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_b7cb9f372c5a40dfbbd4ccbe725d8fd3</sys_update_name>
+    <description/>
+    <name>wbApplicabilityConfigId</name>
+    <page>3e9b81b8e94545e59c93cd781b066ef7</page>
+    <route/>
+    <suffix>wbApplicabilityConfigId</suffix>
+    <type>string</type>
+    <value>bf6ce86f098346ec8c4d720f261f75c2</value>
+  </sys_ux_page_property>
+</record_update>

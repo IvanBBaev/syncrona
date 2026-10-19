@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import * as ConfigManager from "./config.js";
+import { startWatching, stopWatching } from "./Watcher.js";
+import * as AppUtils from "./appUtils.js";
+import { logger } from "./Logger.js";
+import { devModeLog } from "./logMessages.js";
+import { setLogLevel, scopeCheck } from "./commandHelpers.js";
+
+// Node clamps a timer delay above 2^31-1 ms to 1 ms; a larger interval would
+// refresh back to back. Mirrors config.ts MAX_REFRESH_INTERVAL_SECONDS, kept
+// local because the suites that mock config.js do not export it.
+const MAX_TIMER_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
+export async function devCommand(
+  args: Sync.SharedCmdArgs & { refreshInterval?: number }
+) {
+  setLogLevel(args);
+  await scopeCheck(async () => {
+    startWatching(ConfigManager.getSourcePath());
+    devModeLog();
+
+    // Skip a scheduled refresh while the previous one is still running so a
+    // slow network cannot stack concurrent manifest syncs.
+    let refreshInFlight = false;
+    const refresher = async () => {
+      if (refreshInFlight) {
+        logger.debug("Skipping scheduled refresh: previous refresh still running.");
+        return;
+      }
+      refreshInFlight = true;
+      const startedAt = Date.now();
+      try {
+        await refreshCommand(args, false);
+      } finally {
+        refreshInFlight = false;
+        // DX21: surface refresh cost at debug/verbose so a slow instance is visible.
+        logger.debug(`Manifest refresh took ${Date.now() - startedAt}ms`);
+      }
+    };
+    // DX16: --refresh-interval overrides sync.config.js refreshInterval; 0 disables polling.
+    const interval =
+      typeof args.refreshInterval === "number" && Number.isFinite(args.refreshInterval)
+        ? Math.min(MAX_TIMER_SECONDS, Math.max(0, Math.floor(args.refreshInterval)))
+        : ConfigManager.getRefresh();
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (interval && interval > 0) {
+      logger.info(`Checking for new manifest files every ${interval} seconds`);
+      timer = setInterval(() => {
+        void refresher();
+      }, interval * 1000);
+      // Don't keep the process alive just for the refresh timer.
+      timer.unref();
+    }
+    // Always stop the file watcher cleanly on Ctrl+C — even when polling is
+    // disabled (interval 0), startWatching() above is still running and would
+    // otherwise leak with no SIGINT handler to release it.
+    process.once("SIGINT", () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+      void stopWatching();
+    });
+  });
+}
+
+export async function refreshCommand(
+  args: Sync.SharedCmdArgs,
+  log: boolean = true
+) {
+  setLogLevel(args);
+  // #1: quieting a background refresh must NOT reset the active instance
+  // profile. setLogLevel() also calls setActiveInstanceProfile(), and the
+  // dev refresher passes a bare { logLevel: "warn" } with no instanceProfile,
+  // which would reset the session profile mid-run and silently target the
+  // BASE instance. Drive the logger level directly so the profile that
+  // setLogLevel(args) established above is preserved through the refresh.
+  const previousLogLevel = logger.getLogLevel();
+  // scopeCheck reports a failed scope check or a thrown sync through
+  // process.exitCode = 1. A background refresh must leave the exit code alone,
+  // as it does for an unsuccessful sync below, or one transient failure would
+  // make the later clean Ctrl+C exit of `syncrona dev` report a failure.
+  const previousExitCode = process.exitCode;
+  await scopeCheck(async () => {
+    if (!log) logger.setLogLevel("warn");
+    try {
+      const ok = await AppUtils.syncManifest();
+      if (ok) {
+        logger.success("Refresh complete! ✅");
+      } else if (log) {
+        // Interactive refresh: surface the failure as a real error exit.
+        process.exitCode = 1;
+      }
+    } finally {
+      if (!log) logger.setLogLevel(previousLogLevel);
+    }
+  });
+  if (!log) process.exitCode = previousExitCode;
+}

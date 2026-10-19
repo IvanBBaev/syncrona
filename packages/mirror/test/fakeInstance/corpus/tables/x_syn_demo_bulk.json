@@ -1,0 +1,35 @@
+{
+  "columns": [
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "sequence",
+      "internalType": "integer",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "payload",
+      "internalType": "string",
+      "maxLength": 4000,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Demo Bulk",
+  "name": "x_syn_demo_bulk",
+  "rows": [],
+  "scopeSysId": "c50cdf59d855337e330f1ab84ea00f27",
+  "superClass": "a393993bada71f0b99f6fb9661a11c99",
+  "synthetic": {
+    "rowCount": 24000,
+    "seed": 3129671063
+  },
+  "sysId": "73e9e922a5de112cc7815e87df6c4281"
+}

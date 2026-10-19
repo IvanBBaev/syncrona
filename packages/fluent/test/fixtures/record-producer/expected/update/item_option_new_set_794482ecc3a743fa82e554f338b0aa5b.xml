@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<record_update table="item_option_new_set">
+  <item_option_new_set action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>794482ecc3a743fa82e554f338b0aa5b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>item_option_new_set_794482ecc3a743fa82e554f338b0aa5b</sys_update_name>
+    <create_roles/>
+    <description/>
+    <display_title>false</display_title>
+    <internal_name>producer_set</internal_name>
+    <layout>normal</layout>
+    <name/>
+    <order>100</order>
+    <read_roles/>
+    <set_attributes/>
+    <title>Producer Set</title>
+    <type>one_to_one</type>
+    <version>1</version>
+    <write_roles/>
+  </item_option_new_set>
+</record_update>

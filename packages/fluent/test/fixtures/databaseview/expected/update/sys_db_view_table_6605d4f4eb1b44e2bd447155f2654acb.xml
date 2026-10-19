@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sys_db_view_table">
+  <sys_db_view_table action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6605d4f4eb1b44e2bd447155f2654acb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_db_view_table_6605d4f4eb1b44e2bd447155f2654acb</sys_update_name>
+    <active>false</active>
+    <left_join>true</left_join>
+    <order>200</order>
+    <sys_policy>read</sys_policy>
+    <table>sys_user</table>
+    <variable_prefix>usr</variable_prefix>
+    <view name="x_snc_bprobe_full">ed751008dacc44e89ad1d42912f3d0d8</view>
+    <where_clause>inc_caller_id=usr_sys_id</where_clause>
+  </sys_db_view_table>
+</record_update>

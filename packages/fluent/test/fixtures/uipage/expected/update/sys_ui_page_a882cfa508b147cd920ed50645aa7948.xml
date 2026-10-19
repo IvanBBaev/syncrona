@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_page">
+  <sys_ui_page action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a882cfa508b147cd920ed50645aa7948</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_page_a882cfa508b147cd920ed50645aa7948</sys_update_name>
+    <category/>
+    <client_script/>
+    <description/>
+    <direct>false</direct>
+    <endpoint>x_snc_bprobe_minimal.do</endpoint>
+    <html/>
+    <name>minimal</name>
+    <processing_script/>
+    <sys_name>minimal</sys_name>
+  </sys_ui_page>
+</record_update>

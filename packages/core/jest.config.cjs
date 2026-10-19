@@ -1,0 +1,272 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// This config is CommonJS (.cjs) on purpose: the package is now "type": "module"
+// (ESM), so a plain jest.config.js would be parsed as ESM and break module.exports.
+//
+// The source tree is native ESM under TypeScript NodeNext, so tests run as real
+// ESM via ts-jest (useESM) + Node's --experimental-vm-modules (set in the "test"
+// script). Consequences that shape this config:
+//   - extensionsToTreatAsEsm marks .ts files as ESM for the jest runtime.
+//   - moduleNameMapper strips the mandatory ".js" suffix off relative specifiers
+//     so jest resolves "./foo.js" back to the "./foo.ts" source.
+//   - jest.mock() is NOT hoisted/applied under ESM; suites use
+//     jest.unstable_mockModule() + a deferred await import() of the subject.
+module.exports = {
+  testEnvironment: 'node',
+  extensionsToTreatAsEsm: ['.ts'],
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', { useESM: true }],
+  },
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
+  // Force the OS keychain off by default so no test touches the real keychain
+  // (hermetic + deterministic); keychain behaviour is tested via mocks.
+  setupFiles: ['<rootDir>/jest.setup.cjs'],
+  // Runs after the test framework is installed, which is what lets it register
+  // global hooks (setupFiles above runs too early for that). It resets
+  // `process.exitCode` around every test so no suite can inherit — or leak — a
+  // value another one left behind; see the file for why the per-suite guards
+  // were not enough on their own.
+  setupFilesAfterEnv: ['<rootDir>/jest.exitcode.cjs'],
+  // An unhandled promise rejection must fail a test, not kill the worker.
+  // Node 22 defaults to `--unhandled-rejections=throw`, so a rejection with no
+  // listener is fatal. jest-circus does install a listener on the real process
+  // for the duration of a run, but WITHOUT this flag it never yields to the
+  // event loop before `teardown` removes it again — so a rejection that becomes
+  // unhandled as the last test settles is delivered into the gap and takes the
+  // whole process down with it, mid-run and with no reporter output at all.
+  // Setting this makes jest-circus `await untilNextEventLoopTurn()` at
+  // `test_fn_success` / `test_fn_failure` / `hook_*` / `teardown`, which closes
+  // the gap and attributes the rejection to the test that caused it.
+  //
+  // Measured, because the obvious alternative does not work: registering
+  // `process.on('unhandledRejection', ...)` from a `setupFilesAfterEnv` file is
+  // a no-op. That file runs inside the test VM, whose `process` is a deep copy
+  // made by jest-util's `createProcessObject()` with its own EventEmitter, so
+  // nothing is ever emitted on it — see the comment at
+  // jest-circus/build/jestAdapterInit.js `case 'setup'`. Such a guard was
+  // written, shipped, and then disproved by a Stryker mutant that still killed
+  // the runner with it installed; this flag is what actually fixed it.
+  waitForUnhandledRejections: true,
+  // Whole-source coverage: the gate previously measured only src/commands.ts,
+  // which made the "core >= 80%" CI claim meaningless. Thresholds below are a
+  // ratchet floor set just under the measured baseline (2026-07-03: statements
+  // 95.5%, branches 83.2%, functions 91.8%, lines 95.5% — up from the earlier
+  // 85.7/71.9/80.7/85.6 baseline after per-file coverage suites landed for
+  // diagnosticsCommands, downloadPipeline, config, FileUtils, manifestBuilder,
+  // updateNotifier, pushCommand and Logger). Raise these as coverage grows;
+  // never lower them. The lines/statements floors sit ~3pts under the measured
+  // numbers so a real regression fails CI while cross-OS noise does not; the
+  // branch floor keeps extra headroom because OS-specific branches
+  // (keychain/homedir/platform) still make Linux CI measure a touch below macOS.
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/tests/**',
+  ],
+  testPathIgnorePatterns: [
+    // Compiled test output only. These patterns are regexes matched against the
+    // ABSOLUTE path, so a bare ".js" also matched any checkout path containing
+    // "<char>js" (`~/jsmith/`, `…-json-…`) and Jest then ran no tests at all.
+    "\\.[cm]?jsx?$",
+    // Stryker copies the whole package (tests included) into its sandbox and
+    // does not clean it up when a run is interrupted, so without this a
+    // leftover .stryker-tmp makes Jest run every suite twice — and the sandbox
+    // copies resolve REPO_ROOT relative to themselves, which fails the
+    // license-consistency suite from inside an otherwise green tree.
+    //
+    // The `<rootDir>/` anchor is load-bearing, not decoration. These patterns are
+    // matched against the ABSOLUTE path of each test file, and inside a Stryker
+    // sandbox that path is `<pkg>/.stryker-tmp/sandbox-XXXX/src/tests/*.test.ts`
+    // — which contains `/.stryker-tmp/` too. An unanchored pattern therefore
+    // hides the tests from the mutation run itself: Stryker copies the package,
+    // starts Jest inside the copy, Jest matches zero files, and the whole run
+    // dies with "No tests were found". Anchoring pins the pattern to whichever
+    // root Jest was started with, so it still skips a leftover sandbox from the
+    // package root while matching nothing when Jest runs from inside one.
+    // strykerSandboxDiscovery.test.ts pins both halves of that.
+    "<rootDir>/\\.stryker-tmp/",
+  ],
+  // testPathIgnorePatterns only decides which files Jest RUNS; the haste map still
+  // scans a leftover sandbox and finds a second `package.json` naming the same
+  // module, which Jest reports as "Haste module naming collision: syncrona" and
+  // resolves arbitrarily — so an import could bind to the stale copy instead of the
+  // real one. Excluding the sandbox from module resolution as well closes that.
+  // Anchored for the same reason as above: unanchored, this would blind the
+  // mutation run to its own modules.
+  modulePathIgnorePatterns: ["<rootDir>/\\.stryker-tmp/"],
+  coverageThreshold: {
+    // Measured 97.88 / 91.47 / 98.47 / 98.47 (statements / branches / functions /
+    // lines) when last raised; the floors keep a few points for the branch
+    // variance between macOS and Linux CI.
+    global: {
+      statements: 95,
+      branches: 88,
+      functions: 95,
+      lines: 95,
+    },
+    // REV-95 (GATE-1): the global-only thresholds above are diluted by the
+    // whole tree — a brand-new source file at 0% coverage barely moves the
+    // aggregate and ships green. These PER-FILE floors catch that: every file
+    // that mismatches the floor fails CI on its own.
+    //
+    // Both globs together still preserve the global ratchet. Jest computes the
+    // "global" bucket from files that match NO other threshold group; because
+    // './src/**/*.ts' matches every collected source file, that bucket is empty
+    // and Jest falls back to measuring `global` across ALL covered files (see
+    // @jest/reporters coverage_reporter). So global and per-file gates both
+    // stay live.
+    //
+    // REV-141: the globs MUST stay recursive to keep that invariant. They used to be
+    // single-level ('./src/*.ts'), while collectCoverageFrom is recursive
+    // ('src/**/*.ts'): the first source file added under a subdirectory would
+    // therefore match no threshold group, land in the "global" bucket alone,
+    // and Jest would then evaluate the global thresholds against THAT ONE FILE
+    // instead of the whole tree — silently turning the repo-wide ratchet into a
+    // single-file check (and skipping the per-file floor for it as well).
+    //
+    // src/index.ts is the CLI entry barrel (exercised only via subprocess
+    // smoke tests, so it measures 0% lines/functions but 100% branches). It is
+    // matched only by the branches glob below (which it passes) and excluded
+    // from the lines glob via the '!(index)' extglob, so its legitimate 0%
+    // lines does not fail the floor.
+    //
+    // GATE-2: these two globs used to sit at 20/20, which is a floor only against
+    // a file with no test whatsoever — a module could fall from 98% to 21% and
+    // still ship green. They are sized a few points under the weakest LEGITIMATE
+    // file, so a real regression fails while cross-OS noise does not.
+    //
+    // Re-measured 2026-08-02 (whole suite, `jest --coverage`). The previous
+    // sizing was anchored to src/mcpCommand.ts at 83.33% lines / 68.18% branches,
+    // and that anchor was itself the bug: those were MACOS numbers, the file has
+    // uncovered `process.platform` branches, and on Linux it measured 77.77 /
+    // 52.27 — under this very floor, by one line. It now has a suite that pins the
+    // platform instead of reading it (100.00 / 98.11 on every host) and a named
+    // floor below, so the anchor moves to the real weak points:
+    //   - lines: bootstrap.ts 84.00% (its uncovered code sits behind
+    //     `JEST_WORKER_ID` guards, so it is unreachable from this suite by
+    //     construction — the number is stable, not neglected);
+    //   - branches: commandHelpers.ts and wizard.ts, both 71.79%.
+    // Hence 81 / 67 rather than 78 / 62. `process.platform` now appears in exactly
+    // two source files here (this one's neighbour diagnosticsCommands.ts is the
+    // other) and both have suites that pin it, so the cross-OS branch drift these
+    // floors used to absorb is down to the keychain and homedir cases.
+    './src/**/*.ts': {
+      branches: 67,
+    },
+    './src/**/!(index).ts': {
+      lines: 81,
+    },
+    // GATE-2, per-module floors. The tree-wide globs above are necessarily sized
+    // for the weakest file in the package, so on their own they let the modules
+    // that write files, push to the instance, hold credentials or shell out drop
+    // 15-20 points and still pass. Each key below pins ONE file a few points under
+    // what it measures today (2026-07-30, recorded per entry as `measured L/B`):
+    // ~3pts of headroom on lines and ~4-5pts on branches, because branch coverage
+    // is the metric that moves between macOS and Linux CI (keychain, homedir and
+    // platform branches). A ratchet, not a cliff: raise a floor when coverage
+    // rises, never lower one to turn a red build green.
+    //
+    // Mechanics that make these safe (verified in @jest/reporters, coverage
+    // reporter `_checkThreshold`):
+    //   - A covered file is pushed into EVERY threshold group it matches, so a
+    //     file listed here is still scored by the globs above and still feeds the
+    //     `global` ratchet; adding keys cannot disable either.
+    //   - A key that resolves to an existing file becomes a PATH group (prefix
+    //     match); full filenames are used so one key can only ever score one file.
+    //   - A key that matches nothing fails loudly with "Jest: Coverage data for
+    //     <key> was not found.", so a floor left behind by a rename or a delete is
+    //     reported instead of silently gating nothing.
+    //   - Keys are resolved against process.cwd(), NOT rootDir (Jest does not
+    //     expand <rootDir> in coverageThreshold keys). The suite runs from this
+    //     package via `npm --workspace syncrona test`; running jest from the repo
+    //     root with `-c packages/core/jest.config.cjs` makes every key below fail
+    //     as "not found" rather than pass vacuously.
+    //
+    // Only lines and branches are pinned. Statements track lines almost exactly
+    // here, and a functions floor on a single file is too coarse to mean anything
+    // (one uncovered arrow in a 4-function module is a 25pt drop).
+    //
+    // The `// measured L / B` annotations are MACHINE-CHECKED, in two halves:
+    //   - coverageFloors.test.ts (GATE-3) asserts each floor sits at or below its
+    //     annotation and within the allowed headroom of it;
+    //   - `npm run test:coverage:annotations` (scripts/check-coverage-annotations.mjs)
+    //     asserts each annotation still equals what the file actually measures,
+    //     reading Jest's json-summary report. They had drifted apart before that
+    //     gate existed, which silently inflated the headroom every raise-the-floor
+    //     decision was based on. Re-measure before editing one; never hand-edit an
+    //     annotation to match a floor.
+    //
+    // Exact match is the rule HERE, with no escape hatch. The mcp-server gate
+    // accepts a declared second reading (`// measured L / B (also L / B: cause)`)
+    // because V8 range coverage reports two values for the same tree; istanbul does
+    // not — three full runs of this suite produced a byte-identical
+    // coverage-summary.json — so the annotations gate rejects that form on this
+    // file. An annotation here that stopped matching is a real change, and the
+    // per-run flapper this config has actually seen (`./src/commands.ts`, via
+    // `process.exitCode` leaking between Jest suites) was fixed in the suite's
+    // hooks, not absorbed by widening the gate.
+
+    // Local filesystem writes and the path-containment guard.
+    './src/FileUtils.ts': { lines: 95, branches: 94 }, // measured 99.60 / 98.65
+    // Everything that mutates the ServiceNow instance, plus the collaboration
+    // lock and the resumable checkpoint that protect a partial push.
+    './src/pushCommand.ts': { lines: 97, branches: 89 }, // measured 100.00 / 95.72
+    './src/pushPipeline.ts': { lines: 96, branches: 91 }, // measured 99.60 / 96.25
+    './src/downloadPipeline.ts': { lines: 97, branches: 91 }, // measured 99.72 / 97.04
+    './src/downloadCheckpoint.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    './src/manifestBuilder.ts': { lines: 95, branches: 90 }, // measured 97.85 / 94.37
+    './src/dataModel.ts': { lines: 97, branches: 94 }, // measured 100.00 / 100.00
+    // Merges and rewrites the data-model documents (SDK-F2).
+    './src/dataModelComposite.ts': { lines: 96, branches: 89 }, // measured 99.58 / 93.75
+    // Deletes local files under `repair --apply --prune`.
+    './src/repairCommand.ts': { lines: 95, branches: 91 }, // measured 97.65 / 95.20
+    // Transport: auth headers, retries and the request surface every command uses.
+    './src/snClient.ts': { lines: 97, branches: 89 }, // measured 99.72 / 95.91
+    // Credentials: the keychain/file store and the auth-method picker.
+    './src/authCommands.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
+    // The instance-host normalizer both of the above go through (#20).
+    './src/instanceHost.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    './src/config.ts': { lines: 96, branches: 91 }, // measured 99.59 / 96.70
+    './src/envFile.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
+    // Scope resolution — a scope code reaches both a URL and a local path.
+    './src/scopeManagement.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    './src/commandHelpers.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
+    './src/commands.ts': { lines: 96, branches: 94 }, // measured 99.53 / 99.04
+    // Spawns plugin processes / watches the tree / drives the interactive setup.
+    './src/PluginManager.ts': { lines: 97, branches: 95 }, // measured 100.00 / 100.00
+    './src/Watcher.ts': { lines: 94, branches: 91 }, // measured 98.02 / 96.66
+    './src/devCommands.ts': { lines: 96, branches: 90 }, // measured 100.00 / 95.65
+    './src/wizard.ts': { lines: 97, branches: 88 }, // measured 100.00 / 92.10
+    './src/gitUtils.ts': { lines: 96, branches: 94 }, // measured 100.00 / 100.00
+    // Shells out to `git` for the mirror's repack, and mints the Authorization
+    // header that §9 relocated out of `@syncrona/mirror` to keep INV-2 (GET-only)
+    // true of the engine — so it holds credential material for a whole sweep.
+    './src/mirrorCommand.ts': { lines: 97, branches: 94 }, // measured 100.00 / 99.01
+    // Drives api/sn_cicd: installs, publishes and rolls back applications, and
+    // maps a run's outcome to the 0 / 1 / 2 exit code automation acts on.
+    './src/cicdCommand.ts': { lines: 94, branches: 89 }, // measured 98.82 / 95.17
+    // Reads records for `query -o json`, whose envelope scripts parse.
+    './src/queryCommand.ts': { lines: 94, branches: 91 }, // measured 97.56 / 97.46
+    // Installs and reinstalls applications through the optional Fluent tier, and
+    // mints the OAuth token the ServiceNow SDK uses for the whole session.
+    './src/fluentCommand.ts': { lines: 95, branches: 93 }, // measured 98.86 / 98.70
+    // Writes the native `.d.ts` from instance metadata: a regression here ships a
+    // type file that silently mistypes columns or drops inherited ones.
+    './src/fluentNativeTypes.ts': { lines: 96, branches: 92 }, // measured 100.00 / 96.95
+    // Rewrites third-party MCP client config files, writes the secrets file that
+    // points the server at an instance, and spawns the server. It had no named
+    // floor while it was the weakest file in the tree; that is what let it fail
+    // the tree-wide floor on Linux by a single line (77.77 lines / 52.27
+    // branches) while macOS measured 83.33 / 68.18 and shipped green.
+    './src/mcpCommand.ts': { lines: 97, branches: 93 }, // measured 100.00 / 98.00
+    // The CLI registry: 25 entries, nearly all one-line delegations, so a floor
+    // on LINES is what
+    // catches an entry that no longer routes anywhere (it declares no branches,
+    // and a branch floor on 0/0 is reported as 100% and would gate nothing).
+    './src/cliCommands.ts': { lines: 96 }, // measured 100.00 lines (0 branches)
+    // `init --new`: derives and validates the scope, resolves the vendor prefix
+    // and inserts the sys_app row — the one command that creates an application
+    // on the instance, so every refusal it makes before that POST is pinned.
+    './src/appCreator.ts': { lines: 97, branches: 94 }, // measured 100.00 / 98.71
+  },
+}

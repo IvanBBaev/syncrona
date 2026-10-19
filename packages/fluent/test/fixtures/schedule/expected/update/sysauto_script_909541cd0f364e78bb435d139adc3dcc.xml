@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<record_update table="sysauto_script">
+  <sysauto_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>909541cd0f364e78bb435d139adc3dcc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysauto_script_909541cd0f364e78bb435d139adc3dcc</sys_update_name>
+    <active>true</active>
+    <advanced>false</advanced>
+    <business_calendar/>
+    <condition/>
+    <conditional>false</conditional>
+    <entered_run_end/>
+    <entered_run_start>2024-01-01 08:00:00</entered_run_start>
+    <entered_time>1970-01-01 23:59:59</entered_time>
+    <max_drift/>
+    <name>Monthly</name>
+    <offset/>
+    <offset_type>2</offset_type>
+    <repeat_every/>
+    <run_as/>
+    <run_as_tz/>
+    <run_dayofmonth>15</run_dayofmonth>
+    <run_dayofweek>1</run_dayofweek>
+    <run_daysofweek/>
+    <run_end/>
+    <run_month>11</run_month>
+    <run_period/>
+    <run_start>2024-01-01 08:00:00</run_start>
+    <run_time>1970-01-01 23:59:59</run_time>
+    <run_type>day_week_month_year</run_type>
+    <run_weekinmonth>2</run_weekinmonth>
+    <script><![CDATA[gs.info("m");]]></script>
+    <sys_name>Monthly</sys_name>
+    <sys_policy/>
+    <time_zone>floating</time_zone>
+    <upgrade_safe>false</upgrade_safe>
+  </sysauto_script>
+</record_update>

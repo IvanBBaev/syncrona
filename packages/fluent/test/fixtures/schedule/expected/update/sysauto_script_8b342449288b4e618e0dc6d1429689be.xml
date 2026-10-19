@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<record_update table="sysauto_script">
+  <sysauto_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8b342449288b4e618e0dc6d1429689be</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysauto_script_8b342449288b4e618e0dc6d1429689be</sys_update_name>
+    <active>true</active>
+    <advanced>false</advanced>
+    <business_calendar/>
+    <condition><![CDATA[answer = gs.getProperty('x') == 'true';]]></condition>
+    <conditional>true</conditional>
+    <entered_run_end>2025-12-31 23:59:59</entered_run_end>
+    <entered_run_start>2024-01-01 00:00:00</entered_run_start>
+    <entered_time>1970-01-01 02:30:05</entered_time>
+    <max_drift/>
+    <name>Daily NY</name>
+    <offset/>
+    <offset_type>0</offset_type>
+    <repeat_every/>
+    <run_as/>
+    <run_as_tz/>
+    <run_dayofmonth>1</run_dayofmonth>
+    <run_dayofweek>1</run_dayofweek>
+    <run_daysofweek/>
+    <run_end>2026-01-01 04:59:59</run_end>
+    <run_month/>
+    <run_period/>
+    <run_start>2024-01-01 05:00:00</run_start>
+    <run_time>1970-01-01 07:30:05</run_time>
+    <run_type>daily</run_type>
+    <run_weekinmonth/>
+    <script><![CDATA[gs.info('included scheduled');
+]]></script>
+    <sys_name>Daily NY</sys_name>
+    <sys_policy/>
+    <time_zone>America/New_York</time_zone>
+    <upgrade_safe>false</upgrade_safe>
+  </sysauto_script>
+</record_update>

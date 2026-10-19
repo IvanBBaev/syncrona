@@ -1,0 +1,370 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// chokidar 5 is ESM-only with named exports — no default export (DEP1).
+import { watch } from "chokidar";
+import type { FSWatcher } from "chokidar";
+import { logFilePush } from "./logMessages.js";
+// lodash is CommonJS; under ESM its named exports are not statically detectable
+// by Node, so import the default and destructure the method we need.
+import lodash from "lodash";
+import { getFileContextFromPath } from "./FileUtils.js";
+import { Sync } from "@syncrona/types";
+import { groupAppFiles, pushFiles } from "./appUtils.js";
+import * as ConfigManager from "./config.js";
+import { logger } from "./Logger.js";
+import {
+  LAYOUT_CONFLICT_HINT,
+  strayCompositeSidecarMessage,
+  strayCompositeSidecarTable,
+} from "./dataModelComposite.js";
+const { debounce } = lodash;
+const DEBOUNCE_MS = 300;
+// Self-driving retry backoff for a failed batch. A failed push requeues its
+// files — whether the drain THREW or pushFiles RESOLVED per-record failures
+// (pushRec converts every transport/HTTP error into a resolved
+// { success: false } result, so the common failure mode never throws) — but
+// nothing guarantees another fs event will ever arrive to drive the next
+// drain, so the requeued changes would strand indefinitely. Instead the drain
+// schedules its own retry on a capped exponential backoff.
+const RETRY_BASE_MS = 500;
+const MAX_RETRY_MS = 30_000;
+let pushQueue: string[] = [];
+let watcher: FSWatcher | undefined = undefined;
+// Serializes queue processing: changes arriving while a push is in flight are
+// queued and handled in one follow-up run instead of a concurrent push.
+let processing = false;
+// Pending self-driving retry and its backoff step. Both are cleared on any
+// full, failure-free drain and on stopWatching so a recovered watcher does not
+// keep firing retries or carry a stale backoff into the next failure.
+let retryTimer: NodeJS.Timeout | undefined = undefined;
+let retryAttempt = 0;
+// #17: paths already reported as untracked in this session. Editors save the
+// same file over and over, and the warning is guidance ("run refresh"), not an
+// event log — one line per save would bury everything else in the dev output.
+// Cleared by stopWatching along with the rest of the session state.
+let warnedUntracked = new Set<string>();
+// SDK-F2: paths already reported as a stray per-record sidecar of a composite
+// table, for the same reason — one warning per path per session.
+let warnedStraySidecar = new Set<string>();
+// Paths deleted since they were last added or changed. The drain empties the
+// queue before it pushes, so a file deleted while its batch is in flight is not
+// in the queue for fileUnlinked to remove — a failed push must not requeue it.
+let deletedPaths = new Set<string>();
+const notDeleted = (queued: string): boolean => !deletedPaths.has(queued);
+// Bumped by stopWatching. A drain remembers the session it started in: a push
+// still in flight when the watcher stops belongs to a session that no longer
+// exists, so its files must not be requeued or retried into the next one.
+let session = 0;
+
+/**
+ * True when `filePath` is a per-record sidecar of a table whose metadata the
+ * `composite` layout keeps in the data-model documents. `push` refuses such a
+ * file; `dev` must not push it either, or the copy that reaches the instance
+ * would depend on which of the two files was saved last. Warned once per path.
+ * Without a loadable config nothing is composite, so nothing is skipped.
+ */
+const skipStrayCompositeSidecar = (filePath: string): boolean => {
+  let table: string | undefined;
+  try {
+    table = strayCompositeSidecarTable(
+      filePath,
+      ConfigManager.getSourcePath(),
+      ConfigManager.getConfig()
+    );
+  } catch {
+    return false;
+  }
+  if (table === undefined) return false;
+  if (!warnedStraySidecar.has(filePath)) {
+    warnedStraySidecar.add(filePath);
+    logger.warn(
+      `Change ignored: ${strayCompositeSidecarMessage(filePath, table)} It will not be pushed. ` +
+        LAYOUT_CONFLICT_HINT
+    );
+  }
+  return true;
+};
+
+// Arms the self-driving retry on the capped exponential backoff. Guarded
+// against stacking so overlapping failures schedule at most one pending retry.
+const scheduleRetry = (): void => {
+  if (retryTimer) {
+    return;
+  }
+  const delay = Math.min(RETRY_BASE_MS * 2 ** retryAttempt, MAX_RETRY_MS);
+  retryAttempt += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined;
+    void drainQueue();
+  }, delay);
+  // A pending retry must not by itself keep the Node process alive.
+  retryTimer.unref();
+};
+
+const drainQueue = async (): Promise<void> => {
+  if (processing) {
+    return;
+  }
+  processing = true;
+  let drainSession = session;
+  // Tracks the batch currently being pushed so it can be requeued if the push
+  // throws — the queue is cleared before the push runs, so without this those
+  // file changes would be silently dropped and never retried.
+  let inFlight: string[] = [];
+  try {
+    while (pushQueue.length > 0) {
+      // dedupe pushes
+      const toProcess = Array.from(new Set([...pushQueue]));
+      pushQueue = [];
+      inFlight = toProcess;
+      // Queue-depth visibility: a mass update (e.g. a 50-file git checkout)
+      // lands here as one batch — surface its size so the user can tell a
+      // flood apart from a normal save. Single-file drains stay quiet.
+      if (toProcess.length > 1) {
+        logger.info(`Pushing ${toProcess.length} queued file changes.`);
+      }
+      // REV-110 (CONC-6): the dev session loaded the manifest once at startup
+      // and holds it in memory. A concurrent `refresh`/`repair` may have
+      // rewritten sync.manifest.json (e.g. a record's sys_id changed) since
+      // then; resolving paths against the stale in-memory copy would push to
+      // the wrong sys_id. Re-read the manifest from disk before resolving so
+      // each drain routes to the current record. A transient read failure
+      // preserves the existing manifest (see ConfigManager.reloadManifest).
+      await ConfigManager.reloadManifest();
+      if (drainSession !== session) {
+        // Stopped while the manifest was reloading: the batch is from the
+        // previous session. Drop it and carry on with whatever the new one queued.
+        inFlight = [];
+        drainSession = session;
+        continue;
+      }
+      const pathContexts: { queuedPath: string; ctx: Sync.FileContext }[] = [];
+      for (const queuedPath of toProcess) {
+        if (skipStrayCompositeSidecar(queuedPath)) continue;
+        const ctx = getFileContextFromPath(queuedPath);
+        if (ctx) {
+          pathContexts.push({ queuedPath, ctx });
+          // Resolvable again — a later `refresh` may have registered it, so the
+          // next time it goes missing the user hears about it afresh.
+          warnedUntracked.delete(queuedPath);
+          continue;
+        }
+        // #17: "add" already reports an untracked file; "change" dropped it
+        // without a word. Editing a file the manifest does not claim — renamed
+        // away, removed by a concurrent refresh, or never registered — then
+        // looked exactly like a healthy save: no push, no error, no output,
+        // while `dev` kept reporting itself as watching.
+        if (!warnedUntracked.has(queuedPath)) {
+          warnedUntracked.add(queuedPath);
+          logger.warn(
+            `Change ignored: ${queuedPath} — it is not tracked by the manifest, so it will not be pushed. Run "syncrona refresh" (or "syncrona repair") to register it.`
+          );
+        }
+      }
+      const fileContexts = pathContexts.map((pc) => pc.ctx);
+      const buildables = groupAppFiles(fileContexts);
+      const contextByBuildable = new Map<string, Sync.FileContext>();
+      // Queued paths per record, so a record whose push failed can requeue
+      // exactly the files that produced it instead of the whole batch.
+      const pathsByBuildable = new Map<string, string[]>();
+      for (const { queuedPath, ctx } of pathContexts) {
+        const key = `${ctx.tableName}-${ctx.sys_id}`;
+        if (!contextByBuildable.has(key)) {
+          contextByBuildable.set(key, ctx);
+        }
+        const paths = pathsByBuildable.get(key);
+        if (paths) {
+          paths.push(queuedPath);
+        } else {
+          pathsByBuildable.set(key, [queuedPath]);
+        }
+      }
+
+      const updateResults = await pushFiles(buildables);
+      const failedPaths: string[] = [];
+      const finalFailedPaths: string[] = [];
+      updateResults.forEach((res, index) => {
+        const buildable = buildables[index];
+        if (!buildable) {
+          return;
+        }
+
+        const key = `${buildable.table}-${buildable.sysId}`;
+        const ctx = contextByBuildable.get(key);
+        if (ctx) {
+          logFilePush(ctx, res);
+        }
+        if (!res.success) {
+          // A failure only a change can fix (the file does not build, the
+          // record is gone, the instance refused the request) would fail the
+          // same way on every retry, so it is not requeued: the next save of
+          // the file queues it again.
+          const target = res.retryable === false ? finalFailedPaths : failedPaths;
+          target.push(...(pathsByBuildable.get(key) ?? []));
+        }
+      });
+      // Batch handed off — a later batch's throw must not requeue it
+      // wholesale; per-record failures are requeued selectively below.
+      inFlight = [];
+      if (drainSession !== session) {
+        // Stopped mid-push: the failures belong to the previous session.
+        drainSession = session;
+        continue;
+      }
+      if (finalFailedPaths.length > 0) {
+        logger.warn(
+          `${finalFailedPaths.length} file(s) failed to push and will not be retried — ` +
+            "fix the cause shown above and save the file again."
+        );
+      }
+      if (failedPaths.length > 0) {
+        // pushFiles RESOLVES per-record failures (pushRec converts every
+        // transport/HTTP error into a { success: false } result), so the
+        // common failure mode — instance unreachable, expired auth, 5xx —
+        // never reaches the catch below. Requeue the failed files and drive
+        // the same backoff ladder; otherwise those changes would be dropped
+        // until the user happens to re-save the file.
+        pushQueue = Array.from(new Set([...failedPaths.filter(notDeleted), ...pushQueue]));
+        logger.warn(
+          `${failedPaths.length} file(s) failed to push — retrying automatically.`
+        );
+        scheduleRetry();
+        return;
+      }
+    }
+    // Full, failure-free drain: reset the backoff ladder and cancel any pending
+    // self-driving retry — the queue is empty, so there is nothing left to
+    // retry and the next failure should start the backoff from scratch.
+    retryAttempt = 0;
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
+  } catch (e) {
+    // Requeue the in-flight batch (ahead of anything that arrived since) so the
+    // failed changes are retried on the next drain instead of being lost.
+    // A batch from a session that has since stopped is dropped, not requeued.
+    const sameSession = drainSession === session;
+    if (sameSession && inFlight.length > 0) {
+      pushQueue = Array.from(new Set([...inFlight.filter(notDeleted), ...pushQueue]));
+    }
+    let message;
+    if (e instanceof Error) {
+      message = e.message;
+    } else {
+      message = String(e);
+    }
+    logger.error("Watcher queue processing failed");
+    logger.error(message);
+    // Drive the next drain ourselves: without a guaranteed future fs event the
+    // requeued batch would otherwise never be retried.
+    if (sameSession || pushQueue.length > 0) {
+      scheduleRetry();
+    }
+  } finally {
+    processing = false;
+  }
+};
+
+const processQueue = debounce(() => {
+  void drainQueue();
+}, DEBOUNCE_MS);
+
+export function startWatching(directory: string) {
+  watcher = watch(directory, {
+    // Chokidar fires "add" for every pre-existing file during its initial
+    // scan; without this flag a fresh watch session would flood the push
+    // queue with the entire source tree on startup.
+    ignoreInitial: true,
+    // Editors commonly save atomically (write a temp file, then rename over
+    // the target) or flush in several chunks. Waiting until the file size has
+    // been stable avoids pushing half-written content. Conservative values:
+    // 200ms of stability polled every 50ms adds imperceptible latency to a
+    // manual save while covering slow multi-chunk writes.
+    awaitWriteFinish: {
+      stabilityThreshold: 200,
+      pollInterval: 50,
+    },
+  });
+  watcher.on("change", fileChanged);
+  watcher.on("add", fileAdded);
+  watcher.on("unlink", fileUnlinked);
+  watcher.on("error", watcherError);
+}
+
+async function fileChanged(path: string) {
+  deletedPaths.delete(path);
+  pushQueue.push(path);
+  processQueue();
+}
+
+function fileAdded(path: string): void {
+  // With ignoreInitial enabled this only fires for files that appear after
+  // startup. A new file is only pushable when the manifest already tracks it
+  // (e.g. a tracked file restored via `git checkout` or re-created after a
+  // local delete): getFileContextFromPath resolves paths through the manifest
+  // and returns undefined for unknown files, which drainQueue would then
+  // silently drop. Surface the untracked case instead of pretending to sync.
+  deletedPaths.delete(path);
+  if (skipStrayCompositeSidecar(path)) return;
+  let tracked = false;
+  try {
+    tracked = Boolean(getFileContextFromPath(path));
+  } catch {
+    // No manifest loaded — treat the file as untracked and log guidance.
+  }
+  if (tracked) {
+    pushQueue.push(path);
+    processQueue();
+    return;
+  }
+  logger.warn(
+    `New file detected: ${path} — it is not tracked by the manifest, so it will not be pushed. Run "syncrona refresh" (or "syncrona repair") to register it.`
+  );
+}
+
+function fileUnlinked(path: string): void {
+  // A deleted file has nothing left to push. Left in the queue (a failed batch
+  // is requeued), it would fail every retry — and when it was the stale copy
+  // of an "Ambiguous push", block every other save, since later changes join
+  // the same batch. A re-created file comes back through "add" or "change".
+  deletedPaths.add(path);
+  pushQueue = pushQueue.filter(notDeleted);
+  logger.warn(
+    `File deleted locally: ${path} — delete propagation is not supported, so the instance record is unchanged. Run "syncrona repair" to reconcile the manifest.`
+  );
+}
+
+function watcherError(error: unknown): void {
+  // A failed watcher means local edits silently stop syncing — make that
+  // failure mode explicit but keep the process alive so an in-flight push
+  // (and a possible watcher recovery) can still complete.
+  const message = error instanceof Error ? error.message : String(error);
+  logger.error(`File watcher error: ${message}`);
+  logger.error(
+    'Watching may be degraded — local changes may silently stop syncing. If pushes stop appearing, restart "syncrona dev".'
+  );
+}
+
+export async function stopWatching(): Promise<void> {
+  // Cancel any pending self-driving retry and reset the backoff so a restarted
+  // watcher does not inherit a stale timer or backoff step.
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  }
+  retryAttempt = 0;
+  session += 1;
+  // Drop queued/requeued paths as well: a watcher restarted in the same
+  // process must not push stale changes from the previous session.
+  pushQueue = [];
+  // The "already told you" set is session state too: a restarted `dev` must
+  // warn again about a file it never warned about in THIS run.
+  warnedUntracked = new Set<string>();
+  warnedStraySidecar = new Set<string>();
+  deletedPaths = new Set<string>();
+  if (watcher) {
+    const current = watcher;
+    watcher = undefined;
+    await current.close();
+  }
+}

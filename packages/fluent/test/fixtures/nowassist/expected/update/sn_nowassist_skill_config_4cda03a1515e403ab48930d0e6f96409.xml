@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sn_nowassist_skill_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4cda03a1515e403ab48930d0e6f96409</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_nowassist_skill_config_4cda03a1515e403ab48930d0e6f96409</sys_update_name>
+    <description>AI-powered customer support assistant</description>
+    <internal_name>customer_support_helper.4cda03a1515e403ab48930d0e6f96409</internal_name>
+    <name>Customer Support Helper</name>
+    <nap_skill_applicability/>
+    <skill_family>a5efaf1c93764210aa5730f16489186d</skill_family>
+    <skill_id>e0156365ac94450b86885804ae35ed6b</skill_id>
+    <skill_table>sys_one_extend_capability</skill_table>
+    <state>0</state>
+    <internal_name>customer_support_helper.4cda03a1515e403ab48930d0e6f96409</internal_name>
+  </sn_nowassist_skill_config>
+</record_update>

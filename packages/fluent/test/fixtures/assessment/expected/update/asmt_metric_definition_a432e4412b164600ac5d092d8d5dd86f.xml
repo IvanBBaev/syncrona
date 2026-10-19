@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="asmt_metric_definition">
+  <asmt_metric_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a432e4412b164600ac5d092d8d5dd86f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>asmt_metric_definition_a432e4412b164600ac5d092d8d5dd86f</sys_update_name>
+    <display>1</display>
+    <metric>44107a5cb6b5464489a4f8616fbdfe8d</metric>
+    <normalization_input>0</normalization_input>
+    <order>1</order>
+    <value>1</value>
+  </asmt_metric_definition>
+</record_update>

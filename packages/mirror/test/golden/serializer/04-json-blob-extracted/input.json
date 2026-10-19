@@ -1,0 +1,16 @@
+{
+  "description": "A JSON-blob column with an extension becomes a canonical sibling document: object keys sorted at every level, ARRAY order preserved (an array is ordered data, not a key set), two-space indent, one trailing newline.",
+  "table": {
+    "name": "sys_hub_flow",
+    "fields": [
+      { "element": "name" },
+      { "element": "snapshot", "internalType": "string", "isJsonBlob": true, "extractAs": "json" },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "33cc44dd55ee66ff778899aabbccddee",
+    "name": "Approval flow",
+    "snapshot": "{\"steps\":[{\"order\":2,\"id\":\"b\"},{\"order\":1,\"id\":\"a\"}],\"name\":\"Flow\",\"active\":true}"
+  }
+}

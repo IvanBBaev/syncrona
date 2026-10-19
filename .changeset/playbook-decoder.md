@@ -1,0 +1,5 @@
+---
+"syncrona": minor
+---
+
+- Add a read-only Process Automation Designer playbook reader in `packages/core/src/flow/`, the playbook counterpart of the flow decoder. `readPlaybookDocument` reads one `sys_pd_process_definition` row and its lanes, activities, trigger instances, process inputs and outputs, variants and timer attributes through the Table API, plus the `sys_variable_value` rows that hold the `glide_var` columns (`launcher_inputs`, `start_rule_vars`, activity `inputs` / `outputs` / `type_vals`, `trigger_inputs`), which the Table API returns empty. `assemblePlaybookDocument` (schema `syncrona.playbook/1`) nests activities under their lanes ordered by `order`, attaches each row's variable values named by their dictionary element, decodes the JSON columns (`designer_state`, `permission`), drops audit stamps, and replaces secret-typed variable values and input defaults with `<redacted:type>`. Activities whose lane is not part of the playbook are kept under `unassigned` and listed in `warnings`. `serializePlaybookDocument` writes deterministic JSON. Runtime tables (contexts, executions, logs) are never read. No command uses it yet.

@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_agent">
+  <sn_aia_agent action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>33c0da38ee2342b1a36cb7545c7fd645</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_agent_33c0da38ee2342b1a36cb7545c7fd645</sys_update_name>
+    <acl>ad32fa4dbc73429fbd697dd317288c1c</acl>
+    <active>true</active>
+    <advanced_mode>false</advanced_mode>
+    <agent_type>internal</agent_type>
+    <channel>nap_and_va</channel>
+    <compiled_handbook/>
+    <condition/>
+    <context_processing_script>/*
+ * Available Variables:
+ * - task: The task provided to agent to solve either by orchestrator or user(incase of only agent execution i.e agent is invoked as seperate entity instead from a workflow).
+ * - user_utterance: The user utterance provided. and task = user_utterance in case of individual agent execution.
+ * - agent_id: The agent id.
+ * - context: An object that carries additional contextual information for the agent.
+ * It always includes a "pageContext" and may include a "triggerContext",
+ * depending on how and from where the agent is invoked.
+ *
+ * Behavior by invocation type:
+ * ---------------------------------
+ * - When invoked via the startAiAgentConversation API:
+ * If a "contextMemory" parameter is provided in the API request,
+ * it will be available here as the "triggerContext".
+ * The "pageContext" is always present in this call, regardless
+ * of whether the agent is executed individually or as part of a use case.
+ * Example:
+ * {
+ * pageContext: { ... },
+ * triggerContext: { ... } // Derived from contextMemory (if passed)
+ * }
+ *
+ * - When invoked as part of a use case or workflow:
+ * The "pageContext" and "triggerContext" objects available here
+ * may have been *modified* by the use case's context processing script.
+ * This means the use case may alter, extend, or overwrite values
+ * from the original "pageContext" or "triggerContext"
+ * before the context reaches the agent.
+ * If the use case was originally triggered via the API,
+ * the initial "triggerContext" is still derived from the
+ * "contextMemory" parameter, but its contents may have been updated
+ * by the use case logic.
+ *
+ * - When executed directly (standalone agent execution):
+ * The "pageContext" will always be present (default or empty),
+ * and the "triggerContext" will only be populated if explicitly
+ * passed through the API call.
+ * Return an modified context like: { pageContext : {},triggerContext:{} }
+ */
+(function(task, user_utterance, agent_id, context) {
+	return {
+		pageContext : context?.pageContext,
+		triggerContext : context?.triggerContext
+	};
+})(task,user_utterance, agent_id, context);</context_processing_script>
+    <description>Minimal</description>
+    <external>false</external>
+    <external_agent_configuration/>
+    <instructions/>
+    <internal_name>global.x_snc_bprobe.Minimal Agent</internal_name>
+    <name>Minimal Agent</name>
+    <parent/>
+    <post_processing_message/>
+    <processing_message/>
+    <record_type>template</record_type>
+    <role>Assistant</role>
+    <source_id/>
+    <strategy>f0bff21f9f13c6108f431597d90a1c74</strategy>
+    <sys_domain>global</sys_domain>
+  </sn_aia_agent>
+</record_update>

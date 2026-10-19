@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_widget_dependency">
+  <m2m_sp_widget_dependency action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5d2442c9ae6549028e753e062ba22a92</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_widget_dependency_5d2442c9ae6549028e753e062ba22a92</sys_update_name>
+    <sp_dependency>2de1475032444377be5a8c937db70d52</sp_dependency>
+    <sp_widget>344a7f5749134f4fac04f211f1c4b7bb</sp_widget>
+  </m2m_sp_widget_dependency>
+</record_update>

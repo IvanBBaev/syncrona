@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_script_include">
+  <sys_script_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>898d6b077f5b480e93938c1fb5b49273</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_script_include_898d6b077f5b480e93938c1fb5b49273</sys_update_name>
+    <access>package_private</access>
+    <active>true</active>
+    <api_name>x_snc_bprobe.OvrSI</api_name>
+    <caller_access/>
+    <client_callable>false</client_callable>
+    <description>d</description>
+    <mobile_callable>false</mobile_callable>
+    <name>OvrSI</name>
+    <sandbox_callable>false</sandbox_callable>
+    <script><![CDATA[var OvrSI = Class.create();
+]]></script>
+    <sys_class_name>sys_script_include</sys_class_name>
+    <sys_name>OvrSI</sys_name>
+    <sys_policy>read</sys_policy>
+    <x_snc_bprobe_flag>0</x_snc_bprobe_flag>
+  </sys_script_include>
+</record_update>

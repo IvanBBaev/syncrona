@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="par_dashboard_visibility">
+  <par_dashboard_visibility action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0086d6b035ea40cdab5e028a9efb3203</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>par_dashboard_visibility_0086d6b035ea40cdab5e028a9efb3203</sys_update_name>
+    <dashboard>c0f9eba0f59d4d90950ffb78abc0dc2d</dashboard>
+    <experience>08c73d60537101100834ddeeff7b1287</experience>
+  </par_dashboard_visibility>
+</record_update>

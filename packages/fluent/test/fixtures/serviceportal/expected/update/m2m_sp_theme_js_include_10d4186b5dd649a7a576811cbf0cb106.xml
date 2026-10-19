@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_theme_js_include">
+  <m2m_sp_theme_js_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>10d4186b5dd649a7a576811cbf0cb106</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_theme_js_include_10d4186b5dd649a7a576811cbf0cb106</sys_update_name>
+    <order>100</order>
+    <sp_js_include>4fe8e62547c94fb7b33fa1e728a12cdb</sp_js_include>
+    <sp_theme>0577c28b5d63489592bc97092e3af7e7</sp_theme>
+  </m2m_sp_theme_js_include>
+</record_update>

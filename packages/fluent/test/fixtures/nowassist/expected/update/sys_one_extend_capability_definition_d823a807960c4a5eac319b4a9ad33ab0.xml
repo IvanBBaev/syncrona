@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sys_one_extend_capability_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d823a807960c4a5eac319b4a9ad33ab0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_one_extend_capability_definition_d823a807960c4a5eac319b4a9ad33ab0</sys_update_name>
+    <api>936e514a53b3b110f028ddeeff7b128c</api>
+    <api_type>sys_hub_flow</api_type>
+    <capability>e0156365ac94450b86885804ae35ed6b</capability>
+    <description>Definition for Customer Support Helper</description>
+    <name>Customer Support Helper (Now LLM Service)</name>
+    <truncate_strategy>2b99e1137fb20210f465c3b76d86650d</truncate_strategy>
+  </sys_one_extend_capability_definition>
+</record_update>

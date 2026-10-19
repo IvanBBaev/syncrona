@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_documentation">
+  <sys_documentation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dc2957c7a96d4af68144d39fecb71f40</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_documentation_x_snc_bprobe_ovr_title_en</sys_update_name>
+    <element>title</element>
+    <help/>
+    <hint/>
+    <label>Title</label>
+    <language>en</language>
+    <name>x_snc_bprobe_ovr</name>
+    <plural>Titles</plural>
+    <url/>
+    <url_target/>
+  </sys_documentation>
+</record_update>

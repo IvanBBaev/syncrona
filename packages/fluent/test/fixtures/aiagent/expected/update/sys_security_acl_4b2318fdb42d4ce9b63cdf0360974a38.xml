@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl">
+  <sys_security_acl action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4b2318fdb42d4ce9b63cdf0360974a38</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_4b2318fdb42d4ce9b63cdf0360974a38</sys_update_name>
+    <active>true</active>
+    <admin_overrides>true</admin_overrides>
+    <advanced>false</advanced>
+    <decision_type>allow</decision_type>
+    <local_or_existing>Existing</local_or_existing>
+    <name>global.x_snc_bprobe.Full Agent</name>
+    <operation>execute</operation>
+    <security_attribute/>
+    <type>fc55e9f79f8222109570e67e8a0a1c34</type>
+  </sys_security_acl>
+</record_update>

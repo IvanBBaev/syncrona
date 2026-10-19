@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_graphql_resolver">
+  <sys_graphql_resolver action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3c37de31b24e4f1dbf068367fd48935f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_graphql_resolver_3c37de31b24e4f1dbf068367fd48935f</sys_update_name>
+    <name>pets</name>
+    <schema>7e13ee453839472f89318d37f909bfa2</schema>
+    <script><![CDATA[return [{ name: "Rex", barks: true }];]]></script>
+  </sys_graphql_resolver>
+</record_update>

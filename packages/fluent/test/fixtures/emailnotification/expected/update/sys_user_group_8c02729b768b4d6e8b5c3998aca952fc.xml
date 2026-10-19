@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<record_update table="sys_user_group">
+  <sys_user_group action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8c02729b768b4d6e8b5c3998aca952fc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_user_group_8c02729b768b4d6e8b5c3998aca952fc</sys_update_name>
+    <name>Probe Group</name>
+  </sys_user_group>
+</record_update>

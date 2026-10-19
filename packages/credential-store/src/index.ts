@@ -1,0 +1,981 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * @syncrona/credential-store
+ *
+ * Single source of truth for SyncroNow AI's at-rest credential storage. Both the
+ * core CLI (async API) and the MCP server (sync API) consume this package so
+ * the crypto format, key derivation, file naming, and on-disk layout never
+ * diverge between the two processes.
+ *
+ * Security note: the encryption key is resolved by `getStoreKey()` (AR2/D5) with
+ * the precedence SYNCRONA_STORE_KEY (explicit, for CI / secrets managers) > OS
+ * keychain (DEFAULT backend; needs the optional @napi-rs/keyring, opt out with
+ * SYNCRONA_USE_KEYCHAIN=0) > the legacy machine-derived key. When the keychain
+ * or @napi-rs/keyring is unavailable the resolver falls back to the
+ * machine-derived key automatically, and reads retry with it so stores written
+ * before D5 keep decrypting. The machine-derived key is only obfuscation-grade —
+ * anyone able to run as the same user on the same host can decrypt files written
+ * with it; the keychain (now default) or an explicit key gives real at-rest
+ * protection. See the core README "Credential storage security" section.
+ */
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from "crypto";
+import {
+  existsSync,
+  mkdirSync,
+  promises as fsp,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+} from "fs";
+import os from "os";
+import path from "path";
+
+/**
+ * ServiceNow authentication method persisted alongside a login. Kept as a local
+ * union (rather than imported from `@syncrona/sn-transport`) because the
+ * foundation packages must not depend on each other — this package is the single
+ * normalizer for the *stored* value, mirroring {@link JiraDeploymentKind}.
+ */
+export type StoredAuthMethod =
+  | "basic"
+  | "oauth-password"
+  | "oauth-client-credentials"
+  | "oauth-jwt-bearer"
+  | "api-key";
+
+const STORED_AUTH_METHODS: readonly StoredAuthMethod[] = [
+  "basic",
+  "oauth-password",
+  "oauth-client-credentials",
+  "oauth-jwt-bearer",
+  "api-key",
+];
+
+export type StoredCredentials = {
+  instance: string;
+  user: string;
+  password: string;
+  /**
+   * Explicit auth method selector. Absent on legacy three-field stores (Basic /
+   * OAuth-password are inferred by the caller for backward compatibility).
+   */
+  authMethod?: StoredAuthMethod;
+  /** OAuth client id — client-credentials / jwt-bearer / password grants. */
+  clientId?: string;
+  /** OAuth client secret — stored encrypted like the password. */
+  clientSecret?: string;
+  /** Inbound REST API key value — stored encrypted like the password. */
+  apiKey?: string;
+  /** API-key header name override (default `x-sn-apikey`). */
+  apiKeyHeader?: string;
+  /**
+   * Path to the JWT-bearer signing key (PEM). Referenced by path — the key
+   * material itself is never copied into the encrypted store.
+   */
+  jwtKeyPath?: string;
+  jwtKid?: string;
+  jwtIss?: string;
+  jwtSub?: string;
+  jwtAud?: string;
+  /** mTLS client certificate path — referenced by path, never inlined. */
+  clientCertPath?: string;
+  /** mTLS client private key path — referenced by path, never inlined. */
+  clientKeyPath?: string;
+  /** Passphrase protecting the mTLS client key — stored encrypted. */
+  clientKeyPassphrase?: string;
+};
+
+type GlobalConfig = {
+  activeInstance?: string;
+};
+
+const ALGORITHM = "aes-256-gcm";
+const KEY_LENGTH = 32;
+const IV_LENGTH = 16;
+/** GCM authentication tag length in bytes — full 128-bit tag, never truncated. */
+const GCM_TAG_LENGTH = 16;
+const STORE_SALT = "syncrona-credential-store-v1";
+
+/** True when `value` is exactly `bytes` bytes of valid hex (even length, case-insensitive). */
+function isHexOfBytes(value: string, bytes: number): boolean {
+  return value.length === bytes * 2 && /^[0-9a-fA-F]+$/.test(value);
+}
+
+export function getSyncronaDir(): string {
+  return path.join(os.homedir(), ".syncrona");
+}
+
+function getCredentialsDir(): string {
+  return path.join(getSyncronaDir(), "credentials");
+}
+
+function getConfigFile(): string {
+  return path.join(getSyncronaDir(), "config.json");
+}
+
+export function instanceToFilename(instance: string): string {
+  // Reversible, collision-free encoding — same rationale as jiraProfileToFilename.
+  // The old `replace(/[^a-zA-Z0-9.-]/g, "_")` was lossy: distinct instances that
+  // differ only in unsafe characters (e.g. "a:b" vs "a_b", or a full URL vs its
+  // host) collapsed to one file, silently overwriting one login, and could not be
+  // round-tripped by filenameToInstance/listInstances. Back-compatible: a normal
+  // ServiceNow host (letters, digits, ".", "-") is left untouched by both schemes,
+  // so credential files written under the old scheme still resolve unchanged.
+  return encodeURIComponent(instance) + ".enc";
+}
+
+export function filenameToInstance(filename: string): string {
+  return decodeURIComponent(filename.replace(/\.enc$/, ""));
+}
+
+function credentialFilePath(instance: string): string {
+  return path.join(getCredentialsDir(), instanceToFilename(instance));
+}
+
+export function getMachineKey(): Buffer {
+  let userName = "";
+  try {
+    userName = os.userInfo().username;
+  } catch {
+    userName = "";
+  }
+  const machineId = `${os.hostname()}:${userName}:${STORE_SALT}`;
+  return scryptSync(machineId, STORE_SALT, KEY_LENGTH);
+}
+
+/* ----------------------------------------------------------------------------
+ * At-rest key resolution (AR2 + D5)
+ *
+ * The file-encryption key is resolved with this precedence:
+ *   1. SYNCRONA_STORE_KEY  — an explicit 32-byte key (64 hex chars or base64),
+ *      for CI and secrets managers.
+ *   2. OS keychain         — a random 256-bit master key kept in the OS keychain.
+ *      DEFAULT backend (D5); needs the optional @napi-rs/keyring. Opt out with
+ *      SYNCRONA_USE_KEYCHAIN=0 (e.g. headless CI with no keychain).
+ *   3. Machine-derived key — the legacy obfuscation-grade fallback, used
+ *      automatically when the keychain / @napi-rs/keyring is unavailable.
+ *
+ * Reads fall back to the legacy machine key so stores written before this
+ * change keep decrypting; the next `login` re-encrypts with the resolved key.
+ * ------------------------------------------------------------------------- */
+
+const STORE_KEY_ENV = "SYNCRONA_STORE_KEY";
+const USE_KEYCHAIN_ENV = "SYNCRONA_USE_KEYCHAIN";
+const KEYCHAIN_SERVICE = "syncrona-credential-store";
+const KEYCHAIN_ACCOUNT = "store-master-key";
+
+export type StoreKeySource = "env" | "keychain" | "machine";
+
+type KeyringEntry = {
+  getPassword(): string | null;
+  setPassword(pw: string): void;
+};
+type KeyringModule = {
+  Entry: new (service: string, account: string) => KeyringEntry;
+};
+
+let cachedStoreKey: { key: Buffer; source: StoreKeySource } | null = null;
+
+function parseKeyMaterial(raw: string): Buffer | null {
+  const value = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return Buffer.from(value, "hex");
+  try {
+    const b = Buffer.from(value, "base64");
+    if (b.length === KEY_LENGTH) return b;
+  } catch {
+    // not valid base64 — fall through
+  }
+  return null;
+}
+
+function keyFromEnv(): Buffer | null {
+  const raw = process.env[STORE_KEY_ENV];
+  if (!raw || !raw.trim()) return null;
+  const key = parseKeyMaterial(raw);
+  if (!key) {
+    throw new Error(
+      `${STORE_KEY_ENV} must be a 32-byte key encoded as 64 hex characters or base64.`
+    );
+  }
+  return key;
+}
+
+function isKeychainEnabled(): boolean {
+  // D5: the OS keychain is the DEFAULT at-rest backend. Only an explicit falsey
+  // opt-out disables it (e.g. SYNCRONA_USE_KEYCHAIN=0 on a headless CI box with
+  // no keychain). When enabled but the keychain / @napi-rs/keyring is
+  // unavailable, keyFromKeychain returns null and getStoreKey falls back to the
+  // legacy machine-derived key, so this is safe to default on.
+  const flag = (process.env[USE_KEYCHAIN_ENV] || "").trim().toLowerCase();
+  if (flag === "0" || flag === "false" || flag === "no") {
+    return false;
+  }
+  return true;
+}
+
+function openKeychainEntry(): KeyringEntry | null {
+  try {
+    // Optional native dependency — absent or unloadable on unsupported platforms.
+    // Loaded lazily via require so an absent optional dep never breaks module load.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("@napi-rs/keyring") as KeyringModule;
+    return new mod.Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+  } catch {
+    return null;
+  }
+}
+
+const PROVISION_LOCK_DIRNAME = "store-key.lock";
+const PROVISION_LOCK_WAIT_MS = 250;
+const PROVISION_LOCK_POLL_MS = 25;
+const PROVISION_LOCK_STALE_MS = 5000;
+
+function provisionLockPath(): string {
+  return path.join(getSyncronaDir(), PROVISION_LOCK_DIRNAME);
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Remove `lockPath` only if it is still the stale lock we observed. A plain
+ * stat-then-rmdir is check-then-act: two waiters can both see the same stale
+ * lock, the first removes it and re-acquires with a fresh mkdir, and the
+ * second's rmdir then deletes that FRESH lock — both enter the critical section
+ * and each provisions its own random key, the exact clobber the lock exists to
+ * prevent. Instead the stealer atomically renames the lock dir to a name only
+ * it knows (so at most one stealer can take any given lock dir), then re-checks
+ * what it actually took: still stale → it was the abandoned lock, delete it;
+ * fresh → it was re-created after our stat by a live holder, so put it back
+ * untouched. Every failure (holder released, another stealer won the rename)
+ * just means "retry the mkdir".
+ */
+function stealStaleProvisionLock(lockPath: string): void {
+  try {
+    const seen = statSync(lockPath);
+    if (Date.now() - seen.mtimeMs <= PROVISION_LOCK_STALE_MS) return;
+    const taken = `${lockPath}.stale.${process.pid}.${randomBytes(6).toString("hex")}`;
+    renameSync(lockPath, taken);
+    const moved = statSync(taken);
+    if (moved.ino === seen.ino && Date.now() - moved.mtimeMs > PROVISION_LOCK_STALE_MS) {
+      rmdirSync(taken);
+    } else {
+      renameSync(taken, lockPath);
+    }
+  } catch {
+    // The holder released (or another steal raced ours) — just retry.
+  }
+}
+
+/**
+ * Cross-process mutex around master-key provisioning. `mkdir` of the lock
+ * directory is atomic on every platform, so exactly one process can hold it; a
+ * lock left behind by a crashed provisioner is stolen once it is older than
+ * PROVISION_LOCK_STALE_MS (the critical section itself takes milliseconds).
+ * Returns false when the lock could not be acquired within the wait window.
+ */
+function acquireProvisionLock(): boolean {
+  const lockPath = provisionLockPath();
+  const deadline = Date.now() + PROVISION_LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        // ~/.syncrona itself does not exist yet (first run) — create it and retry.
+        try {
+          mkdirSync(getSyncronaDir(), { recursive: true, mode: 0o700 });
+        } catch {
+          return false;
+        }
+      } else {
+        stealStaleProvisionLock(lockPath);
+      }
+      if (Date.now() >= deadline) return false;
+      sleepSync(PROVISION_LOCK_POLL_MS);
+    }
+  }
+}
+
+function releaseProvisionLock(): void {
+  try {
+    rmdirSync(provisionLockPath());
+  } catch {
+    // Best-effort: a leftover lock is stolen after PROVISION_LOCK_STALE_MS.
+  }
+}
+
+/**
+ * Generate and persist the master key when the keychain holds none. The naive
+ * get-then-generate-then-set is a cross-process TOCTOU: two processes (e.g. a
+ * CLI `login` and the MCP server starting up) can both read an empty keychain,
+ * each write its own random key, and the second write silently overwrites the
+ * first — every credential file already encrypted with the overwritten key
+ * becomes PERMANENTLY undecryptable once that process exits, because a random
+ * key exists nowhere else and decryptWithFallback only retries the
+ * deterministic machine key. So the generate+set runs under a cross-process
+ * lock with a re-read after acquiring it: the loser of the race adopts the
+ * winner's key instead of clobbering it. If the lock cannot be acquired, fall
+ * back to the machine key (return null) — it is deterministic, so anything
+ * encrypted with it stays recoverable, unlike an unserialized random key.
+ */
+function provisionKeychainKey(entry: KeyringEntry): Buffer | null {
+  if (!acquireProvisionLock()) return null;
+  try {
+    const existing = entry.getPassword();
+    if (existing) {
+      const parsed = parseKeyMaterial(existing);
+      if (parsed) return parsed;
+    }
+    const generated = randomBytes(KEY_LENGTH);
+    entry.setPassword(generated.toString("hex"));
+    return generated;
+  } finally {
+    releaseProvisionLock();
+  }
+}
+
+function keyFromKeychain(): Buffer | null {
+  if (!isKeychainEnabled()) return null;
+  const entry = openKeychainEntry();
+  if (!entry) return null;
+  try {
+    const existing = entry.getPassword();
+    if (existing) {
+      const parsed = parseKeyMaterial(existing);
+      if (parsed) return parsed;
+    }
+    return provisionKeychainKey(entry);
+  } catch {
+    // keychain locked or unavailable — fall through to the machine key.
+    return null;
+  }
+}
+
+export function getStoreKey(): Buffer {
+  if (cachedStoreKey) return cachedStoreKey.key;
+  const envKey = keyFromEnv();
+  if (envKey) {
+    cachedStoreKey = { key: envKey, source: "env" };
+    return envKey;
+  }
+  const keychainKey = keyFromKeychain();
+  if (keychainKey) {
+    cachedStoreKey = { key: keychainKey, source: "keychain" };
+    return keychainKey;
+  }
+  const machineKey = getMachineKey();
+  cachedStoreKey = { key: machineKey, source: "machine" };
+  return machineKey;
+}
+
+export function getStoreKeySource(): StoreKeySource {
+  getStoreKey();
+  return (cachedStoreKey as { key: Buffer; source: StoreKeySource }).source;
+}
+
+/** Reset the resolved-key cache so a later env change is re-evaluated (tests). */
+export function clearStoreKeyCache(): void {
+  cachedStoreKey = null;
+}
+
+export function encrypt(plaintext: string, key: Buffer): string {
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
+}
+
+export function decrypt(ciphertext: string, key: Buffer): string {
+  const parts = ciphertext.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Invalid credential file format.");
+  }
+  const [ivHex, authTagHex, encryptedHex] = parts;
+  // Validate field shapes before handing bytes to the cipher. `Buffer.from(x,"hex")`
+  // silently truncates at the first bad nibble, and GCM's setAuthTag accepts a
+  // SHORT tag — a truncated tag weakens forgery resistance. Require an exact-length
+  // IV and a full 128-bit auth tag, and reject non-hex / odd-length ciphertext, so
+  // a tampered or corrupt credential file fails closed instead of decrypting weakly.
+  if (
+    !isHexOfBytes(ivHex, IV_LENGTH) ||
+    !isHexOfBytes(authTagHex, GCM_TAG_LENGTH) ||
+    encryptedHex.length % 2 !== 0 ||
+    !/^[0-9a-fA-F]*$/.test(encryptedHex)
+  ) {
+    throw new Error("Invalid credential file format.");
+  }
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const encrypted = Buffer.from(encryptedHex, "hex");
+  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
+}
+
+/**
+ * Decrypt with the resolved store key, retrying with the legacy machine-derived
+ * key so credential files written before AR2 keep opening.
+ */
+function decryptWithFallback(ciphertext: string): string {
+  try {
+    return decrypt(ciphertext, getStoreKey());
+  } catch (primaryError) {
+    if (getStoreKeySource() !== "machine") {
+      try {
+        return decrypt(ciphertext, getMachineKey());
+      } catch {
+        // legacy key did not match either — surface the primary error below
+      }
+    }
+    throw primaryError;
+  }
+}
+
+async function ensureDirs(): Promise<void> {
+  await fsp.mkdir(getCredentialsDir(), { recursive: true, mode: 0o700 });
+}
+
+/**
+ * Write `contents` to `target` atomically and owner-only. Writing the target in
+ * place (`writeFile(target, …, { mode: 0o600 })`) has two defects: it truncates
+ * first, so a crash or a concurrent reader mid-write sees an empty/partial
+ * file (an encrypted credential that no longer decrypts), and `mode` applies
+ * only when the file is CREATED — a pre-existing 0644 credential file (an old
+ * release, a restore from backup, a manual copy) stays world-readable forever.
+ * Instead write a fresh sibling temp file (`wx`, so it is always newly created
+ * with our mode), chmod it to 0600 explicitly (the create mode is filtered by
+ * the umask and ignored on some filesystems), then rename it over the target:
+ * rename is atomic on the same filesystem and the target inherits the temp
+ * file's inode — and therefore its 0600 mode. The random suffix keeps
+ * concurrent writers in the same process from colliding on one temp path (pid
+ * alone is not unique there). A failed write removes its temp file so no
+ * secret-bearing `.tmp` is left behind.
+ */
+async function writeFileAtomic(target: string, contents: string): Promise<void> {
+  const tmpPath = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await fsp.writeFile(tmpPath, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fsp.chmod(tmpPath, 0o600);
+    await fsp.rename(tmpPath, target);
+  } catch (e) {
+    try {
+      await fsp.rm(tmpPath, { force: true });
+    } catch {
+      // Best effort — the original write error is the one worth reporting.
+    }
+    throw e;
+  }
+}
+
+/**
+ * Normalize a decoded credential record into the on-disk shape. The three core
+ * fields are always present; the optional multi-method fields are only carried
+ * through when set, so a legacy three-field store round-trips byte-for-byte and
+ * a Basic login never grows empty OAuth/mTLS keys. `authMethod` is validated
+ * against the known union (unknown/legacy values drop to undefined, letting the
+ * caller re-infer) — mirroring {@link normalizeStoredJira}.
+ */
+function normalizeStoredCredentials(
+  data: Partial<StoredCredentials>,
+  instance: string
+): StoredCredentials {
+  const stored: StoredCredentials = {
+    instance: String(data.instance || instance || ""),
+    user: String(data.user || ""),
+    // Do not coerce/trim secrets — surrounding characters can be significant.
+    password: String(data.password || ""),
+  };
+  if (
+    typeof data.authMethod === "string" &&
+    STORED_AUTH_METHODS.includes(data.authMethod as StoredAuthMethod)
+  ) {
+    stored.authMethod = data.authMethod as StoredAuthMethod;
+  }
+  const optional: (keyof StoredCredentials)[] = [
+    "clientId",
+    "clientSecret",
+    "apiKey",
+    "apiKeyHeader",
+    "jwtKeyPath",
+    "jwtKid",
+    "jwtIss",
+    "jwtSub",
+    "jwtAud",
+    "clientCertPath",
+    "clientKeyPath",
+    "clientKeyPassphrase",
+  ];
+  for (const field of optional) {
+    const value = data[field];
+    if (typeof value === "string" && value.length > 0) {
+      (stored as Record<string, unknown>)[field] = value;
+    }
+  }
+  return stored;
+}
+
+/* ----------------------------------------------------------------------------
+ * Async API — used by the core CLI (read + write).
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Persist ServiceNow credentials for `instance`, encrypted at rest.
+ *
+ * Backward compatible: called as `saveCredentials(instance, user, password)` it
+ * writes the classic three-field record. Pass `extra` to persist multi-method
+ * material (auth method, OAuth client id/secret, API key, JWT/mTLS *paths*).
+ * Certificate and private-key material is referenced by path only — the key
+ * bytes are never copied into the encrypted store.
+ */
+export async function saveCredentials(
+  instance: string,
+  user: string,
+  password: string,
+  extra?: Partial<StoredCredentials>
+): Promise<void> {
+  await ensureDirs();
+  const key = getStoreKey();
+  const record = normalizeStoredCredentials(
+    { ...(extra || {}), instance, user, password },
+    instance
+  );
+  const data = JSON.stringify(record);
+  const encrypted = encrypt(data, key);
+  await writeFileAtomic(credentialFilePath(instance), encrypted);
+}
+
+export async function loadCredentials(
+  instance: string
+): Promise<StoredCredentials> {
+  const filePath = credentialFilePath(instance);
+  let raw: string;
+  try {
+    raw = await fsp.readFile(filePath, "utf8");
+  } catch {
+    throw new Error(
+      `No credentials found for "${instance}". Run: syncrona login ${instance}`
+    );
+  }
+  const data = decryptWithFallback(raw.trim());
+  return normalizeStoredCredentials(
+    JSON.parse(data) as Partial<StoredCredentials>,
+    instance
+  );
+}
+
+export async function listInstances(): Promise<string[]> {
+  try {
+    await ensureDirs();
+    const files = await fsp.readdir(getCredentialsDir());
+    const instances: string[] = [];
+    for (const f of files) {
+      if (!f.endsWith(".enc")) {
+        continue;
+      }
+      try {
+        // Decode per file: one malformed name (e.g. a stray `%` that is not valid
+        // percent-encoding) must not throw out of the loop and hide EVERY instance.
+        instances.push(filenameToInstance(f));
+      } catch {
+        // Skip the unreadable name; the rest of the instances still list.
+      }
+    }
+    return instances;
+  } catch {
+    return [];
+  }
+}
+
+/** Remove one instance's credentials. Returns true only if a file was deleted. */
+export async function removeCredentials(instance: string): Promise<boolean> {
+  const filePath = credentialFilePath(instance);
+  try {
+    await fsp.unlink(filePath);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      // Already gone — nothing was deleted, but the secret is not on disk either.
+      return false;
+    }
+    // Any other errno (EACCES, EPERM, EROFS, …) means the encrypted file is STILL
+    // there. Swallowing it would let the caller report a purge that never happened.
+    throw e;
+  }
+}
+
+/**
+ * Remove every stored instance; returns the count actually deleted.
+ *
+ * Best-effort across instances — one unremovable file must not stop the rest —
+ * but a file that could not be deleted is reported by throwing, so a caller can
+ * never announce that credentials were wiped while they remain on disk.
+ */
+export async function removeAllCredentials(): Promise<number> {
+  const instances = await listInstances();
+  let removed = 0;
+  const failures: string[] = [];
+  for (const inst of instances) {
+    try {
+      if (await removeCredentials(inst)) {
+        removed += 1;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      failures.push(`${inst} (${message})`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Removed credentials for ${removed} instance(s), but ${failures.length} could not be removed and are still on disk: ${failures.join("; ")}`
+    );
+  }
+  return removed;
+}
+
+async function loadGlobalConfig(): Promise<GlobalConfig> {
+  try {
+    const raw = await fsp.readFile(getConfigFile(), "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    // A valid-JSON but non-object config.json (`null`, `"hello"`, `42`, `[]`)
+    // parses fine, so the catch below never fires and the bad value escapes to
+    // the callers, which read/write `activeInstance` on it and throw a raw
+    // TypeError. Treat anything that is not a plain object as an empty config —
+    // the resilience getActiveInstanceSync already has.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as GlobalConfig;
+  } catch {
+    return {};
+  }
+}
+
+async function saveGlobalConfig(config: GlobalConfig): Promise<void> {
+  await ensureDirs();
+  // Temp file + rename (see writeFileAtomic): a crash or a concurrent reader
+  // mid-write can never observe a truncated/corrupt config.json — the previous
+  // version stays intact until the rename completes.
+  await writeFileAtomic(getConfigFile(), JSON.stringify(config, null, 2));
+}
+
+export async function setActiveInstance(instance: string): Promise<void> {
+  const config = await loadGlobalConfig();
+  config.activeInstance = instance;
+  await saveGlobalConfig(config);
+}
+
+export async function getActiveInstance(): Promise<string | null> {
+  const config = await loadGlobalConfig();
+  // Same normalization as getActiveInstanceSync: the CLI (async) and the MCP
+  // server (sync) must agree on the active instance. Returning the raw value let
+  // a whitespace-only marker read as an instance named "  " (a doomed
+  // credential lookup instead of "no active instance"), and " host " miss the
+  // credential file the sync reader finds for "host".
+  const active = String(config.activeInstance || "").trim();
+  return active || null;
+}
+
+export async function resolveCredentialsFromStore(
+  instance?: string
+): Promise<StoredCredentials | null> {
+  try {
+    const target = instance || (await getActiveInstance());
+    if (!target) return null;
+    return await loadCredentials(target);
+  } catch {
+    return null;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Sync API — used by the MCP server during synchronous secrets resolution.
+ *
+ * These never throw: any missing file, decrypt failure, or parse error returns
+ * null so the caller can fall through to the next secrets provider. They also
+ * do NOT enforce non-empty user/password — that policy is left to the caller.
+ * ------------------------------------------------------------------------- */
+
+export function getActiveInstanceSync(): string | null {
+  try {
+    const raw = readFileSync(getConfigFile(), "utf8");
+    const config = JSON.parse(raw) as GlobalConfig;
+    const active = String(config.activeInstance || "").trim();
+    return active || null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadCredentialsSync(
+  instance: string
+): StoredCredentials | null {
+  const filePath = credentialFilePath(instance);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(filePath, "utf8").trim();
+    const data = decryptWithFallback(raw);
+    return normalizeStoredCredentials(
+      JSON.parse(data) as Partial<StoredCredentials>,
+      instance
+    );
+  } catch {
+    return null;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Jira credential family
+ *
+ * Mirrors the ServiceNow credential API above and reuses the exact same crypto
+ * (getStoreKey + encrypt/decrypt + decryptWithFallback). Jira logins are keyed by
+ * a free-form *profile* name (default "default") rather than an instance host, so
+ * a developer can keep more than one Jira site configured. Files live under
+ * ~/.syncrona/jira/<profile>.enc, separate from the ServiceNow credentials dir.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Persisted Jira deployment flavour. Mirrors `JiraDeployment` in
+ * `@syncrona/jira`; the two unions are kept separate (rather than imported)
+ * because the foundation packages must not depend on each other (no import
+ * cycle / boundaries rule). This package is the single normalizer for the
+ * *stored* value — see {@link normalizeStoredJira}.
+ */
+export type JiraDeploymentKind = "cloud" | "server";
+
+export type StoredJiraCredentials = {
+  profile: string;
+  baseUrl: string;
+  /**
+   * Explicit deployment flavour. Absent when none was stored (or the stored
+   * value is not a known kind) — `@syncrona/jira` then detects it from
+   * `baseUrl`, so a `*.atlassian.net` site still resolves to Cloud.
+   */
+  deployment?: JiraDeploymentKind;
+  /** Account email — Cloud only. */
+  email?: string;
+  /** API token (Cloud) or personal access token (Server/DC). */
+  token: string;
+};
+
+const DEFAULT_JIRA_PROFILE = "default";
+
+function getJiraDir(): string {
+  return path.join(getSyncronaDir(), "jira");
+}
+
+export function jiraProfileToFilename(profile: string): string {
+  // Reversible, collision-free encoding: percent-encode every character that is
+  // unsafe in a filename. A naive `replace(/[^a-zA-Z0-9.-]/g, "_")` would map
+  // distinct profiles ("work a", "work/a", "work_a") to the same file and lose
+  // credentials; it would also let a "/" escape the jira dir. encodeURIComponent
+  // neutralizes "/" (→ %2F) and spaces (→ %20) and round-trips exactly.
+  return encodeURIComponent(profile) + ".enc";
+}
+
+export function filenameToJiraProfile(filename: string): string {
+  return decodeURIComponent(filename.replace(/\.enc$/, ""));
+}
+
+function jiraCredentialFilePath(profile: string): string {
+  return path.join(getJiraDir(), jiraProfileToFilename(profile));
+}
+
+function normalizeJiraProfile(profile?: string): string {
+  const trimmed = String(profile || "").trim();
+  return trimmed || DEFAULT_JIRA_PROFILE;
+}
+
+async function ensureJiraDir(): Promise<void> {
+  await fsp.mkdir(getJiraDir(), { recursive: true, mode: 0o700 });
+}
+
+function normalizeStoredJira(
+  data: Partial<StoredJiraCredentials>,
+  profile: string
+): StoredJiraCredentials {
+  // Keep only a recognised kind (case-insensitively) and otherwise leave the
+  // field unset. Coercing a missing/legacy/corrupted value to "server" here
+  // looked safe but defeated `resolveJiraConfig`'s URL detection: it only calls
+  // `detectDeployment(baseUrl)` when the stored kind is absent or invalid, so a
+  // forced "server" made a `*.atlassian.net` profile talk REST v2 with a Bearer
+  // PAT header to Cloud and fail auth. Leaving it undefined lets the one
+  // detector decide from the URL (and it still falls back to Server/DC for any
+  // host that is not a known Cloud host).
+  const rawDeployment = String(data.deployment || "").trim().toLowerCase();
+  const stored: StoredJiraCredentials = {
+    profile: String(data.profile || profile || DEFAULT_JIRA_PROFILE),
+    baseUrl: String(data.baseUrl || ""),
+    // Do not coerce/trim the token — surrounding whitespace can be significant.
+    token: String(data.token || ""),
+  };
+  if (rawDeployment === "cloud" || rawDeployment === "server") {
+    stored.deployment = rawDeployment;
+  }
+  const email = String(data.email || "").trim();
+  if (email) {
+    stored.email = email;
+  }
+  return stored;
+}
+
+export async function saveJiraCredentials(
+  creds: StoredJiraCredentials
+): Promise<void> {
+  await ensureJiraDir();
+  const profile = normalizeJiraProfile(creds.profile);
+  const key = getStoreKey();
+  const payload = normalizeStoredJira(creds, profile);
+  const encrypted = encrypt(JSON.stringify(payload), key);
+  await writeFileAtomic(jiraCredentialFilePath(profile), encrypted);
+}
+
+export async function loadJiraCredentials(
+  profile?: string
+): Promise<StoredJiraCredentials | null> {
+  const normalized = normalizeJiraProfile(profile);
+  const filePath = jiraCredentialFilePath(normalized);
+  let raw: string;
+  try {
+    raw = await fsp.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const data = decryptWithFallback(raw.trim());
+    return normalizeStoredJira(JSON.parse(data) as Partial<StoredJiraCredentials>, normalized);
+  } catch {
+    return null;
+  }
+}
+
+export async function listJiraProfiles(): Promise<string[]> {
+  try {
+    await ensureJiraDir();
+    const files = await fsp.readdir(getJiraDir());
+    const profiles: string[] = [];
+    for (const f of files) {
+      if (!f.endsWith(".enc")) {
+        continue;
+      }
+      try {
+        // Decode per file: one malformed name (e.g. a stray `%` that is not valid
+        // percent-encoding) must not throw out of the loop and hide EVERY profile.
+        profiles.push(filenameToJiraProfile(f));
+      } catch {
+        // Skip the unreadable name; the rest of the profiles still list.
+      }
+    }
+    return profiles;
+  } catch {
+    return [];
+  }
+}
+
+/** Remove one profile's credentials. Returns true only if a file was deleted. */
+export async function removeJiraCredentials(profile?: string): Promise<boolean> {
+  const filePath = jiraCredentialFilePath(normalizeJiraProfile(profile));
+  try {
+    await fsp.unlink(filePath);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      // Already gone — nothing was deleted, but the token is not on disk either.
+      return false;
+    }
+    // Any other errno means the encrypted token is STILL there; swallowing it
+    // would let `jira-logout` report a removal that never happened.
+    throw e;
+  }
+}
+
+/**
+ * Remove every stored profile; returns the count actually deleted.
+ *
+ * Best-effort across profiles, but a file that could not be deleted is reported
+ * by throwing, so a caller can never announce a purge while tokens remain on disk.
+ */
+export async function removeAllJiraCredentials(): Promise<number> {
+  const profiles = await listJiraProfiles();
+  let removed = 0;
+  const failures: string[] = [];
+  for (const profile of profiles) {
+    try {
+      if (await removeJiraCredentials(profile)) {
+        removed += 1;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      failures.push(`${profile} (${message})`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Removed Jira credentials for ${removed} profile(s), but ${failures.length} could not be removed and are still on disk: ${failures.join("; ")}`
+    );
+  }
+  return removed;
+}
+
+/**
+ * Health of a stored Jira profile, mirroring the ServiceNow active-store probe:
+ * `"missing"` (no file), `"undecryptable"` (file present but decrypt/parse fails —
+ * usually credentials moved between machines/users), or `"ok"`. Sync and never
+ * throws, so the CLI/MCP can turn a null config into the *right* message instead
+ * of always blaming a missing login.
+ */
+export type JiraCredentialHealth = "missing" | "undecryptable" | "ok";
+
+export function jiraCredentialHealth(profile?: string): JiraCredentialHealth {
+  const filePath = jiraCredentialFilePath(normalizeJiraProfile(profile));
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8").trim();
+  } catch (err) {
+    // Read first (no existsSync) so we never misreport a file that vanished
+    // between the probe and the read. A genuine ENOENT is "missing"; any other
+    // read failure (permissions, etc.) still means we cannot use stored creds.
+    return (err as NodeJS.ErrnoException)?.code === "ENOENT" ? "missing" : "undecryptable";
+  }
+  try {
+    JSON.parse(decryptWithFallback(raw));
+    return "ok";
+  } catch {
+    return "undecryptable";
+  }
+}
+
+/**
+ * Sync read for the MCP runtime. Never throws: a missing file, decrypt failure,
+ * or parse error returns null so the caller can fall through to env resolution.
+ */
+export function loadJiraCredentialsSync(
+  profile?: string
+): StoredJiraCredentials | null {
+  const normalized = normalizeJiraProfile(profile);
+  const filePath = jiraCredentialFilePath(normalized);
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(filePath, "utf8").trim();
+    const data = decryptWithFallback(raw);
+    return normalizeStoredJira(JSON.parse(data) as Partial<StoredJiraCredentials>, normalized);
+  } catch {
+    return null;
+  }
+}

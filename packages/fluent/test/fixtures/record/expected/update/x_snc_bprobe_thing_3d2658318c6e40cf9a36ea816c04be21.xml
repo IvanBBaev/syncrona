@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="x_snc_bprobe_thing">
+  <x_snc_bprobe_thing action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3d2658318c6e40cf9a36ea816c04be21</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>x_snc_bprobe_thing_3d2658318c6e40cf9a36ea816c04be21</sys_update_name>
+    <guid_ref>5137153cc611227c000bbd1bd8cd2005</guid_ref>
+    <name>Refs</name>
+    <other name="CAB Approval">ee2f0da627974868a148262d1aabff99</other>
+    <owner_role name="x_snc_bprobe.manager">788724aa2f634f19afd35ea98bb69a7d</owner_role>
+    <parent>8b2dd6cadc804957b42506ddd02e17d6</parent>
+  </x_snc_bprobe_thing>
+</record_update>

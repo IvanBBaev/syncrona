@@ -1,0 +1,58 @@
+version: 2
+updates:
+  # Production + dev npm dependencies across the workspace root (npm workspaces
+  # resolve from the single root lockfile, so a root-level entry covers all
+  # packages/*).
+  #
+  # Grouping strategy (gap-analysis #32): the previous single production group
+  # bundled unmergeable breaking majors (chalk 4->5 ESM, inquirer 8->14,
+  # eslint 8->10, typescript 5->6, zod 3->4, chokidar 3->4) together with safe
+  # in-range fixes, so PRs #6/#7/#8/#10 died and #13 starved every wanted
+  # patch/minor. We now:
+  #   * land patch + minor bumps as small, mergeable weekly groups (prod and dev
+  #     kept separate), and
+  #   * raise majors as isolated per-dependency PRs.
+  # The former `ignore` list of breaking majors (chalk, inquirer, eslint,
+  # typescript-eslint, typescript, zod, chokidar) was removed in July 2026 after
+  # each migration landed (TODO item DEP1).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    ignore:
+      # The mcp-server builds undici dispatchers (mutual TLS, custom CA, proxy)
+      # and hands them to Node's global fetch, which runs on the undici that
+      # Node bundles. A dispatcher from a different undici major breaks that
+      # fetch: with undici 8 on Node 22 (bundled 6.x) every mutual-TLS request
+      # fails with "fetch failed" (PR #32, authMethods.test.js). Move undici to
+      # a new major only together with the Node baseline that bundles it.
+      - dependency-name: undici
+        update-types:
+          - version-update:semver-major
+    groups:
+      # Safe, in-range fixes for the credential-carrying HTTP client and the
+      # rest of the runtime — grouped so they land as one small weekly PR.
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      # Tooling/test/build deps: batch minor+patch together too.
+      development-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # Keep the SHA-pinned GitHub Actions current (Dependabot bumps the pin and
+  # the version comment together).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"

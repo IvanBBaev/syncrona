@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_list table="x_snc_bprobe_sub" parent="x_snc_bprobe_task" relationship="" sys_domain="mydomain" view="x_snc_bprobe_byname">
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>d0ed822bdb504ddbb0d96caee0260860</sys_id>
+      <list_id display_value="x_snc_bprobe_sub" name="x_snc_bprobe_sub" view="c0652f644de74db690e7f9cae70fd927" sys_domain="mydomain" element="NULL" relationship="NULL" parent="x_snc_bprobe_task">08a8e852f121435eb11d511e855e99f4</list_id>
+      <element>short_description</element>
+      <position>0</position>
+    </sys_ui_list_element>
+    <sys_ui_list action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>08a8e852f121435eb11d511e855e99f4</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <view name="x_snc_bprobe_byname">c0652f644de74db690e7f9cae70fd927</view>
+      <name>x_snc_bprobe_sub</name>
+      <parent>x_snc_bprobe_task</parent>
+      <sys_domain>mydomain</sys_domain>
+    </sys_ui_list>
+  </sys_ui_list>
+</record_update>

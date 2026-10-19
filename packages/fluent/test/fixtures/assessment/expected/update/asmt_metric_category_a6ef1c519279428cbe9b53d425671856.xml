@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="asmt_metric_category">
+  <asmt_metric_category action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a6ef1c519279428cbe9b53d425671856</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>asmt_metric_category_a6ef1c519279428cbe9b53d425671856</sys_update_name>
+    <create_stakeholders>false</create_stakeholders>
+    <description/>
+    <details/>
+    <filter/>
+    <metric_type>92a17095559242dfbea8640bb3eb9bcd</metric_type>
+    <name>Impact</name>
+    <order>1</order>
+    <qb_evaluation_method/>
+    <roles/>
+    <scoring_type>percent</scoring_type>
+    <sys_domain>global</sys_domain>
+    <sys_domain_path>/</sys_domain_path>
+    <table>change_request</table>
+    <total_metrics>1</total_metrics>
+    <weight>10</weight>
+  </asmt_metric_category>
+</record_update>

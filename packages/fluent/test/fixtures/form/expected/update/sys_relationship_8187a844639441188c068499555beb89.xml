@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<record_update table="sys_relationship">
+  <sys_relationship action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8187a844639441188c068499555beb89</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_relationship_8187a844639441188c068499555beb89</sys_update_name>
+    <name>Probe rel</name>
+  </sys_relationship>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_properties">
+  <sys_properties action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b43b33c396a54f51a3df2c463eddf048</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_properties_b43b33c396a54f51a3df2c463eddf048</sys_update_name>
+    <choices>a,b,c</choices>
+    <description/>
+    <ignore_cache>false</ignore_cache>
+    <is_private>false</is_private>
+    <name>x_snc_bprobe.choice</name>
+    <read_roles>itil</read_roles>
+    <suffix>choice</suffix>
+    <type>choicelist</type>
+    <value>b</value>
+    <write_roles>admin,x_snc_bprobe.manager</write_roles>
+  </sys_properties>
+</record_update>

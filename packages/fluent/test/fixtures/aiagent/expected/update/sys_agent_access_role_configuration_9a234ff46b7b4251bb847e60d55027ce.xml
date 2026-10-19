@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_agent_access_role_configuration">
+  <sys_agent_access_role_configuration action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9a234ff46b7b4251bb847e60d55027ce</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_agent_access_role_configuration_9a234ff46b7b4251bb847e60d55027ce</sys_update_name>
+    <action>limit_to_roles</action>
+    <agent>c9a01837e85e40699f677abfd0586e24</agent>
+    <agent_table>sn_aia_agent</agent_table>
+    <description/>
+    <name>c9a01837e85e40699f677abfd0586e24</name>
+    <role_list>282bf1fac6112285017366cb5f867469</role_list>
+  </sys_agent_access_role_configuration>
+</record_update>

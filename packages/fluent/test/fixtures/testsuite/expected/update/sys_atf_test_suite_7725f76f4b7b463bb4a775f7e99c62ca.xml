@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_test_suite">
+  <sys_atf_test_suite action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7725f76f4b7b463bb4a775f7e99c62ca</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_test_suite_7725f76f4b7b463bb4a775f7e99c62ca</sys_update_name>
+    <active>true</active>
+    <description/>
+    <input_filter>nameSTARTSWITHsmoke</input_filter>
+    <name>Filtered</name>
+    <parent>b1b2c3d4e5f6407182930a4b5c6d7e8f</parent>
+    <sys_policy>protected</sys_policy>
+  </sys_atf_test_suite>
+</record_update>

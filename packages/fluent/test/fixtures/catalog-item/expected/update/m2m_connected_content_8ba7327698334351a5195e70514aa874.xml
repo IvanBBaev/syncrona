@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="m2m_connected_content">
+  <m2m_connected_content action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8ba7327698334351a5195e70514aa874</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_connected_content_8ba7327698334351a5195e70514aa874</sys_update_name>
+    <catalog_item>c8788f2b2e384d1493b66797ecfb49bf</catalog_item>
+    <content_type>98f9a16553622010069addeeff7b1248</content_type>
+    <order>100</order>
+    <source>user</source>
+    <topic>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</topic>
+  </m2m_connected_content>
+</record_update>

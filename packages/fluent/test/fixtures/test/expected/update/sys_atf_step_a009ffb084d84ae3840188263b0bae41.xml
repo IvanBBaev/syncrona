@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_step">
+  <sys_atf_step action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a009ffb084d84ae3840188263b0bae41</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <active>true</active>
+    <description/>
+    <display_name>Application Menu Visibility</display_name>
+    <notes/>
+    <order>2</order>
+    <step_config>6228cf753752030064a52f3c8e41f1a8</step_config>
+    <table/>
+    <test>9e14d76c867b4323a46465814e0766d9</test>
+    <timeout>1970-01-01 00:01:05</timeout>
+    <warning_message/>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_step_a009ffb084d84ae3840188263b0bae41</sys_update_name>
+  </sys_atf_step>
+  <sys_variable_value action="delete_multiple" query="document_key=a009ffb084d84ae3840188263b0bae41"/>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>bc96c2c6ddfa455486fa82ccb7399bc0</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>a009ffb084d84ae3840188263b0bae41</document_key>
+    <value/>
+    <variable>1b52683573220300c79260bdfaf6a763</variable>
+    <order>400</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_bc96c2c6ddfa455486fa82ccb7399bc0</sys_update_name>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f6204aa3699c4f748327737c53f977c7</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>a009ffb084d84ae3840188263b0bae41</document_key>
+    <value>at_least_applications_visible</value>
+    <variable>746a8fb53752030064a52f3c8e41f14c</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f6204aa3699c4f748327737c53f977c7</sys_update_name>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>abc410beebf748a09cf4a4d3895b1a2c</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>a009ffb084d84ae3840188263b0bae41</document_key>
+    <value>at_least_applications_not_visible</value>
+    <variable>abc1e03573220300c79260bdfaf6a7f0</variable>
+    <order>300</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_abc410beebf748a09cf4a4d3895b1a2c</sys_update_name>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7acfb194746d40a584da07f1e08c8d77</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>a009ffb084d84ae3840188263b0bae41</document_key>
+    <value>ui15</value>
+    <variable>e26225ab73f22010ac1560bdfaf6a7e0</variable>
+    <order>50</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_7acfb194746d40a584da07f1e08c8d77</sys_update_name>
+  </sys_variable_value>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>63cc73c01640421dbe2e33eb4c385fe3</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>a009ffb084d84ae3840188263b0bae41</document_key>
+    <value>a0a61f643dae4bd4a5d26caeb06e7518,0123456789abcdef0123456789abcdef</value>
+    <variable>e9994bb53752030064a52f3c8e41f1a9</variable>
+    <order>200</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_63cc73c01640421dbe2e33eb4c385fe3</sys_update_name>
+  </sys_variable_value>
+</record_update>

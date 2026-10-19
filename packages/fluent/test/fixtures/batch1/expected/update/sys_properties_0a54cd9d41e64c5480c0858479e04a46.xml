@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_properties">
+  <sys_properties action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0a54cd9d41e64c5480c0858479e04a46</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_properties_0a54cd9d41e64c5480c0858479e04a46</sys_update_name>
+    <choices/>
+    <description/>
+    <ignore_cache>false</ignore_cache>
+    <is_private>false</is_private>
+    <name>x_snc_bprobe.count</name>
+    <read_roles/>
+    <suffix>count</suffix>
+    <type>integer</type>
+    <value>7</value>
+    <write_roles/>
+  </sys_properties>
+</record_update>

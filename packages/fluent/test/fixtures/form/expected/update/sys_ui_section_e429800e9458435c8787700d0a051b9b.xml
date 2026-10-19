@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_section caption="Only" section_id="e429800e9458435c8787700d0a051b9b" sys_domain="global" table="x_snc_bprobe_task" view="x_snc_bprobe_byname">
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>name</element>
+      <position>0</position>
+      <sys_id>ddc8ee18c9b54eafb072a38f5de3d259</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Only" display_value="Only" name="x_snc_bprobe_task" sys_domain="global" view="ae280de478774e77ae645ff4a81b2d25">e429800e9458435c8787700d0a051b9b</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <caption>Only</caption>
+      <header>false</header>
+      <name>x_snc_bprobe_task</name>
+      <roles/>
+      <sys_domain>global</sys_domain>
+      <sys_id>e429800e9458435c8787700d0a051b9b</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user/>
+      <title>false</title>
+      <view_name/>
+      <view name="x_snc_bprobe_byname" display_value="x_snc_bprobe_byname">ae280de478774e77ae645ff4a81b2d25</view>
+    </sys_ui_section>
+  </sys_ui_section>
+</record_update>

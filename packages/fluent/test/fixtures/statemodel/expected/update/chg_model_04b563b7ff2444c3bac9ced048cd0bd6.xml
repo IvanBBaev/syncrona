@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<record_update table="chg_model">
+  <chg_model action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>04b563b7ff2444c3bac9ced048cd0bd6</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>chg_model_04b563b7ff2444c3bac9ced048cd0bd6</sys_update_name>
+    <active>true</active>
+    <advanced_security>false</advanced_security>
+    <apply_record_preset>true</apply_record_preset>
+    <available_in_ui>false</available_in_ui>
+    <color>blue</color>
+    <default_change_model>true</default_change_model>
+    <description>A change model</description>
+    <itil_change_process>normal</itil_change_process>
+    <name>Change model</name>
+    <read_roles/>
+    <record_preset>type=normal^EQ</record_preset>
+    <state_field>state</state_field>
+    <table_name>change_request</table_name>
+    <template_approval_groups/>
+    <template_approval_users/>
+    <template_proposal_access/>
+    <write_roles/>
+  </chg_model>
+</record_update>

@@ -1,0 +1,55 @@
+{
+  "name": "@syncrona/mcp-server",
+  "version": "1.2.0-beta.0",
+  "description": "MCP server for SyncroNow AI — drives ServiceNow scope automation, record queries, and background script execution from AI chat clients.",
+  "main": "./dist/index.js",
+  "bin": {
+    "syncrona-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --enable-source-maps --require ./test/isolate-state.cjs --test test/*.test.js",
+    "test:coverage": "npm run build && node --enable-source-maps --require ./test/isolate-state.cjs --test --experimental-test-coverage test/*.test.js",
+    "test:coverage:gate": "npm run build && node scripts/check-coverage-gate.js --line-threshold 90 --branch-threshold 80",
+    "test:coverage:gate100": "npm run build && node scripts/check-coverage-gate.js --line-threshold 100",
+    "test:mutation": "cd ../.. && stryker run packages/mcp-server/stryker.conf.json",
+    "quality-gates": "bash scripts/quality-gates.sh",
+    "check-tool-contract": "node scripts/check-tool-contract.js",
+    "check-docs-drift": "node scripts/check-docs-drift.js",
+    "check-claude-docs-drift": "node scripts/check-claude-docs-drift.js",
+    "validate-release-checklist": "node scripts/validate-release-checklist.js",
+    "prepack": "tsc"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@syncrona/credential-store": "^1.2.0-beta.0",
+    "@syncrona/jira": "^1.2.0-beta.0",
+    "@syncrona/redaction": "^1.2.0-beta.0",
+    "@syncrona/sn-transport": "^1.2.0-beta.0",
+    "undici": "^6.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@types/node": "^26.1.0",
+    "fast-check": "^3.23.2",
+    "typescript": "~6.0.3"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

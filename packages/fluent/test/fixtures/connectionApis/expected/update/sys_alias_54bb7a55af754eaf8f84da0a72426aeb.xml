@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>54bb7a55af754eaf8f84da0a72426aeb</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_54bb7a55af754eaf8f84da0a72426aeb</sys_update_name>
+    <configuration_template/>
+    <connection_type>orch_jms_ds</connection_type>
+    <description/>
+    <id>x_snc_bprobe.JMS</id>
+    <multiple_connections>false</multiple_connections>
+    <name>JMS</name>
+    <parent/>
+    <retry_policy/>
+    <sys_policy/>
+    <type>connection</type>
+  </sys_alias>
+</record_update>

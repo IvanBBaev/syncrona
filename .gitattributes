@@ -1,0 +1,28 @@
+# Line endings are part of this repository's contract, not a local preference.
+#
+# Git for Windows installs with core.autocrlf=true by default, which rewrites
+# every checked-out text file to CRLF. That is invisible on macOS/Linux CI and
+# breaks real things here:
+#
+#   * The CLI round-trips ServiceNow record fields through local files and
+#     compares them byte-for-byte to decide what changed (`build --diff`, the
+#     mirror's serializer and its manifest hashes). A CRLF checkout makes a
+#     clean tree read as fully-modified.
+#   * Test fixtures and expected-output files are compared as bytes, so a CRLF
+#     checkout reddens suites that pass everywhere else.
+#   * `packaging/windows/install.ps1` and `packages/mcp-server/scripts/
+#     quality-gates.sh` are executed, not just read; a shell script that reaches
+#     WSL/Linux with CRLF fails on the shebang line.
+#
+# `.editorconfig` already declares `end_of_line = lf` for the whole tree, but it
+# only governs editors — it cannot influence what git writes at checkout time.
+# This file makes the same rule hold at the git layer, for every contributor,
+# regardless of their core.autocrlf setting.
+#
+# Every tracked text file is already LF in the index (verified with
+# `git ls-files --eol`), so this normalises nothing retroactively; it only keeps
+# the working tree matching the index on Windows.
+* text=auto eol=lf
+
+# Binary content: never normalise it, never try to diff it as text.
+*.png binary

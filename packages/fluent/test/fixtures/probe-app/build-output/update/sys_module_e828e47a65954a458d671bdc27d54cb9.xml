@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<record_update table="sys_module">
+  <sys_module action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e828e47a65954a458d671bdc27d54cb9</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_module_e828e47a65954a458d671bdc27d54cb9</sys_update_name>
+    <content><![CDATA[{
+  "name": "syncrona-build-probe",
+  "version": "0.0.1",
+  "description": "",
+  "license": "UNLICENSED",
+  "imports": {
+    "#now:*": "./@types/servicenow/fluent/*/index.js"
+  },
+  "scripts": {
+    "build": "now-sdk build",
+    "deploy": "now-sdk install",
+    "transform": "now-sdk transform",
+    "types": "now-sdk dependencies"
+  },
+  "devDependencies": {
+    "@servicenow/glide": "27.0.5",
+    "@servicenow/sdk": "4.13.6",
+    "@syncrona/fluent": "^1.1.0",
+    "typescript": "5.5.4"
+  }
+}]]></content>
+    <external_source>false</external_source>
+    <path>x_snc_bprobe/syncrona-build-probe/0.0.1/package.json</path>
+    <sys_name>x_snc_bprobe/syncrona-build-probe/0.0.1/package.json</sys_name>
+  </sys_module>
+</record_update>

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<record_update table="scan_table_check">
+  <scan_table_check action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fdd25aecc7d348a08b82ee3ffb71bb13</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>scan_table_check_fdd25aecc7d348a08b82ee3ffb71bb13</sys_update_name>
+    <active>true</active>
+    <advanced>false</advanced>
+    <category>security</category>
+    <conditions>active=false^roles!=</conditions>
+    <description/>
+    <documentation_url/>
+    <finding_type>scan_finding</finding_type>
+    <name>Inactive Users</name>
+    <priority>2</priority>
+    <resolution_details/>
+    <run_condition/>
+    <score_max>100</score_max>
+    <score_min>0</score_min>
+    <score_scale>1</score_scale>
+    <script/>
+    <short_description>Inactive users with roles</short_description>
+    <table>sys_user</table>
+    <use_manifest>false</use_manifest>
+  </scan_table_check>
+</record_update>

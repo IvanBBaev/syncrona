@@ -1,0 +1,14 @@
+{
+  "description": "The hard case for §8. JavaScript re-orders integer-index keys numerically no matter how they were inserted, so a plain JSON.stringify would emit 1, 2, 9, 10. Code-unit order is 1, 10, 2, 9 — this fixture is what fails if the explicit-key-order path is ever removed.",
+  "table": {
+    "name": "sys_choice_set",
+    "fields": [
+      { "element": "choice_cache", "internalType": "string", "isJsonBlob": true },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "778899aabbccddeeff001122334455aa",
+    "choice_cache": "{\"10\":\"ten\",\"9\":\"nine\",\"2\":\"two\",\"alpha\":\"a\",\"1\":\"one\"}"
+  }
+}

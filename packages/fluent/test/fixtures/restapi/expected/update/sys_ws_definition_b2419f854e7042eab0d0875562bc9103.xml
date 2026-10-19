@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_definition">
+  <sys_ws_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b2419f854e7042eab0d0875562bc9103</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_definition_b2419f854e7042eab0d0875562bc9103</sys_update_name>
+    <active>true</active>
+    <base_uri>/api/x_snc_bprobe/plain_api</base_uri>
+    <consumes>application/json,application/xml,text/xml</consumes>
+    <consumes_customized>false</consumes_customized>
+    <default_version>No active default version</default_version>
+    <doc_link/>
+    <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+    <is_versioned>false</is_versioned>
+    <name>Plain</name>
+    <namespace>x_snc_bprobe</namespace>
+    <produces>application/json,application/xml,text/xml</produces>
+    <produces_customized>false</produces_customized>
+    <service_id>plain_api</service_id>
+    <short_description/>
+    <sys_policy/>
+  </sys_ws_definition>
+</record_update>

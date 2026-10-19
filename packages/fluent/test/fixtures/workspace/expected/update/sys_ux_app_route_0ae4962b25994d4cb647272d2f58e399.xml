@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_app_route">
+  <sys_ux_app_route action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0ae4962b25994d4cb647272d2f58e399</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_app_route_0ae4962b25994d4cb647272d2f58e399</sys_update_name>
+    <app_config>7f4bf680998847ee990f4af42f0d0940</app_config>
+    <description/>
+    <extension_point/>
+    <fields>table,sysId</fields>
+    <icon/>
+    <interoperable>false</interoperable>
+    <name>Record Default</name>
+    <optional_parameters>query,extraParams,views,selectedTab</optional_parameters>
+    <order>0</order>
+    <parent_macroponent>c276387cc331101080d6d3658940ddd2</parent_macroponent>
+    <parent_macroponent_composition_element_id/>
+    <route_type>record</route_type>
+    <screen_type>da4c2903e4b64be2a2bf5a7dff2b58e6</screen_type>
+  </sys_ux_app_route>
+</record_update>

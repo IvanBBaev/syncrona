@@ -1,0 +1,567 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import { promises as fsp } from "fs";
+import path from "path";
+import * as ConfigManager from "./config.js";
+import * as AppUtils from "./appUtils.js";
+import { startWizard } from "./wizard.js";
+import { logger } from "./Logger.js";
+import {
+  logPushResults,
+  logBuildResults,
+} from "./logMessages.js";
+import {
+  defaultClient,
+  resolveCredentials,
+} from "./snClient.js";
+import inquirer from "inquirer";
+import { clearDiff, gitDiffToEncodedPaths, writeDiff } from "./gitUtils.js";
+import { encodedPathsToFilePaths } from "./FileUtils.js";
+import { buildManifestFromTableAPI, listAppsFromTableAPI } from "./manifestBuilder.js";
+import { generateScopeDocs } from "./scopeDocs.js";
+import { warnWithdrawnFieldFiles } from "./withdrawnFieldFiles.js";
+import { isFlowPresetEnabled, isPlaybookPresetEnabled, isWorkflowPresetEnabled } from "./tablePresets.js";
+import { PATH_DELIMITER } from "./constants.js";
+import { isSafePathComponent } from "./genericUtils.js";
+import {
+  LOGIN_DEFAULT_SOURCE_DIRECTORY,
+  setLogLevel,
+  scopeCheck,
+  logErrorHint,
+} from "./commandHelpers.js";
+import { mcpCommand } from "./mcpCommand.js";
+import { initNewApp, wantsInitNew, type InitCmdArgs } from "./appCreator.js";
+
+// Re-export extracted command modules so consumers can import the full command
+// surface from "./commands" (barrel) in addition to the dedicated modules.
+export { pushCommand } from "./pushCommand.js";
+export { statusCommand, doctorCommand, pluginsCommand } from "./diagnosticsCommands.js";
+export { mcpCommand } from "./mcpCommand.js";
+
+async function localPathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fsp.stat(targetPath);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+async function ensureScopeWorkspace(scopeDir: string): Promise<void> {
+  const sourcePath = path.join(scopeDir, LOGIN_DEFAULT_SOURCE_DIRECTORY);
+  const configPath = path.join(scopeDir, "sync.config.js");
+
+  await fsp.mkdir(sourcePath, { recursive: true });
+  if (!(await localPathExists(configPath))) {
+    await fsp.writeFile(
+      configPath,
+      ConfigManager.getDefaultConfigFile(LOGIN_DEFAULT_SOURCE_DIRECTORY),
+      "utf8"
+    );
+  }
+}
+
+async function initAllScopesFromEnv(args: Sync.SharedCmdArgs): Promise<void> {
+  const workspaceRoot = process.cwd();
+  const packagesRoot = path.join(workspaceRoot, "packages");
+  await fsp.mkdir(packagesRoot, { recursive: true });
+
+  const client = defaultClient(args.instanceProfile);
+  const apps = await listAppsFromTableAPI(client);
+
+  const scopedApps = apps
+    .filter((app) => app.scope && app.scope.startsWith("x_"))
+    // INJ-1: `app.scope` is instance-supplied and is joined onto packages/
+    // below to create — and download into — a directory. It never passed
+    // through the download pipeline's path-component check, so a scope
+    // containing a separator or made only of dots (a tampered sys_app row)
+    // could place the generated workspace outside packages/. Reject such a
+    // scope loudly instead of sanitizing it, so a compromised source is
+    // visible rather than masked.
+    .filter((app) => {
+      if (isSafePathComponent(app.scope)) {
+        return true;
+      }
+      logger.warn(
+        `Skipping app with unsafe scope name ${JSON.stringify(app.scope)}: it cannot be used as a directory name.`
+      );
+      return false;
+    })
+    .sort((a, b) => a.scope.localeCompare(b.scope));
+
+  if (scopedApps.length === 0) {
+    logger.warn("No active scoped apps found for initialization.");
+    return;
+  }
+
+  // Resolve the folder name for each scope up front so we can show the user
+  // exactly what would be created before touching the filesystem.
+  // Use the short scope alias (strip the "x_<vendor>_" prefix), e.g.
+  // x_acme_cs -> cs; fall back to the full scope on collision or empty name.
+  // The full scope is still used for all API calls and stored in the manifest.
+  const usedDirNames = new Set<string>();
+  const plan = scopedApps.map((app) => {
+    let dirName = app.scope.replace(/^x_[^_]+_/, "");
+    // Stripping the vendor prefix can turn a safe scope into an unsafe
+    // component (e.g. "x_a_.." -> ".."), so re-check the derived name and fall
+    // back to the full — already validated — scope.
+    if (
+      dirName.length === 0 ||
+      usedDirNames.has(dirName) ||
+      !isSafePathComponent(dirName)
+    ) {
+      dirName = app.scope;
+    }
+    usedDirNames.add(dirName);
+    return { scope: app.scope, dirName };
+  });
+
+  // DX4: auto-init can create many directories from a single `init` — say what
+  // and confirm first (skipped with --ci; --dry-run reports without creating).
+  logger.info(
+    `Found ${plan.length} scoped app(s). Would create under packages/: ${plan
+      .map((p) => p.dirName)
+      .join(", ")}`
+  );
+  if (args.dryRun === true) {
+    logger.info("Dry run: skipping directory creation and downloads.");
+    return;
+  }
+  if (args.ci !== true) {
+    const approved = await confirmAction(
+      `Create ${plan.length} package folder(s) under packages/ and download each scope?`
+    );
+    if (!approved) {
+      logger.info("Auto init cancelled.");
+      return;
+    }
+  }
+
+  logger.info(`Auto init: preparing ${plan.length} scoped packages...`);
+  // #50: each iteration chdir's into a scope and reloads the singleton
+  // ConfigManager for THAT scope. Restoring only process.cwd() in the inner
+  // finally leaves the singleton pointed at the last scope, so any later
+  // workspace-root command (or the caller) reads stale scope paths (same bug
+  // class as #1). Restore the config store to originalCwd once the loop ends.
+  const originalCwd = process.cwd();
+  try {
+    for (const { scope, dirName } of plan) {
+      const scopeDir = path.join(packagesRoot, dirName);
+      // Defence in depth: the component check above already rejects separators
+      // and dot-only names, so a resolved path outside packages/ can only mean
+      // the guard was bypassed.
+      if (
+        path.relative(packagesRoot, scopeDir).startsWith("..") ||
+        path.isAbsolute(path.relative(packagesRoot, scopeDir))
+      ) {
+        throw new Error(
+          `Refusing to initialize scope "${scope}": ${scopeDir} is outside ${packagesRoot}.`
+        );
+      }
+      await ensureScopeWorkspace(scopeDir);
+
+      try {
+        process.chdir(scopeDir);
+        // Re-resolve config/manifest/source paths for this scope. The config
+        // store is a singleton initialized once at startup, so without this the
+        // chdir is ignored and every scope would write to the workspace root.
+        ConfigManager.resetConfigState();
+        await ConfigManager.loadConfigs();
+        await downloadCommand({
+          logLevel: args.logLevel,
+          scope,
+          dryRun: args.dryRun,
+          instanceProfile: args.instanceProfile,
+          ci: true,
+        });
+      } finally {
+        process.chdir(originalCwd);
+      }
+    }
+  } finally {
+    // Reload the singleton for the workspace root so the ConfigManager no longer
+    // points at the last scope's directory once auto-init returns.
+    ConfigManager.resetConfigState();
+    await ConfigManager.loadConfigs();
+  }
+}
+
+// Every destructive command asks the same yes/no question, defaulting to "no"
+// so that a non-interactive run never agrees by accident.
+async function confirmAction(question: string): Promise<boolean> {
+  const answer = await inquirer.prompt<{ confirmed: boolean }>([{ type: "confirm", name: "confirmed", message: question, default: false }]);
+  return Boolean(answer.confirmed);
+}
+
+export async function downloadCommand(args: Sync.CmdDownloadArgs) {
+  setLogLevel(args);
+  const dryRun = args.dryRun === true;
+  if (dryRun) {
+    logger.info(`Dry run: would download scope ${args.scope} and overwrite local manifest/files.`);
+    return;
+  }
+
+  if (
+    args.ci !== true &&
+    !(await confirmAction("Downloading will overwrite manifest and files. Are you sure?"))
+  ) {
+    return;
+  }
+  const config = ConfigManager.getConfig();
+  const client = defaultClient(args.instanceProfile);
+  logger.info("Downloading manifest...");
+
+  const man = await buildManifestFromTableAPI(args.scope, client, config);
+
+  // 17c: the manifest this download replaces, read before processManifest
+  // overwrites it, so a field it listed and this one drops is reported below.
+  let previousManifest: import("@syncrona/types").SN.AppManifest | undefined;
+  try {
+    previousManifest = ConfigManager.getManifest(true);
+  } catch (_) {
+    previousManifest = undefined;
+  }
+
+  logger.info("Creating local files from manifest...");
+  // checkExists=true (forceWrite=false): the manifest file is still force-written
+  // (processManifest always does that), and downloadAllFiles below force-writes
+  // full content for every pending table — but the skeleton phase must NOT blank
+  // already-downloaded files, or a resumed download would truncate the tables it
+  // then skips via the checkpoint. It cannot blank anything now in any case: a
+  // manifest entry carries no `content`, and writeSNFileCurry creates no file for
+  // a request without one — this phase only materialises the directories.
+  await AppUtils.processManifest(man, false);
+  logger.info("Fetching file contents...");
+  await AppUtils.downloadAllFiles(
+    man,
+    args.instanceProfile,
+    resolveCredentials(args.instanceProfile).instance
+  );
+  await warnWithdrawnFieldFiles(previousManifest, man, () => ({
+    sourcePath: ConfigManager.getSourcePath(),
+    flat: config.flat === true,
+  }));
+  // WP2: the read-only Flow Designer documents of the `flow` preset. Loaded
+  // only when the preset is on, so the flow reader stays out of other runs.
+  if (isFlowPresetEnabled(config)) {
+    const { syncFlowDocuments } = await import("./flow/flowFiles.js");
+    if (!(await syncFlowDocuments(client, man.scope, ConfigManager.getSourcePath()))) {
+      process.exitCode = 1;
+    }
+  }
+  // WP2c: the read-only playbook documents of the `playbook` preset, loaded the same way.
+  if (isPlaybookPresetEnabled(config)) {
+    const { syncPlaybookDocuments } = await import("./flow/playbookFiles.js");
+    if (!(await syncPlaybookDocuments(client, man.scope, ConfigManager.getSourcePath()))) {
+      process.exitCode = 1;
+    }
+  }
+  // WP2f: the read-only legacy workflow documents of the `workflow` preset, loaded the same way.
+  if (isWorkflowPresetEnabled(config)) {
+    const { syncWorkflowDocuments } = await import("./flow/workflowFiles.js");
+    if (!(await syncWorkflowDocuments(client, man.scope, ConfigManager.getSourcePath()))) {
+      process.exitCode = 1;
+    }
+  }
+  try {
+    const docPath = await generateScopeDocs(man);
+    logger.success(`Scope documentation written to ${docPath}`);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.warn(`Could not generate scope documentation: ${message}`);
+  }
+  // downloadAllFiles sets a non-zero process.exitCode when a table could not be
+  // fetched, so don't announce a clean completion over a partial pull.
+  if (process.exitCode) {
+    logger.warn("Download finished with errors — some tables are incomplete. See the warnings above.");
+  } else {
+    logger.success("Download complete ✅");
+  }
+}
+export async function docsCommand(args: Sync.SharedCmdArgs): Promise<void> {
+  setLogLevel(args);
+  const manifest = ConfigManager.getManifest();
+  if (manifest == null) {
+    // A missing manifest is a failure, so scripts and CI do not read it as success.
+    process.exitCode = 1;
+    logger.error("No manifest found. Run 'syncrona init' or 'syncrona download <scope>' first.");
+    return;
+  }
+  try {
+    const docPath = await generateScopeDocs(manifest);
+    logger.success(`Scope documentation written to ${docPath}`);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Failed to generate scope documentation: ${message}`);
+    process.exitCode = 1;
+  }
+}
+export async function initCommand(args: InitCmdArgs) {
+  setLogLevel(args);
+  // R3: `init --new` creates the application first, so it must win over the
+  // .env branch below (which binds every EXISTING scope) and over the wizard.
+  // It has its own dry-run, so the wizard's dry-run refusal does not apply.
+  if (wantsInitNew(args)) {
+    const created = await initNewApp(args);
+    if (created) {
+      await mcpCommand({ ...args, autoConfigure: true, start: false });
+    }
+    return;
+  }
+  const hasEnvFile = await localPathExists(path.join(process.cwd(), ".env"));
+  if (hasEnvFile) {
+    // DX2: name the instance the .env resolves to so the user knows which
+    // server init will talk to before it proceeds (folder creation is then
+    // confirmed in initAllScopesFromEnv — DX4 — unless --ci).
+    const detectedInstance = resolveCredentials(args.instanceProfile).instance;
+    logger.info(
+      `Detected .env in current directory${detectedInstance ? ` (SN_INSTANCE=${detectedInstance})` : ""}. ` +
+        "Running all-scope initialization — you'll confirm before any folders are created."
+    );
+    await initAllScopesFromEnv(args);
+    logger.success("Init complete: all discoverable scopes initialized. ✅");
+    return;
+  }
+
+  // The .env branch above threads --dry-run all the way down (DX4), but the
+  // wizard branch cannot: startWizard() prompts for answers and then writes the
+  // config, the manifest and the source tree with no preview mode of its own.
+  // Honouring the flag by REFUSING is the only honest option — silently running
+  // the real wizard under --dry-run provisions a project the user asked us not
+  // to create.
+  if (args.dryRun === true) {
+    logger.info(
+      "Dry run: no .env found in this directory, so init would run the interactive setup wizard, which has no preview mode."
+    );
+    logger.info(
+      "Nothing was created. Add a .env with SN_INSTANCE/SN_USER/SN_PASSWORD to preview an all-scope init, or re-run without --dry-run."
+    );
+    return;
+  }
+
+  // REV-161: only wire up the MCP server once the workspace actually exists. The
+  // wizard used to return the same way whether it finished, failed or was
+  // cancelled with Ctrl-C, so init went on to write an MCP configuration pointing
+  // at a project that had no config, no manifest and no credentials.
+  const wizardCompleted = await startWizard();
+  if (!wizardCompleted) {
+    return;
+  }
+  await mcpCommand({ ...args, autoConfigure: true, start: false });
+}
+
+export async function buildCommand(args: Sync.BuildCmdArgs) {
+  setLogLevel(args);
+  try {
+    if (args.checkConfig === true) {
+      const rules = ConfigManager.getConfig().rules ?? [];
+      const issues = ConfigManager.checkRuleOrder(rules);
+      if (issues.length === 0) {
+        logger.success(`Config rule order OK (${rules.length} rule(s); no shadowing detected).`);
+        return;
+      }
+      for (const issue of issues) {
+        logger.warn(
+          `Rule #${issue.laterIndex + 1} (${rules[issue.laterIndex].match}) is shadowed by ` +
+            `earlier rule #${issue.earlierIndex + 1} (${rules[issue.earlierIndex].match}): ` +
+            `a file like "${issue.sample}" would match the earlier rule first. ` +
+            "Move the more specific rule before the broader one."
+        );
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    const fileList = await AppUtils.getAppFileList(await gitDiffToEncodedPaths(args.diff));
+    logger.info(`${fileList.length} files to build.`);
+    if (args.dryRun === true) {
+      logger.info("Dry run: skipping local build output writes.");
+      return;
+    }
+    const results = await AppUtils.buildFiles(fileList);
+    logBuildResults(results);
+    // `build --diff <target>` is documented — CLI help, README, CLAUDE.md — to
+    // RECORD what it built, and getDeployPaths reads exactly that file back.
+    // Nothing wrote it: writeDiff existed, was exported and was unit-tested, but
+    // no command ever called it. sync.diff.manifest.json therefore never
+    // appeared, so every deploy after a diff build fell through to the full
+    // build scope — under --ci without even a prompt, the exact escalation the
+    // comment in getDeployPaths warns about, overwriting instance records the
+    // diff never touched.
+    //
+    // Only the records that actually built are recorded: the artifact of a
+    // failed one is absent, or stale from an earlier build, and deploying it
+    // would ship yesterday's code as if it were fresh. buildFiles returns its
+    // results in fileList order, which is what lets them be selected here.
+    //
+    // A full build CLEARS the file for the mirror-image reason: one left behind
+    // by an earlier diff build narrows the next deploy to a stale subset of a
+    // scope the user just rebuilt whole.
+    if (args.diff !== "") {
+      const built = fileList.filter((_, index) => results[index]?.success);
+      await writeDiff(AppUtils.buildFilePaths(built).join(PATH_DELIMITER));
+    } else {
+      await clearDiff();
+    }
+    // REV-160: buildFiles never throws — pushPipeline folds per-record failures
+    // into `{ success: false }` results and logBuildResults only prints them, so
+    // the catch below could not fire and a failed build still exited 0. A CI step
+    // (`syncrona build && syncrona deploy`) therefore deployed stale artifacts.
+    // Mirror deployCommand, which already fails the process on a failed result.
+    if (results.some((res) => !res.success)) {
+      process.exitCode = 1;
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(`Build failed: ${message}`);
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * What a deploy was asked to ship, and on whose authority.
+ *
+ * `fromDiff` is not cosmetic: an empty list means "the diff build found no
+ * changes" when it comes from a manifest, and "there is nothing built here" when
+ * it comes from the build directory. The first is a successful no-op; the second
+ * is a deploy that should never have reported success.
+ */
+type DeployScope = { paths: string[]; fromDiff: boolean };
+
+async function getDeployPaths(ci: boolean): Promise<DeployScope> {
+  // #46: a corrupt sync.diff.manifest.json must ABORT, not silently fall through
+  // to a full-scope deploy. getDiffFile() throws DiffFileCorruptError only when
+  // the file is present-but-unreadable; a genuinely absent diff file leaves
+  // isDiffFileCorrupt() false and we proceed to a full deploy as before.
+  if (ConfigManager.isDiffFileCorrupt()) {
+    ConfigManager.getDiffFile(); // throws DiffFileCorruptError with the reason
+  }
+  let diffFile: Sync.DiffFile | undefined;
+  try {
+    diffFile = ConfigManager.getDiffFile();
+  } catch (_e) {
+    // Only "no diff file present" reaches here (the corrupt case threw above);
+    // fall back to a full-scope deploy.
+  }
+  if (diffFile) {
+    const changedPaths = diffFile.changed;
+    // An empty list is a STATEMENT — "the diff build found nothing to ship" —
+    // and not at all the same thing as having no manifest. Treating the two
+    // alike is how the quietest possible build turns into the loudest possible
+    // deploy: `build --diff main` with nothing changed, then `deploy --ci`
+    // overwriting every record in the scope with no prompt in the way. Deploy
+    // exactly what the manifest names, even when that is nothing.
+    if (changedPaths.length === 0) {
+      logger.info(
+        "The diff manifest lists no changed files - nothing to deploy. Run `build` without --diff for a full-scope deploy."
+      );
+      return { paths: [], fromDiff: true };
+    }
+    // Under --ci there is no TTY: the prompt would resolve to its `false`
+    // default and silently escalate a `build --diff` into a full-scope deploy
+    // that overwrites untouched instance records — and still exit 0. The diff
+    // manifest only exists because someone ran `build --diff`, so its presence
+    // IS the intent; honour it and record the decision in the CI log.
+    if (ci) {
+      logger.info(
+        `Deploying ${changedPaths.length} file(s) from the diff manifest (--ci; build without --diff for a full-scope deploy).`
+      );
+      return { paths: changedPaths, fromDiff: true };
+    }
+    if (await confirmAction("Would you like to deploy only files changed in your diff file?")) {
+      return { paths: changedPaths, fromDiff: true };
+    }
+  }
+  if (ci) {
+    logger.info("Deploying the full build scope (no diff manifest present).");
+  }
+  return {
+    paths: await encodedPathsToFilePaths(ConfigManager.getBuildPath()),
+    fromDiff: false,
+  };
+}
+
+export async function deployCommand(args: Sync.SharedCmdArgs): Promise<void> {
+  setLogLevel(args);
+  await scopeCheck(async () => {
+    const dryRun = args.dryRun === true;
+    const credentials = resolveCredentials(args.instanceProfile);
+    const targetServer = credentials.instance;
+    if (!targetServer) {
+      logger.error("No server configured for deploy!");
+      // #49: route the next step through the DX19 taxonomy (config category)
+      // instead of hardcoding SN_* advice.
+      logErrorHint(new Error("missing config: no instance configured for deploy"));
+      // #3: a misconfigured deploy must fail the shell, not report success.
+      process.exitCode = 1;
+      return;
+    }
+
+    const client = defaultClient(args.instanceProfile);
+    try {
+      await client.checkConnection(5000);
+    } catch (e) {
+      logger.error(
+        `Unable to reach ServiceNow instance ${targetServer} before deploy. Check the instance URL and network connectivity.`
+      );
+      // #49: classify the real reason (network vs auth) via the DX19 taxonomy.
+      logErrorHint(e);
+      // #3: an unreachable instance must fail the shell.
+      process.exitCode = 1;
+      return;
+    }
+
+    // Skipped with --ci: without a TTY the prompt resolves to its `false`
+    // default, so an automated deploy would decline itself and still exit 0.
+    if (
+      args.ci !== true &&
+      !(await confirmAction("Deploying will overwrite code in your instance. Are you sure?"))
+    ) {
+      return;
+    }
+    const { paths, fromDiff } = await getDeployPaths(args.ci === true);
+    logger.silly(`${paths.length} paths found...`);
+    logger.silly(JSON.stringify(paths, null, 2));
+    // A deploy that ships nothing must say so and fail, unless a diff manifest
+    // deliberately asked for nothing. `deploy` before `build`, or after the
+    // build directory was cleaned, resolved to zero files and pushed zero
+    // records without a word — a CI deploy stage that goes green having
+    // deployed nothing is indistinguishable from one that worked.
+    if (paths.length === 0 && !fromDiff) {
+      logger.error(
+        `Nothing to deploy: no built files under ${ConfigManager.getBuildPath()}. ` +
+          "Run `syncrona build` first."
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const appFileList = await AppUtils.getAppFileList(paths);
+    // getAppFileList drops paths no manifest record claims — right for a stray
+    // file among good ones, but when it drops EVERY file there is nothing left
+    // to push and the run would still exit 0. This is what a diff manifest
+    // carried into a different checkout root looks like: its absolute paths
+    // name files that do not exist here.
+    if (paths.length > 0 && appFileList.length === 0) {
+      logger.error(
+        `Nothing to deploy: none of the ${paths.length} selected file(s) belong to a record in the manifest. ` +
+          "Run `syncrona refresh` if these are real records, or rebuild before deploying."
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (dryRun) {
+      logger.info(
+        `Dry run: would deploy ${appFileList.length} records to ${targetServer}, skipping remote push.`
+      );
+      return;
+    }
+    const pushResults = await AppUtils.pushFiles(appFileList);
+    // #3: deploy shares push's failure model — per-record failures are folded
+    // into { success: false } results, so a partially-failed deploy previously
+    // exited 0. Fail the shell whenever any record failed.
+    if (pushResults.some((res) => !res.success)) {
+      process.exitCode = 1;
+    }
+    logPushResults(pushResults);
+  }, false, { dryRun: args.dryRun === true });
+}

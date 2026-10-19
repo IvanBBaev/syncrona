@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sys_db_view_table_field">
+  <sys_db_view_table_field action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>74afbd47d57d4a3ea7299e255fc7861f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_db_view_table_field_74afbd47d57d4a3ea7299e255fc7861f</sys_update_name>
+    <field>caller_id</field>
+    <sys_policy>read</sys_policy>
+    <table>incident</table>
+    <view_table>f63ca98fd1d24128bdeaed53035fa061</view_table>
+  </sys_db_view_table_field>
+</record_update>

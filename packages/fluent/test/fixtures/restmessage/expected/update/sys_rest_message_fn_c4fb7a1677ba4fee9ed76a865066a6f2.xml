@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_fn">
+  <sys_rest_message_fn action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c4fb7a1677ba4fee9ed76a865066a6f2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_fn_c4fb7a1677ba4fee9ed76a865066a6f2</sys_update_name>
+    <authentication_type>no_authentication</authentication_type>
+    <basic_auth_profile/>
+    <content/>
+    <function_name>del</function_name>
+    <http_method>delete</http_method>
+    <lock>true</lock>
+    <oauth2_profile/>
+    <rest_endpoint/>
+    <rest_message>d46e75c26830456e98241763d7915f6c</rest_message>
+    <use_mid_server>d1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6</use_mid_server>
+  </sys_rest_message_fn>
+</record_update>

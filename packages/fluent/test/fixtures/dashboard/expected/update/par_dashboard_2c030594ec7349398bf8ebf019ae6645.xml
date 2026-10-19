@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="par_dashboard">
+  <par_dashboard action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2c030594ec7349398bf8ebf019ae6645</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>par_dashboard_2c030594ec7349398bf8ebf019ae6645</sys_update_name>
+    <active>true</active>
+    <certified>true</certified>
+    <description>Ops overview</description>
+    <name>Operations</name>
+  </par_dashboard>
+</record_update>

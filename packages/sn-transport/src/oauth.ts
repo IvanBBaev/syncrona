@@ -1,0 +1,204 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Shared, IO-free OAuth 2.0 token manager. Supports the Resource Owner Password
+// Credentials, Client Credentials, and JWT Bearer grants, plus refresh_token
+// re-use. Lives in @syncrona/sn-transport so both the CLI (axios) and the MCP
+// server (fetch) use one implementation. The HTTP call is injected as `post`,
+// so this module performs no IO itself and stays pure.
+//
+// OAuth is ADDITIVE everywhere — Basic auth stays the default; OAuth engages
+// only when a client id + secret (and, for jwt-bearer, a signing key) are
+// configured.
+
+/** OAuth grant used for the INITIAL token acquisition (refresh always reuses a
+ * cached refresh_token when the server issued one). "password" is the historical
+ * default and keeps today's behaviour when `grantType` is omitted. */
+export type OAuthGrantType = "password" | "client_credentials" | "jwt-bearer";
+
+/** RFC 7523 grant-type URN for the OAuth 2.0 JWT bearer assertion flow. */
+export const JWT_BEARER_GRANT_TYPE =
+  "urn:ietf:params:oauth:grant-type:jwt-bearer";
+
+export type OAuthConfig = {
+  clientId: string;
+  clientSecret: string;
+  /** Grant for the initial acquisition. Defaults to "password" (backward compatible). */
+  grantType?: OAuthGrantType;
+  /**
+   * For `grantType: "jwt-bearer"` — mints a freshly signed JWT assertion for
+   * each acquisition. A function (not a static string) so a re-acquisition
+   * after expiry produces a new, unexpired assertion. Ignored for other grants.
+   */
+  buildAssertion?: () => string | Promise<string>;
+};
+
+export type OAuthTokenResponse = {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+};
+
+// Posts a form-encoded body to a path (relative to the instance base URL) and
+// returns the parsed token response. Injected so the manager is testable
+// without a network or a specific HTTP client.
+export type TokenPoster = (path: string, body: string) => Promise<OAuthTokenResponse>;
+
+export type TokenManager = {
+  /** Valid access token, acquiring or refreshing as needed. */
+  getToken(): Promise<string>;
+  /** Force a refresh (used after a 401) and return the new token. */
+  forceRefresh(): Promise<string>;
+};
+
+export const OAUTH_TOKEN_PATH = "oauth_token.do";
+// Treat a token as expired this many ms early to avoid racing its expiry.
+const EXPIRY_SKEW_MS = 30_000;
+const DEFAULT_TTL_MS = 30 * 60 * 1000;
+
+export function oauthFormBody(fields: Record<string, string>): string {
+  return Object.entries(fields)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
+export function createTokenManager(
+  credentials: { username?: string; password?: string } = {},
+  oauth: OAuthConfig,
+  post: TokenPoster
+): TokenManager {
+  // `staleAt` is when the cached token stops being served: its expiry minus a skew
+  // that is capped at half the TTL. A flat 30 s skew would make any token living
+  // 30 s or less stale on arrival, so every request would POST for a new one.
+  let cached: { accessToken: string; refreshToken?: string; staleAt: number } | null = null;
+  // De-duplicates concurrent acquire/refresh: a burst of parallel requests that
+  // all see an expired (or missing) token must trigger ONE token call, not N.
+  let inFlight: Promise<string> | null = null;
+
+  const store = (res: OAuthTokenResponse): string => {
+    const token = res?.access_token;
+    if (typeof token !== "string" || token.length === 0) {
+      // A malformed response (e.g. an error payload with no access_token) must
+      // not poison the cache with `undefined` — that would make every later
+      // request send `Authorization: Bearer undefined` until restart.
+      throw new Error("OAuth token response did not include an access_token");
+    }
+    // Trust `expires_in` only when it is a positive, finite number of seconds.
+    // A 0 / negative / NaN / non-number value (malformed server, or a string that
+    // would coerce oddly) falls back to DEFAULT_TTL_MS instead of producing an
+    // already-expired token that forces a refresh on the very next request.
+    const ttlMs =
+      typeof res.expires_in === "number" &&
+      Number.isFinite(res.expires_in) &&
+      res.expires_in > 0
+        ? res.expires_in * 1000
+        : DEFAULT_TTL_MS;
+    cached = {
+      accessToken: token,
+      refreshToken: res.refresh_token ?? cached?.refreshToken,
+      staleAt: Date.now() + ttlMs - Math.min(EXPIRY_SKEW_MS, ttlMs / 2),
+    };
+    return token;
+  };
+
+  // Serializes token acquisition so concurrent callers share a single network
+  // round-trip. The in-flight promise is cleared once settled (success or
+  // failure) so the next miss starts fresh.
+  const runExclusive = (fn: () => Promise<string>): Promise<string> => {
+    if (inFlight) {
+      return inFlight;
+    }
+    inFlight = (async () => {
+      try {
+        return await fn();
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+
+  // Acquire a NEW token per the configured grant. client_credentials and
+  // jwt-bearer typically return no refresh_token, so refresh() re-runs this.
+  const acquire = async (): Promise<string> => {
+    const grant = oauth.grantType ?? "password";
+    if (grant === "client_credentials") {
+      return store(
+        await post(
+          OAUTH_TOKEN_PATH,
+          oauthFormBody({
+            grant_type: "client_credentials",
+            client_id: oauth.clientId,
+            client_secret: oauth.clientSecret,
+          })
+        )
+      );
+    }
+    if (grant === "jwt-bearer") {
+      if (!oauth.buildAssertion) {
+        throw new Error(
+          "OAuth jwt-bearer grant requires an assertion builder (buildAssertion)"
+        );
+      }
+      const assertion = await oauth.buildAssertion();
+      return store(
+        await post(
+          OAUTH_TOKEN_PATH,
+          oauthFormBody({
+            grant_type: JWT_BEARER_GRANT_TYPE,
+            assertion,
+            client_id: oauth.clientId,
+            client_secret: oauth.clientSecret,
+          })
+        )
+      );
+    }
+    return store(
+      await post(
+        OAUTH_TOKEN_PATH,
+        oauthFormBody({
+          grant_type: "password",
+          username: credentials.username ?? "",
+          password: credentials.password ?? "",
+          client_id: oauth.clientId,
+          client_secret: oauth.clientSecret,
+        })
+      )
+    );
+  };
+
+  const refresh = async (): Promise<string> => {
+    if (!cached?.refreshToken) {
+      return acquire();
+    }
+    try {
+      const res = await post(
+        OAUTH_TOKEN_PATH,
+        oauthFormBody({
+          grant_type: "refresh_token",
+          refresh_token: cached.refreshToken,
+          client_id: oauth.clientId,
+          client_secret: oauth.clientSecret,
+        })
+      );
+      return store(res);
+    } catch (_) {
+      // Refresh token expired/revoked — fall back to a fresh grant acquisition.
+      // Forget it first: `store` keeps the previous refresh token when the new
+      // response carries none, so a dead one would otherwise be POSTed again
+      // before every later re-acquisition.
+      cached.refreshToken = undefined;
+      return acquire();
+    }
+  };
+
+  return {
+    async getToken(): Promise<string> {
+      if (cached && Date.now() < cached.staleAt) {
+        return cached.accessToken;
+      }
+      return runExclusive(() => (cached ? refresh() : acquire()));
+    },
+    async forceRefresh(): Promise<string> {
+      return runExclusive(refresh);
+    },
+  };
+}

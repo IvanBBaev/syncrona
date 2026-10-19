@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sys_one_extend_definition_attribute action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f4378d87793b4844b9bc623b7c2e2c2d</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_one_extend_definition_attribute_f4378d87793b4844b9bc623b7c2e2c2d</sys_update_name>
+    <active>true</active>
+    <capability>e0156365ac94450b86885804ae35ed6b</capability>
+    <data_type>string</data_type>
+    <description>Error Message</description>
+    <label>error</label>
+    <name>error</name>
+    <type>output</type>
+  </sys_one_extend_definition_attribute>
+</record_update>

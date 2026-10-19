@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="sp_page">
+  <sp_page action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>313624f3811b46c4af6be87a299d8719</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_page_313624f3811b46c4af6be87a299d8719</sys_update_name>
+    <category>sc</category>
+    <css>.p{}</css>
+    <draft>true</draft>
+    <dynamic_title_structure>T ${number}</dynamic_title_structure>
+    <human_readable_url_structure>kb/%sys_id</human_readable_url_structure>
+    <id>full_page</id>
+    <internal>true</internal>
+    <omit_watcher>true</omit_watcher>
+    <public>true</public>
+    <roles>itil,x_snc_bprobe.p_user</roles>
+    <seo_script/>
+    <short_description>sd</short_description>
+    <title>Full Page</title>
+    <use_seo_script>false</use_seo_script>
+  </sp_page>
+</record_update>

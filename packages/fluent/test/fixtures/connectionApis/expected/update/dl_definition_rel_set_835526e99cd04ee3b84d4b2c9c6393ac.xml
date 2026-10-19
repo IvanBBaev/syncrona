@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="dl_definition_rel_set">
+  <dl_definition_rel_set action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>835526e99cd04ee3b84d4b2c9c6393ac</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>dl_definition_rel_set_835526e99cd04ee3b84d4b2c9c6393ac</sys_update_name>
+    <always_replace>true</always_replace>
+    <dl_definition>c78915ade236450494fbba6f191c6542</dl_definition>
+    <matcher_table>x_snc_bprobe_matcher</matcher_table>
+    <matcher_table_field>priority</matcher_table_field>
+    <source_table>x_snc_bprobe_src</source_table>
+    <source_table_field>priority</source_table_field>
+  </dl_definition_rel_set>
+</record_update>

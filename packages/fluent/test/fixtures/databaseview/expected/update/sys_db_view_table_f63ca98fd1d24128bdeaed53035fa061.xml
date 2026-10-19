@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sys_db_view_table">
+  <sys_db_view_table action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f63ca98fd1d24128bdeaed53035fa061</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_db_view_table_f63ca98fd1d24128bdeaed53035fa061</sys_update_name>
+    <active>true</active>
+    <left_join>false</left_join>
+    <order>100</order>
+    <sys_policy>read</sys_policy>
+    <table>incident</table>
+    <variable_prefix>inc</variable_prefix>
+    <view name="x_snc_bprobe_full">ed751008dacc44e89ad1d42912f3d0d8</view>
+    <where_clause/>
+  </sys_db_view_table>
+</record_update>

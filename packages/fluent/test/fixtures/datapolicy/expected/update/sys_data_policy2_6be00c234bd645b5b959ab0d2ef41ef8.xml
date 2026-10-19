@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_data_policy2">
+  <sys_data_policy2 action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6be00c234bd645b5b959ab0d2ef41ef8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_data_policy2_6be00c234bd645b5b959ab0d2ef41ef8</sys_update_name>
+    <active>false</active>
+    <apply_import_set>false</apply_import_set>
+    <apply_soap>false</apply_soap>
+    <conditions>code=A^EQ</conditions>
+    <description>Full</description>
+    <enforce_ui>false</enforce_ui>
+    <inherit>true</inherit>
+    <model_id>m1</model_id>
+    <model_table>x_snc_bprobe_dp</model_table>
+    <reverse_if_false>false</reverse_if_false>
+    <short_description>Code &amp; &lt;note&gt;</short_description>
+  </sys_data_policy2>
+</record_update>

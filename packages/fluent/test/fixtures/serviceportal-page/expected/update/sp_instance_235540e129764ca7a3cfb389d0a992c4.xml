@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<record_update table="sp_instance">
+  <sp_instance action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>235540e129764ca7a3cfb389d0a992c4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_instance_235540e129764ca7a3cfb389d0a992c4</sys_update_name>
+    <active>true</active>
+    <advanced_placeholder_dimensions>false</advanced_placeholder_dimensions>
+    <async_load>false</async_load>
+    <async_load_device_type>desktop,tablet,mobile</async_load_device_type>
+    <async_load_trigger>viewport</async_load_trigger>
+    <class_name/>
+    <color>default</color>
+    <css/>
+    <glyph/>
+    <id/>
+    <order>2</order>
+    <placeholder_dimensions>{
+	"mobile": {
+		"height": "250px",
+		"width": "100%"
+	},
+	"desktop": {
+		"height": "250px",
+		"width": "100%"
+	},
+	"tablet": {
+		"height": "250px",
+		"width": "100%"
+	}
+}</placeholder_dimensions>
+    <placeholder_dimensions_script>function evaluateConfig(options) { return {
+	"mobile": {
+		"height": "250px",
+		"width": "100%"
+	},
+	"desktop": {
+		"height": "250px",
+		"width": "100%"
+	},
+	"tablet": {
+		"height": "250px",
+		"width": "100%"
+	}
+}; }</placeholder_dimensions_script>
+    <placeholder_template>&lt;!--
+	AngularJS template with configurable options.
+	Use the "options" object to control dynamic behavior.
+	Example: Display an element when max row count is 10:
+	&lt;div ng-if="options.maxRowCount === 10"&gt;&lt;/div&gt;
+	The "skeleton-container" class is used for loading placeholders.
+--&gt;
+	&lt;div class="skeleton-container"&gt;
+	&lt;!-- Header Skeleton --&gt;
+	&lt;div class="skeleton-box skeleton-header"&gt;&lt;/div&gt;
+	&lt;!-- Body Skeleton --&gt;
+	&lt;div class="skeleton-box skeleton-line"&gt;&lt;/div&gt;
+	&lt;div class="skeleton-box skeleton-line small"&gt;&lt;/div&gt;
+	&lt;div class="skeleton-box skeleton-line medium"&gt;&lt;/div&gt;
+&lt;/div&gt;</placeholder_template>
+    <preserve_placeholder_size>false</preserve_placeholder_size>
+    <roles/>
+    <short_description/>
+    <size>md</size>
+    <sp_column>e08c4b760aae4d398e0bc24745c4dfe6</sp_column>
+    <sp_widget/>
+    <title/>
+    <url/>
+    <widget_parameters>{"k":{"value":"v","displayValue":"v"}}</widget_parameters>
+  </sp_instance>
+</record_update>

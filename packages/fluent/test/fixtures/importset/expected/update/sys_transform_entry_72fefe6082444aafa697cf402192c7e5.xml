@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<record_update table="sys_transform_entry">
+  <sys_transform_entry action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>72fefe6082444aafa697cf402192c7e5</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_transform_entry_72fefe6082444aafa697cf402192c7e5</sys_update_name>
+    <choice_action/>
+    <coalesce>false</coalesce>
+    <coalesce_case_sensitive>false</coalesce_case_sensitive>
+    <coalesce_empty_fields>false</coalesce_empty_fields>
+    <date_format/>
+    <map>d1c2890a17404df4b526f43f71999d9c</map>
+    <reference_value_field/>
+    <source_field/>
+    <source_script><![CDATA[answer = source.u_title.toUpperCase();]]></source_script>
+    <source_table>x_snc_bprobe_users_import</source_table>
+    <target_field>title</target_field>
+    <target_table>sys_user</target_table>
+    <use_source_script>true</use_source_script>
+  </sys_transform_entry>
+</record_update>

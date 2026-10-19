@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_policy_rl_action">
+  <sys_ui_policy_rl_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e528c03647d94146afc7aa7de83fd95a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_policy_rl_action_e528c03647d94146afc7aa7de83fd95a</sys_update_name>
+    <list>REL:b9b7e1a0c0a8016400b98a06818d57c7</list>
+    <ui_policy table="x_snc_bprobe_ui" short_description="Full policy">88116b537e6d4b1eac10f0de566c3dd7</ui_policy>
+    <visible>ignore</visible>
+  </sys_ui_policy_rl_action>
+</record_update>

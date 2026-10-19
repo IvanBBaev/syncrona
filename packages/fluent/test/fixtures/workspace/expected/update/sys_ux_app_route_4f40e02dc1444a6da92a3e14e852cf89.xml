@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_app_route">
+  <sys_ux_app_route action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4f40e02dc1444a6da92a3e14e852cf89</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_app_route_4f40e02dc1444a6da92a3e14e852cf89</sys_update_name>
+    <app_config>7f4bf680998847ee990f4af42f0d0940</app_config>
+    <description/>
+    <extension_point/>
+    <fields/>
+    <icon/>
+    <interoperable>false</interoperable>
+    <name>Dashboards Default</name>
+    <optional_parameters>sysId,edit,tabSysId,filter,element</optional_parameters>
+    <order>0</order>
+    <parent_macroponent>c276387cc331101080d6d3658940ddd2</parent_macroponent>
+    <parent_macroponent_composition_element_id/>
+    <route_type>home</route_type>
+    <screen_type>1089ae84f8f546c88148dd11a2106826</screen_type>
+  </sys_ux_app_route>
+</record_update>

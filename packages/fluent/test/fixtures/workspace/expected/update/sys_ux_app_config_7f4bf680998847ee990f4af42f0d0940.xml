@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_app_config">
+  <sys_ux_app_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7f4bf680998847ee990f4af42f0d0940</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_app_config_7f4bf680998847ee990f4af42f0d0940</sys_update_name>
+    <active>true</active>
+    <custom_icon/>
+    <description>Workspace created by Fluent</description>
+    <disable_auto_reflow>false</disable_auto_reflow>
+    <encode_query_string>false</encode_query_string>
+    <icon/>
+    <landing_path>list</landing_path>
+    <name>Minimal</name>
+  </sys_ux_app_config>
+</record_update>

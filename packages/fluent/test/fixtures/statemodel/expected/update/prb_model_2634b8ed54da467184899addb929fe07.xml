@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<record_update table="prb_model">
+  <prb_model action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2634b8ed54da467184899addb929fe07</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>prb_model_2634b8ed54da467184899addb929fe07</sys_update_name>
+    <active>true</active>
+    <advanced_security>false</advanced_security>
+    <default_prb_model>false</default_prb_model>
+    <description>P</description>
+    <name>Problem model</name>
+    <read_roles/>
+    <state_field>state</state_field>
+    <table_name>problem</table_name>
+    <template_approval_groups/>
+    <template_approval_users/>
+    <template_proposal_access/>
+    <write_roles/>
+  </prb_model>
+</record_update>

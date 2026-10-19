@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<record_update table="sysauto_script">
+  <sysauto_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dfea9beb0bad415898a0ed68b7511169</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysauto_script_dfea9beb0bad415898a0ed68b7511169</sys_update_name>
+    <active>false</active>
+    <advanced>true</advanced>
+    <business_calendar/>
+    <condition/>
+    <conditional>false</conditional>
+    <entered_run_end/>
+    <entered_run_start>2024-03-01 10:00:00</entered_run_start>
+    <entered_time/>
+    <max_drift>1970-01-01 00:10:00</max_drift>
+    <name>Periodic</name>
+    <offset>1970-01-02 00:00:03</offset>
+    <offset_type>1</offset_type>
+    <repeat_every>3</repeat_every>
+    <run_as>6816f79cc0a8016401c5a33be04be441</run_as>
+    <run_as_tz>Asia/Kolkata</run_as_tz>
+    <run_dayofmonth>1</run_dayofmonth>
+    <run_dayofweek>1</run_dayofweek>
+    <run_daysofweek/>
+    <run_end/>
+    <run_month/>
+    <run_period>1970-01-01 04:05:00</run_period>
+    <run_start>2024-03-01 10:00:00</run_start>
+    <run_time>1970-01-01 00:00:00</run_time>
+    <run_type>periodically</run_type>
+    <run_weekinmonth/>
+    <script><![CDATA[gs.info("p");]]></script>
+    <sys_name>Periodic</sys_name>
+    <sys_policy>read</sys_policy>
+    <time_zone>UTC</time_zone>
+    <upgrade_safe>true</upgrade_safe>
+  </sysauto_script>
+</record_update>

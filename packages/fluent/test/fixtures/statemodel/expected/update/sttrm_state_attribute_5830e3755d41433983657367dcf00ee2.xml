@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_state_attribute">
+  <sttrm_state_attribute action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5830e3755d41433983657367dcf00ee2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_state_attribute_5830e3755d41433983657367dcf00ee2</sys_update_name>
+    <active>true</active>
+    <sttrm_attribute>2ca2cbd5ff2031107f54ffffffffff6c</sttrm_attribute>
+    <sttrm_state>74cd9a3ae4454d73b2d21ee981d44818</sttrm_state>
+  </sttrm_state_attribute>
+</record_update>

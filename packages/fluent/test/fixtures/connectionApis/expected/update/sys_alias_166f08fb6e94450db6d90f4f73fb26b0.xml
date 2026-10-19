@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>166f08fb6e94450db6d90f4f73fb26b0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_166f08fb6e94450db6d90f4f73fb26b0</sys_update_name>
+    <configuration_template/>
+    <connection_type>http_connection</connection_type>
+    <description/>
+    <id>x_snc_bprobe.Min_Alias</id>
+    <multiple_connections>false</multiple_connections>
+    <name>Min Alias</name>
+    <parent/>
+    <retry_policy>ef751ff07301330025d71afe2ff6a7f9</retry_policy>
+    <sys_policy/>
+    <type>connection</type>
+  </sys_alias>
+</record_update>

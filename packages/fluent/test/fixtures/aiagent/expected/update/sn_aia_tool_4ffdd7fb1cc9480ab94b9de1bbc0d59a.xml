@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_tool">
+  <sn_aia_tool action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4ffdd7fb1cc9480ab94b9de1bbc0d59a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_tool_4ffdd7fb1cc9480ab94b9de1bbc0d59a</sys_update_name>
+    <active>true</active>
+    <description>Runs</description>
+    <input_schema>[{"name":"content","description":"Content","mandatory":true}]</input_schema>
+    <name>Run Script</name>
+    <post_processing_script/>
+    <record_type>template</record_type>
+    <script><![CDATA[function run(inputs) { return inputs.content; }]]></script>
+    <sys_domain>global</sys_domain>
+    <sys_overrides/>
+    <target_document/>
+    <target_document_table>sn_aia_tool</target_document_table>
+    <type>script</type>
+  </sn_aia_tool>
+</record_update>

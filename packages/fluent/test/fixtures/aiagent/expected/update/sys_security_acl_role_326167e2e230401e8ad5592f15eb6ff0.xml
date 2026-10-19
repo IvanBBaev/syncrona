@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl_role">
+  <sys_security_acl_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>326167e2e230401e8ad5592f15eb6ff0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_role_326167e2e230401e8ad5592f15eb6ff0</sys_update_name>
+    <sys_security_acl>fe02e2968ddf4cfbb5c3296bd81e8961</sys_security_acl>
+    <sys_user_role>b0593b350a0a0aa7001d689e4542dc28</sys_user_role>
+  </sys_security_acl_role>
+</record_update>

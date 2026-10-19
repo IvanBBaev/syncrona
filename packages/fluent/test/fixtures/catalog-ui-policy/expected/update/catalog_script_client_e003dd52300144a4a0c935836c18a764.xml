@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<record_update table="catalog_script_client">
+  <catalog_script_client action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e003dd52300144a4a0c935836c18a764</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>catalog_script_client_e003dd52300144a4a0c935836c18a764</sys_update_name>
+    <active>true</active>
+    <applies_catalog>true</applies_catalog>
+    <applies_req_item>true</applies_req_item>
+    <applies_sc_task>false</applies_sc_task>
+    <applies_target_record>false</applies_target_record>
+    <applies_to>item</applies_to>
+    <cat_item>3813e86653aa4f21acf1c0afdf1c4500</cat_item>
+    <cat_variable>IO:055f9af2598b416a8ff001d9b411409f</cat_variable>
+    <global>true</global>
+    <isolate_script>true</isolate_script>
+    <name>On change</name>
+    <order>7</order>
+    <published_ref/>
+    <script><![CDATA[function onChange(control, oldValue, newValue, isLoading) {}]]></script>
+    <type>onChange</type>
+    <ui_type>1</ui_type>
+    <va_supported>false</va_supported>
+    <variable_set/>
+  </catalog_script_client>
+</record_update>

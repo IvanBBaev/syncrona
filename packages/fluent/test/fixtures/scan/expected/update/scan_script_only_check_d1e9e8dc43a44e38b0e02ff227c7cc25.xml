@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="scan_script_only_check">
+  <scan_script_only_check action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d1e9e8dc43a44e38b0e02ff227c7cc25</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>scan_script_only_check_d1e9e8dc43a44e38b0e02ff227c7cc25</sys_update_name>
+    <active>true</active>
+    <category>security</category>
+    <description/>
+    <documentation_url/>
+    <finding_type>scan_finding</finding_type>
+    <name>Explicit id</name>
+    <priority>1</priority>
+    <resolution_details/>
+    <run_condition/>
+    <score_max>100</score_max>
+    <score_min>0</score_min>
+    <score_scale>1</score_scale>
+    <script/>
+    <short_description>Explicit</short_description>
+  </scan_script_only_check>
+</record_update>

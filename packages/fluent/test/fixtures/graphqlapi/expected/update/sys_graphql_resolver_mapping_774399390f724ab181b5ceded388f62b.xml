@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_graphql_resolver_mapping">
+  <sys_graphql_resolver_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>774399390f724ab181b5ceded388f62b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_graphql_resolver_mapping_774399390f724ab181b5ceded388f62b</sys_update_name>
+    <path>Query:hello</path>
+    <resolver>bd3bc87faee143b9a1871a8ed044c617</resolver>
+    <schema>7e13ee453839472f89318d37f909bfa2</schema>
+  </sys_graphql_resolver_mapping>
+</record_update>

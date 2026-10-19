@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard_answer">
+  <sys_wizard_answer action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>195538581f944ec1b9178e43bad7130a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_answer_195538581f944ec1b9178e43bad7130a</sys_update_name>
+    <active>true</active>
+    <answer>By sys_id</answer>
+    <button_label/>
+    <dependent_value/>
+    <element/>
+    <name>By sys_id</name>
+    <next_question>aaaabbbbccccddddeeeeffff00001111</next_question>
+    <order>50</order>
+    <payload_name/>
+    <question name="Demo wizard">855cef9fabb04903be20c4444a518c3a</question>
+    <roles/>
+    <script/>
+    <table/>
+    <target_url/>
+    <type>2</type>
+  </sys_wizard_answer>
+</record_update>

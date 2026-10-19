@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="catalog_ui_policy_action">
+  <catalog_ui_policy_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4e7e75d5eafc4d13848d379bfe83fbaf</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>catalog_ui_policy_action_4e7e75d5eafc4d13848d379bfe83fbaf</sys_update_name>
+    <catalog_item>3813e86653aa4f21acf1c0afdf1c4500</catalog_item>
+    <catalog_variable>IO:055f9af2598b416a8ff001d9b411409f</catalog_variable>
+    <cleared>false</cleared>
+    <disabled>ignore</disabled>
+    <field_message/>
+    <field_message_type>none</field_message_type>
+    <mandatory>true</mandatory>
+    <order>100</order>
+    <ui_policy>06c821b89f69493a9b1ff9c543b813ca</ui_policy>
+    <value/>
+    <value_action>ignore</value_action>
+    <variable>a</variable>
+    <variable_set/>
+    <visible>true</visible>
+  </catalog_ui_policy_action>
+</record_update>

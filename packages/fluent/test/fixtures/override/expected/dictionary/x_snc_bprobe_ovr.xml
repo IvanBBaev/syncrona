@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<database>
+  <element name="x_snc_bprobe_ovr" type="collection" label="Ovr" is_extendable="false" text_index="false" read_only="false" audit="false" access="public" caller_access="0" scriptable_table="false" attributes="">
+    <element name="title" type="string" active="true" array="false" audit="false" unique="false" label="Title" max_length="7" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Titles"/>
+  </element>
+</database>

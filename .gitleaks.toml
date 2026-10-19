@@ -1,0 +1,61 @@
+# gitleaks configuration — extends the built-in ruleset with project allowlists.
+# Used by the secret-scan job in .github/workflows/ci.yml (G16).
+title = "syncrona gitleaks config"
+
+[extend]
+useDefault = true
+
+# SECURITY NOTE (gap-analysis #25/#57): this repo is now PUBLIC and its history
+# had one real-credential incident that originated inside a test file. The old
+# config blanket-allowlisted EVERY test directory (`packages/.*/test/.*`,
+# `packages/core/src/tests/.*`), which would let a future real secret committed
+# to any test path slip past the scan silently. That directory-path allowlist has
+# been removed. Test/fixture secrets are instead allowed narrowly by two means:
+#   1. the placeholder-value regex below (matches only obviously-fake fixture
+#      secrets — short dictionary-ish words, never high-entropy real keys), and
+#   2. inline `# gitleaks:allow` comments on any specific line that trips a rule
+#      but is provably a placeholder.
+# Real, high-entropy secrets committed to a test path are NO LONGER exempt.
+[allowlist]
+description = "Allow only obviously-fake placeholder secrets used in fixtures/docs; do not exempt whole directories."
+
+# Placeholder fixture values: short, low-entropy, human-readable stand-ins such
+# as `secret`, `pass`, `pass_a`, `dev-pass`, `s3cret`, `tok-1`, `access-token`,
+# `refreshed-token`, `base_pass`, `test-token`, `dummy`, `changeme`, `xxxx`,
+# `example`, `placeholder`, `fake-...`. These are matched by value, so they are
+# allowed no matter which file they appear in, while any credential-looking
+# string that is NOT one of these fake shapes is still flagged.
+regexes = [
+  # Common explicit placeholder words (case-insensitive), optionally suffixed.
+  '''(?i)\b(secret|password|passwd|pass|pw|token|apikey|api[_-]?key|client[_-]?secret|access[_-]?token|refresh(?:ed)?[_-]?token|bearer)?[_-]?(placeholder|example|sample|dummy|fake|changeme|redacted|test|dev|qa|prod|stored?|legacy|old|new|base|file)([_-][a-z0-9]{1,8})?\b''',
+  # Short low-entropy fixture tokens: `tok-1`, `tok-123`, `pass_a`, `s3cret`,
+  # `dev-pass`, `access-token`, `auth-header`. Bounded length keeps real
+  # high-entropy secrets (which exceed this shape) out of the exemption.
+  '''\b(tok|token|pass|pw|key|auth|cred|secret)[-_][a-z0-9]{1,10}\b''',
+  # The sys_id of the platform's default Now LLM generic flow, which
+  # @servicenow/sdk 4.13 writes into every Now Assist skill as `api="..."`.
+  # It is a public record id shipped in the SDK, not a credential; the byte-exact
+  # golden XML fixtures cannot carry an inline gitleaks:allow comment.
+  '''^936e514a53b3b110f028ddeeff7b128c$''',
+]
+
+# Example / template env files are configuration templates, never real secrets.
+paths = [
+  '''.*\.example$''',
+  '''.*\.example\..*''',
+]
+
+# ServiceNow record-update XML references a record by its 32-hex sys_id in a
+# `document_key="..."` attribute and generated keys.ts files hold it as
+# `document_key: '...'` (e.g. the golden ATF fixtures), and an AI agent's
+# access role mapping references its agent as `<agent_access_config agent="...">` (the golden
+# AiAgent fixtures); the default generic-api-key rule mistakes them for keys.
+# Only those exact shapes are allowed, and only for that rule.
+[[rules]]
+id = "generic-api-key"
+  [[rules.allowlists]]
+  regexTarget = "match"
+  regexes = [
+    '''^document_key(?:="?|: ')[0-9a-f]{32}["']$''',
+    '''^agent_access_config agent="[0-9a-f]{32}"$''',
+  ]

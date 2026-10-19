@@ -1,0 +1,797 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { SN, Sync } from "@syncrona/types";
+import path from "path";
+import { promises as fsp } from "fs";
+import vm from "vm";
+import { createRequire } from "module";
+import { types } from "node:util";
+import { logger } from "./Logger.js";
+import { includes, excludes, tableOptions } from "./defaultOptions.js";
+import { isValidDataModelTableName } from "./dataModel.js";
+import { DATA_MODEL_LAYOUTS, isValidDataModelLayout } from "./dataModelComposite.js";
+import { TABLE_PRESET_NAMES, isTablePresetName } from "./tablePresets.js";
+
+// #46: thrown when sync.diff.manifest.json exists but cannot be read/parsed,
+// so a scoped deploy never silently degrades into a full deploy.
+export class DiffFileCorruptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DiffFileCorruptError";
+  }
+}
+
+// The one shape deploy knows how to act on. Anything else parsed from
+// sync.diff.manifest.json is reported as corrupt rather than read as an empty
+// diff, because "empty" and "unintelligible" lead to opposite deploys.
+const isDiffFileShape = (value: unknown): value is Sync.DiffFile => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const { changed } = value as { changed?: unknown };
+  return (
+    Array.isArray(changed) && changed.every((p) => typeof p === "string")
+  );
+};
+
+// #16: the one shape the rest of the CLI knows how to act on. `{}`, `[]`,
+// `null` and `{"scope":"x_app"}` are all valid JSON, and every one of them used
+// to load as a healthy manifest — after which `manifest.tables ?? {}` claims
+// nothing at all. That reads identically to a manifest for an empty scope, and
+// the two lead to opposite outcomes: `repair --apply --prune` takes the entire
+// downloaded tree for orphans and deletes it, and a push resolves no record.
+// Both `scope` and `tables` are required because both are load-bearing — the
+// scope names the application every remote call is filtered by.
+const isAppManifestShape = (value: unknown): value is SN.AppManifest => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const { scope, tables } = value as { scope?: unknown; tables?: unknown };
+  return (
+    typeof scope === "string" &&
+    typeof tables === "object" &&
+    tables !== null &&
+    !Array.isArray(tables)
+  );
+};
+
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
+
+const DEFAULT_CONFIG: Sync.Config = {
+  sourceDirectory: "src",
+  buildDirectory: "build",
+  pushConcurrency: 10,
+  rules: [],
+  includes,
+  excludes,
+  tableOptions: {},
+  refreshInterval: DEFAULT_REFRESH_INTERVAL_SECONDS,
+  // DX22: write the `.meta.json` sidecar unless a project opts out.
+  meta: true,
+  // DX22: and push local edits to it back, unless a project opts out. Separate
+  // from `meta` because "show me the metadata" and "let me change it" are
+  // different decisions — a team can keep the sidecar as read-only reference.
+  metaPush: true,
+  // R4: the data model (dictionary, choices, roles, ACLs, …) is opt-in. An
+  // empty list keeps every existing workspace exactly as it was; the documented
+  // table list is DATA_MODEL_DEFAULT_TABLES (docs/DATA_MODEL.md).
+  dataModelTables: [],
+  // SDK-F2: one sidecar per record stays the default; "composite" keeps a
+  // table, its columns and their choices in one data-model document.
+  dataModelLayout: "records",
+  // WP3: JSON columns stay sidecar strings unless a project opts a preset in.
+  tablePresets: [],
+};
+
+type ConfigState = {
+  root_dir?: string;
+  config?: Sync.Config;
+  manifest?: SN.AppManifest;
+  config_path?: string;
+  source_path?: string;
+  build_path?: string;
+  env_path?: string;
+  manifest_path?: string;
+  diff_path?: string;
+  diff_file?: Sync.DiffFile;
+  // #46: set only when sync.diff.manifest.json is PRESENT but unreadable
+  // (parse error / read error). Absent-file is left as undefined on both, so
+  // callers can tell "no diff" (full scope) apart from "corrupt diff" (abort).
+  diff_file_error?: string;
+  // #16: set only when sync.manifest.json is PRESENT but does not parse into a
+  // manifest. Same distinction as diff_file_error: "no manifest yet" and
+  // "manifest we cannot read" must not collapse into each other.
+  manifest_error?: string;
+  refresh_interval?: number;
+};
+
+function shouldPreferCurrentWorkingDirectory(
+  currentPath: string,
+  discoveredConfigPath: string | false
+): boolean {
+  if (!discoveredConfigPath) {
+    return false;
+  }
+
+  const localConfigPath = path.join(currentPath, "sync.config.js");
+  if (path.resolve(discoveredConfigPath) === path.resolve(localConfigPath)) {
+    return false;
+  }
+
+  const configRoot = path.dirname(discoveredConfigPath);
+  const relative = path.relative(configRoot, currentPath);
+  if (!relative || relative.startsWith("..")) {
+    return false;
+  }
+
+  const segments = relative.split(path.sep).filter(Boolean);
+  return segments.length >= 2 && segments[0] === "packages";
+}
+
+// Shape validation for sync.config.js: typos in option names (e.g.
+// "excldues") otherwise pass silently and the option is ignored. Wrong types
+// are hard errors; unknown keys are warnings (forward compatibility).
+const CONFIG_KEY_TYPES: Record<string, "string" | "number" | "array" | "object" | "boolean"> = {
+  sourceDirectory: "string",
+  buildDirectory: "string",
+  pushConcurrency: "number",
+  rules: "array",
+  includes: "object",
+  excludes: "object",
+  tableOptions: "object",
+  refreshInterval: "number",
+  flat: "boolean",
+  meta: "boolean",
+  metaPush: "boolean",
+  createRecords: "boolean",
+  createTables: "array",
+  dataModelTables: "array",
+  dataModelLayout: "string",
+  tablePresets: "array",
+};
+
+// Node clamps a timer delay above 2^31-1 ms to 1 ms, so a "practically never"
+// interval would refresh the manifest back to back instead.
+export const MAX_REFRESH_INTERVAL_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
+/**
+ * The refresh interval `dev` polls with, in whole seconds. A missing, null or
+ * non-finite value takes the default (a destructuring default only covers
+ * `undefined`, so `null` used to disable polling), a negative one disables
+ * polling like 0, and anything past the timer limit is capped at it.
+ */
+export function normalizeRefreshInterval(value: unknown): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return DEFAULT_REFRESH_INTERVAL_SECONDS;
+  }
+  return Math.min(MAX_REFRESH_INTERVAL_SECONDS, Math.max(0, Math.floor(value)));
+}
+
+export function validateConfigShape(config: unknown, configPath: string): void {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(
+      `Invalid config in ${configPath}: expected module.exports to be an object.`
+    );
+  }
+
+  const errors: string[] = [];
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    const expected = CONFIG_KEY_TYPES[key];
+    if (!expected) {
+      logger.warn(
+        `Unknown option "${key}" in ${configPath} — it will be ignored (typo?). ` +
+          `Known options: ${Object.keys(CONFIG_KEY_TYPES).join(", ")}.`
+      );
+      continue;
+    }
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const matches =
+      expected === "array"
+        ? Array.isArray(value)
+        : expected === "object"
+          ? typeof value === "object" && !Array.isArray(value)
+          : typeof value === expected;
+    if (!matches) {
+      errors.push(`"${key}" must be ${expected === "array" ? "an array" : `a ${expected}`}`);
+    }
+  }
+
+  // An entry that is not a table name would be interpolated into a Table API
+  // query and a directory name, so it is refused rather than skipped.
+  const dataModelTables = (config as { dataModelTables?: unknown }).dataModelTables;
+  if (Array.isArray(dataModelTables)) {
+    const invalid = dataModelTables.filter((entry) => !isValidDataModelTableName(entry));
+    if (invalid.length > 0) {
+      errors.push(
+        `"dataModelTables" must list table names (letters, digits and "_"); ` +
+          `invalid: ${invalid.map((entry) => JSON.stringify(entry)).join(", ")}`
+      );
+    }
+  }
+
+  // A misspelt layout would silently fall back to "records" — and a workspace
+  // holding documents would then refuse every refresh with a layout conflict.
+  const dataModelLayout = (config as { dataModelLayout?: unknown }).dataModelLayout;
+  if (
+    typeof dataModelLayout === "string" &&
+    !isValidDataModelLayout(dataModelLayout)
+  ) {
+    errors.push(
+      `"dataModelLayout" must be one of ${DATA_MODEL_LAYOUTS.map((v) => `"${v}"`).join(", ")}; ` +
+        `got ${JSON.stringify(dataModelLayout)}`
+    );
+  }
+
+  // A misspelt preset would silently sync nothing, and the JSON columns it
+  // meant would keep landing in the sidecar with no hint why.
+  const tablePresets = (config as { tablePresets?: unknown }).tablePresets;
+  if (Array.isArray(tablePresets)) {
+    const invalid = tablePresets.filter((entry) => !isTablePresetName(entry));
+    if (invalid.length > 0) {
+      errors.push(
+        `"tablePresets" must list preset names (${TABLE_PRESET_NAMES.map((v) => `"${v}"`).join(", ")}); ` +
+          `invalid: ${invalid.map((entry) => JSON.stringify(entry)).join(", ")}`
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Invalid config in ${configPath}: ${errors.join("; ")}.`);
+  }
+}
+
+export type RuleOrderIssue = { laterIndex: number; earlierIndex: number; sample: string };
+
+// Build a representative filename from an anchored, literal extension pattern
+// (e.g. /\.secret\.ts$/ -> "file.secret.ts"). Returns null for patterns with
+// regex metacharacters we can't safely turn into a concrete filename, so the
+// shadowing check never guesses. Exported for property-based testing (#20): the
+// invariant checkRuleOrder depends on — a synthesized sample matches its own
+// suffix-anchored pattern — is pinned directly against this helper.
+export function synthesizeFilename(pattern: RegExp): string | null {
+  const literal = pattern.source.replace(/^\^/, "").replace(/\$$/, "").replace(/\\\./g, ".");
+  if (!/^[A-Za-z0-9._-]+$/.test(literal)) {
+    return null;
+  }
+  return literal.startsWith(".") ? `file${literal}` : `file.${literal}`;
+}
+
+// DX10: rules are matched first-wins, so a broad rule placed before a more
+// specific one (e.g. /\.ts$/ before /\.secret\.ts$/) silently shadows it. For
+// each rule we synthesize a representative filename and, if an EARLIER rule
+// also matches it, report the shadow — a real file with that name would be
+// claimed by the earlier rule. Zero false positives by construction.
+export function checkRuleOrder(rules: Array<{ match: RegExp }>): RuleOrderIssue[] {
+  // #18: normalize the whole list once, for two reasons the raw list gets wrong.
+  //
+  // A rule whose `match` is missing or is not a RegExp is SKIPPED, not fatal.
+  // sync.config.js is hand-written JS that nothing type-checks, and
+  // PluginManager.determinePlugins already survives such a rule by warning and
+  // moving on; the checker instead died on `pattern.source` of a non-RegExp —
+  // so `build --check-config`, the one command whose whole job is to diagnose
+  // these rules, crashed on the configs that needed it and reported nothing
+  // about the real shadowing further down the list. isRegExp rather than
+  // instanceof: the config is loaded through vm.runInNewContext, so its regex
+  // literals belong to another realm (see PluginManager).
+  //
+  // Each usable pattern is also cloned without /g and /y. `.test()` on those
+  // resumes from the RegExp's own lastIndex, and this function calls .test()
+  // repeatedly with the SAME earlier pattern against different samples — so a
+  // single `/\.ts$/g` rule would report the first file it shadows and then
+  // silently miss every later one. It would mutate the user's own RegExp too.
+  const patterns = rules.map((rule) => {
+    const reg = (rule as { match?: unknown } | null | undefined)?.match;
+    if (!types.isRegExp(reg)) {
+      return null;
+    }
+    return reg.global || reg.sticky
+      ? new RegExp(reg.source, reg.flags.replace(/[gy]/g, ""))
+      : reg;
+  });
+
+  const issues: RuleOrderIssue[] = [];
+  for (let j = 0; j < rules.length; j++) {
+    const later = patterns[j];
+    if (!later) {
+      continue;
+    }
+    const sample = synthesizeFilename(later);
+    if (sample === null || !later.test(sample)) {
+      continue;
+    }
+    for (let i = 0; i < j; i++) {
+      if (patterns[i]?.test(sample)) {
+        issues.push({ laterIndex: j, earlierIndex: i, sample });
+        break;
+      }
+    }
+  }
+  return issues;
+}
+
+export class ConfigStore {
+  private state: ConfigState = {};
+
+  reset(): void {
+    this.state = {};
+  }
+
+  async loadConfigs(): Promise<void> {
+    let noConfigPath = false;
+    const currentPath = process.cwd();
+    const discoveredConfigPath = await this.loadConfigPath();
+    const preferCurrentWorkingDirectory = shouldPreferCurrentWorkingDirectory(
+      currentPath,
+      discoveredConfigPath
+    );
+
+    if (discoveredConfigPath && !preferCurrentWorkingDirectory) {
+      this.state.config_path = discoveredConfigPath;
+    } else {
+      this.state.config_path = undefined;
+      noConfigPath = true;
+    }
+
+    await this.loadRootDir(noConfigPath);
+
+    const cfg = await this.loadConfig(noConfigPath);
+    if (cfg) {
+      this.state.config = cfg;
+      if (cfg.flat === true) {
+        // DX17: the flat layout is applied on pull/push (single file per field
+        // named <table>/<record>~<field>.<ext>) but is still experimental — note
+        // it so the on-disk shape change is never silent.
+        logger.info(
+          "Config `flat: true` — using the experimental flat " +
+            "<table>/<record>~<field> layout for pull/push " +
+            "(see the README \"Flat layout\" section)."
+        );
+      }
+    }
+
+    await this.loadEnvPath();
+    await this.loadSourcePath();
+    await this.loadBuildPath();
+    await this.loadManifestPath();
+    await this.loadManifest();
+    await this.loadDiffPath();
+    await this.loadDiffFile();
+    await this.loadRefresh();
+  }
+
+  getConfig(): Sync.Config {
+    if (this.state.config) return this.state.config;
+    throw new Error("Error getting config");
+  }
+
+  getConfigPath(): string {
+    if (this.state.config_path) return this.state.config_path;
+    throw new Error("Error getting config path");
+  }
+
+  checkConfigPath(): string | false {
+    if (this.state.config_path) return this.state.config_path;
+    return false;
+  }
+
+  getRootDir(): string {
+    if (this.state.root_dir) return this.state.root_dir;
+    throw new Error("Error getting root directory");
+  }
+
+  getManifest(setup = false): SN.AppManifest | undefined {
+    if (this.state.manifest) return this.state.manifest;
+    // #16: a present-but-unreadable manifest says WHY, so the caller does not
+    // act on "no manifest" when the truth is "a manifest we refuse to trust".
+    // Setup mode keeps answering undefined either way: `init`/`refresh` exist
+    // to rebuild the file, and throwing would lock the user out of the one
+    // command that repairs it.
+    if (!setup && this.state.manifest_error) {
+      throw new Error(this.state.manifest_error);
+    }
+    if (!setup) throw new Error("Error getting manifest");
+    return undefined;
+  }
+
+  getManifestPath(): string {
+    if (this.state.manifest_path) return this.state.manifest_path;
+    throw new Error("Error getting manifest path");
+  }
+
+  getSourcePath(): string {
+    if (this.state.source_path) return this.state.source_path;
+    throw new Error("Error getting source path");
+  }
+
+  getBuildPath(): string {
+    if (this.state.build_path) return this.state.build_path;
+    throw new Error("Error getting build path");
+  }
+
+  getEnvPath(): string {
+    if (this.state.env_path) return this.state.env_path;
+    throw new Error("Error getting env path");
+  }
+
+  getDiffPath(): string {
+    if (this.state.diff_path) return this.state.diff_path;
+    throw new Error("Error getting diff path");
+  }
+
+  getDiffFile(): Sync.DiffFile {
+    // #46: a corrupt diff file must abort with a distinct error, never be
+    // treated the same as "no diff file present" (which would silently promote
+    // a scoped deploy to a full deploy).
+    if (this.state.diff_file_error) {
+      throw new DiffFileCorruptError(this.state.diff_file_error);
+    }
+    if (this.state.diff_file) return this.state.diff_file;
+    throw new Error("Error getting diff file");
+  }
+
+  // Distinguishes "diff file is corrupt" from "no diff file" so callers can
+  // abort on the former without a full read of getDiffFile().
+  isDiffFileCorrupt(): boolean {
+    return this.state.diff_file_error !== undefined;
+  }
+
+  getRefresh(): number {
+    if (this.state.refresh_interval !== undefined)
+      return this.state.refresh_interval;
+    throw new Error("Error getting refresh interval");
+  }
+
+  updateManifest(man: SN.AppManifest): void {
+    this.state.manifest = man;
+  }
+
+  // REV-110 (CONC-6): re-read the manifest from disk into the in-memory state.
+  // `dev` loads the manifest once at startup and keeps it in memory; a
+  // concurrent `refresh`/`repair` that rewrites sync.manifest.json (e.g. a
+  // record's sys_id changed) would otherwise be invisible, so the next watch
+  // push would resolve a file to a STALE sys_id and overwrite the wrong record.
+  // Unlike the private loadManifest(), a transient read/parse failure must NOT
+  // clobber a good in-memory manifest: dropping it would make every subsequent
+  // push silently no-op. Preserve the current manifest on any error, and treat
+  // an unconfigured manifest path as a no-op rather than throwing.
+  async reloadManifest(): Promise<void> {
+    if (!this.state.manifest_path) return;
+    try {
+      const manifestString = await fsp.readFile(this.state.manifest_path, "utf-8");
+      const parsed: unknown = JSON.parse(manifestString);
+      // #16: a file that parses into the wrong shape is the same situation as
+      // an unreadable one — keep the manifest already in memory rather than
+      // replacing a known-good one with something we cannot act on.
+      if (isAppManifestShape(parsed)) {
+        this.state.manifest = parsed;
+      }
+    } catch (_) {
+      // Keep the existing in-memory manifest; a transient unreadable/partial
+      // write on disk should not blow away a known-good manifest mid-session.
+    }
+  }
+
+  private async loadConfig(skipConfigPath = false): Promise<Sync.Config> {
+    if (skipConfigPath) {
+      logger.warn("No sync.config.js found; using the default configuration.");
+      return DEFAULT_CONFIG;
+    }
+    const configPath = this.getConfigPath();
+    // NOTE: vm.runInNewContext here is a module LOADER, not a sandbox —
+    // sync.config.js is executable code by design and receives the real
+    // `process`/`require`/`console` (same trust model as any build config).
+    // The vm context only gives us a fresh evaluation per load, so config
+    // reloads (per-scope auto-init, watch mode) pick up file changes without
+    // fighting the require cache.
+    let loaded: unknown;
+    try {
+      const source = await fsp.readFile(configPath, "utf-8");
+      const configRequire = createRequire(configPath);
+      // When stdout is a machine protocol channel (MCP stdio / completion), a
+      // stray console.log inside sync.config.js would corrupt it. Hand the loader
+      // a stderr-only console in that mode; otherwise the real console (the config
+      // is trusted build code and may legitimately log during a human command).
+      const configConsole = logger.isRoutedToStderr()
+        ? new console.Console(process.stderr, process.stderr)
+        : console;
+      // `exports` must alias `module.exports`, as in Node: a config written as
+      // `exports.includes = ...` assigns onto that shared object.
+      const configModule = { exports: {} as unknown };
+      const sandbox = {
+        module: configModule,
+        exports: configModule.exports,
+        require: configRequire,
+        __filename: configPath,
+        __dirname: path.dirname(configPath),
+        process,
+        console: configConsole,
+      };
+      vm.runInNewContext(source, sandbox, { filename: configPath });
+      loaded = configModule.exports;
+    } catch (e) {
+      // An error thrown by the config comes from the vm context's own Error, which
+      // fails `instanceof Error` here; String(e) would prefix it with "Error: ".
+      const message = types.isNativeError(e) ? e.message : String(e);
+      // A present-but-broken config must fail hard: silently falling back to
+      // defaults would run commands with the wrong includes/excludes/rules.
+      throw new Error(`Failed to load config file ${configPath}: ${message}`);
+    }
+
+    // No `?? {}` fallback: `module.exports = null` is a broken config, and the
+    // shape check below must reject it rather than load the defaults.
+    const projectConfig = ((loaded as { default?: unknown } | null)?.default ||
+      loaded) as Sync.Config;
+    validateConfigShape(projectConfig, configPath);
+    const { includes: pIncludes = {}, excludes: pExcludes = {}, tableOptions: pTableOptions = {} } =
+      projectConfig;
+
+    return {
+      ...projectConfig,
+      includes: Object.assign({}, includes, pIncludes),
+      excludes: Object.assign({}, excludes, pExcludes),
+      tableOptions: Object.assign({}, tableOptions, pTableOptions),
+    };
+  }
+
+  private async loadManifest(): Promise<void> {
+    this.state.manifest_error = undefined;
+    let parsed: unknown;
+    try {
+      const manifestString = await fsp.readFile(this.getManifestPath(), "utf-8");
+      parsed = JSON.parse(manifestString);
+    } catch (e) {
+      this.state.manifest = undefined;
+      // Absent: there is simply no manifest to work from, which every caller
+      // already handles by telling the user to refresh.
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      // Present but unreadable or not JSON (e.g. merge-conflict markers) is the
+      // same "manifest we refuse to trust" as a wrong shape below, not "no
+      // manifest": say so instead of answering "run refresh" for a file that
+      // is right there.
+      this.state.manifest_error =
+        `${this.getManifestPath()} is present but could not be read as JSON: ` +
+        `${(e as Error).message}. ` +
+        "Fix the file or run `syncrona refresh` to rebuild it.";
+      logger.warn(this.state.manifest_error);
+      return;
+    }
+    if (!isAppManifestShape(parsed)) {
+      this.state.manifest = undefined;
+      this.state.manifest_error =
+        `${this.getManifestPath()} is present but is not a manifest: ` +
+        `expected {"scope": "<scope>", "tables": {…}}. ` +
+        "Run `syncrona refresh` to rebuild it.";
+      // Warned as well as recorded: the commands that read the manifest in
+      // setup mode never see the error above, and a silently ignored manifest
+      // is the thing this whole guard exists to prevent.
+      logger.warn(this.state.manifest_error);
+      return;
+    }
+    this.state.manifest = parsed;
+  }
+
+  private async loadConfigPath(pth?: string): Promise<string | false> {
+    const currentPath = pth || process.cwd();
+    const candidate = path.join(currentPath, "sync.config.js");
+    // stat, not readdir: a directory named sync.config.js is not a config, and
+    // an ancestor we may traverse but not list (mode --x) must not abort the
+    // walk with EACCES when the file itself is reachable.
+    try {
+      if ((await fsp.stat(candidate)).isFile()) return candidate;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR" && code !== "EACCES" && code !== "EPERM") {
+        throw e;
+      }
+    }
+
+    if (path.parse(currentPath).root === currentPath) {
+      return false;
+    }
+
+    return this.loadConfigPath(path.dirname(currentPath));
+  }
+
+  private async loadRefresh(): Promise<void> {
+    this.state.refresh_interval = normalizeRefreshInterval(this.getConfig().refreshInterval);
+  }
+
+  private async loadSourcePath(): Promise<void> {
+    const rootDir = this.getRootDir();
+    const { sourceDirectory } = this.getConfig();
+    // A default only triggers on `undefined`; an empty/whitespace string would
+    // collapse source_path onto the project root (path.join(root, "") === root),
+    // so coerce blank values back to the default the same way defaults are written.
+    const dir = String(sourceDirectory || "src").trim() || "src";
+    this.state.source_path = path.join(rootDir, dir);
+  }
+
+  private async loadBuildPath(): Promise<void> {
+    const rootDir = this.getRootDir();
+    const { buildDirectory } = this.getConfig();
+    const dir = String(buildDirectory || "build").trim() || "build";
+    this.state.build_path = path.join(rootDir, dir);
+  }
+
+  private async loadEnvPath(): Promise<void> {
+    const rootDir = this.getRootDir();
+    this.state.env_path = path.join(rootDir, ".env");
+  }
+
+  private async loadManifestPath(): Promise<void> {
+    const rootDir = this.getRootDir();
+    this.state.manifest_path = path.join(rootDir, "sync.manifest.json");
+  }
+
+  private async loadDiffPath(): Promise<void> {
+    const rootDir = this.getRootDir();
+    this.state.diff_path = path.join(rootDir, "sync.diff.manifest.json");
+  }
+
+  private async loadDiffFile(): Promise<void> {
+    this.state.diff_file = undefined;
+    this.state.diff_file_error = undefined;
+    let diffString: string;
+    try {
+      diffString = await fsp.readFile(this.getDiffPath(), "utf-8");
+    } catch (e) {
+      // #46: an ABSENT diff file is a normal state (full-scope deploy). Only
+      // a present-but-unreadable file is a corruption we must not swallow.
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+      this.state.diff_file_error = `Could not read ${this.getDiffPath()}: ${
+        e instanceof Error ? e.message : String(e)
+      }`;
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(diffString);
+    } catch (e) {
+      // Present but not valid JSON → corrupt. Record it so getDiffFile() can
+      // refuse to silently fall back to a FULL deploy.
+      this.state.diff_file_error = `${this.getDiffPath()} is present but not valid JSON: ${
+        e instanceof Error ? e.message : String(e)
+      }`;
+      return;
+    }
+    // Parsing is not the same as understanding: `{}`, `{"changed":"all"}` and
+    // `[1,2,3]` are all valid JSON, and every one of them used to load as a
+    // healthy manifest whose `changed` read as an empty list — which deploy
+    // then took for "no diff at all" and promoted to a full-scope deploy. A
+    // present file whose shape we cannot read is corrupt, not absent.
+    if (!isDiffFileShape(parsed)) {
+      this.state.diff_file_error =
+        `${this.getDiffPath()} is present but is not a diff manifest: ` +
+        `expected {"changed": ["<path>", ...]}. Delete it and re-run \`build --diff <target>\`.`;
+      return;
+    }
+    this.state.diff_file = parsed;
+  }
+
+  private async loadRootDir(skip?: boolean): Promise<void> {
+    if (skip) {
+      this.state.root_dir = process.cwd();
+      return;
+    }
+    const configPath = this.getConfigPath();
+    this.state.root_dir = configPath ? path.dirname(configPath) : process.cwd();
+  }
+}
+
+export function createConfigStore(): ConfigStore {
+  return new ConfigStore();
+}
+
+const defaultConfigStore = createConfigStore();
+
+export const loadConfigs = async () => defaultConfigStore.loadConfigs();
+
+export function resetConfigState() {
+  defaultConfigStore.reset();
+}
+
+export function getConfig() {
+  return defaultConfigStore.getConfig();
+}
+
+export function getConfigPath() {
+  return defaultConfigStore.getConfigPath();
+}
+
+export function checkConfigPath() {
+  return defaultConfigStore.checkConfigPath();
+}
+
+export function getRootDir() {
+  return defaultConfigStore.getRootDir();
+}
+
+export function getManifest(setup = false) {
+  return defaultConfigStore.getManifest(setup);
+}
+
+export function getManifestPath() {
+  return defaultConfigStore.getManifestPath();
+}
+
+export function getSourcePath() {
+  return defaultConfigStore.getSourcePath();
+}
+
+export function getBuildPath() {
+  return defaultConfigStore.getBuildPath();
+}
+
+export function getEnvPath() {
+  return defaultConfigStore.getEnvPath();
+}
+
+export function getDiffPath() {
+  return defaultConfigStore.getDiffPath();
+}
+
+export function getDiffFile() {
+  return defaultConfigStore.getDiffFile();
+}
+
+export function isDiffFileCorrupt() {
+  return defaultConfigStore.isDiffFileCorrupt();
+}
+
+export function getRefresh() {
+  return defaultConfigStore.getRefresh();
+}
+
+// DX17: whether the workspace uses the flat <table>/<record>~<field>.<ext>
+// layout instead of per-record folders. Off unless `flat: true` in sync.config.js.
+export function getFlatMode(): boolean {
+  return getConfig().flat === true;
+}
+
+// The built-in defaults applied before a project's sync.config.js overrides.
+// Exposed read-only for `syncrona config show-defaults` (DX9).
+export function getDefaultConfig(): Sync.Config {
+  return DEFAULT_CONFIG;
+}
+
+export function getDefaultConfigFile(sourceDirectory = "src"): string {
+  const normalizedSourceDirectory = String(sourceDirectory || "src").trim() || "src";
+  // JSON.stringify produces a properly escaped, valid JS string literal — a raw
+  // `"${dir}"` would emit syntactically broken JS (and bricked every subsequent
+  // command) for any source dir containing a quote, backslash or newline.
+  return `
+    module.exports = {
+      sourceDirectory: ${JSON.stringify(normalizedSourceDirectory)},
+      buildDirectory: "build",
+      pushConcurrency: 10,
+      rules: [],
+      excludes: {},
+      includes: {},
+      tableOptions: {},
+      refreshInterval: 30,
+      // DX22: set to false to stop writing the per-record .meta.json sidecar.
+      meta:true,
+      // DX22: set to false to keep that sidecar read-only (never pushed back).
+      metaPush:true,
+      // R4: data-model tables to track as editable records (opt-in; see
+      // docs/DATA_MODEL.md for the documented list), e.g. ["sys_dictionary"].
+      dataModelTables:[],
+      // SDK-F2: "composite" keeps a table, its columns and their choices in one
+      // data-model/<table>.json document instead of one sidecar per record.
+      dataModelLayout:"records"
+    };
+    `.trim();
+}
+
+export function updateManifest(man: SN.AppManifest) {
+  defaultConfigStore.updateManifest(man);
+}
+
+// REV-110 (CONC-6): module-level delegate so callers (the dev Watcher) can
+// refresh the in-memory manifest from disk before resolving file paths.
+export function reloadManifest() {
+  return defaultConfigStore.reloadManifest();
+}

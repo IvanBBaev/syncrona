@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_list table="x_snc_bprobe_expense" parent="" relationship="" sys_domain="global" view="x_snc_bprobe_detailed">
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>a8d4ffcdf8934cdd8601633064e90871</sys_id>
+      <list_id display_value="x_snc_bprobe_expense" name="x_snc_bprobe_expense" view="e44dd44c7d824eb6a255e5bfd2a56937" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">12c531e963fd455189be59900ee22038</list_id>
+      <element>category</element>
+      <position>5</position>
+    </sys_ui_list_element>
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>ab9544353f3d4a9e9122631ade4d97c7</sys_id>
+      <list_id display_value="x_snc_bprobe_expense" name="x_snc_bprobe_expense" view="e44dd44c7d824eb6a255e5bfd2a56937" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">12c531e963fd455189be59900ee22038</list_id>
+      <element>amount</element>
+      <position>1</position>
+      <min_value>false</min_value>
+      <max_value>true</max_value>
+      <average_value>true</average_value>
+      <sum>true</sum>
+    </sys_ui_list_element>
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>89bf5b8af7f1497d9d725cccc6198cf5</sys_id>
+      <list_id display_value="x_snc_bprobe_expense" name="x_snc_bprobe_expense" view="e44dd44c7d824eb6a255e5bfd2a56937" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">12c531e963fd455189be59900ee22038</list_id>
+      <element>other</element>
+      <position>2</position>
+      <max_value>true</max_value>
+    </sys_ui_list_element>
+    <sys_ui_list_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>bc7b20d213d6467ba1b91fbb94ec271a</sys_id>
+      <list_id display_value="x_snc_bprobe_expense" name="x_snc_bprobe_expense" view="e44dd44c7d824eb6a255e5bfd2a56937" sys_domain="global" element="NULL" relationship="NULL" parent="NULL">12c531e963fd455189be59900ee22038</list_id>
+      <element>date</element>
+      <position>3</position>
+    </sys_ui_list_element>
+    <sys_ui_list action="INSERT_OR_UPDATE" apply_defaults="true">
+      <sys_id>12c531e963fd455189be59900ee22038</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <view name="x_snc_bprobe_detailed">e44dd44c7d824eb6a255e5bfd2a56937</view>
+      <name>x_snc_bprobe_expense</name>
+      <sys_policy>read</sys_policy>
+      <sys_domain>global</sys_domain>
+    </sys_ui_list>
+  </sys_ui_list>
+</record_update>

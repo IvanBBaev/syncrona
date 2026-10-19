@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_fn_parameters">
+  <sys_rest_message_fn_parameters action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8ee1c9566c294babbd8755ae66c2941a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_fn_parameters_8ee1c9566c294babbd8755ae66c2941a</sys_update_name>
+    <name>firstName</name>
+    <rest_message_function rest_message="7aa73d18d57b4673a5b72c30a34dc552" function_name="createContact">2efb9b14587048caa1d0a5546f0d3406</rest_message_function>
+    <type>string</type>
+  </sys_rest_message_fn_parameters>
+</record_update>

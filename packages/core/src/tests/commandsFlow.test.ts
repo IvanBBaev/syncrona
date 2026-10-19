@@ -1,0 +1,1347 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
+import os from "os";
+import path from "path";
+
+// The CLI resolves an explicit server path before checking it, so on Windows
+// the POSIX literal gains a drive letter; the mocks must key on the same value.
+const MCP_ENTRY = path.resolve("/tmp/mcp/dist/index.js");
+
+export {};
+
+const mockStartWatching = jest.fn();
+const mockCheckScope = jest.fn();
+const mockGetAppFileList = jest.fn();
+const mockPushFiles = jest.fn();
+const mockSetLogLevel = jest.fn();
+const mockLogPushResults = jest.fn();
+const mockLogBuildResults = jest.fn();
+const mockDevModeLog = jest.fn();
+const mockPrompt = jest.fn();
+const mockGetSourcePath = jest.fn();
+const mockGetRefresh = jest.fn();
+const mockGetDiffFile = jest.fn();
+const mockIsDiffFileCorrupt = jest.fn();
+const mockGetBuildPath = jest.fn();
+const mockBuildFiles = jest.fn();
+const mockEncodedPathsToFilePaths = jest.fn();
+const mockCheckConnection = jest.fn();
+const mockGetSessionScope = jest.fn();
+const mockResolveCredentials = jest.fn();
+const mockSetActiveInstanceProfile = jest.fn();
+const mockLoggerError = jest.fn();
+const mockLoggerWarn = jest.fn();
+const mockLoggerInfo = jest.fn();
+const mockLoggerSuccess = jest.fn();
+const mockRouteAllToStderr = jest.fn();
+const mockGitDiffToEncodedPaths = jest.fn();
+const mockReadFile = jest.fn();
+const mockWriteFile = jest.fn();
+const mockUnlink = jest.fn();
+const mockLink = jest.fn();
+const mockReaddir = jest.fn();
+const mockStat = jest.fn();
+const mockMkdir = jest.fn();
+const mockSpawn = jest.fn();
+const mockCheckConfigPath = jest.fn();
+const mockGetBuildPathConfig = jest.fn();
+const mockGetConfig = jest.fn();
+const mockGetManifest = jest.fn();
+const mockGetRootDir = jest.fn();
+
+// A small in-memory filesystem for the collaboration-lock family of files.
+//
+// REV-205 made releaseCollaborationLock ownership-aware: it removes the lock only
+// while the file on disk still carries the owner token this process wrote, so it
+// reads the lock back before unlinking. A mock whose readFile always answers
+// ENOENT turns every release into a silent no-op and the lock assertions below
+// pass vacuously.
+//
+// REV-233 raised the bar again. The lock is no longer written in place — it is
+// assembled under a staging name and published with link(), because 'wx' creates
+// the name before the bytes and a racer can read a half-written lock. Modelling
+// that needs a real directory, not a single "is the lock there" flag: staging
+// file, atomic link, eviction claims and the post-acquire sweep all touch it. So
+// this seam keeps a path→content map and implements link/readdir/stat over it,
+// which also means the tests below can stage a foreign or stale lock by simply
+// putting it in the map instead of scripting an exact syscall sequence.
+const LOCK_FILE_NAME = "sync.collaboration.lock.json";
+const CHECKPOINT_FILE_NAME = "sync.push.checkpoint.json";
+const collabFiles = new Map<string, string>();
+const isCollabPath = (target: unknown): boolean =>
+  String(target).includes("sync.collaboration.");
+
+jest.unstable_mockModule("../Watcher.js", () => ({
+  stopWatching: jest.fn(),
+  startWatching: (...args: unknown[]) => mockStartWatching(...args),
+}));
+
+jest.unstable_mockModule("../appUtils.js", () => ({
+  checkScope: (...args: unknown[]) => mockCheckScope(...args),
+  getAppFileList: (...args: unknown[]) => mockGetAppFileList(...args),
+  pushFiles: (...args: unknown[]) => mockPushFiles(...args),
+  buildFiles: (...args: unknown[]) => mockBuildFiles(...args),
+  buildFilePaths: jest.fn(() => []),
+}));
+
+jest.unstable_mockModule("../gitUtils.js", () => ({
+  gitDiffToEncodedPaths: (...args: unknown[]) => mockGitDiffToEncodedPaths(...args),
+  gitDiffToChanges: jest.fn(),
+  gitWorkingTreeDeletions: jest.fn(async () => []),
+  writeDiff: jest.fn(),
+  clearDiff: jest.fn(),
+}));
+
+jest.unstable_mockModule("../Logger.js", () => ({
+  logger: {
+    setLogLevel: (...args: unknown[]) => mockSetLogLevel(...args),
+    routeAllToStderr: (...args: unknown[]) => mockRouteAllToStderr(...args),
+    info: (...args: unknown[]) => mockLoggerInfo(...args),
+    success: (...args: unknown[]) => mockLoggerSuccess(...args),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
+    silly: jest.fn(),
+    getInternalLogger: () => ({ error: jest.fn() }),
+  },
+}));
+
+// statusCommand inspects the credential store (DX20/DX20b); keep it hermetic.
+jest.unstable_mockModule("../auth.js", () => ({
+  saveCredentials: jest.fn(),
+  setActiveInstance: jest.fn(),
+  resolveCredentialsFromStore: jest.fn(),
+  getActiveInstance: jest.fn().mockResolvedValue(null),
+  listInstances: jest.fn().mockResolvedValue([]),
+  loadCredentials: jest.fn().mockResolvedValue({}),
+}));
+
+jest.unstable_mockModule("../snClient.js", () => ({
+  snClient: jest.fn(),
+  buildClientAuth: () => ({}),
+  credentialsFromStore: (stored: unknown) => stored,
+  preloadStoredCredentials: jest.fn(),
+  getErrorResponseStatus: jest.fn(),
+  diagnoseCredentials: jest.fn(),
+  defaultClient: () => ({
+    checkConnection: (...args: unknown[]) => mockCheckConnection(...args),
+    getSessionScope: (...args: unknown[]) => mockGetSessionScope(...args),
+  }),
+  unwrapSNResponse: jest.fn(),
+  resolveCredentials: (...args: unknown[]) => mockResolveCredentials(...args),
+  describeCredentialSource: () => "environment (.env / shell SN_* vars)",
+  setActiveInstanceProfile: (...args: unknown[]) => mockSetActiveInstanceProfile(...args),
+}));
+
+jest.unstable_mockModule("../logMessages.js", () => ({
+  scopeCheckMessage: jest.fn(),
+  devModeLog: (...args: unknown[]) => mockDevModeLog(...args),
+  logPushResults: (...args: unknown[]) => mockLogPushResults(...args),
+  logBuildResults: (...args: unknown[]) => mockLogBuildResults(...args),
+}));
+
+jest.unstable_mockModule("../config.js", () => ({
+  getSourcePath: (...args: unknown[]) => mockGetSourcePath(...args),
+  getRefresh: (...args: unknown[]) => mockGetRefresh(...args),
+  getDiffFile: (...args: unknown[]) => mockGetDiffFile(...args),
+  isDiffFileCorrupt: (...args: unknown[]) => mockIsDiffFileCorrupt(...args),
+  getConfig: (...args: unknown[]) => mockGetConfig(...args),
+  getManifest: (...args: unknown[]) => mockGetManifest(...args),
+  getRootDir: (...args: unknown[]) => mockGetRootDir(...args),
+  getBuildPath: (...args: unknown[]) => {
+    const override = mockGetBuildPathConfig(...args);
+    if (override !== undefined) {
+      return override;
+    }
+    return mockGetBuildPath(...args);
+  },
+  checkConfigPath: (...args: unknown[]) => mockCheckConfigPath(...args),
+}));
+
+// child_process is a CJS core module; spread the real surface so named imports
+// elsewhere in the graph (e.g. execFileSync) still link, overriding only spawn.
+jest.unstable_mockModule("child_process", () => {
+  const actual = jest.requireActual("child_process") as typeof import("child_process");
+  const spawn = (...args: unknown[]) => mockSpawn(...args);
+  return { ...actual, spawn, default: { ...actual, spawn } };
+});
+
+jest.unstable_mockModule("../FileUtils.js", () => ({
+  encodedPathsToFilePaths: (...args: unknown[]) => mockEncodedPathsToFilePaths(...args),
+}));
+
+// fs is a CommonJS core module, so requireActual loads it synchronously. Spread
+// the real surface and override only the promises members the flows touch, so
+// callers doing `import fs from "fs"` (default) or `import { readFileSync }`
+// (named) still link while filesystem writes stay mocked.
+jest.unstable_mockModule("fs", () => {
+  const actual = jest.requireActual("fs") as typeof import("fs");
+  const promises = {
+    ...actual.promises,
+    readFile: (...args: unknown[]) => mockReadFile(...args),
+    writeFile: (...args: unknown[]) => mockWriteFile(...args),
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+    link: (...args: unknown[]) => mockLink(...args),
+    readdir: (...args: unknown[]) => mockReaddir(...args),
+    stat: (...args: unknown[]) => mockStat(...args),
+    mkdir: (...args: unknown[]) => mockMkdir(...args),
+  };
+  return { ...actual, promises, default: { ...actual, promises } };
+});
+
+jest.unstable_mockModule("inquirer", () => ({
+  __esModule: true,
+  default: {
+    prompt: (...args: unknown[]) => mockPrompt(...args),
+  },
+}));
+
+describe("command flows", () => {
+  const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCheckScope.mockResolvedValue({ match: true });
+    mockGetSourcePath.mockReturnValue("/tmp/src");
+    mockGetRefresh.mockReturnValue(0);
+    // No sync.diff.manifest.json on disk is what the real ConfigManager
+    // signals by throwing - an empty `changed` list means the opposite
+    // (a diff build ran and found nothing to ship).
+    mockGetDiffFile.mockImplementation(() => {
+      throw new Error("Error getting diff file");
+    });
+    mockIsDiffFileCorrupt.mockReturnValue(false);
+    mockGetConfig.mockReturnValue({});
+    mockGetRootDir.mockReturnValue("/tmp/project");
+    mockGetBuildPath.mockReturnValue("encoded-build-path");
+    mockGetBuildPathConfig.mockReturnValue(undefined);
+    mockCheckConfigPath.mockReturnValue("/tmp/sync.config.js");
+    mockEncodedPathsToFilePaths.mockResolvedValue(["/tmp/a.js", "/tmp/b.js"]);
+    mockGitDiffToEncodedPaths.mockResolvedValue([]);
+    mockBuildFiles.mockResolvedValue([]);
+    mockPrompt.mockResolvedValue({ confirmed: true });
+    mockCheckConnection.mockResolvedValue(undefined);
+    mockGetSessionScope.mockResolvedValue({ scope: "x_test", sys_id: "scope_sys_id" });
+    mockResolveCredentials.mockImplementation(() => ({
+      instance: process.env.SN_INSTANCE || "",
+      user: process.env.SN_USER || "",
+      password: process.env.SN_PASSWORD || "",
+      profile: undefined,
+    }));
+    mockLoggerWarn.mockReset();
+    const enoent = Object.assign(new Error("not found"), { code: "ENOENT" });
+    const eexist = Object.assign(new Error("exists"), { code: "EEXIST" });
+    collabFiles.clear();
+    mockReadFile.mockImplementation((target: unknown) =>
+      isCollabPath(target) && collabFiles.has(String(target))
+        ? Promise.resolve(collabFiles.get(String(target)))
+        : Promise.reject(enoent)
+    );
+    mockStat.mockImplementation((target: unknown) =>
+      collabFiles.has(String(target))
+        ? Promise.resolve({ mtimeMs: Date.now() })
+        : Promise.reject(enoent)
+    );
+    mockMkdir.mockResolvedValue(undefined);
+    mockWriteFile.mockImplementation((target: unknown, data: unknown) => {
+      if (isCollabPath(target)) {
+        collabFiles.set(String(target), String(data));
+      }
+      return Promise.resolve(undefined);
+    });
+    // link() is the exclusivity primitive: it publishes an already-complete file
+    // and fails EEXIST rather than overwriting. Both halves matter here.
+    mockLink.mockImplementation((from: unknown, to: unknown) => {
+      if (collabFiles.has(String(to))) {
+        return Promise.reject(eexist);
+      }
+      if (!collabFiles.has(String(from))) {
+        return Promise.reject(enoent);
+      }
+      collabFiles.set(String(to), collabFiles.get(String(from)) as string);
+      return Promise.resolve(undefined);
+    });
+    mockUnlink.mockImplementation((target: unknown) => {
+      collabFiles.delete(String(target));
+      return Promise.resolve(undefined);
+    });
+    mockReaddir.mockImplementation((dir: unknown) =>
+      Promise.resolve(
+        [...collabFiles.keys()]
+          .filter((entry) => path.dirname(entry) === String(dir))
+          .map((entry) => path.basename(entry))
+      )
+    );
+    mockSpawn.mockImplementation(() => ({
+      once: (event: string, cb: (...args: unknown[]) => void) => {
+        if (event === "close") {
+          setImmediate(() => cb(0));
+        }
+        return undefined;
+      },
+    }));
+  });
+
+  it("devCommand starts watcher when scope matches", async () => {
+    const { devCommand } = await import("../devCommands.js");
+
+    await devCommand({ logLevel: "info" });
+
+    expect(mockSetLogLevel).toHaveBeenCalledWith("info");
+    expect(mockCheckScope).toHaveBeenCalledWith(false);
+    expect(mockStartWatching).toHaveBeenCalledWith("/tmp/src");
+    expect(mockDevModeLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("pushCommand processes target paths and logs push results", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushResults = [{ success: true, message: "ok" }];
+
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue(pushResults);
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockCheckScope).toHaveBeenCalledWith(false);
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    expect(mockGetAppFileList).toHaveBeenCalledWith("encoded:/tmp/a.js");
+    expect(mockPushFiles).toHaveBeenCalledWith(appFileList, undefined);
+    expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
+    // Counting raw writeFile calls would now measure how the lock is published
+    // (staging file + link) rather than what the flow did, so assert the logical
+    // effects: the checkpoint is written and cleared, and the lock directory is
+    // left empty — no lock, no claim, no staging litter.
+    expect(
+      mockWriteFile.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(2);
+    expect(
+      mockUnlink.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(1);
+    expect([...collabFiles.keys()]).toEqual([]);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand aborts when active collaboration lock is detected", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    // Another process already holds the lock. #18: a lock is only "active" if its
+    // owning process is still alive, so use THIS process's pid (guaranteed alive)
+    // — otherwise the pid-liveness check reclaims it as stale and the
+    // block-on-active-lock behavior this test asserts never runs.
+    collabFiles.set(
+      path.join("/tmp/project", LOCK_FILE_NAME),
+      JSON.stringify({
+        command: "push",
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        owner: "another-process",
+      })
+    );
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockLoggerWarn).toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    // The other process still holds exactly what it wrote: losing the race must
+    // never disturb the winner's lock.
+    expect(
+      JSON.parse(collabFiles.get(path.join("/tmp/project", LOCK_FILE_NAME)) as string).owner
+    ).toBe("another-process");
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand replaces a stale collaboration lock and proceeds", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    // A leftover lock file that is stale (>30min old): the first atomic create
+    // hits it, it gets evicted, and the retry succeeds.
+    collabFiles.set(
+      path.join("/tmp/project", LOCK_FILE_NAME),
+      JSON.stringify({
+        command: "push",
+        pid: 4242,
+        createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        owner: "crashed-run",
+      })
+    );
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockPushFiles).toHaveBeenCalledTimes(1);
+    // The stale lock was evicted through a claim on its exact bytes, and this
+    // run's own lock was released afterwards — nothing survives the flow.
+    expect([...collabFiles.keys()]).toEqual([]);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand leaves no checkpoint when the confirmation prompt is declined", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPrompt.mockResolvedValueOnce({ confirmed: false });
+
+    await pushCommand({
+      logLevel: "info",
+      ci: false,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockPushFiles).not.toHaveBeenCalled();
+    // The lock is taken and released; no checkpoint state may survive a declined
+    // prompt. Assert on the published lock path rather than on call counts — the
+    // staging file shares the lock's name, so a substring match on writeFile
+    // would be satisfied by the staging write alone.
+    const lockPath = path.join("/tmp/project", LOCK_FILE_NAME);
+    expect(mockLink.mock.calls.map((call) => String(call[1]))).toContain(lockPath);
+    expect(mockUnlink.mock.calls.map((call) => String(call[0]))).toContain(lockPath);
+    expect(
+      mockWriteFile.mock.calls.filter((call) => String(call[0]).includes(CHECKPOINT_FILE_NAME))
+    ).toHaveLength(0);
+    expect([...collabFiles.keys()]).toEqual([]);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand releases the collaboration lock when the push fails", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    const oldExitCode = process.exitCode;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockRejectedValue(new Error("network died"));
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const unlinkedPaths = mockUnlink.mock.calls.map((call) => String(call[0]));
+    expect(
+      unlinkedPaths.some((p) => p.includes("sync.collaboration.lock.json"))
+    ).toBe(true);
+
+    process.exitCode = oldExitCode;
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand dry-run skips checkpoint writes and remote push", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+      dryRun: true,
+    });
+
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand resumes only failed records from checkpoint", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [
+      { table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } },
+      { table: "sys_script", sysId: "2", fields: { script: { filePath: "/tmp/b.js" } } },
+    ];
+    const pushResults = [{ success: false, message: "failed" }];
+
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue(pushResults);
+    // The checkpoint must record the instance it was written against; a resume is
+    // only legitimate against that same instance (Finding 7).
+    mockReadFile.mockResolvedValue(
+      JSON.stringify({
+        attempted: ["sys_script:1", "sys_script:2"],
+        succeeded: ["sys_script:1"],
+        failed: ["sys_script:2"],
+        instance: "instance.service-now.com",
+      })
+    );
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockPushFiles).toHaveBeenCalledWith(
+      [{ table: "sys_script", sysId: "2", fields: { script: { filePath: "/tmp/b.js" } } }],
+      undefined
+    );
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand exits early with clear message when connection preflight fails", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    mockCheckConnection.mockRejectedValue(new Error("offline"));
+
+    const { pushCommand } = await import("../commands.js");
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    // #3/#49: the preflight message now names the resolved target instance and
+    // no longer hardcodes SN_* advice — the actionable next step is delegated to
+    // the DX19 taxonomy (logErrorHint), which tailors advice to the credential
+    // source. The unreachable-instance path also fails the shell (#3).
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "Unable to reach ServiceNow instance instance.service-now.com before push. Check the instance URL and network connectivity."
+    );
+    expect(mockGetAppFileList).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = 0;
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("pushCommand exits early when no target server is configured", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    delete process.env.SN_INSTANCE;
+
+    const { pushCommand } = await import("../commands.js");
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    });
+
+    expect(mockLoggerError).toHaveBeenCalledWith("No server configured for push!");
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("deployCommand confirms and deploys resolved build paths", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { deployCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushResults = [{ success: true, message: "ok" }];
+
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue(pushResults);
+
+    await deployCommand({ logLevel: "info" });
+    await flushPromises();
+    await flushPromises();
+
+    expect(mockCheckScope).toHaveBeenCalledWith(false);
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    expect(mockEncodedPathsToFilePaths).toHaveBeenCalledWith("encoded-build-path");
+    expect(mockGetAppFileList).toHaveBeenCalledWith(["/tmp/a.js", "/tmp/b.js"]);
+    expect(mockPushFiles).toHaveBeenCalledWith(appFileList);
+    expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("deployCommand with --ci deploys without asking for confirmation", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    // A noninteractive shell has no TTY, so the confirm prompt resolves to its
+    // `false` default: without the --ci gate the deploy declines itself, pushes
+    // nothing, and still exits 0.
+    mockPrompt.mockResolvedValue({ confirmed: false });
+
+    const { deployCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushResults = [{ success: true, message: "ok" }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockPushFiles.mockResolvedValue(pushResults);
+
+    await deployCommand({ logLevel: "info", ci: true });
+    await flushPromises();
+    await flushPromises();
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+    expect(mockPushFiles).toHaveBeenCalledWith(appFileList);
+    expect(mockLogPushResults).toHaveBeenCalledWith(pushResults);
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("deployCommand without --ci still aborts when the confirmation is declined", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    mockPrompt.mockResolvedValue({ confirmed: false });
+
+    const { deployCommand } = await import("../commands.js");
+    mockGetAppFileList.mockResolvedValue([]);
+
+    await deployCommand({ logLevel: "info" });
+    await flushPromises();
+
+    expect(mockPrompt).toHaveBeenCalled();
+    expect(mockGetAppFileList).not.toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("deployCommand dry-run resolves files but skips remote push", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    process.env.SN_INSTANCE = "instance.service-now.com";
+
+    const { deployCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+
+    await deployCommand({ logLevel: "info", dryRun: true });
+    await flushPromises();
+
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    expect(mockGetAppFileList).toHaveBeenCalled();
+    expect(mockPushFiles).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  // Found live (SDK-F1): a user/project scope mismatch refused `push --dry-run`
+  // before it previewed anything, and the only way past it was --scopeSwap,
+  // which writes the user's scope preference on the instance. A dry run now
+  // warns and previews, never swaps, and a real run still refuses.
+  describe("scope mismatch", () => {
+    const mismatch = { match: false, sessionScope: "global", manifestScope: "x_test" };
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const pushArgs = {
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+    };
+    let oldInstance: string | undefined;
+    let oldExitCode: typeof process.exitCode;
+
+    beforeEach(() => {
+      oldInstance = process.env.SN_INSTANCE;
+      oldExitCode = process.exitCode;
+      process.env.SN_INSTANCE = "instance.service-now.com";
+      process.exitCode = undefined;
+      mockCheckScope.mockResolvedValue(mismatch);
+      mockGetAppFileList.mockResolvedValue(appFileList);
+      mockPushFiles.mockResolvedValue([{ success: true, message: "ok" }]);
+    });
+
+    afterEach(() => {
+      process.exitCode = oldExitCode;
+      process.env.SN_INSTANCE = oldInstance;
+    });
+
+    const warnedAboutScope = () =>
+      mockLoggerWarn.mock.calls.some(
+        ([message]) =>
+          String(message).includes("global") && String(message).includes("x_test")
+      );
+
+    it("pushCommand dry-run warns and previews anyway", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, dryRun: true });
+
+      expect(warnedAboutScope()).toBe(true);
+      expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+      expect(mockGetAppFileList).toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith("1 files to push.");
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("pushCommand dry-run never swaps scopes, even with --scopeSwap", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, scopeSwap: true, dryRun: true });
+
+      expect(mockCheckScope).toHaveBeenCalledTimes(1);
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("pushCommand without --dry-run still refuses with exit 1", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand(pushArgs);
+
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(warnedAboutScope()).toBe(false);
+      expect(mockCheckConnection).not.toHaveBeenCalled();
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+
+    it("pushCommand without --dry-run still swaps with --scopeSwap", async () => {
+      const { pushCommand } = await import("../commands.js");
+
+      await pushCommand({ ...pushArgs, scopeSwap: true });
+
+      expect(mockCheckScope).toHaveBeenCalledWith(true);
+    });
+
+    it("deployCommand dry-run warns and previews anyway", async () => {
+      const { deployCommand } = await import("../commands.js");
+
+      await deployCommand({ logLevel: "info", dryRun: true });
+      await flushPromises();
+
+      expect(mockCheckScope).toHaveBeenCalledWith(false);
+      expect(warnedAboutScope()).toBe(true);
+      expect(mockGetAppFileList).toHaveBeenCalled();
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "Dry run: would deploy 1 records to instance.service-now.com, skipping remote push."
+      );
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("deployCommand without --dry-run still refuses with exit 1", async () => {
+      const { deployCommand } = await import("../commands.js");
+
+      await deployCommand({ logLevel: "info" });
+      await flushPromises();
+
+      expect(warnedAboutScope()).toBe(false);
+      expect(mockCheckConnection).not.toHaveBeenCalled();
+      expect(mockPushFiles).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    });
+  });
+
+  it("deployCommand exits early when no target server is configured", async () => {
+    const oldInstance = process.env.SN_INSTANCE;
+    delete process.env.SN_INSTANCE;
+
+    const { deployCommand } = await import("../commands.js");
+    await deployCommand({ logLevel: "info" });
+
+    expect(mockLoggerError).toHaveBeenCalledWith("No server configured for deploy!");
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldInstance;
+  });
+
+  it("buildCommand dry-run skips build output generation", async () => {
+    const { buildCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+
+    mockGitDiffToEncodedPaths.mockResolvedValue(["encoded:/tmp/a.js"]);
+    mockGetAppFileList.mockResolvedValue(appFileList);
+
+    await buildCommand({ logLevel: "info", diff: "", dryRun: true });
+
+    expect(mockGetAppFileList).toHaveBeenCalledWith(["encoded:/tmp/a.js"]);
+    expect(mockBuildFiles).not.toHaveBeenCalled();
+  });
+
+  it("buildCommand executes build pipeline when dry-run is disabled", async () => {
+    const { buildCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    const buildResults = [{ success: true, message: "built" }];
+
+    mockGitDiffToEncodedPaths.mockResolvedValue(["encoded:/tmp/a.js"]);
+    mockGetAppFileList.mockResolvedValue(appFileList);
+    mockBuildFiles.mockResolvedValue(buildResults);
+
+    await buildCommand({ logLevel: "info", diff: "", dryRun: false });
+
+    expect(mockBuildFiles).toHaveBeenCalledWith(appFileList);
+    expect(mockLogBuildResults).toHaveBeenCalledWith(buildResults);
+  });
+
+  it("doctorCommand reports healthy diagnostics when config, env, and connectivity are valid", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "secret";
+    mockGetSourcePath.mockReturnValue("/tmp/src");
+    mockGetBuildPathConfig.mockReturnValue("/tmp/build");
+    mockCheckConnection.mockResolvedValue(undefined);
+
+    const { doctorCommand } = await import("../commands.js");
+    const result = await doctorCommand({ logLevel: "info" });
+
+    expect(result.ok).toBe(true);
+    expect(result.checks.every((check) => check.ok)).toBe(true);
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+
+  it("pluginsCommand returns empty summary when no plugin rules are configured", async () => {
+    const { pluginsCommand } = await import("../commands.js");
+    mockGetConfig.mockReturnValue({ rules: [] });
+
+    const result = await pluginsCommand({ logLevel: "info" });
+
+    expect(result).toEqual({
+      totalRules: 0,
+      totalPlugins: 0,
+      plugins: [],
+    });
+  });
+
+  it("pluginsCommand reports installed and missing plugins", async () => {
+    const { pluginsCommand } = await import("../commands.js");
+    mockGetConfig.mockReturnValue({
+      rules: [
+        {
+          match: /\\.ts$/,
+          plugins: [
+            { name: "@syncrona/typescript-plugin", options: {} },
+            { name: "@syncrona/prettier-plugin", options: {} },
+          ],
+        },
+        {
+          match: /\\.js$/,
+          plugins: [{ name: "@syncrona/typescript-plugin", options: {} }],
+        },
+      ],
+    });
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath.includes(path.join("@syncrona", "typescript-plugin"))) {
+        return { isDirectory: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    const result = await pluginsCommand({ logLevel: "info" });
+
+    expect(result.totalRules).toBe(2);
+    expect(result.totalPlugins).toBe(2);
+    expect(result.plugins).toEqual([
+      { name: "@syncrona/prettier-plugin", installed: false, rulesMatched: 1 },
+      { name: "@syncrona/typescript-plugin", installed: true, rulesMatched: 2 },
+    ]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "plugin:@syncrona/prettier-plugin is configured but not installed in node_modules."
+    );
+  });
+
+  it("mcpCommand auto-configures mcp client and secrets files", async () => {
+    const { mcpCommand } = await import("../commands.js");
+    mockResolveCredentials.mockReturnValue({
+      instance: "dev.service-now.com",
+      user: "dev-user",
+      password: "dev-pass",
+      profile: undefined,
+    });
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath === MCP_ENTRY) {
+        return { isFile: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    await mcpCommand({
+      logLevel: "info",
+      autoConfigure: true,
+      start: false,
+      mcpServerPath: MCP_ENTRY,
+    });
+
+    expect(mockMkdir).toHaveBeenCalled();
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      path.join("/tmp/project", ".vscode", "mcp.json"),
+      expect.any(String),
+      "utf8"
+    );
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
+      expect.stringContaining("dev.service-now.com"),
+      "utf8"
+    );
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
+      expect.not.stringContaining("dev-pass"),
+      "utf8"
+    );
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      path.join("/tmp/project", ".syncrona-mcp", "secrets.json"),
+      expect.not.stringContaining("password"),
+      "utf8"
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("mcpCommand updates discovered MCP client configs without removing existing entries", async () => {
+    const { mcpCommand } = await import("../commands.js");
+    const homeDir = os.homedir();
+
+    // The platform is PINNED, not read. This assertion used to mirror the
+    // source's own `process.platform` branching to build `expectedPaths`; on
+    // Linux both arms were false, the array came out empty, and the assertion
+    // loop below iterated zero times — the test passed having asserted nothing,
+    // on exactly the OS CI runs. Pinning darwin makes the merge semantics the
+    // subject on every host; per-platform *target discovery* is covered
+    // exhaustively in mcpCommand.test.ts.
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+
+    const expectedPaths = [
+      path.join(homeDir, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+      path.join(homeDir, ".cursor", "mcp.json"),
+    ];
+
+    mockResolveCredentials.mockReturnValue({
+      instance: "dev.service-now.com",
+      user: "dev-user",
+      password: "dev-pass",
+      profile: undefined,
+    });
+
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath === MCP_ENTRY) {
+        return { isFile: () => true };
+      }
+      if (expectedPaths.includes(candidatePath)) {
+        return { isFile: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    mockReadFile.mockImplementation(async (candidatePath: string) => {
+      if (expectedPaths.includes(candidatePath)) {
+        return JSON.stringify({
+          mcpServers: {
+            existing: {
+              command: "node",
+              args: ["/tmp/existing-server.js"],
+            },
+          },
+        });
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    try {
+      await mcpCommand({
+        logLevel: "info",
+        autoConfigure: true,
+        start: false,
+        mcpServerPath: MCP_ENTRY,
+      });
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
+
+    // Guards the loop below against ever going vacuous again: a `for` over an
+    // empty array asserts nothing and still reports green.
+    expect(expectedPaths).toHaveLength(2);
+    for (const clientPath of expectedPaths) {
+      const match = mockWriteFile.mock.calls.find((call) => call[0] === clientPath);
+      expect(match).toBeDefined();
+      const writtenConfig = JSON.parse(String(match?.[1] ?? "{}"));
+      expect(writtenConfig.mcpServers?.existing).toBeDefined();
+      expect(writtenConfig.mcpServers?.["syncrona"]).toBeDefined();
+      expect(writtenConfig.mcpServers?.["syncrona"]?.args).toEqual([MCP_ENTRY]);
+    }
+  });
+
+  it("mcpCommand requires login before start when credentials are missing", async () => {
+    // #13: missing credentials is a failure the CLI must surface with a non-zero
+    // exit code, not a silent skip — otherwise scripts/CI treat it as success.
+    const oldExitCode = process.exitCode;
+    process.exitCode = 0;
+    const { mcpCommand } = await import("../commands.js");
+    mockResolveCredentials.mockReturnValue({
+      instance: "",
+      user: "",
+      password: "",
+      profile: undefined,
+    });
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath === MCP_ENTRY) {
+        return { isFile: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    await mcpCommand({
+      logLevel: "info",
+      autoConfigure: true,
+      start: true,
+      mcpServerPath: MCP_ENTRY,
+    });
+
+    expect(mockLoggerError).toHaveBeenCalledWith("Run syncrona login first.");
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = oldExitCode;
+  });
+
+  it("mcpCommand engages all-to-stderr routing before emitting any log line", async () => {
+    const { mcpCommand } = await import("../commands.js");
+    mockResolveCredentials.mockReturnValue({
+      instance: "dev.service-now.com",
+      user: "dev-user",
+      password: "dev-pass",
+      profile: undefined,
+    });
+    mockStat.mockImplementation(async (candidatePath: string) => {
+      if (candidatePath === MCP_ENTRY) {
+        return { isFile: () => true };
+      }
+      throw Object.assign(new Error("not found"), { code: "ENOENT" });
+    });
+
+    await mcpCommand({
+      logLevel: "info",
+      autoConfigure: true,
+      start: false,
+      mcpServerPath: MCP_ENTRY,
+    });
+
+    // stdout must stay byte-clean for MCP stdio clients: routeAllToStderr has
+    // to run before the first info/success line, or that line corrupts the
+    // JSON-RPC channel the spawned server inherits. Pin the call ordering.
+    expect(mockRouteAllToStderr).toHaveBeenCalledTimes(1);
+    const routeOrder = mockRouteAllToStderr.mock.invocationCallOrder[0];
+    const logOrders = [
+      ...mockLoggerInfo.mock.invocationCallOrder,
+      ...mockLoggerSuccess.mock.invocationCallOrder,
+    ];
+    expect(logOrders.length).toBeGreaterThan(0);
+    for (const order of logOrders) {
+      expect(order).toBeGreaterThan(routeOrder);
+    }
+  });
+
+  it("doctorCommand reports issues when env vars are missing and connectivity is skipped", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    delete process.env.SN_INSTANCE;
+    delete process.env.SN_USER;
+    delete process.env.SN_PASSWORD;
+    mockCheckConfigPath.mockReturnValue(false);
+
+    const { doctorCommand } = await import("../commands.js");
+    const result = await doctorCommand({ logLevel: "info" });
+
+    expect(result.ok).toBe(false);
+    expect(result.checks.find((check) => check.name === "env")?.ok).toBe(false);
+    expect(result.checks.find((check) => check.name === "connectivity")?.ok).toBe(false);
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+
+  it("statusCommand keeps connectivity healthy when the session scope lookup fails", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "secret";
+    mockCheckConfigPath.mockReturnValue("/tmp/project/sync.config.js");
+    mockGetSourcePath.mockReturnValue("/tmp/src");
+    mockGetBuildPathConfig.mockReturnValue("/tmp/build");
+    mockGetManifest.mockReturnValue({ scope: "x_demo", tables: {} });
+    mockCheckConnection.mockResolvedValue(undefined);
+    mockGetSessionScope.mockRejectedValue(new Error("Could not resolve the session user"));
+
+    const { statusCommand } = await import("../commands.js");
+    const result = await statusCommand({ logLevel: "info" });
+
+    expect(result.connectivityOk).toBe(true);
+    expect(result.scope).toBe("<unknown>");
+    expect(result.errors).toContain(
+      "Could not read the current session scope: Could not resolve the session user"
+    );
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+
+  it("pushCommand resolves target server from instance profile credentials", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+      SN_INSTANCE_DEV: process.env.SN_INSTANCE_DEV,
+      SN_USER_DEV: process.env.SN_USER_DEV,
+      SN_PASSWORD_DEV: process.env.SN_PASSWORD_DEV,
+    };
+
+    delete process.env.SN_INSTANCE;
+    delete process.env.SN_USER;
+    delete process.env.SN_PASSWORD;
+    process.env.SN_INSTANCE_DEV = "dev-instance.service-now.com";
+    process.env.SN_USER_DEV = "dev-user";
+    process.env.SN_PASSWORD_DEV = "dev-pass";
+
+    mockResolveCredentials.mockImplementation((profile?: string) => {
+      if (String(profile || "").toLowerCase() === "dev") {
+        return {
+          instance: process.env.SN_INSTANCE_DEV || "",
+          user: process.env.SN_USER_DEV || "",
+          password: process.env.SN_PASSWORD_DEV || "",
+          profile: "DEV",
+        };
+      }
+
+      return {
+        instance: process.env.SN_INSTANCE || "",
+        user: process.env.SN_USER || "",
+        password: process.env.SN_PASSWORD || "",
+        profile: undefined,
+      };
+    });
+
+    const { pushCommand } = await import("../commands.js");
+    const appFileList = [{ table: "sys_script", sysId: "1", fields: { script: { filePath: "/tmp/a.js" } } }];
+    mockGetAppFileList.mockResolvedValue(appFileList);
+
+    await pushCommand({
+      logLevel: "info",
+      ci: true,
+      target: "encoded:/tmp/a.js",
+      diff: "",
+      scopeSwap: false,
+      updateSet: "",
+      instanceProfile: "dev",
+    });
+
+    expect(mockSetActiveInstanceProfile).toHaveBeenCalledWith("dev");
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+    expect(mockPushFiles).toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+    process.env.SN_INSTANCE_DEV = oldEnv.SN_INSTANCE_DEV;
+    process.env.SN_USER_DEV = oldEnv.SN_USER_DEV;
+    process.env.SN_PASSWORD_DEV = oldEnv.SN_PASSWORD_DEV;
+  });
+
+  it("statusCommand uses instance profile credentials in summary", async () => {
+    mockResolveCredentials.mockImplementation((profile?: string) => {
+      if (String(profile || "").toLowerCase() === "qa") {
+        return {
+          instance: "qa-instance.service-now.com",
+          user: "qa-user",
+          password: "qa-pass",
+          profile: "QA",
+        };
+      }
+      return { instance: "", user: "", password: "", profile: undefined };
+    });
+    mockCheckConnection.mockResolvedValue(undefined);
+    mockGetSessionScope.mockResolvedValue({ scope: "x_qa", sys_id: "qa_scope" });
+
+    const { statusCommand } = await import("../commands.js");
+    const result = await statusCommand({ logLevel: "info", instanceProfile: "qa" });
+
+    expect(result.ok).toBe(true);
+    expect(result.instance).toBe("qa-instance.service-now.com");
+    expect(result.user).toBe("qa-user");
+    expect(result.scope).toBe("x_qa");
+  });
+
+  it("downloadCommand dry-run skips prompt and network calls", async () => {
+    const { downloadCommand } = await import("../commands.js");
+
+    await downloadCommand({ logLevel: "info", scope: "x_test", dryRun: true });
+
+    expect(mockPrompt).not.toHaveBeenCalled();
+  });
+
+  it("statusCommand returns extended status summary when env and connectivity are healthy", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "secret";
+    mockCheckConfigPath.mockReturnValue("/tmp/sync.config.js");
+    mockGetSourcePath.mockReturnValue("/tmp/src");
+    mockGetBuildPathConfig.mockReturnValue("/tmp/build");
+    mockCheckConnection.mockResolvedValue(undefined);
+    mockGetSessionScope.mockResolvedValue({ scope: "x_demo", sys_id: "demo_scope" });
+
+    const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
+    const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
+
+    expect(exitCode).toBeUndefined();
+    expect(result.ok).toBe(true);
+    expect(result.instance).toBe("instance.service-now.com");
+    expect(result.user).toBe("admin");
+    expect(result.scope).toBe("x_demo");
+    expect(result.envReady).toBe(true);
+    expect(result.connectivityOk).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(mockCheckConnection).toHaveBeenCalledWith(5000);
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+
+  it("statusCommand reports degraded summary when env is missing", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    delete process.env.SN_INSTANCE;
+    delete process.env.SN_USER;
+    delete process.env.SN_PASSWORD;
+    mockCheckConfigPath.mockReturnValue(false);
+
+    const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
+    const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
+
+    expect(exitCode).toBe(1);
+    expect(result.ok).toBe(false);
+    expect(result.scope).toBe("<unknown>");
+    expect(result.envReady).toBe(false);
+    expect(result.connectivityOk).toBe(false);
+    expect(result.errors[0].includes("Missing environment variables")).toBe(true);
+    expect(mockCheckConnection).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+
+  it("statusCommand reports connectivity error when env exists but connection fails", async () => {
+    const oldEnv = {
+      SN_INSTANCE: process.env.SN_INSTANCE,
+      SN_USER: process.env.SN_USER,
+      SN_PASSWORD: process.env.SN_PASSWORD,
+    };
+    process.env.SN_INSTANCE = "instance.service-now.com";
+    process.env.SN_USER = "admin";
+    process.env.SN_PASSWORD = "secret";
+    mockCheckConnection.mockRejectedValue(new Error("offline"));
+
+    const { statusCommand } = await import("../commands.js");
+    const oldExitCode = process.exitCode;
+    process.exitCode = undefined;
+    const result = await statusCommand({ logLevel: "info" });
+    const exitCode = process.exitCode;
+    process.exitCode = oldExitCode;
+
+    expect(exitCode).toBe(1);
+    expect(result.ok).toBe(false);
+    expect(result.envReady).toBe(true);
+    expect(result.connectivityOk).toBe(false);
+    expect(result.errors.some((line) => line.includes("offline"))).toBe(true);
+    expect(mockLoggerWarn).toHaveBeenCalled();
+
+    process.env.SN_INSTANCE = oldEnv.SN_INSTANCE;
+    process.env.SN_USER = oldEnv.SN_USER;
+    process.env.SN_PASSWORD = oldEnv.SN_PASSWORD;
+  });
+});

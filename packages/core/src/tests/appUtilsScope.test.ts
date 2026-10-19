@@ -1,0 +1,396 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { jest } from "@jest/globals";
+import type { SN, Sync } from "@syncrona/types";
+
+// Mocked snClient surface. The unwrap helpers are mocked so each test can drive
+// the return values directly without constructing real Table-API envelopes.
+const mockClient = {
+  getScopeId: jest.fn(async () => ({})),
+  getSessionScope: jest.fn(async (): Promise<SN.ScopeObj> => ({ scope: "global", sys_id: "global" })),
+  getUserSysId: jest.fn(async () => ({})),
+  getCurrentAppUserPrefSysId: jest.fn(async () => ({})),
+  updateCurrentAppUserPref: jest.fn(async () => ({})),
+  createCurrentAppUserPref: jest.fn(async () => ({})),
+  createUpdateSet: jest.fn(async () => ({})),
+  getCurrentUpdateSetUserPref: jest.fn(async () => ({})),
+  updateCurrentUpdateSetUserPref: jest.fn(async () => ({})),
+  createCurrentUpdateSetUserPref: jest.fn(async () => ({})),
+  updateRecord: jest.fn(async () => ({})),
+};
+
+const mockUnwrapSNResponse = jest.fn();
+const mockUnwrapFirst = jest.fn();
+const mockUnwrapFirstOrEmpty = jest.fn();
+const mockProcessPush = jest.fn();
+const mockBuildBulk = jest.fn();
+
+const getConfig = jest.fn(() => ({}) as Record<string, unknown>);
+const getManifest = jest.fn();
+const getSourcePath = jest.fn(() => "/src");
+const getBuildPath = jest.fn(() => "/build");
+
+const getFinalFileContents = jest.fn(async () => "built-content");
+const createDirRecursively = jest.fn(async () => undefined);
+const writeFileForce = jest.fn(async () => undefined);
+const getFileContextFromPath = jest.fn((..._a: unknown[]) => undefined as unknown);
+const encodedPathsToFilePaths = jest.fn(async (..._a: unknown[]) => [] as string[]);
+
+const loggerError = jest.fn();
+
+jest.unstable_mockModule("../snClient.js", () => ({
+  defaultClient: jest.fn(() => mockClient),
+  unwrapSNResponse: (...a: unknown[]) => mockUnwrapSNResponse(...a),
+  unwrapTableAPIFirstItem: (...a: unknown[]) => mockUnwrapFirst(...a),
+  unwrapTableAPIFirstItemOrEmpty: (...a: unknown[]) => mockUnwrapFirstOrEmpty(...a),
+  getErrorResponseStatus: (e: { response?: { status?: number } } | null) =>
+    e && e.response ? e.response.status : undefined,
+  isRetryableRequestError: () => false,
+  retryOnErr: (fn: () => Promise<unknown>) => fn(),
+  processPushResponse: (...a: unknown[]) => mockProcessPush(...a),
+  SNClient: class {},
+}));
+
+jest.unstable_mockModule("../config.js", () => ({
+  getConfig,
+  getManifest,
+  getSourcePath,
+  getBuildPath,
+}));
+
+jest.unstable_mockModule("../PluginManager.js", () => ({
+  __esModule: true,
+  default: { getFinalFileContents },
+}));
+
+jest.unstable_mockModule("../FileUtils.js", () => ({
+  createDirRecursively,
+  writeFileForce,
+  getFileContextFromPath: (...a: unknown[]) => getFileContextFromPath(...a),
+  encodedPathsToFilePaths: (...a: unknown[]) => encodedPathsToFilePaths(...a),
+  getBuildExt: () => "js",
+  writeSNFileCurry: () => async () => undefined,
+  appendToPath: (prefix: string) => (suffix: string) => `${prefix}/${suffix}`,
+  pathExists: async () => true,
+  SNFileExists: () => async () => true,
+}));
+
+jest.unstable_mockModule("../manifestBuilder.js", () => ({
+  buildManifestFromTableAPI: jest.fn(),
+  buildBulkDownloadFromTableAPI: (...a: unknown[]) => mockBuildBulk(...a),
+}));
+
+jest.unstable_mockModule("../Logger.js", () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    success: jest.fn(),
+    error: (...a: unknown[]) => loggerError(...a),
+    debug: jest.fn(),
+    // "error" log level keeps getProgTick a no-op (no ProgressBar on stderr).
+    getLogLevel: jest.fn(() => "error"),
+  },
+}));
+
+jest.unstable_mockModule("../downloadCheckpoint.js", () => ({
+  DownloadCheckpoint: jest.fn(),
+  readDownloadCheckpoint: jest.fn(async () => null),
+  writeDownloadCheckpoint: jest.fn(async () => undefined),
+  deleteDownloadCheckpoint: jest.fn(async () => undefined),
+}));
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  getConfig.mockReturnValue({});
+  mockProcessPush.mockReturnValue({ success: true, message: "ok" });
+  mockBuildBulk.mockResolvedValue({});
+});
+
+const buildableRecord = (sysId: string): Sync.BuildableRecord =>
+  ({
+    table: "sys_script",
+    sysId,
+    fields: {
+      script: {
+        name: `record_${sysId}`,
+        tableName: "sys_script",
+        targetField: "script",
+        filePath: `/src/sys_script/record_${sysId}/script.js`,
+        ext: ".js",
+        sys_id: sysId,
+        scope: "x_test",
+      },
+    },
+  }) as unknown as Sync.BuildableRecord;
+
+describe("swapScope / swapServerScope", () => {
+  it("updates the existing user pref when one already exists", async () => {
+    mockUnwrapFirst
+      .mockResolvedValueOnce("scopeId123") // getScopeId
+      .mockResolvedValueOnce("userId"); // getUserSysId
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce("prefId"); // existing pref
+    mockClient.getSessionScope.mockResolvedValueOnce({ scope: "x_app", sys_id: "scopeId123" });
+
+    const { swapScope } = await import("../appUtils.js");
+    const res = await swapScope("x_app");
+
+    expect(res).toEqual({ scope: "x_app", sys_id: "scopeId123" });
+    expect(mockClient.updateCurrentAppUserPref).toHaveBeenCalledWith("scopeId123", "prefId");
+    expect(mockClient.createCurrentAppUserPref).not.toHaveBeenCalled();
+  });
+
+  it("creates a new user pref when none exists yet", async () => {
+    mockUnwrapFirst
+      .mockResolvedValueOnce("scopeId123")
+      .mockResolvedValueOnce("userId");
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce(""); // no existing pref
+    mockClient.getSessionScope.mockResolvedValueOnce({ scope: "x_app", sys_id: "scopeId123" });
+
+    const { swapScope } = await import("../appUtils.js");
+    await swapScope("x_app");
+
+    expect(mockClient.createCurrentAppUserPref).toHaveBeenCalledWith("scopeId123", "userId");
+    expect(mockClient.updateCurrentAppUserPref).not.toHaveBeenCalled();
+  });
+
+  it("logs and rethrows when the scope swap fails", async () => {
+    mockUnwrapFirst
+      .mockResolvedValueOnce("scopeId123") // getScopeId
+      .mockRejectedValueOnce(new Error("no user")); // getUserSysId fails
+
+    const { swapScope } = await import("../appUtils.js");
+    await expect(swapScope("x_app")).rejects.toThrow("no user");
+    expect(loggerError).toHaveBeenCalledWith("no user");
+  });
+});
+
+describe("checkScope", () => {
+  it("returns the first-time result when there is no manifest", async () => {
+    getManifest.mockReturnValue(undefined);
+    const { checkScope } = await import("../appUtils.js");
+    const res = await checkScope(false);
+    expect(res).toEqual({ match: true, sessionScope: "", manifestScope: "" });
+  });
+
+  it("matches when the session scope equals the manifest scope", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockClient.getSessionScope.mockResolvedValueOnce({ scope: "x_app", sys_id: "s1" });
+    const { checkScope } = await import("../appUtils.js");
+    const res = await checkScope(false);
+    expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
+  });
+
+  it("reports a mismatch without swapping when swap=false", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockClient.getSessionScope.mockResolvedValueOnce({ scope: "other", sys_id: "s2" });
+    const { checkScope } = await import("../appUtils.js");
+    const res = await checkScope(false);
+    expect(res).toEqual({ match: false, sessionScope: "other", manifestScope: "x_app" });
+    expect(mockClient.updateCurrentAppUserPref).not.toHaveBeenCalled();
+    expect(mockClient.createCurrentAppUserPref).not.toHaveBeenCalled();
+  });
+
+  it("swaps and re-checks when swap=true and the scope differs", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockClient.getSessionScope
+      .mockResolvedValueOnce({ scope: "other", sys_id: "s2" }) // initial session scope
+      .mockResolvedValueOnce({ scope: "x_app", sys_id: "scopeId123" }); // read back after swap
+    mockUnwrapFirst
+      .mockResolvedValueOnce("scopeId123") // getScopeId
+      .mockResolvedValueOnce("userId"); // getUserSysId
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce("prefId");
+
+    const { checkScope } = await import("../appUtils.js");
+    const res = await checkScope(true);
+    expect(res).toEqual({ match: true, sessionScope: "x_app", manifestScope: "x_app" });
+    expect(mockClient.updateCurrentAppUserPref).toHaveBeenCalledWith("scopeId123", "prefId");
+  });
+
+  it("reports a mismatch when the swap is not reflected in the session scope", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockClient.getSessionScope
+      .mockResolvedValueOnce({ scope: "other", sys_id: "s2" })
+      .mockResolvedValueOnce({ scope: "other", sys_id: "s2" });
+    mockUnwrapFirst.mockResolvedValueOnce("scopeId123").mockResolvedValueOnce("userId");
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce("prefId");
+
+    const { checkScope } = await import("../appUtils.js");
+    const res = await checkScope(true);
+    expect(res).toEqual({ match: false, sessionScope: "other", manifestScope: "x_app" });
+  });
+
+  it("rethrows an error from the session scope lookup", async () => {
+    getManifest.mockReturnValue({ scope: "x_app" });
+    mockClient.getSessionScope.mockRejectedValueOnce({ response: { status: 500 } });
+    const { checkScope } = await import("../appUtils.js");
+    await expect(checkScope(false)).rejects.toEqual({ response: { status: 500 } });
+  });
+});
+
+describe("createAndAssignUpdateSet", () => {
+  it("updates the existing update-set pref when present", async () => {
+    mockUnwrapSNResponse.mockResolvedValueOnce({ sys_id: "us123" }); // createUpdateSet
+    mockUnwrapFirst.mockResolvedValueOnce("userId"); // getUserSysId
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce("pref1"); // existing pref
+
+    const { createAndAssignUpdateSet } = await import("../appUtils.js");
+    const res = await createAndAssignUpdateSet("My Set");
+
+    expect(res).toEqual({ name: "My Set", id: "us123" });
+    expect(mockClient.updateCurrentUpdateSetUserPref).toHaveBeenCalledWith("us123", "pref1");
+    expect(mockClient.createCurrentUpdateSetUserPref).not.toHaveBeenCalled();
+  });
+
+  it("creates a new update-set pref when none exists", async () => {
+    mockUnwrapSNResponse.mockResolvedValueOnce({ sys_id: "us123" });
+    mockUnwrapFirst.mockResolvedValueOnce("userId");
+    mockUnwrapFirstOrEmpty.mockResolvedValueOnce("");
+
+    const { createAndAssignUpdateSet } = await import("../appUtils.js");
+    await createAndAssignUpdateSet("My Set");
+
+    expect(mockClient.createCurrentUpdateSetUserPref).toHaveBeenCalledWith("us123", "userId");
+    expect(mockClient.updateCurrentUpdateSetUserPref).not.toHaveBeenCalled();
+  });
+});
+
+describe("pushFiles error paths", () => {
+  it("reports a 404 as 'could not find' on the server", async () => {
+    getConfig.mockReturnValue({ pushConcurrency: 1 });
+    mockClient.updateRecord.mockRejectedValueOnce({ response: { status: 404 } });
+
+    const { pushFiles } = await import("../appUtils.js");
+    const [res] = await pushFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(false);
+    expect(res.message).toContain("Could not find");
+    expect(mockProcessPush).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a non-404 push error message", async () => {
+    getConfig.mockReturnValue({ pushConcurrency: 1 });
+    mockClient.updateRecord.mockRejectedValueOnce(new Error("boom"));
+
+    const { pushFiles } = await import("../appUtils.js");
+    const [res] = await pushFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(false);
+    expect(res.message).toContain("boom");
+  });
+
+  it("returns a build failure without attempting the push", async () => {
+    getConfig.mockReturnValue({ pushConcurrency: 1 });
+    getFinalFileContents.mockRejectedValueOnce(new Error("plugin blew up"));
+
+    const { pushFiles } = await import("../appUtils.js");
+    const [res] = await pushFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(false);
+    expect(res.message).toContain("plugin blew up");
+    expect(mockClient.updateRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildFiles", () => {
+  it("writes built field contents to the build path on success", async () => {
+    const { buildFiles } = await import("../appUtils.js");
+    const [res] = await buildFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(true);
+    expect(writeFileForce).toHaveBeenCalledTimes(1);
+    expect(createDirRecursively).toHaveBeenCalled();
+  });
+
+  it("returns a build failure when a plugin rejects", async () => {
+    getFinalFileContents.mockRejectedValueOnce(new Error("plugin blew up"));
+    const { buildFiles } = await import("../appUtils.js");
+    const [res] = await buildFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(false);
+    expect(writeFileForce).not.toHaveBeenCalled();
+  });
+
+  it("returns a write failure when the build file cannot be written", async () => {
+    writeFileForce.mockRejectedValueOnce(new Error("disk full"));
+    const { buildFiles } = await import("../appUtils.js");
+    const [res] = await buildFiles([buildableRecord("s1")]);
+
+    expect(res.success).toBe(false);
+    expect(res.message).toContain("disk full");
+  });
+
+  // `build --diff` records buildFilePaths() in the diff manifest and deploy reads
+  // that list back, so the two have to name the SAME file. They share one helper
+  // for exactly that reason; this pins the contract, because a second copy of the
+  // arithmetic would drift the moment a layout or getBuildExt rule changed — the
+  // build would write `<record>/script.js` while the manifest pointed elsewhere,
+  // and the deploy would report "0 files" for a record it had just built.
+  it("predicts the exact paths the build writes", async () => {
+    const { buildFiles, buildFilePaths } = await import("../appUtils.js");
+    const recs = [buildableRecord("s1"), buildableRecord("s2")];
+    await buildFiles(recs);
+
+    const written = writeFileForce.mock.calls.map((call) => call[0]);
+    expect(written).toHaveLength(2);
+    expect(buildFilePaths(recs)).toEqual(written);
+  });
+});
+
+describe("downloadAllFiles", () => {
+  const manifest = {
+    scope: "x_app",
+    tables: {
+      sys_script_include: { records: { a: { sys_id: "sa", files: [{ name: "script", type: "js" }] } } },
+      sys_script: { records: { b: { sys_id: "sb", files: [{ name: "script", type: "js" }] } } },
+    },
+  } as unknown as SN.AppManifest;
+
+  // A fetched TableMap that actually carries records for both manifest tables, so
+  // the resume loop's empty-result accounting treats the pull as a real download
+  // (an empty map would be flagged as an inaccessible table and set a failing exit
+  // code).
+  const fetchedBothTables = {
+    sys_script_include: { records: { a: { sys_id: "sa", name: "a", files: [] } } },
+    sys_script: { records: { b: { sys_id: "sb", name: "b", files: [] } } },
+  } as unknown as SN.TableMap;
+
+  it("fetches every manifest table through the Table API", async () => {
+    getConfig.mockReturnValue({ tableOptions: {} });
+    mockBuildBulk.mockResolvedValue(fetchedBothTables);
+
+    const { downloadAllFiles } = await import("../appUtils.js");
+    await downloadAllFiles(manifest);
+
+    expect(mockBuildBulk).toHaveBeenCalledTimes(2);
+    expect(mockUnwrapSNResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe("getAppFileList", () => {
+  it("decodes a string of encoded paths before building file contexts", async () => {
+    encodedPathsToFilePaths.mockResolvedValueOnce(["/src/sys_script/r/script.js"]);
+    getFileContextFromPath.mockReturnValueOnce({
+      tableName: "sys_script",
+      sys_id: "s1",
+      targetField: "script",
+    });
+
+    const { getAppFileList } = await import("../appUtils.js");
+    const out = await getAppFileList("encoded-paths");
+
+    expect(encodedPathsToFilePaths).toHaveBeenCalledWith("encoded-paths");
+    expect(out).toHaveLength(1);
+    expect(out[0].table).toBe("sys_script");
+  });
+
+  it("uses an array of paths directly and drops unparseable entries", async () => {
+    getFileContextFromPath
+      .mockReturnValueOnce({ tableName: "sys_script", sys_id: "s1", targetField: "script" })
+      .mockReturnValueOnce(null);
+
+    const { getAppFileList } = await import("../appUtils.js");
+    const out = await getAppFileList(["/a.js", "/bad"]);
+
+    expect(encodedPathsToFilePaths).not.toHaveBeenCalled();
+    expect(out).toHaveLength(1);
+  });
+});

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sp_theme">
+  <sp_theme action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8d44b57c58fc475c8c19c9e8fb8f5b88</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_theme_8d44b57c58fc475c8c19c9e8fb8f5b88</sys_update_name>
+    <css_variables/>
+    <footer/>
+    <footer_fixed>true</footer_fixed>
+    <header/>
+    <icon/>
+    <logo/>
+    <logo_alt_text/>
+    <matching_now_experience_theme/>
+    <name>Min Theme</name>
+    <navbar_fixed>true</navbar_fixed>
+    <turn_off_scss_compilation>false</turn_off_scss_compilation>
+  </sp_theme>
+</record_update>

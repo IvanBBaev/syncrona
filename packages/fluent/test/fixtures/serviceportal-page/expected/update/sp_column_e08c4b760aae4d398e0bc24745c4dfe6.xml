@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<record_update table="sp_column">
+  <sp_column action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e08c4b760aae4d398e0bc24745c4dfe6</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_column_e08c4b760aae4d398e0bc24745c4dfe6</sys_update_name>
+    <class_name>colc</class_name>
+    <order>2</order>
+    <semantic_tag/>
+    <size>6</size>
+    <size_lg>8</size_lg>
+    <size_sm>4</size_sm>
+    <size_xs>12</size_xs>
+    <sp_row>99bcfc8121ad434096897208728c44c5</sp_row>
+  </sp_column>
+</record_update>

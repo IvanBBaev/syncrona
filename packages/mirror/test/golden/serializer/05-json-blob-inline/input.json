@@ -1,0 +1,14 @@
+{
+  "description": "A JSON-blob column WITHOUT an extension is nested inside the record envelope, and the per-level key sort applies to it exactly as to the envelope's own keys. Mixed case pins code-unit order (uppercase before lowercase), and a JSON null inside a blob is kept: the drop-empties rule is about empty column VALUES on the wire, not about nulls inside a document.",
+  "table": {
+    "name": "sys_ux_page_property",
+    "fields": [
+      { "element": "label_cache", "internalType": "string", "isJsonBlob": true },
+      { "element": "sys_id", "internalType": "GUID" }
+    ]
+  },
+  "row": {
+    "sys_id": "44dd55ee66ff778899aabbccddeeff00",
+    "label_cache": "{\"Beta\":\"b\",\"alpha\":{\"z\":1,\"a\":null},\"Alpha\":\"A\"}"
+  }
+}

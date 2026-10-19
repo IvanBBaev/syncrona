@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_action">
+  <sys_ui_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ac5b903f936d4ffbba1cd28b665f1cc8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_action_ac5b903f936d4ffbba1cd28b665f1cc8</sys_update_name>
+    <action_name>a</action_name>
+    <active>true</active>
+    <client>false</client>
+    <client_script_v2/>
+    <comments/>
+    <condition/>
+    <form_action>false</form_action>
+    <form_button>false</form_button>
+    <form_button_v2>false</form_button_v2>
+    <form_context_menu>false</form_context_menu>
+    <form_link>false</form_link>
+    <form_menu_button_v2>false</form_menu_button_v2>
+    <form_style/>
+    <format_for_configurable_workspace>false</format_for_configurable_workspace>
+    <hint/>
+    <isolate_script>false</isolate_script>
+    <list_action>false</list_action>
+    <list_banner_button>false</list_banner_button>
+    <list_button>false</list_button>
+    <list_choice>false</list_choice>
+    <list_context_menu>false</list_context_menu>
+    <list_link>false</list_link>
+    <list_save_with_form_button>false</list_save_with_form_button>
+    <list_style/>
+    <messages/>
+    <name>Ovr UA</name>
+    <onclick>o()</onclick>
+    <order>100</order>
+    <script/>
+    <show_form_icon_only>false</show_form_icon_only>
+    <show_insert>true</show_insert>
+    <show_list_icon_only>false</show_list_icon_only>
+    <show_multiple_update>false</show_multiple_update>
+    <show_query>false</show_query>
+    <show_update>true</show_update>
+    <sys_domain>abc</sys_domain>
+    <sys_name>Ovr UA</sys_name>
+    <sys_overrides/>
+    <table>incident</table>
+    <u_x>1.5</u_x>
+    <ui11_compatible>false</ui11_compatible>
+    <ui16_compatible>false</ui16_compatible>
+  </sys_ui_action>
+</record_update>

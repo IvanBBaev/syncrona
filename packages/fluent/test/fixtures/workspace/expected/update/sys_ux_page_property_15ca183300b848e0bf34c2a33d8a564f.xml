@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>15ca183300b848e0bf34c2a33d8a564f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_15ca183300b848e0bf34c2a33d8a564f</sys_update_name>
+    <description/>
+    <name>chrome_tab</name>
+    <page>3e9b81b8e94545e59c93cd781b066ef7</page>
+    <route/>
+    <suffix>chrome_tab</suffix>
+    <type>json</type>
+    <value>{"contextual":["record"],"newTabMenu":[{"label":{"translatable":true,"message":"New incident"},"routeInfo":{"route":"record","fields":{"table":"incident","sysId":"-1"},"multiInstField":"sysId"},"condition":{"tableDescription":{"table":"incident","canCreate":true}}},{"label":{"translatable":true,"message":"New problem"},"routeInfo":{"route":"record","fields":{"table":"problem","sysId":"-1"},"multiInstField":"sysId"},"condition":{"tableDescription":{"table":"problem","canCreate":true}}}],"maxMainTabLimit":10,"maxTotalSubTabLimit":30}</value>
+  </sys_ux_page_property>
+</record_update>

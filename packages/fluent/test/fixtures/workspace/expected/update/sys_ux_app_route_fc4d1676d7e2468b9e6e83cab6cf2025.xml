@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_app_route">
+  <sys_ux_app_route action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fc4d1676d7e2468b9e6e83cab6cf2025</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_app_route_fc4d1676d7e2468b9e6e83cab6cf2025</sys_update_name>
+    <app_config>7f4bf680998847ee990f4af42f0d0940</app_config>
+    <description/>
+    <extension_point/>
+    <fields>table</fields>
+    <icon/>
+    <interoperable>false</interoperable>
+    <name>Simple List</name>
+    <optional_parameters>listTitle,query,disableInlineEditing</optional_parameters>
+    <order>0</order>
+    <parent_macroponent>c276387cc331101080d6d3658940ddd2</parent_macroponent>
+    <parent_macroponent_composition_element_id/>
+    <route_type>simplelist</route_type>
+    <screen_type>e98ffb50bed94349a71e52c60f281e3d</screen_type>
+  </sys_ux_app_route>
+</record_update>

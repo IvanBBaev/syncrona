@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_step">
+  <sys_atf_step action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>61693ba9490a448a81f18f3ac7b65d71</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <active>false</active>
+    <description/>
+    <display_name>Log</display_name>
+    <notes/>
+    <order>5</order>
+    <step_config>58ab71985f30220012b44adb7f46661e</step_config>
+    <table/>
+    <test>61a3c5f832594d81a97e269197542477</test>
+    <timeout/>
+    <warning_message/>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_step_61693ba9490a448a81f18f3ac7b65d71</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_atf_step>
+  <sys_variable_value action="delete_multiple" query="document_key=61693ba9490a448a81f18f3ac7b65d71"/>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>05c71a7afedc4138a43d60bb8ceca2a3</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>61693ba9490a448a81f18f3ac7b65d71</document_key>
+    <value>id={{step['dc79c3d492514a97aafd83f7bc98acd4'].record_id}} t={{step['dc79c3d492514a97aafd83f7bc98acd4'].table}}</value>
+    <variable>523c79985f30220012b44adb7f46663a</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_05c71a7afedc4138a43d60bb8ceca2a3</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_variable_value>
+  <sys_element_mapping action="delete_multiple" query="id=61693ba9490a448a81f18f3ac7b65d71"/>
+  <sys_element_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d37535024d194b4ea14f7e4fc8f83c40</sys_id>
+    <field>log</field>
+    <id>61693ba9490a448a81f18f3ac7b65d71</id>
+    <table>var__m_atf_input_variable_58ab71985f30220012b44adb7f46661e</table>
+    <value>id={{step['dc79c3d492514a97aafd83f7bc98acd4'].record_id}} t={{step['dc79c3d492514a97aafd83f7bc98acd4'].table}}</value>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_element_mapping_d37535024d194b4ea14f7e4fc8f83c40</sys_update_name>
+    <sys_policy>read</sys_policy>
+  </sys_element_mapping>
+</record_update>

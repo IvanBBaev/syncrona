@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_trigger_configuration">
+  <sn_aia_trigger_configuration action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dfdaa952004749b8ae73eed27caecca7</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_trigger_configuration_dfdaa952004749b8ae73eed27caecca7</sys_update_name>
+    <active>false</active>
+    <business_rule/>
+    <channel>nap_and_va</channel>
+    <condition>active=true</condition>
+    <description/>
+    <enable_discovery>false</enable_discovery>
+    <internal_name>global.x_snc_bprobe.Daily Trigger</internal_name>
+    <name>Daily Trigger</name>
+    <notification_script/>
+    <objective_template><![CDATA[Daily]]></objective_template>
+    <portal/>
+    <profile/>
+    <run_as/>
+    <run_as_script/>
+    <run_as_user/>
+    <run_dayofmonth/>
+    <run_dayofweek/>
+    <run_period/>
+    <run_start/>
+    <run_time>1970-01-01 08:00:00</run_time>
+    <show_notifications>false</show_notifications>
+    <sys_domain>global</sys_domain>
+    <sys_overrides/>
+    <target_table>incident</target_table>
+    <trigger_flow/>
+    <trigger_flow_definition_type>daily</trigger_flow_definition_type>
+    <trigger_strategy>every</trigger_strategy>
+    <usecase/>
+    <usecase_discovery>false</usecase_discovery>
+  </sn_aia_trigger_configuration>
+</record_update>

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_ng_pro_sp_widget">
+  <m2m_sp_ng_pro_sp_widget action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>7e7c4dc4030b48dfad14e2fc2597129f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_ng_pro_sp_widget_7e7c4dc4030b48dfad14e2fc2597129f</sys_update_name>
+    <sp_angular_provider>10d309b958ba44e8b6f98633ce55cd52</sp_angular_provider>
+    <sp_widget>12c15fec720f4b69849ad484f3d52d9b</sp_widget>
+  </m2m_sp_ng_pro_sp_widget>
+</record_update>

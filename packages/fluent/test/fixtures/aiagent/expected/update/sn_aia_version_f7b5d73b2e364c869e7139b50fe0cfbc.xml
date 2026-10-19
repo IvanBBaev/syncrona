@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_version">
+  <sn_aia_version action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f7b5d73b2e364c869e7139b50fe0cfbc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_version_f7b5d73b2e364c869e7139b50fe0cfbc</sys_update_name>
+    <instructions/>
+    <state>draft</state>
+    <sys_domain>global</sys_domain>
+    <target_id>c9a01837e85e40699f677abfd0586e24</target_id>
+    <target_table>sn_aia_agent</target_table>
+    <version_name>Public Agent</version_name>
+    <version_number>1</version_number>
+  </sn_aia_version>
+</record_update>

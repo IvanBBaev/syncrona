@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_section caption="Details" section_id="087fb62848f045c09af37c2011ec4f6b" sys_domain="global" table="incident" view="">
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>number</element>
+      <position>0</position>
+      <sys_id>9b74789e98d641098239eda6ce53337f</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Details" display_value="Details" name="incident" sys_domain="global" view="Default view">087fb62848f045c09af37c2011ec4f6b</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>short_description</element>
+      <position>1</position>
+      <sys_id>c789d4710c4c4da7b27d04a971133f22</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Details" display_value="Details" name="incident" sys_domain="global" view="Default view">087fb62848f045c09af37c2011ec4f6b</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <caption>Details</caption>
+      <header>false</header>
+      <name>incident</name>
+      <roles/>
+      <sys_domain>global</sys_domain>
+      <sys_id>087fb62848f045c09af37c2011ec4f6b</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user/>
+      <title>false</title>
+      <view_name/>
+      <view name="NULL" display_value="Default view">Default view</view>
+    </sys_ui_section>
+  </sys_ui_section>
+</record_update>

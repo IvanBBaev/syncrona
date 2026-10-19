@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="m2m_sp_dependency_css_include">
+  <m2m_sp_dependency_css_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8040655930664b8c97f7e9f1fc438b9f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>m2m_sp_dependency_css_include_8040655930664b8c97f7e9f1fc438b9f</sys_update_name>
+    <order>200</order>
+    <sp_css_include>2a84296b659a428dbcb6d600d73815e2</sp_css_include>
+    <sp_dependency>29fee90408f14088af3c544c00c7cc41</sp_dependency>
+  </m2m_sp_dependency_css_include>
+</record_update>

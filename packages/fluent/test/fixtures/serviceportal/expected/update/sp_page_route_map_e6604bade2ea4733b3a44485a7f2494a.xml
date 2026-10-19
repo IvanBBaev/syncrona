@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sp_page_route_map">
+  <sp_page_route_map action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e6604bade2ea4733b3a44485a7f2494a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_page_route_map_e6604bade2ea4733b3a44485a7f2494a</sys_update_name>
+    <active>false</active>
+    <order>50</order>
+    <portals>fe12dbbed14bd3f712f0787141c2f656</portals>
+    <roles>itil,x_snc_bprobe.sp_user,admin</roles>
+    <route_from_page>b5f4d31047132100ba13a5554ee49002</route_from_page>
+    <route_to_page>c6e5e42047132100ba13a5554ee49003</route_to_page>
+    <short_description>Redirect ITIL</short_description>
+  </sp_page_route_map>
+</record_update>

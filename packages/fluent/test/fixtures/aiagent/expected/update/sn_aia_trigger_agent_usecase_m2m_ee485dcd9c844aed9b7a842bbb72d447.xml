@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_trigger_agent_usecase_m2m">
+  <sn_aia_trigger_agent_usecase_m2m action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ee485dcd9c844aed9b7a842bbb72d447</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_trigger_agent_usecase_m2m_ee485dcd9c844aed9b7a842bbb72d447</sys_update_name>
+    <active>false</active>
+    <objective_template><![CDATA[Handle ${number}]]></objective_template>
+    <related_resource_record>cd65f04152944317a4d531140b8ad539</related_resource_record>
+    <related_resource_table>sn_aia_agent</related_resource_table>
+    <sys_domain>global</sys_domain>
+    <sys_overrides/>
+    <trigger_configuration name="Create Trigger" usecase="NULL">429b52620b2947d2aefedd6ab6b0c516</trigger_configuration>
+  </sn_aia_trigger_agent_usecase_m2m>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2c90e4987f21474c8a71f183cf7c4194</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_2c90e4987f21474c8a71f183cf7c4194</sys_update_name>
+    <configuration_template/>
+    <connection_type>http_connection</connection_type>
+    <description/>
+    <id>x_snc_bprobe.Cred_Alias</id>
+    <multiple_connections>false</multiple_connections>
+    <name>Cred Alias</name>
+    <parent>bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</parent>
+    <retry_policy>cccccccccccccccccccccccccccccccc</retry_policy>
+    <sys_policy/>
+    <type>credential</type>
+  </sys_alias>
+</record_update>

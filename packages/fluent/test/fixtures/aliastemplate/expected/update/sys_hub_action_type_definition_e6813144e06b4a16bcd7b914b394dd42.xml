@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<record_update table="sys_hub_action_type_definition">
+  <sys_hub_action_type_definition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e6813144e06b4a16bcd7b914b394dd42</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_hub_action_type_definition_e6813144e06b4a16bcd7b914b394dd42</sys_update_name>
+    <name>Test connection</name>
+  </sys_hub_action_type_definition>
+</record_update>

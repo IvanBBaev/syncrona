@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<record_update table="catalog_script_client">
+  <catalog_script_client action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b43c5f0be2534c48982495ca17f77f18</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>catalog_script_client_b43c5f0be2534c48982495ca17f77f18</sys_update_name>
+    <active>true</active>
+    <applies_catalog>true</applies_catalog>
+    <applies_req_item>false</applies_req_item>
+    <applies_sc_task>false</applies_sc_task>
+    <applies_target_record>false</applies_target_record>
+    <applies_to>item</applies_to>
+    <cat_item/>
+    <cat_variable/>
+    <global>true</global>
+    <isolate_script>true</isolate_script>
+    <name>Minimal</name>
+    <published_ref/>
+    <script><![CDATA[function onSubmit() {}]]></script>
+    <type>onSubmit</type>
+    <ui_type>10</ui_type>
+    <va_supported>false</va_supported>
+    <variable_set/>
+  </catalog_script_client>
+</record_update>

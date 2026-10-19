@@ -1,0 +1,65 @@
+# @syncrona/babel-preset-servicenow
+
+<!-- badges:start -->
+| [![npm](https://img.shields.io/npm/v/@syncrona/babel-preset-servicenow?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncrona/babel-preset-servicenow) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+|:--:|:--:|:--:|:--:|:--:|
+<!-- badges:end -->
+
+## Overview
+
+[SyncroNow AI](https://ivanbbaev.github.io/syncrona/) is the ServiceNow scoped-application toolchain behind the `syncrona` CLI. This package is not a `sync.config.js` build plugin: it is a plain Babel preset, listed last in the Babel options you pass to [`@syncrona/babel-plugin`](https://www.npmjs.com/package/@syncrona/babel-plugin).
+
+This [Babel](https://babeljs.io) preset is meant to run **absolutely last** of all plugins and presets. Its purpose is to remove or refactor any code that might break ServiceNow's serverside Rhino engine.
+Right now it is fairly simple, but it might be enhanced in the future if more issues are discovered.
+
+## Installation
+
+```bash
+npm i -D @syncrona/babel-preset-servicenow
+```
+
+After the installation is completed, add it to the `presets` section of your Babel configuration.
+
+## Sanitizer
+
+The sanitizer performs various operations on code to make it safe for ServiceNow
+
+### `__proto__` references
+
+ServiceNow blocks references to `__proto__` on the serverside. This is sidestepped by changing all references to `__proto__` to `__proto_sn__`. So far all functionality has been preserved in transpiled output.
+
+```javascript
+test.__proto__ = {};
+```
+
+**becomes...**
+
+```javascript
+test.__proto_sn__ = {};
+```
+
+### Keyword Identifiers
+
+ServiceNow does not allow properties of objects that have the same name as keywords to be accessed directly. This is sidestepped by using the index syntax instead.
+
+```javascript
+test.default;
+```
+
+**becomes...**
+
+```javascript
+test["default"]
+```
+
+The same applies to optional chaining (`test?.default` becomes `test?.["default"]`) and to object-literal keys:
+
+```javascript
+var options = { default: true };
+```
+
+**becomes...**
+
+```javascript
+var options = { "default": true };
+```

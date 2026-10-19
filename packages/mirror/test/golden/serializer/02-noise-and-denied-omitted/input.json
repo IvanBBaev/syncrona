@@ -1,0 +1,20 @@
+{
+  "description": "A denied column (D19: password2 is returned as recoverable ciphertext, not as a mask) and a noise column (per-row churn counter) never reach the tree. The password value here is an obvious placeholder, not real ciphertext.",
+  "table": {
+    "name": "sys_email_account",
+    "fields": [
+      { "element": "name" },
+      { "element": "password2", "internalType": "password2", "isDenied": true },
+      { "element": "sys_id", "internalType": "GUID" },
+      { "element": "sys_mod_count", "internalType": "integer", "isNoise": true },
+      { "element": "sys_updated_on", "internalType": "glide_date_time" }
+    ]
+  },
+  "row": {
+    "sys_id": "1a2b3c4d5e6f70819203a4b5c6d7e8f9",
+    "name": "SMTP account",
+    "password2": "placeholder-not-a-real-secret-value",
+    "sys_mod_count": "417",
+    "sys_updated_on": "2026-02-01 11:00:00"
+  }
+}

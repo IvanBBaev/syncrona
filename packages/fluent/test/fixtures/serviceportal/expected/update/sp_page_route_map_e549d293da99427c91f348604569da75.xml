@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sp_page_route_map">
+  <sp_page_route_map action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e549d293da99427c91f348604569da75</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_page_route_map_e549d293da99427c91f348604569da75</sys_update_name>
+    <active>true</active>
+    <order>10</order>
+    <portals/>
+    <roles/>
+    <route_from_page>a4e3c21047132100ba13a5554ee49001</route_from_page>
+    <route_to_page>07261a2147132100ba13a5554ee49092</route_to_page>
+    <short_description/>
+  </sp_page_route_map>
+</record_update>

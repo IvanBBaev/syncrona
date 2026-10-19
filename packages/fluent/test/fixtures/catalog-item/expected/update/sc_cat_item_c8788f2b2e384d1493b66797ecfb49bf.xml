@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<record_update table="sc_cat_item">
+  <sc_cat_item action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c8788f2b2e384d1493b66797ecfb49bf</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sc_cat_item_c8788f2b2e384d1493b66797ecfb49bf</sys_update_name>
+    <access_type>delegated</access_type>
+    <active>false</active>
+    <availability>on_both</availability>
+    <billable>true</billable>
+    <category>d258b953c611227a0146101fb1be7c31</category>
+    <checked_out>true</checked_out>
+    <cost>12.5</cost>
+    <custom_cart>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee</custom_cart>
+    <delivery_plan>cccccccccccccccccccccccccccccccc</delivery_plan>
+    <delivery_plan_script><![CDATA[answer = true;]]></delivery_plan_script>
+    <delivery_time>1970-01-03 03:04:05</delivery_time>
+    <description><![CDATA[<p>Rich & description</p>]]></description>
+    <display_price_property>always</display_price_property>
+    <entitlement_script><![CDATA[answer = gs.hasRole("itil");]]></entitlement_script>
+    <flow_designer_flow/>
+    <fulfillment_automation_level>semi_automated</fulfillment_automation_level>
+    <group>dddddddddddddddddddddddddddddddd</group>
+    <hide_sp>true</hide_sp>
+    <icon>icon-x</icon>
+    <ignore_price>false</ignore_price>
+    <image>img.png</image>
+    <location>11111111111111111111111111111111</location>
+    <make_item_non_conversational>true</make_item_non_conversational>
+    <mandatory_attachment>true</mandatory_attachment>
+    <meta>laptop,hardware</meta>
+    <mobile_hide_price>true</mobile_hide_price>
+    <mobile_picture>mp.png</mobile_picture>
+    <mobile_picture_type>use_no_picture</mobile_picture_type>
+    <model>bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</model>
+    <name>Full &amp; &lt;Item&gt;</name>
+    <no_attachment_v2>false</no_attachment_v2>
+    <no_cart>true</no_cart>
+    <no_cart_v2>true</no_cart_v2>
+    <no_delivery_time_v2>true</no_delivery_time_v2>
+    <no_order>true</no_order>
+    <no_order_now>true</no_order_now>
+    <no_proceed_checkout>true</no_proceed_checkout>
+    <no_quantity>true</no_quantity>
+    <no_quantity_v2>true</no_quantity_v2>
+    <no_save_as_draft>true</no_save_as_draft>
+    <no_search>true</no_search>
+    <no_wishlist_v2>true</no_wishlist_v2>
+    <omit_price>true</omit_price>
+    <order>300</order>
+    <owner>6816f79cc0a8016401c5a33be04be441</owner>
+    <picture>p.png</picture>
+    <recurring_frequency>monthly</recurring_frequency>
+    <request_method>submit</request_method>
+    <roles>x_snc_bprobe.approver,itil</roles>
+    <sc_catalogs>e0d08b13c3330100c8b837659bba8fb4,742ce428d7211100f2d224837e61036d</sc_catalogs>
+    <short_description>Short one</short_description>
+    <show_variable_help_on_load>true</show_variable_help_on_load>
+    <start_closed>true</start_closed>
+    <state>published</state>
+    <taxonomy_topic>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</taxonomy_topic>
+    <type>item</type>
+    <use_sc_layout>false</use_sc_layout>
+    <vendor>ffffffffffffffffffffffffffffffff</vendor>
+    <version>2</version>
+    <view>catalog_view</view>
+    <visible_bundle>false</visible_bundle>
+    <visible_guide>false</visible_guide>
+    <visible_standalone>false</visible_standalone>
+    <workflow/>
+  </sc_cat_item>
+</record_update>

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_email_template">
+  <sysevent_email_template action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d494bafb0eda477ba8a096b4ca8233e0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_email_template_d494bafb0eda477ba8a096b4ca8233e0</sys_update_name>
+    <name>Probe Tpl</name>
+  </sysevent_email_template>
+</record_update>

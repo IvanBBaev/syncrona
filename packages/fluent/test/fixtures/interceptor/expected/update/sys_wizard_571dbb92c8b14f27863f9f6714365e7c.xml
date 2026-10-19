@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard">
+  <sys_wizard action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>571dbb92c8b14f27863f9f6714365e7c</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_571dbb92c8b14f27863f9f6714365e7c</sys_update_name>
+    <back_panel name="Minimal">4c1ec0a527cb494e980a73415c7c473f</back_panel>
+    <intercepts/>
+    <name>Keyed refs</name>
+    <next_panel name="Elsewhere">11112222333344445555666677778888</next_panel>
+    <question/>
+    <sys_policy>protected</sys_policy>
+  </sys_wizard>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_script_action">
+  <sysevent_script_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>0f9e58cd6c8144ff888e9d0d7669b94a</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_script_action_0f9e58cd6c8144ff888e9d0d7669b94a</sys_update_name>
+    <active>true</active>
+    <condition_script><![CDATA[event.parm1 == 'x']]></condition_script>
+    <description>Full &lt;desc&gt; &amp; "q"</description>
+    <event_name>x_snc_bprobe.full</event_name>
+    <name>Full SA</name>
+    <order>250</order>
+    <script><![CDATA[gs.info('included scheduled');
+]]></script>
+    <sys_name>Full SA</sys_name>
+    <sys_policy>protected</sys_policy>
+  </sysevent_script_action>
+</record_update>

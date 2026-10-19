@@ -1,0 +1,24 @@
+{
+  "name": "@syncrona/types",
+  "version": "1.2.0-beta.0",
+  "description": "Shared TypeScript type declarations for the SyncroNow AI toolchain — the Sync and SN namespaces consumed by the core CLI, MCP server, and build plugins.",
+  "main": "index.d.ts",
+  "scripts": {
+    "test": "echo \"No runtime tests for @syncrona/types\""
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "index.d.ts"
+  ],
+  "types": "./index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/types"
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

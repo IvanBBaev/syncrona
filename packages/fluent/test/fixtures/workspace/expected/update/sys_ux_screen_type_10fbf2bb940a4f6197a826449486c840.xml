@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_screen_type">
+  <sys_ux_screen_type action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>10fbf2bb940a4f6197a826449486c840</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_screen_type_10fbf2bb940a4f6197a826449486c840</sys_update_name>
+    <description/>
+    <name>Record Default</name>
+  </sys_ux_screen_type>
+</record_update>

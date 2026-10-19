@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sp_css_include">
+  <sp_css_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2a84296b659a428dbcb6d600d73815e2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_css_include_2a84296b659a428dbcb6d600d73815e2</sys_update_name>
+    <lazy_load>true</lazy_load>
+    <name>Portal CSS</name>
+    <rtl_css_file_url/>
+    <source>local</source>
+    <sp_css>ccfbb128f13494f68c570b646ba5d335</sp_css>
+    <url/>
+  </sp_css_include>
+</record_update>

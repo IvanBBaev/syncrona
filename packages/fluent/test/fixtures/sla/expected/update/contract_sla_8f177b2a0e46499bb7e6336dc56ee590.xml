@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<record_update table="contract_sla">
+  <contract_sla action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8f177b2a0e46499bb7e6336dc56ee590</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>contract_sla_8f177b2a0e46499bb7e6336dc56ee590</sys_update_name>
+    <active>true</active>
+    <adv_condition_type>none</adv_condition_type>
+    <cancel_condition/>
+    <collection>incident</collection>
+    <condition_class/>
+    <duration>1970-01-01 08:00:00</duration>
+    <duration_type/>
+    <enable_logging>false</enable_logging>
+    <flow>828f267973333300e289235f04f6a7a3</flow>
+    <name>Min</name>
+    <pause_condition/>
+    <relative_duration_works_on>Task record</relative_duration_works_on>
+    <reset_action>cancel</reset_action>
+    <reset_condition/>
+    <resume_condition/>
+    <retroactive>false</retroactive>
+    <retroactive_pause>true</retroactive_pause>
+    <schedule>08fcd0830a0a0b2600079f56b1adb9ae</schedule>
+    <schedule_source>sla_definition</schedule_source>
+    <schedule_source_field/>
+    <set_start_to/>
+    <start_condition/>
+    <stop_condition/>
+    <sys_domain_path>/</sys_domain_path>
+    <sys_overrides/>
+    <target/>
+    <timezone/>
+    <timezone_source>task.caller_id.time_zone</timezone_source>
+    <type>SLA</type>
+    <vendor/>
+    <when_to_cancel>on_condition</when_to_cancel>
+    <when_to_resume>on_condition</when_to_resume>
+    <workflow/>
+  </contract_sla>
+</record_update>

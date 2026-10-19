@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_header_map">
+  <sys_ws_header_map action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>dc8bbfe136cf4545b40d7bd16bb7da83</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_header_map_dc8bbfe136cf4545b40d7bd16bb7da83</sys_update_name>
+    <web_service_header>d92612518ab74093bf89c44749ff5ae3</web_service_header>
+    <web_service_operation>34ab963acda14d8abccf5747402b62ed</web_service_operation>
+  </sys_ws_header_map>
+</record_update>

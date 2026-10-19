@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_operation">
+  <sys_ws_operation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>34ab963acda14d8abccf5747402b62ed</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_operation_34ab963acda14d8abccf5747402b62ed</sys_update_name>
+    <active>true</active>
+    <consumes>application/json</consumes>
+    <consumes_customized>false</consumes_customized>
+    <default_operation_uri>/api/x_snc_bprobe/items/list</default_operation_uri>
+    <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+    <http_method>GET</http_method>
+    <name>list</name>
+    <operation_script><![CDATA[(function (request, response) { response.setBody({ ok: true }); })(request, response);]]></operation_script>
+    <operation_uri>/api/x_snc_bprobe/v1/items/list</operation_uri>
+    <produces>application/json,application/xml,text/xml</produces>
+    <produces_customized>false</produces_customized>
+    <relative_path>/list</relative_path>
+    <request_example/>
+    <requires_acl_authorization>true</requires_acl_authorization>
+    <requires_authentication>true</requires_authentication>
+    <requires_snc_internal_role>true</requires_snc_internal_role>
+    <short_description/>
+    <sys_policy/>
+    <web_service_definition>d3617245013c4e83bd60ed56ae312b91</web_service_definition>
+    <web_service_version>c766d9dec6bf4cae8945c0905b51df37</web_service_version>
+  </sys_ws_operation>
+</record_update>

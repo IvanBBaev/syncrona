@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_agent_config">
+  <sn_aia_agent_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>531085ef3c404f7a9a11b8bf53af87af</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_agent_config_531085ef3c404f7a9a11b8bf53af87af</sys_update_name>
+    <active>false</active>
+    <agent>cd65f04152944317a4d531140b8ad539</agent>
+    <agent_descriptor>created_by_build_agent</agent_descriptor>
+    <agent_learning>true</agent_learning>
+    <doc_url>https://example.com/doc</doc_url>
+    <icon_url>https://example.com/icon.png</icon_url>
+    <public>true</public>
+    <run_as_user/>
+    <sys_domain>global</sys_domain>
+    <sys_overrides/>
+  </sn_aia_agent_config>
+</record_update>

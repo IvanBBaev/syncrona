@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_state_transition">
+  <sttrm_state_transition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>11c9816b82ea4bedace52911b397c096</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_state_transition_11c9816b82ea4bedace52911b397c096</sys_update_name>
+    <automatic>false</automatic>
+    <from_state>74cd9a3ae4454d73b2d21ee981d44818</from_state>
+    <name>New to Work in Progress</name>
+    <to_state>96c37db38e414b3fa265b34d846b0965</to_state>
+  </sttrm_state_transition>
+</record_update>

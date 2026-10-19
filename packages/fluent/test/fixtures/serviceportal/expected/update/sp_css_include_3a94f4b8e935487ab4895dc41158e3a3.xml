@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="sp_css_include">
+  <sp_css_include action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>3a94f4b8e935487ab4895dc41158e3a3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_css_include_3a94f4b8e935487ab4895dc41158e3a3</sys_update_name>
+    <lazy_load>false</lazy_load>
+    <name>Bootstrap CSS</name>
+    <rtl_css_file_url>https://cdn.example.com/b.rtl.css</rtl_css_file_url>
+    <source>url</source>
+    <sp_css/>
+    <url>https://cdn.example.com/b.css</url>
+  </sp_css_include>
+</record_update>

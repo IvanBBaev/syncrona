@@ -1,0 +1,25 @@
+{
+  "columns": [
+    {
+      "element": "name",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    },
+    {
+      "element": "note",
+      "internalType": "string",
+      "maxLength": 40,
+      "phantom": false,
+      "reference": null
+    }
+  ],
+  "label": "Demo Empty",
+  "name": "x_syn_demo_empty",
+  "rows": [],
+  "scopeSysId": "c50cdf59d855337e330f1ab84ea00f27",
+  "superClass": "a393993bada71f0b99f6fb9661a11c99",
+  "synthetic": null,
+  "sysId": "af097057b4fc8d730319dd7b644b1589"
+}

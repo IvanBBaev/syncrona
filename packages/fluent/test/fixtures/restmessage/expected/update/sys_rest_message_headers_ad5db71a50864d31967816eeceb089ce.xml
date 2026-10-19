@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_headers">
+  <sys_rest_message_headers action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ad5db71a50864d31967816eeceb089ce</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_headers_ad5db71a50864d31967816eeceb089ce</sys_update_name>
+    <name>Accept</name>
+    <rest_message>7aa73d18d57b4673a5b72c30a34dc552</rest_message>
+    <value>application/json</value>
+  </sys_rest_message_headers>
+</record_update>

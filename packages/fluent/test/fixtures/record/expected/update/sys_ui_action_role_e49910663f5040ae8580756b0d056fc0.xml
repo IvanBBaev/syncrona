@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_action_role">
+  <sys_ui_action_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e49910663f5040ae8580756b0d056fc0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_action_role_e49910663f5040ae8580756b0d056fc0</sys_update_name>
+    <sys_ui_action>02cddd358c024d23a78448224eb0556e</sys_ui_action>
+    <sys_user_role name="x_snc_bprobe.manager">788724aa2f634f19afd35ea98bb69a7d</sys_user_role>
+  </sys_ui_action_role>
+</record_update>

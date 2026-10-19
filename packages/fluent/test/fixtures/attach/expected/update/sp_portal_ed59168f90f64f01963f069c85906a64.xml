@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<record_update>
+  <sp_portal action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>ed59168f90f64f01963f069c85906a64</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_portal_ed59168f90f64f01963f069c85906a64</sys_update_name>
+    <icon>75812384a56c3ef38852a4afd0c0e194</icon>
+    <logo>6cf0256dad5cf4ef9e64752b28cd6fd2</logo>
+    <title>Portal A</title>
+    <url_suffix>portal-a</url_suffix>
+  </sp_portal>
+  <sys_attachment action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>75812384a56c3ef38852a4afd0c0e194</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_75812384a56c3ef38852a4afd0c0e194</sys_update_name>
+    <average_image_color/>
+    <chunk_size_bytes>933336</chunk_size_bytes>
+    <compressed>true</compressed>
+    <content_type>image/png</content_type>
+    <file_name>icon</file_name>
+    <hash>bc09c2590d2502c8ffaf1a3c09aa89df222e03d186a8daa0c7fce6321fb6e928</hash>
+    <image_height/>
+    <image_width/>
+    <size_bytes>70</size_bytes>
+    <size_compressed>81</size_compressed>
+    <table_name>ZZ_YYsp_portal</table_name>
+    <table_sys_id>ed59168f90f64f01963f069c85906a64</table_sys_id>
+  </sys_attachment>
+  <sys_attachment_doc action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1345a15912248e43a77a54aba232f036</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_doc_1345a15912248e43a77a54aba232f036</sys_update_name>
+    <data>H4sIAIQ/0moAAw==</data>
+    <length>16</length>
+    <position>0</position>
+    <sys_attachment>75812384a56c3ef38852a4afd0c0e194</sys_attachment>
+  </sys_attachment_doc>
+  <sys_attachment_doc action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d12fc0d86ed6fee3cd7a9465dea75024</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_doc_d12fc0d86ed6fee3cd7a9465dea75024</sys_update_name>
+    <data>6wzwc+flkuJiYGDg9fRwCQLSjCDMwQYk5UWPdIIlXBxDKm4l/zl/4IM8AysrE0P8iY+XgBIMnq5+LuucEpoAZkMUx0YAAAA=</data>
+    <length>96</length>
+    <position>1</position>
+    <sys_attachment>75812384a56c3ef38852a4afd0c0e194</sys_attachment>
+  </sys_attachment_doc>
+  <sys_attachment action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6cf0256dad5cf4ef9e64752b28cd6fd2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_6cf0256dad5cf4ef9e64752b28cd6fd2</sys_update_name>
+    <average_image_color/>
+    <chunk_size_bytes>933336</chunk_size_bytes>
+    <compressed>true</compressed>
+    <content_type>image/png</content_type>
+    <file_name>logo</file_name>
+    <hash>bc09c2590d2502c8ffaf1a3c09aa89df222e03d186a8daa0c7fce6321fb6e928</hash>
+    <image_height/>
+    <image_width/>
+    <size_bytes>70</size_bytes>
+    <size_compressed>81</size_compressed>
+    <table_name>ZZ_YYsp_portal</table_name>
+    <table_sys_id>ed59168f90f64f01963f069c85906a64</table_sys_id>
+  </sys_attachment>
+  <sys_attachment_doc action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>45b475deb25fbbc35bdfb456df8b2af0</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_doc_45b475deb25fbbc35bdfb456df8b2af0</sys_update_name>
+    <data>H4sIAIQ/0moAAw==</data>
+    <length>16</length>
+    <position>0</position>
+    <sys_attachment>6cf0256dad5cf4ef9e64752b28cd6fd2</sys_attachment>
+  </sys_attachment_doc>
+  <sys_attachment_doc action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>b863758579f8e4c09b21a7e105fad3fc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_attachment_doc_b863758579f8e4c09b21a7e105fad3fc</sys_update_name>
+    <data>6wzwc+flkuJiYGDg9fRwCQLSjCDMwQYk5UWPdIIlXBxDKm4l/zl/4IM8AysrE0P8iY+XgBIMnq5+LuucEpoAZkMUx0YAAAA=</data>
+    <length>96</length>
+    <position>1</position>
+    <sys_attachment>6cf0256dad5cf4ef9e64752b28cd6fd2</sys_attachment>
+  </sys_attachment_doc>
+</record_update>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sttrm_transition_condition">
+  <sttrm_transition_condition action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9151083c4b7840d89b2ea98949c0c8b4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sttrm_transition_condition_9151083c4b7840d89b2ea98949c0c8b4</sys_update_name>
+    <active>false</active>
+    <condition/>
+    <condition_script><![CDATA[(function (current) {
+    return true;
+})(current);]]></condition_script>
+    <condition_type>eb8676985303101034d1ddeeff7b1291</condition_type>
+    <description>A script</description>
+    <name>Scripted</name>
+    <order>200</order>
+    <sttrm_state_transition>11c9816b82ea4bedace52911b397c096</sttrm_state_transition>
+  </sttrm_transition_condition>
+</record_update>

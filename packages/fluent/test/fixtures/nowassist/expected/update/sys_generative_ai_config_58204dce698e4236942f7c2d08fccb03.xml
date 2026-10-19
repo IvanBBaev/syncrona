@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="[object Object]">
+  <sys_generative_ai_config action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>58204dce698e4236942f7c2d08fccb03</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_generative_ai_config_58204dce698e4236942f7c2d08fccb03</sys_update_name>
+    <active>false</active>
+    <capability>e0156365ac94450b86885804ae35ed6b</capability>
+    <definition capability="e0156365ac94450b86885804ae35ed6b" api="936e514a53b3b110f028ddeeff7b128c">d823a807960c4a5eac319b4a9ad33ab0</definition>
+    <definition_table>sys_one_extend_capability_definition</definition_table>
+    <description>AI-powered customer support assistant</description>
+    <max_tokens>500</max_tokens>
+    <min_word_count>-1</min_word_count>
+    <model>llm_generic_small</model>
+    <name>Support Prompt</name>
+    <prompt>You are a helpful customer support agent...</prompt>
+    <show_in_prompt_library>false</show_in_prompt_library>
+    <state>draft</state>
+    <temperature>0.2</temperature>
+    <version>1</version>
+  </sys_generative_ai_config>
+</record_update>

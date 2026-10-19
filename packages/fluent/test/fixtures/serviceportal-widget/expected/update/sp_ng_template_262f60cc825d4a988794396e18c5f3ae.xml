@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sp_ng_template">
+  <sp_ng_template action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>262f60cc825d4a988794396e18c5f3ae</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_ng_template_262f60cc825d4a988794396e18c5f3ae</sys_update_name>
+    <id>tpl-one.html</id>
+    <sp_widget>12c15fec720f4b69849ad484f3d52d9b</sp_widget>
+    <template>&lt;p&gt;one&lt;/p&gt;</template>
+  </sp_ng_template>
+</record_update>

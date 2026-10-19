@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias">
+  <sys_alias action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>20d1874aa94b445bb221683ede2f56bc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_20d1874aa94b445bb221683ede2f56bc</sys_update_name>
+    <configuration_template/>
+    <connection_type>sys_connection</connection_type>
+    <description/>
+    <id>x_snc_bprobe.Odd_name_v2</id>
+    <multiple_connections>false</multiple_connections>
+    <name> Odd-name.v2 </name>
+    <parent/>
+    <retry_policy/>
+    <sys_policy>read</sys_policy>
+    <type>credential</type>
+  </sys_alias>
+</record_update>

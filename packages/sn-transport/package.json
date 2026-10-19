@@ -1,0 +1,39 @@
+{
+  "name": "@syncrona/sn-transport",
+  "version": "1.2.0-beta.0",
+  "description": "Shared ServiceNow transport policy for SyncroNow AI (retry, query-escaping, TLS, rate-limit and OAuth policy) used by the core CLI client and the MCP server client.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepack": "tsc",
+    "test": "jest --coverage",
+    "test:mutation": "stryker run"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/jest-runner": "^10.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.0",
+    "fast-check": "^3.23.2",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.1.1",
+    "typescript": "~6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/sn-transport"
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

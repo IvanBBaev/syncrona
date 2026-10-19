@@ -1,0 +1,246 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { Sync } from "@syncrona/types";
+import { logger } from "./Logger.js";
+import { setLogLevel } from "./commandHelpers.js";
+import { defaultClient, NonApiResponseError, resolveCredentials, type SNClient } from "./snClient.js";
+
+/**
+ * `syncrona query <table>` — a read-only Table API query with the flag set and
+ * the `-o json` envelope of `now-sdk query`, so scripts written against the SDK
+ * keep working when they switch binaries.
+ */
+
+export const QUERY_DEFAULT_LIMIT = 100;
+export const QUERY_DEFAULT_TIMEOUT_MS = 30000;
+export const QUERY_OUTPUT_FORMATS = ["json", "raw"] as const;
+export const QUERY_DISPLAY_VALUES = ["true", "false", "all"] as const;
+
+export type QueryCmdArgs = Sync.SharedCmdArgs & {
+  table: string;
+  query: string;
+  limit?: number;
+  offset?: number;
+  fields?: string;
+  displayValue?: string;
+  excludeReferenceLink?: boolean;
+  /** yargs maps `--no-count` to `count: false`; `noCount` is accepted as well. */
+  count?: boolean;
+  noCount?: boolean;
+  timeout?: number;
+  view?: string;
+  queryCategory?: string;
+  queryNoDomain?: boolean;
+  output?: string;
+};
+
+export type QueryRecord = Record<string, unknown>;
+
+/** The `now-sdk query -o json` success envelope. */
+export type QuerySuccessEnvelope = {
+  ok: true;
+  hasMore: boolean;
+  nextOffset: number | null;
+  records: QueryRecord[];
+};
+
+/** The `now-sdk query -o json` failure envelope. */
+export type QueryFailureEnvelope = {
+  ok: false;
+  error: { message: string; status?: number; table: string };
+};
+
+export type QueryDeps = {
+  getClient: (profile?: string) => Pick<SNClient, "tableAPIGet">;
+  /** Where the result goes — stdout in production, a buffer under test. */
+  write: (line: string) => void;
+};
+
+/**
+ * The real client, after checking there is an instance to talk to. Without the
+ * check the request goes to an empty base URL and fails with a network error
+ * that names neither the cause nor the fix.
+ */
+export function nodeQueryClient(profile?: string): Pick<SNClient, "tableAPIGet"> {
+  if (!resolveCredentials(profile).instance) {
+    throw new Error(
+      "No ServiceNow instance is configured. Run `syncrona login`, or set SN_INSTANCE in the environment."
+    );
+  }
+  return defaultClient(profile);
+}
+
+const defaultDeps: QueryDeps = {
+  getClient: nodeQueryClient,
+  write: (line) => process.stdout.write(`${line}\n`),
+};
+
+const TABLE_NAME_PATTERN = /^[a-z0-9_]+$/i;
+
+// The one spelling of the table the run reports: the request, the human summary
+// and the failure envelope all name the trimmed argument.
+const tableNameOf = (args: QueryCmdArgs): string => String(args.table ?? "").trim();
+
+function requireInteger(name: string, value: number, min: number): number {
+  if (!Number.isInteger(value) || value < min) {
+    throw new Error(`--${name} must be an integer >= ${min} (got ${String(value)}).`);
+  }
+  return value;
+}
+
+/** Translates the parsed flags into the extra sysparm_* params, mirroring now-sdk. */
+export function buildQueryParams(args: QueryCmdArgs): Record<string, string> {
+  const params: Record<string, string> = {
+    sysparm_display_value: args.displayValue ?? "false",
+    sysparm_exclude_reference_link: String(args.excludeReferenceLink ?? true),
+  };
+  if (args.count === false || args.noCount === true) {
+    params.sysparm_no_count = "true";
+  }
+  if (args.view) {
+    params.sysparm_view = args.view;
+  }
+  if (args.queryCategory) {
+    params.sysparm_query_category = args.queryCategory;
+  }
+  if (args.queryNoDomain === true) {
+    params.sysparm_query_no_domain = "true";
+  }
+  return params;
+}
+
+/**
+ * The offset of the Link header's rel="next" page, when the instance sent one.
+ * Read-ACL filtering drops rows from a page after the limit is applied, so a
+ * short page is not proof of the last page while that header still points on.
+ */
+function nextOffsetFromLink(headers: unknown): number | null {
+  const link = (headers as Record<string, unknown> | null | undefined)?.link;
+  if (typeof link !== "string") {
+    return null;
+  }
+  // Each link-value is `<uri>; params` (RFC 8288). The URI may itself contain
+  // commas (an `IN` list in sysparm_query, a sysparm_fields list), so the header
+  // is split on the angle-bracketed URIs, not on every comma.
+  for (const [, uri, params] of link.matchAll(/<([^>]*)>([^<]*)/g)) {
+    if (!/;\s*rel="?next"?/i.test(params)) {
+      continue;
+    }
+    const offset = /[?&]sysparm_offset=(\d+)/.exec(uri)?.[1];
+    return offset === undefined ? null : Number(offset);
+  }
+  return null;
+}
+
+/**
+ * Fetches one page. `hasMore` comes from asking for `limit + 1` rows rather than
+ * from the Link header or X-Total-Count: both depend on the count query that
+ * `--no-count` switches off, while the extra row is exact either way. A short
+ * page still falls back to the Link header, since ACLs can hide rows from it.
+ */
+export async function runQuery(
+  client: Pick<SNClient, "tableAPIGet">,
+  args: QueryCmdArgs
+): Promise<QuerySuccessEnvelope> {
+  const table = tableNameOf(args);
+  if (!table) {
+    throw new Error("A table name is required, e.g. `syncrona query incident -q active=true`.");
+  }
+  // The name is spliced into the request path (api/now/table/<table>), so only a
+  // plain table identifier may reach it: no "/", "?", "%" or "..".
+  if (!TABLE_NAME_PATTERN.test(table)) {
+    throw new Error(
+      `"${table}" is not a table name; use letters, digits and underscores only (e.g. incident, x_acme_task).`
+    );
+  }
+  if (typeof args.query !== "string") {
+    throw new Error("--query (-q) is required; pass an encoded query such as `active=true`.");
+  }
+  // An empty encoded query matches every row, so a blank -q would page through the
+  // whole table; a full-table read has to be asked for explicitly.
+  if (!args.query.trim()) {
+    throw new Error(
+      "--query (-q) is empty; pass an encoded query such as `active=true` (use `sys_idISNOTEMPTY` to match every record)."
+    );
+  }
+  const limit = requireInteger("limit", args.limit ?? QUERY_DEFAULT_LIMIT, 1);
+  const offset = requireInteger("offset", args.offset ?? 0, 0);
+  // At least 1 ms: axios reads a timeout of 0 as "never time out".
+  const timeout = requireInteger("timeout", args.timeout ?? QUERY_DEFAULT_TIMEOUT_MS, 1);
+
+  const resp = await client.tableAPIGet(table, args.query, args.fields ?? "", limit + 1, offset, {
+    params: buildQueryParams(args),
+    timeout,
+  });
+  const data: unknown = resp.data;
+  if (!data || typeof data !== "object" || !Array.isArray((data as { result?: unknown }).result)) {
+    const contentType = resp.headers?.["content-type"];
+    const snippet = typeof data === "string" ? data.slice(0, 120).replace(/\s+/g, " ").trim() : "";
+    throw new NonApiResponseError(typeof contentType === "string" ? contentType : undefined, snippet);
+  }
+  const rows = (data as { result: QueryRecord[] }).result;
+  if (rows.length > limit) {
+    return { ok: true, hasMore: true, nextOffset: offset + limit, records: rows.slice(0, limit) };
+  }
+  const linkOffset = nextOffsetFromLink(resp.headers);
+  const hasMore = linkOffset !== null && linkOffset > offset;
+  return { ok: true, hasMore, nextOffset: hasMore ? linkOffset : null, records: rows };
+}
+
+function statusOf(e: unknown): number | undefined {
+  const status = (e as { response?: { status?: unknown } } | null)?.response?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+// The Table API puts the useful reason ("Invalid table x") in the body, not in
+// axios' generic "Request failed with status code 400".
+function messageOf(e: unknown): string {
+  const base = e instanceof Error ? e.message : String(e);
+  const detail = (e as { response?: { data?: { error?: { message?: unknown } } } } | null)?.response
+    ?.data?.error?.message;
+  return typeof detail === "string" && detail && !base.includes(detail) ? `${base}: ${detail}` : base;
+}
+
+export async function queryCommand(
+  args: QueryCmdArgs,
+  deps: QueryDeps = defaultDeps
+): Promise<QuerySuccessEnvelope | QueryFailureEnvelope> {
+  setLogLevel(args);
+  const machineMode = args.output !== undefined;
+  if (machineMode) {
+    // stdout carries exactly one JSON document in machine mode; any log line
+    // goes to stderr so `syncrona query ... -o json | jq` never sees it.
+    logger.routeAllToStderr();
+  }
+
+  try {
+    const envelope = await runQuery(deps.getClient(args.instanceProfile), args);
+    if (machineMode) {
+      // `raw` only changes how now-sdk prints a `--select`ed value; without a
+      // selection it prints the same compact envelope, and so does this.
+      deps.write(JSON.stringify(envelope));
+    } else {
+      logger.info(`Retrieved ${envelope.records.length} record(s) from table '${tableNameOf(args)}'`);
+      if (envelope.hasMore) {
+        logger.info(`More records available. Use --offset ${envelope.nextOffset} to fetch the next page`);
+      }
+      deps.write(JSON.stringify(envelope.records, null, 2));
+    }
+    return envelope;
+  } catch (e) {
+    if (!machineMode) {
+      throw e;
+    }
+    const status = statusOf(e);
+    const failure: QueryFailureEnvelope = {
+      ok: false,
+      error: {
+        message: messageOf(e),
+        ...(status !== undefined ? { status } : {}),
+        table: tableNameOf(args),
+      },
+    };
+    deps.write(JSON.stringify(failure));
+    process.exitCode = 1;
+    return failure;
+  }
+}

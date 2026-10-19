@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<record_update table="asmt_metric_type">
+  <asmt_metric_type action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c7ebefdc2cce432489fd5a534b9a7853</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>asmt_metric_type_c7ebefdc2cce432489fd5a534b9a7853</sys_update_name>
+    <active>true</active>
+    <allow_public>true</allow_public>
+    <allow_retake>true</allow_retake>
+    <anonymize>true</anonymize>
+    <business_rule>6041662ad37c4d3eb149ca162d13a171</business_rule>
+    <chat_survey>false</chat_survey>
+    <condition>active=true^EQ</condition>
+    <default_filter/>
+    <delete_business_rule>1b1bb5273edf4dd2bbec8cbb3be3f8b6</delete_business_rule>
+    <description><![CDATA[Rates vendors]]></description>
+    <disable_ui_action/>
+    <display_all_filters>false</display_all_filters>
+    <display_field>short_description</display_field>
+    <duration>1970-01-04 04:00:00</duration>
+    <enable_ui_action/>
+    <end_note><![CDATA[Thanks]]></end_note>
+    <enforce_condition>false</enforce_condition>
+    <evaluation_method>assessment</evaluation_method>
+    <filter_condition/>
+    <filter_table>incident</filter_table>
+    <introduction><![CDATA[Please answer]]></introduction>
+    <job>3d5318dc77cb434eb2f2366430e41069</job>
+    <live_feed>true</live_feed>
+    <name>Vendor Review</name>
+    <not_show_intro_note>true</not_show_intro_note>
+    <notify_if_overdue>true</notify_if_overdue>
+    <notify_user>false</notify_user>
+    <one_click_survey>false</one_click_survey>
+    <overdue_notify_user>6816f79cc0a8016401c5a33be04be441</overdue_notify_user>
+    <portal_pagination>question</portal_pagination>
+    <publish_state>published</publish_state>
+    <roles>x_snc_bprobe.reviewer,admin</roles>
+    <sample_metric/>
+    <scale_factor>100</scale_factor>
+    <schedule_period>3</schedule_period>
+    <schedule_type>scheduled</schedule_type>
+    <scoring_type>absolute</scoring_type>
+    <signature/>
+    <source_table/>
+    <survey_owners>6816f79cc0a8016401c5a33be04be441</survey_owners>
+    <sys_domain>global</sys_domain>
+    <sys_domain_path>/</sys_domain_path>
+    <table>incident</table>
+    <url>home.do</url>
+    <user_field>assigned_to</user_field>
+    <user_field_business_rule>07978b0d275943049fae5347ae6d7648</user_field_business_rule>
+  </asmt_metric_type>
+</record_update>

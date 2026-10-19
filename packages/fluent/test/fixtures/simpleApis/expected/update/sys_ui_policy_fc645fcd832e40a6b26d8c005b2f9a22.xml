@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_policy">
+  <sys_ui_policy action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fc645fcd832e40a6b26d8c005b2f9a22</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_policy_fc645fcd832e40a6b26d8c005b2f9a22</sys_update_name>
+    <active>true</active>
+    <conditions/>
+    <description/>
+    <global>true</global>
+    <inherit>false</inherit>
+    <isolate_script>false</isolate_script>
+    <model_id/>
+    <model_table/>
+    <on_load>true</on_load>
+    <order>100</order>
+    <reverse_if_false>true</reverse_if_false>
+    <run_scripts>false</run_scripts>
+    <script_false>function onCondition() {
+
+}</script_false>
+    <script_true>function onCondition() {
+
+}</script_true>
+    <set_values/>
+    <short_description>Minimal policy</short_description>
+    <table/>
+    <ui_type>0</ui_type>
+    <view/>
+  </sys_ui_policy>
+</record_update>

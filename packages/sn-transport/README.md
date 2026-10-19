@@ -1,0 +1,32 @@
+# @syncrona/sn-transport
+
+<!-- badges:start -->
+| [![npm](https://img.shields.io/npm/v/@syncrona/sn-transport?style=flat-square&logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@syncrona/sn-transport) | [![node](https://img.shields.io/badge/node-%3E%3D22-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org) | [![license](https://img.shields.io/github/license/IvanBBaev/syncrona?style=flat-square&color=blue&label=license)](../../LICENSE) | [![CI](https://img.shields.io/github/actions/workflow/status/IvanBBaev/syncrona/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/IvanBBaev/syncrona/actions/workflows/ci.yml) | [![TypeScript](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) |
+|:--:|:--:|:--:|:--:|:--:|
+<!-- badges:end -->
+
+Shared **ServiceNow transport policy** for SyncroNow AI. This package is the single
+source of truth for the transport-level rules that both ServiceNow HTTP clients
+must agree on:
+
+- the **core CLI** client — [`packages/core/src/snClient.ts`](../core/src/snClient.ts) (axios)
+- the **MCP server** client — [`packages/mcp-server/src/servicenowCore.ts`](../mcp-server/src/servicenowCore.ts) (native fetch)
+
+The two clients remain separate implementations on purpose (a one-shot CLI vs. a
+long-lived MCP runtime with different retry/rate-limit needs), but the policies
+below were previously copy-pasted in both and were the most likely to silently
+drift apart.
+
+## What lives here
+
+### Retryable HTTP status policy
+- `RETRYABLE_HTTP_STATUSES` — canonical retryable status codes
+  (`408, 425, 429, 500, 502, 503, 504`).
+- `shouldRetryStatus(status)` — predicate over that set.
+
+## Design notes
+
+This module is intentionally **pure**: no I/O and no node globals. Callers read
+and clean the environment value themselves and pass the raw string in, and each
+client keeps its **own** runtime cache of the last successful prefix (transport
+state is per-process, not shared).

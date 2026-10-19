@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<database>
+  <element name="x_snc_bprobe_task" type="collection" label="Probe Task" is_extendable="true" text_index="false" read_only="false" audit="false" display="title" access="public" caller_access="0" scriptable_table="false" attributes="">
+    <element name="title" type="string" active="true" array="false" audit="false" unique="false" label="Title" max_length="100" mandatory="true" read_only="false" choice="0" display="true" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Titles"/>
+    <element name="priority" type="integer" active="true" array="false" audit="false" default_value="3" unique="false" label="Priority" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Priorities"/>
+    <element name="done" type="boolean" active="true" array="false" audit="false" unique="false" label="Done" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Dones"/>
+    <element name="owner" type="reference" active="true" array="false" audit="false" unique="false" label="Owner" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" reference="sys_user" plural="Owners"/>
+    <element name="state" type="choice" active="true" array="false" audit="false" unique="false" label="State" mandatory="false" read_only="false" choice="1" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="States">
+      <choice>
+        <element value="open" label="Open" inactive="false" inactive_on_update="false" sequence="0" language="en"/>
+        <element value="closed" label="Closed" inactive="false" inactive_on_update="false" sequence="1" language="en"/>
+      </choice>
+    </element>
+    <element name="due" type="glide_date_time" active="true" array="false" audit="false" unique="false" label="Due" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Dues"/>
+    <element name="notes" type="string" active="true" array="false" audit="false" unique="false" label="Notes" mandatory="false" read_only="false" choice="0" display="false" function_field="false" attributes="" spell_check="false" xml_view="false" table_reference="false" text_index="false" element_reference="false" primary="false" plural="Notes"/>
+  </element>
+</database>

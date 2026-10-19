@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<record_update table="cmn_schedule">
+  <cmn_schedule action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d55502989bae40958c17fd39a0adc155</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>cmn_schedule_d55502989bae40958c17fd39a0adc155</sys_update_name>
+    <calendar_name>P</calendar_name>
+    <label>P</label>
+    <name>Probe 8-5</name>
+    <plural_label>Ps</plural_label>
+  </cmn_schedule>
+</record_update>

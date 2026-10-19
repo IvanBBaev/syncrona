@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_ltm_category_mapping">
+  <sn_aia_ltm_category_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>88760091c95b41578da1cc33c59ad978</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_ltm_category_mapping_88760091c95b41578da1cc33c59ad978</sys_update_name>
+    <category>5c446eae43db52107c4d14020ab8f218</category>
+    <entity_id>cd65f04152944317a4d531140b8ad539</entity_id>
+    <entity_table>sn_aia_agent</entity_table>
+  </sn_aia_ltm_category_mapping>
+</record_update>

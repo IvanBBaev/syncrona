@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { formatTable } from "../genericUtils.js";
+
+export {};
+
+// DX22: column-aligned dry-run preview table.
+describe("formatTable", () => {
+  it("aligns columns to the widest cell and adds a separator", () => {
+    const out = formatTable(
+      ["Table", "Record", "Fields"],
+      [
+        ["sys_script", "Beta", "1"],
+        ["sys_script_include", "A", "2"],
+      ]
+    );
+    const lines = out.split("\n");
+    expect(lines).toHaveLength(4); // header + separator + 2 rows
+    // Header padded to the widest cell in each column (sys_script_include = 18).
+    expect(lines[0]).toBe("Table               Record  Fields");
+    expect(lines[1]).toBe("------------------  ------  ------");
+    expect(lines[2]).toBe("sys_script          Beta    1");
+    expect(lines[3]).toBe("sys_script_include  A       2");
+  });
+
+  it("handles no rows (header + separator only)", () => {
+    const out = formatTable(["A", "B"], []);
+    expect(out.split("\n")).toEqual(["A  B", "-  -"]);
+  });
+
+  // A short row must contribute nothing to the width of the columns it does not
+  // reach: the whole rendered block is asserted, so a missing cell that widened
+  // its column (padding the header and separator out to a phantom width) would
+  // show up here instead of only in the row itself.
+  it("treats missing cells as empty", () => {
+    const out = formatTable(["A", "B"], [["x"]]);
+    expect(out.split("\n")).toEqual(["A  B", "-  -", "x"]);
+  });
+});

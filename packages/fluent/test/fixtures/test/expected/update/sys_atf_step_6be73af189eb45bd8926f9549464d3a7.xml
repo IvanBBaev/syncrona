@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<record_update table="sys_atf_step">
+  <sys_atf_step action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6be73af189eb45bd8926f9549464d3a7</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <active>true</active>
+    <description/>
+    <display_name>Log</display_name>
+    <notes/>
+    <order>3</order>
+    <step_config>58ab71985f30220012b44adb7f46661e</step_config>
+    <table/>
+    <test>9e14d76c867b4323a46465814e0766d9</test>
+    <timeout/>
+    <warning_message/>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_atf_step_6be73af189eb45bd8926f9549464d3a7</sys_update_name>
+  </sys_atf_step>
+  <sys_variable_value action="delete_multiple" query="document_key=6be73af189eb45bd8926f9549464d3a7"/>
+  <sys_variable_value action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f3a54c0ea46a45a5856008759fae556c</sys_id>
+    <document>sys_atf_step</document>
+    <document_key>6be73af189eb45bd8926f9549464d3a7</document_key>
+    <value>after</value>
+    <variable>523c79985f30220012b44adb7f46663a</variable>
+    <order>100</order>
+    <sys_scope>db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_variable_value_f3a54c0ea46a45a5856008759fae556c</sys_update_name>
+  </sys_variable_value>
+</record_update>

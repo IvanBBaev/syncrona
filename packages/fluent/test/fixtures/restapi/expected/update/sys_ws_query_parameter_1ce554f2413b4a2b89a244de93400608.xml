@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_ws_query_parameter">
+  <sys_ws_query_parameter action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>1ce554f2413b4a2b89a244de93400608</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ws_query_parameter_1ce554f2413b4a2b89a244de93400608</sys_update_name>
+    <example_value/>
+    <name>dry</name>
+    <required>false</required>
+    <short_description/>
+    <web_service_definition>d3617245013c4e83bd60ed56ae312b91</web_service_definition>
+  </sys_ws_query_parameter>
+</record_update>

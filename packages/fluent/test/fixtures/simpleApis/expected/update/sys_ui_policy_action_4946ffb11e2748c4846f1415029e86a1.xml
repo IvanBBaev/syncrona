@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_policy_action">
+  <sys_ui_policy_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4946ffb11e2748c4846f1415029e86a1</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_policy_action_4946ffb11e2748c4846f1415029e86a1</sys_update_name>
+    <cleared>false</cleared>
+    <disabled>ignore</disabled>
+    <field>caller_id</field>
+    <field_message/>
+    <field_message_type>none</field_message_type>
+    <mandatory>ignore</mandatory>
+    <table>x_snc_bprobe_ui</table>
+    <ui_policy table="x_snc_bprobe_ui" short_description="Full policy">88116b537e6d4b1eac10f0de566c3dd7</ui_policy>
+    <value/>
+    <value_action>ignore</value_action>
+    <visible>ignore</visible>
+  </sys_ui_policy_action>
+</record_update>

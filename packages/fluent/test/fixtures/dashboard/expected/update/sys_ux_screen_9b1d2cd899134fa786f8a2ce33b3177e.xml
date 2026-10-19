@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_screen">
+  <sys_ux_screen action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9b1d2cd899134fa786f8a2ce33b3177e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_screen_9b1d2cd899134fa786f8a2ce33b3177e</sys_update_name>
+    <active>true</active>
+    <app_config>64739e81d80b47a295d7c0d45c34cb52</app_config>
+    <description/>
+    <disable_auto_reflow>false</disable_auto_reflow>
+    <disable_interoperable>false</disable_interoperable>
+    <event_mappings/>
+    <macroponent>d1dad31c97984d5da5c1357a538e7442</macroponent>
+    <macroponent_config>{"bare":{"type":"JSON_LITERAL","value":true},"headerLevel":{"type":"JSON_LITERAL","value":"1"},"headingOnlyVisibleToScreenReaders":{"type":"JSON_LITERAL","value":false},"interceptNotifications":{"type":"JSON_LITERAL","value":false},"label":{"type":"TRANSLATION_LITERAL","value":{"code":null,"comment":"","message":""}},"propagateNotifications":{"type":"JSON_LITERAL","value":false},"scrollable":{"type":"JSON_LITERAL","value":"y"}}</macroponent_config>
+    <name>Record Default</name>
+    <order>0</order>
+    <parent_macroponent>c276387cc331101080d6d3658940ddd2</parent_macroponent>
+    <required_translations/>
+    <rollback_screen/>
+    <screen_condition/>
+    <screen_type>e46a6d2f52254e34ac02f25a08ae377b</screen_type>
+  </sys_ux_screen>
+</record_update>

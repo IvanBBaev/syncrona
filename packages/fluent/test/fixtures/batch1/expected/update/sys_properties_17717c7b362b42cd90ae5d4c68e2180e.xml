@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_properties">
+  <sys_properties action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>17717c7b362b42cd90ae5d4c68e2180e</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_properties_17717c7b362b42cd90ae5d4c68e2180e</sys_update_name>
+    <choices/>
+    <description>A flag</description>
+    <ignore_cache>true</ignore_cache>
+    <is_private>true</is_private>
+    <name>x_snc_bprobe.flag</name>
+    <read_roles/>
+    <suffix>flag</suffix>
+    <type>boolean</type>
+    <value>true</value>
+    <write_roles/>
+  </sys_properties>
+</record_update>

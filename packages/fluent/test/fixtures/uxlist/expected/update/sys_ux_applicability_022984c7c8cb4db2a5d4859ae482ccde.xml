@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_applicability">
+  <sys_ux_applicability action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>022984c7c8cb4db2a5d4859ae482ccde</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_applicability_022984c7c8cb4db2a5d4859ae482ccde</sys_update_name>
+    <active>false</active>
+    <description>Viewers and helpdesk</description>
+    <name>Full Audience</name>
+    <role_names>itil,x_snc_bprobe.viewer</role_names>
+    <roles>28d4655b98c54df7a95bec35212d1c31</roles>
+  </sys_ux_applicability>
+</record_update>

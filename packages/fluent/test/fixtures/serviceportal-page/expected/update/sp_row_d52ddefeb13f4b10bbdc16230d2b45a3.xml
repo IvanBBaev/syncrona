@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sp_row">
+  <sp_row action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d52ddefeb13f4b10bbdc16230d2b45a3</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_row_d52ddefeb13f4b10bbdc16230d2b45a3</sys_update_name>
+    <class_name/>
+    <order>1</order>
+    <semantic_tag/>
+    <sp_column/>
+    <sp_container>9871d3fd20c745bdbfe73c6d1df930d0</sp_container>
+  </sp_row>
+</record_update>

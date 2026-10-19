@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_in_email_action">
+  <sysevent_in_email_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>580364318995454999e7a6781fb3c5ac</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_in_email_action_580364318995454999e7a6781fb3c5ac</sys_update_name>
+    <action>reply_email</action>
+    <active>false</active>
+    <assignment_operator/>
+    <condition_script/>
+    <description/>
+    <event_name>email.read</event_name>
+    <filter_condition/>
+    <from/>
+    <name/>
+    <order>100</order>
+    <reply_email/>
+    <required_roles/>
+    <script/>
+    <stop_processing>false</stop_processing>
+    <table/>
+    <template/>
+    <type>new</type>
+  </sysevent_in_email_action>
+</record_update>

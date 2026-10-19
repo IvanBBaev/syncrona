@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<record_update table="sys_db_object">
+  <sys_db_object action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>8c59976ea62d4946aefdad13b2c19d41</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_db_object_8c59976ea62d4946aefdad13b2c19d41</sys_update_name>
+    <access>public</access>
+    <caller_access/>
+    <create_access_controls>false</create_access_controls>
+    <is_extendable>false</is_extendable>
+    <label>Bprobe Child</label>
+    <live_feed_enabled>false</live_feed_enabled>
+    <name>x_snc_bprobe_child</name>
+    <number_ref/>
+    <scriptable_table>false</scriptable_table>
+    <super_class name="task">6d5ab0cc7bcd44478f006fac0f7e2fe2</super_class>
+    <user_role/>
+  </sys_db_object>
+</record_update>

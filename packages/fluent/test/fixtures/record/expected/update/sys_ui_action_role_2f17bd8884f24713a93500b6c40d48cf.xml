@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_action_role">
+  <sys_ui_action_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2f17bd8884f24713a93500b6c40d48cf</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_action_role_2f17bd8884f24713a93500b6c40d48cf</sys_update_name>
+    <sys_ui_action>02cddd358c024d23a78448224eb0556e</sys_ui_action>
+    <sys_user_role name="itil">b0eeab4ab4674c5299db0362212fdbef</sys_user_role>
+  </sys_ui_action_role>
+</record_update>

@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<record_update table="sysevent_email_action">
+  <sysevent_email_action action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>a9a03f547acc4729989e967ca98eef67</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysevent_email_action_a9a03f547acc4729989e967ca98eef67</sys_update_name>
+    <action_insert>true</action_insert>
+    <action_update>false</action_update>
+    <active>true</active>
+    <advanced_condition/>
+    <affected_field_on_event/>
+    <category>c97d83137f4432005f58108c3ffa917a</category>
+    <collection>incident</collection>
+    <condition/>
+    <content_type>text/html</content_type>
+    <default_digest>false</default_digest>
+    <default_interval/>
+    <description/>
+    <digest_from/>
+    <digest_html/>
+    <digest_reply_to/>
+    <digest_separator_html><![CDATA[<p>&nbsp;</p>
+<hr>
+<p>&nbsp;</p>]]></digest_separator_html>
+    <digest_separator_text><![CDATA[--------------------------------------------------------------------------------
+]]></digest_separator_text>
+    <digest_subject/>
+    <digest_template/>
+    <digest_text/>
+    <digest_type>single</digest_type>
+    <digestable>false</digestable>
+    <enable_dynamic_translation>false</enable_dynamic_translation>
+    <event_name/>
+    <event_parm_1>false</event_parm_1>
+    <event_parm_2>false</event_parm_2>
+    <exclude_delegates>false</exclude_delegates>
+    <force_delivery>false</force_delivery>
+    <from/>
+    <generation_type>engine</generation_type>
+    <importance/>
+    <include_attachments>false</include_attachments>
+    <item>event.parm1</item>
+    <item_table/>
+    <mandatory>false</mandatory>
+    <message/>
+    <message_html/>
+    <message_list/>
+    <message_text/>
+    <name/>
+    <omit_watermark>false</omit_watermark>
+    <order>100</order>
+    <push_message_only>false</push_message_only>
+    <recipient_fields/>
+    <recipient_groups/>
+    <recipient_users/>
+    <reply_to/>
+    <send_self>false</send_self>
+    <sms_alternate/>
+    <style/>
+    <subject/>
+    <subscribable>false</subscribable>
+    <sys_version>2</sys_version>
+    <template/>
+    <type>email</type>
+    <weight>0</weight>
+  </sysevent_email_action>
+</record_update>

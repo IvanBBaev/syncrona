@@ -1,0 +1,1642 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+## [1.2.0-beta.0] - 2026-10-19
+
+**Independent codebase, Table API only.** First beta of 1.2.0, published under
+the npm `beta` dist-tag (`npm install syncrona@beta`); `latest` stays on 1.1.0.
+
+- The CLI and the MCP server no longer use a scoped application's REST API on
+  the instance. Manifests, file contents and the session scope come from the
+  Table API (`apps.current_app` in `sys_user_preference`), ATF step scripts are
+  pushed through `sys_variable_value`, and the MCP background-script tool runs
+  through the platform Scripts - Background page. `SYNCRONA_SCOPED_API_PREFIXES`
+  no longer has any effect.
+- The build plugin packages, the shared types and the remaining core code were
+  re-authored; no inherited code is left, and the legacy names, scopes, routes
+  and migration guide are gone.
+- Flow Designer flows and actions, Process Automation playbooks and legacy
+  Workflows can be downloaded as read-only, decoded JSON documents (`flow`,
+  `playbook` and `workflow` table presets).
+- New environment-only auth inputs: `SN_BEARER_TOKEN` for a pre-issued OAuth
+  token, and `SN_SESSION_COOKIE` / `SN_SESSION_TOKEN` for the Fluent tier.
+- `syncrona fluent build`, `pack`, `install` and `status` run on the native
+  engine without `@servicenow/sdk` (`--engine sdk|native`).
+
+Per-package details are in each package's `CHANGELOG.md`.
+
+## [1.1.0] - 2026-10-13
+
+**now-sdk parity.** SyncroNow AI now covers the everyday ServiceNow SDK
+(`now-sdk`) workflow without giving up the file-based tier: `query`, `cicd`,
+`fluent`, `init --new` and `push --create` / `--prune` are new, and two MCP tools
+expose the CI/CD and Fluent build paths to AI clients. The guide for moving over
+is [`docs/MIGRATING_FROM_NOW_SDK.md`](docs/MIGRATING_FROM_NOW_SDK.md).
+
+Most of this release is the hardening that followed. The review rounds went
+after one failure signature: a value the CLI wrote, deleted or reported on
+evidence it had not checked. A password reached a `.meta.json` sidecar through a
+column whose type was never read. A missing table was read as "not
+`sys_metadata`" and planned as a create. A rejected OAuth grant was returned as
+the command's own result. Every case found now fails closed and says why.
+
+Verified against a live instance: `init --new`, `push --create` / `--prune`,
+the data-model sidecars, `cicd run-suite` / `run-test` and `sync_cicd_run`,
+`fluent install` / `status` / `types --native` / `explain`, and `query`. Covered
+by tests against mocked responses only: `cicd install` / `publish` / `rollback`,
+`fluent move-to-app`, `sync_fluent_build`, the composite data-model layout and
+mutual TLS, so try those on a development instance first. See
+[`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md).
+
+### Added
+
+- `syncrona query <table>` reads records through the Table API with the
+  `now-sdk query` flag set, all but `--select` and `--auth` (`-q` is required).
+  It is read-only, and `-o json` prints the `now-sdk` envelope
+  `{ok, hasMore, nextOffset, records}`. The table name must be letters, digits
+  and underscores, and with `-o` the log goes to stderr so stdout stays
+  parseable, however the option is spelled.
+- `syncrona cicd <action>` drives the CI/CD REST API (`api/sn_cicd`) and follows
+  its progress tracker. `run-suite` and `run-test` run ATF; `install`, `publish`
+  and `rollback` act on an app-repo application. It exits 0 on success, 1 when
+  the run could not finish and 2 on failures. `--progress-id` resumes waiting on
+  a run that outlived `--timeout` without dispatching it again. Every `--json`
+  document carries a `verdict` (`passed`, `failed`, `no_tests`, `incomplete`,
+  `unknown`) and a `reason`. A suite passes only on an allow-listed status with
+  zero failures and errors, so an unknown status or count is reported as
+  could-not-finish, never as a pass. A suite that ran no tests is a failure.
+- `syncrona fluent <action>` drives Fluent (`.now.ts`) projects through the new
+  optional `@syncrona/fluent` package, with `@servicenow/sdk` (`~4.13`) as an
+  optional peer. It reuses the syncrona credential store for Basic and OAuth
+  profiles. The actions are `init`, `build`, `transform`, `pack`, `install`,
+  `types`, `dependencies`, `run`, `status`, `explain` (the SDK's bundled
+  documentation, offline) and `move-to-app`. `install` and `move-to-app` change
+  the instance, so they ask first unless `--ci`, and without a terminal or with
+  `--json` they exit 1 asking for `--ci`. `--dry-run` fails wherever the real
+  run would, including a missing package, and resolves no credentials.
+- `fluent types --native` generates table types from `sys_db_object`,
+  `sys_dictionary` and `sys_choice` without the SDK, with every profile, API key
+  and mutual TLS included. A plain `fluent types` uses the SDK when it is
+  installed and falls back to the native generator when it is missing or
+  incomplete, saying which and why.
+- `syncrona init --new --name "<display>"` creates a new scoped application on
+  the instance and binds the directory to it, even before the app owns a record.
+  `--dry-run` prints the `sys_app` body.
+- `syncrona push --create` creates or adopts records for local files the
+  manifest does not track yet (`createRecords` in `sync.config.js` sets the
+  default; `--no-create` overrides it). `push --prune` deletes in-scope records
+  whose tracked files git shows deleted. It confirms unless `--ci`, and above 25
+  deletions or 20% of the manifest it needs `--allow-mass-delete`. A record that
+  the same run adopts is held as a rename, never deleted, in the dry run and the
+  real run alike.
+- Opt-in `dataModelTables` tracks data-model records (tables, columns, choices)
+  as editable local files and fetches only the scope's `sys_choice` rows. Opt-in
+  `dataModelLayout: "composite"` keeps a table, its columns and choices as one
+  byte-stable `data-model/<table>.json`.
+- New MCP tools `sync_cicd_run` and `sync_fluent_build` (63 tools in all).
+  `sync_cicd_run` exposes the `cicd` actions behind `confirmDestructive`, with
+  `dryRun`, a `progressId` resume and the same `verdict` and `reason` as
+  `cicd --json`. `sync_fluent_build` runs `fluent build` for a project inside
+  the workspace. It is classed as mutating and confined to an adapter installed
+  in the project or the server's own `node_modules`. Responses report which
+  adapter was loaded.
+- `SN_MAX_RPS` lowers the 20 requests/second cap for the CLI and the MCP server
+  (a whole number from 1 to 20). An invalid value is an error, never a silent
+  full rate.
+- `syncrona config show-defaults` lists the default include and exclude tables
+  by name, not only their counts.
+
+### Fixed
+
+- `dev` no longer pushes changes from a stopped watch session. A push that
+  failed after the watcher stopped (Ctrl-C, or a `dev` restart in the same
+  process) requeued its files and armed a retry, which then pushed them about
+  half a second later.
+
+- `sync.config.js` written with the CommonJS `exports.<key> = ...` alias now
+  loads; `exports` was a separate object, so those settings were silently
+  dropped. `module.exports = null` is now rejected as an invalid config instead
+  of loading the defaults, and an error the config throws is reported by its
+  message without a doubled `Error:` prefix.
+
+- `init` without a `sync.config.js` now downloads the scope into the source
+  directory chosen at the prompt; it reloaded the configuration only after the
+  download, so the files landed in the default `src`.
+
+- `refresh` no longer fails on a scope that owns no records yet when the
+  companion scoped endpoint answers without a `tables` key. The manifest was
+  written without `tables`, and the missing-file check then stopped with
+  "Cannot convert undefined or null to object". The answer now counts as an
+  empty table map, the same as `{ tables: {} }`.
+- With OAuth, when the token endpoint rejected the first token request and
+  then granted a second one, a core CLI command received the token endpoint's
+  JSON in place of the instance's answer, and the request it was meant to send
+  never went out. A `cicd` run read that as an answer without a result. The CLI
+  now sends one token request and fails with the token endpoint's rejection, as
+  `sync_cicd_run` does, and never treats token JSON as data.
+- `cicd` names the OAuth token endpoint when it fails during a poll or an ATF
+  result read, and ends the message at the reason. Only a 4xx answer is
+  reported as the endpoint rejecting the OAuth client or the credentials. A 5xx
+  or a network failure reads as "no OAuth token could be obtained" and is retried
+  like any transient poll failure, so an outage no longer blames your
+  credentials.
+- A `cicd` run that outlives `--timeout` no longer prints the "Network issue"
+  hint: a timeout is not a connection failure. The hint now follows the last
+  poll error, when the final poll failed before the deadline.
+- `cicd` and `sync_cicd_run` now agree on every wait outcome. They make the same
+  number of requests for a transient poll failure (a network failure, 408, 425,
+  429 or 5xx, retried up to 3 times). An HTML login page or a redirect loop ends
+  the run as a session/authentication redirect. A 3xx answer is reported as an
+  unexpected redirect, usually a proxy or SSO gateway. Every timeout says where
+  to check the tracker and how to resume with `--progress-id`. A resume of the
+  wrong ATF kind names the action to resume it with.
+- Records whose names collide on a case-insensitive or Unicode-normalising
+  volume (`Util` and `util`) get their own `<name>_<sys_id>` folders on every
+  download path. Before, they overwrote each other's files, and a push could
+  upload the wrong record. Names that no filesystem stores as written are made
+  storable too: control characters are replaced, long names are cut and hashed,
+  Windows device names are escaped, and an empty or dot-only name falls back to
+  the sys_id. The first `refresh` or `download` moves an affected folder and
+  keeps local edits. See `docs/DATA_MODEL.md`, "Record folder names".
+- `push --create` refuses to create in a table the instance does not have, and
+  refuses to adopt a record that belongs to another application.
+- The scoped-create check now fails with a message naming what is wrong, instead
+  of guessing "outside `sys_metadata`" and planning an unscoped create. It
+  covers a missing, malformed or inconsistent `sys_db_object` record: no result
+  list, a row that is not a record, a `super_class.name` that is absent or not a
+  string, another table's record, or a broken or whitespace-padded parent.
+- `repair --apply --prune` deletes only orphan files that git holds committed
+  and unchanged, so git can restore them. It never deletes the files of a
+  record awaiting `push --create`, and it has a `--dry-run` preview. It finds
+  the repository even with `GIT_DIR` / `GIT_WORK_TREE` exported, handles
+  decomposed names on macOS, and quotes git's own reason when it refuses.
+  `repair --apply` exits 1 when files are still missing after the re-download.
+- `download` and `refresh` of a scope that owns no records explain how to get
+  tables into it, instead of pointing at `init --new`. A `refresh` of a freshly
+  created empty scope exits 0, so `dev` no longer logs an error on every
+  interval.
+- A command line whose leading flag swallowed the command name
+  (`syncrona --dry-run status`) now names the flag and prints the corrected
+  order, instead of "Specify a command to run". It still refuses to run.
+- A refused path segment says why: traversal, a control character, or a segment
+  over 255 bytes. It no longer always says the name "would escape" its
+  directory.
+- `fluent` reads `now.config.json` the way the SDK does where it matters (a
+  byte-order mark, comments and trailing commas), refuses one it cannot parse
+  by name, and treats a whitespace-only `scope` as none.
+- `run_workspace_command` asks for confirmation before `cicd`, `dev`,
+  `refresh`, `init --new`, `repair --apply` and every `fluent` action that can
+  write.
+
+### Security
+
+- The update notifier only accepts a complete semantic version from the npm
+  registry or its cache file. A version with trailing text, such as terminal
+  escape sequences, is ignored instead of being written to stderr.
+
+- Secret columns no longer reach the working tree. Columns are now classified
+  in one place on every manifest path, and an unsafe column is dropped with a
+  warning naming the table and column; a column whose type cannot be read is
+  kept, and a warning says so. Before, a value leaked in three ways:
+  - a `password` / `password2` `sys_properties` value, into its `.meta.json`
+    sidecar or as a field file;
+  - an `includes` entry, an explicit `metaFields` list or the data-field
+    fallback naming a password, encrypted, masked, journal, collection or image
+    column;
+  - a column spelled in another letter case than the dictionary's.
+- Dot-walked field names (`sys_created_by.user_password`) are refused as local
+  files on `download`, `refresh` and `push`. Such a name reads a column of
+  another record, so the unsafe-type check could not see it, and the creator's
+  password was requested and written. The refusal covers an `includes` entry, a
+  `metaFields` entry and a field file a hand-edited manifest lists. It warns
+  once per table and column. The one exemption is the ATF step script
+  (`sys_atf_step` `inputs.script`).
+
+### Changed
+
+- `fluent --dry-run` now checks that `@syncrona/fluent` and `@servicenow/sdk`
+  are installed and exits 1 with the install hint when one is missing, where it
+  used to print a plan the real run could not carry out.
+- `sync_fluent_build` is classed as a mutating tool, so tool policy and the
+  mutating audit apply to it. The build never calls the instance, so it is
+  exempt from the instance preflight unless a policy asks for it explicitly.
+- `TOOL_CONTRACT_VERSION` is now 1.1.0. Two tools were added (`sync_cicd_run`,
+  `sync_fluent_build`) and `sync_fluent_build` is classed as mutating. The
+  `target`, `diff` and `updateSet` inputs of `sync_push` and the `diff` input of
+  `sync_build` now reject a value that starts with `-`, so it cannot be read as
+  a CLI flag. A git ref never starts with `-`; the legitimate values refused
+  are a target path or an update-set name that does (a path can still be
+  passed as `./-name`). No tool was removed or renamed.
+- Mutation testing runs on Stryker 10 (`@stryker-mutator/core` and
+  `jest-runner`, from 8.7.1). The three scoped `overrides` that patched
+  Stryker 8's pinned `ajv`, `@babel/core` and `tmp` are gone, because Stryker
+  10 ships patched versions itself. The `@babel/core` one would have forced
+  the Babel 8 instrumenter back onto Babel 7. One new scoped override,
+  `typed-rest-client > qs`, lifts the `qs` that Stryker 10 brings in past
+  GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g.
+- Dependabot no longer proposes `undici` majors. The MCP server hands its
+  undici dispatchers (mutual TLS, custom CA, proxy) to Node's global `fetch`,
+  which runs on the undici bundled with Node. With undici 8 on Node 22, every
+  mutual-TLS request failed with "fetch failed". `undici` moves to a new major
+  together with the Node baseline that bundles it.
+
+## [1.0.0] - 2026-08-25
+
+**First stable release.** 1.0.0 adds no features on top of 0.9.4. It draws a
+line under the surface 0.9.4 already had and commits to versioning it honestly:
+from here on the CLI command set, the shared `--dry-run` / `--json` / `--ci`
+option contracts, the `sync.config.js` schema, the plugin `rules` interface, the
+manifest formats (`sync.manifest.json`, `sync.diff.manifest.json`) and the MCP
+tool contract are public API, and a breaking change to any of them takes a major
+bump — the tool-contract and docs-drift gates fail the build when one happens by
+accident. What is verified and what is merely expected stays written down rather
+than implied: see [`docs/PRODUCT_STATE.md`](docs/PRODUCT_STATE.md) for the open
+items and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for what has actually
+been run against a live instance.
+
+Three passes over one failure signature: something that does other than what it
+says it does, and exits 0 about it. The first went after the CLI's own contracts
+— the flags it accepts, the manifests it documents, the cadence it promises. The
+second went after the values it reads from an instance, a workspace file or a
+hand-written `.env` and then trusts without looking. The third went after the
+repository's claims about itself — an audit gate that covered half the
+dependency tree, a packaging formula nobody had ever built, and a product name
+that appeared in four spellings across the pages users read first.
+
+### Added
+
+- `syncrona mirror sync --reconcile` runs a reconciling sweep on demand: the same
+  deletion authority as `--full`, without re-fetching rows that have not changed.
+  It is deliberately outranked by `--full` and does not reset the schedule. Every
+  sync now prints its position in the reconcile cycle, and `--json` carries it as
+  `syncCadence`.
+- A root `.gitattributes` pins every tracked text file to LF. This repository
+  decides what changed by comparing bytes — `build --diff`, the mirror's
+  serializer and its manifest hashes — and asserts against byte-exact fixtures,
+  so a checkout under Git for Windows' default `core.autocrlf=true` read as a
+  fully-modified tree. `.editorconfig` already declared `end_of_line = lf`, but
+  that governs editors, not git.
+- `syncrona build --diff <target>` writes `sync.diff.manifest.json`, the file the
+  CLI help, README and CLAUDE.md all say it records. `writeDiff` existed, was
+  exported and was unit-tested, but no command ever called it, so the manifest
+  never appeared and every deploy after a diff build fell through to the full
+  build scope. Only records that actually built are listed, and a full `build`
+  now clears a stale manifest rather than leaving it to narrow the next deploy.
+
+### Fixed
+
+- `deploy --ci` no longer escalates a diff-only deploy into a full-scope one.
+  With a diff manifest present, the confirmation prompt had no TTY to answer it,
+  resolved to its `false` default, and overwrote every untouched record in the
+  scope while exiting 0. The manifest exists only because someone ran
+  `build --diff`, so its presence is the intent; `--ci` deploys it and logs which
+  scope it chose. An empty manifest is now honoured as "nothing changed" instead
+  of being read as "no manifest at all".
+- `deploy` with nothing built, and `deploy` whose selected files match no record
+  in the manifest, both report the reason and exit 1. Either one used to push
+  zero records and go green — a CI deploy stage indistinguishable from one that
+  worked.
+- `push <path>` that matches no tracked record fails instead of logging
+  "0 files to push." and exiting 0. A typo, a path outside the source tree and a
+  file no manifest record claims all took that route. A derived scope
+  (`push --diff main` with nothing changed) stays a legitimate no-op.
+- `--dry-run` is refused by the ten commands that have no preview mode, rather
+  than being parsed and ignored. `syncrona docs --dry-run` regenerated the docs
+  for real and `syncrona mcp --dry-run` wrote `.vscode/mcp.json` and the secrets
+  file for real, neither saying a word. It is a registry contract
+  (`supportsDryRun`) plus one check in the parser, so it cannot drift, and a test
+  forces every future shared-option command to declare which side it is on.
+- `--json` output is machine-readable. `jira` and `mirror` promise a pipeable
+  document on stdout, but every log level except warn/error also writes there, so
+  a bootstrap notice or a hint line interleaved with the payload and broke `jq`.
+  Fixed in the bootstrap layer that already did this for `mcp`, so it covers both
+  commands and any future `--json` one.
+- The mirror's reconcile cadence fires. The planner took its mode from an
+  ordinal nothing ever supplied, so it was always 1, `1 % 10` was never 0, and
+  every `mirror sync` in the product's history planned an incremental run. INV-5
+  then correctly refused every deletion, and a record deleted on the instance
+  stayed in the mirror indefinitely unless an operator remembered `--full`. The
+  count now lives in `.mirror/state/sync-counter.json`, advances only on a run
+  that finished, and degrades to ordinal 1 with a warning if damaged.
+- The MCP server resolves flat-layout workspaces. Under `flat: true` a record's
+  field files live at `<table>/<record>~<field>.<ext>`, but
+  `sync_diff_instance_vs_local` and `createAndSyncScriptInclude` both built the
+  record-folder path — the first reported a clean file as a diff, the second
+  handed the agent a path that does not exist. Both now go through one seam.
+- An instance written as a URL is accepted. Every request URL is built as
+  `https://${instance}/`, so the instance is a host; a user told to paste "the
+  instance URL" pastes what the address bar shows, and
+  `https://https://dev12345.service-now.com//` failed with
+  `getaddrinfo ENOTFOUND https`. `login` and credential resolution now share one
+  normalizer, and the correction is reported rather than applied in silence.
+- A `sync.manifest.json` or `sync.diff.manifest.json` that parses but is not a
+  manifest is reported as corrupt instead of read as an empty one. `{}`, `[]`,
+  `null` and `{"scope":"x_app"}` are all valid JSON and every one of them loaded
+  as healthy, after which the manifest claimed no records at all — which reads
+  identically to a manifest for an empty scope, and leads to the opposite
+  outcome: `repair --apply --prune` took the whole downloaded tree for orphans.
+- `build --check-config` diagnoses the rule list it exists to diagnose. A rule
+  whose `match` was missing or was not a RegExp crashed the checker outright, and
+  a `/g` or `/y` pattern silently reported only the first file it shadowed,
+  because `.test()` resumes from the RegExp's own `lastIndex`.
+- A plugin rule whose `plugins` is not an array is skipped with a warning naming
+  the rule, instead of aborting the whole build on `plugins.length` with a
+  message about our internals. An explicitly empty array stays legitimate.
+- `dev` reports a change to a file the manifest does not track. "add" already
+  did; "change" dropped it without a word, so editing a renamed or unregistered
+  file looked exactly like a healthy save — no push, no error, no output. Warned
+  once per path per session.
+- Table, record and column names coming off an instance or a path on disk are
+  read and written as own properties only. Names like `constructor`,
+  `__proto__`, `toString` and `valueOf` are all valid in their respective
+  namespaces, and each one had a way to make a record disappear between fetch and
+  writer, resolve to `Object.prototype`, or push to
+  `/api/now/table/<table>/undefined` — in every case while the run reported
+  success. Covers manifest and bulk-download maps, the download merge, the
+  sidecar serializer and its update resolver, and file-context lookup.
+- A `.meta.json` sidecar saved with a UTF-8 byte-order mark parses. Notepad,
+  PowerShell redirection and a VS Code workspace set to `utf8bom` all write one,
+  and this tool ships for Windows and WSL; `JSON.parse` rejected it, failing the
+  push with "not valid JSON" against a file that looks perfectly valid in the
+  editor that produced it.
+- A metadata column whose wire form is a non-string scalar — `{ "value": 100 }`,
+  `{ "value": false }` — is written with its value instead of as empty.
+
+### Security
+
+- `undici` 6.27.0 → 6.28.0, a lockfile-only bump clearing GHSA-8xcm-r25x-g524
+  (response desync), GHSA-m8rv-5g2x-5cg5 (CRLF injection) and
+  GHSA-v3r7-h72x-cjcm (cookie-attribute injection). It was a production
+  dependency of `@syncrona/mcp-server`, on the dispatcher path built for
+  mTLS / custom-CA / proxy. The gate that should have caught it was set to
+  `--audit-level=high`; CI and release now fail at `moderate`, which the
+  production tree clears with headroom.
+- Dev dependencies are audited. They previously were not — `--omit=dev` was the
+  only audit in any workflow, so the 11 findings the full tree carried (5 low,
+  3 moderate, 3 high, all confined to build tooling) were reported by nothing.
+  All 11 are now cleared and `ci.yml` gates the full tree on every push and PR:
+  - `brace-expansion` (GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895 — unbounded
+    expansion DoS) and `js-yaml` (GHSA-5p4m-2wfm-xmqj — quadratic CPU in `!!omap`)
+    were in-range lockfile-only bumps reached by `npm audit fix`. They came in
+    through eslint, typescript-eslint and jest.
+  - The remaining nine were one chain, all under `@stryker-mutator/*@8.7.1`,
+    which pins its dependencies too tightly to be fixed by a lockfile bump:
+    `ajv` at `~8.17.1` (GHSA-2g4f-4pwh-qvx6, ReDoS via `$data`; patched in
+    8.18.0), `@babel/core` at `~7.25.2` (GHSA-4x5r-pxfx-6jf8, arbitrary file read
+    via `sourceMappingURL`; patched in 7.29.6) and `tmp@0.0.33` via
+    `external-editor` (GHSA-ph9p-34f9-6g65 path traversal, GHSA-52f5-9888-hmc6
+    symlink write; patched in 0.2.6). npm's own remedy was
+    `@stryker-mutator/core@10`, two breaking majors of a tool that is not in CI
+    and whose four `stryker.conf.json` files carry the measurement rationale for
+    every threshold in them. Taken instead as three **scoped** `overrides` in the
+    root `package.json` — `@stryker-mutator/core > ajv`,
+    `@stryker-mutator/instrumenter > @babel/core`, `external-editor > tmp` — so
+    eslint's `ajv@6` and the build plugins' `@babel/core@8` are untouched.
+    Verified by running Stryker, not by re-reading the audit: all four configs
+    still validate against the schema under the new `ajv`, and a real
+    `stryker run --dryRunOnly` instrumented 832 mutants and passed its initial
+    test run under the new `@babel/core`.
+- `ci.yml` gates the dev tree at `--audit-level=high` while production stays at
+  `moderate`. Production dependencies execute on user machines with user
+  credentials, so that bar is set as low as the tree can hold; dev dependencies
+  execute only on maintainer machines over this repository's own source, where
+  the realistic threat is `high`-shaped. A `moderate` bar on a ~590-package dev
+  tree would stop unrelated PRs on advisories that do not warrant it. Everything
+  below the bar is still printed by a non-blocking low+moderate report step, so
+  sub-`high` findings stay visible rather than tolerated in silence.
+
+### Changed
+
+- `release.yml` no longer claims that `ci.yml` audits the full dependency tree.
+  It did not when the claim was written; it does now, and the comment says where
+  the dev coverage actually lives and why the release gate stays production-only.
+
+## [0.9.4] - 2026-08-20
+
+`0.9.3` announced that record metadata round-trips. It did — on instances that do
+not have the companion scoped app installed, which is the opposite of the setup
+the documentation tells you to run. Everything below is that promise made true on
+the instance it was written for, verified against a live one.
+
+### Fixed
+
+- `refresh` and `download` write `.meta.json` sidecars on instances that have the
+  legacy companion scoped app. The scoped manifest the app returns carries no
+  metadata layer at all, so the sidecar was silently absent on exactly those
+  instances; the scoped manifest is now enriched before it is used, and a fetch
+  is split — the scoped endpoint keeps serving the file half while the sidecar
+  half goes over the Table API.
+- Field discovery no longer drops a tracked column because its name starts with
+  `sys_`. That blanket exclusion took `sys_scope`, `sys_class_name`,
+  `sys_policy`, `sys_overrides` and their siblings with it; what is excluded is
+  now six named audit stamps (`sys_id`, `sys_created_by`, `sys_created_on`,
+  `sys_updated_by`, `sys_updated_on`, `sys_mod_count`). Measured against a live
+  five-table scope, the tracked columns per table went 29→40, 14→25, 9→17, 34→45
+  and 8→18.
+- A column that is empty on the instance is written as `""` rather than omitted,
+  so a sidecar answers "what can I set on this record?" instead of only "what is
+  set right now". A column the instance did not return at all — a read ACL hides
+  it — is still left out rather than claimed as empty.
+- A sidecar under a manifest with no metadata layer is no longer discarded in
+  silence. `push` resolves it from the record it sits under; an unreadable
+  dictionary is reported once per table with its cause and both escape hatches;
+  and a metadata push against a degraded manifest points at `syncrona refresh`
+  instead of reporting every key of a perfectly correct file as an unknown
+  column.
+
+### Changed
+
+- Manifest enrichment stops re-reading a scope's shared ancestor table once per
+  child table — 15 dictionary requests down to 11 on the same five-table scope,
+  with a regression test that pins the request count rather than the wall clock.
+
+## [0.9.3] - 2026-08-18
+
+Everything below had accumulated on `main` since 0.9.1 without a release to carry
+it. `0.9.2` was never published and the number is left unused.
+
+### Added
+
+- New package `@syncrona/mirror` and the `syncrona mirror` command — a
+  full-instance git mirror. The engine catalogs an instance from
+  `sys_dictionary`, sweeps every in-scope table over the Table API and writes a
+  sharded, deterministically ordered tree; `mirror init` provisions the
+  repository for a checkout that size (`feature.manyFiles`, `core.fsmonitor`,
+  `core.precomposeunicode`, scheduled `git maintenance`, `.gitattributes`),
+  `mirror sync` runs the sweep and prints a suggested commit message without
+  ever committing, `mirror status` compares the tree against the live instance,
+  `mirror verify` checks the tree against its own manifests with no network at
+  all, and `mirror report` re-prints the last sweep. Exit codes: 0 clean, 1 the
+  run could not finish, 2 completed with drift or findings. Four invariants are
+  machine-enforced rather than documented: a re-sync over an unchanged instance
+  is byte-identical (one bytewise comparator, plus an e2e that syncs twice and
+  diffs the trees); the engine issues no state-changing request (checked by
+  grepping its built output, which is why the one POST the design needs — the
+  OAuth token exchange — lives in the CLI adapter and hands the engine a ready
+  `Authorization` header, rather than as a carve-out that would turn a
+  mechanical check into a judgement call); the `complete` flag is the only
+  completion signal, so an aborted sweep leaves nothing that reads as finished;
+  and an unreadable manifest is never reported as an empty one. The package
+  ships CommonJS so the ESM core CLI reaches it through Node's interop, and
+  carries 100/100/100/100 coverage floors; `mirrorCommand.ts` gets its own named
+  floor in core because it shells out to git and holds credential material for a
+  whole sweep.
+- Record metadata is now synced in both directions. Field discovery only ever
+  admitted the eight script-ish dictionary types, so a script include's
+  `api_name`, `access`, `client_callable`, `active` and `description` were never
+  selected, never written and never diffable — the workspace held the code and
+  nothing else. Each record now also gets a `.meta.json` sidecar (flat layout:
+  `<record>~.meta.json`) holding its non-file columns, with the column list
+  discovered per table and recorded in the manifest. Passwords, journal fields,
+  binaries and `sys_*` plumbing are excluded; keys are sorted and empty values
+  dropped, so re-downloading an unchanged record produces no diff. Set
+  `meta: false` to opt out, or `tableOptions.<table>.metaFields` to choose the
+  columns explicitly. `repair --prune` does not treat the sidecar as an orphan.
+- Edits to a `.meta.json` sidecar are pushed back. `push`, `dev` and `deploy`
+  expand it into an update of the record's real columns, in the same request as
+  the field files. A column the table does not track fails that record rather
+  than being sent, because ServiceNow ignores unknown columns and still answers
+  `200`; a column the dictionary marks read-only or virtual is withheld and
+  reported (recorded in the manifest as `metaReadOnlyFields`); a missing key is
+  not a clear, since empty values are never written — clear a column with `""`.
+  Set `metaPush: false` to keep the sidecar as read-only reference data.
+- `deploy --ci` skips the overwrite confirmation, so a deploy can run in a
+  noninteractive pipeline.
+- `init --ci` is now accepted. The flag was documented and read by the command,
+  but `init` registered no options, so yargs' `.strict()` rejected it before the
+  command ran.
+- MCP fetch client now honors `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` via an
+  undici `EnvHttpProxyAgent` dispatcher, composed with the existing
+  mutual-TLS/custom-CA dispatcher cache (G9 follow-up).
+- New package `@syncrona/redaction` — the single answer to "is this a
+  credential?". `isSensitiveKey` (property names), `looksLikeSecretValue`
+  (connection strings, JWTs, PEM private keys, inline `Authorization`, AWS access
+  keys, vendor-prefixed API keys, raw 256-bit hex) and `redactValue`
+  (`__SYNCRONA_REDACTED__<sha256-12>`, digested from the plaintext so a rotated
+  secret still shows a diff) were extracted from the MCP audit trail, where they
+  had been hardened one security review at a time. The package imports nothing —
+  not even `@syncrona/types` — which is an acceptance criterion rather than a
+  preference: a security primitive at the bottom of the graph can be audited on
+  its own and can never be made to import something that imports it back. A
+  `redaction-is-leaf` dependency-cruiser rule enforces it. Detection fails closed:
+  a value longer than the 8192-character scan budget is reported as a secret
+  instead of being scanned, because padding a secret past the budget used to be
+  all it took to launder it into a log in cleartext.
+- `@syncrona/sn-transport` gained the two policy modules a full-instance mirror
+  needs before it may touch the network or the filesystem, shared so that the CLI
+  and the MCP server agree with them rather than re-derive them. `mirrorPolicy.ts`
+  is the failure taxonomy — which HTTP status/body pairs are transient, auth, ACL,
+  not-found or fatal, the retry schedule, and a **tri-state** reachability probe
+  that keeps "wrong credentials", "wrong URL / no network" and "hibernating PDI"
+  as three distinct operator actions instead of one useless "cannot reach
+  instance". The classifications are measurements from a live instance, carried in
+  the tests as fixtures, so a future cleanup back to status-code-only
+  classification fails loudly instead of quietly mis-routing errors.
+  `pathSafety.ts` is the on-disk half: the safe-component predicate, a byte cap
+  applied to bytes rather than code points, and deterministic collision resolution
+  when two instance-supplied names fold to the same filename.
+
+### Changed
+
+- Migrated breaking dependency majors, each landed and tested on its own:
+  chalk 4→5 and inquirer 8→14 (no code changes — the core package is ESM),
+  chokidar 3→5 (named-import surface), zod 3→4 (custom messages preserved
+  via union-level `{ error }`), eslint 8→10 with typescript-eslint 6→8, and
+  typescript ~5.9.3→6.0.3.
+- Pressing Ctrl-C during any interactive prompt now cancels quietly with
+  exit code 130 instead of printing an error stack. inquirer 14 rejects with
+  `ExitPromptError`, which the CLI command runner handles centrally.
+- Linting is flat-config only: the repo root uses `eslint.config.mjs`, the
+  legacy root `.eslintrc` was deleted, and the eslint build plugin now falls
+  back to the project's flat ESLint config (`eslint.config.js` /
+  `eslint.config.mjs`) instead of generating an `.eslintrc`.
+- `@syncrona/typescript-plugin`: with no `target` configured, transpiled
+  output is now ES2021 (keeping `const` etc.) instead of the ES5 `var`
+  downlevel. TypeScript 6 makes `target: ES5` a deprecation error and
+  TypeScript 7 removes it, so users who still need ES5 must set it
+  explicitly together with `ignoreDeprecations`. The plugin still emits no
+  `"use strict"` prologue unless `strict`/`alwaysStrict` is configured
+  (TypeScript 6 turned the prologue on by default), and configs whose
+  `module` implies Classic resolution now get `Bundler` resolution instead
+  of the removed `node10`.
+- Modernized the tsconfigs for TypeScript 6: `NodeNext`
+  module/moduleResolution across packages, an explicit per-package
+  `rootDir`, explicit `types`, and removed the deprecated
+  `downlevelIteration`/`baseUrl`.
+
+### Removed
+
+- The `.github/dependabot.yml` `ignore` list for breaking majors: with every
+  migration landed, majors now arrive as normal isolated Dependabot PRs.
+  (typescript 7.x is currently blocked by typescript-eslint's peer range,
+  `<6.1.0`.)
+
+### Security
+
+- The MCP server's `run_node_code` full mode runs in a real child process with
+  string code generation disabled and a credential-scrubbed environment. The
+  in-process `vm` "safe sandbox" was removed after a reproduced escape to the
+  host realm; its documentation now states plainly that the environment scrub is
+  defense-in-depth, not isolation.
+- `run_workspace_command` confirmation is default-deny. Only a small read-only
+  binary allowlist runs unconfirmed, and the git gate resolves the real
+  subcommand through space-separated global-option values, requires confirmation
+  for any verb not on a read-only allowlist (which closes a git-alias remote
+  code execution and every previously unlisted mutating verb such as `switch`,
+  `pull`, `branch -D`, `worktree`, `update-ref`, `config`), and always requires
+  confirmation for inline `-c`/`--config-env` configuration injection.
+- The MCP audit log is a keyed, tamper-evident hash chain. It is keyed from the
+  credential store's per-install secret when `SYNCRONA_STORE_KEY` is absent,
+  refuses to write through a symlinked audit directory or file, fails closed on
+  a mutating tool's failed write, caps quarantine-file retention, and redacts
+  secret-shaped VALUES — connection strings, JWTs, PEM keys, inline
+  Authorization, and vendor-prefixed API tokens (Stripe, OpenAI, GitHub, Slack,
+  GitLab, Google, AWS) plus raw 256-bit hex — not just secret-named keys.
+- The unified change workflow gates approval on the script that actually
+  executes (remote mode analyzes `remoteScript`) and floors its risk score with
+  a trusted analysis that ignores caller-supplied policy weights, so
+  `riskLevel:"low"` or a zeroed `policy.weights` cannot bypass the approval and
+  self-attestation gates.
+- The download/pull write path refuses path components that would escape the
+  workspace source root (`..`, pure dots, embedded separators in manifest table
+  keys or record names), and the manifest-driven missing-file maps use
+  null-prototype objects so a hostile `__proto__` table key cannot pollute
+  `Object.prototype`.
+- MCP guardrail policy loading fails closed: a present-but-unreadable,
+  non-object, or prototype-poisoning guardrail configuration refuses instead of
+  silently loading defaults.
+- `dryRun` is honored end to end. `run_workspace_command` and `run_node_code`
+  accepted the flag, satisfied the `requireDryRun` guardrail with it, and then
+  executed for real — auditing the real run as a simulation;
+  `sync_unified_change_workflow` was never handed the flag at all, so
+  `dryRun: true` performed the actual apply with preflight disabled.
+  `sync_unified_change_workflow`'s `dryRun` therefore changed meaning, and its
+  `metadata.version` is bumped to `1.2.0` so clients caching tool definitions learn
+  that an input they already knew about now takes precedence over `apply`.
+- The two remaining `dryRun` enforcement points key on what the tool honors, not on
+  what the caller asked for. The preflight gate was skipped whenever a dry run was
+  merely *requested*, so the first mutating tool added without a dry-run-aware handler
+  would silently lose its preflight; and the `requireDryRun` guardrail — an operator
+  lock meaning "this tool may only be planned here" — inverted on any tool whose
+  handler ignores the flag, making `dryRun: true` the only accepted shape while still
+  performing the real mutation. An unenforceable `requireDryRun` entry is now refused
+  outright.
+- The `run_workspace_command` git gate allowlists the global options that may precede
+  a subcommand instead of blocking only the ones known to be dangerous. Flags that
+  point git at a caller-chosen program or repository — `--exec-path`, `-C`,
+  `--git-dir`, `--work-tree`, `--namespace`, `--super-prefix` — now require
+  confirmation even in front of a read-only verb, which is exactly where they landed:
+  `git --exec-path=/tmp/evil ls-remote https://host/r` executed
+  `/tmp/evil/git-remote-https` while `ls-remote` kept the call off the confirmation
+  path entirely.
+- The `run_workspace_command` git gate validates a subcommand's own options, not
+  just the verb. `git status --exec=...`-style option smuggling and an allowlisted
+  verb carrying a destructive option now require confirmation, and only a bare
+  command name can be allowlisted at all: a command carrying a path separator
+  (`./git`, `/tmp/evil/git`) is a caller-chosen executable and always requires
+  confirmation, where previously it matched the allowlist on its basename alone
+  and ran an attacker-planted binary unconfirmed.
+- Audit-chain hardening: the truncation high-water marker moved out of the
+  world-shared `/tmp` (symlink clobber and silent tripwire defeat), the integrity
+  checker refuses to rewrite through a symlink, the tripwire is consulted for a
+  fully-legacy log instead of returning early (wholesale erasure read as "valid"),
+  concurrent writers no longer mint duplicate `seq` numbers that poison the chain
+  as permanently tampered, and value-based redaction no longer switches itself off
+  for values over 8192 characters.
+- A non-object `policy`, `policy.tools` or `policy.environments` node is rejected
+  instead of being coerced to `{}` — a malformed guardrail file failed open.
+- `init` validates the path components it derives from the server-supplied
+  application scope, and `docs` no longer interpolates that scope straight into a
+  filename; a hostile scope value could write outside the workspace.
+- The Jira MCP untrusted-data fence covers every attacker-controlled free-text
+  field — comment author display names and parent/subtask/link summaries were
+  passed through verbatim. (Assignee and reporter stay verbatim by design; that
+  limit is now documented.)
+- The CLI fails instead of silently downgrading: incomplete api-key or JWT-bearer
+  material no longer falls back to Basic auth, and an unrecognized
+  `SN_AUTH_METHOD` is rejected rather than quietly resolving to an inferred grant
+  (a typo could POST a password to the OAuth token endpoint). An unrecognized
+  selector is now surfaced everywhere it can be: the MCP server refuses to start
+  on it *even when mutual TLS is configured* — a client certificate excuses missing
+  Authorization material, but it never excuses picking a different grant — and
+  every CLI command that authenticates warns once, naming the rejected value and
+  the method it fell back to. A merely incomplete configuration stays quiet there,
+  so first-run `init`/`login` is unaffected.
+- An ADF code block can no longer break out of its own fence. Jira content whose
+  code text contains a ``` run is now fenced with a longer backtick run, so
+  attacker-authored issue text cannot escape into the surrounding Markdown and be
+  read as instructions.
+- SECURITY.md no longer overstates two protections. It claimed *all* mutating MCP
+  tools require `confirmDestructive=true`; it now names the ones that do, and names
+  `sync_set_scope`, `sync_set_update_set` and `sync_prepare_session` (no
+  confirmation flag) plus the two workflow tools that enforce it only on
+  `apply=true`. It also claimed the opt-in diagnostic file log redacts known
+  credential fields; no redactor runs over that file, and the document now says so.
+- A JWT private key is no longer reproduced in a filesystem error message. Key and
+  certificate settings accept either PEM text or a path, and anything without PEM
+  armor was read as a path — so Node's `ENOENT`/`ENAMETOOLONG` message, which quotes
+  the path verbatim, printed a base64-encoded key in full to stderr, into the audit
+  trail and into the error text returned to an MCP client. The audit secret scanner
+  could not catch it, because it matches literal PEM armor, which is exactly the
+  shape that goes down this path. The replacement message names the setting, states
+  that the value was read as a path, and reports the fs error code and the value's
+  byte length — never the value. Fixed in the CLI and the MCP server alike.
+- Confirmation for a destructive workspace command no longer depends on where the
+  verb sits. The gate resolved a single "first operand", so a global option that
+  takes a space-separated value (`--logLevel debug push`, `--instance-profile dev
+  push`, `-d main push`) shifted the verb out of view and a live push to a
+  ServiceNow instance was reported as needing no confirmation. Any destructive verb
+  anywhere in the operand region now requires confirmation, in the same default-deny
+  way the git option regions already worked.
+- The MCP identifier gate no longer validates one value and forwards another. Every
+  identifier schema trims before matching its pattern, so a padded value parsed
+  clean while the untrimmed original — newlines included — reached the Table API URL
+  builder and the audit line. The normalized value is written back, and a
+  whitespace-only identifier becomes empty rather than arriving supplied-but-blank
+  at handlers that test it for truthiness.
+- A tool name that names an `Object.prototype` member is rejected as an unknown
+  tool. `toolArgSchemas[name]` returned the inherited member for `"constructor"`,
+  so the call failed as an internal error instead of an argument error. The same
+  own-property fix applies to the display-field and file-type lookups in the CLI,
+  where an inherited function was returned typed as a string and sent on as a
+  ServiceNow field name or interpolated into a filename.
+- A manifest `type` can no longer escape the build directory. The source-tree writer
+  was hardened against a manifest-supplied path component; the build-tree writer was
+  not, and the value is interpolated into the output filename and written without a
+  containment check, so `js/../../../../evil` left both the build directory and the
+  workspace.
+- The MCP audit sanitizer bounds its walk over client-supplied arguments on depth
+  and breadth, and states in the record when it truncated.
+- A timed-out child process is escalated on a budget: SIGTERM, then SIGKILL, so a
+  child that ignores SIGTERM cannot hold a tool call open indefinitely.
+- The high-severity production advisories are cleared again: `fast-uri` (host
+  confusion via a backslash authority introducer, reached through `ajv`) and
+  `ip-address` (three SSRF / trust-boundary bypasses, reached through
+  `express-rate-limit` under the MCP SDK). Both are transitive, so both are
+  pinned in the root `overrides`, alongside a `hono` bump that also clears four
+  moderate advisories. Two moderates remain deliberately: `undici` stays on 6.x
+  because 8.x reintroduces GHSA-4c8g-83qw-93j6, and `@hono/node-server`'s fix
+  requires a 2.x that sits outside the MCP SDK's declared range for a
+  `serve-static` path traversal the stdio server never reaches.
+- The download write seam validates every path component at the chokepoint,
+  before `path.join` sees it. The source-root containment guard only anchors at
+  the workspace root, so a field named `../Bar/script` written from record Foo's
+  folder relocated the write onto a *sibling record* and stayed inside the root
+  the whole time — quieter, not safer. `writeSNFileCurry` and
+  `writeFlatSNFileCurry` now reject unsafe file names, file types and record
+  names outright, and the download pipeline names which component failed and
+  which boundary it would have crossed.
+
+### Fixed
+
+- Watch mode never retried a failed push. The retry ladder in `Watcher.ts` was
+  reached only when the drain threw, but `pushRec` converts every transport/HTTP
+  error into a resolved `{ success: false }`, so the common failure mode never
+  threw: failed pushes requeued their files and then waited for an fs event that
+  may never come. The drain now schedules its own retry on a capped exponential
+  backoff (unref'd, so a pending retry cannot by itself keep the process alive,
+  and guarded so overlapping failures stack at most one timer) and requeues per
+  record rather than per batch.
+- Keychain master-key provisioning raced. Two processes starting at once could
+  each provision a key, and the loser's ciphertext became undecryptable.
+  Provisioning is now behind a cross-process mutex — `mkdir` of a lock directory,
+  atomic on every platform — with a stale-lock steal for a crashed provisioner.
+- Jira dropped comments it already had. `fetchRecentComments` returned an empty
+  array for a page that contradicted the truncation signal that triggered the
+  fetch; an empty array is truthy, so it passed the caller's guard and wiped the
+  embedded comments. An empty page is now a failure and the caller falls back as
+  designed.
+- The MCP server's legacy `sys.scripts.do` fallback aborted before authenticating.
+  It now reuses the same `Authorization` header — whichever method is configured —
+  and the same mTLS/proxy dispatcher as the primary REST path, instead of being
+  Basic-only.
+- The MCP server degraded stored credentials to Basic auth. A stored profile's
+  auth method is now adopted when the environment supplies no auth material;
+  the environment still wins, and a stored profile for a different instance is
+  ignored, failing closed. Mutual TLS stays environment-only in both clients.
+- The webpack plugin could not find its config on Windows: a POSIX-style split
+  produced an invalid import specifier. It now uses `path.join` plus
+  `pathToFileURL`.
+- A named profile that defines no instance still falls back to the base
+  `SN_INSTANCE` by design, but it now warns once per process on both the CLI and
+  the MCP path. The user named that profile, and on the `mcp` path the fallback
+  target is persisted into `.syncrona-mcp/secrets.json` for every later session.
+- Releases are tagged again. `release.yml` now configures a git identity:
+  `changeset publish` creates annotated tags, which need a committer, and without
+  one the tag call fails silently inside changesets while still printing
+  "New tag:" — which is why 0.9.0 and 0.9.1 shipped without per-package tags.
+- `refresh` no longer downloads a `.js` file for a field the workspace already
+  keeps as `.ts` (or any other extension a plugin rule maps to). The
+  missing-file probe compared only against the exact `<field>.<manifest type>`
+  path, but the push side has always resolved a local file to a field by
+  stripping *whatever* extension it carries and compiling it back to the
+  manifest type on the way out — so on a TypeScript workspace `script.ts` was
+  invisible, the field was reported missing, and the writer created `script.js`
+  beside it. The stray file was only half the damage: two files claiming one
+  field is exactly what `groupAppFiles` rejects as an "Ambiguous push", so the
+  next `push` failed outright until the file was deleted by hand. The probe now
+  falls back to a stem match over the record directory (canonicalised the same
+  way `repair` canonicalises record names, so both halves agree about when two
+  names are the same name), and a forced write — `download`, and the wizard's
+  first pull — declines to create a second claimant and names, by full path, the
+  local file it kept: a scope-wide download hits that branch once per affected
+  record and every record spells the field the same way, so a message built from
+  the field name alone repeated verbatim and identified nothing. Forced writes
+  still overwrite the field's *own* file, so a half-written workspace heals as
+  before.
+- `push` now names every field claimed by more than one local file instead of
+  aborting on the first pair it meets. A workspace acquires these in bulk — the
+  refresh bug above left one downloaded copy per TypeScript-backed field — so a
+  message naming a single pair turned the cleanup into one failed push per file.
+  All claimants of a field are listed too, not just the first two.
+- A tracked field whose value on the instance is legitimately empty now
+  converges. The download wrote it as a zero-byte file, and `SNFileExists` read
+  zero bytes as "placeholder, not fetched yet", so every later refresh reported
+  the field missing and fetched it again — forever — while the command printed
+  "Download complete". The ambiguity is removed at the write seam rather than at
+  the probe: a request carrying no `content` key (a manifest entry) writes
+  nothing at all, `{ content: "" }` (a fetched empty value) writes the zero-byte
+  file, and existence is once again the whole answer. The skeleton phase still
+  materialises every record directory, so `init` lays out the tree as before.
+- Manifest paging is stable and no longer truncates. Record paging walked
+  `offset += pageSize` over a query with no `ORDERBY`, so the Table API was free
+  to return a different order for the second page and a row that crossed the
+  boundary in between was never returned at all — it never reached the manifest,
+  `findOrphanFiles` reported its local file as unclaimed, and
+  `repair --apply --prune` deleted it. Every paged query now carries a
+  `sys_id` ordering (`withStableOrder`, which leaves an ordering the caller
+  already chose alone, since ServiceNow honours the first `ORDERBY` as the
+  primary key). Separately, field and table discovery called the Table API once
+  with a fixed limit and no offset loop, so a table with more dictionary rows
+  than the limit produced a quietly incomplete manifest — no error, no warning,
+  and the same partial answer on every run. Both now page; the lookups that
+  cannot truncate by construction stay unpaged with the reason written down.
+- `mcp --instance-profile <name>` no longer aims the MCP server at the wrong
+  instance. The generated secrets file took the *stored active instance* over the
+  profile named on the command line, so after `syncrona use prod`, an explicit
+  `mcp --instance-profile qa` resolved qa's credentials and then wrote prod's host
+  next to them — the server talked to production while the flag said qa, and
+  nothing in the output said so. An explicit profile now wins; the stored instance
+  is still the default when no profile is given. Both directions are pinned by
+  tests.
+- `mcp --mcp-server-path <path>` now fails loudly when that path does not exist.
+  A typo fell through to the automatic discovery candidates, so the command either
+  started a **different** server than the one that was asked for, or reported
+  "unable to find the MCP server" without ever naming the path it was handed.
+- A **relative** `--mcp-server-path` (or `SYNCRONA_MCP_SERVER_PATH`) is resolved
+  against the invoking directory before it is validated, and that absolute path
+  is what reaches every consumer. It was stat'ed as given — cwd-relative — while
+  the client configs and the server spawn both run with `cwd` set to the
+  workspace root, so a relative path that passed validation was then consumed
+  against a different base: a silently persistent misconfiguration in
+  `.vscode/mcp.json` and the desktop-client configs. The not-found error now
+  names the resolved location, so the typo hunt starts from the right base.
+- Auto-configure no longer corrupts an MCP client config whose JSON root is an
+  array. `typeof [] === "object"` passed the validity check, and `JSON.stringify`
+  drops an array's non-index properties — so the `mcpServers` entry was written,
+  silently discarded on serialisation, and the run still reported success. A
+  non-object config is now treated as malformed and replaced, with a warning
+  naming the file (previously it was replaced in silence).
+- The same guard now applies one level down: a config whose **`mcpServers` value**
+  is an array also passed the object check, and spreading it registered every
+  element as a server named by its index (`"0"`, `"1"`, ...) — one garbage client
+  entry per element, written back as a success. An array there is replaced like
+  any other non-map value.
+- `mcp --auto-configure` on Windows without `APPDATA` set now says so. It resolved
+  no Claude Desktop or Cursor target and reported a successful configure that had
+  written nothing.
+- The MCP server reported the wrong version to its clients. `SERVER_VERSION` was
+  a hardcoded `"0.1.0"` while the package was at 0.9.1, so the `initialize`
+  handshake, `sync_health` and every tool-module banner understated the server by
+  eight minor releases — enough for a client to gate a feature it actually had.
+  The version is now read from the package's own `package.json` at runtime, the
+  same fix `syncrona --version` received in 0.9.1; if that lookup ever fails the
+  handshake reports `0.0.0-unknown` rather than guessing a number.
+- `logout` no longer claims success it did not achieve. Removing a single
+  instance now reports whether a credential file was actually deleted, a
+  failed removal exits non-zero instead of printing "Logged out", and
+  `logout --all` only clears the active-instance marker when every credential
+  file is really gone.
+- `--log-level` rejects an unrecognized value instead of passing it to winston,
+  which silently suppressed *all* output — including errors — for a typo.
+- `status` and `doctor` report non-Basic authentication correctly. Both gated on
+  `SN_USER`+`SN_PASSWORD` alone, so a healthy api-key, client-credentials or
+  jwt-bearer setup was diagnosed as unconfigured.
+- `push --dry-run` is side-effect-free again; it cleared the on-disk push
+  checkpoint before the dry-run guard, destroying resume state for a real push.
+- `push --ci` exits non-zero when a collaboration-lock conflict aborts the run,
+  instead of masking a no-op deployment as success.
+- The Jira error hint no longer tells a user hitting `HTTP 403` to check their
+  credentials; a forbidden response now gets its own permissions hint.
+- Build plugins load again. `PluginManager` resolved a plugin to its package
+  directory and `await import()`ed that path, which throws
+  `ERR_UNSUPPORTED_DIR_IMPORT` on Node — every configured build plugin failed to
+  load at runtime.
+- `syncrona build` exits non-zero when records fail to build; it reported the
+  failures and then exited 0, so a pipeline continued to `deploy`.
+- `syncrona push <relative-path>` no longer silently pushes nothing. The
+  workspace-containment check compared the raw, unresolved argument against the
+  absolute source root, so no file ever matched.
+- `repair --prune` no longer deletes live, manifest-tracked files whose on-disk
+  bytes have drifted from the manifest, and a 403/404 on a single table no longer
+  drops that table from the rebuilt manifest — which turned every one of its
+  local sources into an "orphan" for the next prune. The same applies to a
+  *partially* refused read: a table whose records came back incomplete (one
+  refused `sys_id` chunk, a refused metadata lookup, or a refused field lookup)
+  keeps the records the previous manifest knew about instead of being rewritten
+  as if the short answer were the whole table.
+- The download checkpoint is keyed by more than the scope, so a re-fetched
+  manifest no longer skips whole tables and leaves zero-byte files behind a
+  "Download complete" message. The bounded download pool now surfaces the first
+  worker rejection instead of discarding every later error, and a bulk Table-API
+  response with a missing field no longer coerces it to `""` and truncates the
+  local file.
+- Record names that collide on a case-insensitive or Unicode-normalizing volume
+  are disambiguated with the record's `sys_id` instead of merely warned about.
+  Both names were written to the manifest, the records overwrote each other's
+  files, and `push` then uploaded one record's content into the other's `sys_id`.
+  (The suffix is decided in one pass over the whole result set, so it does not
+  depend on the Table API's unstable row order.) Relatedly, when both layouts
+  claim the same record field after `flat` has been toggled, `push` now fails with
+  an "Ambiguous push" error naming both files instead of picking one by
+  directory-walk order.
+- Ctrl-C is handled consistently in the last two places that missed it: the push
+  confirmation printed a raw stack trace and exited 1 instead of 130, and
+  `scopeCheck` swallowed the inquirer `ExitPromptError` into a bogus error banner.
+  Aborting the `init` wizard now exits without writing the MCP configuration —
+  it exited 0 and wrote it anyway.
+- The CLI's ServiceNow data-path client and its OAuth token client both have a
+  request timeout (default 120 s; `SN_REQUEST_TIMEOUT` in milliseconds overrides
+  it, `0` restores the old unbounded behaviour); a hung socket or token endpoint
+  parked a connection-pool slot — or the whole command — indefinitely.
+- Jira: an explicit `--profile` whose credentials are missing or undecryptable now
+  fails instead of silently querying whichever site the environment points at, and
+  an ADF `expand`/`nestedExpand` title is no longer dropped from the rendered text.
+- `@syncrona/typescript-plugin`: `tsconfig.json` `extends` chains are resolved
+  (only the leaf file's `compilerOptions` were used), a string-valued `target` in
+  plugin options no longer downgrades the emit to CommonJS — which produced
+  `exports.` code that cannot run in Rhino — and plugin-supplied `compilerOptions`
+  now reach the type check that hard-fails the build, so the documented escape
+  hatches work.
+- `@syncrona/eslint-plugin` writes the `--fix` result. Autofixes were computed and
+  then thrown away.
+- `@syncrona/babel-plugin-remove-modules`: a trailing same-line `//@keepModule`
+  attached to the *next* import, so the tagged module was deleted and an untagged
+  one kept.
+- `sn_search_scripts` no longer reports a run in which every table query failed as
+  a successful zero-match result. The response is flagged as an error and carries
+  `searchComplete: false`, so "unknown" is distinguishable from "absent". A table
+  name the tool does not cover is likewise no longer dropped in silence: it comes
+  back in `unknownTables`, `searchComplete` requires that list to be empty too, and
+  the schema now enumerates the searchable tables (metadata `1.1.0`).
+- `dryRun` is reported honestly in the audit trail. Four scope-knowledge tools
+  declare and honor the flag but were missing from the dry-run-aware registry, so a
+  simulation was recorded as a real write; `sync_set_scope` accepted the string
+  `"true"` through validation and then performed the real scope switch; and three
+  tools described a dry-run payload in their **output** schema without declaring
+  `dryRun` as an input, so the contract gave no way to ask for it.
+- Jira remediation text now names the credential source the call actually used. An
+  explicit `--profile` is the exclusive source by design, so advising the user to set
+  `JIRA_BASE_URL`/`JIRA_TOKEN` was advice that provably could not fix the call; the
+  same applied to the 401 hint and to `jira-login`'s own failure hint, which pointed
+  at environment variables for credentials just typed at its prompt. Fixed on the MCP
+  handler as well as the CLI, where an agent acts on the text literally.
+- `@syncrona/typescript-plugin`'s README documented its configuration precedence
+  backwards. `tsconfig.json` is the base and `compilerOptions` from `sync.config.js`
+  are merged on top (the plugin option wins) — the README said the reverse, so
+  following it produced the opposite emit with no warning. The section now documents
+  the real order and the reason behind each plugin default.
+- MCP semantic index: an invalidation arriving during an in-flight build is no
+  longer swallowed, out-of-band deletions mark the index stale instead of serving
+  deleted symbols indefinitely, and the "non-blocking" async getter no longer runs
+  a full synchronous filesystem walk on every call including cache hits.
+- The MCP OAuth token manager resolves its undici dispatcher per token request
+  instead of pinning the one captured when the manager was created, which had
+  defeated the certificate-rotation fix; and it no longer runs the credential-store
+  password through the environment-value cleaner, which could silently alter a
+  stored secret.
+- Documentation corrections: the README claimed `refresh` re-lays an existing
+  workspace when `flat` is switched on (nothing does — the correct procedure is
+  now documented), `@syncrona/types`' README declared MIT for a GPL-3.0-or-later
+  package, and six per-package README configuration examples were unusable
+  (`rules` shown as an object where an array is required, and a plugin list that
+  is a JavaScript syntax error).
+- Releasing the collaboration lock no longer deletes a collaborator's live lock. A
+  push that outlives the staleness window is legitimately reclaimed by another
+  developer while it is still running; the old unconditional unlink then removed the
+  new owner's lock, and the next push proceeded with no mutual exclusion at all. Each
+  acquisition now records an owner token and only removes a lock it can prove is its
+  own. A lock left behind by a crashed process is still reclaimed immediately, since
+  its pid stops answering.
+- A reference field no longer aborts the download of every table. ServiceNow returns
+  a reference column as a `{ link, value }` object unless the request opts out, which
+  this client does not, so a `displayField` or `differentiatorField` pointing at a
+  reference column raised `name.replace is not a function` from outside the per-table
+  error handling — failing the whole download and naming neither table nor record.
+  Such a value is now read as its display value.
+- Records with unusable names are skipped with a counted warning instead of
+  corrupting the workspace: a record whose `sys_id` is `..` no longer materializes
+  the parent directory as a record folder, a record with no `sys_id` no longer lands
+  under the literal name `undefined`, and a record named `__proto__` no longer
+  vanishes from the manifest while the run reports success.
+- `repair --apply --prune` no longer deletes files the manifest does claim. Presence
+  on disk was decided with a case-insensitive filesystem call while the orphan lookup
+  compared names byte-exactly, so on macOS and Windows a record differing only in
+  case was neither reported missing nor recognized as claimed — and was deleted along
+  with any unpushed local edits. Name comparison now folds case the same way the
+  manifest builder does when it detects colliding record names.
+- The missing-record probe looks where the writer actually writes. Where a manifest
+  key and the record's name differed, the record was permanently stuck:
+  re-downloaded on every run, then deleted by `repair --prune` as an orphan.
+
+### Testing
+
+- A source-text gate (`scripts/check-source-text.mjs`) forbids literal invisible
+  characters in source. Three files carried them and now spell them as escapes —
+  including the one line whose entire security value *is* a zero-width space,
+  which read as a no-op join in every diff and every review.
+- Every Jest config sets `waitForUnhandledRejections: true`. Node 22 defaults to
+  `--unhandled-rejections=throw` and jest-circus drops its own listener at
+  teardown, so a rejection settling in the same turn as the test killed the worker
+  mid-file: every test the worker had not reached silently never ran, and the suite
+  still looked green. `unhandledRejectionConfig.test.ts` pins it in both
+  directions. This was also the single cause of every `RuntimeError` mutant
+  Stryker could not grade.
+- `stryker.conf.json` pins `concurrency: 4`, because concurrency is part of the
+  measurement rather than a performance knob: Stryker calibrates each mutant's
+  time allowance from a dry run it performs solo, then runs mutants N at a time.
+  Re-running `genericUtils.ts` unchanged at `--concurrency 1` moved 47 of its 60
+  timeouts to Killed and 2 to Survived, taking the honest band from
+  [36.27%, 95.10%] to [77.67%, 94.17%] while Stryker's own headline moved
+  95.10% → 94.17%. CONTRIBUTING and the config comments now say to read the
+  timeout count before the score, and to quote a band.
+- The mutation run can no longer be silently switched off by the config that is
+  meant to protect it. `testPathIgnorePatterns` has to skip a leftover
+  `.stryker-tmp/` sandbox when Jest runs from the package root, yet find those same
+  tests when Stryker starts Jest *inside* that sandbox — and because the patterns
+  are matched against the ABSOLUTE path, an unanchored `/\.stryker-tmp/` satisfies
+  the first requirement and destroys the second. It did: `npm run test:mutation`
+  died with "No tests were found" while the ordinary suite stayed green, because
+  nothing outside the mutation run exercises the sandbox path. The patterns are now
+  anchored with `<rootDir>/`, which Jest expands against whichever root it was
+  started with, and `strykerSandboxDiscovery.test.ts` pins both halves plus the
+  rule that these entries are regexes rather than globs. The same anchoring is
+  applied to a new `modulePathIgnorePatterns`, which closes the neighbouring hole
+  `testPathIgnorePatterns` cannot: it filters only which files Jest *runs*, so a
+  leftover sandbox still reached the haste map as a second `package.json` claiming
+  the name `syncrona` — a naming collision Jest resolves arbitrarily, letting an
+  import bind to the stale copy.
+- The Stryker timeout budget is back at the default. It had been raised to
+  `timeoutMS` 30000 / `timeoutFactor` 3 on the theory that slow, variable ts-jest
+  ESM startup under machine load was expiring the budget on mutants the suite never
+  reacted to. Measurement disproved it: on an idle machine the raised budget —
+  2.7x the effective per-mutant allowance, since that is `timeoutMS` plus
+  `timeoutFactor` times the ~17s dry run — timed out on 70 of the first 262
+  mutants, 26.7% against the 26.5% it was meant to fix. Neither `static` (6 vs 8)
+  nor coverage breadth (10.6 vs 11.7 covering tests, 2.85 vs 2.58 covering test
+  files) separates Timeout from Killed; what does correlate is the mutated file —
+  48% of `genericUtils.ts` against 5% of `repairCommand.ts`.
+- The core mutation score is now quoted as a band, because the timeouts behind it
+  were shown to be non-deterministic. Re-running `genericUtils.ts` under
+  `coverageAnalysis: "off"` — 363 tests per mutant instead of 18, twenty times the
+  work — barely moved the rate (58.3% to 55.6%) but almost entirely changed *which*
+  mutants timed out: only 32 of 60 timed out in both, 27 that had "timed out" were
+  killed by a real assertion, 22 that had been killed timed out instead, and one
+  mutant scored as detected was in fact a **survivor** (with two known survivors
+  scored as kills the other way). A genuine infinite loop times out in every
+  configuration; a coin flip does not. Since Stryker counts a TimedOut mutant as
+  DETECTED, each of those flips silently promotes an undetected mutant to a kill, so
+  the honest reading of that run is the band `[59.2%, 85.92%]` — 763 mutants,
+  14 min 9 s, 203 timeouts (26.6%) — and not the 85.92%. The cause of the
+  non-determinism is identified in the next entry.
+- The Stryker timeouts were CPU contention, not hangs, and the run now pins
+  `concurrency` to 4 because of it. Stryker calibrates every mutant's allowance
+  from a dry run it performs **solo** (`timeout = timeoutFactor * netTime +
+  timeoutMS + timeOverheadMS`; under `coverageAnalysis: "perTest"` `netTime`
+  counts only the covering tests, so a small pure function is budgeted at little
+  more than the constants) and then executes mutants N-at-a-time — the allowance
+  never accounts for the contention the mutants actually run under, and the
+  shortfall is charged to the mutant as if it had hung. Re-running
+  `genericUtils.ts` unchanged at `--concurrency 1` changed nothing but that one
+  variable — same 105 mutants matched one-to-one by mutator, position and
+  replacement, zero unmatched — and moved **47 of its 60 timeouts to Killed and 2
+  to Survived**, leaving 11 timing out both times; the band went `[36.27%,
+  95.10%]` to `[77.67%, 94.17%]`. Stryker's own headline moved 95.10% to 94.17%,
+  which is the point: the reported number is nearly blind to the thing destroying
+  the measurement underneath it. The other two candidate explanations were
+  measured and are wrong — machine load (idle 26.6% against loaded 26.5%) and the
+  budget (2.7x the allowance gave 26.7%) — and 0 of the 203 timeouts in the full
+  run tripped Stryker's instrumented hit limit, which a loop through the mutated
+  statement must trip. `concurrency: 4` is therefore documented in
+  `stryker.conf.json` as part of the measurement rather than a performance knob,
+  with the instruction to lower it further on a smaller machine.
+- The core mutation band is now `[72.74%, 83.88%]`, measured with both fixes in
+  place — 763 mutants, 21 min 27 s, 20.50 tests per mutant, 555 killed / 85
+  timed out / 110 survived / 13 no coverage / **0 errors**, per file 94.44%
+  `genericUtils.ts`, 84.81% `FileUtils.ts`, 81.82% `downloadCheckpoint.ts`,
+  80.84% `repairCommand.ts`, 76.92% `PluginManager.ts`. The bottom of the band
+  counts every timeout as a survivor and the top is Stryker's own figure, so the
+  band's *width* is the measurement error: it fell from 26.7pp to 11.14pp as
+  timeouts dropped from 203/763 (26.6%) to 85/763 (11.1%) under `concurrency: 4`.
+  The headline moved the other way, 84.10% down to 83.88%, and that is the
+  intended direction — the denominator grew from 761 to 763 because the two
+  mutants that used to escape scoring entirely as un-gradable `RuntimeError` are
+  now graded like every other mutant. The flag costs about 6% of wall clock
+  (19.52 to 20.50 tests per mutant) for the event-loop turn it adds per test.
+  Seven `genericUtils.ts` mutants time out both with and without contention, and
+  three of them are genuine hangs by construction rather than by measurement:
+  emptying `wait`'s Promise executor leaves a promise that never settles, which
+  `retryOnErr` awaits (`snClient.ts:178`); `chunkArr`'s `i++` turned into `i--`
+  never fails `i < numChunks`; and `i < numChunks` turned into `i >= numChunks`
+  loops forever on the empty-array path, where `numChunks` is 0. So the bottom of
+  the band — which counts every timeout as a survivor — is now known to be too
+  pessimistic, just as the observed `Timeout → Survived` flips show the top is too
+  optimistic. The true score sits strictly inside the band, which is why it is
+  published as one.
+- An unhandled promise rejection no longer kills a `packages/core` Jest worker:
+  `jest.config.cjs` sets `waitForUnhandledRejections: true`. Node 22 defaults to
+  `--unhandled-rejections=throw`, so a rejection with no listener is fatal. Jest
+  does install one on the real process for the duration of a run, but without
+  this flag jest-circus never yields to the event loop before `teardown` removes
+  it again — a rejection that becomes unhandled in the same turn the test settles
+  lands in that gap, and the worker printed the raw error and exited with code 1
+  mid-file. Every test it had not reached yet silently never ran, and the report
+  blamed the process rather than the promise. This is the normal shape of an
+  error-path test, not an exotic one: `allSettled([..., rejected, ...])`,
+  `unwrapSNResponse(Promise.reject(err))` and a mock armed with
+  `mockRejectedValueOnce` all let the code under test be the thing that attaches
+  the handler, which means "the production code stopped catching" takes down the
+  worker instead of reddening one test. Mutation testing is what surfaced it: two
+  `src/genericUtils.ts` mutants (`BlockStatement 38:40 -> "{}"` and
+  `ArrowFunction 40:18 -> "() => undefined"`, both of which make `allSettled`
+  attach no handler) reported "Test runner crashed. Tried twice to restart it
+  without any luck" — a result Stryker cannot grade at all, so they escaped
+  scoring entirely. With the flag they are Killed, and `appUtilsScope.test.ts`
+  reports 6 ordinary failures instead of dying.
+  The first fix attempted here was wrong and has been removed rather than left in
+  place: a `setupFilesAfterEnv` file registering `process.on('unhandledRejection',
+  ...)` is a no-op, because that file runs inside the test VM whose `process` is a
+  deep copy made by jest-util's `createProcessObject()` with its own EventEmitter
+  — jest-circus says so itself at `jestAdapterInit.js` `case 'setup'`. It was
+  shipped, and the next mutation run still crashed on the same two mutants with it
+  installed. `unhandledRejectionConfig.test.ts` pins the real fix from a child
+  Jest, in both directions: the shipped config turns the fixture rejection into
+  `Tests: 1 failed`, and the same fixture run with `--waitForUnhandledRejections=false`
+  produces Node's fatal banner and no reporter summary at all. Asserting only the
+  first would pass just as happily if the fixture had stopped reproducing the bug.
+  `@syncrona/credential-store`, `@syncrona/jira` and `@syncrona/sn-transport` set the
+  same flag. They were initially left out on the grounds that they run Jest in CJS
+  mode and had never reported the failure — but "never reported" is what this bug
+  looks like from outside, and dropping the same fixture into `sn-transport`
+  reproduced it exactly. The mechanism is in the runner, not the module system. Their
+  suites stay green (124 + 66 + 65 tests), so nothing there was masking a rejection.
+- `dist/semanticIndexState.js` carries the third declared second reading in the
+  mcp-server per-file coverage table: 98.63 / 94.03 measured on darwin, 98.63 /
+  94.20 on the ubuntu leg of the CI matrix — the first entry where the two
+  platforms split rather than one run flickering. The uncovered-line list is
+  byte-identical in both readings, darwin prints 63/67 branches under Node
+  22.23.0 and 22.23.2 alike, and 65/69 is the only nearby pair that renders
+  94.20 — V8 range granularity across platforms, not behaviour, so per the
+  gate's own procedure the second reading is declared rather than chased with a
+  test, lower value first so the headroom audit keeps checking the floor
+  against the conservative measurement.
+- The core per-file coverage annotations were re-recorded after the `.meta.json`
+  sidecar landed: `FileUtils` 98.32 / 92.53 to 98.34 / 92.75, `pushPipeline`
+  96.03 / 79.16 to 96.55 / 81.03, `downloadPipeline` 97.87 / 84.61 to 97.95 /
+  84.53, `manifestBuilder` 93.86 / 82.37 to 94.26 / 83.43 and `repairCommand`
+  96.61 / 93.67 to 96.66 / 93.82. Both legs of the CI matrix print the same new
+  pairs. Only the comments moved — every floor stayed where it was, and the
+  widest headroom this leaves is `manifestBuilder`'s 6.43 branch points, inside
+  the 8-point ceiling the floor audit enforces.
+- `dist/servicenowCore.js` carries a declared second reading, and it is the
+  second entry where the CI platforms split rather than one run flickering:
+  98.50 / 91.64 on darwin, 98.50 / 91.70 on the ubuntu leg, on a commit that
+  touched neither the module nor its tests. The uncovered-line list is
+  byte-identical (432-436, 441-442, 792, 942-944, 970-971, 985-986), 265/289 is
+  the only pair within +-12 of both counters that renders 91.70 against darwin's
+  263/287, and ubuntu counts one extra *function* range on top (62/64 against
+  61/64) — the same +2/+2 shape `semanticIndexState.js` showed, which is the
+  instrument counting and not the tree changing. The header's count of declared
+  readings was off by one from the commit that introduced it, and now reads the
+  true five.
+- Cross-test `process.exitCode` leakage in `packages/core` is now prevented by
+  the harness rather than by each suite remembering. 41 source sites set the
+  value and one reads it (`downloadCommand`, to decide whether a partial pull is
+  announced as success), while `process.exitCode` is per-process and Jest runs
+  many suites in one worker. Suites guarded it two ways, and only one of them
+  held: saving in `beforeEach` and restoring in `afterEach` survives a failing
+  test, whereas saving at the top of a test body and restoring at the bottom is
+  skipped the moment an assertion between them throws — so the first genuine
+  failure silently poisoned every test after it. A global hook
+  (`jest.exitcode.cjs`, via `setupFilesAfterEnv`) now resets the value around
+  every test — to `undefined`, Node's pristine value, rather than to a snapshot
+  taken when the setup file loads: workers are reused across test files and a
+  top-level suite `afterEach` runs after this hook, so a suite that parks the
+  code at `0` would otherwise become the next file's baseline. It touches only
+  the boundary between tests, never what the code under test sets inside one. `exitCodeIsolation.test.ts` pins it with a
+  deliberate polluter, a clean-slate assertion and a test that throws past a
+  would-be inline restore; with the hook removed two of its four cases fail.
+  Coverage is unchanged (97.52 / 87.53, all 42 `// measured` annotations still
+  exact), which answers the open question the earlier per-suite fix could not:
+  nothing in the tree had been covered by the leak.
+- The download write seam is pinned against a tampered manifest over a real
+  filesystem, not a mocked one: a field name, a file type and a flat-layout
+  record name each carrying a traversal, in both the folder and the flat layout,
+  plus the two chokepoint writers driven directly. The fixtures join their
+  segments raw rather than through `path.join`, because `path.join` normalizes
+  as it builds and would collapse the very `x/..` sequences the exploit depends
+  on — a tampered manifest is a JSON string, not something Node normalized on
+  the way in. Two companion tests assert the legitimate dot-walked names
+  (`inputs.script` on `sys_atf_step`, the `<record>~<field>` flat stem) still
+  write, so the guard cannot be tightened into a regression.
+- The empty-field convergence is pinned end to end — the manifest entry creates
+  no file and still reads as missing, the fetched empty value writes zero bytes
+  and then reads as present, and `findMissingFiles` stops naming the field after
+  the download that supplied it.
+- `withStableOrder` is pinned including its two ways to be wrong: it must not
+  double-order a query that already has an `ORDERBY` (which would silently
+  demote the caller's sort to secondary rather than replace it), and it must not
+  mistake an ordinary column whose name merely contains `orderby` for an
+  ordering clause. The paging tests drive a full first page so a second request
+  is forced, and assert both requests carry byte-identical query text — an
+  offset only means the same row on the second request if the ordering it
+  indexes into is identical.
+- The audit log retires a file two ways — rotation on size and quarantine on
+  corruption — and both named the retired file after the millisecond they ran in,
+  so both collided when the same file was retired twice inside one millisecond.
+  The collision arm is what decides whether the second file is written beside the
+  first or `renameSync`d on top of it, i.e. whether the history the audit log
+  exists to keep survives at all. It was one duplicated block and is now one
+  helper, `withCollisionSuffix`, behind the two exported names `toRotatedAuditPath`
+  and `toCorruptAuditPath` (the `corrupt.` infix stays load-bearing: it is how
+  `pruneRotatedAuditFiles` and `pruneCorruptAuditFiles` tell the two kinds of
+  retired file apart).
+  Both now take the instant they stamp as a parameter — production still calls the
+  one-argument form — because the embedded clock made the arm untestable rather
+  than merely untested. Nothing but machine speed had ever reached it: the
+  `.corrupt.` cap test quarantines five times in a tight loop, which collides on an
+  idle machine and does not under load, so `dist/audit.js` was recorded three
+  different ways (96.33/91.74, 96.57/92.12, 96.25/91.70) across runs of an
+  unchanged tree, while the rotation copy of the arm was never covered at all.
+  `auditIntegrity.test.js` now drives both with a frozen clock and pins the
+  `.1`/`.2` suffixes, that neither earlier file is clobbered, that a rotated name
+  carries no `corrupt.` marker, and that the default arm still stamps wall-clock
+  time. Two consecutive gate runs now report byte-identical per-file rows.
+- The metrics store carried the third copy of that same clock-named path, and it
+  is closed the same way. `toRotatedMetricsPath` stamps a rotated
+  `metrics.jsonl` with the millisecond it was retired, so two rotations inside
+  one millisecond produce one name twice and the `renameSync` below the call
+  lands the second on top of the first — discarding samples nothing else holds a
+  copy of. The arm's only coverage was accidental in exactly the audit shape: the
+  prune test rotates four times in a row, which collides on an idle host and does
+  not under load. The function now takes the instant it stamps (production still
+  calls the one-argument form) and is exported, so a frozen clock drives the
+  collision on purpose; the tests pin the `.1`/`.2` suffixes, that neither
+  earlier rotated file is clobbered, and that the default arm still stamps
+  wall-clock time. That closes the last of the three sites the original grep
+  found.
+- `resolveServerVersion`'s fallbacks are driven deliberately rather than left to
+  the shape of the checkout: an unreadable manifest, an unparseable one, one with
+  no `version`, an empty string and a non-string all resolve to the
+  `0.0.0-unknown` sentinel, and `SERVER_VERSION` is asserted to be *derived* from
+  the package manifest rather than equal to a literal — the failure that shipped
+  the wrong version through the `initialize` handshake for eight minor releases.
+- The audit lock's contention arms are now driven deterministically instead of
+  by scheduling luck — a fourth run-dependence carrier next to the embedded
+  clock, the clock-named path and shared process state: **cross-process lock
+  contention**, where the concurrent full suite decides which rare arm of
+  `acquireAuditLock` executes. The arms ran only incidentally (the stale-reclaim
+  body and the release best-effort catch usually never; the vanished-lock and
+  deadline arms 3–4 times per suite), so `dist/audit.js` measured 92.15 branches
+  on some full-chain runs and 92.18 on others — caught by the annotations gate —
+  and a quiet machine could have dropped below either.
+  `auditLockContention.test.js` stages each arm from outside the (unexported)
+  lock: a planted fresh lock must stall the writer to the 500ms deadline and
+  then be left standing while the record is still written; a planted stale lock
+  must be reclaimed, not waited on; a lock vanishing between the failed `O_EXCL`
+  open and the stat (one-shot `fs.statSync` interception) must retry
+  immediately; and a release that finds its lock already stale-reclaimed
+  (one-shot `fs.unlinkSync` interception) must stay best-effort. `dist/audit.js`
+  now measures 96.83/92.62, byte-identical across three consecutive gate runs.
+- `downloadCommand`'s partial-pull guard is now tested rather than inherited.
+  `commands.ts` ends by branching on `process.exitCode` — set by `downloadAllFiles`
+  when a table could not be fetched — to warn instead of printing "Download
+  complete ✅" over an incomplete pull. `process.exitCode` is per-process, not
+  per-test: Jest runs many suites in one worker, around twenty source sites set a
+  non-zero code, and not every suite restores it, so which arm ran depended on what
+  executed earlier in the same worker (`commands.ts` measured 96.73/83.11 on one
+  full run and 96.19/81.81 on another, with no source change). `commandsDownload.test.ts`
+  now pins the value around every test — which also stops the suite leaking onto its
+  neighbours — and drives the failure arm deliberately, asserting that the warning is
+  printed, that the success line is not, and that the non-zero exit code survives the
+  command so CI cannot show a green step over missing files.
+- The REV-197 fail-closed refusal in `policyConfig` — a `requireDryRun` guardrail
+  naming a tool whose handler cannot honour a dry run — is now driven by its own
+  tests. It previously had none: every tool the suite named with `requireDryRun` is
+  dry-run aware, so the refusal arm was reached only incidentally by the concurrent
+  full run, which made `dist/policyConfig.js` report 100.00/100.00 on most runs and
+  97.60/99.00 on others and flipped the new annotation gate red at random. Both the
+  refusal and its negative control (`dryRun: true` must not buy a pass) are pinned,
+  along with the logged operator error.
+- `npm run test:coverage:annotations` — a new link in the check chain (and a CI
+  step) that compares every `// measured L/B` comment beside a coverage floor with
+  the report the package actually produced. Both floor audits enforce a maximum
+  *headroom* against those comments, so a stale one silently corrupts the decision
+  about whether a floor is safe to raise. Ten had drifted, in both directions. The
+  checker takes its keys from the two configs by `require()` — the audited set is
+  by construction the enforced set — and fails closed on a missing, unreadable or
+  stale report rather than reporting "no drift".
+- The annotation checker's fail-closed contract gained the case its own doctrine
+  had missed: a **partial** report. A filtered `jest --testPathPatterns` run with
+  coverage on overwrites the summary with subset numbers, `collectCoverageFrom`
+  still lists every unloaded file at 0%, and the report is *newer* than the
+  sources — so the missing-data and staleness checks both read healthy, and the
+  gate prescribed `fix: // measured 0.00 / 0.00` transcriptions of the artifact.
+  An annotated file at 0.00% lines against a non-zero annotation now exits 2
+  ("cannot judge — re-run the full suite") instead of 1 ("drift"). Its staleness
+  check also now counts the measurement's configuration among the inputs a
+  report must be newer than: `jest.setup.cjs` (decides whether keychain branches
+  are reachable at all) and each package's `package.json` (carries the test
+  invocation the report comes from).
+- The annotation checker's exact-match rule rested on a premise that measurement
+  falsified: that two runs over an unchanged tree produce the same numbers. Over
+  45 saved mcp-server coverage tables, `dist/audit.js` reported 96.83 / 92.62 in
+  42 and 96.83 / 92.65 in 3, and `dist/inputValidation.js` reported 99.30 / 96.15
+  in 44 and 99.30 / 96.30 in 1 — so the gate reddened on trees nobody had
+  touched. The mechanism rules out a test-side fix: numerator *and* denominator
+  each move by one (226/244 vs 227/245), and every one of the 45 tables reported
+  the same uncovered-lines list, so V8 is occasionally counting one extra range
+  that was already executing — there is nothing uncovered to cover.
+  `--no-flush-bytecode` and `--no-lazy-feedback-allocation` were both tried and
+  refuted under interleaved, load-controlled A/B; the second flag flaked more
+  than the default. A `measured >= recorded` rule is refuted too
+  (`dist/workflowHandlers.js` moves 99/118 → 99/122, percentage *down*), and a
+  blind tolerance would absorb regressions this repo has actually caught at 0.42
+  points. So annotations may now **declare** a second reading —
+  `// measured 96.83 / 92.62 (also 96.83 / 92.65: cause)` — where exactly those
+  two readings pass and a third is still drift. The cause is mandatory, the
+  lower reading must come first (both floor audits parse only the first pair, so
+  a higher one there would silently widen their headroom allowance), and the
+  form is accepted **only** on the mcp-server/V8 target: three full core runs
+  produced a byte-identical `coverage-summary.json`, so the istanbul side keeps
+  exact match with no escape hatch. The gate header now carries the diagnostic —
+  diff the uncovered-*lines* column before the percentage: a moved column is a
+  real branch change, an identical one is V8 range granularity.
+- That first pass declared two files and missed a third. Every driver script
+  printed a hand-picked watch list, and `dist/toolService.js` was not on it: it
+  reads 92.60 / 92.05 in 61 of 62 default-config runs and 92.60 / 91.53 in one,
+  uncovered-lines column byte-identical. It is now declared, and it corrects the
+  doctrine in two ways. The class runs in **both** directions — here the odd
+  reading is *lower* (162/176 = 92.05 against 162/177 = 91.53, an extra range
+  that was *not* executing, enlarging the denominator alone), so the
+  lower-reading-first rule puts the value you will almost always measure in the
+  parentheses. And the counters are now ground truth rather than arithmetic: raw
+  V8 data confirms `toolService` 162/176, `audit` 226/244 and `inputValidation`
+  25/26, since percentages alone never pin a fraction (162/176 vs 162/177 and
+  324/352 vs 324/354 both render 92.05 / 91.53). A new test divides every
+  declared fraction out and asserts it renders the reading beside it. Two limits
+  stated rather than glossed: the 177 denominator is *derived* — no run printing
+  91.53 was caught while capturing raw data — and completeness is not
+  established, since a reading seen once in 62 escapes a sample that size about
+  37% of the time.
+- The annotation checker itself gained five fixes found by review: declaration
+  comparisons now round to the two decimals the instrument actually has (raw
+  `Number` comparisons in one place and rounding in another let a `fix:`
+  directive emit text the same gate rejects as malformed); "this target does not
+  accept a second reading" now outranks "this one is written wrong", so the
+  istanbul side no longer advises a form it refuses unconditionally; a cause must
+  contain a letter, so `.` or an invisible U+200B no longer satisfies it; the
+  failure banner offers the declaration recipe only when a failing target allows
+  one; and a doubled word in three "cannot judge" messages is gone.
+- `mcpCommand.ts` went from **no named floor and the weakest file in the tree** to
+  100.00% lines / 98.27% branches behind a 97/93 floor. It was the direct cause of
+  a red ubuntu build: the tree-wide floors had been sized against *its* macOS
+  numbers (83.33 / 68.18), while on Linux it measured 77.77 / 52.27 and missed the
+  line floor by one line. With that anchor gone the tree-wide globs ratchet from
+  78/62 to **81/67**.
+- `check-env`'s third platform arm (anything that is neither win32 nor linux) was
+  covered only *by accident*, because the developer machines run macOS and the host
+  walked into it; on ubuntu nothing reached it. It is now pinned by a test, which
+  makes the whole core tree's coverage host-independent — re-measured by forcing
+  `process.platform` to `linux` for a full suite run, every annotated file lands on
+  the same number as macOS.
+- A test asserting that MCP client configs are merged rather than overwritten was
+  **vacuous on Linux** — it mirrored the source's own `process.platform` branching
+  to build its expected paths, so on the OS CI runs, both arms went false, the
+  array came out empty, and the assertion loop iterated zero times. It now pins the
+  platform, and asserts the array is non-empty before looping.
+- Per-file coverage floors in both packages, so a weak module can no longer hide
+  behind a green global ratchet: 21 module floors plus raised tree-wide thresholds in
+  the core CLI, and 19 module floors plus an 80% line / 45% branch default in the MCP
+  server. A floor whose pattern no longer matches any file fails the gate rather than
+  silently gating nothing, and dedicated tests prove each floor rejects a file below
+  it.
+- `bench:guard` and `scan:secrets` are now links in `npm run check` and steps in CI.
+  A test re-derives the check chain from `package.json` and fails the build if a link
+  has no matching CI step, so the local gate and CI cannot drift apart. The
+  performance guard asserts a median against a deliberately loose ceiling — it is a
+  blowup detector for accidental quadratic behavior, not a microbenchmark.
+- Property-based tests grew from three files to eight, covering manifest name
+  derivation, transport auth, MCP input validation and the command safety policy.
+  They found the reference-field crash, the `..` sys_id escape and the `__proto__`
+  disappearance listed above.
+- First measured mutation scores for the MCP policy layer: 100% for endpoint policy,
+  87% for input validation, 83% for create-table policy, and 63% for the command
+  safety policy — where 327 of 383 survivors were a single shape, deleting one entry
+  from a policy table. The suite tested the helpers thoroughly and the table contents
+  barely at all, so a new contract suite now asserts the observable decision for
+  every entry of every table (including all 302 allowlisted git subcommand options),
+  alongside 34 targeted regression tests. The MCP suite grew from 1585 to 1610 tests.
+  Re-measured afterwards, the command safety policy scores **94.90%** (1039 mutants:
+  985 killed, 1 timeout, 53 survived) — the `StringLiteral` class that was the whole
+  finding fell from 327 survivors to 9.
+- A multi-process race harness for the push collaboration lock (`npm run race:lock`)
+  spawns N real processes against one real directory and releases them from a
+  busy-wait barrier into the same millisecond. It exposed that
+  `writeFile(path, body, {flag:"wx"})` is atomic in exclusion but **not** in
+  publication — `O_CREAT|O_EXCL` publishes the name before the bytes, so a concurrent
+  reader can see an empty file and treat the lock as abandoned. The lock and its
+  eviction claims are now staged under a private name and published with `link()`,
+  which has no such split. Four earlier designs failed this harness; the current one
+  survived 195 rounds at up to 24 concurrent racers with zero violations.
+- A hostile-input harness over the real MCP stdio boundary
+  (`packages/mcp-server/scripts/stdio-fuzz.js`, wired into the suite as
+  `test/stdioFuzz.test.js`). Every other test in that package calls exported
+  functions directly, so transport framing, the JSON-RPC parser, a log line on the
+  wrong file descriptor and a fatal unhandled rejection were all untested — on the
+  only surface a real client touches. It spawns the compiled server as a child
+  process and feeds 42 hostile frames down a real pipe (truncated JSON, NUL and
+  lone-surrogate bytes, batches, duplicate ids, prototype-pollution keys,
+  1000-deep nesting, a 1 MB payload, a Trojan Source bidi tool name), checking
+  after each that stdout stays pure JSON-RPC, the process still answers a ping, no
+  id is invented or reused, and no stack frame or absolute path leaks into an
+  error payload. It also verifies from the server's own audit log that no frame
+  reached real work — a claim added after two frames were found to be spawning a
+  real `syncrona status` subprocess. It found that the server was reporting the
+  wrong version in its handshake (see Fixed), and runs in 221 ms.
+- The two path-escape tests in `fileUtilsCoverage.test.ts` asserted on
+  `os.tmpdir()` itself rather than on a directory they owned, so they could neither
+  clean up after the escape they provoke nor survive an unrelated file of the same
+  name. The mutation run made that concrete: a mutant with the traversal guard
+  removed genuinely wrote outside the root and left the file behind, breaking every
+  later run. The source root is now nested inside a tracked sandbox.
+- The eviction-claim scheme that publishes the collaboration lock arrived with the
+  race harness but without unit coverage, which the per-file floor caught. Its
+  branches are now driven on a real filesystem rather than through mocks: a path made
+  a directory is occupied for `link()` yet unreadable for `readFile()`, a dangling
+  symlink makes `stat()` report `ENOENT`, and a backdated mtime ages a claim. That
+  covers the generation walk, the step budget, the back-off behind a live evictor and
+  the sweep's short-circuits, and pins the rule that only *positive* evidence abandons
+  a claim — an unparseable or unstattable claim is treated as live. `push` also now
+  proves it fails the shell when the instance is unreachable, before touching any
+  record. `pushCommand.ts` measures 100% lines / 93.91% branches and its floor was
+  raised accordingly.
+
+## [0.9.1] - 2026-07-04
+
+### Fixed
+
+- `syncrona --version` now reports the CLI's own version. It is wired explicitly
+  from the package's `package.json`; yargs' default detection derived the path
+  from the yargs module's `node_modules` parent, which under a hoisted/symlinked
+  install resolved to an unrelated `package.json`.
+
+### Changed
+
+- Package metadata: set the npm `homepage` of every published package to the
+  project site (https://ivanbbaev.github.io/syncrona/) instead of the
+  auto-generated GitHub `#readme` URL, and sharpened the `syncrona`,
+  `@syncrona/babel-plugin` and `@syncrona/babel-preset-servicenow` descriptions.
+  All packages remain in lockstep.
+
+## [0.9.0] - 2026-07-03
+
+First public release to npm. The `syncrona` core CLI, the `@syncrona/mcp-server`
+runtime, their shared libraries (`@syncrona/sn-transport`,
+`@syncrona/credential-store`, `@syncrona/jira`, `@syncrona/types`) and the
+first-party build plugins (`@syncrona/babel-plugin`,
+`@syncrona/babel-plugin-remove-modules`, `@syncrona/babel-preset-servicenow`,
+`@syncrona/webpack-plugin`, `@syncrona/typescript-plugin`, `@syncrona/sass-plugin`,
+`@syncrona/prettier-plugin`, `@syncrona/eslint-plugin`) are published together at
+`0.9.0` with build provenance.
+
+This release consolidates everything previously developed under the `0.x` line,
+including the ServiceNow authentication methods work (Basic, OAuth
+password / client-credentials / JWT-bearer, inbound REST API key, optional mutual
+TLS) and the shared encrypted credential store.
+
+### Security
+
+- Stronger at-rest credential key (AR2 / D5): the credential-store encryption key
+  is resolved from `SYNCRONA_STORE_KEY` (explicit 32-byte key for CI / secrets
+  managers) or, **by default**, a random 256-bit key held in the OS keychain
+  (via the optional `@napi-rs/keyring`; opt out with `SYNCRONA_USE_KEYCHAIN=0`),
+  falling back to the legacy machine-derived key so existing credential files
+  keep decrypting.
+- Relicensed the project from MIT to **GPL-3.0-or-later** (SPDX headers across
+  the source tree; `LICENSE` and package `license` fields updated).
+- Custom CA bundle support in the shared transport (`SYNCRONA_CA_BUNDLE`, and
+  `NODE_EXTRA_CA_CERTS`) for corporate TLS-inspection / private-CA setups.
+- Updated production dependencies to clear all `npm audit` findings (13
+  vulnerabilities, 7 high — including five axios advisories such as SSRF and
+  credential leakage; axios 1.5.1 → 1.17.0, webpack bumped). `npm audit
+  --omit=dev` now reports 0 vulnerabilities.
+
+### Added
+
+- **Jira issue context** (`@syncrona/jira`): new `jira`, `jira-login` and
+  `jira-logout` CLI commands and a `jira_get_issue` MCP tool that fetch
+  read-only issue context (summary, description, status, comments, links, …).
+  Supports Jira Cloud (email + API token) and Server / Data Center (PAT),
+  auto-detecting the deployment from the base URL; the `jira` command resolves
+  the issue key from its argument or the current git branch name. Credentials
+  are stored in the encrypted global CredentialStore, with named profiles.
+- OAuth 2.0 client-credentials auth for the CLI (G1): set `SN_OAUTH_CLIENT_ID` /
+  `SN_OAUTH_CLIENT_SECRET` (with `SN_USER` / `SN_PASSWORD`, optional per-profile
+  `_<PROFILE>` suffixes) and the CLI exchanges them for a Bearer token at
+  `oauth_token.do`, refreshing on expiry/401; without them it stays on Basic.
+- `repair` command: reconciles the manifest with local files — reports (default)
+  or re-downloads files the manifest expects but that are missing locally
+  (`--apply`), and optionally prunes orphan files no record claims (`--prune`).
+- `config add-plugin`: lists the first-party build plugins (with install status)
+  and prints a paste-ready `rules` snippet for `sync.config.js`.
+- Resumable downloads (G3): `download` / `refresh` checkpoint progress and resume
+  the tables not yet fetched instead of restarting after an interruption.
+- Flat project layout support: projects can keep source directly under the
+  project root (flat) in addition to the `src/` layout.
+  `npm run changeset` / `version-packages` / `release`; all `@syncrona/*`
+  packages version in lockstep.
+- Machine-enforced module boundaries (G10): dependency-cruiser runs in
+  `npm run lint` (`lint:boundaries`) — no circular dependencies, and the shared
+  foundation packages may not import the core/mcp-server consumers.
+- Registry-driven modular architecture: CLI commands are declared in
+  `packages/core/src/cliCommands.ts` (one `CliCommandModule` entry per
+  command) and MCP tool families in `packages/mcp-server/src/toolModules.ts`
+  (`TOOL_HANDLER_MODULES`); the orchestrators are generic interpreters. See
+  `docs/ARCHITECTURE.md` §5 for the add/remove module contract.
+- Architecture and product-state documentation with mermaid diagrams
+  (`docs/ARCHITECTURE.md`, `docs/PRODUCT_STATE.md`) and `CONTRIBUTING.md`.
+- Zod argument schemas for every mutating MCP tool (7 previously
+  unvalidated, including `sync_push` and `sn_execute_background_script`).
+- Table API pagination (`sysparm_offset`) in the manifest builder — tables
+  with more than 500 records are now fully enumerated; `sys_idIN` queries
+  are chunked to avoid URL-length failures.
+- Client-side rate limiting in the MCP server (shared 20 req/s policy from
+  `@syncrona/sn-transport`, matching the CLI's axios-rate-limit).
+
+### Fixed
+
+- Push safety: the resume checkpoint is written only after the confirmation
+  prompts (a declined prompt no longer fakes an "unfinished push"); the
+  collaboration lock is acquired atomically (`wx` flag), anchored to the
+  project root, and always released — `process.exit` no longer skips cleanup.
+- `--scopeSwap`/`--updateSet` no longer crash for users without an existing
+  user-preference record (the create path was unreachable), and the username
+  is resolved through the credential chain instead of raw `SN_USER`.
+- Error honesty: a present-but-broken `sync.config.js` is a hard error
+  instead of a silent fallback to defaults; `refresh` reports real failures;
+  `scopeCheck` no longer masks command errors as scope problems; `build`
+  logs the failure reason; unknown CLI commands fail (`yargs.strict()`).
+- Push retries follow the shared retry policy (no more retrying 401/403/404
+  toward account lockout); a 404 reports "Could not find … on the server".
+- Manifest refresh treats network failures as errors rather than "no
+  records" — a partial or empty manifest can no longer overwrite a good one.
+- MCP: the scoped-prefix cache is set only on 2xx responses (a 5xx could
+  poison the prefix order); `checkSyncronaCapabilities` resolves the scope
+  via the lightweight current-scope endpoint and no longer probes bogus
+  `/api/<scope>/…` namespaces; MCP credential precedence now matches the CLI
+  (project-local sources beat the global store) and resolved secrets are
+  cached for 30 s (removes a blocking scrypt from every request); server
+  startup connects stdio before the background scope auto-pull.
+- Watcher pushes are serialized (no concurrent pushes on rapid changes);
+  dev-mode interval refreshes no longer overlap; SIGINT cleans up the
+  watcher and refresh timer.
+- Git diff target handling uses `execFile` (paths with spaces, no shell
+  injection) and follows renames/copies to the new path.
+- Correctly detect file extensions for records whose names contain dots (e.g. `my.Widget.js`) by using `path.extname` instead of splitting on the first dot. This fixes wrong field/extension mapping during build and push.
+- `dev` mode no longer crashes when `refreshInterval` is set to `0` (disable polling); `getRefresh()` now treats `0` as a valid value.
+- `SNFileExists` now escapes and anchors the record-name regex, preventing false matches and regex errors for names containing special characters.
+
+### Changed
+
+- CI now runs on a macOS + Linux matrix and fails on high/critical `npm
+  audit` findings in production dependencies; the mcp coverage gate also
+  enforces a 70% branch threshold; `sync.config.js` option types
+  are validated on load (unknown keys warn, wrong types are errors); CLI
+  registry handlers are type-checked via `typedHandler<TArgs>`.
+- Core is now part of the lint gate (`npm run lint` covers core + mcp-server
+  with `--max-warnings=0`); the core coverage gate measures the whole source
+  tree with ratchet thresholds instead of a single file.
+- Workspace package metadata normalized (`engines`, `files`, `types` fields);
+  per-package lockfiles removed in favor of the root lockfile.
+- Removed dead, duplicated file-path parsing helpers (`parseFileNameParams`, `getParsedFilesPayload`) so `getFileContextFromPath` is the single source of truth.
+- Minor cleanups: removed redundant `try/catch` rethrows and fixed a user-facing typo ("Recieved" → "Received").
+
+## [0.4.1] - 2020-07-06
+
+### Added
+
+- updated deps version with security vulnerabilities
+- in dev mode, retries are disabledd from [@nrdurkin]
+
+## [0.4.0] - 2020-06-19
+
+### Added
+
+- Installed Jest and added preliminary tests from [@tyler-ed]
+- Added diff option to build and deploy commands from [@nrdurkin]
+- Added documentation for new configuration options and commands from [@nrdurkin]
+
+### Changed
+
+- Dev mode will periodically refresh the manifest from [@nrdurkin]
+
+## [0.3.10-alpha.0] - 2020-06-01
+
+### Added
+
+- Retry sending files when network error occurs while pushing to server from [@nrdurkin].
+- Added status command to show current connection information from [@nrdurkin]
+- Added "build" command to create static deployable bundles from [@nrdurkin].
+- Added "deploy" command to deploy static bundles to servers from [@nrdurkin].
+
+### Changed
+
+- "sync push" shows record count before confirmation from [@nrdurkin].
+- Validate credentials during init from [@nrdurkin].
+- refactored config loading during startup to be more straight forward and performent from [@nrdurkin].
+
+### Removed
+
+- nothing removed
+
+## [0.3.6] - 2020-02-12
+
+### Added
+
+- created by [@bbarber9](https://github.com/bbarber9).
+
+### Changed
+
+- no changes
+
+### Removed
+
+- nothing removed
+
+[Unreleased]: https://github.com/IvanBBaev/syncrona/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/IvanBBaev/syncrona/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/IvanBBaev/syncrona/compare/v0.9.4...v1.0.0
+[0.9.4]: https://github.com/IvanBBaev/syncrona/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/IvanBBaev/syncrona/compare/v0.9.1...v0.9.3
+[0.9.1]: https://github.com/IvanBBaev/syncrona/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.9.0
+[0.4.1]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.1
+[0.4.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.4.0
+[0.3.6]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.3.6
+[0.3.10-alpha.0]: https://github.com/IvanBBaev/syncrona/releases/tag/v0.3.10-alpha.0
+[@nrdurkin]: https://github.com/nrdurkin
+[@tyler-ed]: https://github.com/tyler-ed

@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<record_update table="sys_alias_templates">
+  <sys_alias_templates action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6c77937bfb1d466790419fbcf3226a18</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_alias_templates_6c77937bfb1d466790419fbcf3226a18</sys_update_name>
+    <default_data_template>{
+  "connection": {
+    "table": "http_connection",
+    "name": "Full Connection",
+    "use_mid": true,
+    "connection_url": "https://api.example.com",
+    "host": "api.example.com",
+    "customField": "kept",
+    "nested": {
+      "connection_url": "converted",
+      "use_mid": false
+    }
+  },
+  "credential": {
+    "table": "basic_auth_credentials",
+    "name": "Full Credential",
+    "userName": "admin"
+  },
+  "additional": {
+    "list": [
+      1,
+      null,
+      "two",
+      true
+    ],
+    "emptyObject": {},
+    "emptyArray": []
+  }
+}</default_data_template>
+    <dynamic_data_schema>{
+  "connection_fields": [
+    {
+      "name": "connectionUrl",
+      "label": "Base URL",
+      "type": "text",
+      "mandatory": true,
+      "hint": "https://…",
+      "defaultValue": "https://api.example.com"
+    },
+    {
+      "name": "port",
+      "type": "number",
+      "defaultValue": 443
+    },
+    {
+      "name": "useMid",
+      "type": "checkbox",
+      "defaultValue": false
+    },
+    {
+      "name": "auth",
+      "label": "Auth",
+      "type": "radio",
+      "groups": [
+        {
+          "name": "basic",
+          "label": "Basic",
+          "default_group": true,
+          "fields": [
+            {
+              "name": "userName",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "name": "key",
+          "label": "Key",
+          "fields": [
+            {
+              "name": "apiKey",
+              "type": "password"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "region",
+      "type": "choice",
+      "choices": [
+        "eu",
+        {
+          "name": "us",
+          "label": "United States"
+        }
+      ]
+    },
+    {
+      "name": "owner",
+      "type": "reference",
+      "table": "sys_user",
+      "query": "active=true"
+    }
+  ],
+  "credential_fields": [
+    {
+      "name": "password",
+      "label": "Password",
+      "type": "password",
+      "mandatory": true
+    }
+  ],
+  "additional_fields": [
+    {
+      "name": "notes",
+      "type": "text"
+    }
+  ]
+}</dynamic_data_schema>
+    <name>Full &lt;Template&gt; &amp; "quotes"</name>
+    <on_edit_script><![CDATA[(function execute(aliasId, connectionSysId, jsonDefaultData, jsonDynamicData) {
+    gs.info('on edit <' + aliasId + '> & "' + connectionSysId + '"');
+})(aliasId, connectionSysId, jsonDefaultData, jsonDynamicData);
+]]></on_edit_script>
+    <post_process_script><![CDATA[gs.info("done & <ok>");
+]]></post_process_script>
+    <pre_edit_script><![CDATA[return [];]]></pre_edit_script>
+    <sys_policy>read</sys_policy>
+    <test_action>e6813144e06b4a16bcd7b914b394dd42</test_action>
+  </sys_alias_templates>
+</record_update>

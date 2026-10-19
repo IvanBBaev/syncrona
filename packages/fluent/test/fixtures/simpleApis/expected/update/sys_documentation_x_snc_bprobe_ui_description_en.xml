@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_documentation">
+  <sys_documentation action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>5778f20a474d41109ef331ec51ec6fd2</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_documentation_x_snc_bprobe_ui_description_en</sys_update_name>
+    <element>description</element>
+    <help/>
+    <hint/>
+    <label>Description</label>
+    <language>en</language>
+    <name>x_snc_bprobe_ui</name>
+    <plural>Descriptions</plural>
+    <url/>
+    <url_target/>
+  </sys_documentation>
+</record_update>

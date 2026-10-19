@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<record_update table="sp_widget">
+  <sp_widget action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>12c15fec720f4b69849ad484f3d52d9b</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_widget_12c15fec720f4b69849ad484f3d52d9b</sys_update_name>
+    <category>kb</category>
+    <client_script>api.controller = function ($scope) {
+  var c = this;
+};</client_script>
+    <controller_as>c</controller_as>
+    <css>.a { color: red; }</css>
+    <data_table>incident</data_table>
+    <demo_data>{"data":{"x":1,"list":["a"]}}</demo_data>
+    <description>A widget</description>
+    <docs>f8af18a5e6c71a3702c4f2038b43cf62</docs>
+    <field_list>number,short_description</field_list>
+    <has_preview>true</has_preview>
+    <id>full-widget_1</id>
+    <internal>true</internal>
+    <link>function link() {}</link>
+    <name>Full Widget</name>
+    <option_schema>[{"name":"title","label":"Title","section":"Presentation","type":"string","default_value":"Hi","hint":"h"},{"name":"tbl","label":"Table","section":"Data","type":"field_list","table":"incident"},{"name":"pick","label":"Pick","section":"Behavior","type":"choice","choices":[{"label":"A","value":"a"}]},{"name":"ref","label":"Ref","section":"Data","type":"reference","ed":{"reference":"sys_user"},"display_value_list":["x"]}]</option_schema>
+    <public>true</public>
+    <roles>itil,x_snc_bprobe.w_user,itil,admin</roles>
+    <script>(function () { data.x = 1; })();</script>
+    <servicenow>false</servicenow>
+    <template>&lt;div&gt;{{c.data.x}}&lt;/div&gt;</template>
+  </sp_widget>
+</record_update>

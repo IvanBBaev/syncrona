@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_applicability">
+  <sys_ux_applicability action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>e1f8d68e6737402fa2f66d31920b838c</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_applicability_e1f8d68e6737402fa2f66d31920b838c</sys_update_name>
+    <active>true</active>
+    <description/>
+    <name>Workspace Audience</name>
+    <role_names/>
+    <roles>fdceda502b6841d5a3d7d4c283936964</roles>
+  </sys_ux_applicability>
+</record_update>

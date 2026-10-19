@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_list_category">
+  <sys_ux_list_category action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>9c22f8428d6548f4bbc2eabe6a3f7a24</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_list_category_9c22f8428d6548f4bbc2eabe6a3f7a24</sys_update_name>
+    <active>false</active>
+    <configuration>3c3cefc6d7644b74b124d8428c10f138</configuration>
+    <description>All the lists</description>
+    <order>20</order>
+    <title>Lists</title>
+  </sys_ux_list_category>
+</record_update>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_dictionary">
+  <sys_dictionary action="INSERT_OR_UPDATE" element="" table="x_snc_bprobe_dp" apply_defaults="true">
+    <sys_id>85a19861e3c7499cad05e4c872b903dc</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_dictionary_x_snc_bprobe_dp_null</sys_update_name>
+    <active>true</active>
+    <attributes/>
+    <audit>false</audit>
+    <element/>
+    <internal_type>collection</internal_type>
+    <name>x_snc_bprobe_dp</name>
+    <read_only>false</read_only>
+    <sizeclass/>
+    <text_index>false</text_index>
+  </sys_dictionary>
+</record_update>

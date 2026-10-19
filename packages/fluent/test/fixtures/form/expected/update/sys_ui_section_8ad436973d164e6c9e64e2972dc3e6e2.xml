@@ -1,0 +1,129 @@
+<?xml version="1.0"?>
+<record_update>
+  <sys_ui_section caption="Overview" section_id="8ad436973d164e6c9e64e2972dc3e6e2" sys_domain="global" table="x_snc_bprobe_task" view="x_snc_bprobe_ops">
+    <sys_ui_annotation action="INSERT_OR_UPDATE" apply_defaults="true">
+      <is_plain_text>false</is_plain_text>
+      <name/>
+      <sys_id>7f063b25438f4c79b45aa1988d0eb26c</sys_id>
+      <text>Review &lt;b&gt;all&lt;/b&gt; fields &amp; save.</text>
+      <type>823f88a80f930000b12e6903cfe01209</type>
+    </sys_ui_annotation>
+    <sys_ui_annotation action="INSERT_OR_UPDATE" apply_defaults="true">
+      <is_plain_text>true</is_plain_text>
+      <name/>
+      <sys_id>3c20e947a5fd4e4cb6355f796b68027a</sys_id>
+      <text>Plain</text>
+      <type/>
+    </sys_ui_annotation>
+    <sys_ui_annotation action="INSERT_OR_UPDATE" apply_defaults="true">
+      <is_plain_text>true</is_plain_text>
+      <name/>
+      <sys_id>0b8b8e7fe7f548c4b3bd611d9268c8e2</sys_id>
+      <text>Keyed</text>
+      <type>19756e5ec3313000bac1addbdfba8f18</type>
+    </sys_ui_annotation>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>.begin_split</element>
+      <position>0</position>
+      <sys_id>85766f9c33c140f3b29ab861cc0a92e4</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>.begin_split</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>name</element>
+      <position>1</position>
+      <sys_id>0652883d642f42d2a0d4a21767235e23</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>category</element>
+      <position>2</position>
+      <sys_id>f44bc18376084c89976e6469fdc709c4</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>.split</element>
+      <position>3</position>
+      <sys_id>12723a9dec49417fa405332596e78198</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>.split</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>priority</element>
+      <position>4</position>
+      <sys_id>f36cb8d764e64760b4a949ed7afeb3dc</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>.end_split</element>
+      <position>5</position>
+      <sys_id>6257678816d846aea18384a10d409e2a</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>.end_split</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>7f063b25438f4c79b45aa1988d0eb26c</element>
+      <position>6</position>
+      <sys_id>6701a52599c845cfab730d8bf2750620</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>annotation</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>3c20e947a5fd4e4cb6355f796b68027a</element>
+      <position>7</position>
+      <sys_id>869b2e3200be43bd933ae194d7348818</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>annotation</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>0b8b8e7fe7f548c4b3bd611d9268c8e2</element>
+      <position>8</position>
+      <sys_id>51a3bc8f9bda4ff3a9b164478b594101</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type>annotation</type>
+    </sys_ui_element>
+    <sys_ui_element action="INSERT_OR_UPDATE" apply_defaults="true">
+      <element>description</element>
+      <position>9</position>
+      <sys_id>171ba8bb13794f39940f0e6e739d3071</sys_id>
+      <sys_ui_formatter/>
+      <sys_ui_section caption="Overview" display_value="Overview" name="x_snc_bprobe_task" sys_domain="global" view="672ee96223d6408bb98d39d3c1c7b2f3">8ad436973d164e6c9e64e2972dc3e6e2</sys_ui_section>
+      <sys_user/>
+      <type/>
+    </sys_ui_element>
+    <sys_ui_section action="INSERT_OR_UPDATE" apply_defaults="true">
+      <caption>Overview</caption>
+      <header>true</header>
+      <name>x_snc_bprobe_task</name>
+      <roles/>
+      <sys_domain>global</sys_domain>
+      <sys_id>8ad436973d164e6c9e64e2972dc3e6e2</sys_id>
+      <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+      <sys_user/>
+      <title>true</title>
+      <view_name/>
+      <view name="x_snc_bprobe_ops" display_value="Operations">672ee96223d6408bb98d39d3c1c7b2f3</view>
+    </sys_ui_section>
+  </sys_ui_section>
+</record_update>

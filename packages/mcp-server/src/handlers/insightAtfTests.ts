@@ -1,0 +1,442 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { escapeQueryValue, wrapUntrustedData } from "../runtimeUtils";
+import {
+  describeNonTablePayload,
+  runBackgroundScript,
+  snRequest,
+  toTableResultRows,
+} from "../servicenowCore";
+
+import type { ToolResponse } from "../toolResponse";
+import type { InsightToolContext } from "./insightShared";
+import { errorResponse, isoToServiceNowDateTime, textResponse } from "./insightShared";
+
+// --- E1: sync_run_atf_tests ----------------------------------------------
+
+const ATF_RUNNING_STATES = new Set(["", "pending", "running", "queued", "waiting"]);
+
+export function buildAtfRunScript(opts: {
+  scope: string;
+  suiteIds: string[];
+  testIds: string[];
+}): string {
+  const payload = JSON.stringify({
+    scope: opts.scope,
+    suiteIds: opts.suiteIds,
+    testIds: opts.testIds,
+  });
+  return [
+    "(function runSyncronaAtf() {",
+    `  var request = ${payload};`,
+    "  var triggered = { suites: [], tests: [], errors: [] };",
+    "  function runSuite(id) {",
+    "    try {",
+    "      var runner = new sn_atf.UserTestRunner();",
+    "      if (typeof runner.runSuite !== 'function') { triggered.errors.push('suite ' + id + ': runSuite is unavailable'); return; }",
+    "      runner.runSuite(id);",
+    "      triggered.suites.push(id);",
+    "    } catch (e) { triggered.errors.push('suite ' + id + ': ' + e); }",
+    "  }",
+    "  function runTest(id) {",
+    "    try {",
+    "      var runner = new sn_atf.UserTestRunner();",
+    "      if (typeof runner.runTest !== 'function') { triggered.errors.push('test ' + id + ': runTest is unavailable'); return; }",
+    "      runner.runTest(id);",
+    "      triggered.tests.push(id);",
+    "    } catch (e) { triggered.errors.push('test ' + id + ': ' + e); }",
+    "  }",
+    "  request.suiteIds.forEach(runSuite);",
+    "  request.testIds.forEach(runTest);",
+    "  if (request.suiteIds.length === 0 && request.testIds.length === 0) {",
+    "    var gr = new GlideRecord('sys_atf_test_suite');",
+    "    gr.addQuery('sys_scope.scope', request.scope);",
+    "    gr.addActiveQuery();",
+    "    gr.query();",
+    "    while (gr.next()) { runSuite(gr.getUniqueValue()); }",
+    "  }",
+    "  gs.print('SYNCRONA_ATF_TRIGGERED:' + JSON.stringify(triggered));",
+    "})();",
+  ].join("\n");
+}
+
+const ATF_TRIGGER_MARKER = "SYNCRONA_ATF_TRIGGERED:";
+
+// runBackgroundScript returns the parsed sys.scripts.do output in
+// result.output; a custom endpointPath may answer with plain text instead, so
+// the body text is the fallback.
+export function atfTriggerOutput(response: { text?: unknown; data?: unknown }): string {
+  const data = response.data as { result?: { output?: unknown } } | null | undefined;
+  if (data && typeof data === "object" && typeof data.result?.output === "string") {
+    return data.result.output;
+  }
+  return String(response.text ?? "");
+}
+
+export function parseAtfTrigger(text: string): Record<string, unknown> {
+  const marker = ATF_TRIGGER_MARKER;
+  const index = typeof text === "string" ? text.indexOf(marker) : -1;
+  if (index < 0) {
+    return { suites: [], tests: [], errors: [] };
+  }
+  const tail = text.slice(index + marker.length).trim();
+  const end = tail.indexOf("\n");
+  const jsonText = end >= 0 ? tail.slice(0, end) : tail;
+  try {
+    return JSON.parse(jsonText) as Record<string, unknown>;
+  } catch (_) {
+    return { suites: [], tests: [], errors: [] };
+  }
+}
+
+export function summarizeAtfResults(
+  rows: Record<string, unknown>[]
+): {
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+  results: Array<Record<string, unknown>>;
+} {
+  let passed = 0;
+  let failed = 0;
+  // A result still queued or running has not failed; counting it as failed made
+  // a run cut short by the budget read as a failing one.
+  let pending = 0;
+  const results = rows.map((row) => {
+    const status = String(row.status ?? "").toLowerCase();
+    const ok = status === "success" || status === "passed";
+    if (ok) {
+      passed += 1;
+    } else if (ATF_RUNNING_STATES.has(status)) {
+      pending += 1;
+    } else {
+      failed += 1;
+    }
+    return {
+      sys_id: String(row.sys_id ?? ""),
+      name: String(row.name ?? row.test ?? row.test_suite ?? ""),
+      status: status || "unknown",
+      // ATF step output is instance-authored free text — fence as untrusted.
+      output: wrapUntrustedData(row.output, "servicenow"),
+      duration: String(row.duration ?? row.run_time ?? ""),
+    };
+  });
+  return { total: rows.length, passed, failed, pending, results };
+}
+
+// `expectedCount` is the number of suites or tests the trigger started: each
+// writes its own result row, and one that has not written it yet is still
+// running even when every row already there has finished.
+function isAtfTerminal(rows: Record<string, unknown>[], expectedCount = 0): boolean {
+  if (rows.length === 0 || rows.length < expectedCount) {
+    return false;
+  }
+  return rows.every((row) => !ATF_RUNNING_STATES.has(String(row.status ?? "").toLowerCase()));
+}
+
+function snSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// REV-212: `timeoutMs` is the budget for the WHOLE poll, not for each request in
+// it. The old loop spent it per attempt and never looked at the clock: 40 attempts
+// × (a 30 s request + a 1.5 s sleep) is a tool call that can block for 20 minutes
+// on a `timeoutMs` of 30 000 — past every client-side deadline, so the caller had
+// already given up while this kept issuing requests against the instance. One
+// deadline, taken once, is the fix; every attempt is then charged against what is
+// actually left.
+const ATF_POLL_INTERVAL_MS = 1500;
+const ATF_MAX_POLL_ATTEMPTS = 40;
+const ATF_MIN_ATTEMPT_TIMEOUT_MS = 1000;
+// One read returns at most this many result rows; one more is requested so a
+// run with more results than this is reported as truncated instead of being
+// summarized — and declared complete — from the first page alone.
+const ATF_MAX_RESULT_ROWS = 200;
+
+// Exported for the budget test, alongside buildAtfRunScript/parseAtfTrigger/
+// summarizeAtfResults: the alternative is asserting on wall-clock through
+// handleRunAtfTests, which also has to satisfy the trigger request first.
+export async function pollAtfResults(
+  table: string,
+  query: string,
+  fields: string,
+  timeoutMs: number,
+  expectedCount = 0
+): Promise<{
+  status: number;
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+  badPayload: string | null;
+}> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  let lastStatus = 0;
+  let lastRows: Record<string, unknown>[] = [];
+  let truncated = false;
+
+  for (let attempt = 0; attempt < ATF_MAX_POLL_ATTEMPTS; attempt += 1) {
+    const remaining = deadline - Date.now();
+    // Gated on `attempt > 0` so the first request is always sent. A caller with an
+    // already-exhausted budget (a tiny or zero `timeoutMs`, or a preceding step
+    // that consumed it) must still get a real status and rows back — returning
+    // `status: 0` with no rows would be reported to the model as "the run produced
+    // no results", which is a different claim from "it timed out".
+    if (attempt > 0 && remaining <= 0) {
+      break;
+    }
+
+    const params = new URLSearchParams();
+    params.set("sysparm_query", query);
+    params.set("sysparm_limit", String(ATF_MAX_RESULT_ROWS + 1));
+    params.set("sysparm_fields", fields);
+
+    const response = await snRequest(
+      "GET",
+      `/api/now/table/${table}?${params.toString()}`,
+      undefined,
+      // Never longer than the budget left, and never shorter than the floor: a
+      // sub-second timeout aborts before an ordinary Table API round trip can
+      // complete, which would turn the last attempt of every poll into a
+      // guaranteed transport error rather than a result.
+      Math.max(ATF_MIN_ATTEMPT_TIMEOUT_MS, Math.min(timeoutMs, remaining))
+    );
+    lastStatus = response.status;
+    // A 2xx login or maintenance page reads as zero rows, which would keep the
+    // poll waiting out the budget and end as "no results yet"; polling again
+    // will not turn it into a Table API answer.
+    if (response.status >= 200 && response.status <= 299) {
+      const badPayload = describeNonTablePayload(response.status, response.data);
+      if (badPayload) {
+        return { status: lastStatus, rows: [], truncated: false, badPayload };
+      }
+    }
+    const allRows = toTableResultRows(response.data);
+    truncated = allRows.length > ATF_MAX_RESULT_ROWS;
+    lastRows = truncated ? allRows.slice(0, ATF_MAX_RESULT_ROWS) : allRows;
+
+    // With `truncated`, terminal visible rows say nothing about the rows past the
+    // limit, and polling again cannot reveal them, so the poll ends either way;
+    // the caller must not read it as complete.
+    if (isAtfTerminal(lastRows, expectedCount)) {
+      return { status: lastStatus, rows: lastRows, truncated, badPayload: null };
+    }
+
+    // No wait is owed after the final attempt: the loop is about to end either
+    // way, so sleeping here only withholds the answer the caller already has.
+    if (attempt + 1 >= ATF_MAX_POLL_ATTEMPTS) {
+      break;
+    }
+
+    // Sleeping the full interval past the deadline is the same overrun in
+    // miniature, so the wait is clamped to what is left; a non-positive remainder
+    // ends the poll instead.
+    const beforeSleep = deadline - Date.now();
+    if (beforeSleep <= 0) {
+      break;
+    }
+    await snSleep(Math.min(ATF_POLL_INTERVAL_MS, beforeSleep));
+  }
+
+  return { status: lastStatus, rows: lastRows, truncated, badPayload: null };
+}
+
+export async function handleRunAtfTests(
+  args: Record<string, unknown>,
+  context: InsightToolContext
+): Promise<ToolResponse> {
+  const { timeoutMs } = context;
+  const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+  if (!scope) {
+    return errorResponse("Missing required field: scope");
+  }
+
+  const suiteId = typeof args.suiteId === "string" ? args.suiteId.trim() : "";
+  const testId = typeof args.testId === "string" ? args.testId.trim() : "";
+  const runAll = args.runAll === true;
+
+  if (!suiteId && !testId && !runAll) {
+    return errorResponse("Provide suiteId, testId, or set runAll=true.");
+  }
+
+  // A test's result lands in sys_atf_test_result and a suite's in
+  // sys_atf_test_suite_result, and one run is polled on one table: with a suite
+  // the test's result was never read, so its count kept the poll waiting out the
+  // budget, and with runAll the script started only the test yet the poll read
+  // every suite result of the scope as this run's.
+  if (testId && (suiteId || runAll)) {
+    return errorResponse("testId cannot be combined with suiteId or runAll=true; run the test on its own.");
+  }
+
+  // Triggering ATF runs a background script that mutates the instance, so gate
+  // it behind the same confirmDestructive / dryRun / audit contract as the
+  // other mutating tools.
+  if (args.confirmDestructive !== true) {
+    return errorResponse(
+      "Running ATF tests executes a background script on the instance. Re-run with confirmDestructive=true."
+    );
+  }
+
+  if (context.dryRun) {
+    return context.makeDryRunAuditResponse("sync_run_atf_tests", args, {
+      scope,
+      suiteId: suiteId || null,
+      testId: testId || null,
+      runAll,
+    });
+  }
+
+  const startedAtIso = isoToServiceNowDateTime(new Date().toISOString());
+  const script = buildAtfRunScript({
+    scope,
+    suiteIds: suiteId ? [suiteId] : [],
+    testIds: testId ? [testId] : [],
+  });
+
+  const triggerResponse = await runBackgroundScript(script, timeoutMs);
+  const triggerOutput = atfTriggerOutput(triggerResponse);
+  const trigger = parseAtfTrigger(triggerOutput);
+
+  // A rejected trigger (401, 403, 5xx) started nothing, so polling would only
+  // wait out the budget and report "no results yet" as a non-error.
+  if (triggerResponse.status < 200 || triggerResponse.status > 299) {
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: triggerResponse.status, scope, triggered: false },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: triggerResponse.status,
+        scope,
+        error: `The instance rejected the ATF trigger script (HTTP ${triggerResponse.status}); no tests were started.`,
+        response: triggerResponse.data,
+      },
+      true
+    );
+  }
+
+  // A run that started nothing has no result to wait for, so polling would only
+  // spend the budget and end in `completed: false`. It is an error, not a pass:
+  // an empty or inactive scope, a script whose output was lost (a 200 login page
+  // carries no marker), and a suite or test that failed to start must not read as
+  // a test run still in progress.
+  const triggerErrors = Array.isArray(trigger.errors) ? trigger.errors.map(String) : [];
+  const triggeredCount =
+    (Array.isArray(trigger.suites) ? trigger.suites.length : 0) +
+    (Array.isArray(trigger.tests) ? trigger.tests.length : 0);
+  const useTest = Boolean(testId) && !suiteId && !runAll;
+  const mode = useTest ? "test" : runAll ? "all" : "suite";
+  if (triggeredCount === 0) {
+    const markerSeen = triggerOutput.includes(ATF_TRIGGER_MARKER);
+    let error: string;
+    if (!markerSeen) {
+      error =
+        "The ATF trigger script's output carried no result marker (the instance may have " +
+        "answered with a login page, or the script did not run); no tests are known to have started.";
+    } else if (triggerErrors.length > 0) {
+      error = `No ATF run was started: ${triggerErrors.join("; ")}`;
+    } else {
+      error = `No ATF suite was started for scope ${scope}: the scope has no active test suite, or none of them could be started.`;
+    }
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: triggerResponse.status, scope, mode, triggered: false },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: triggerResponse.status,
+        scope,
+        mode,
+        triggered: trigger,
+        completed: false,
+        error,
+      },
+      true
+    );
+  }
+
+  const table = useTest ? "sys_atf_test_result" : "sys_atf_test_suite_result";
+  const filterParts: string[] = [];
+  if (testId && useTest) {
+    filterParts.push(`test=${escapeQueryValue(testId)}`);
+  } else if (suiteId) {
+    filterParts.push(`test_suite=${escapeQueryValue(suiteId)}`);
+  } else {
+    filterParts.push(`test_suite.sys_scope.scope=${escapeQueryValue(scope)}`);
+  }
+  if (startedAtIso) {
+    filterParts.push(`sys_created_on>=${startedAtIso}`);
+  }
+  filterParts.push("ORDERBYDESCsys_created_on");
+
+  const poll = await pollAtfResults(
+    table,
+    filterParts.join("^"),
+    "sys_id,status,output,duration,run_time,test,test_suite",
+    timeoutMs,
+    triggeredCount
+  );
+
+  if (poll.badPayload) {
+    context.auditMutatingTool(
+      "sync_run_atf_tests",
+      args,
+      { status: poll.status, scope, mode, completed: false, triggerErrors: triggerErrors.length },
+      Date.now() - context.startedAt
+    );
+    return textResponse(
+      {
+        status: poll.status,
+        scope,
+        mode,
+        suiteId: suiteId || null,
+        testId: testId || null,
+        triggered: trigger,
+        completed: false,
+        error: `ATF results could not be read: ${poll.badPayload}. The run was started; check its results on the instance.`,
+      },
+      true
+    );
+  }
+
+  const summary = summarizeAtfResults(poll.rows);
+  // Rows past the read limit were never seen, so they may still be running.
+  const completed = !poll.truncated && isAtfTerminal(poll.rows, triggeredCount);
+
+  context.auditMutatingTool(
+    "sync_run_atf_tests",
+    args,
+    {
+      status: poll.status,
+      scope,
+      mode,
+      completed,
+      truncated: poll.truncated,
+      triggerErrors: triggerErrors.length,
+      total: summary.total,
+      passed: summary.passed,
+      failed: summary.failed,
+      pending: summary.pending,
+    },
+    Date.now() - context.startedAt
+  );
+
+  return textResponse(
+    {
+      status: poll.status,
+      scope,
+      mode,
+      suiteId: suiteId || null,
+      testId: testId || null,
+      triggered: trigger,
+      completed,
+      truncated: poll.truncated,
+      summary,
+    },
+    // A suite that failed to start is a failure of the run even when the ones
+    // that did start passed.
+    poll.status < 200 || poll.status > 299 || summary.failed > 0 || triggerErrors.length > 0
+  );
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<record_update table="scan_table_check">
+  <scan_table_check action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2608989e7dcb40689f469b7762327e38</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>scan_table_check_2608989e7dcb40689f469b7762327e38</sys_update_name>
+    <active>false</active>
+    <advanced>true</advanced>
+    <category>performance</category>
+    <conditions/>
+    <description>Finds big files</description>
+    <documentation_url>https://example.com/doc</documentation_url>
+    <finding_type>scan_finding</finding_type>
+    <name>Large &lt;Attachments&gt; &amp; more</name>
+    <priority>3</priority>
+    <resolution_details>Delete them</resolution_details>
+    <run_condition>active=true</run_condition>
+    <score_max>50</score_max>
+    <score_min>5</score_min>
+    <score_scale>2</score_scale>
+    <script><![CDATA[;(function check(current) {
+    if (current.size_bytes > 10485760) {
+        finding.increment()
+    }
+})(current)
+]]></script>
+    <short_description>Oversized attachments</short_description>
+    <table>sys_attachment</table>
+    <use_manifest>true</use_manifest>
+  </scan_table_check>
+</record_update>

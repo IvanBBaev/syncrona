@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<record_update table="sys_rest_message_fn">
+  <sys_rest_message_fn action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>52bb4a0f849e462b94dbd273d9f3bd63</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_rest_message_fn_52bb4a0f849e462b94dbd273d9f3bd63</sys_update_name>
+    <authentication_type>inherit_from_parent</authentication_type>
+    <basic_auth_profile/>
+    <content/>
+    <function_name>getContact</function_name>
+    <http_method>get</http_method>
+    <lock>false</lock>
+    <oauth2_profile/>
+    <rest_endpoint/>
+    <rest_message>7aa73d18d57b4673a5b72c30a34dc552</rest_message>
+    <use_mid_server/>
+  </sys_rest_message_fn>
+</record_update>

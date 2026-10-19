@@ -1,0 +1,21 @@
+[now-sdk] WARN: src/fluent/override.now.ts:6:29 - warning TS97: $override: 'grantable' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:6:60 - warning TS11: $override: 'description' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:17:16 - warning TS9: $override: 'order' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:35:28 - warning TS11: $override: 'sys_name' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:35:55 - warning TS11: $override: 'sys_policy' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:35:121 - warning TS11: $override: 'caller_access' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:53:30 - warning TS11: $override: 'applies_to' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:53:46 - warning TS11: $override: 'condition' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:53:74 - warning TS11: $override: 'description' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:53:127 - warning TS112: $override: 'advanced' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:60:79 - warning TS11: $override: 'read_roles' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:60:101 - warning TS11: $override: 'write_roles' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:60:122 - warning TS112: $override: 'is_private' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:46 - warning TS11: $override: 'comments' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:62 - warning TS11: $override: 'condition' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:73 - warning TS11: $override: 'hint' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:102 - warning TS11: $override: 'script' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:122 - warning TS11: $override: 'sys_overrides' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:67:165 - warning TS9: $override: 'order' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] WARN: src/fluent/override.now.ts:74:84 - warning TS11: $override: 'attributes' is already set by the plugin and will be ignored — use the corresponding API property instead.
+[now-sdk] Build completed successfully

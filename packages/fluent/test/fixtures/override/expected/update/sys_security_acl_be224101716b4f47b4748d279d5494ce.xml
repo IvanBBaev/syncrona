@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl">
+  <sys_security_acl action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>be224101716b4f47b4748d279d5494ce</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_be224101716b4f47b4748d279d5494ce</sys_update_name>
+    <active>true</active>
+    <admin_overrides>true</admin_overrides>
+    <advanced>false</advanced>
+    <applies_to/>
+    <condition/>
+    <decision_type>allow</decision_type>
+    <description/>
+    <name>incident</name>
+    <operation display_value="read">read</operation>
+    <script>s</script>
+    <security_attribute>x</security_attribute>
+    <sys_domain>top</sys_domain>
+    <sys_name>incident</sys_name>
+    <type>record</type>
+  </sys_security_acl>
+</record_update>

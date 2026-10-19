@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<record_update table="sys_security_acl_role">
+  <sys_security_acl_role action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>fde50217a7ba4e92a9cd844bb3726d06</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_security_acl_role_fde50217a7ba4e92a9cd844bb3726d06</sys_update_name>
+    <sys_name>incident.x_snc_bprobe.ovr</sys_name>
+    <sys_security_acl>be224101716b4f47b4748d279d5494ce</sys_security_acl>
+    <sys_user_role name="x_snc_bprobe.ovr">8729a1ac51d74e97acf864d17b827dfe</sys_user_role>
+  </sys_security_acl_role>
+</record_update>

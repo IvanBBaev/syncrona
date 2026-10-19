@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<record_update table="catalog_ui_policy">
+  <catalog_ui_policy action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>85227dc6b6994d04bba702ce626f6e2f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>catalog_ui_policy_85227dc6b6994d04bba702ce626f6e2f</sys_update_name>
+    <active>true</active>
+    <applies_catalog>true</applies_catalog>
+    <applies_req_item>false</applies_req_item>
+    <applies_sc_task>false</applies_sc_task>
+    <applies_target_record>false</applies_target_record>
+    <applies_to>item</applies_to>
+    <catalog_conditions/>
+    <catalog_item/>
+    <conditions/>
+    <description/>
+    <global>true</global>
+    <inherit>false</inherit>
+    <isolate_script>true</isolate_script>
+    <model_id/>
+    <model_table/>
+    <on_load>true</on_load>
+    <order>100</order>
+    <published_ref/>
+    <reverse_if_false>true</reverse_if_false>
+    <run_scripts>false</run_scripts>
+    <script_false>function onCondition() {
+
+}</script_false>
+    <script_true>function onCondition() {
+
+}</script_true>
+    <set_values/>
+    <short_description>Minimal</short_description>
+    <table/>
+    <ui_type>10</ui_type>
+    <va_supported>true</va_supported>
+    <variable_set/>
+    <view/>
+  </catalog_ui_policy>
+</record_update>

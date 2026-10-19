@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<record_update table="sn_aia_agent_tool_m2m">
+  <sn_aia_agent_tool_m2m action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>6d93b58f0f044ee7b234e52fb300d174</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sn_aia_agent_tool_m2m_6d93b58f0f044ee7b234e52fb300d174</sys_update_name>
+    <active>true</active>
+    <agent>cd65f04152944317a4d531140b8ad539</agent>
+    <description>Runs</description>
+    <display_output>false</display_output>
+    <document_status/>
+    <execution_mode>autopilot</execution_mode>
+    <inputs>[{"name":"content","description":"Content","mandatory":true,"value":""}]</inputs>
+    <max_auto_executions>10</max_auto_executions>
+    <name>Run Script</name>
+    <output_transformation_strategy/>
+    <post_message/>
+    <post_processing_script/>
+    <pre_message/>
+    <pre_run>false</pre_run>
+    <sys_domain>global</sys_domain>
+    <sys_overrides/>
+    <timeout/>
+    <tool>4ffdd7fb1cc9480ab94b9de1bbc0d59a</tool>
+    <tool_attributes>{}</tool_attributes>
+    <transformation_instructions/>
+    <widgets/>
+  </sn_aia_agent_tool_m2m>
+</record_update>

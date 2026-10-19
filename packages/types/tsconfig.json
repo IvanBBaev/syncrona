@@ -1,0 +1,11 @@
+{
+  "//": "Project the plugin packages reference; it only checks index.d.ts and emits nothing but build info.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "strict": true,
+    "composite": true,
+    "types": []
+  },
+  "files": ["index.d.ts"]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "@syncrona/fluent",
+  "version": "1.2.0-beta.0",
+  "description": "Optional Fluent tier for SyncroNow AI: drives the ServiceNow SDK (@servicenow/sdk) orchestrator behind `syncrona fluent` - init, build, transform, pack, install, status, types, dependencies, run, explain and move-to-app.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "prepack": "tsc",
+    "test": "jest --coverage"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "Ivan Baev",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@syncrona/types": "^1.2.0-beta.0"
+  },
+  "peerDependencies": {
+    "@servicenow/sdk": "~4.13",
+    "typescript": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "@servicenow/sdk": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.1.1",
+    "typescript": "~6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IvanBBaev/syncrona.git",
+    "directory": "packages/fluent"
+  },
+  "homepage": "https://ivanbbaev.github.io/syncrona/"
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<record_update table="sys_ui_page">
+  <sys_ui_page action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>42fe376dd17c497e92fdd2254e6db1ff</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ui_page_42fe376dd17c497e92fdd2254e6db1ff</sys_update_name>
+    <category/>
+    <client_script/>
+    <description/>
+    <direct>false</direct>
+    <endpoint>x_snc_bprobe_empty.do</endpoint>
+    <html/>
+    <name>empty</name>
+    <processing_script/>
+    <sys_name>empty</sys_name>
+  </sys_ui_page>
+</record_update>

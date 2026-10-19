@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<record_update table="sp_instance_menu">
+  <sp_instance_menu action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>f6c956798fc041788162110aefed0d60</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sp_instance_menu_f6c956798fc041788162110aefed0d60</sys_update_name>
+    <active>false</active>
+    <advanced_placeholder_dimensions>true</advanced_placeholder_dimensions>
+    <async_load>true</async_load>
+    <async_load_device_type>tablet</async_load_device_type>
+    <async_load_trigger>parallel</async_load_trigger>
+    <class_name>mc</class_name>
+    <color>info</color>
+    <css>m</css>
+    <glyph>g</glyph>
+    <id>menu1</id>
+    <order>4</order>
+    <placeholder_dimensions>{"a":1}</placeholder_dimensions>
+    <placeholder_dimensions_script>s</placeholder_dimensions_script>
+    <placeholder_template>t</placeholder_template>
+    <preserve_placeholder_size>true</preserve_placeholder_size>
+    <roles>itil,x_snc_bprobe.p_user</roles>
+    <short_description>msd</short_description>
+    <size>sm</size>
+    <sp_column/>
+    <sp_widget>5ec34342fa424ae3939401f6d14a9b73</sp_widget>
+    <title>Menu</title>
+    <url>/m</url>
+    <widget_parameters>{"a":{"value":1,"displayValue":"1"},"b":{"value":true,"displayValue":"true"}}</widget_parameters>
+  </sp_instance_menu>
+</record_update>

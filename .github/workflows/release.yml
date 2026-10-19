@@ -1,0 +1,174 @@
+name: Release
+
+# Publishes the @syncrona/* packages to npm with build provenance.
+#
+# OWNER-GATED: this workflow stays dormant until the owner decisions land
+# (IP/provenance clearance, repo public, npm scope ownership + 2FA). To enable:
+#   1. Claim the @syncrona scope on npm and enable 2FA (automation token).
+#   2. Add the token as the NPM_TOKEN repository secret.
+#   3. Run via "Run workflow" (workflow_dispatch) or push a v* tag.
+# Provenance requires `id-token: write` and a public repo (npm attestations).
+#
+# gap-analysis D5: manual dispatch defaults to a DRY-RUN rehearsal — full
+# validation runs, then `npm publish --dry-run` for every publishable
+# workspace instead of a real publish; tag pushing and the Homebrew job are
+# skipped. Untick `dry_run` to publish for real from a dispatch. Tag-push
+# (v*) runs always publish for real, exactly as before.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse only (npm publish --dry-run); no publish, no tags, no Homebrew"
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # push the per-package git tags `changeset publish` creates
+  id-token: write # required for npm provenance attestations
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Full validation gate
+        run: npm run check
+
+      # Publish gate: fail the release on a known-vulnerable runtime dependency.
+      # Scoped to production deps so dev-only advisories never block a release —
+      # nothing in the dev tree is inside the tarballs this job publishes, so a
+      # dev advisory is not a reason to withhold a fix from users.
+      # DEV COVERAGE LIVES IN ci.yml, NOT HERE. An earlier version of this
+      # comment claimed ci.yml audited the full tree; that was false, and for a
+      # while afterwards it truthfully recorded that dev dependencies were
+      # audited by NO workflow (11 findings: 5 low, 3 moderate, 3 high). Closed
+      # on 2026-08-25: ci.yml now runs a blocking `npm audit --audit-level=high`
+      # over the full tree on every push/PR, plus a non-blocking low+moderate
+      # report. Read the rationale for the two different thresholds there.
+      # Threshold lowered high -> moderate on 2026-08-21, in lockstep with ci.yml,
+      # after a moderate prod advisory (undici <=6.27.0) went undetected here.
+      - name: Security audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=moderate
+
+      # `changeset publish` creates ANNOTATED tags (`git tag -m`), which need a
+      # committer identity. Runners have none, so the tag call fails inside
+      # changesets — which swallows the exit code and still prints "New tag:" —
+      # and the tag-push step then truthfully reports "Everything up-to-date".
+      # This is why 0.9.0 and 0.9.1 shipped without per-package tags.
+      - name: Configure git identity for release tags
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Real publish path: tag pushes (the `inputs` context is empty there, so
+      # the event-name guard decides) and dispatches that explicitly untick
+      # dry_run. `inputs.dry_run` is a real boolean on workflow_dispatch, so
+      # `== false` is exact — no string-comparison pitfalls.
+      - name: Publish to npm with provenance
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        run: npx changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+
+      # gap-analysis D5: dry-run rehearsal. Packs every publishable workspace
+      # exactly as a real publish would — each package's publishConfig is
+      # honoured and the would-be tarball contents are printed — but nothing
+      # is uploaded, so no npm token is required (setup-node's placeholder
+      # NODE_AUTH_TOKEN satisfies the .npmrc env reference).
+      - name: Rehearse publish (npm publish --dry-run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        run: npm publish --dry-run --workspaces
+
+      # `changeset publish` tags each published package locally; push them so the
+      # release history (and any tag-triggered automation) is not discarded.
+      # Skipped in a dry-run rehearsal (nothing was published, so no new tags).
+      - name: Push package tags
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+        run: git push origin --tags
+
+  # D5: auto-update the Homebrew formula from the freshly published npm tarball.
+  # DORMANT until the tap repo (IvanBBaev/homebrew-tap) exists and the repo
+  # variable HOMEBREW_TAP_READY=true + secret HOMEBREW_TAP_TOKEN are set. Until
+  # then it is skipped, exactly like the owner-gated publish above. Also
+  # skipped in a dry-run rehearsal — there is no published tarball to fetch.
+  #
+  # KNOWN 24-HOUR WINDOW (verified against Homebrew 6.0.16 on 2026-08-25): the
+  # formula installs via `std_npm_args`, which passes npm's
+  # `--min-release-age=<Homebrew::RELEASE_COOLDOWN_DAYS>` (currently 1 DAY).
+  # `syncrona` depends on `@syncrona/* ^1.0.x`, whose only satisfying version is
+  # the one published seconds earlier by the job above, so `brew install
+  # syncrona` fails with `npm error code ETARGET / notarget No matching version
+  # found ... with a date before <today>` until the release is ~24h old. Nothing
+  # here can override that without defeating Homebrew's supply-chain cooldown —
+  # treat the tap as usable one day after the tag, not immediately.
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ vars.HOMEBREW_TAP_READY == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Resolve published version, tarball URL and sha256
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          URL="https://registry.npmjs.org/syncrona/-/syncrona-${VERSION}.tgz"
+          curl -fsSL "$URL" -o core.tgz
+          SHA=$(shasum -a 256 core.tgz | cut -d' ' -f1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Render formula from the template
+        env:
+          FORMULA_URL: ${{ steps.meta.outputs.url }}
+          FORMULA_SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          mkdir -p out
+          # Anchored at the start of the line so only the formula's top-level
+          # `url`/`sha256` fields can match. The unanchored version matched any
+          # line containing `url "` anywhere, so a future `livecheck`/`resource`
+          # block (or a comment carrying an example URL) would have been
+          # rewritten too.
+          sed -e "s|^\( *\)url \".*\"|\1url \"${FORMULA_URL}\"|" \
+              -e "s|^\( *\)sha256 \".*\"|\1sha256 \"${FORMULA_SHA}\"|" \
+              packaging/homebrew/syncrona.rb > out/syncrona.rb
+          # sed exits 0 when it matches nothing, so renaming or re-indenting the
+          # placeholders in the template would have silently shipped a tap
+          # formula still pointing at syncrona-0.0.0.tgz. Fail loudly instead.
+          if ! grep -qF "url \"${FORMULA_URL}\"" out/syncrona.rb ||
+             ! grep -qF "sha256 \"${FORMULA_SHA}\"" out/syncrona.rb; then
+            echo "::error::Homebrew formula substitution did not apply — refusing to publish a placeholder formula"
+            cat out/syncrona.rb
+            exit 1
+          fi
+
+      - name: Commit the formula to the tap repo
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/IvanBBaev/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp out/syncrona.rb tap/Formula/syncrona.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/syncrona.rb
+          git commit -m "syncrona ${{ steps.meta.outputs.version }}" || { echo "No formula changes"; exit 0; }
+          git push

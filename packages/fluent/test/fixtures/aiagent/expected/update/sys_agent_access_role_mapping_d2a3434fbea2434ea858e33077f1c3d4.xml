@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<record_update table="sys_agent_access_role_mapping">
+  <sys_agent_access_role_mapping action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>d2a3434fbea2434ea858e33077f1c3d4</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_agent_access_role_mapping_d2a3434fbea2434ea858e33077f1c3d4</sys_update_name>
+    <agent_access_config agent="cd65f04152944317a4d531140b8ad539">e0451a6f33c94fbc8bd56ce91d883115</agent_access_config>
+    <role name="admin">95ab90c74a2f4ea6abc8b4673dc926be</role>
+  </sys_agent_access_role_mapping>
+</record_update>

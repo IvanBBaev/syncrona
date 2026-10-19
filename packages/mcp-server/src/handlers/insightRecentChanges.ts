@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { snRequest, toTableResultRows } from "../servicenowCore";
+
+import type { ToolResponse } from "../toolResponse";
+import {
+  buildRecentChangesQuery,
+  clampLimit,
+  defaultSinceIso,
+  describeNonTablePayload,
+  errorResponse,
+  isoToServiceNowDateTime,
+  textResponse,
+} from "./insightShared";
+
+export async function handleListRecentChanges(
+  args: Record<string, unknown>,
+  timeoutMs: number
+): Promise<ToolResponse> {
+  const scope = typeof args.scope === "string" ? args.scope.trim() : "";
+  if (!scope) {
+    return errorResponse("Missing required field: scope");
+  }
+
+  const requestedSince =
+    typeof args.since === "string" && args.since.trim() ? args.since.trim() : "";
+  let sinceIso = requestedSince || defaultSinceIso();
+  let sinceDateTime = isoToServiceNowDateTime(sinceIso);
+  // A non-empty but unparseable `since` yields an empty ServiceNow datetime, which
+  // silently drops the time-bound clause and returns all-time results. Fall back to
+  // the default window and echo the bound actually applied, so the payload never
+  // claims a `since` it did not enforce.
+  if (requestedSince && !sinceDateTime) {
+    sinceIso = defaultSinceIso();
+    sinceDateTime = isoToServiceNowDateTime(sinceIso);
+  }
+  const limit = clampLimit(args.limit, 50, 200);
+
+  const params = new URLSearchParams();
+  params.set("sysparm_query", buildRecentChangesQuery(scope, sinceDateTime));
+  // One row past the limit tells a full page from a cut one.
+  params.set("sysparm_limit", String(limit + 1));
+  params.set(
+    "sysparm_fields",
+    "name,type,target_name,action,sys_created_by,sys_created_on,update_set"
+  );
+
+  const response = await snRequest(
+    "GET",
+    `/api/now/table/sys_update_xml?${params.toString()}`,
+    undefined,
+    timeoutMs
+  );
+
+  const isError = response.status < 200 || response.status > 299;
+  // A login or maintenance page served with a 2xx must not read as a scope
+  // with no recent changes.
+  const badPayload = isError ? null : describeNonTablePayload(response.status, response.data);
+  if (badPayload) {
+    return errorResponse(`Recent changes request returned ${badPayload}.`);
+  }
+
+  const allRows = toTableResultRows(response.data);
+  const truncated = allRows.length > limit;
+  const rows = truncated ? allRows.slice(0, limit) : allRows;
+  const changes = rows.map((row) => ({
+    // target_name comes back as "" (not absent) for records without a display
+    // value; fall back to the update name (table_sysid) so the change stays
+    // identifiable.
+    name: String(row.target_name || row.name || ""),
+    type: String(row.type ?? ""),
+    action: String(row.action ?? "").toUpperCase(),
+    changedBy: String(row.sys_created_by ?? ""),
+    changedAt: String(row.sys_created_on ?? ""),
+  }));
+
+  return textResponse(
+    {
+      status: response.status,
+      scope,
+      since: sinceIso,
+      rowCount: changes.length,
+      truncated,
+      changes,
+    },
+    isError
+  );
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<record_update table="sys_ux_page_property">
+  <sys_ux_page_property action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>2b295e11a2e64dfcb8461c9d9a32859f</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_ux_page_property_2b295e11a2e64dfcb8461c9d9a32859f</sys_update_name>
+    <description/>
+    <name>chrome_footer</name>
+    <page>73391a4a7a6d4f118381de6cde20a84f</page>
+    <route/>
+    <suffix>chrome_footer</suffix>
+    <type>json</type>
+    <value>{"public_page":{"enable_footer_topbar":false,"footer_topbar_options":{},"enable_footer_bar":false,"footer_bar_options":{}}}</value>
+  </sys_ux_page_property>
+</record_update>

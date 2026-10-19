@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<record_update table="dl_definition_rel_match">
+  <dl_definition_rel_match action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>90c613f83a5046feadd2932d0d86aa31</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>dl_definition_rel_match_90c613f83a5046feadd2932d0d86aa31</sys_update_name>
+    <dl_definition>c78915ade236450494fbba6f191c6542</dl_definition>
+    <exact_match>false</exact_match>
+    <matcher_table>x_snc_bprobe_matcher</matcher_table>
+    <matcher_table_field>impact</matcher_table_field>
+    <source_table>x_snc_bprobe_src</source_table>
+    <source_table_field>impact</source_table_field>
+  </dl_definition_rel_match>
+</record_update>

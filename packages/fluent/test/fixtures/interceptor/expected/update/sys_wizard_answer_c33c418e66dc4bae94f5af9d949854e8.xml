@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="sys_wizard_answer">
+  <sys_wizard_answer action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>c33c418e66dc4bae94f5af9d949854e8</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sys_wizard_answer_c33c418e66dc4bae94f5af9d949854e8</sys_update_name>
+    <active>true</active>
+    <answer>Only answer</answer>
+    <button_label/>
+    <dependent_value/>
+    <element/>
+    <name>Only answer</name>
+    <next_question/>
+    <order>100</order>
+    <payload_name/>
+    <question name="Follow-up question">f4f9fb4305fc4f9aa93116a2a8da6891</question>
+    <roles/>
+    <script/>
+    <table/>
+    <target_url>incident.do?sys_id=-1</target_url>
+    <type>1</type>
+  </sys_wizard_answer>
+</record_update>

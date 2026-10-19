@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<record_update table="sysauto_script">
+  <sysauto_script action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>4f5e5c04e31c4dd492d960d61d210323</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>sysauto_script_4f5e5c04e31c4dd492d960d61d210323</sys_update_name>
+    <active>true</active>
+    <advanced>false</advanced>
+    <business_calendar/>
+    <condition/>
+    <conditional>false</conditional>
+    <entered_run_end/>
+    <entered_run_start>2024-07-01 12:00:00</entered_run_start>
+    <entered_time>1970-01-01 00:00:30</entered_time>
+    <max_drift/>
+    <name>On demand</name>
+    <offset/>
+    <offset_type>0</offset_type>
+    <repeat_every/>
+    <run_as/>
+    <run_as_tz/>
+    <run_dayofmonth>1</run_dayofmonth>
+    <run_dayofweek>1</run_dayofweek>
+    <run_daysofweek/>
+    <run_end/>
+    <run_month/>
+    <run_period/>
+    <run_start>2024-07-01 19:00:00</run_start>
+    <run_time>1970-01-01 08:00:30</run_time>
+    <run_type>on_demand</run_type>
+    <run_weekinmonth/>
+    <script><![CDATA[gs.info("o");]]></script>
+    <sys_name>On demand</sys_name>
+    <sys_policy/>
+    <time_zone>America/Los_Angeles</time_zone>
+    <upgrade_safe>false</upgrade_safe>
+  </sysauto_script>
+</record_update>

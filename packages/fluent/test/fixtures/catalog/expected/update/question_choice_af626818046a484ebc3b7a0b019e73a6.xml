@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<record_update table="question_choice">
+  <question_choice action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>af626818046a484ebc3b7a0b019e73a6</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>question_choice_af626818046a484ebc3b7a0b019e73a6</sys_update_name>
+    <inactive>false</inactive>
+    <order>0</order>
+    <question cat_item="NULL" variable_set="45149637c2784e6e9b1189aa3eaafc53" name="color">a2831a129cf14953b769eed36a81095e</question>
+    <text>Red</text>
+    <value>red</value>
+  </question_choice>
+</record_update>

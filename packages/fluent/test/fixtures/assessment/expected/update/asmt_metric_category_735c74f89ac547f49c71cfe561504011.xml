@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<record_update table="asmt_metric_category">
+  <asmt_metric_category action="INSERT_OR_UPDATE" apply_defaults="true">
+    <sys_id>735c74f89ac547f49c71cfe561504011</sys_id>
+    <sys_scope display_value="x_snc_bprobe">db22ea00d7ff49d9b5d64061202ea510</sys_scope>
+    <sys_update_name>asmt_metric_category_735c74f89ac547f49c71cfe561504011</sys_update_name>
+    <create_stakeholders>true</create_stakeholders>
+    <description>Quality of service</description>
+    <details><![CDATA[<p>Details</p>]]></details>
+    <filter>priority=1^EQ</filter>
+    <metric_type>c7ebefdc2cce432489fd5a534b9a7853</metric_type>
+    <name>Quality</name>
+    <order>2</order>
+    <qb_evaluation_method/>
+    <roles>itil,x_snc_bprobe.reviewer</roles>
+    <scoring_type>percent</scoring_type>
+    <sys_domain>global</sys_domain>
+    <sys_domain_path>/</sys_domain_path>
+    <table>incident</table>
+    <total_metrics>4</total_metrics>
+    <weight>20</weight>
+  </asmt_metric_category>
+</record_update>
