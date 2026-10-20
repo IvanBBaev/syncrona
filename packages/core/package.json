@@ -23,7 +23,7 @@
     "jest": "^30.4.2",
     "jest-junit": "^17.0.0",
     "ts-jest": "^29.1.1",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "dependencies": {
     "@syncrona/credential-store": "^1.2.0",
