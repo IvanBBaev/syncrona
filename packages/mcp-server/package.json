@@ -31,8 +31,8 @@
     "@syncrona/jira": "^1.2.0",
     "@syncrona/redaction": "^1.2.0",
     "@syncrona/sn-transport": "^1.2.0",
-    "undici": "^6.29.0",
-    "zod": "^4.4.3"
+    "undici": "^6.29.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^10.0.0",
